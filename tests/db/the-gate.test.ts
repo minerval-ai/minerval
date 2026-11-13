@@ -148,8 +148,8 @@ afterAll(async () => {
 }, 180_000);
 
 describe("where a gate starts", () => {
-  it("is the Redactor's decision for every kind, and open for the bare fact that a request was taken up", () => {
-    expect(STARTING_MODE).toEqual({ page: "redactor", answer: "redactor", taken_up: "open", funding: "redactor", mandate: "redactor", message: "redactor" });
+  it("is the Redactor's decision for every kind, and open for the bare fact that a request was taken up and for a statement of the payer's own money", () => {
+    expect(STARTING_MODE).toEqual({ page: "redactor", answer: "redactor", taken_up: "open", funding: "redactor", mandate: "redactor", message: "redactor", petition: "redactor", statement: "open" });
   });
 
   it("offers nothing where the destination already reads the label", async () => {

@@ -30,7 +30,11 @@ import { A, B, C, at, seedNode, seedUser, system, unwall, wall } from "./review-
 import { creditOwls, owlBalance, seedGrantWithJob } from "./helpers.js";
 import { ASKED_FROM_BELOW, NOT_PLACED_MESSAGE, addToAsk, askAbove, askableFaces, askableNote } from "../../src/services/ask-above-service.js";
 import { listLabelFaces, showLabelFace, withdrawLabelFace } from "../../src/services/label-admin-service.js";
-import { setGateOffer, type GateOffer } from "../../src/services/gate-handoff.js";
+import { offerPetitionBelow, setGateOffer, type GateOffer } from "../../src/services/gate-handoff.js";
+import { gateItemFor } from "../../src/services/gate-service.js";
+import { gateBacklog } from "../../src/services/release-gate-service.js";
+import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
+import { executeAuditTool } from "../../src/llm/tools/audit-tools.js";
 import { getRequest, listRequests, paidFromBelowNote, recordWork, requestBrief, setRequestState } from "../../src/services/request-service.js";
 import { answerableBelow } from "../../src/services/request-adoption-service.js";
 import { grantEscrowBreakdown, regrantEdges } from "../../src/services/regrant-service.js";
@@ -45,6 +49,8 @@ import { postureAt, postureNote } from "../../src/label-posture.js";
 import { labelNote } from "../../src/llm/label-note.js";
 
 const PUBLIC = "public";
+/** The organization's own party, where the end-to-end case had to make one. */
+let madeOrgParty = "";
 const ROOM = "r3-room";
 const OWL = 1_000_000;
 const NOW = Date.parse("2030-01-01T00:00:00Z");
@@ -144,6 +150,7 @@ describe("work asked for from below", () => {
       await rawQuery(`DELETE FROM labels WHERE name = $1`, [ROOM]).catch((err: unknown) => console.warn("[work-from-below] cleanup:", err instanceof Error ? err.message : err));
     });
     await unwall();
+    if (madeOrgParty) await system(() => rawQuery(`DELETE FROM parties WHERE id = $1`, [madeOrgParty])).catch(() => undefined);
   });
 
   it("a label is addressed by a face its administrators show below, and by nothing else", async () => {
@@ -237,16 +244,16 @@ describe("work asked for from below", () => {
     expect(await at(A, () => rawQuery(`SELECT 1 FROM grants WHERE id = $1`, [made!.grant_id]))).toEqual([]);
     expect(await at(A, () => rawQuery(`SELECT 1 FROM adopted_requests WHERE from_request_id = $1`, [res.request_id]))).toEqual([]);
     // That it was made is offered to the gate, for the request that asked, paid from the mandate's own budget.
-    expect(offered).toEqual([
-      { kind: "mandate", fromLabel: C, toLabel: A, subject: { grantId: made!.grant_id }, replyTo: { requestId: res.request_id }, payer: { grantId: made!.grant_id } },
-    ]);
+    // With it goes the offer of a statement of what was put in and what went back, which says nothing until the mandate has closed.
+    const mandateOffer = { kind: "mandate", fromLabel: C, toLabel: A, subject: { grantId: made!.grant_id }, replyTo: { requestId: res.request_id }, payer: { grantId: made!.grant_id } };
+    const statementOffer = { kind: "statement", fromLabel: C, toLabel: A, subject: { grantId: made!.grant_id }, replyTo: { requestId: res.request_id } };
+    expect(offered).toEqual([mandateOffer, statementOffer]);
     const before = await whatARunIsGiven(A, node, [res.request_id]);
     // A decline: finance closes the mandate as it would any scope it should not accept. The money returns; the account of it is the gate's.
     const closed = await at(C, () => cancelGrant({ grantId: made!.grant_id, funderUserId: person }));
     expect(closed).toMatchObject({ ok: true, refundedMicroUsd: 20 * OWL });
     expect(await system(() => owlBalance(person))).toBe(50 * OWL);
-    expect(offered.length).toBe(2);
-    expect(offered[1]).toEqual(offered[0]);
+    expect(offered.slice(2)).toEqual([mandateOffer, statementOffer]);
     expect(await whatARunIsGiven(A, node, [res.request_id])).toBe(before);
   });
 
@@ -442,4 +449,140 @@ describe("work asked for from below", () => {
       )
     ).toMatchObject({ ok: false, code: "PAYER" });
   });
+
+  it("end to end with the gate: asked from company, worked in the room, the Redactor decides, and the Steward's later pass reads the answer as a source", async () => {
+    const SECRET = "account 4417-88 at the custodian";
+    // The gate itself from here on, and the party that is the organization, whose material an answer is.
+    setGateOffer(null);
+    const madeOrg = await system(async () => {
+      const [existing] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+      if (existing) return null;
+      return (await rawQuery<{ id: string }>(`INSERT INTO parties (name, is_own_organization) VALUES ('The organization (work from below)', true) RETURNING id`))[0]!.id;
+    });
+    try {
+      const node = await seedNode(A, "A company node the custodian's file bears on");
+      const funder = await seedUser();
+      const { grantId } = await at(A, () => seedGrantWithJob({ funderId: funder, budgetMicroUsd: 100 * OWL }));
+      await system(() => rawQuery(`UPDATE grants SET status = 'active' WHERE id = $1`, [grantId]));
+      const [pass] = await at(A, () =>
+        rawQuery<{ id: string }>(
+          `INSERT INTO actions (kind, exclusion_group, variant, claim_id, label, cost_est_micro_usd, status)
+           VALUES ('assess', $1, 'standard', $2, 'A pass', $3, 'running') RETURNING id`,
+          [`assess:${node} @${A}`, node, 20 * OWL]
+        )
+      );
+      await at(A, () =>
+        rawQuery(
+          `INSERT INTO action_allocations (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, commissioned_by) VALUES ($1, $2, $3, $4, $5, 'grantmaker')`,
+          [`assess:${node} @${A}`, pass!.id, node, grantId, 20 * OWL]
+        )
+      );
+      const budget = { microUsd: 20 * OWL, source: "the commission for this pass", meter: { billedMicroUsd: 0 }, funding: { actionId: pass!.id } };
+      const asSteward = <T>(fn: () => Promise<T>) => at(A, () => withAgent("steward", () => runWithUsageContext({ claimId: node, passBudget: budget as never }, fn)));
+      const asked = JSON.parse((await asSteward(() => executeSpendTool("commission", { kind: "research", ask_of: face.room, brief: "What does the custodian's file show for the reserve?", budget_owls: 8 })))!);
+      expect(asked.success, JSON.stringify(asked)).toBe(true);
+
+      // That it was taken up came through the gate at once: the gate starts open for that fact, which carries no text from the room.
+      const told = (await at(A, () => getRequest(asked.request_id)))!;
+      expect(told.taken_up_above).toMatchObject({ answer: "none yet" });
+
+      // In the room: work with an outcome is recorded on the request that took it up. Its answer goes to the gate by itself.
+      const [link] = await system(() => rawQuery<{ request_id: string }>(`SELECT request_id FROM adopted_requests WHERE from_request_id = $1`, [asked.request_id]));
+      await at(ROOM, () => recordWork({ requestId: link!.request_id, byLabel: "Researcher", outcome: "met", summary: `The file was read in full.\n\nIt shows the reserve held in ${SECRET}.` }));
+      const item = (await at(ROOM, () => gateItemFor({ kind: "answer", subjectRef: link!.request_id, toLabel: A })))!;
+      expect(item.state).toBe("waiting");
+      // The Redactor's run is paid for by the mandate at the company label that paid for the work, with nobody commissioning it.
+      const payers = await system(() =>
+        rawQuery<{ grant_id: string | null }>(`SELECT al.grant_id FROM action_allocations al JOIN actions a ON a.id = al.action_id WHERE a.exclusion_group = $1`, [`redact:${item.item_id}`])
+      );
+      expect(payers.map((p) => p.grant_id)).toEqual([grantId]);
+
+      // While it waits, the company label is shown that one answer is at the gate, from "Evidence room" and never from the room's own name.
+      const reader = { clearance: [A, PUBLIC], administer: false, releaseParties: [] as string[] };
+      const waiting = (await runWithUsageContext({ clearance: reader.clearance }, () => gateBacklog(reader))) as { gates: any[]; asked_from_here: any[] };
+      expect(waiting.gates.some((g) => g.from === "Evidence room" && g.to === A)).toBe(true);
+      expect(waiting.asked_from_here.find((a) => a.asked_of === "Evidence room")).toMatchObject({ answer_waiting_at_the_gate: 1 });
+      expect(JSON.stringify(waiting)).not.toContain(ROOM);
+      expect(JSON.stringify(waiting)).not.toContain(SECRET);
+
+      // The Redactor decides: one passage removed, the rest let through. Audit passes its work. No person acts.
+      const redactor = async (name: string, input: Record<string, unknown> = {}) =>
+        JSON.parse(await at(ROOM, () => withAgent("redactor", () => executeRedactorTool(name, input, { pageId: item.item_id })))) as Record<string, any>;
+      const page = await redactor("get_page_to_redact");
+      expect(page.gate).toMatch(/^The Redactor decides/);
+      const part = page.parts.find((p: any) => p.text.includes(SECRET)).part;
+      expect((await redactor("redact", { part, passage: SECRET, category: "commercial figures", note: "An account number." })).success).toBe(true);
+      expect((await redactor("finish_redaction", { least_sure: [] })).success).toBe(true);
+      const passed = JSON.parse(await at(ROOM, () => withAgent("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: item.item_id, outcome: "pass", reasons: "The one removal is covered." }, {}))));
+      expect(passed.success, JSON.stringify(passed)).toBe(true);
+      expect(await system(() => rawQuery(`SELECT 1 FROM showing_acts WHERE page_id = $1 AND by = 'person'`, [item.item_id]))).toEqual([]);
+
+      // At the company label: the answer is work on the Steward's request, and a source on its node, with the mark and without the passage.
+      const answered = (await at(A, () => getRequest(asked.request_id)))!;
+      expect(answered.taken_up_above).toMatchObject({ answer: "through the gate" });
+      const work = answered.work.find((w) => w.by === "Work at a label this one does not read")!;
+      expect(work.summary).toContain("The file was read in full.");
+      expect(work.summary).toContain("It shows the reserve held in [redacted: commercial figures].");
+      const sources = await at(A, () =>
+        rawQuery<{ raw_content: string; source_type: string }>(
+          `SELECT s.raw_content, s.source_type FROM claim_instances i JOIN sources s ON s.id = i.source_id WHERE i.claim_id = $1 AND i.detached_at IS NULL`,
+          [node]
+        )
+      );
+      expect(sources).toHaveLength(1);
+      expect(sources[0]!.source_type).toBe("shown_page");
+      expect(sources[0]!.raw_content).toContain("[redacted: commercial figures]");
+      // The Steward's later pass is opened and told so; it did not wait for it.
+      const inbox = await at(A, () => withAgent("steward", () => openInbox(node, Date.now())));
+      expect(inbox.brief).toContain("An answer to a request on this node, from work at a label this one does not read, has come through the gate.");
+      for (const text of [JSON.stringify(answered), sources[0]!.raw_content, inbox.brief]) {
+        expect(text).not.toContain(SECRET);
+        expect(text).not.toContain(ROOM);
+      }
+      const after = (await runWithUsageContext({ clearance: reader.clearance }, () => gateBacklog(reader))) as { asked_from_here: any[] };
+      expect(after.asked_from_here.find((a) => a.asked_of === "Evidence room")).toMatchObject({ answer_through_the_gate: 1, answer_waiting_at_the_gate: 0 });
+
+      // A petition from the run in the room to the mandate that pays for it goes to the gate, and reaches that mandate's officers when it is through.
+      const [petition] = await at(ROOM, () =>
+        rawQuery<{ id: string }>(
+          `INSERT INTO petitions (grant_id, kind, asked_micro_usd, plan, why) VALUES ($1, 'more_budget', $2, 'Read the second volume of the file.', $3) RETURNING id`,
+          [grantId, 5 * OWL, `The first volume points to ${SECRET}.`]
+        )
+      );
+      await at(ROOM, () => offerPetitionBelow(petition!.id, { grantId, label: A }, ROOM));
+      const asking = (await at(ROOM, () => gateItemFor({ kind: "petition", subjectRef: petition!.id, toLabel: A })))!;
+      const petitionRedactor = async (name: string, input: Record<string, unknown> = {}) =>
+        JSON.parse(await at(ROOM, () => withAgent("redactor", () => executeRedactorTool(name, input, { pageId: asking.item_id })))) as Record<string, any>;
+      const petitionPage = await petitionRedactor("get_page_to_redact");
+      expect(petitionPage.kind_of_thing).toBe("petition");
+      const why = petitionPage.parts.find((p: any) => p.text.includes(SECRET)).part;
+      expect((await petitionRedactor("redact", { part: why, passage: SECRET, category: "commercial figures", note: "An account number." })).success).toBe(true);
+      expect((await petitionRedactor("finish_redaction", { least_sure: [] })).success).toBe(true);
+      expect(JSON.parse(await at(ROOM, () => withAgent("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: asking.item_id, outcome: "pass", reasons: "Covered." }, {})))).success).toBe(true);
+      const raised = await at(A, () => rawQuery<{ summary: string }>(`SELECT summary FROM mandate_inbox WHERE grant_id = $1 AND detail->>'gate_item' = $2`, [grantId, asking.item_id]));
+      expect(raised).toHaveLength(1);
+      expect(raised[0]!.summary).toContain("asks it for 5.00 owls more");
+      expect(raised[0]!.summary).toContain("What it would do with it: Read the second volume of the file.");
+      expect(raised[0]!.summary).toContain("Why: The first volume points to [redacted: commercial figures].");
+      expect(raised[0]!.summary).not.toContain(SECRET);
+
+      // When the work ends, a statement of what was spent and what went back comes through. It starts open: it says only what the payer's own account shows.
+      await at(ROOM, () => setRequestState({ requestId: link!.request_id, state: "met" }));
+      const closed = (await at(A, () => getRequest(asked.request_id)))!;
+      const statement = closed.work.find((w) => w.summary.startsWith("A statement of what was spent"))!;
+      expect(statement.summary).toMatch(/Work on the request has ended\. Of 8\.00 owls placed on it, \d+\.\d\d were spent and \d+\.\d\d went back to whoever paid\./);
+    } finally {
+      setGateOffer(async (offer) => {
+        offered.push(offer);
+      });
+      await system(async () => {
+        await rawQuery(`DELETE FROM gates WHERE boundary_id IN (SELECT boundary_id FROM redaction_policies WHERE from_label = $1)`, [ROOM]);
+        if (madeOrg) {
+          await rawQuery(`DELETE FROM showing_acts WHERE party_id = $1`, [madeOrg]);
+          await rawQuery(`DELETE FROM gate_settings WHERE party_id = $1`, [madeOrg]);
+        }
+      }).catch(() => undefined);
+      madeOrgParty = madeOrg ?? "";
+    }
+  }, 120_000);
 });

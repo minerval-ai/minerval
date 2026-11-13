@@ -29,9 +29,11 @@ same acts (`GATE_KINDS` in `src/services/gate-kinds.ts`).
 | --- | --- | --- | --- |
 | `page` | A node's page at the label | A flow covers the node and a version is finished | A source at the destination, attached to the node, and a pass opened there |
 | `taken_up` | That a request filed on the other side was taken up here | It is taken up | The request there reads as taken up (`taken_up_above`) |
-| `answer` | Where that request stands here, and what work on it found | Work with an outcome is recorded on it, or it is closed | A row in the asking request's work log, citing the source |
+| `answer` | Where that request stands here, and what work on it found | Work with an outcome is recorded on it, or it is closed | A row in the asking request's work log; a source on each node the request bears on, and a pass opened there, so the Steward that asked reads it on a later pass |
+| `statement` | What was spent on that request, or put into a mandate made for it, and what went back | The request is closed, or the mandate closes | A row in the asking request's work log |
+| `petition` | What a run here asks of the mandate on the other side that pays for it: how much more, and why | The run petitions | An item in that mandate's inbox, for its officers |
 | `message` | The answer a pass here gave to a message sent on the other side | The pass answers it | A reply in the sender's inbox |
-| `mandate` | That a mandate exists here, with its name, terms and budget | A person who directs offers it, or everything flows | Listed among what came through (`GET /gate/items`) |
+| `mandate` | That a mandate exists here, with its name, terms and budget | It was made for a request from the other side (when made, activated and closed); a person who directs offers it; or everything flows | A row in the asking request's work log where a request asked; listed among what came through (`GET /gate/items`) |
 | `funding` | A mandate here paying for a pass on a node on the other side | The mandate's side asks for it | The pass is opened there |
 
 An item is recorded the way a node's page is: a short list of what is
@@ -106,7 +108,17 @@ that waited on a person for each item would not move, and the point of a
 deployment is that what a label learns reaches the labels below it and the
 public. A gate that let text through unread would not be a gate. The fact
 that a request was taken up carries no text from the label that took it up,
-and an asker who is not told may pay for the same work twice.
+and an asker who is not told may pay for the same work twice. A statement
+of what was spent also starts open: it is figures in fixed words about the
+payer's own money, which the payer's own account already shows as it moves.
+
+**Refunds are not the gate's.** Money that was not spent returns to its
+payer by the ordinary settlement, as soon as it is released, and the payer
+sees it in its own account. A full refund soon after asking therefore tells
+the asker that the work was declined or cost nothing, before any words
+come through. Holding a payer's own money at a gate to hide that was
+judged worse than the signal: the gate governs the account of what was
+done, and the money stays the payer's.
 
 A setting is for one kind of thing or every kind; for the whole boundary,
 one mandate's work, a node and everything under it, or one request; and
@@ -173,9 +185,16 @@ pay by hand (`POST /showings/:showing_id/pages/:page_id/commission`).
 how many items have not gone through, of what kinds, for how long, and what
 each waits on: the budget, the Redactor's run, Audit's check, the
 Redactor's hold, a person's hold or decision (by party), a delay. It is
-counts and fixed words. No item, node, request or mandate is named, nothing
-of any item's text is in it, and the label things come from is named only
-to a person with a say over the gate.
+counts and fixed words. No item, node, request or mandate is named, and
+nothing of any item's text is in it. The label things come from is named to
+those who read it and to administrators. To anyone else it is the face
+that label shows on their side (`label_faces`, how a label above is
+addressed from below), or nothing where it shows none.
+
+With it comes what the reader's labels asked of labels above and what has
+come back (`asked_from_here`): for each face asked, how many requests,
+with how many owls behind them, and for how many the gate has let through
+that they were taken up, an answer, or nothing yet.
 
 It is shown to the readers of the destination label unless the gate's
 administrators turn that off. A long wait on the Redactor's hold or on a
@@ -222,11 +241,15 @@ are downward flow at the outer boundary still have their own paths:
   on the parties whose sources the judgment read. The parts of an answer,
   a message, a mandate or a funding item are taken to be the
   organization's own.
+- **A petition that comes through is not waited for.** It reaches the
+  paying mandate's officers as an item in their inbox; the run that
+  petitioned has usually ended by then, and adding to what was asked
+  funds further work.
 - **An answer to a message reaches a sender that is a Steward.** For any
   other sender it is listed among what came through
   (`GET /gate/items`).
 - **A batch is a shared time.** Items delayed to the same time go
   together. A gate has no standing schedule of batches.
-- **Label names are shown to a gate's authorities** whether or not they
-  read the label: a holder of `release` put at a gate is told which two
-  labels it stands between.
+- **A holder of `release` who does not read the label things come from**
+  is shown its face, or "a label you do not read" where it shows none.
+  The destination's name is shown to them: they were put at that gate.

@@ -1048,7 +1048,8 @@ export async function itemScopeOf(showing: ShowingRow, page: Pick<PageRow, "node
 /**
  * The mandates an item is the work of, first to pay first: the one the
  * offer named; the one whose budget paid for the judgment the page carries,
- * or for the work on the request an answer reports.
+ * or for the work on the request an answer reports, which for work asked
+ * for from a label below is the asker's own mandate.
  */
 async function payersOf(showing: ShowingRow, page: Pick<PageRow, "judgment_kind" | "judgment_id">): Promise<string[]> {
   const out: string[] = [];
@@ -1064,6 +1065,15 @@ async function payersOf(showing: ShowingRow, page: Pick<PageRow, "judgment_kind"
     if (!j.job) continue;
     const [grant] = await rawQuery<{ id: string }>(`SELECT id FROM grants WHERE budget_job_id = $1`, [j.job]);
     if (grant && !out.includes(grant.id)) out.push(grant.id);
+  }
+  // Work on a request is also paid for by placing money on its ledger row: for work asked for from a label
+  // below, that is the asker's mandate, and sending the answer back is part of what it asked for.
+  if (showing.kind === "answer" || showing.kind === "statement") {
+    const placed = await rawQuery<{ id: string }>(
+      `SELECT DISTINCT grant_id AS id FROM action_allocations WHERE exclusion_group = $1 AND grant_id IS NOT NULL`,
+      [`request:${showing.subject_ref}`]
+    );
+    for (const g of placed) if (!out.includes(g.id)) out.push(g.id);
   }
   return out;
 }
