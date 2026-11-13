@@ -126,7 +126,20 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await system(async () => {
+    // A gate toward `public` keeps its destination side at `public`, which the review labels' cleanup leaves.
+    const toPublic = await rawQuery<{ id: string; boundary_id: string }>(
+      `SELECT id, boundary_id FROM shown_showings WHERE sensitivity_label = 'public' AND boundary_id IN (SELECT boundary_id FROM redaction_policies WHERE from_label = ANY($1::text[]))`,
+      [[A, B, C]]
+    );
+    for (const showing of toPublic) {
+      await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showing.id]);
+      await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showing.id]);
+      await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = $1)`, [showing.id]);
+      for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = $1`, [showing.id]);
+      await rawQuery(`DELETE FROM shown_showings WHERE id = $1`, [showing.id]);
+    }
     await rawQuery(`DELETE FROM gates WHERE boundary_id IN (SELECT boundary_id FROM redaction_policies WHERE from_label = ANY($1::text[]))`, [[A, B, C]]);
+    await rawQuery(`DELETE FROM redaction_policies WHERE sensitivity_label = 'public' AND boundary_id = ANY($1::uuid[])`, [toPublic.map((s) => s.boundary_id)]);
     await rawQuery(`DELETE FROM action_allocations WHERE grant_id = ANY($1::uuid[])`, [[id.mandate, id.otherMandate, id.general, id.companyGeneral].filter(Boolean)]);
   }).catch((err: unknown) => console.warn("[the-gate] cleanup:", err instanceof Error ? err.message : err));
   await unwall();

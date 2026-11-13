@@ -325,8 +325,10 @@ describe("every labelled table", () => {
     requests: { keeper_kind: "'steward'", keeper_claim_id: "gen_random_uuid()" },
     // A source is an input by its id alone.
     judgment_inputs: { input_kind: "'source'", source_id: "gen_random_uuid()" },
-    // Shown to a label or outside, one of the two.
-    showings: { to_outside: "true" },
+    // Shown to a label or outside, one of the two; and a flow for one node names the node.
+    showings: { to_outside: "true", node_id: "gen_random_uuid()" },
+    // An item that is not a node's page says what it was composed from.
+    showing_pages: { version_key: "'enf'" },
     // A removal is a span with an end after its start.
     showing_removals: { end_offset: "2" },
     // The page's side of a policy names the label pages are written at.

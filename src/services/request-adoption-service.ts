@@ -141,8 +141,8 @@ export async function takeUpFromBelow(
 export function takenUpAboveNote(below: { id: string; label: string }, here: { id: string; label: string }): string {
   return (
     `Request ${below.id} was filed at \`${below.label}\`, which this run reads and does not change. It is taken up ` +
-    `at \`${here.label}\` as request ${here.id}, linked to it, and that is the request this acted on. What the ` +
-    `work finds goes to readers at \`${below.label}\` through the gate between the two labels, which may remove from it or hold it.`
+    `at \`${here.label}\` as request ${here.id}, linked to it, and that is the request this acted on. That it was taken up, and what the ` +
+    `work finds, go to readers at \`${below.label}\` through the gate between the two labels, which may remove from it or hold it.`
   );
 }
 

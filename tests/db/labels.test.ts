@@ -194,7 +194,7 @@ describe("the labels table", () => {
         "consistency_sweeps", "contribution_reviews", "contributions", "correspondent_events", "correspondent_plan_items",
         "correspondent_updates", "correspondents", "curation_requests", "enqueue_events", "events", "examination_coverage",
         "examination_findings", "examinations", "feed_contributions", "feed_request_targets", "feed_requests",
-        "file_set_files", "file_set_keeps", "file_sets", "given_addresses", "grant_conversations", "grant_sources",
+        "file_set_files", "file_set_keeps", "file_sets", "gate_settings", "gates", "given_addresses", "grant_conversations", "grant_sources",
         "grants", "inbound_contributions", "ingest_focuses", "jobs", "judgment_inputs",
         "keep_current_exceptions", "keep_current_queue", "lean_checks", "llm_usage", "lookout_events",
         "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",

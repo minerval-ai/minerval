@@ -444,11 +444,10 @@ describe("what a permission guards", () => {
       "POST /showings/:showing_id/end": ["direct"],
       "POST /showings/:showing_id/pages/:page_id/hold": ["direct"],
       "POST /showings/:showing_id/pages/:page_id/commission": ["fund"],
-      "GET /release/queue": ["release"],
-      "POST /release/decisions": ["release"],
-      "GET /release/rules": ["release"],
-      "POST /release/rules": ["release"],
-      "DELETE /release/rules/:rule_id": ["release"],
+      "GET /gate/queue": ["release"],
+      "POST /gate/decisions": ["release"],
+      "POST /gate/offers": ["direct"],
+      "PUT /gates/:gate_id": ["administer"],
       "PUT /redaction-policies": ["administer"],
       "POST /outbound/send": ["direct"],
       "POST /outbound/packages/:package_id/file": ["direct"],
@@ -722,7 +721,7 @@ describe("an MCP caller and the Assistant", () => {
     expect(note).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
     expect(note).toMatch(/Without the permission to fund work: .*fund_mandate/);
     expect(note).toMatch(/Without the permission to administer the deployment: .*list_permission_grants/);
-    expect(note).toMatch(/Without the permission to release one party's material: get_release_queue, list_release_rules/);
+    expect(note).toMatch(/Without the permission to release one party's material: get_gate_queue, decide_at_gate/);
     expect(note).not.toMatch(/read at a label/);
     await limited.close();
 
@@ -800,10 +799,24 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(byReader.statusCode).toBe(403);
       expect(byReader.json().permission).toBe("direct");
       const noDestination = await as(director, { method: "POST", url: "/showings", payload: { ...body, to_label: undefined } });
-      expect(noDestination.json()).toEqual({ error: "Say where the page is to be shown: to_label, or outside.", code: "NO_DESTINATION" });
+      expect(noDestination.json()).toEqual({ error: "Say where the pages are to go: to_label, or outside.", code: "NO_DESTINATION" });
       const asked = await as(director, { method: "POST", url: "/showings", payload: body });
       expect(asked.statusCode, asked.body).toBe(201);
       const showingId = asked.json().showing_id as string;
+      // A gate starts from the Redactor's decision. This one is set to a person's decision as well, which is an
+      // administrator's to set for the gate as a whole; a person who directs, or who releases, may not.
+      const gateId = asked.json().boundary_id as string;
+      expect((await as(director, { method: "PUT", url: `/gates/${gateId}/settings`, payload: { mode: "person" } })).statusCode).toBe(403);
+      expect((await as(releaser, { method: "PUT", url: `/gates/${gateId}/settings`, payload: { mode: "person" } })).json().code).toBe("NOT_YOURS_TO_SET");
+      const set = await as(admin, { method: "PUT", url: `/gates/${gateId}/settings`, payload: { mode: "person" } });
+      expect(set.statusCode, set.body).toBe(200);
+      expect(set.json()).toMatchObject({ changed: true, let_through_now: 0 });
+      // The other side is shown that one item waits, and on what, in counts.
+      const backlog = (await as(reader, { url: "/gate/backlog" })).json();
+      expect(backlog.gates).toHaveLength(1);
+      expect(backlog.gates[0]).toMatchObject({ to: "internal", items_waiting: 1 });
+      expect(backlog.gates[0].from).toBeUndefined();
+      expect(JSON.stringify(backlog)).not.toContain("restricted");
 
       // The other side reads the showing at once, with the page held and none of its words.
       const listed = (await as(reader, { url: "/showings" })).json();
@@ -827,8 +840,8 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       // The gate: a person who directs does not release. A holder of release for the organization who does not read the
       // label is shown each part as it would be shown if released, and not what the Redactor removed: a part that rests
       // on no outside party's material is the organization's by default, and what was removed from it stays at its label.
-      expect((await as(director, { url: "/release/queue" })).statusCode).toBe(403);
-      const queue = (await as(releaser, { url: "/release/queue" })).json();
+      expect((await as(director, { url: "/gate/queue" })).statusCode).toBe(403);
+      const queue = (await as(releaser, { url: "/gate/queue" })).json();
       expect(queue.items.map((i: { part: number | null }) => i.part)).toEqual([null, 1, 2, 3, 4]);
       expect(queue.items[4].as_it_would_be_shown).toBe("The log also gives [redacted: security detail].");
       expect(queue.items[1].as_it_would_be_shown).toMatch(/^The vault was resealed/);
@@ -838,15 +851,28 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(JSON.stringify(queue)).not.toContain("A code.");
       expect(queue.items.every((i: Record<string, unknown>) => i.removals === undefined && i.as_written === undefined && typeof i.shown_as_released === "string")).toBe(true);
       expect(queue.items[4].removals_by_category).toEqual({ "security detail": 1 });
-      const refusedForDirector = await as(director, { method: "POST", url: "/release/decisions", payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }] } });
+      const refusedForDirector = await as(director, { method: "POST", url: "/gate/decisions", payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }] } });
       expect(refusedForDirector.statusCode).toBe(403);
       const decided = await as(releaser, {
         method: "POST",
-        url: "/release/decisions",
+        url: "/gate/decisions",
         payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }, ...[1, 2, 3, 4].map((part) => ({ page_id: pageId, part }))] },
       });
       expect(decided.statusCode, decided.body).toBe(200);
       expect(decided.json()).toMatchObject({ decided: 5, refused: [], shown: [pageId] });
+      // The same call sent again changes nothing: a script may retry.
+      const again = await as(releaser, { method: "POST", url: "/gate/decisions", payload: { decision: "release", items: [{ item_id: pageId }] } });
+      expect(again.json()).toMatchObject({ decided: 0, unchanged: 1, refused: [] });
+      // The person at the gate may act through a key of their own account, with no session: their agent or a script.
+      const gatekeeperKey = await createApiKey({ userId: releaser.id, name: "dbtest gatekeeper's script" });
+      const scripted = { "x-api-key": gatekeeperKey.plaintext };
+      expect((await app.inject({ url: "/gate/queue", headers: scripted })).statusCode).toBe(200);
+      const byKey = await app.inject({ method: "POST", url: "/gate/decisions", headers: scripted, payload: { decision: "release", items: [{ item_id: pageId }] } });
+      expect(byKey.statusCode, byKey.body).toBe(200);
+      expect(byKey.json()).toMatchObject({ decided: 0, unchanged: 1, refused: [] });
+      // A key carries its account's permissions and no others: the reader's key is refused.
+      const readerKey = await createApiKey({ userId: reader.id, name: "dbtest reader's script" });
+      expect((await app.inject({ method: "POST", url: "/gate/decisions", headers: { "x-api-key": readerKey.plaintext }, payload: { decision: "release", items: [{ item_id: pageId }] } })).statusCode).toBe(403);
 
       const shown = (await as(reader, { url: `/showings/${showingId}/pages/${pageId}` })).json();
       expect(shown.state).toBe("released_whole");
@@ -904,7 +930,7 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
         for (let pass = 0; pass < 5; pass++) {
           for (const table of tables) await rawQuery(`DELETE FROM "${table}" WHERE sensitivity_label = 'restricted'`).catch(() => undefined);
         }
-        for (const table of ["showing_acts", "shown_parts", "shown_pages", "shown_nodes", "shown_showings", "release_rules", "redaction_policies"]) {
+        for (const table of ["showing_acts", "shown_parts", "shown_pages", "shown_nodes", "shown_showings", "gates", "redaction_policies"]) {
           await rawQuery(`DELETE FROM ${table} WHERE sensitivity_label = 'internal'`).catch(() => undefined);
         }
         await rawQuery(`DELETE FROM sources WHERE source_type = 'shown_page'`).catch(() => undefined);

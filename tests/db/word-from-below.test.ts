@@ -29,7 +29,7 @@ vi.mock("../../src/services/embedding-service.js", async (importOriginal) => ({
 }));
 
 import { rawQuery } from "../../src/db/client.js";
-import { A, C, at, caught, seedNode, seedUser, sqlState, stewardAt, system, tag, unwall, version, wall } from "./review-3-common.js";
+import { A, C, at, caught, personDecidesAt, seedNode, seedUser, sqlState, stewardAt, system, tag, unwall, version, wall } from "./review-3-common.js";
 import { seedClaim, seedGrantWithJob } from "./helpers.js";
 import {
   answerMessages,
@@ -162,6 +162,10 @@ describe.each([
     // A General mandate at every label, the one at `public` the oldest: the one the old lookup took for all.
     for (const [i, label] of [...below, top].entries()) generals[label] = await seedGeneral(label, 30 - i);
     resetAllocationPolicyCache();
+    // What the work above does about word from below goes down through the gate between the two labels
+    // (the-gate.test.ts). These cases are about what reaches the layer below while that gate lets nothing
+    // through, so each gate is set to a person's decision for every kind of thing, and no person acts.
+    for (const label of below) await personDecidesAt(top, label);
 
     node = await seedNode(PUBLIC, "The reservoir holds enough for the summer");
     child = await seedNode(below.at(-1)!, "The spring inflow was above average");
@@ -251,7 +255,7 @@ describe.each([
     );
     expect(answered.message).toBe(
       `Recorded ${below.length + 1} answer(s); 0 reached their senders as replies. ${below.length} answered a message sent at another label: ` +
-        `recorded at \`${top}\` and not sent to the sender.`
+        `recorded at \`${top}\`, and sent to the sender through the gate between the two labels.`
     );
     await stewardAt(top, () => markMessagesRead(inbox.ids));
 
@@ -328,7 +332,7 @@ describe.each([
     expect(funded.taken_up).toBe(takenUpAboveNote({ id: asked, label: askedAt }, { id: here, label: top }));
     expect(funded.taken_up).toBe(
       `Request ${asked} was filed at \`${askedAt}\`, which this run reads and does not change. It is taken up at \`${top}\` as request ${here}, ` +
-        `linked to it, and that is the request this acted on. Readers at \`${askedAt}\` are not shown that it was taken up or what was found.`
+        `linked to it, and that is the request this acted on. That it was taken up, and what the work finds, go to readers at \`${askedAt}\` through the gate between the two labels, which may remove from it or hold it.`
     );
 
     const state = await system(async () => ({
