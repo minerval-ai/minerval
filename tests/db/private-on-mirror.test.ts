@@ -1234,27 +1234,25 @@ describe("what a run is told", () => {
     const stamp = `${asOf.slice(0, 10)} ${asOf.slice(11, 16)} UTC`;
     const steward = labelNote(A, [A, PUBLIC_LABEL], { writesJudgments: true, mirror: { publicGraphAsOf: asOf } });
     expect(steward).toContain(
-      `Part of what is labeled \`public\` is the public graph itself, read through a mirror: a copy of its nodes, ` +
-        `with their arguments, sources and assessments, that follows it. It shows the public graph as of ${stamp}, ` +
-        `when the newest batch applied here was cut, not as of now. A node's full read says under \`mirrored\` that ` +
-        `it is one of these.`
+      `Part of what is labeled \`public\` is the public graph itself, copied here by a mirror that follows it. The ` +
+        `copy shows the public graph as of ${stamp}, not as of now, and a node's full read says so under \`mirrored\`.`
     );
     expect(steward).toContain(
-      `A mirrored row is not changed by any run in this deployment, at any label: the next batch from the public ` +
-        `graph would overwrite the change, and until then readers would take it for the public graph's own. A tool ` +
-        `that would change one refuses and says so.`
+      `No run here changes a mirrored row, and a tool that would refuses: the next batch from the public graph ` +
+        `would overwrite the change, and until then readers would take it for the public graph's own.`
     );
     expect(steward).toContain(
-      `On a mirrored node the version at \`public\` is the public graph's own assessment, which arrives with the ` +
-        `mirror, and the Steward at that label is the public graph's: no run in this deployment records a version there.`
+      `On a mirrored node the judgment at \`public\` is the public graph's own. None is made or paid for in this ` +
+        `deployment, because readers would take it for the public graph's; a fresh one is funded on the public graph.`
     );
     expect(steward).toContain(
-      `Record it as a request (file_request), which stays at \`${A}\`. A request about a mirrored node stays in this ` +
-        `deployment like any other. Raising it on the public graph would show what this deployment is working on, so ` +
-        `that is for the people who direct the deployment to decide, and no tool of yours sends anything there.`
+      `so a point against its judgment is recorded as a request (file_request), which the people who direct this ` +
+        `graph can act on. That holds for a mirrored node you judge the public graph has wrong, in its wording, its ` +
+        `structure or its assessment: the request stays in this deployment, since raising it on the public graph ` +
+        `would show what this deployment is working on, which is for the people who direct it to decide.`
     );
     // Told once: each of those sentences appears a single time in the whole note.
-    for (const once of ["read through a mirror", "A mirrored row is not changed", "A request about a mirrored node stays"]) {
+    for (const once of ["copied here by a mirror", "No run here changes a mirrored row", "the request stays in this deployment"]) {
       expect(steward.split(once).length - 1, once).toBe(1);
     }
     // Without a mirror the note is word for word what it was.
@@ -1262,8 +1260,8 @@ describe("what a run is told", () => {
     expect(plain).not.toContain("mirror");
     expect(labelNote(A, [A, PUBLIC_LABEL], { writesJudgments: true, mirror: null })).toBe(plain);
     // A deployment that mirrors and has one label has no label note: the passage stands alone.
-    expect(mirrorNote({ publicGraphAsOf: asOf }, { writesJudgments: true })).toContain(
-      "No pass on a mirrored node at `public` is opened, paid for or run in this deployment: an assessment of it made here at `public` would be this deployment's"
+    expect(mirrorNote({ publicGraphAsOf: asOf })).toContain(
+      "On a mirrored node the judgment at `public` is the public graph's own. None is made or paid for in this deployment"
     );
   });
 });

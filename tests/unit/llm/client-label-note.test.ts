@@ -211,7 +211,7 @@ describe("on a deployment that mirrors the public graph", () => {
       writesJudgments: true,
       mirror: { publicGraphAsOf: "2026-11-12T17:08:45.113Z" },
     });
-    expect(note).toContain("It shows the public graph as of 2026-11-12 17:08 UTC");
+    expect(note).toContain("The copy shows the public graph as of 2026-11-12 17:08 UTC");
     const sent = capture(mocks.completeWithTools, toolTurn, finalTurn);
     await runAtLabel("internal", "a test", () =>
       withAgent("steward", () =>
@@ -226,7 +226,7 @@ describe("on a deployment that mirrors the public graph", () => {
     const briefed = `${note}${FEATURES_OFF_NOTE_SEPARATOR}go`;
     expect(sent[0]).toEqual([{ role: "user", content: briefed }]);
     expect(sent[1]![0]).toEqual({ role: "user", content: briefed });
-    expect(JSON.stringify(sent[1]).split("read through a mirror").length - 1).toBe(1);
+    expect(JSON.stringify(sent[1]).split("copied here by a mirror").length - 1).toBe(1);
   });
 
   it("gives a deployment whose only label is public the passage on its own", async () => {

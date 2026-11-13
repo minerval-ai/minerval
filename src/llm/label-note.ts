@@ -58,29 +58,33 @@ export interface MirrorBrief {
 const asOf = (mirror: MirrorBrief) => `${mirror.publicGraphAsOf.slice(0, 10)} ${mirror.publicGraphAsOf.slice(11, 16)} UTC`;
 
 /** Which of what the run reads is the public graph's, and as of when. */
-const mirrorWhatItIs = (mirror: MirrorBrief) =>
-  `Part of what is labeled ${tick(PUBLIC_LABEL)} is the public graph itself, read through a mirror: a copy ` +
-  `of its nodes, with their arguments, sources and assessments, that follows it. It shows the public ` +
-  `graph as of ${asOf(mirror)}, when the newest batch applied here was cut, not as of now. A node's full ` +
-  `read says under \`mirrored\` that it is one of these.`;
+const mirrorWhatItIs = (mirror: MirrorBrief, where: string) =>
+  `Part of ${where} is the public graph itself, copied here by a mirror that follows it. The copy shows ` +
+  `the public graph as of ${asOf(mirror)}, not as of now, and a node's full read says so under \`mirrored\`.`;
 
 /** That no run changes a mirrored row, and why. */
 const MIRROR_NOT_CHANGED =
-  `A mirrored row is not changed by any run in this deployment, at any label: the next batch from the ` +
-  `public graph would overwrite the change, and until then readers would take it for the public graph's ` +
-  `own. A tool that would change one refuses and says so.`;
+  `No run here changes a mirrored row, and a tool that would refuses: the next batch from the public graph ` +
+  `would overwrite the change, and until then readers would take it for the public graph's own.`;
 
-/** That a mirrored node the run thinks is wrong is a request, and why the request goes no further on its own. */
+/** Whose the judgment of a mirrored node at `public` is, and why none is made here. */
+const MIRROR_PUBLIC_JUDGMENT =
+  `On a mirrored node the judgment at ${tick(PUBLIC_LABEL)} is the public graph's own. None is made or paid ` +
+  `for in this deployment, because readers would take it for the public graph's; a fresh one is funded on ` +
+  `the public graph.`;
+
+/** What a run does when it thinks the public graph has a mirrored node wrong, and why that goes no further on its own. */
 const MIRROR_REQUEST =
-  `A request about a mirrored node stays in this deployment like any other. Raising it on the public ` +
-  `graph would show what this deployment is working on, so that is for the people who direct the ` +
-  `deployment to decide, and no tool of yours sends anything there.`;
+  `If you judge that the public graph has a mirrored node wrong, in its wording, its structure or its ` +
+  `assessment, record a request (file_request, where your role has it; otherwise say so in what you ` +
+  `report). The request stays in this deployment: raising it on the public graph would show what this ` +
+  `deployment is working on, which is for the people who direct it to decide.`;
 
-/** That work on a mirrored node at the node's own label is not done here, and why. */
-const MIRROR_NO_PUBLIC_PASS =
-  `No pass on a mirrored node at ${tick(PUBLIC_LABEL)} is opened, paid for or run in this deployment: an ` +
-  `assessment of it made here at ${tick(PUBLIC_LABEL)} would be this deployment's, shown to readers as the ` +
-  `public graph's. A fresh public assessment is funded on the public graph.`;
+/** The same, for a run already told in the sentence before what a request is for. */
+const MIRROR_REQUEST_AFTER_REQUEST =
+  `That holds for a mirrored node you judge the public graph has wrong, in its wording, its structure or ` +
+  `its assessment: the request stays in this deployment, since raising it on the public graph would show ` +
+  `what this deployment is working on, which is for the people who direct it to decide.`;
 
 /** The start of the note, by which a first message that already carries one is known. */
 export const LABEL_NOTE_HEADING = "## This run's label\n\n";
@@ -90,20 +94,13 @@ export const MIRROR_NOTE_HEADING = "## The public graph, mirrored\n\n";
  * The passage for a run on a deployment that mirrors the public graph and
  * has no label but `public`, where there is no label note to carry it.
  */
-export function mirrorNote(mirror: MirrorBrief, opts: { writesJudgments?: boolean } = {}): string {
+export function mirrorNote(mirror: MirrorBrief): string {
   return (
     MIRROR_NOTE_HEADING +
-    `Part of this graph is the public graph itself, read through a mirror: a copy of its nodes, with ` +
-    `their arguments, sources and assessments, that follows it. It shows the public graph as of ` +
-    `${asOf(mirror)}, when the newest batch applied here was cut, not as of now. A node's full read says ` +
-    `under \`mirrored\` that it is one of these.\n\n` +
-    `${MIRROR_NOT_CHANGED} What this run adds to a mirrored node (an argument, a subclaim, a source) is a ` +
-    `row of this deployment's own, beside what is there. ${MIRROR_NO_PUBLIC_PASS}` +
-    (opts.writesJudgments ? ` No run here records an assessment of a mirrored node either.` : "") +
-    `\n\n` +
-    `If you judge that the public graph has a mirrored node wrong, in its wording, its structure or its ` +
-    `assessment, that is a request (file_request, where your role has it; otherwise say so in what you ` +
-    `report). ${MIRROR_REQUEST}`
+    `${mirrorWhatItIs(mirror, "this graph")}\n\n` +
+    `${MIRROR_NOT_CHANGED} What this run adds to a mirrored node (an argument, a subclaim, a source) is ` +
+    `this deployment's own, beside what is there. ${MIRROR_PUBLIC_JUDGMENT}\n\n` +
+    MIRROR_REQUEST
   );
 }
 
@@ -114,7 +111,7 @@ export function mirrorNote(mirror: MirrorBrief, opts: { writesJudgments?: boolea
  * judgment at each label works for the one it writes; every other run is
  * told enough to read a node that carries more than one. `mirror` is given
  * on a deployment that mirrors the public graph, and adds what a run is
- * told of mirrored nodes.
+ * told of mirrored nodes. Each thing is said once.
  */
 export function labelNote(
   label: string,
@@ -122,37 +119,45 @@ export function labelNote(
   opts: { writesJudgments?: boolean; mirror?: MirrorBrief | null } = {}
 ): string {
   const mirror = opts.mirror ?? null;
+  const own = tick(label);
   // The labels it reads besides its own, `public` last.
   const others = [...new Set(reads)]
     .filter((l) => l !== label)
     .sort((a, b) => (a === PUBLIC_LABEL ? 1 : b === PUBLIC_LABEL ? -1 : a < b ? -1 : 1));
   const canRead =
     others.length === 0
-      ? `What you can read: what is labeled ${tick(label)}, and nothing else.`
-      : `What you can read: what is labeled ${tick(label)}, and what is labeled ${listed(others, "or")}, ` +
-        `which ${tick(label)} reads.`;
+      ? `What you can read: what is labeled ${own}, and nothing else.`
+      : `What you can read: what is labeled ${own}, and what is labeled ${listed(others, "or")}, which ${own} reads.`;
   const whoReads =
     label === PUBLIC_LABEL
       ? `Every reader of this graph may read it.`
-      : `Readers who are not cleared for ${tick(label)} do not see it.`;
-  return (
-    `## This run's label\n\n` +
-    `This graph holds material that only some of its readers may see. Everything it holds carries a ` +
-    `label saying who may read it. This run works at one label, fixed before it started: ${tick(label)}.\n\n` +
-    `${canRead} The database withholds everything else from the tools you read the graph with. A ` +
-    `search or a read that comes back empty has looked only at what this label can read.` +
-    `${mirror ? ` ${mirrorWhatItIs(mirror)}` : ""}\n\n` +
-    `What you write: each new thing this run records (a judgment, an argument, a reading of a source, ` +
-    `a message, a request) carries the label ${tick(label)}, whatever you read to write it. ${whoReads} ` +
-    `What already carries another label is not this run's to change. A tool that would change or ` +
-    `remove it refuses and says so, because that label's readers would read the change as their own ` +
-    `label's work. What ${tick(label)} has to say about such a thing is recorded as something new, at ` +
-    `${tick(label)}.${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}\n\n` +
-    `${opts.writesJudgments ? versionsForAWriter(label, others, mirror) : versionsForAReader(mirror)}\n\n` +
-    `${opts.writesJudgments ? `${shownBelowNote(label)}\n\n` : ""}` +
+      : `Readers who are not cleared for ${own} do not see it.`;
+  // A run that reads no other label never meets a row at one, so it is not
+  // told what happens when it tries to change one. The reason given is the
+  // one that matters: what a run at this label writes is shaped by what it
+  // read here, and that goes to other readers only as a page shown to them.
+  const othersRows =
+    others.length === 0
+      ? ""
+      : ` What carries another label is not this run's to change, and a tool that would change or remove ` +
+        `it refuses. The reason is that this run has read material at ${own}, and what a run at ${own} ` +
+        `writes reaches readers who are not cleared for ${own} only as a page shown to them, with what was ` +
+        `removed marked. What ${own} has to say about such a thing is recorded as something new, at ${own}.`;
+  const judgments = opts.writesJudgments ? judgmentsForAWriter(label, others, mirror) : judgmentsForAReader(others, mirror);
+  const paragraphs = [
+    `${LABEL_NOTE_HEADING}` +
+      `This graph holds material that only some of its readers may see, and everything in it carries a ` +
+      `label saying who may read it. This run works at one label, fixed before it started: ${own}.`,
+    `${canRead} No tool returns anything else, so a search or a read that comes back empty has looked ` +
+      `only there.${mirror ? ` ${mirrorWhatItIs(mirror, `what is labeled ${tick(PUBLIC_LABEL)}`)}` : ""}`,
+    `What you write: everything this run records carries the label ${own}, whatever you read to write ` +
+      `it. ${whoReads}${othersRows}${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}`,
+    judgments,
+    opts.writesJudgments ? shownBelowNote(label) : "",
     `If the work cannot be done well on what this label can read, say so in what you record, so that ` +
-    `whoever reads it or pays for the next pass knows what it rests on.`
-  );
+      `whoever reads it or pays for the next pass knows what it rests on.`,
+  ];
+  return paragraphs.filter(Boolean).join("\n\n");
 }
 
 /**
@@ -178,97 +183,76 @@ export function shownBelowNote(label: string): string {
   );
 }
 
-/** What any run is told about a node that carries a judgment at more than one label. */
-function versionsForAReader(mirror: MirrorBrief | null = null): string {
+/** How a read tells a run which of several judgments it is given. */
+const WHICH_JUDGMENT =
+  `lists the judgments you can read under \`versions\`, each with its label, and marks which are in force ` +
+  `for this run: one is in force unless another you can read was made at a label that reads its label. A ` +
+  `read that gives a single judgment gives the one in force, or the most recent where two labels that do ` +
+  `not read each other each have one.`;
+
+/** What a run that records no judgment is told about a node that carries one at more than one label. */
+function judgmentsForAReader(others: readonly string[], mirror: MirrorBrief | null): string {
+  const ofMirror = mirror ? `${MIRROR_PUBLIC_JUDGMENT} ${MIRROR_REQUEST}` : "";
+  // A run that reads one label sees one judgment on any node.
+  if (others.length === 0) return ofMirror;
   return (
-    `A node can carry a judgment at each label: a version, made by a run at that label from what that ` +
-    `label reads, and replaced only by a run at that label. Where you can read more than one, the ` +
-    `node's full read lists them under \`versions\`, each with its label, and says which are in force ` +
-    `for this run. A version is in force unless another one you can read was made at a label that ` +
-    `reads its label, and so with sight of everything it saw and more. Where a read gives a single ` +
-    `judgment for a node, it is the one in force, and the most recent of them if two labels that do ` +
-    `not read each other each have one.` +
-    (mirror
-      ? ` On a mirrored node the version at ${tick(PUBLIC_LABEL)} is the public graph's own assessment. ` +
-        `${MIRROR_NO_PUBLIC_PASS} ` +
-        `If you judge that the public graph has a mirrored node wrong, in its wording, its structure or ` +
-        `its assessment, that is a request (file_request, where your role has it; otherwise say so in ` +
-        `what you report). ${MIRROR_REQUEST}`
-      : "")
+    `A node can carry a judgment at each label, each made by a run at that label from what that label ` +
+    `reads. A node's full read ${WHICH_JUDGMENT}` +
+    (ofMirror ? ` ${ofMirror}` : "")
   );
 }
 
 /**
  * What a run that records judgments is told. Each sentence states what the
  * tools and the database do, with the reason, or what the constitution
- * already asks (§21); whether material bears on a node, and whether a
- * change beside its version matters, stay the Steward's judgment.
+ * already asks (§10, §21). The judgment a run records is its own assessment
+ * of everything it reads: it is not asked to agree with the one at another
+ * label wherever its own label's material is silent, since that would be
+ * deference, and it is asked to say which part of a difference its own
+ * label's material makes, so that a reader can see it.
  */
-function versionsForAWriter(label: string, others: readonly string[], mirror: MirrorBrief | null = null): string {
+function judgmentsForAWriter(label: string, others: readonly string[], mirror: MirrorBrief | null): string {
   const own = tick(label);
   const opening =
     `## A judgment at each label\n\n` +
-    `A node in this graph can carry more than one judgment at once, one for each label: a version. ` +
-    `Each is made by a run at its label, which saw only what that label reads, and each is a full ` +
-    `assessment held to every standard you work under. This run writes the version at ${own} and no ` +
-    `other: the tools that record an assessment, an estimate, a question's assessment or an argument's ` +
-    `evaluation record it at ${own}.`;
+    `A node can carry a judgment at each label, each made by a run at that label from what that label ` +
+    `reads. This run records the one at ${own}.`;
   if (others.length === 0) {
-    // A label that reads no other sees one version on any node: its own.
     return (
-      `${opening}\n\n` +
-      `${own} reads no other label, so on every node this run reads, the version at ${own} is the only ` +
-      `one it sees. A version made at another label does not replace it: yours goes on standing for ` +
-      `the readers and runs that work from it, and is reassessed on its own inputs.` +
-      (mirror && label === PUBLIC_LABEL
-        ? `\n\n` +
-          `On a mirrored node the version at ${own} is the public graph's own assessment, which arrives ` +
-          `with the mirror, and no run in this deployment records one. ${MIRROR_NO_PUBLIC_PASS} If you ` +
-          `judge that the public graph has a mirrored node wrong, that is a request (file_request). ` +
-          `${MIRROR_REQUEST}`
-        : "")
+      `${opening} ${own} reads no other label, so the judgment at ${own} is the only one this run sees on ` +
+      `any node. One made at another label does not replace it.` +
+      (mirror && label === PUBLIC_LABEL ? `\n\n${MIRROR_PUBLIC_JUDGMENT} ${MIRROR_REQUEST}` : "")
     );
   }
-  return (
-    `${opening}\n\n` +
-    `The versions you read at ${listed(others, "or")} are not yours to change, and nothing you record ` +
-    `replaces them. Each goes on standing for the readers and runs that work from it, and is reassessed ` +
-    `on its own inputs like any judgment. A node that carries another label is not yours to reword or ` +
-    `restructure either: its wording, its importance and the structure recorded at its label belong to ` +
-    `the Steward that works at that label. What you add to it (an argument, a subclaim, a source) is ` +
-    `recorded at ${own}, beside what is there.` +
-    (mirror && others.includes(PUBLIC_LABEL)
-      ? ` On a mirrored node the version at ${tick(PUBLIC_LABEL)} is the public graph's own assessment, ` +
-        `which arrives with the mirror, and the Steward at that label is the public graph's: no run in ` +
-        `this deployment records a version there.`
-      : "") +
-    `\n\n` +
-    `On a node that carries another label, a version at ${own} is stored only when material at ${own} ` +
-    `bears on the node: a source labeled ${own} attached to it, a node labeled ${own} under it, or a ` +
-    `node under it that carries a version at ${own}. The tool that records the version refuses when ` +
-    `there is none. The reason is that a version at ${own} should differ from the one it reads only ` +
-    `where material at ${own} makes the difference, so that a reader can trace the difference to ` +
-    `something named. Whether a source really bears on the node is your judgment, and the tool checks ` +
-    `only that one is attached. Where nothing at ${own} bears, there is nothing at ${own} to judge: ` +
-    `record no version, say so with log_stewardship_decision, and the version you read stands for ` +
-    `readers at ${own}. A node that itself carries the label ${own} needs no such material: its ` +
-    `judgment is simply its judgment.\n\n` +
-    `Where you read a version at another label, start from it. Read its reasoning as you would a ` +
-    `colleague's, then ask what the material at ${own} changes. Your version owes that one coherence, ` +
-    `not deference (§21): where the two differ, the material at ${own} accounts for the difference, ` +
-    `and your reasoning says how. A disagreement about evidence the other version could see is a ` +
-    `case against that version, not a version of your own. Record it as a request (file_request), ` +
-    `which stays at ${own}.${mirror && others.includes(PUBLIC_LABEL) ? ` ${MIRROR_REQUEST}` : ""} A version that agrees with the one you read is still worth recording ` +
-    `when material at ${own} changes the confidence, the credence, or what the verdict rests on.\n\n` +
-    `Your version records the versions it was made beside: the current version at each label that ` +
-    `${own} reads, as they stood. When one of them is replaced, readers at ${own} are shown that ` +
-    `yours was made against an earlier version, and a reassessment is opened at ${own}, which runs ` +
-    `when it is funded. Whether the change matters is your judgment when it does.\n\n` +
-    `get_claim lists a node's versions under \`versions\`, each with its label, and says which are in ` +
-    `force for this run: a version is in force unless another one you can read was made at a label ` +
-    `that reads its label. Where a read gives a single judgment for a node, it is the one in force, ` +
-    `and the most recent of them if two labels that do not read each other each have one.`
-  );
+  const mirrored = mirror !== null && others.includes(PUBLIC_LABEL);
+  return [
+    opening,
+    `Yours does not replace the judgments you read at ${listed(others, "or")}: readers at those labels go ` +
+      `on reading them, and each is reassessed on its own inputs. A node that carries another label keeps ` +
+      `its wording, its importance and its structure, which belong to the Steward at that label; what you ` +
+      `add to it (an argument, a subclaim, a source) is recorded at ${own}.` +
+      (mirrored ? ` ${MIRROR_PUBLIC_JUDGMENT}` : ""),
+    `On a node that carries another label, the tool records a judgment at ${own} only when something at ` +
+      `${own} is attached to the node: a source labeled ${own}, a node labeled ${own} under it, or a node ` +
+      `under it that carries a judgment at ${own}. The reason is that a reader should be able to trace a ` +
+      `judgment at ${own} to what ${own} has that the other label lacks. Whether what is attached bears on ` +
+      `the node is your judgment; the tool checks only that it is there. Where nothing at ${own} bears, ` +
+      `record no judgment and say so with log_stewardship_decision; readers at ${own} then read the ` +
+      `judgment at the other label. A node labeled ${own} needs no such material.`,
+    `Where you read a judgment at another label, read its reasoning as you would a colleague's. Yours is ` +
+      `your own assessment of everything you read, and owes the other coherence, not deference (§21). ` +
+      `Where the two differ, your reasoning says why: what the material at ${own} changes, and, where you ` +
+      `read the evidence you share differently, that you do and how. A judgment that agrees with the one ` +
+      `you read is still worth recording when material at ${own} changes the confidence, the credence, or ` +
+      `what the verdict rests on. The Steward at the other label does not read what is written at ${own}, ` +
+      `so a point against its judgment is recorded as a request (file_request), which the people who ` +
+      `direct this graph can act on.` +
+      (mirrored ? ` ${MIRROR_REQUEST_AFTER_REQUEST}` : ""),
+    `Your judgment records the judgment it was made beside at each label ${own} reads. When one of those ` +
+      `is replaced, readers at ${own} are shown that, and a reassessment at ${own} is opened, which runs ` +
+      `when it is funded. Whether the change matters is your judgment then.`,
+    `get_claim ${WHICH_JUDGMENT}`,
+  ].join("\n\n");
 }
 
 /**
