@@ -238,10 +238,7 @@ function judgmentsForAWriter(label: string, others: readonly string[], mirror: M
       `at ${own}, when, and your reasons.`,
     `Where you read a judgment at another label, read its reasoning as you would a colleague's. Yours is ` +
       `your own assessment of everything you read, and owes the other coherence, not deference (§21). ` +
-      `Where the two differ, your reasoning says why: what the material at ${own} changes, and, where you ` +
-      `read the evidence you share differently, that you do and how. A judgment that agrees with the one ` +
-      `you read is still worth recording when material at ${own} changes the confidence, the credence, or ` +
-      `what the verdict rests on. The Steward at the other label does not read what is written at ${own}, ` +
+      `The Steward at the other label does not read what is written at ${own}, ` +
       `so a point against its judgment is recorded as a request (file_request), which the people who ` +
       `direct this graph can act on.` +
       (mirrored ? ` ${MIRROR_REQUEST_AFTER_REQUEST}` : ""),
