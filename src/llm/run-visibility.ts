@@ -47,7 +47,7 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
   correspondent: { reads: "private", why: "the manager's poke notes and the private workspace" },
   curator: { reads: "public", why: "curation requests over public claims" },
   dispute_arbitrator: { reads: "public", why: "a contribution, its appeal and the trigger; all public" },
-  extension: { reads: "private", why: "the page a reader has open and their questions about it; logged only in record mode" },
+  extension: { reads: "private", why: "the page a reader has open; logged only in record mode" },
   extractor: { reads: "public", why: "a submitted source, public once submitted; on-demand analysis runs untraced, or private in record mode" },
   grantmaker: { reads: "private", why: "the funder's conversation and notes" },
   grantor: { reads: "private", why: "a mandate before approval, and its workspace" },

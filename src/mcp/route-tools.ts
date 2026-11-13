@@ -444,9 +444,6 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /pages/:id":
     "A page is its user's to throw away: deleting takes the signed-in dashboard session, so " +
     "nothing an agent reads can have it delete what the user keeps.",
-  "POST /extension/chat":
-    "The extension's chat over the page open in the browser; an MCP client " +
-    "is itself the conversation, with the graph tools in hand.",
 };
 
 /** Whole route families excluded by prefix, each with its reason. */

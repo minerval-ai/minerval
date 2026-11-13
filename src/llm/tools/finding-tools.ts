@@ -9,7 +9,7 @@
  * already noted, which adds a sighting rather than a new row. Attribution
  * comes from the ambient usage context, as for reports.
  *
- * The tools are not given to the extension chat, the MCP surface, the
+ * The tools are not given to the extension agent, the MCP surface, the
  * Extractor, the Matcher, or the solver: findings are the administrators'
  * to note, and an outside agent's discovery is a contribution. A mandate's
  * Grantmaker notes them too (constitution §19, Part VIII), with its own

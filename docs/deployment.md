@@ -250,7 +250,7 @@ on when its key is set, which is how it worked before the file existed.
 | `owl_cost_micro_usd` | What one owl of spending covers, in millionths of a dollar of metered cost. | `OWL_COST_MICRO_USD` |
 | `owl_packs` | What is sold, as a list of `"owls:cents:name"`. An empty list sells nothing. | `OWL_PACKS` |
 | `signup_grant_owls`, `monthly_grant_owls` | Owls given to a new account, and each month. | `SIGNUP_GRANT_OWLS`, `MONTHLY_GRANT_OWLS` |
-| `cap_claim_proposal_owls`, `cap_assessment_owls`, `cap_source_ingest_owls`, `cap_extension_analysis_owls`, `cap_extension_chat_owls`, `cap_text_analysis_owls` | The most each paid operation can cost its buyer. | `CAP_CLAIM_PROPOSAL_OWLS`, `CAP_ASSESSMENT_OWLS`, `CAP_SOURCE_INGEST_OWLS`, `CAP_EXTENSION_ANALYSIS_OWLS`, `CAP_EXTENSION_CHAT_OWLS`, `CAP_TEXT_ANALYSIS_OWLS` |
+| `cap_claim_proposal_owls`, `cap_assessment_owls`, `cap_source_ingest_owls`, `cap_extension_analysis_owls`, `cap_text_analysis_owls` | The most each paid operation can cost its buyer. | `CAP_CLAIM_PROPOSAL_OWLS`, `CAP_ASSESSMENT_OWLS`, `CAP_SOURCE_INGEST_OWLS`, `CAP_EXTENSION_ANALYSIS_OWLS`, `CAP_TEXT_ANALYSIS_OWLS` |
 
 ### What is not in the file
 
