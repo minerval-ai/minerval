@@ -24,7 +24,7 @@
  *     asking, for one conversation or for the account. An allowed call runs
  *     at once and is recorded here the same way, as a receipt.
  */
-import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { getDb, rawQuery } from "../db/client.js";
 import {
@@ -880,12 +880,18 @@ export async function getAssistantConversation(
   return convo;
 }
 
+/**
+ * The user's conversations as a list shows them (serializeAssistantSummary),
+ * newest first. Their transcripts are not read: `messages` is empty on every
+ * row. Fifty whole transcripts were read for a list that shows titles, on
+ * every page of the Ask section.
+ */
 export async function listAssistantConversations(
   userId: string,
   limit = 50
 ): Promise<AssistantConversation[]> {
   return getDb()
-    .select()
+    .select({ ...getTableColumns(assistantConversations), messages: sql<unknown>`'[]'::jsonb` })
     .from(assistantConversations)
     .where(eq(assistantConversations.userId, userId))
     .orderBy(desc(assistantConversations.updatedAt))
