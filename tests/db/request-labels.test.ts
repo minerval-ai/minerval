@@ -1233,12 +1233,48 @@ describe("every route that writes, driven against a private target", () => {
 
   const post = (person: Person, url: string, payload?: unknown) => as(person, { method: "POST", url, payload: payload ?? {} });
 
+  /** The organization's own party, which a connection or a set of files belongs to here. */
+  async function ownParty(): Promise<string> {
+    await rawQuery(
+      `INSERT INTO parties (name, is_own_organization) SELECT $1, true WHERE NOT EXISTS (SELECT 1 FROM parties WHERE is_own_organization)`,
+      [OWN_ORGANIZATION]
+    );
+    const [party] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+    return party!.id;
+  }
+
+  /** An address nothing answers at: a connection is added and changed all the same, and shows as failing. */
+  const NO_SERVER = "http://127.0.0.1:9/mcp";
+
+  /** A connection at `label`, as an administrator who reads it added it. The administrator's acts on it work at its label. */
+  async function connectionAt(label: string): Promise<string> {
+    const tag = randomUUID().slice(0, 8);
+    const [row] = await rawQuery<{ id: string }>(
+      `INSERT INTO connections (name, tool_prefix, url, party_id, stake, sensitivity_label)
+       VALUES ($1, $2, $3, $4, 'The organization runs this system.', $5) RETURNING id`,
+      [`Sweep connection ${tag}`, `sweep_${tag}`, NO_SERVER, await ownParty(), label]
+    );
+    return row!.id;
+  }
+
   /**
    * One request for each route whose label comes from a row, against a row
    * at rl-a, made by the person who also reads rl-b. Each entry builds what
    * the route needs first (not counted) and returns the request to count.
    */
   const FROM_A_ROW: Record<string, () => Promise<Drive>> = {
+    "PATCH /connections/:connection_id": async () => {
+      const id = await connectionAt(A);
+      return () => as(admin, { method: "PATCH", url: `/connections/${id}`, payload: { calls_per_minute: 30 } });
+    },
+    "POST /connections/:connection_id/look": async () => {
+      const id = await connectionAt(A);
+      return () => post(admin, `/connections/${id}/look`);
+    },
+    "PUT /connections/:connection_id/tools": async () => {
+      const id = await connectionAt(A);
+      return () => as(admin, { method: "PUT", url: `/connections/${id}/tools`, payload: { offered: [] } });
+    },
     "POST /claims/:claim_id/order": async () => {
       const id = await seedClaimAt(A);
       return () => post(both, `/claims/${id}/order`);
@@ -1439,6 +1475,18 @@ describe("every route that writes, driven against a private target", () => {
 
   /** One request for each route that starts something new, with rl-a named. */
   const NEW_AT_A: Record<string, () => Promise<Drive>> = {
+    // An administrator's, from a signed-in session: the first administrator reads rl-a.
+    "POST /connections": async () => {
+      const party = await ownParty();
+      return () =>
+        post(admin, "/connections", {
+          name: `A new connection ${randomUUID().slice(0, 8)}`,
+          url: NO_SERVER,
+          party_id: party,
+          stake: "The organization runs this system.",
+          label: A,
+        });
+    },
     "POST /claims/propose": async () => () =>
       post(both, "/claims/propose", { claim: `The first partner renewed ${randomUUID()}`, label: A }),
     "POST /sources": async () => () =>
@@ -1474,6 +1522,7 @@ describe("every route that writes, driven against a private target", () => {
    * upload's form, a bounty's window).
    */
   const ADDS_ROWS = [
+    "POST /connections",
     "POST /claims/:claim_id/order",
     "POST /claims/:claim_id/contribute",
     "POST /claims/:claim_id/decompose",
@@ -1505,6 +1554,9 @@ describe("every route that writes, driven against a private target", () => {
     "POST /pages",
     "PATCH /reports/:id",
     "PATCH /findings/:id",
+    "PATCH /connections/:connection_id",
+    "POST /connections/:connection_id/look",
+    "PUT /connections/:connection_id/tools",
   ];
 
   it("has a request here for every rule that takes its label from a row or from the person", () => {
