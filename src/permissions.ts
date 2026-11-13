@@ -119,7 +119,9 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
       "say whose material a source is, save the redaction policy of a boundary, sign the statement that " +
       "registers the deployment's key to an account on the public graph, connect the deployment to an " +
       "organization's systems and pick which of their tools agents are offered, and register a directory on " +
-      "the deployment's disk as a set of files.",
+      "the deployment's disk as a set of files. Set up the deployment's General and Governance " +
+      "mandates, and create owls where the deployment creates its own. Read the usage reports " +
+      "the deployment makes to the public graph, and send them.",
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",

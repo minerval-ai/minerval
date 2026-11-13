@@ -11,6 +11,7 @@ import {
 } from "./features.js";
 import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
 import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
+import { parseModelPrices } from "./llm/model-prices.js";
 
 /**
  * Requests per minute one IP address may make without credentials. The one
@@ -144,6 +145,87 @@ const configSchema = z.object({
   // age (web/auth.ts reads the same variable), so a person at work signs in
   // again before their groups lapse.
   signInValidHours: z.coerce.number().positive().default(12),
+
+  // Where this deployment's owls come from (docs/accounts.md, "Owls a
+  // deployment creates for itself"). "sold", the starting value, is the
+  // public graph: owls are bought through Stripe where it is configured, and
+  // granted or earned as the settings below say. "created" is for a
+  // deployment that pays its own model providers: its administrators create
+  // owls, each act logged, and nothing is sold. The Stripe routes and the
+  // packs are then not mounted, so it says more than payments being off:
+  // payments off leaves a deployment with no way to get owls, and this
+  // gives it one. It needs READS=members, because creating owls is an
+  // administrator's act and only a members-only deployment has
+  // administrators, and it refuses to load beside a Stripe key.
+  owls: z.enum(["sold", "created"]).default("sold"),
+  // Prices this deployment states for models, in US dollars per million
+  // tokens (src/llm/model-prices.ts): for a model the rate table does not
+  // know, or in place of the table's for one it does. A JSON list, empty by
+  // default. A value that cannot be read fails the load with what is wrong.
+  modelPrices: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const problem of parseModelPrices(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+      }
+    })
+    .transform((raw) => {
+      const parsed = parseModelPrices(raw);
+      return parsed.problems.length > 0 ? [] : parsed.prices;
+    })
+    .prefault(""),
+  // How a members-only deployment pays toward the public graph it reads
+  // (docs/usage-report.md). "metered", the starting value: it reports the
+  // owls its runs spent each UTC day, one total and nothing else, and pays
+  // in proportion. "flat": it pays a flat price for the feed and reports
+  // nothing. Read only where READS=members; the public graph reports to
+  // no one.
+  publicGraphPrice: z.enum(["metered", "flat"]).default("metered"),
+  // Where a metered deployment's usage reports go. One of the two:
+  //   usageReportUrl: the address of the public graph's receiving route
+  //     (for instance https://api.minerval.ai/usage-reports), with
+  //     usageReportApiKey, an API key of the organization's account there;
+  //   usageReportDir: a directory the reports are written to as files, for
+  //     a deployment whose network is restricted, to be handed over.
+  // With neither, reports are prepared and kept, readable by the
+  // administrators, and sent once one is set.
+  usageReportUrl: z
+    .string()
+    .trim()
+    .refine(
+      (url) => {
+        if (url === "") return true;
+        try {
+          const parsed = new URL(url);
+          return parsed.protocol === "https:" || parsed.protocol === "http:";
+        } catch {
+          return false;
+        }
+      },
+      {
+        message:
+          "USAGE_REPORT_URL must be the http or https address of the public graph's receiving " +
+          'route, for example "https://api.minerval.ai/usage-reports".',
+      }
+    )
+    .default(""),
+  usageReportApiKey: z.string().trim().default(""),
+  usageReportDir: z.string().trim().default(""),
+  // The first UTC day a metered deployment reports, as YYYY-MM-DD. Empty by
+  // default: the first day reported is the first day anything was metered.
+  // A deployment that moves from the flat price to the metered one sets the
+  // day the metered price starts, so that days it paid for flat are not
+  // reported.
+  usageReportFrom: z
+    .string()
+    .trim()
+    .refine((day) => day === "" || (/^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(Date.parse(`${day}T00:00:00Z`))), {
+      message: 'USAGE_REPORT_FROM must be a day written as YYYY-MM-DD, for example "2026-11-01".',
+    })
+    .default(""),
+  // How often the usage report worker looks for closed days to report and
+  // for reports not yet sent, in seconds.
+  usageReportIntervalSeconds: z.coerce.number().positive().default(3600),
 
   // CORS
   corsOrigins: z.string().default(""),
@@ -1375,6 +1457,56 @@ const configSchema = z.object({
 
 export type Config = z.infer<typeof configSchema>;
 
+/**
+ * What is wrong with settings that cannot hold together, in words an
+ * installer can act on, or null. Exported for the preflight, which says the
+ * same thing before the deployment starts.
+ */
+export function settingsThatDisagree(
+  config: Pick<Config, "owls" | "reads" | "stripeSecretKey" | "usageReportUrl" | "usageReportDir">,
+  /** The free grants the deployment's own settings ask for, in owls: zero where it sets none. */
+  grantsSet: { signup: number; monthly: number } = {
+    signup: Number(process.env.SIGNUP_GRANT_OWLS) || 0,
+    monthly: Number(process.env.MONTHLY_GRANT_OWLS) || 0,
+  }
+): string | null {
+  if (config.owls === "created" && config.reads !== "members") {
+    return (
+      "OWLS=created needs READS=members. Owls are created by an administrator, and only a " +
+      "members-only deployment has administrators. Set READS=members, or leave OWLS unset."
+    );
+  }
+  // The same test billing uses for a real key (stripeConfigured).
+  const stripeKey = config.stripeSecretKey.startsWith("sk_") || config.stripeSecretKey.startsWith("rk_");
+  if (config.owls === "created" && stripeKey) {
+    return (
+      "OWLS=created and STRIPE_SECRET_KEY are both set. A deployment either creates its own " +
+      "owls or sells them, never both: an owl its administrators created and an owl someone " +
+      "paid for would be one balance. Remove the Stripe keys, or leave OWLS unset."
+    );
+  }
+  if (config.owls === "created" && (grantsSet.signup > 0 || grantsSet.monthly > 0)) {
+    const which = [
+      ...(grantsSet.signup > 0 ? ["SIGNUP_GRANT_OWLS"] : []),
+      ...(grantsSet.monthly > 0 ? ["MONTHLY_GRANT_OWLS"] : []),
+    ].join(" and ");
+    return (
+      `OWLS=created and ${which} are both set. Where a deployment creates its own owls, an owl enters a ` +
+      `balance by an administrator's act, which is logged where every member can read it. A grant by ` +
+      `setting would create owls that no act records. Remove ${which}; an administrator creates owls ` +
+      `into the accounts that are to have them.`
+    );
+  }
+  if (config.usageReportUrl && config.usageReportDir) {
+    return (
+      "USAGE_REPORT_URL and USAGE_REPORT_DIR are both set. A usage report is sent to the public " +
+      "graph or written to a file to be handed over, never both, so that each report has one " +
+      "record of how it left. Set one of them."
+    );
+  }
+  return null;
+}
+
 let _config: Config | null = null;
 
 export function loadConfig(): Config {
@@ -1401,6 +1533,14 @@ export function loadConfig(): Config {
     reads: process.env.READS || undefined,
     firstAdministrator: process.env.FIRST_ADMINISTRATOR,
     signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
+    owls: process.env.OWLS || undefined,
+    modelPrices: process.env.MODEL_PRICES,
+    publicGraphPrice: process.env.PUBLIC_GRAPH_PRICE || undefined,
+    usageReportUrl: process.env.USAGE_REPORT_URL,
+    usageReportApiKey: process.env.USAGE_REPORT_API_KEY,
+    usageReportDir: process.env.USAGE_REPORT_DIR,
+    usageReportFrom: process.env.USAGE_REPORT_FROM,
+    usageReportIntervalSeconds: process.env.USAGE_REPORT_INTERVAL_SECONDS || undefined,
     corsOrigins: process.env.CORS_ORIGINS,
     publicReadMaxAgeSeconds: process.env.PUBLIC_READ_MAX_AGE_SECONDS,
     publicReadStaleWhileRevalidateSeconds:
@@ -1689,6 +1829,26 @@ export function loadConfig(): Config {
       ..._config,
       sqlAgentDatabaseUrl: _config.sqlAgentDatabaseUrl ?? url(_config.sqlAgentDbUser, _config.sqlAgentDbPassword),
       sqlCallerDatabaseUrl: _config.sqlCallerDatabaseUrl ?? url(_config.sqlCallerDbUser, _config.sqlCallerDbPassword),
+    };
+  }
+
+  // Settings that only make sense together. Each refusal says what to change.
+  const settingsProblem = settingsThatDisagree(_config);
+  if (settingsProblem) {
+    _config = null;
+    throw new Error(settingsProblem);
+  }
+
+  // The free grants (the signup grant and the monthly owl) are the public
+  // graph's offer to a reader who has just arrived. A members-only
+  // deployment's accounts are its own people, and owls there are the
+  // organization's budget for its agents' work, so an account receives a
+  // grant only when the deployment sets one: the defaults do not apply.
+  if (_config.reads === "members") {
+    _config = {
+      ..._config,
+      signupGrantOwls: process.env.SIGNUP_GRANT_OWLS ? _config.signupGrantOwls : 0,
+      monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS ? _config.monthlyGrantOwls : 0,
     };
   }
 

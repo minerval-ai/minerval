@@ -40,7 +40,12 @@ import {
   refundOwls,
   settleMeteredCharge,
 } from "../../services/owl-ledger-service.js";
-import { capOwls, capMicroUsd, type PricedOp } from "../../services/owl.js";
+import {
+  ASK_AN_ADMINISTRATOR_FOR_OWLS,
+  capOwls,
+  capMicroUsd,
+  type PricedOp,
+} from "../../services/owl.js";
 import { withPassBudget } from "../../llm/usage-context.js";
 
 // callerKey → timestamps (ms) of requests within the last hour
@@ -95,11 +100,13 @@ function insufficientOwls(
       `This operation (${op}) costs up to ${price} owl${price === 1 ? "" : "s"} ` +
       `(you pay the metered cost, never more than the cap) ` +
       `and your balance is ${entitlement.owlBalance}. ` +
-      (entitlement.creditsEnabled
-        ? `Buy owls from your account page (${config.publicWebBaseUrl}/account); ` +
-          `the free monthly owl also lands at the start of each month.`
-        : `Purchasing owls is not enabled on this deployment; the free ` +
-          `monthly owl lands at the start of each month.`),
+      (entitlement.owlsCreatedHere
+        ? ASK_AN_ADMINISTRATOR_FOR_OWLS
+        : entitlement.creditsEnabled
+          ? `Buy owls from your account page (${config.publicWebBaseUrl}/account); ` +
+            `the free monthly owl also lands at the start of each month.`
+          : `Purchasing owls is not enabled on this deployment; the free ` +
+            `monthly owl lands at the start of each month.`),
     entitlement: serializeEntitlement(entitlement),
     packs: serializeOwlPacks(),
     capOwls: price,

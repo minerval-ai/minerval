@@ -41,11 +41,21 @@ const isRead = (key: string) => key.startsWith("GET ");
 describe("every route that writes has a rule for its label", () => {
   let app: FastifyInstance;
   let keys: string[];
+  /** The routes mounted only where a deployment creates its own owls (OWLS=created), which the first app does not have. */
+  let createdOnly: FastifyInstance["routeCatalog"];
   beforeAll(async () => {
     app = await build({ READS: "members" });
     keys = app.routeCatalog.map((r) => routeKey(r.method, r.url));
+    const created = await build({ READS: "members", OWLS: "created" });
+    createdOnly = created.routeCatalog.filter((r) => !keys.includes(routeKey(r.method, r.url)));
+    await created.close();
+    keys = [...keys, ...createdOnly.map((r) => routeKey(r.method, r.url))];
   });
   afterAll(() => app?.close());
+
+  it("sees the routes of a deployment that creates its own owls as well", () => {
+    expect(createdOnly.map((r) => routeKey(r.method, r.url)).sort()).toEqual(["GET /owls/created", "POST /owls/created"]);
+  });
 
   it("sees the whole route table", () => {
     expect(keys.filter((k) => !isRead(k)).length).toBeGreaterThan(60);
@@ -72,7 +82,7 @@ describe("every route that writes has a rule for its label", () => {
     for (const [key, rule] of Object.entries(REQUEST_LABELS)) {
       if (rule.rule !== "from") continue;
       expect(rule.carrier in CARRIERS, key).toBe(true);
-      const route = app.routeCatalog.find((r) => routeKey(r.method, r.url) === key)!;
+      const route = [...app.routeCatalog, ...createdOnly].find((r) => routeKey(r.method, r.url) === key)!;
       if (rule.in === "params") {
         expect(route.url.split("/"), key).toContain(`:${rule.field}`);
       } else {
@@ -105,6 +115,7 @@ describe("every route that writes has a rule for its label", () => {
       "POST /published-pages",
       "POST /publishers",
       "POST /sources",
+      "POST /standing-mandates/:name",
     ]);
   });
 

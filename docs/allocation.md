@@ -550,6 +550,13 @@ One currency, deliberately: accepted contributions EARN spendable owls
 accumulate real say over what it assesses next. Recognition stays
 ungameable by purchase: the leaderboard ranks lifetime owls *earned*.
 
+A deployment that pays its own model providers does not sell owls: it
+creates them (`OWLS=created`; docs/accounts.md, "Owls a deployment creates
+for itself"). The unit is the same, one owl for one dollar of metered cost
+at the prices the deployment is configured with, and there is no purchase
+price and no margin in it. Its owls never convert to or from the public
+graph's.
+
 ## Caps, not prices
 
 Nothing has a fixed price; everything is metered at real cost. A quoted
@@ -1555,6 +1562,13 @@ and lookout briefs over the live ones, through the versioned path, for
 when the platform as funder changes what the mandate is for; the
 Grantmaker revises from there. Re-founding them through a conversation
 is a follow-up.
+
+A members-only deployment sets its own General and Governance mandates
+up through routes, with no script and no operator key
+(`POST /standing-mandates/:name`; docs/accounts.md, "The standing mandates,
+set up in the app"). The definition is shared with the seed
+(`src/services/standing-mandates.ts`): the same policy and lookouts, with
+the sentences that say whose mandate it is worded for the deployment.
 
 **General is a maintenance mandate.** Its money is the platform's, and
 it buys what no topical funder would: consistency sweeps, curation,

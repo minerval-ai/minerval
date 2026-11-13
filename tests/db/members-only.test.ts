@@ -483,6 +483,9 @@ describe("what a permission guards", () => {
       // deployment's disk get, which is an administrator's to decide.
       "POST /file-sets/register": ["administer"],
       "POST /file-sets/:file_set_id/rehash": ["administer"],
+      "POST /standing-mandates/:name": ["administer"],
+      "GET /usage-reports/outgoing": ["administer"],
+      "POST /usage-reports/outgoing/send": ["administer"],
     });
     // The routes that any one of several permissions opens: the reads of
     // the file sets, for a person who directs, who uploads sets, or an

@@ -130,6 +130,18 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing. It returns a count, which the route gives the person as how many commands the list leaves out. No row's content is read.",
     ],
   ],
+  "src/services/owl-creation-service.ts": [
+    [
+      "Every member is told how many owls the deployment's runs have spent in all, which is a sum over the meter's rows at every label.",
+      "Nothing. It returns one total and the date of the first metered call, which every member is shown. No row's content is read.",
+    ],
+  ],
+  "src/services/usage-report-service.ts": [
+    [
+      "The usage report counts the owls every run spent in a day, whatever the run's label, so the sum is over the meter's rows at every label.",
+      "Usage reports, in a table that carries no label: for each closed day a total of owls spent, a revision number and the deployment's own id. The total is over every label and names none; the report is made to leave the deployment and says nothing of which run, node or label the spend was for.",
+    ],
+  ],
   "src/services/setup-service.ts": [
     [
       "A setup part is stored once for every label and numbered across all of them, so storing one must see them all.",

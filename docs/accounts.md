@@ -160,7 +160,7 @@ code decides who should hold which.
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
-| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files, set up the General and Governance mandates, create owls where the deployment creates its own, read and send the usage reports | act under a permission they have not also been granted, or change who may do what without a log entry |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
@@ -186,6 +186,7 @@ The routes a permission guards, in each mode (`requirePermission` in
 | the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
 | the routes for connections ([connections.md](connections.md)) | not mounted | `administer`, and a signed-in session for every write |
 | the routes for file sets ([file-sets.md](file-sets.md)) | not mounted | `direct` for the reads and for uploading a set; `administer` for registering a directory, which decides what label files already on the deployment's disk get; a set's label within the caller's clearance, and a signed-in session for every write |
+| `POST /standing-mandates/:name`, `POST /owls/created`, `GET /usage-reports/outgoing`, `POST /usage-reports/outgoing/send` (below, "Owls a deployment creates for itself") | not mounted | `administer`, and a signed-in session for every write |
 
 Taking money back asks for no permission in either mode: withdrawing from a
 mandate, cancelling a grant, a job or an order. A funder may take back
@@ -336,7 +337,7 @@ Mounted only where `READS=members`:
 | `GET /permissions` | a member | what each permission covers |
 | `GET /permissions/mine` | any signed-in account | what the account holds, its clearance and groups |
 | `GET /labels/mine` | a member | the labels the caller may file new material at, and who reads each; for a key or a token, the one label it works at |
-| `GET /permissions/log` | a member | every grant, removal and administrative change, newest first |
+| `GET /permissions/log` | a member | every grant, removal and administrative change, newest first, owls created and standing mandates set up included |
 | `GET /permissions/grants`, `GET /permissions/accounts`, `GET /parties`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the parties; the labels |
 | `POST /permissions/grants`, `DELETE /permissions/grants/:grant_id` | `administer`, from a signed-in session | grant; remove |
 | `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
@@ -353,7 +354,8 @@ marks the same row with who removed it and when; no row is deleted. The
 other administrative acts (a label defined, a pair of labels added or
 removed, a party added, a source's party set, every change to a
 connection or to the tools it offers, and a file set added, closed or
-switched off, whoever's act it was) each write a row to
+switched off, whoever's act it was, owls created, a standing
+mandate set up) each write a row to
 `administrative_events` in the same transaction as the change. The last
 live grant of `administer` cannot be removed.
 
@@ -446,6 +448,135 @@ To run one locally: set `READS=members` and an `API_KEYS` entry on the API
 (there is no dev bypass), the same key and `READS=members` on the web app,
 and sign in with the development login, whose identities read
 `dev:<username>`.
+
+### Owls a deployment creates for itself
+
+On the public graph owls are bought (below, "Buying owls"). A deployment
+that pays its own model providers has nobody to buy them from, so it creates
+them: `OWLS=created`.
+
+**What they are.** The organization's own unit for budgeting its agents'
+work. One owl covers one dollar of metered cost, at the prices the
+deployment is configured with. They are created by its administrators, not
+bought, and they never convert to or from owls on the public graph. The one
+sentence every surface uses is `CREATED_OWLS_STATEMENT` in
+`src/services/owl.ts`.
+
+**The setting.** `OWLS` is `sold` (the starting value: the public graph) or
+`created`. It says more than payments being off. Payments off leaves a
+deployment with no way to get owls at all; `created` gives it one. So
+`created`:
+
+- needs `READS=members`, because creating owls is an administrator's act
+  and only a members-only deployment has administrators;
+- refuses to load beside a Stripe key (`STRIPE_SECRET_KEY`): an owl an
+  administrator created and an owl someone paid for would be one balance;
+- does not mount `GET /billing/packs`, `POST /billing/checkout` or
+  `POST /billing/webhook`, so the `list_owl_packs` tool does not exist
+  there. `GET /billing/ledger`, an account's own history, stays.
+
+**Creating.** `POST /owls/created` (`src/routes/owls.ts`,
+`src/services/owl-creation-service.ts`), from a signed-in session by a
+holder of `administer`, into one of:
+
+- an account's balance (`account_id`): a person who holds `fund` then puts
+  the owls behind mandates exactly as on the public graph;
+- a mandate's budget (`mandate_id`): the budget grows at once. These owls
+  are held in the name of the deployment's own account, the one account
+  nobody signs in to, which carries the organization's name. If the mandate
+  closes with money unspent, that share returns to this account, as any
+  funder's share returns to them. The mandate is one at a label the
+  administrator reads, and the request works at the mandate's label
+  ("The label a request works at", above): one at another label answers as
+  not found.
+
+The ledger reason is `owl_created`. Each act writes a row to
+`administrative_events` (`owls_created`) in the same transaction, with the
+amount, the recipient and the administrator's note, and appears in
+`GET /permissions/log`.
+
+**There is no cap.** It is the organization's own budget, spent at its own
+model providers, and a ceiling here would be a number nobody chose. What
+stands in its place is visibility: `GET /owls/created` (`get_created_owls`
+on MCP), open to every member, says how much has been created, by which
+administrator, into accounts and into mandates, how much the deployment's
+runs have spent, and lists the acts. The spend is one total over every run,
+whatever its label, taken under system clearance
+([architecture.md](architecture.md), "System work"): a member who reads one
+label is still told what the whole deployment has spent. A mandate at a
+label the reader does not read is named in the list by its id alone.
+
+**No free grants.** The signup grant and the monthly owl are the public
+graph's offer to a reader who has just arrived. In any members-only
+deployment (`READS=members`, whatever `OWLS` says) neither is given unless
+the deployment sets it: `SIGNUP_GRANT_OWLS` and `MONTHLY_GRANT_OWLS` have no
+default there. Where owls are created (`OWLS=created`) neither can be set:
+the deployment refuses to load with either above zero, because every owl
+there enters a balance by an administrator's logged act, and a grant by
+setting would create owls that no act records.
+
+**The price of an owl.** Cost is metered as everywhere (below, "The
+per-token meter"). Three things can price a call: the rate table in
+`src/llm/pricing.ts`; a provider that reports the cost of each call itself
+(OpenRouter, and an endpoint a deployment declares with its prices); and a
+price the deployment states, `MODEL_PRICES`:
+
+```
+MODEL_PRICES=[{"model":"gpt-oss-120b","inputUsdPerMtok":0.5,"outputUsdPerMtok":1.5}]
+```
+
+US dollars per million input and output tokens, for a model the table does
+not know, or in place of the table's price for one it does (a negotiated
+rate). `model` is a model ID or the start of one; the longest match wins,
+and a stated price wins over the table. `cacheReadMultiplier` and
+`cacheWriteMultiplier` are optional.
+
+On the public graph a model with no price meters at a conservative fallback
+rate. Where owls are created that rate would be a number nobody chose, so a
+call to a model with no price is refused before anything is sent, with a
+message that says how to state one (`ModelNotPricedError`). `GET
+/owls/created` lists the models the deployment is configured to run that
+have no price, so the gap can be closed before a run meets it.
+
+### The standing mandates, set up in the app
+
+Every deployment needs a General mandate (upkeep) and a Governance mandate
+(audits): no agent work runs except by allocation (docs/allocation.md,
+"Platform mandates"). On the public graph a seed script creates them with
+the database's credentials. In a members-only deployment an administrator
+does, from a signed-in session:
+
+| route | who | |
+|---|---|---|
+| `GET /standing-mandates` | a member | the two mandates, and whether each has been set up |
+| `POST /standing-mandates/:name` (`general` or `governance`) | `administer`, from a signed-in session | set one up, with `budget_owls` and `daily_owls` |
+
+The mandate is the one the seed creates (the same starting operating policy
+and lookouts, from one definition in `src/services/standing-mandates.ts`),
+worded as the deployment's own and never Minerval's. Where the deployment
+creates its own owls, `budget_owls` is created with the mandate and logged.
+Where owls are sold, a budget cannot be created: the mandate is set up with
+none and funded from a balance like any mandate. More budget is added like
+any mandate's: created into it, or contributed.
+
+**One at each label.** A mandate's work runs at its label
+([architecture.md](architecture.md), "Labels and clearance"): its
+Grantmaker reads what that label reads, and what it pays for is work at
+that label. So where a deployment holds material at more than one label,
+the request that sets a standing mandate up names the label it is for
+(`label`, among the labels the administrator reads), and each label whose
+upkeep or audits are to be paid for has its own General or Governance
+mandate. Setting one up at a label says nothing about another label, and
+is refused only where that label already has one. `GET /standing-mandates`
+then carries `by_label`: for each label the caller reads, the mandate set
+up there or none. A label with no General mandate has nobody paying for
+its upkeep, which the list shows as that.
+
+### What a deployment reports
+
+A members-only deployment on the metered price reports the owls its runs
+spent each day to the public graph: one total, and never which claims the
+work was for. docs/usage-report.md.
 
 ## The per-token meter
 
@@ -782,8 +913,9 @@ balance = SUM(owl_ledger.amount_micro_usd)
 Reasons: `purchase`, `signup_grant`, `monthly_grant`, `contribution_award`,
 `charge`, `meter_settlement` (the unused fraction of a charged cap,
 returned after the meter ran), `refund`, `escrow_hold`/`escrow_refund`
-(budgeted jobs), `admin_adjust`, and `prize_award` (a prize paid in owls,
-below). Charges carry the operation (`op`) and
+(budgeted jobs), `admin_adjust`, `prize_award` (a prize paid in owls,
+below), and `owl_created` (owls an administrator created, in a deployment
+that creates its own; above). Charges carry the operation (`op`) and
 link to the claim or contribution they paid for, so the account history
 reads as "up to 2 owls held for the assessment of claim X, 0.4 returned".
 Charges, escrow holds, and allocations are balance-guarded inserts taken
@@ -873,6 +1005,9 @@ owl is backed by escrow paid for before the offer was made.
   purchase pack (Parliament, $1,000) sits under the same figure.
 
 ## Buying owls (Stripe)
+
+Not in a deployment that creates its own owls (`OWLS=created`, above):
+there these routes are not mounted.
 
 Purchases are enabled when `STRIPE_SECRET_KEY` looks real (`sk_…` or a
 restricted `rk_…` — `stripeConfigured()`); a placeholder keeps the deployment

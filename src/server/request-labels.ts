@@ -351,6 +351,27 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   ),
   "PATCH /file-sets/:file_set_id": from("file_set", "file_set_id", "Switching a set off or on changes the set's own row."),
 
+  // ---- the deployment's own mandates, owls and usage report ----
+  "POST /standing-mandates/:name": {
+    rule: "chosen",
+    why: "A standing mandate is new, and its work runs at its label: the administrator names the label whose upkeep or audits it pays for, among the labels they read.",
+  },
+  "POST /owls/created": {
+    rule: "from",
+    carrier: "mandate",
+    in: "body",
+    field: "mandate_id",
+    why: "Owls created into a mandate's budget change that mandate's own budget row, at the mandate's label. Created into an account's balance they add rows to the owl ledger and the administrators' log, which carry no label.",
+  },
+  "POST /usage-reports/outgoing/send": {
+    rule: "none",
+    why: "Writes usage reports, which carry no label: a day, a total and identifiers. The total is counted over every label by the service, under system clearance (services/usage-report-service.ts).",
+  },
+  "POST /usage-reports": {
+    rule: "none",
+    why: "Records a report another deployment sent, in a table that carries no label.",
+  },
+
   // ---- a shown page leaves the deployment: members-only deployments only ----
   "POST /outbound/send": { rule: "none", why: OUTBOUND },
   "POST /outbound/packages/:package_id/file": { rule: "none", why: OUTBOUND },

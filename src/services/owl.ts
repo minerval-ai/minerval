@@ -54,6 +54,38 @@ export type PricedOp =
   // Read-only SQL past a caller's daily allowance, priced by database time (sql-service.ts).
   | "sql_query";
 
+/** The part of the config that says where owls come from. */
+export interface OwlsConfig {
+  owls?: "sold" | "created";
+}
+
+/**
+ * Whether this deployment creates its own owls (OWLS=created; docs/accounts.md,
+ * "Owls a deployment creates for itself"). A config without the setting (a
+ * test's partial config) sells them, as a deployment that sets nothing does.
+ */
+export function owlsCreatedHere(config: OwlsConfig = loadConfig()): boolean {
+  return config?.owls === "created";
+}
+
+/**
+ * What an owl is in a deployment that creates its own, as its
+ * administrators and members read it wherever created owls are shown. The
+ * one place the sentence is written.
+ */
+export const CREATED_OWLS_STATEMENT =
+  "Owls here are this organization's own unit for budgeting its agents' work. One owl covers " +
+  "one dollar of metered cost, at the prices this deployment is configured with. This " +
+  "deployment's administrators create them. They are not bought, and they never convert to " +
+  "or from owls on the public graph.";
+
+/**
+ * How an account adds to its balance in a deployment that creates its own
+ * owls: the end of a refusal for a balance that cannot cover something.
+ */
+export const ASK_AN_ADMINISTRATOR_FOR_OWLS =
+  "Owls here are created by this deployment's administrators: ask one to add to your balance.";
+
 /** What one owl costs to BUY, in micro-USD ($4). Purchase display only. */
 export function owlPriceMicroUsd(): number {
   return loadConfig().owlPriceMicroUsd;

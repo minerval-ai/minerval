@@ -62,6 +62,9 @@ import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
 import { connectionRoutes } from "../routes/connections.js";
 import { fileSetRoutes } from "../routes/file-sets.js";
+import { createdOwlRoutes, standingMandateRoutes } from "../routes/owls.js";
+import { usageReportReceivingRoutes, usageReportSendingRoutes } from "../routes/usage-reports.js";
+import { owlsCreatedHere } from "../services/owl.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -181,11 +184,23 @@ export async function buildApp() {
     // Sets of files are added by people who hold the permission to direct
     // (src/file-sets.ts), so they exist where permissions do.
     await app.register(fileSetRoutes);
+    // The deployment's own standing mandates, set up by an administrator
+    // in place of the seed script (routes/owls.ts), and what it reports of
+    // its own owl spend (routes/usage-reports.ts).
+    await app.register(standingMandateRoutes);
+    await app.register(usageReportSendingRoutes);
+    // Creating owls exists only where the deployment creates its own
+    // (OWLS=created, which needs READS=members).
+    if (owlsCreatedHere(config)) await app.register(createdOwlRoutes);
   }
   // Every graph admits pages other graphs publish, as sources their
   // publishers submit (docs/published-pages.md). It is the public graph
   // that these are built for and tested on.
   await app.register(publishedPageRoutes);
+  // Where a private deployment's usage report is received. On every
+  // deployment, and of use on the public graph, which private deployments
+  // report to.
+  await app.register(usageReportReceivingRoutes);
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool
   // either: the tools are built from the catalog of mounted routes.

@@ -10,6 +10,7 @@ import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
 import { PUBLIC_LABEL } from "../labels.js";
+import { microUsdToOwls } from "./owl.js";
 import {
   PERMISSION_DEFINITIONS,
   PERMISSIONS,
@@ -593,7 +594,14 @@ export type AdministrativeAction =
   // ones because they change what agents may read.
   | "file_set_added"
   | "file_set_closed"
-  | "file_set_changed";
+  | "file_set_changed"
+  // In a deployment that creates its own owls: an administrator created
+  // owls into an account's balance or a mandate's budget
+  // (owl-creation-service.ts).
+  | "owls_created"
+  // An administrator set up the General or the Governance mandate
+  // (standing-mandates.ts).
+  | "standing_mandate_created";
 
 export interface LogEntry {
   event: "granted" | "removed" | AdministrativeAction;
@@ -629,6 +637,12 @@ export interface LogEntry {
   manifest_sha256?: string;
   /** On a set switched off or on. */
   enabled?: boolean;
+  /** Owls an administrator created, for owls_created and a standing mandate created with a budget. */
+  amount_owls?: number;
+  /** The mandate owls were created into, or the standing mandate that was set up. */
+  mandate?: { id: string; title: string; withheld?: true };
+  /** What the administrator wrote when creating owls. */
+  note?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -726,6 +740,37 @@ export async function permissionLog(
     [limit, before]
   );
 
+  // The accounts and mandates the owl entries name, by id.
+  const namedIds = (key: string) => [
+    ...new Set(
+      rows
+        .map((r) => r.detail?.[key])
+        .filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
+    ),
+  ];
+  const accountIds = namedIds("account_id");
+  const grantIds = namedIds("grant_id");
+  const accountNames = new Map(
+    accountIds.length === 0
+      ? []
+      : (
+          await rawQuery<{ id: string; display_name: string }>(
+            `SELECT id, display_name FROM contributors WHERE id = ANY($1::uuid[])`,
+            [accountIds]
+          )
+        ).map((a) => [a.id, a.display_name])
+  );
+  const mandateTitles = new Map(
+    grantIds.length === 0
+      ? []
+      : (
+          await rawQuery<{ id: string; title: string }>(
+            `SELECT id, COALESCE(mandate->>'title', name) AS title FROM grants WHERE id = ANY($1::uuid[])`,
+            [grantIds]
+          )
+        ).map((g) => [g.id, g.title])
+  );
+
   return rows.map((r): LogEntry => {
     const entry: LogEntry = { event: r.event, at: r.at.toISOString(), by: r.by_name };
     if (r.event === "granted" || r.event === "removed") {
@@ -745,6 +790,17 @@ export async function permissionLog(
       if (typeof d.source_id === "string") entry.source_id = d.source_id;
       entry.previous_party =
         typeof d.previous_party_id === "string" ? partyName(d.previous_party_id) : null;
+    }
+    if (r.event === "owls_created" || r.event === "standing_mandate_created") {
+      const micro = Number(d.amount_micro_usd);
+      if (Number.isFinite(micro) && micro > 0) entry.amount_owls = microUsdToOwls(micro);
+      if (typeof d.account_id === "string") entry.account = accountNames.get(d.account_id) ?? "";
+      if (typeof d.grant_id === "string") {
+        // A mandate at a label the reader does not read is named by its id alone.
+        const title = mandateTitles.get(d.grant_id);
+        entry.mandate = title === undefined ? { id: d.grant_id, title: "", withheld: true } : { id: d.grant_id, title };
+      }
+      if (typeof d.note === "string" && d.note) entry.note = d.note;
     }
     if (typeof d.connection_id === "string") {
       entry.connection = connectionName(d.connection_id);
