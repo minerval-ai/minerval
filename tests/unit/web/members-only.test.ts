@@ -304,20 +304,22 @@ describe("the gate", () => {
     // (components/MembersBand.tsx).
     const [band, page] = tree.props.children as [Node, unknown];
     expect(page).toBe(PAGE);
-    const links = (who: string[]) => {
+    const links = (who: string[], clearance: string[] = ["public"]) => {
       const rendered = (band.type as (props: unknown) => Node | null)({
-        mine: { account: {}, member: true, permissions: who, grants: [], clearance: [], raw_source_labels: [], groups: [] },
+        mine: { account: {}, member: true, permissions: who, grants: [], clearance, raw_source_labels: [], groups: [] },
       });
       return rendered === null ? null : textOf(rendered.props.children);
     };
-    // A member who can neither direct nor administer is shown no line at all.
+    // A member who reads only what everyone reads, and can neither direct, release nor administer, is shown no line at all.
     expect(links(["read"])).toBeNull();
-    // The pages about the public graph are linked for those who can act there: whoever directs, and whoever
-    // releases, since sending an agent's report on takes release.
-    expect(links(["read", "direct"])).toBe("Add a sourceThe public graph");
-    expect(links(["read", "release"])).toBe("The public graph");
-    expect(links(["administer"])).toBe("Administration");
-    expect(links(["direct", "fund", "administer"])).toBe("Add a sourceThe public graphAdministration");
+    // A person is shown a link for what they can do: showings for whoever reads at a label besides `public` or acts
+    // on showings, the release queue for whoever releases, file sets for whoever directs or administers, and the
+    // pages about the public graph for whoever directs or releases, since sending an agent's report on takes release.
+    expect(links(["read"], ["public", "finance"])).toBe("Showings");
+    expect(links(["release"])).toBe("ShowingsRelease queueThe public graph");
+    expect(links(["read", "direct"])).toBe("ShowingsFile setsAdd a sourceThe public graph");
+    expect(links(["administer"])).toBe("File setsAdministration");
+    expect(links(["direct", "fund", "administer"])).toBe("ShowingsFile setsAdd a sourceThe public graphAdministration");
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

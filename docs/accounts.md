@@ -338,7 +338,8 @@ Mounted only where `READS=members`:
 | `GET /permissions/mine` | any signed-in account | what the account holds, its clearance and groups |
 | `GET /labels/mine` | a member | the labels the caller may file new material at, and who reads each; for a key or a token, the one label it works at |
 | `GET /permissions/log` | a member | every grant, removal and administrative change, newest first, owls created and standing mandates set up included |
-| `GET /permissions/grants`, `GET /permissions/accounts`, `GET /parties`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the parties; the labels |
+| `GET /permissions/grants`, `GET /permissions/accounts`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the labels |
+| `GET /parties` | `administer` or `direct` | the parties: in full for an administrator; for a person who directs, each party's id and name and whether it is the organization itself, since adding a source or a set of files says whose material it is |
 | `POST /permissions/grants`, `DELETE /permissions/grants/:grant_id` | `administer`, from a signed-in session | grant; remove |
 | `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
 | `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
@@ -466,8 +467,11 @@ the site is named this way.
 
 **The pages a members-only build adds.** A line above each page, placed by
 the gate for a member (`web/components/MembersBand.tsx`), links the ones a
-person's permissions open: "Add a source" for holders of `direct`, "Administration" for holders
-of `administer`. The administration pages link to one another down the left
+person's permissions open: "Showings" for a member who reads at a label
+besides `public` or who directs or releases, "Release queue" for holders of
+`release`, "File sets" for holders of `direct` or `administer`, "Add a
+source" for holders of `direct`, "Administration" for holders of
+`administer`. The administration pages link to one another down the left
 side of the page, and in a line above it at a phone's width
 (`AdminNav` in `web/components/admin/access.tsx`). A person who lacks a
 permission is not shown a control that needs it, and a page reached directly
@@ -489,13 +493,54 @@ says so where an administrator's list leaves rows out.
 | `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
 | `/admin/outside` and the four pages under it | every member; controls by permission | docs/outward-acts.md: the organization's account on the public graph with its public owls and public mandates, and the log of every act there; public requests adopted and taken up; the setting that keeps public versions current, with what it shows outside; what readers said back about published pages; and the agents' reports, with sending one on to Minerval's maintainers |
 | `/sources/new` | `direct` | Add a document or an address (`POST /sources`), at a label the person chooses where there is more than one |
+| `/claims/:id` | every member | The ordinary page of a node. Where the node carries a judgment at more than one label the reader reads (`versions` on `GET /claims/:id`), a tab for each, opening on the one in force; a reader for whom two are in force, at labels that do not read each other, is shown both in full and neither is chosen. Under the tabs: what the assessment was made on, what it was made beside, and whether that has since been replaced. A page of the node shown to a label the reader reads, or outside, is a further tab drawn by the components of the public site's second tab (`web/lib/inside-node.ts`, `web/components/claim/InsideVersions.tsx`) |
+| `/showings`, `/showings/:id`, `/showings/:id/pages/:page_id` | every member, as far as their labels reach; controls by permission | docs/showing-a-page.md: the showings a reader may see from either side; one showing with each node's state, every version, every act, and for a reader of the page's label paying for the redaction or its check (`fund`), holding a page and ending a standing showing (`direct`); one version as shown, part by part, with who released or held each, the fingerprint, and a check that runs in the reader's browser |
+| `/showings/new` | `direct` | Ask for a node's page to be shown (`POST /showings`), from the node's page. Nothing is preselected, and each choice says what it shows and to whom |
+| `/release` | `release` | The release queue (`GET /release/queue`): each waiting part as it would be shown, with the Redactor's removals struck through in front of their marks, release and hold part by part or in bulk, what cannot be done there and why, and the party's standing rules |
+| `/redaction-policies`, `/redaction-policies/:id` | every member; saving for `administer` | Each boundary's policy in full; an administrator who reads the label the pages are written at saves the next version (`PUT /redaction-policies`), with a refusal shown beside the form |
+| `/outbound` | every member; controls for `direct` and `release` | Pages sent outside. docs/published-pages.md, "Inside the deployment": what a send shows outside, each package with its sends and the public graph's answers, sending, taking a package as a file, and the words a node that exists only here is proposed in |
+| `/file-sets`, `/file-sets/:id` | `direct` or `administer` | docs/file-sets.md: the sets at labels the reader reads, adding one by upload (`direct`) or from a directory (`administer`), uploading with each file's progress and hash, a set's files and the commands run against it, switching it off |
 
-Not among them yet, and needed by what the deployment now does: a page for
-sets of files (docs/file-sets.md), the release queue, the list of showings
-and what each would cost to move on, a node's page with its judgment at
-each label and a shown page beside it, the editor of a boundary's redaction
-policy, and sending outside (docs/showing-a-page.md and
-docs/published-pages.md, "Not built here").
+These pages link to one another down the left side, as the administration
+pages do (`WorkNav` in `web/components/inside/nav.tsx`), each link shown to
+whoever can use the page. Their words that are not the API's own are in the
+pages; the two fixed lists of reasons are the API's, served with
+`GET /showings` and `GET /release/queue`. `/outbound` is for pages; what
+else passes between the deployment and the public graph is on
+`/admin/outside` (docs/outward-acts.md), and each page points to the other.
+
+What the pages still cannot be given, because the API does not serve it:
+
+- **The text of a part, to a holder of `release` who does not read the
+  label the page was written at.** The queue says so on each item.
+- **Earlier versions of a policy.** `GET /redaction-policies` serves the
+  newest version of each boundary; an earlier one is read by its id, which
+  a showing's record gives.
+- **Labels a person does not read.** A showing, a rule or a policy can
+  name a label its author does not read, and the API takes it; no read
+  names such a label, so the pages offer the labels the person reads.
+- **A receipt for a package carried by hand.** Taking a file is logged;
+  nothing records what the public graph then answered.
+- **What a redaction or its check is expected to cost.**
+
+**Where more than one judgment is in force for one reader.** A reader who
+holds two labels that do not read each other, each with a judgment of a
+node, has two in force, and so has a run at a label that reads both. A read
+that gives a node one judgment gives the most recently made
+(`<table>_in_force`), and says how many there are: `judgments_in_force`,
+with one sentence beside it (`judgments_in_force_note`), present only where
+it is more than one (`judgmentsInForce` and `markSeveralInForce` in
+`src/services/judgment-version-service.ts`). It is on a row of the list and
+of a search, a card, a row of a tree and of a node's premises, and a read
+of the node, which also lists each judgment under `versions` with its own
+`coverage` and `since_assessed`. An argument's evaluation is said the same
+way (`argument_evaluations_in_force` on a tree's row; `evaluations_in_force`
+and `evaluations` on the argument's own read). The web app shows "N
+assessments" on such a row, linking to the node. Reads that still give one
+judgment and do not say so: citations, the extension's lookups, findings,
+monitors, a session's snapshot, a source's segments, bounties, claim links,
+the Mira export, a question's listed answers and a quantity's bases, and
+read-only SQL's `assessments` view.
 
 The account page shows no way to buy owls where `entitlement.owls_created_here`
 is true, gives what an owl is there in the API's words

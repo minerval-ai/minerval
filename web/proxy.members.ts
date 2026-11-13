@@ -41,6 +41,14 @@ export const proxy = auth(async (request) => {
 // (the sign-in handlers, and the stylesheet, scripts and icons of the gate
 // page itself). The matcher has to be written out: Next reads it when it
 // builds.
+//
+// One more path is left out: a file uploaded into a file set
+// (app/api/file-sets/[id]/files/[...path]/route.members.ts). A proxy is
+// handed a request's body whole, and holds at most ten megabytes of it, so a
+// larger file would arrive cut short. That route serves nothing: it takes a
+// file from the person in the server's own session and hands it to the API
+// as a stream, and the API refuses anyone who is not a member holding the
+// permission to direct.
 export const config = {
-  matcher: ["/((?!api/auth/|_next/static/|_next/image|icon\\.svg$|apple-icon$).*)"],
+  matcher: ["/((?!api/auth/|api/file-sets/[^/]+/files/|_next/static/|_next/image|icon\\.svg$|apple-icon$).*)"],
 };

@@ -90,6 +90,12 @@ A private deployment, one that serves only its signed-in members, has these page
 | `/admin/outside/said-back` | For every member: the contributions readers made on the public graph through pages the deployment published, each with the Contribution Reviewer's summary and where the reassessment it opened stands (`list_public_contributions_received`) |
 | `/admin/outside/reports` | For every member, the agents' reports written at labels they read: what each is about, its facts, its words as written and as redacted, and what came back from Minerval's maintainers (`list_reports_for_sending`). Holders of release for the organization's own material send one on |
 | `/sources/new` | For holders of the permission to direct: add a document or an address as a source |
+| `/showings`, `/showings/:id`, `/showings/:id/pages/:page_id` | For every member, as far as their labels reach: the pages shown to readers who do not read the label they were written at, or outside the deployment; one showing with each node's state, every version and every act; one version as shown, part by part, with its removals marked, its held parts named and the check against its fingerprint. A node's own page has the same shown page as a tab, beside a tab for the node's assessment at each label the reader reads |
+| `/showings/new` | For holders of the permission to direct: ask for a node's page to be shown, reached from the node's page. It says what each choice shows and to whom |
+| `/release` | For holders of the permission to release a party's material: the parts of redacted pages waiting on them, oldest first, to release or hold, and that party's standing rules |
+| `/redaction-policies`, `/redaction-policies/:id` | For every member: the redaction policy of each boundary they can read, in full. For an administrator who reads the label the pages are written at, saving the next version |
+| `/outbound` | Pages sent outside. For every member: each signed package built for a page shown outside, whether it was sent and what the public graph answered. For holders of the permission to direct, sending, taking a package as a file, and the words a node that exists only in the deployment is proposed in |
+| `/file-sets`, `/file-sets/:id` | For holders of the permission to direct or to administer: the sets of files added for agents to explore in the deployment's sandbox; one set's files with their hashes, the commands agents ran, uploading into it and switching it off |
 
 ## Owls in the interface
 

@@ -86,6 +86,18 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
   keeps_public_versions_current?: { setting: "on" | "off"; a_public_mandate_pays_for_it: boolean } | null;
   check: PackageCheck;
   packages: Array<{ package: number; state: string; received_at: string; hash: string }>;
+  /**
+   * Set when the page was not published from another graph but shown inside
+   * this deployment, to a label its reader reads, from a label they do not
+   * (docs/showing-a-page.md). It is the same tab, drawn by the same
+   * components; what differs is whose page it is said to be and where its
+   * record is read from (components/claim/InsideVersions.tsx).
+   */
+  inside?: {
+    tab: { showing_id: string; page_id: string; outside: boolean; shown_to: string; version_of: string; from_label?: string };
+    showing: import("./inside-api").ShownShowing;
+    page: import("./inside-api").ShownPage;
+  };
 }
 
 /** The second tab's name, as the owner of the design named it. */

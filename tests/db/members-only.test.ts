@@ -381,6 +381,13 @@ describe("grants", () => {
     expect((await as(person, { url: "/permissions/accounts" })).statusCode).toBe(403);
     expect((await as(person, { url: "/parties" })).statusCode).toBe(403);
     expect((await as(person, { url: "/labels" })).statusCode).toBe(403);
+    // A person who directs names the party whose material a source or a set of files is, so they read the
+    // parties by name and nothing else of them.
+    const director = await signIn("a-director-reading-parties");
+    await grant(admin, { permission: "direct", account_id: director.id });
+    const named = await as(director, { url: "/parties" });
+    expect(named.statusCode).toBe(200);
+    for (const party of named.json().parties) expect(Object.keys(party).sort()).toEqual(["id", "is_own_organization", "name"]);
 
     // The administrator's own API key reads, and cannot write.
     const key = await createApiKey({ userId: admin.id, name: "dbtest admin key" });
@@ -475,7 +482,6 @@ describe("what a permission guards", () => {
       "POST /permissions/grants": ["administer"],
       "DELETE /permissions/grants/:grant_id": ["administer"],
       "GET /permissions/accounts": ["administer"],
-      "GET /parties": ["administer"],
       "POST /parties": ["administer"],
       "PUT /sources/:source_id/party": ["administer"],
       "GET /labels": ["administer"],
@@ -517,6 +523,8 @@ describe("what a permission guards", () => {
       "GET /file-sets/:file_set_id": [["direct", "administer"]],
       "GET /file-sets/:file_set_id/files": [["direct", "administer"]],
       "GET /file-sets/:file_set_id/commands": [["direct", "administer"]],
+      // The parties, in full for an administrator and by name for a person who directs.
+      "GET /parties": [["administer", "direct"]],
     });
   });
 

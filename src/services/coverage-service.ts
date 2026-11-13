@@ -179,6 +179,13 @@ export async function summarizeCoverage(
          JOIN claim_instances ci ON ci.claim_id = j.node_id AND ci.detached_at IS NULL
          JOIN sources s ON s.id = ci.source_id
         WHERE NOT j.inputs_recorded
+          -- The public graph's own judgment of a mirrored node was made there. What this deployment has
+          -- attached to the node since (a page shown to public, a source of its own) was never in front
+          -- of it, so only the public graph's own sources count as what it may have been made on.
+          AND (s.origin = 'mirror' OR NOT (
+                (j.kind = 'assessment' AND EXISTS (SELECT 1 FROM assessments x WHERE x.id = j.id AND x.origin = 'mirror'))
+             OR (j.kind = 'quantity_estimate' AND EXISTS (SELECT 1 FROM quantity_estimates x WHERE x.id = j.id AND x.origin = 'mirror'))
+             OR (j.kind = 'question_assessment' AND EXISTS (SELECT 1 FROM question_assessments x WHERE x.id = j.id AND x.origin = 'mirror'))))
      )
      SELECT j.node_id,
             EXISTS (SELECT 1 FROM made_on m WHERE m.node_id = j.node_id AND m.source_type <> 'shown_page'

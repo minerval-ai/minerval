@@ -1,4 +1,11 @@
 import { rawQuery, searchableClaims } from "../db/client.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
+
+/** Rows of a search, each saying how many judgments of its node are in force for the reader where that is more than one. */
+async function markedRows<T extends { id: string }>(rows: T[]): Promise<T[]> {
+  await markSeveralInForce(rows, (r) => r.id);
+  return rows;
+}
 import { generateEmbedding } from "./embedding-service.js";
 import type { NodeKind } from "../schemas/kinds.js";
 import {
@@ -225,6 +232,7 @@ async function hybridSearchWithEmbedding(
     ...prizeFields(r),
   }));
 
+  await markSeveralInForce(results, (r) => r.id);
   return { results, total: results.length };
 }
 
@@ -270,6 +278,7 @@ async function keywordSearch(
     ...prizeFields(r),
   }));
 
+  await markSeveralInForce(results, (r) => r.id);
   return { results, total: results.length };
 }
 
@@ -308,7 +317,7 @@ export async function keywordClaimSearch(
     `,
     params
   );
-  return rows.map((r) => ({
+  return markedRows(rows.map((r) => ({
     id: r.id,
     kind: r.kind,
     text: r.text,
@@ -318,7 +327,7 @@ export async function keywordClaimSearch(
     importance: r.importance,
     assessment_status: r.assessment_status,
     assessment_confidence: r.assessment_confidence,
-  }));
+  })));
 }
 
 /**
@@ -355,7 +364,7 @@ export async function findSimilarClaims(
     params
   );
 
-  return rows.map((r) => ({
+  return markedRows(rows.map((r) => ({
     id: r.id,
     kind: r.kind,
     text: r.text,
@@ -365,5 +374,5 @@ export async function findSimilarClaims(
     importance: r.importance,
     assessment_status: r.assessment_status,
     assessment_confidence: r.assessment_confidence,
-  }));
+  })));
 }

@@ -16,6 +16,7 @@
  * Cards are read in one query however many are asked for, so a page showing
  * many claims makes one request (GET /claims/cards).
  */
+import { markSeveralInForce } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { resolveClaimId, type ResolvedFrom } from "./claim-alias-service.js";
@@ -136,6 +137,8 @@ export async function getClaimCards(ids: string[]): Promise<Map<string, ClaimCar
       cards.get(resolution.id) ?? (await readCards([resolution.id])).get(resolution.id);
     if (survivor) cards.set(id, { ...survivor, resolved_from: resolution.resolvedFrom });
   }
+  // Where more than one judgment of a node is in force for the reader, its card says how many.
+  await markSeveralInForce([...cards.values()], (card) => card.id);
   return cards;
 }
 

@@ -58,6 +58,10 @@ const PAGES: Array<{ href: string; name: string }> = [
   { href: "/admin/outside/keep-current", name: "Keeping public versions current" },
   { href: "/admin/outside/said-back", name: "What readers said back" },
   { href: "/admin/outside/reports", name: "Agents' reports" },
+  // Read by every member; an administrator who reads the label the pages are written at saves a version.
+  { href: "/redaction-policies", name: "Redaction policies" },
+  { href: "/file-sets", name: "File sets" },
+  { href: "/showings", name: "Showings" },
 ];
 
 /** The administration pages, as a line of links with the current one marked. For administrators. */

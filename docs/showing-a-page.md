@@ -400,12 +400,14 @@ a key that leaked or an agent following text it read cannot do any of them
 
 ## Not built here
 
-- Web pages. The queue needs a view that shows each removal as a marked
-  difference and takes bulk decisions; a node's page needs the shown page
-  beside its own assessment for readers at the destination label; the
-  people who direct need the list of showings with where each page stands
-  and what it would cost to move it on; administrators need the policy
-  editor with the refusals shown inline.
+- What the web pages for this ([accounts.md](accounts.md), "The web app")
+  could not be given: what the next piece of work on a page is expected to
+  cost, so the person paying for a redaction names a budget with no figure
+  beside the field. A reader of the page's label is told which kinds of
+  part wait on which party (`waiting_on` on `GET /showings`: kind and
+  party, never text), a queue item names its node and carries the reason
+  and date of a hold already placed, and the lists of hold and end reasons
+  are served with `GET /showings` and `GET /release/queue`.
 - A node at the destination label for a page whose node the destination
   cannot read.
 - Additions a deployment makes to a role's prompt. The record names none

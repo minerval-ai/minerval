@@ -777,9 +777,25 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
         needs.map((party) => ({ party: { id: party, name: allNames.get(party) ?? "" }, standing: standingOf(acts, partId, party) }));
       const mine = (partId: string | null, needs: string[]) =>
         actor.releaseParties.filter((party) => needs.includes(party) && standingOf(acts, partId, party) !== "released");
+      // The node the page is of: its id always, and its wording where this person reads the node.
+      const [node] = await rawQuery<{ text: string; label: string }>(`SELECT text, sensitivity_label AS label FROM claims WHERE id = $1`, [page.node_id]);
+      // A hold this person's parties have already placed on an item: its reason and since when.
+      const heldBy = (partId: string | null) =>
+        actor.releaseParties
+          .filter((party) => standingOf(acts, partId, party) === "held")
+          .map((party) => {
+            const hold = [...acts].reverse().find((a) => a.act === "held" && a.part_id === partId && a.party_id === party);
+            return {
+              party: { id: party, name: names.get(party) ?? "" },
+              reason: HOLD_REASONS[(hold?.reason ?? "no_reason_given") as HoldReason] ?? hold?.reason ?? null,
+              since: hold?.at.toISOString() ?? null,
+            };
+          });
       const base = {
         page_id: page.id,
         showing_id: page.showing_id,
+        node_id: page.node_id,
+        ...(node && actor.clearance.includes(node.label) ? { node: node.text } : {}),
         audit: page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : null,
         waiting_since: page.checked_at?.toISOString() ?? null,
       };
@@ -791,6 +807,7 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
           kind: "the page itself, with its verdict and everything that is always shown with it",
           decide_for: mine(null, page.rests_on).map((id) => ({ id, name: names.get(id) ?? "" })),
           rests_on: wait(null, page.rests_on),
+          ...(heldBy(null).length > 0 ? { held: heldBy(null) } : {}),
           ...(reads ? { always_shown: JSON.parse(page.header) } : { text_withheld: TEXT_WITHHELD }),
           order: -1,
         });
@@ -806,6 +823,7 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
           kind: kindWords(part.descriptor),
           decide_for: mine(part.id, part.rests_on).map((id) => ({ id, name: names.get(id) ?? "" })),
           rests_on: wait(part.id, part.rests_on),
+          ...(heldBy(part.id).length > 0 ? { held: heldBy(part.id) } : {}),
           removals_by_category: counts,
           redactor_least_sure: unsure(part).length > 0,
           ...(reads
@@ -841,6 +859,8 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
               `An administrator of this deployment grants reading at a label.`,
           }
         : {}),
+      // The fixed list a hold gives its reason from, each key with the words the other side is told.
+      hold_reasons: HOLD_REASONS,
       note:
         "Each item is released or held whole, for one party at a time. Nothing is released by time passing: an item " +
         "nobody acts on stays held, and readers on the other side see how long it has waited.",
@@ -1074,6 +1094,33 @@ export async function askedShowings(): Promise<Array<Record<string, unknown>>> {
          FROM showing_pages WHERE showing_id = $1 ORDER BY judged_at DESC`,
       [s.id]
     );
+    // For a page at the release gate: which kinds of part wait on which party, and where each party stands.
+    // Kind and party and nothing of the text, which this reader has in front of them on the node's own page.
+    const waiting = new Map<string, Array<{ part: number | null; kind: string; party: string; standing: ItemStanding }>>();
+    for (const p of pages.filter((page) => page.stage === "at_gate")) {
+      const [page] = await rawQuery<{ rests_on: string[] }>(`SELECT rests_on FROM showing_pages WHERE id = $1`, [p.id]);
+      const parts = await rawQuery<{ id: string; position: number; descriptor: string; rests_on: string[] }>(
+        `SELECT id, position, descriptor, rests_on FROM showing_parts WHERE page_id = $1 ORDER BY position`,
+        [p.id]
+      );
+      // The acts are rows on the side the page is shown to, which this reader may not read; only where each party stands is taken from them.
+      const { acts, names } = await bothSides(async () => ({
+        acts: await actsOfPage(p.id),
+        names: await partyNames([...(page?.rests_on ?? []), ...parts.flatMap((part) => part.rests_on)]),
+      }));
+      const lines: Array<{ part: number | null; kind: string; party: string; standing: ItemStanding }> = [];
+      for (const party of page?.rests_on ?? []) {
+        const standing = standingOf(acts, null, party);
+        if (standing !== "released") lines.push({ part: null, kind: "the page itself, with its verdict", party: names.get(party) ?? "a party", standing });
+      }
+      for (const part of parts) {
+        for (const party of part.rests_on) {
+          const standing = standingOf(acts, part.id, party);
+          if (standing !== "released") lines.push({ part: part.position, kind: kindWords(part.descriptor), party: names.get(party) ?? "a party", standing });
+        }
+      }
+      waiting.set(p.id, lines);
+    }
     out.push({
       showing_id: s.id,
       node_id: s.node_id,
@@ -1085,6 +1132,7 @@ export async function askedShowings(): Promise<Array<Record<string, unknown>>> {
       asked_at: s.asked_at.toISOString(),
       ended_at: s.ended_at?.toISOString() ?? null,
       pages: pages.map((p) => ({
+        ...(waiting.has(p.id) ? { waiting_on: waiting.get(p.id) } : {}),
         page_id: p.id,
         node_id: p.node_id,
         version_of: p.judged_at.toISOString(),

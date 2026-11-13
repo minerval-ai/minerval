@@ -138,12 +138,20 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
       description:
         "A node's page written at one label can be shown to readers who may not read that label, with what a policy " +
         "removed marked in its place and what is held named. `shown` lists showings from the side they are shown " +
-        "to; `asked` lists them from the side they were asked for at, with where each page's redaction stands.",
+        "to; `asked` lists them from the side they were asked for at, with where each page's redaction stands and, " +
+        "for a page at the release gate, which kinds of part wait on which party (`waiting_on`: kind and party, " +
+        "never text). `hold_reasons` and `end_reasons` are the fixed lists a hold and an ending give their reason from.",
       querystring: { type: "object", properties: { node_id: UUID } },
     },
     preHandler: signedIn,
     handler: async (request, reply) =>
-      reply.send({ shown: await shownShowings({ nodeId: request.query.node_id }), asked: await askedShowings() }),
+      reply.send({
+        shown: await shownShowings({ nodeId: request.query.node_id }),
+        asked: await askedShowings(),
+        // The two fixed lists a hold and an ending take their reason from, each key with the words the other side is told.
+        hold_reasons: HOLD_REASONS,
+        end_reasons: END_REASONS,
+      }),
   });
 
   app.get<{ Params: { showing_id: string } }>("/showings/:showing_id", {

@@ -13,6 +13,7 @@
  * The view carries no count of instances outside the instances section:
  * how widely an argument is made is not a measure of its standing (§7).
  */
+import { evaluationsInForce, severalEvaluationsNote } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { EVALUATION_STALE_SQL, getArgument, hasWrittenForm, parseClaimLinks } from "./argument-service.js";
@@ -132,6 +133,15 @@ export async function getArgumentView(
         const current = rows.find((r) => r.is_current);
         payload.evaluation = current ? shape(current) : null;
         payload.evaluation_history = rows.filter((r) => !r.is_current).map(shape);
+        // An argument can carry a current evaluation at each label. Where
+        // more than one is in force for the asker, say how many and give
+        // each: the one above is only the most recently made.
+        const inForce = (await evaluationsInForce([argumentId]).catch(() => new Map<string, number>())).get(argumentId.toLowerCase());
+        if (inForce) {
+          payload.evaluations_in_force = inForce;
+          payload.evaluations_in_force_note = severalEvaluationsNote(inForce);
+          payload.evaluations = rows.filter((r) => r.is_current).map(shape);
+        }
       })()
     );
   }

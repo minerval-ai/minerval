@@ -1,4 +1,5 @@
 import { rawQuery } from "../db/client.js";
+import { evaluationsInForce, judgmentsInForce, severalEvaluationsNote, severalInForceNote } from "./judgment-version-service.js";
 import type { TreeNode } from "../schemas/claim.js";
 import {
   stewardParkSelectSql,
@@ -281,7 +282,15 @@ export async function getClaimTree(
     return null;
   });
 
-  return assembleTree(root, childEdges, truncatedParents, covered);
+  // Where more than one judgment of a node, or evaluation of an argument, is
+  // in force for the reader, the row says how many (judgment-version-service.ts).
+  // A failure loses the field, never the tree.
+  const several = await judgmentsInForce([...visited]).catch(() => new Map<string, number>());
+  const severalEvaluations = await evaluationsInForce(
+    [...childEdges.values()].flat().map((edge) => edge.argument_id)
+  ).catch(() => new Map<string, number>());
+
+  return assembleTree(root, childEdges, truncatedParents, covered, several, severalEvaluations);
 }
 
 export interface DependentClaim {
@@ -484,7 +493,9 @@ function assembleTree(
   root: TreeRootRow,
   childEdges: Map<string, TreeEdgeRow[]>,
   truncatedParents: Set<string>,
-  covered: Map<string, CoverageSummary> | null
+  covered: Map<string, CoverageSummary> | null,
+  several: Map<string, number> = new Map(),
+  severalEvaluations: Map<string, number> = new Map()
 ): TreeNode {
   const expanded = new Set<string>();
 
@@ -512,6 +523,15 @@ function assembleTree(
       seed_credence: node.seed_credence,
       // The short form (coverage-service.ts): the tree is paid for per key.
       ...(covered?.has(node.id) ? { coverage: coverageRow(covered.get(node.id)) } : {}),
+      ...(several.has(node.id)
+        ? { judgments_in_force: several.get(node.id), judgments_in_force_note: severalInForceNote(several.get(node.id)!) }
+        : {}),
+      ...(edge?.argument_id && severalEvaluations.has(edge.argument_id)
+        ? {
+            argument_evaluations_in_force: severalEvaluations.get(edge.argument_id),
+            argument_evaluations_in_force_note: severalEvaluationsNote(severalEvaluations.get(edge.argument_id)!),
+          }
+        : {}),
       argument_id: edge?.argument_id ?? null,
       argument_name: edge?.argument_name ?? null,
       argument_stance: edge?.argument_stance ?? null,

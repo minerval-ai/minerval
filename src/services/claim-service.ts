@@ -1,3 +1,4 @@
+import { markSeveralInForce } from "./judgment-version-service.js";
 import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import {
@@ -192,6 +193,8 @@ export async function listClaims(opts: {
   const next_cursor =
     hasMore && last ? encodeCursor(last.updated_at, last.id) : null;
 
+  // Where more than one judgment of a node is in force for the reader, the row says how many.
+  await markSeveralInForce(results, (r) => r.id);
   return { results, next_cursor };
 }
 

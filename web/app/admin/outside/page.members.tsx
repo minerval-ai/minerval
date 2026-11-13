@@ -122,7 +122,9 @@ export default async function OutsidePage() {
       <section className="acct-section" id="log">
         <div className="acct-head">
           <h2>Every act on the public graph</h2>
-          <span className="acct-note">besides pages sent, which are listed with their showings</span>
+          <span className="acct-note">
+            besides pages sent, which are on <Link href="/outbound">Pages sent outside</Link>
+          </span>
         </div>
         {log.length === 0 ? (
           <p className="account-empty">Nothing has been done on the public graph from this deployment.</p>

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { loadClaim, loadFeatures, loadMergedFrom, loadPublishedPage, loadPublishedPages } from "@/lib/data";
+import { loadInsideNode } from "@/lib/inside-node";
 import { mergedFromParam, mergedRedirectPath } from "@/lib/merged";
 import { claimPreview, describePreview, truncateText } from "@/lib/preview";
 import { ClaimMargins } from "@/components/claim/ClaimMargins";
@@ -41,7 +42,10 @@ export default async function ClaimPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ merged_from?: string | string[]; published?: string | string[]; package?: string | string[] }>;
+  searchParams: Promise<{
+    merged_from?: string | string[]; published?: string | string[]; package?: string | string[];
+    at?: string | string[]; shown?: string | string[];
+  }>;
 }) {
   const { id } = await params;
   const { detail, source } = await loadClaim(id);
@@ -86,10 +90,21 @@ export default async function ClaimPage({
   const wanted = typeof query.published === "string" ? query.published : null;
   const onPage = wanted ? publishedPages.find((p) => p.published_page_id === wanted && p.on_the_node.on_the_nodes_page) : undefined;
   const published = onPage ? await loadPublishedPage(onPage.published_page_id, Number(query.package) || undefined) : null;
+  // Inside a private deployment that holds material at more than one label:
+  // the node's assessment at each label this reader reads, and the pages of
+  // it shown to a label they read (lib/inside-node.ts). Null on the public
+  // graph, where the page is as it always was.
+  const inside =
+    source === "live"
+      ? await loadInsideNode(detail, {
+          at: typeof query.at === "string" ? query.at : null,
+          shown: typeof query.shown === "string" ? query.shown : null,
+        })
+      : null;
   return (
     <>
       {mergedFrom && <MergedFromNote from={mergedFrom} />}
-      <ClaimMargins detail={detail} source={source} features={await loadFeatures()} publishedPages={publishedPages} published={published} />
+      <ClaimMargins detail={detail} source={source} features={await loadFeatures()} publishedPages={publishedPages} published={published} inside={inside} />
       {/* In a private deployment, for a node the mirror holds: paying for its public assessment (docs/outward-acts.md). */}
       {source === "live" && !published && <OnThePublicGraph nodeId={detail.claim.id} />}
     </>

@@ -101,6 +101,10 @@ describe("a members-only build", () => {
     for (const path of ["/api/auth/callback/oidc", "/api/auth/session", "/_next/static/chunks/a.css", "/icon.svg", "/apple-icon"]) {
       expect(pattern.test(path), path).toBe(false);
     }
+    // A file uploaded into a file set is not handed to the proxy, which would cut it at ten megabytes; the route
+    // takes a session and the API refuses anyone who may not upload. The pages and reads of file sets are behind it.
+    expect(pattern.test("/api/file-sets/3a128af0/files/deliveries/2026-07.csv")).toBe(false);
+    expect(pattern.test("/file-sets/3a128af0")).toBe(true);
   });
 
   it("answers with a page that exists", () => {
