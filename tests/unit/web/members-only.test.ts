@@ -304,17 +304,21 @@ describe("the gate", () => {
     // (components/MembersBand.tsx).
     const [band, page] = tree.props.children as [Node, unknown];
     expect(page).toBe(PAGE);
-    const links = (who: string[]) => {
+    const links = (who: string[], clearance: string[] = ["public"]) => {
       const rendered = (band.type as (props: unknown) => Node | null)({
-        mine: { account: {}, member: true, permissions: who, grants: [], clearance: [], raw_source_labels: [], groups: [] },
+        mine: { account: {}, member: true, permissions: who, grants: [], clearance, raw_source_labels: [], groups: [] },
       });
       return rendered === null ? null : textOf(rendered.props.children);
     };
-    // A member who can neither direct nor administer is shown no line at all.
+    // A member who reads only what everyone reads, and can neither direct, release nor administer, is shown no line at all.
     expect(links(["read"])).toBeNull();
-    expect(links(["read", "direct"])).toBe("Add a source");
-    expect(links(["administer"])).toBe("Administration");
-    expect(links(["direct", "fund", "administer"])).toBe("Add a sourceAdministration");
+    // A person is shown a link for what they can do: showings for whoever reads at a label besides `public` or acts
+    // on showings, the release queue for whoever releases, file sets for whoever directs or administers.
+    expect(links(["read"], ["public", "finance"])).toBe("Showings");
+    expect(links(["release"])).toBe("ShowingsRelease queue");
+    expect(links(["read", "direct"])).toBe("ShowingsFile setsAdd a source");
+    expect(links(["administer"])).toBe("File setsAdministration");
+    expect(links(["direct", "fund", "administer"])).toBe("ShowingsFile setsAdd a sourceAdministration");
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {
