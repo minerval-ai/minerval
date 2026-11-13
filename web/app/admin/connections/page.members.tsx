@@ -3,7 +3,7 @@ import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
 import { AdminNav, NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
-import { fetchConnections, fetchLabels, fetchParties } from "@/lib/admin-api";
+import { fetchConnections, fetchMyLabels, fetchParties } from "@/lib/admin-api";
 import { CONNECTION_STATE_WORDS, count } from "@/lib/admin-words";
 import { addConnectionAction } from "../actions";
 import { ConnectionFields } from "./ConnectionFields";
@@ -21,9 +21,9 @@ export default async function ConnectionsPage() {
   if (!who) return null;
   if (!can(who, "administer")) return <NeedsPermission title="Connections" permission="administer" />;
 
-  const [{ notice, connections }, labels, parties] = await Promise.all([
+  const [{ notice, connections, not_shown_note: notShown }, labels, parties] = await Promise.all([
     fetchConnections(who.externalId),
-    fetchLabels(who.externalId),
+    fetchMyLabels(who.externalId),
     fetchParties(who.externalId),
   ]);
 
@@ -41,10 +41,12 @@ export default async function ConnectionsPage() {
         <div className="acct-head">
           <h2>Connected systems</h2>
         </div>
+        {notShown && <p className="acct-prose acct-measure">{notShown}</p>}
         {connections.length === 0 ? (
           <p className="account-empty">
-            No system is connected. An administrator adds one below; nothing is offered to an agent
-            until its tools have been looked at and picked.
+            {notShown ? "No system is connected at a label you read." : "No system is connected."} An
+            administrator adds one below; nothing is offered to an agent until its tools have been
+            looked at and picked.
           </p>
         ) : (
           <div className="acct-scroll">

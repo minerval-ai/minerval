@@ -1,15 +1,20 @@
-import type { ConnectionView, LabelView, PartyView } from "@/lib/admin-api";
+import { LabelChoice } from "@/components/admin/LabelChoice";
+import type { ConnectionView, MyLabels, PartyView } from "@/lib/admin-api";
 
 // The settings of a connection, as the fields of a form: the same fields
 // whether one is being added or changed. No field takes a credential. A
 // connection names the environment variable that holds its credential, and
 // the deployment reads it at the moment of a call.
+//
+// The label is chosen when a connection is added, among the labels the
+// administrator reads, and the connection keeps it: a connection being
+// changed shows its label and offers no other.
 export function ConnectionFields({
   labels,
   parties,
   current,
 }: {
-  labels: LabelView[];
+  labels: MyLabels;
   parties: PartyView[];
   current?: ConnectionView;
 }) {
@@ -51,23 +56,20 @@ export function ConnectionFields({
             <option value="sse">SSE, for a server that only speaks that</option>
           </select>
         </label>
-        <label>
-          Label
-          <select name="label" required defaultValue={current?.label ?? ""}>
-            <option value="" disabled>
-              Choose a label
-            </option>
-            {labels.map((l) => (
-              <option key={l.name} value={l.name}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-          <small>
-            An agent&rsquo;s run is offered this connection only when the label it works at reads
-            this one.
-          </small>
-        </label>
+        {current ? (
+          <p className="admin-kept">
+            <span className="sc">Label</span> <code>{current.label}</code>
+            <small>
+              A connection keeps the label it was added at. To have the same system read at another
+              label, add a second connection at that label; this one can be switched off.
+            </small>
+          </p>
+        ) : (
+          <LabelChoice
+            mine={labels}
+            what="An agent's run is offered this connection only when the label it works at reads this one. It is chosen now and kept."
+          />
+        )}
       </div>
       <div className="admin-form-row">
         <label>

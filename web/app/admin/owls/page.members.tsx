@@ -221,7 +221,13 @@ export default async function OwlsPage() {
                             <td>
                               {act.mandate ? (
                                 <>
-                                  the budget of <Link href={`/mandates/${act.mandate.id}`}>{act.mandate.title}</Link>
+                                  {act.mandate.withheld ? (
+                                    <>the budget of a mandate at a label you do not read</>
+                                  ) : (
+                                    <>
+                                      the budget of <Link href={`/mandates/${act.mandate.id}`}>{act.mandate.title}</Link>
+                                    </>
+                                  )}
                                   {act.standing_mandate && <span className="acct-detail">when it was set up</span>}
                                 </>
                               ) : (
@@ -355,13 +361,36 @@ export default async function OwlsPage() {
           decisions. An administrator sets each up once. From then on its Grantmaker stewards it
           and revises its policy, and its page shows what it paid for.
         </p>
-        {standing.map((m) => (
-          <div className="admin-item" key={m.name}>
+        {standing.some((m) => m.by_label) && (
+          <p className="acct-prose acct-measure">
+            This deployment holds material at more than one label, and a mandate&rsquo;s work runs
+            at its label: its Grantmaker reads what that label reads, and what it pays for is work
+            at that label. So each label has a General and a Governance mandate of its own, set up
+            by an administrator who reads it. A label with none has nobody paying for its upkeep
+            or its audits. The labels listed are the ones you read.
+          </p>
+        )}
+        {standing
+          .flatMap((s) =>
+            s.by_label
+              ? s.by_label.map((at) => ({ ...s, mandate: at.mandate, label: at.label as string | null }))
+              : [{ ...s, label: null as string | null }]
+          )
+          .map((m) => (
+          <div className="admin-item" key={`${m.name}:${m.label ?? ""}`}>
             <div className={`admin-state admin-state-${m.mandate ? (m.mandate.budget_owls > 0 ? "done" : "to_do") : "to_do"}`}>
               {m.mandate ? (m.mandate.budget_owls > 0 ? "Set up" : "No budget") : "Not set up"}
             </div>
             <div className="admin-item-body">
-              <h3>{m.mandate ? <Link href={`/mandates/${m.mandate.id}`}>{m.title}</Link> : m.title}</h3>
+              <h3>
+                {m.mandate ? <Link href={`/mandates/${m.mandate.id}`}>{m.title}</Link> : m.title}
+                {m.label && (
+                  <>
+                    {" "}
+                    at <code>{m.label}</code>
+                  </>
+                )}
+              </h3>
               <p>{m.objective}</p>
               {m.mandate ? (
                 <p>
@@ -375,8 +404,9 @@ export default async function OwlsPage() {
                     : "More is added by anyone who holds the permission to fund work backing it from their balance."}
                 </p>
               ) : administers ? (
-                <ActionForm action={setUpStandingMandateAction} submit={`Set up ${m.title}`}>
+                <ActionForm action={setUpStandingMandateAction} submit={m.label ? `Set up ${m.title} at ${m.label}` : `Set up ${m.title}`}>
                   <input type="hidden" name="name" value={m.name} />
+                  {m.label && <input type="hidden" name="label" value={m.label} />}
                   <div className="admin-form-row">
                     {createdHere && (
                       <label>

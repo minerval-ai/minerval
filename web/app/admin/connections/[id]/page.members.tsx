@@ -8,7 +8,7 @@ import { AccountApiError } from "@/lib/account-api";
 import {
   fetchConnection,
   fetchConnectionCalls,
-  fetchLabels,
+  fetchMyLabels,
   fetchParties,
   type ConnectionCall,
   type ConnectionTool,
@@ -57,11 +57,16 @@ export default async function ConnectionPage({
     throw err;
   }
   const keptOnly = callsView === "kept";
-  const [labels, parties, calls] = await Promise.all([
-    fetchLabels(who.externalId),
+  const [labels, parties, called] = await Promise.all([
+    fetchMyLabels(who.externalId),
     fetchParties(who.externalId),
-    fetchConnectionCalls(who.externalId, id, { keptOnly, limit: CALLS_SHOWN }).catch(() => [] as ConnectionCall[]),
+    fetchConnectionCalls(who.externalId, id, { keptOnly, limit: CALLS_SHOWN }).catch(() => ({
+      calls: [] as ConnectionCall[],
+      not_shown: 0,
+      not_shown_note: undefined as string | undefined,
+    })),
   ]);
+  const calls = called.calls;
 
   const listed = connection.tools.filter((t) => t.listed);
   const unlisted = connection.tools.filter((t) => !t.listed);
@@ -209,13 +214,18 @@ export default async function ConnectionPage({
           Every call is recorded when it is made, with the size and fingerprint of what came back.
           A call is not yet a source: agents probe, and an agent keeps a reading only when a
           judgment rests on it. What the system answered is not shown here; a kept reading is read
-          as its source.
+          as its source. A call is listed for those who read at the label of the run that made it.
         </p>
+        {called.not_shown_note && <p className="acct-prose acct-measure">{called.not_shown_note}</p>}
         {calls.length === 0 ? (
           <p className="account-empty">
             {keptOnly
-              ? "No reading from this connection has been kept as a source yet."
-              : "No agent has called this connection yet. A run is offered it when the label it works at reads this connection's label, and only the tools picked above."}
+              ? called.not_shown > 0
+                ? "No reading from this connection has been kept as a source at a label you read."
+                : "No reading from this connection has been kept as a source yet."
+              : called.not_shown > 0
+                ? "No call through this connection was made at a label you read."
+                : "No agent has called this connection yet. A run is offered it when the label it works at reads this connection's label, and only the tools picked above."}
           </p>
         ) : (
           <div className="acct-scroll">
@@ -255,8 +265,8 @@ export default async function ConnectionPage({
           Only what you change is changed, and the log says which settings. A new address or way
           of speaking to the server is, as far as anyone can tell, a different server: every tool
           that was offered is withdrawn until you look at what the new address lists and pick
-          again. A new label or party applies to readings from now on; those already kept carry
-          what the connection had when they were read.
+          again. A new party applies to readings from now on; those already kept carry the party
+          the connection had when they were read.
         </p>
         <details className="acct-asTable">
           <summary>Change this connection&rsquo;s settings</summary>
@@ -395,14 +405,7 @@ function Call({ call }: { call: ConnectionCall }) {
         <code>{call.tool}</code>
         <details className="admin-args">
           <summary>what was asked</summary>
-          {call.arguments_withheld ? (
-            <span className="admin-withheld">
-              Withheld: the arguments are an agent&rsquo;s words at a label you are not cleared to
-              read.
-            </span>
-          ) : (
-            <pre className="admin-pre">{JSON.stringify(call.arguments ?? {}, null, 2)}</pre>
-          )}
+          <pre className="admin-pre">{JSON.stringify(call.arguments ?? {}, null, 2)}</pre>
         </details>
       </td>
       <td>

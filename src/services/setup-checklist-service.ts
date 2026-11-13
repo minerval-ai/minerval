@@ -1,10 +1,11 @@
 /**
- * The setup checklist of a members-only deployment (docs/deployment.md,
- * "The setup checklist"): one read of what an administrator needs in order
- * to see what has been set up and what is still to do.
+ * The setup checklist of a members-only deployment
+ * (docs/setup-checklist.md): one read of what an administrator needs in
+ * order to see what has been set up and what is still to do.
  *
  * It decides nothing and holds no list of steps. Each part is a fact the
- * deployment can see about itself: the preflight's checks, who holds each
+ * deployment can see about itself: its own checks of its configuration,
+ * where the build has them (services/deployment-checks.ts), who holds each
  * permission, which labels exist and which providers are cleared for each,
  * whether the standing mandates exist and have a budget, whether every
  * model has a price, where the usage reports go, how the connections
@@ -16,24 +17,28 @@
  * to its own route (permissions, labels, parties, standing mandates, owls,
  * usage reports, connections), so the checklist and those pages cannot
  * disagree. The three that have no route of their own are read here: the
- * preflight for an administrator (its own route takes the operator key,
- * which the web tier does not hold), which providers are cleared for which
- * label (a setting, src/provider-labels.ts), and the counts of material.
+ * deployment's own checks, which providers are cleared for which label (a
+ * setting, src/provider-labels.ts), and the counts of material.
  *
- * The counts are of the whole deployment, whatever each row's label: an
- * administrator is asking whether anything is in at all, and a count names
- * no row. No label of any row is returned.
+ * What an administrator is shown here is held to what they read, like
+ * every read (db/clearance.ts): the connections and the standing mandates
+ * are the ones at labels the administrator reads, and the part for
+ * connections says how many it leaves out. Two things are counted past
+ * that, under system clearance, because the question is about the whole
+ * deployment and the answer is a number: how much material is in at all,
+ * by the party it belongs to, and how many connections there are. A count
+ * names no row, and no label of any row is returned.
  */
 import { loadConfig, type Config } from "../config.js";
-import { CONFIG_FILE_KEYS } from "../config-file.js";
 import { rawQuery } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { featureOn, type FeatureName } from "../features.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { resolveProvider } from "../llm/providers/routing.js";
 import { PERMISSION_DEFINITIONS, PERMISSIONS, type PermissionName } from "../permissions.js";
-import { runPreflight, type PreflightReport } from "../preflight.js";
 import { clearedLabels, knownProviderNames, OUTSIDE_SERVICE_NAMES } from "../provider-labels.js";
-import { listConnections } from "./connection-service.js";
+import { connectionsNotShown, listConnections } from "./connection-service.js";
+import { deploymentChecks, type PreflightReport } from "./deployment-checks.js";
 import { listLabels } from "./label-admin-service.js";
 import { undefinedLabels } from "./label-service.js";
 import { owlsCreatedHere } from "./owl.js";
@@ -75,8 +80,11 @@ export interface ChecklistLabel {
 }
 
 export interface SetupChecklist {
-  /** The preflight's report, as GET /setup/preflight gives it to the operator. */
-  preflight: PreflightReport;
+  /**
+   * The deployment's own checks of its configuration: the preflight's
+   * report. Null where the build has no preflight (services/deployment-checks.ts).
+   */
+  preflight: PreflightReport | null;
   /** Each permission and how many accounts and groups hold it now. */
   permissions: PermissionHolders[];
   /** Every label besides `public`, with what is cleared for it. Empty until one is defined. */
@@ -123,6 +131,11 @@ export interface SetupChecklist {
     tools_withdrawn: Array<{ connection: { id: string; name: string }; tool: string }>;
     /** On, and the environment variable its credential is read from is not set. */
     credential_missing: Array<{ id: string; name: string }>;
+    /**
+     * Connections at labels the administrator does not read: counted, and
+     * not among the figures above, which are of the ones they read.
+     */
+    not_shown: number;
   };
   material: {
     /** Sources recorded: documents, addresses and kept readings. */
@@ -176,22 +189,56 @@ function permissionHolders(
 
 // ---- which providers are cleared for which label ------------------------------
 
-/** Roles whose model is never called while a feature is off (as the preflight's models check has it). */
+/** Roles whose model is never called while a feature is off. */
 const ROLE_FEATURE: Readonly<Record<string, FeatureName>> = {
   extension: "extension",
   solver: "mathematics",
 };
 
+/**
+ * The roles the configuration names a model for, each with the field of the
+ * config schema (src/config.ts) that holds it. The config file, where a
+ * build has one, names the same roles under `models.`; this list is kept
+ * here because this build has no config file to read them from.
+ */
+const ROLE_MODEL_FIELDS: ReadonlyArray<[role: string, field: keyof Config]> = [
+  ["steward", "stewardModel"],
+  ["steward_strong", "stewardStrongModel"],
+  ["curator", "curatorModel"],
+  ["extractor", "extractorModel"],
+  ["extractor_fallback", "extractorFallbackModel"],
+  ["matcher", "matcherModel"],
+  ["tagger", "taggerModel"],
+  ["contribution_reviewer", "governanceModel"],
+  ["audit", "auditModel"],
+  ["redactor", "redactorModel"],
+  ["arbitration", "arbitrationModel"],
+  ["grantmaker", "grantmakerModel"],
+  ["program_officer", "programOfficerModel"],
+  ["lookout", "lookoutModel"],
+  ["correspondent", "correspondentModel"],
+  ["consistency", "consistencyModel"],
+  ["consistency_strong", "consistencyStrongModel"],
+  ["assistant", "assistantModel"],
+  ["assistant_standard", "assistantStandardModel"],
+  ["assistant_title", "assistantTitleModel"],
+  ["extension", "extensionModel"],
+  ["researcher_strong", "researcherStrongModel"],
+  ["researcher_standard", "researcherStandardModel"],
+  ["researcher_cheap", "researcherCheapModel"],
+  ["solver", "solverModel"],
+  ["judge", "judgeModel"],
+];
+
 /** Every role the configuration names a model for, with the provider that serves it. */
 function roleProviders(config: Config): Array<{ role: string; model: string; provider: string | null }> {
   const roles: Array<{ role: string; model: string; provider: string | null }> = [];
-  for (const key of CONFIG_FILE_KEYS) {
-    if (!key.key.startsWith("models.") || !key.field) continue;
-    const role = key.key.slice("models.".length);
+  for (const [role, field] of ROLE_MODEL_FIELDS) {
     const feature = ROLE_FEATURE[role];
     if (feature && !featureOn(feature, config)) continue;
-    const model = String((config as unknown as Record<string, unknown>)[key.field] ?? "").trim();
-    // An empty model is a role that is not in use.
+    const model = String(config[field] ?? "").trim();
+    // An empty model is a role that is not in use (the Redactor's, left
+    // empty, is the Steward's model, which is listed under its own role).
     if (model) roles.push({ role, model, provider: resolveProvider(model) });
   }
   return roles;
@@ -229,17 +276,25 @@ function labelsNamedByProviderSetting(config: Config): string[] {
 
 // ---- material -----------------------------------------------------------------
 
+const MATERIAL_COUNT_REASON =
+  "The setup checklist tells an administrator how much material the whole deployment holds, which is a count of rows at every label.";
+
 async function materialCounts(
   parties: ReadonlyArray<{ id: string; name: string; is_own_organization: boolean }>
 ): Promise<SetupChecklist["material"]> {
-  const byParty = await rawQuery<{ party_id: string | null; n: number }>(
-    `SELECT party_id, count(*)::int AS n FROM sources GROUP BY party_id`
-  );
-  const [waiting] = await rawQuery<{ n: number }>(
-    `SELECT count(*)::int AS n FROM contributions
-      WHERE contribution_type = 'propose_source' AND review_status = 'pending'`
-  );
-  const [nodes] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM claims`);
+  // Counted at every label: the administrator is asking whether anything is
+  // in at all, and may not read the label most of it is at. Numbers only.
+  const { byParty, waiting, nodes } = await withSystemClearance(MATERIAL_COUNT_REASON, async () => {
+    const byParty = await rawQuery<{ party_id: string | null; n: number }>(
+      `SELECT party_id, count(*)::int AS n FROM sources GROUP BY party_id`
+    );
+    const [waiting] = await rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM contributions
+        WHERE contribution_type = 'propose_source' AND review_status = 'pending'`
+    );
+    const [nodes] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM claims`);
+    return { byParty, waiting, nodes };
+  });
   const counts = new Map(byParty.map((row) => [row.party_id, row.n]));
   return {
     sources: byParty.reduce((sum, row) => sum + row.n, 0),
@@ -259,7 +314,7 @@ async function materialCounts(
 export async function setupChecklist(): Promise<SetupChecklist> {
   const config = loadConfig();
   const [preflight, grants, labels, parties, standingMandates, usage, connections] = await Promise.all([
-    runPreflight(),
+    deploymentChecks(),
     listLiveGrants(),
     listLabels(),
     listParties(),
@@ -306,6 +361,7 @@ export async function setupChecklist(): Promise<SetupChecklist> {
       credential_missing: on
         .filter((c) => c.credential.env !== null && !c.credential.set)
         .map((c) => ({ id: c.id, name: c.name })),
+      not_shown: await connectionsNotShown(connections.length),
     },
     material: await materialCounts(parties),
   };

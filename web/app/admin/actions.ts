@@ -148,13 +148,14 @@ export async function addPartyAction(_previous: FormState, form: FormData): Prom
   if (!user) return NOT_SIGNED_IN;
   const name = text(form, "name");
   if (!name) return { error: "Give the party's name." };
+  const own = form.get("is_own_organization") === "on";
   try {
-    await addParty(user, { name, is_own_organization: form.get("is_own_organization") === "on" });
+    await addParty(user, { name, is_own_organization: own });
   } catch (err) {
     return refused(err);
   }
   revalidatePath("/admin", "layout");
-  return { notice: `Added ${name}.` };
+  return { notice: own ? `Recorded ${name} as the organisation that runs this deployment.` : `Added ${name}.` };
 }
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -195,7 +196,9 @@ function connectionSettings(form: FormData): ConnectionSettings {
     ...(header ? { credential_header: header } : {}),
     ...(prefix ? { tool_prefix: prefix } : {}),
     party_id: text(form, "party_id"),
-    label: text(form, "label"),
+    // Named only where the deployment holds material at more than one label
+    // and the connection is new: a connection keeps the label it was added at.
+    ...(text(form, "label") ? { label: text(form, "label") } : {}),
     stake: text(form, "stake"),
     calls_per_minute: rate ? Number(rate) : null,
     ...(timeout ? { timeout_seconds: Number(timeout) } : {}),
@@ -206,7 +209,6 @@ function settingsProblem(settings: ConnectionSettings): string | null {
   if (!settings.name) return "Give the connection a name.";
   if (!settings.url) return "Give the address of the system's MCP server.";
   if (!settings.party_id) return "Choose whose system it is. Add the party first if it is not listed.";
-  if (!settings.label) return "Choose the connection's label.";
   if (!settings.stake) return "Say what the party stands to gain or lose from what the system shows.";
   if (settings.credential_env && !/^CONNECTION_[A-Z0-9_]+$/.test(settings.credential_env)) {
     return "The credential's variable is named in capitals and starts CONNECTION_. Give its name, never the credential itself.";
@@ -252,7 +254,6 @@ export async function changeConnectionAction(_previous: FormState, form: FormDat
         ? { credential_header: wanted.credential_header }
         : {}),
       ...(wanted.party_id !== now.party.id ? { party_id: wanted.party_id } : {}),
-      ...(wanted.label !== now.label ? { label: wanted.label } : {}),
       ...(wanted.stake !== now.stake ? { stake: wanted.stake } : {}),
       ...(wanted.calls_per_minute !== now.calls_per_minute ? { calls_per_minute: wanted.calls_per_minute } : {}),
       ...(wanted.timeout_seconds !== undefined && wanted.timeout_seconds !== now.timeout_seconds
@@ -374,10 +375,13 @@ export async function setUpStandingMandateAction(_previous: FormState, form: For
   if ((budget && !(Number(budget) >= 0)) || (daily && !(Number(daily) >= 0))) {
     return { error: "A budget and a daily rate are amounts of owls, nothing or more." };
   }
+  // The label the mandate works at, where the deployment holds material at more than one.
+  const label = text(form, "label");
   try {
     await setUpStandingMandate(user, name, {
       ...(budget ? { budget_owls: Number(budget) } : {}),
       ...(daily ? { daily_owls: Number(daily) } : {}),
+      ...(label ? { label } : {}),
     });
   } catch (err) {
     return refused(err);

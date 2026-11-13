@@ -142,6 +142,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Usage reports, in a table that carries no label: for each closed day a total of owls spent, a revision number and the deployment's own id. The total is over every label and names none; the report is made to leave the deployment and says nothing of which run, node or label the spend was for.",
     ],
   ],
+  "src/services/setup-checklist-service.ts": [
+    [
+      "The setup checklist tells an administrator how much material the whole deployment holds, which is a count of rows at every label.",
+      "Nothing. It returns counts: sources by the party each belongs to, submitted sources waiting for review, and nodes. Party names are the administrators' own list; no row's content or label is read out.",
+    ],
+  ],
   "src/services/setup-service.ts": [
     [
       "A setup part is stored once for every label and numbered across all of them, so storing one must see them all.",

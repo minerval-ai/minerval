@@ -343,7 +343,7 @@ Mounted only where `READS=members`:
 | `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
 | `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
 | `POST /operator/administrators` | the operator key | grant `administer` to an account, by its sign-in identity |
-| `GET /setup/checklist` | `administer` | what the deployment's setup has done and what is still to do, the preflight's report included (docs/deployment.md, "The setup checklist") |
+| `GET /setup/checklist` | `administer` | what the deployment's setup has done and what is still to do, with the deployment's own checks where the build has them ([setup-checklist.md](setup-checklist.md)) |
 
 Every write takes a signed-in session, as minting an API key does, so a
 leaked key, an access token, or an agent following text it read can never
@@ -467,18 +467,34 @@ the site is named this way.
 **The pages a members-only build adds.** A line above each page, placed by
 the gate for a member (`web/components/MembersBand.tsx`), links the ones a
 person's permissions open: "Add a source" for holders of `direct`, "Administration" for holders
-of `administer`. A person who lacks a permission is not shown a control
-that needs it, and a page reached directly says which permission it needs.
+of `administer`. The administration pages link to one another down the left
+side of the page, and in a line above it at a phone's width
+(`AdminNav` in `web/components/admin/access.tsx`). A person who lacks a
+permission is not shown a control that needs it, and a page reached directly
+says which permission it needs.
+
+Where the deployment holds material at more than one label, a page that
+starts something new asks which label it is for (`LabelChoice`, from
+`GET /labels/mine`): nothing is preselected, and each label the person may
+choose is listed with who reads it. A page lists what the person reads, and
+says so where an administrator's list leaves rows out.
 
 | page | who | what it is |
 |---|---|---|
-| `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` (docs/deployment.md, "The setup checklist"). Its words are in `web/lib/admin-words.ts` |
+| `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` ([setup-checklist.md](setup-checklist.md)). Its words are in `web/lib/admin-words.ts` |
 | `/admin/people` | every member; controls for `administer` | What each permission covers, what the reader holds, and the log, with a withheld name shown as withheld. For administrators: who holds what by person and by group, granting and removing, and the accounts that have signed in and hold nothing |
-| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form; what each label is cleared to be sent to; the parties; whose material a source is |
-| `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls with which were kept |
-| `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup |
+| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form, and that defining the first label takes about ten seconds; what each label is cleared to be sent to; the parties, with the organization's own named here; whose material a source is |
+| `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection at a label the administrator reads, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls the administrator reads with which were kept. A connection's label is shown and not offered for change |
+| `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup, one for each label the reader reads where there is more than one |
 | `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
-| `/sources/new` | `direct` | Add a document or an address (`POST /sources`) |
+| `/sources/new` | `direct` | Add a document or an address (`POST /sources`), at a label the person chooses where there is more than one |
+
+Not among them yet, and needed by what the deployment now does: a page for
+sets of files (docs/file-sets.md), the release queue, the list of showings
+and what each would cost to move on, a node's page with its judgment at
+each label and a shown page beside it, the editor of a boundary's redaction
+policy, and sending outside (docs/showing-a-page.md and
+docs/published-pages.md, "Not built here").
 
 The account page shows no way to buy owls where `entitlement.owls_created_here`
 is true, gives what an owl is there in the API's words

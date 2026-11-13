@@ -2,13 +2,18 @@
 
 import Link from "next/link";
 import { useActionState } from "react";
+import { LabelChoice } from "../../../components/admin/LabelChoice";
+import type { MyLabels } from "../../../lib/admin-api";
 import { addSourceAction, type AddSourceState } from "./actions";
 
 // The form for adding a source: an address, and the document's title and
 // text where the address cannot be read from where the deployment runs. The
 // button is disabled while the submission is sent, because a submission
 // holds owls and is not safe to send twice.
-export function AddSourceForm() {
+//
+// Where the deployment holds material at more than one label, the person
+// says which label the source is for. Nothing is preselected.
+export function AddSourceForm({ labels }: { labels?: MyLabels | null }) {
   const [state, action, pending] = useActionState<AddSourceState, FormData>(addSourceAction, {});
   return (
     <>
@@ -35,6 +40,12 @@ export function AddSourceForm() {
             one at this address, that source is what is submitted, as it was first read.
           </small>
         </label>
+        {labels && (
+          <LabelChoice
+            mine={labels}
+            what="Who may read the source, and what the agents record from it. It is chosen now and the source keeps it."
+          />
+        )}
         <label>
           Title
           <input name="title" maxLength={500} autoComplete="off" />

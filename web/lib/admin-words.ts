@@ -192,13 +192,15 @@ export function labelClearanceFacts(label: ChecklistLabel): string[] {
  * attention: something that was in place needs someone, or is stopping work.
  * optional: nothing is set up, and nothing needs to be.
  */
-export type ItemState = "done" | "to_do" | "attention" | "optional";
+export type ItemState = "done" | "to_do" | "attention" | "optional" | "not_reported";
 
 export const ITEM_STATE_WORDS: Record<ItemState, string> = {
   done: "In place",
   to_do: "To do",
   attention: "Needs someone",
   optional: "Not set up",
+  // Nothing is known here either way: the build has no means of looking.
+  not_reported: "Not reported",
 };
 
 export interface ChecklistItem {
@@ -217,6 +219,18 @@ export interface ChecklistItem {
 const CONFIG_OWNER = "Whoever runs the deployment";
 
 function checksItem(c: SetupChecklist): ChecklistItem {
+  if (c.preflight === null) {
+    // A build with no preflight has nothing to report here, and says so: an
+    // empty list would read as every check passing.
+    return {
+      key: "checks",
+      title: "The deployment's own checks",
+      state: "not_reported",
+      facts: [
+        "This build does not check its own configuration, so nothing is reported here. The lines below are read from the deployment as it runs.",
+      ],
+    };
+  }
   const { checks, agent_work: agentWork } = c.preflight;
   const failed = checks.filter((k) => k.status === "fail");
   const passed = checks.filter((k) => k.status === "pass").length;
@@ -368,15 +382,24 @@ function partiesItem(c: SetupChecklist): ChecklistItem {
 
 function mandatesItem(c: SetupChecklist): ChecklistItem {
   const WHAT: Record<string, string> = { general: "upkeep has", governance: "audits have" };
-  const facts = c.standing_mandates.map((m) => {
-    if (!m.mandate) return `${m.title}: not set up. Until it is, ${WHAT[m.name] ?? "its work has"} no mandate to pay for it.`;
-    if (m.mandate.budget_owls <= 0) return `${m.title}: set up with no budget, so it can pay for nothing yet.`;
-    const daily = m.mandate.daily_owls > 0 ? `, at most ${owlsText(m.mandate.daily_owls)} a day` : "";
-    const waiting = m.mandate.running ? "" : " It is not running: its budget is spent, or it is waiting for one.";
-    return `${m.title}: set up with a budget of ${owlsText(m.mandate.budget_owls)}${daily}.${waiting}`;
+  // One line for each mandate, or, where the deployment holds material at
+  // more than one label, for each mandate at each label the reader reads: a
+  // mandate's work runs at its label, so a label with none has nobody
+  // paying for its upkeep or its audits.
+  const each = c.standing_mandates.flatMap((m) =>
+    m.by_label
+      ? m.by_label.map((at) => ({ m, mandate: at.mandate, where: ` at the label ${at.label}`, short: ` at ${at.label}` }))
+      : [{ m, mandate: m.mandate, where: "", short: "" }]
+  );
+  const facts = each.map(({ m, mandate, where, short }) => {
+    if (!mandate) return `${m.title}${short}: not set up. Until it is, ${WHAT[m.name] ?? "its work has"} no mandate to pay for it${where}.`;
+    if (mandate.budget_owls <= 0) return `${m.title}${short}: set up with no budget, so it can pay for nothing yet.`;
+    const daily = mandate.daily_owls > 0 ? `, at most ${owlsText(mandate.daily_owls)} a day` : "";
+    const waiting = mandate.running ? "" : " It is not running: its budget is spent, or it is waiting for one.";
+    return `${m.title}${short}: set up with a budget of ${owlsText(mandate.budget_owls)}${daily}.${waiting}`;
   });
-  const ready = c.standing_mandates.every((m) => m.mandate && m.mandate.budget_owls > 0 && m.mandate.running);
-  const missing = c.standing_mandates.some((m) => !m.mandate);
+  const ready = each.every(({ mandate }) => mandate && mandate.budget_owls > 0 && mandate.running);
+  const missing = each.some(({ mandate }) => !mandate);
   return {
     key: "standing_mandates",
     title: "The General and Governance mandates",
@@ -482,16 +505,24 @@ function usageItem(c: SetupChecklist): ChecklistItem {
 function connectionsItem(c: SetupChecklist): ChecklistItem {
   const k = c.connections;
   const base = { key: "connections", title: "Connections", href: "/admin/connections", link: "Connections" };
+  // What the administrator is not shown: connections at labels they do not read.
+  const notShown =
+    k.not_shown > 0
+      ? [
+          `${count(k.not_shown, "more connection")} ${k.not_shown === 1 ? "is at a label" : "are at labels"} you do not read, and ${k.not_shown === 1 ? "is" : "are"} not counted here. An administrator who reads ${k.not_shown === 1 ? "that label" : "those labels"} sees ${k.not_shown === 1 ? "it" : "them"}.`,
+        ]
+      : [];
   if (k.total === 0) {
     return {
       ...base,
       state: "optional",
-      facts: ["No system is connected."],
+      facts: [k.not_shown > 0 ? "No system is connected at a label you read." : "No system is connected.", ...notShown],
       next: "An administrator can connect one, so that agents read the organisation's data where it lives.",
     };
   }
   const facts = [
     `${count(k.total, "connection")}, ${k.on} switched on, ${k.offering_tools} offering tools to agents.`,
+    ...notShown,
   ];
   for (const f of k.failing) facts.push(`${f.name} did not answer when it was last asked.`);
   for (const f of k.credential_missing) {

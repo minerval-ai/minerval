@@ -283,6 +283,30 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   white-space: nowrap; font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
 }
 .admin-nav span[aria-current] { color: var(--ink); font-weight: 600; }
+/* The administration pages' links run down the left side, beside the page,
+   wherever there is room for a column of them: the masthead is one line and
+   stays one. Each page puts the links among its own children, so the page is
+   a grid of two columns with the links in the first, kept in view as the
+   page scrolls. Below that width they are the line of links they were. */
+@media (min-width: 1001px) {
+  .admin-page:has(> .admin-nav) {
+    display: grid; grid-template-columns: 11.5rem minmax(0, 1fr); column-gap: 2.6rem; align-items: start;
+  }
+  .admin-page:has(> .admin-nav) > * { grid-column: 2; }
+  .admin-page > .admin-nav {
+    grid-column: 1; grid-row: 1 / span 60; position: sticky; top: 4.5rem;
+    flex-direction: column; flex-wrap: nowrap; gap: 0.55rem;
+    padding: 0.35rem 1rem 0.35rem 0; border-bottom: 0; border-right: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.3;
+  }
+  .admin-page > .admin-nav span[aria-current] { box-shadow: 2px 0 0 var(--ink); margin-right: -1rem; padding-right: 1rem; }
+}
+/* a setting that is shown and not offered for change, and who reads each label under a choice of label */
+.admin-kept { display: grid; gap: 0.2rem; margin: 0; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.admin-kept small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+.admin-labels-who { margin: 0.35rem 0 0; display: grid; gap: 0.5rem; }
+.admin-labels-who dt { color: var(--ink); }
+.admin-labels-who dd { margin: 0.1rem 0 0; color: var(--muted); line-height: 1.45; }
 .admin-first { margin-top: 2rem; }
 .admin-page .account-empty { margin-top: 0.8rem; }
 /* a long address, identity or path breaks where it must, and never widens the page */
@@ -329,8 +353,8 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 }
 .admin-state-to_do { color: var(--ink); }
 .admin-state-to_do::before { border-color: var(--ink); }
-.admin-state-optional { color: var(--faint); }
-.admin-state-optional::before { border-style: dashed; border-color: var(--faint); }
+.admin-state-optional, .admin-state-not_reported { color: var(--faint); }
+.admin-state-optional::before, .admin-state-not_reported::before { border-style: dashed; border-color: var(--faint); }
 .admin-checks { list-style: none; margin: 0.6rem 0 0; padding: 0; }
 .admin-checks li {
   padding: 0.5rem 0; border-top: 1px solid var(--rule-soft); font-size: 0.86rem;

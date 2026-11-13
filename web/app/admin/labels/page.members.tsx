@@ -21,6 +21,10 @@ import {
   setSourcePartyAction,
 } from "../actions";
 
+// The name the organisation's own party carries from setup until an administrator names it
+// (OWN_ORGANIZATION_SETUP_NAME in the API's permission service).
+const OWN_ORGANISATION_SETUP_NAME = "This organization";
+
 export const metadata: Metadata = { title: "Labels and parties · Minerval" };
 export const dynamic = "force-dynamic";
 
@@ -53,6 +57,7 @@ export default async function LabelsPage() {
   const cleared = new Map((checklist?.labels ?? []).map((l) => [l.name, l]));
   const sourcesBy = new Map((checklist?.material.sources_by_party ?? []).map((p) => [p.party.id, p.sources]));
   const ownLabels = labels.filter((l) => l.name !== "public");
+  const ownParty = parties.find((p) => p.is_own_organization);
 
   return (
     <div className="admin-page">
@@ -150,6 +155,14 @@ export default async function LabelsPage() {
         <div className="acct-cols">
           <div className="acct-main">
             <h3>Define a label</h3>
+            {ownLabels.length === 0 && (
+              <p className="acct-prose">
+                The first label besides <code>public</code> changes how the whole deployment
+                reads: from then on the database holds every reader, and every agent&rsquo;s run,
+                to the labels they are cleared for. Defining it takes about ten seconds, while
+                every running process is given time to notice.
+              </p>
+            )}
             <ActionForm action={defineLabelAction} submit="Define the label">
               <label>
                 Name
@@ -281,10 +294,21 @@ export default async function LabelsPage() {
                 <input name="name" required maxLength={200} autoComplete="off" />
                 <small>Shown wherever the party&rsquo;s material is, to the people entitled to know of it.</small>
               </label>
-              {!parties.some((p) => p.is_own_organization) && (
+              {/* The organisation itself is a party from setup, under a name that stands in for
+                  its own until an administrator gives it. It is offered here until then. */}
+              {(!ownParty || ownParty.name === OWN_ORGANISATION_SETUP_NAME) && (
                 <label className="admin-check">
                   <input type="checkbox" name="is_own_organization" />
-                  This is the organisation that runs this deployment
+                  <span>
+                    This is the organisation that runs this deployment
+                    {ownParty && (
+                      <small>
+                        {" "}
+                        It is a party already, listed above as &ldquo;{ownParty.name}&rdquo;. Ticking
+                        this gives it the name you enter.
+                      </small>
+                    )}
+                  </span>
                 </label>
               )}
             </ActionForm>

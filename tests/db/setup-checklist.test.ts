@@ -1,8 +1,8 @@
 /**
  * The setup checklist (src/services/setup-checklist-service.ts,
  * src/routes/setup-checklist.ts), against the real app and real tables in a
- * members-only deployment that creates its own owls: who may read it, that
- * it carries the preflight's report, and that each part follows what the
+ * members-only deployment that creates its own owls: who may read it, what
+ * it says of the deployment's own checks, and that each part follows what the
  * deployment holds: grants, labels and the providers cleared for them, the
  * standing mandates, owls, the usage report and the material.
  */
@@ -35,7 +35,7 @@ vi.hoisted(() => {
 import { rawQuery } from "../../src/db/client.js";
 import { MCP_EXCLUDED_ROUTES, ROUTE_TOOLS } from "../../src/mcp/route-tools.js";
 import { PERMISSIONS } from "../../src/permissions.js";
-import { PREFLIGHT_CHECKS } from "../../src/preflight.js";
+import { ensureEnforcement } from "../../src/db/enforcement.js";
 import { PLATFORM_EXTERNAL_ID } from "../../src/services/platform-account.js";
 import type { SetupChecklist } from "../../src/services/setup-checklist-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
@@ -91,6 +91,8 @@ beforeAll(async () => {
     `UPDATE grants SET status = 'completed' WHERE is_platform = true OR policy IN ('general', 'governance')`
   );
   await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'dbtest') ON CONFLICT DO NOTHING`, [LABEL]);
+  // More than one label, so the database holds each request below to its clearance.
+  await ensureEnforcement();
   const [own] = await rawQuery<{ display_name: string }>(
     `SELECT display_name FROM contributors WHERE external_id = $1`,
     [PLATFORM_EXTERNAL_ID]
@@ -148,13 +150,11 @@ describe("who may read the checklist", () => {
 });
 
 describe("what the checklist says", () => {
-  it("carries the preflight's report, every check by name", async () => {
+  it("carries no report of the deployment's own checks, in a build that has no preflight", async () => {
+    // The preflight is a separate change (services/deployment-checks.ts). Until the two meet the part is
+    // null, and the page says the checks are not in this build.
     const { preflight } = await checklist(admin);
-    expect(preflight.checks.map((c) => c.name)).toEqual(PREFLIGHT_CHECKS.map((c) => c.name));
-    // The test defined a label besides public, so the deployment holds private material.
-    expect(preflight.holds_private_material).toBe(true);
-    expect(preflight.checks.find((c) => c.name === "database")).toMatchObject({ status: "pass" });
-    for (const check of preflight.checks) expect(check.message.length).toBeGreaterThan(10);
+    expect(preflight).toBeNull();
   });
 
   it("counts who holds each permission, by label and by party where it is granted at one", async () => {
@@ -165,7 +165,10 @@ describe("what the checklist says", () => {
     expect(of(before, "administer")).toMatchObject({ scope: "none", accounts: 1, groups: 0 });
     expect(of(before, "read").by_label!.find((l) => l.label === LABEL)).toMatchObject({ accounts: 2, groups: 0 });
     expect(of(before, "read").by_label!.some((l) => l.label === "public")).toBe(false);
-    expect(of(before, "release").by_party).toEqual([]);
+    // The organization itself is a party from setup, and the first administrator holds release for it.
+    expect(of(before, "release").by_party).toEqual([
+      { party: { id: expect.any(String), name: "This organization" }, accounts: 1, groups: 0 },
+    ]);
 
     const party = await as(admin, { method: "POST", url: "/parties", payload: { name: "Orrin Labs (checklist)" } });
     expect(party.statusCode, party.body).toBe(201);
@@ -178,10 +181,13 @@ describe("what the checklist says", () => {
     expect(group.statusCode, group.body).toBe(201);
 
     const after = await checklist(admin);
-    expect(of(after, "release")).toMatchObject({ scope: "party", accounts: 0, groups: 1 });
-    expect(of(after, "release").by_party).toEqual([
-      { party: { id: partyId, name: "Orrin Labs (checklist)" }, accounts: 0, groups: 1 },
-    ]);
+    expect(of(after, "release")).toMatchObject({ scope: "party", accounts: 1, groups: 1 });
+    expect(of(after, "release").by_party!.find((p) => p.party.id === partyId)).toEqual({
+      party: { id: partyId, name: "Orrin Labs (checklist)" },
+      accounts: 0,
+      groups: 1,
+    });
+    expect(of(after, "release").by_party).toHaveLength(2);
   });
 
   it("says which providers are cleared for each label, and which roles are left unserved at it", async () => {
@@ -210,7 +216,7 @@ describe("what the checklist says", () => {
     const setUp = await as(admin, {
       method: "POST",
       url: "/standing-mandates/general",
-      payload: { daily_owls: 4 },
+      payload: { daily_owls: 4, label: "public" },
     });
     expect(setUp.statusCode, setUp.body).toBe(201);
     const created = await as(admin, {
@@ -249,5 +255,39 @@ describe("what the checklist says", () => {
       before.material.sources_by_party[0]!.sources + 1
     );
     expect(JSON.stringify(owned)).not.toContain("sensitivity_label");
+  });
+
+  it("counts the whole deployment's material for an administrator who reads one label, and the connections they are not shown", async () => {
+    // Material and a connection at the test's label, which the second administrator does not read.
+    const [private_source] = await rawQuery<{ id: string }>(
+      `INSERT INTO sources (url, title, sensitivity_label) VALUES ($1, 'A document at the private label', $2) RETURNING id`,
+      [`https://example.org/checklist/private/${randomUUID()}`, LABEL]
+    );
+    sourceIds.push(private_source!.id);
+    const whole = await checklist(admin);
+    const [party] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+    const [connection] = await rawQuery<{ id: string }>(
+      `INSERT INTO connections (name, tool_prefix, url, party_id, stake, sensitivity_label)
+       VALUES ($1, $2, 'http://127.0.0.1:9/mcp', $3, 'The organization runs it.', $4) RETURNING id`,
+      [`Checklist warehouse ${randomUUID().slice(0, 8)}`, `chk_${randomUUID().slice(0, 8)}`, party!.id, LABEL]
+    );
+    try {
+      const second = await signIn("checklist-second-admin");
+      const granted = await as(admin, { method: "POST", url: "/permissions/grants", payload: { permission: "administer", account_id: second.id } });
+      expect(granted.statusCode, granted.body).toBe(201);
+      const seenByFirst = await checklist(admin);
+      const seenBySecond = await checklist(second);
+      // The same counts of material, whatever labels the administrator reads.
+      expect(seenBySecond.material).toEqual(seenByFirst.material);
+      expect(seenByFirst.material.sources).toBe(whole.material.sources);
+      // The first administrator reads the connection's label; the second is told there is one they are not shown.
+      expect(seenByFirst.connections.total).toBe(whole.connections.total + 1);
+      expect(seenByFirst.connections.not_shown).toBe(0);
+      expect(seenBySecond.connections.total).toBe(seenByFirst.connections.total - 1);
+      expect(seenBySecond.connections.not_shown).toBe(1);
+      expect(JSON.stringify(seenBySecond)).not.toContain("Checklist warehouse");
+    } finally {
+      await rawQuery(`DELETE FROM connections WHERE id = $1`, [connection!.id]);
+    }
   });
 });

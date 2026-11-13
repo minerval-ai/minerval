@@ -20,6 +20,8 @@ export async function addSourceAction(_previous: AddSourceState, form: FormData)
   const url = String(form.get("url") ?? "").trim();
   const title = String(form.get("title") ?? "").trim();
   const content = String(form.get("content") ?? "");
+  // Named where the deployment holds material at more than one label.
+  const label = String(form.get("label") ?? "").trim();
   try {
     // The same test the API makes, so the commonest mistake is said plainly.
     const parsed = new URL(url);
@@ -32,6 +34,7 @@ export async function addSourceAction(_previous: AddSourceState, form: FormData)
       url,
       ...(title ? { title } : {}),
       ...(content.trim() ? { content } : {}),
+      ...(label ? { label } : {}),
     });
     // The page shows the balance, which the submission has just drawn on.
     revalidatePath("/sources/new");

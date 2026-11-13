@@ -52,7 +52,7 @@ function dayOne(): SetupChecklist {
       unsent: 0,
       last_error: null,
     },
-    connections: { total: 0, on: 0, offering_tools: 0, failing: [], tools_withdrawn: [], credential_missing: [] },
+    connections: { total: 0, on: 0, offering_tools: 0, failing: [], tools_withdrawn: [], credential_missing: [], not_shown: 0 },
     material: { sources: 0, sources_with_no_party: 0, sources_by_party: [], sources_waiting_for_review: 0, nodes: 0 },
   };
 }
@@ -63,7 +63,7 @@ function setUp(): SetupChecklist {
   const halden = { id: "p1", name: "Halden Evaluations", is_own_organization: true };
   return {
     ...c,
-    preflight: { ...c.preflight, holds_private_material: true },
+    preflight: { ...c.preflight!, holds_private_material: true },
     permissions: [
       { permission: "direct", scope: "none", accounts: 2, groups: 0 },
       { permission: "release", scope: "party", accounts: 1, groups: 0, by_party: [{ party: halden, accounts: 1, groups: 0 }] },
@@ -87,7 +87,7 @@ function setUp(): SetupChecklist {
     })),
     owls: { created_here: true, created_total_owls: 560, spent_total_owls: 16.45, unpriced_models: [] },
     usage_report: { ...c.usage_report, destination: "file", destination_ready: true, prepared: 3, unsent: 0 },
-    connections: { total: 1, on: 1, offering_tools: 1, failing: [], tools_withdrawn: [], credential_missing: [] },
+    connections: { total: 1, on: 1, offering_tools: 1, failing: [], tools_withdrawn: [], credential_missing: [], not_shown: 0 },
     material: {
       sources: 2,
       sources_with_no_party: 0,
@@ -150,7 +150,7 @@ describe("the setup checklist", () => {
   it("puts what is stopping work first: a failed check that agent work waits on", () => {
     const c = setUp();
     c.preflight = {
-      ...c.preflight,
+      ...c.preflight!,
       ready: false,
       agent_work: "refused",
       checks: [{ name: "run_log", status: "fail", blocking: true, message: "The run log is in best-effort mode." }],
@@ -222,6 +222,46 @@ describe("the setup checklist", () => {
     const item = checklistItems(unpriced).find((i) => i.key === "owls")!;
     expect(item.state).toBe("attention");
     expect(item.facts[1]).toContain("gpt-oss-120b (MATCHER_MODEL)");
+  });
+});
+
+describe("a build with no preflight, and a deployment that holds material at more than one label", () => {
+  it("says the build does not check its own configuration, and marks nothing as passed", () => {
+    const c = dayOne();
+    c.preflight = null;
+    const checks = checklistItems(c).find((item) => item.key === "checks")!;
+    expect(checks.state).toBe("not_reported");
+    expect(checks.facts).toEqual([
+      "This build does not check its own configuration, so nothing is reported here. The lines below are read from the deployment as it runs.",
+    ]);
+    expect(checks.next).toBeUndefined();
+  });
+
+  it("says of each standing mandate at which labels it is set up, and what a label with none goes without", () => {
+    const c = dayOne();
+    const state = { id: "m1", status: "active", budget_owls: 40, daily_owls: 0, running: true };
+    c.standing_mandates = [
+      { name: "general", title: "General maintenance", objective: "", mandate: state, by_label: [{ label: "internal", mandate: state }, { label: "public", mandate: null }] },
+      { name: "governance", title: "Governance", objective: "", mandate: null, by_label: [{ label: "internal", mandate: null }, { label: "public", mandate: null }] },
+    ];
+    const item = checklistItems(c).find((i) => i.key === "standing_mandates")!;
+    expect(item.state).toBe("to_do");
+    expect(item.facts).toEqual([
+      "General maintenance at internal: set up with a budget of 40 owls.",
+      "General maintenance at public: not set up. Until it is, upkeep has no mandate to pay for it at the label public.",
+      "Governance at internal: not set up. Until it is, audits have no mandate to pay for it at the label internal.",
+      "Governance at public: not set up. Until it is, audits have no mandate to pay for it at the label public.",
+    ]);
+  });
+
+  it("says how many connections an administrator is not shown", () => {
+    const c = dayOne();
+    c.connections = { ...c.connections, not_shown: 2 };
+    const item = checklistItems(c).find((i) => i.key === "connections")!;
+    expect(item.facts).toEqual([
+      "No system is connected at a label you read.",
+      "2 more connections are at labels you do not read, and are not counted here. An administrator who reads those labels sees them.",
+    ]);
   });
 });
 

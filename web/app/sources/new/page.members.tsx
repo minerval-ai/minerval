@@ -6,6 +6,7 @@ import { PageHead } from "@/components/PageHead";
 import { NeedsPermission } from "@/components/admin/access";
 import { fetchAccount } from "@/lib/account-api";
 import { owls } from "@/lib/account-format";
+import { fetchMyLabels } from "@/lib/admin-api";
 import { holds, loadStanding } from "@/lib/standing";
 import { AddSourceForm } from "./AddSourceForm";
 
@@ -41,6 +42,8 @@ export default async function AddSourcePage() {
   const privateDeployment = standing.state !== "open";
 
   const account = await fetchAccount(externalId).catch(() => null);
+  // The labels the person may file the source at, where the deployment holds more than one.
+  const labels = privateDeployment ? await fetchMyLabels(externalId).catch(() => null) : null;
   const cap = account?.entitlement.caps_owls?.source_ingest;
   const balance = account?.entitlement.owl_balance;
   const createdHere = account?.entitlement.owls_created_here === true;
@@ -53,7 +56,7 @@ export default async function AddSourcePage() {
       />
       <div className="acct-cols">
         <div className="acct-main">
-          <AddSourceForm />
+          <AddSourceForm labels={labels} />
         </div>
         <aside className="acct-side acct-side-wide">
           <h3>What happens to it</h3>
@@ -89,12 +92,20 @@ export default async function AddSourcePage() {
           {privateDeployment && (
             <>
               <h3 className="acct-gap">Who can read it</h3>
-              <p className="acct-prose">
-                Every member of this deployment can read a source added here, and its text can be
-                sent to every model provider and outside service the deployment uses. A source
-                cannot yet be given a narrower label when it is added. Do not add material here
-                that is not for every member.
-              </p>
+              {labels?.must_choose ? (
+                <p className="acct-prose">
+                  That follows the label you choose for it. The form lists, for each label you may
+                  choose, who reads material filed there and who may open the source itself. Its
+                  text is sent to the model providers and outside services this deployment has
+                  cleared for that label, and to no other.
+                </p>
+              ) : (
+                <p className="acct-prose">
+                  This deployment holds everything at one label, so every member can read a source
+                  added here, and its text can be sent to every model provider and outside service
+                  the deployment uses.
+                </p>
+              )}
               <p className="acct-prose">
                 It is recorded as no party&rsquo;s material until an administrator says whose it
                 is. A system where the organisation&rsquo;s data lives is not added here: an

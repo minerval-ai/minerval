@@ -83,7 +83,7 @@ export default async function AdministrationPage() {
         <div className="admin-items">
           {items.map((item) => (
             <Item key={item.key} item={item}>
-              {item.key === "checks" && <Checks checks={checklist.preflight.checks} />}
+              {item.key === "checks" && checklist.preflight && <Checks checks={checklist.preflight.checks} />}
             </Item>
           ))}
         </div>

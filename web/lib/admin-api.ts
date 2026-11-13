@@ -53,15 +53,31 @@ export interface ChecklistLabel {
   roles_not_served: Array<{ role: string; model: string; provider: string | null }>;
 }
 
+export interface StandingMandateState {
+  id: string;
+  status: string;
+  budget_owls: number;
+  daily_owls: number;
+  running: boolean;
+}
+
 export interface StandingMandate {
   name: "general" | "governance";
   title: string;
   objective: string;
-  mandate: { id: string; status: string; budget_owls: number; daily_owls: number; running: boolean } | null;
+  /** The mandate, or the oldest the reader reads where there is one for each label. */
+  mandate: StandingMandateState | null;
+  /**
+   * Only where the deployment holds material at more than one label: for
+   * each label the reader reads, the mandate set up there or none. A
+   * mandate's work runs at its label.
+   */
+  by_label?: Array<{ label: string; mandate: StandingMandateState | null }>;
 }
 
 export interface SetupChecklist {
-  preflight: PreflightReport;
+  /** The deployment's own checks of its configuration; null in a build that has no preflight. */
+  preflight: PreflightReport | null;
   permissions: PermissionHolders[];
   labels: ChecklistLabel[];
   undefined_labels_in_provider_setting: string[];
@@ -88,6 +104,8 @@ export interface SetupChecklist {
     failing: Array<{ id: string; name: string }>;
     tools_withdrawn: Array<{ connection: { id: string; name: string }; tool: string }>;
     credential_missing: Array<{ id: string; name: string }>;
+    /** Connections at labels the administrator does not read: counted, and not among the figures above. */
+    not_shown: number;
   };
   material: {
     sources: number;
@@ -317,8 +335,34 @@ export interface ConnectionCall {
   claim_id: string | null;
   source_id: string | null;
   kept_at: string | null;
-  arguments?: unknown;
-  arguments_withheld?: true;
+  /** What the agent wrote in the call. */
+  arguments: unknown;
+}
+
+/** A list an administrator's clearance leaves rows out of, with how many and the API's sentence saying so. */
+export interface NotShown {
+  not_shown: number;
+  not_shown_note?: string;
+}
+
+// --- the labels a person may file new material at (GET /labels/mine) -------------
+
+export interface MyLabel {
+  name: string;
+  description: string;
+  /** Who reads material filed at the label, in the API's words. */
+  who_reads: string;
+}
+
+export interface MyLabels {
+  /** Whether the deployment holds material at more than one label, so that something new must name one. */
+  must_choose: boolean;
+  works_at: string | null;
+  labels: MyLabel[];
+}
+
+export function fetchMyLabels(externalId: string): Promise<MyLabels> {
+  return accountFetch("/labels/mine", { actingUser: externalId });
 }
 
 /** What asking a connection's server for its tools found. */
@@ -344,7 +388,7 @@ export interface ConnectionSettings {
   enabled?: boolean;
 }
 
-export function fetchConnections(externalId: string): Promise<{ notice: string; connections: ConnectionView[] }> {
+export function fetchConnections(externalId: string): Promise<{ notice: string; connections: ConnectionView[] } & NotShown> {
   return accountFetch("/connections", { actingUser: externalId });
 }
 
@@ -359,13 +403,12 @@ export async function fetchConnectionCalls(
   externalId: string,
   id: string,
   options: { keptOnly?: boolean; limit?: number } = {}
-): Promise<ConnectionCall[]> {
+): Promise<{ calls: ConnectionCall[] } & NotShown> {
   const params = new URLSearchParams({ limit: String(options.limit ?? 100) });
   if (options.keptOnly) params.set("kept", "true");
-  const r = await accountFetch<{ calls: ConnectionCall[] }>(`/connections/${seg(id)}/calls?${params}`, {
+  return accountFetch<{ calls: ConnectionCall[] } & NotShown>(`/connections/${seg(id)}/calls?${params}`, {
     actingUser: externalId,
   });
-  return r.calls;
 }
 
 export function addConnection(
@@ -417,7 +460,8 @@ export interface CreatedOwls {
     by: string | null;
     amount_owls: number;
     account?: string;
-    mandate?: { id: string; title: string };
+    /** `withheld` where the mandate is at a label the reader does not read: its id alone. */
+    mandate?: { id: string; title: string; withheld?: true };
     standing_mandate?: string;
     note?: string;
   }>;
@@ -448,7 +492,7 @@ export async function fetchStandingMandates(externalId: string): Promise<Standin
 export function setUpStandingMandate(
   externalId: string,
   name: "general" | "governance",
-  body: { budget_owls?: number; daily_owls?: number }
+  body: { budget_owls?: number; daily_owls?: number; label?: string }
 ): Promise<{ standing_mandate: StandingMandate }> {
   return accountFetch(`/standing-mandates/${name}`, { method: "POST", actingUser: externalId, body });
 }
@@ -509,7 +553,7 @@ export interface SubmittedSource {
 
 export function submitSource(
   externalId: string,
-  body: { url: string; title?: string; content?: string }
+  body: { url: string; title?: string; content?: string; label?: string }
 ): Promise<SubmittedSource> {
   return accountFetch("/sources", { method: "POST", actingUser: externalId, body });
 }
