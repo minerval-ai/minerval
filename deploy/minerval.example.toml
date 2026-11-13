@@ -166,7 +166,7 @@ owl_packs = [
   "100:30000:Wisdom",
   "500:100000:Parliament",
 ]
-signup_grant_owls = 5
+signup_grant_owls = 10
 monthly_grant_owls = 1
 cap_claim_proposal_owls = 2
 cap_assessment_owls = 2

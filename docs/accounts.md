@@ -502,9 +502,10 @@ Pause/top-up/refund semantics are the budget job's:
 `POST /grants/:id/topup`, `POST /grants/:id/cancel`, dashboards on
 `GET /grants/:id` (spend, plan, the assessments the grant bought).
 
-**Free tier:** a one-time signup grant of 5 owls (`SIGNUP_GRANT_OWLS`) — "see
-a claim you care about, get it assessed": it covers two capped
-assessments, and the unused part of each cap settles back — plus a 1 owl/month trickle
+**Free tier:** a one-time signup grant of 10 owls (`SIGNUP_GRANT_OWLS`) — "see
+a claim you care about, get it assessed": it covers a few capped
+assessments, or one source submitted at its 10-owl cap, and the unused
+part of each cap settles back — plus a 1 owl/month trickle
 (`MONTHLY_GRANT_OWLS`). Both are lazy, idempotent ledger grants
 (`signup:<user>` / `monthly:<user>:<YYYY-MM>` idempotency keys) written by
 whichever entitlement read sees the user first.

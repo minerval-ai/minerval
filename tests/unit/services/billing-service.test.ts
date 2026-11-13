@@ -85,7 +85,7 @@ describe("entitlement & spend checks", () => {
     expect(wire.owl_cost_micro_usd).toBe(1_000_000);
     expect(wire.caps_owls.assessment).toBe(2);
     expect(wire.credits_enabled).toBe(false);
-    expect(wire.signup_grant_owls).toBe(5);
+    expect(wire.signup_grant_owls).toBe(10);
     expect(wire.monthly_grant_owls).toBe(1);
   });
 
