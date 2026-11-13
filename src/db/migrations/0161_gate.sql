@@ -1,7 +1,74 @@
-ALTER TABLE "gate_settings" DROP CONSTRAINT "ck_gate_settings_kind";--> statement-breakpoint
-ALTER TABLE "showings" DROP CONSTRAINT "ck_showings_kind";--> statement-breakpoint
-ALTER TABLE "gate_settings" ADD CONSTRAINT "ck_gate_settings_kind" CHECK ("gate_settings"."kind" IN ('*', 'page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement'));--> statement-breakpoint
+CREATE TABLE "gate_settings" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"boundary_id" uuid NOT NULL,
+	"kind" text DEFAULT '*' NOT NULL,
+	"scope" text DEFAULT 'boundary' NOT NULL,
+	"scope_ref" uuid,
+	"party_id" uuid,
+	"mode" text NOT NULL,
+	"set_by" uuid,
+	"set_holding" text[] DEFAULT '{}' NOT NULL,
+	"set_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"ended_at" timestamp with time zone,
+	"ended_by" uuid,
+	"from_rule" text,
+	"sensitivity_label" text DEFAULT minerval_default_label() NOT NULL,
+	CONSTRAINT "ck_gate_settings_mode" CHECK ("gate_settings"."mode" IN ('open', 'redactor', 'person')),
+	CONSTRAINT "ck_gate_settings_scope" CHECK ("gate_settings"."scope" IN ('boundary', 'mandate', 'under', 'request') AND (("gate_settings"."scope" = 'boundary') = ("gate_settings"."scope_ref" IS NULL))),
+	CONSTRAINT "ck_gate_settings_kind" CHECK ("gate_settings"."kind" IN ('*', 'page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement'))
+);
+--> statement-breakpoint
+CREATE TABLE "gates" (
+	"boundary_id" uuid NOT NULL,
+	"flow" text DEFAULT 'asked' NOT NULL,
+	"backlog_shown" boolean DEFAULT true NOT NULL,
+	"send_as_released" boolean DEFAULT true NOT NULL,
+	"set_by" uuid,
+	"set_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"sensitivity_label" text DEFAULT minerval_default_label() NOT NULL,
+	CONSTRAINT "gates_sensitivity_label_boundary_id_pk" PRIMARY KEY("sensitivity_label","boundary_id"),
+	CONSTRAINT "ck_gates_flow" CHECK ("gates"."flow" IN ('asked', 'everything'))
+);
+--> statement-breakpoint
+ALTER TABLE "showing_pages" DROP CONSTRAINT "ck_showing_pages_kind";--> statement-breakpoint
+ALTER TABLE "showings" DROP CONSTRAINT "ck_showings_scope";--> statement-breakpoint
+ALTER TABLE "showing_pages" ALTER COLUMN "node_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "showing_pages" ALTER COLUMN "judgment_kind" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "showing_pages" ALTER COLUMN "judgment_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "showings" ALTER COLUMN "node_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "shown_pages" ALTER COLUMN "node_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "shown_showings" ALTER COLUMN "node_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "showing_acts" ADD COLUMN "by" text DEFAULT 'process' NOT NULL;--> statement-breakpoint
+ALTER TABLE "showing_acts" ADD COLUMN "run_id" uuid;--> statement-breakpoint
+ALTER TABLE "showing_acts" ADD COLUMN "until" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "showing_pages" ADD COLUMN "version_key" text;--> statement-breakpoint
+ALTER TABLE "showing_pages" ADD COLUMN "funds_wanted_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "showing_removals" ADD COLUMN "made_by" uuid;--> statement-breakpoint
+ALTER TABLE "showings" ADD COLUMN "kind" text DEFAULT 'page' NOT NULL;--> statement-breakpoint
+ALTER TABLE "showings" ADD COLUMN "subject_ref" uuid;--> statement-breakpoint
+ALTER TABLE "showings" ADD COLUMN "reply_ref" uuid;--> statement-breakpoint
+ALTER TABLE "showings" ADD COLUMN "payer_grant_id" uuid;--> statement-breakpoint
+ALTER TABLE "shown_pages" ADD COLUMN "kind" text DEFAULT 'page' NOT NULL;--> statement-breakpoint
+ALTER TABLE "shown_pages" ADD COLUMN "waiting_for_funds" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "shown_showings" ADD COLUMN "kind" text DEFAULT 'page' NOT NULL;--> statement-breakpoint
+ALTER TABLE "shown_showings" ADD COLUMN "reply_ref" uuid;--> statement-breakpoint
+ALTER TABLE "gate_settings" ADD CONSTRAINT "gate_settings_party_id_parties_id_fk" FOREIGN KEY ("party_id") REFERENCES "public"."parties"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "gate_settings" ADD CONSTRAINT "gate_settings_set_by_contributors_id_fk" FOREIGN KEY ("set_by") REFERENCES "public"."contributors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "gate_settings" ADD CONSTRAINT "gate_settings_ended_by_contributors_id_fk" FOREIGN KEY ("ended_by") REFERENCES "public"."contributors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "gate_settings" ADD CONSTRAINT "gate_settings_sensitivity_label_labels_name_fk" FOREIGN KEY ("sensitivity_label") REFERENCES "public"."labels"("name") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "gates" ADD CONSTRAINT "gates_set_by_contributors_id_fk" FOREIGN KEY ("set_by") REFERENCES "public"."contributors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "gates" ADD CONSTRAINT "gates_sensitivity_label_labels_name_fk" FOREIGN KEY ("sensitivity_label") REFERENCES "public"."labels"("name") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_gate_settings_boundary" ON "gate_settings" USING btree ("boundary_id");--> statement-breakpoint
+ALTER TABLE "showing_removals" ADD CONSTRAINT "showing_removals_made_by_contributors_id_fk" FOREIGN KEY ("made_by") REFERENCES "public"."contributors"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_showing_pages_item_version" ON "showing_pages" USING btree ("sensitivity_label","showing_id","version_key") WHERE node_id IS NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_showings_live_subject" ON "showings" USING btree ("sensitivity_label","boundary_id","kind","scope",COALESCE(subject_ref, '00000000-0000-0000-0000-000000000000'::uuid),COALESCE(payer_grant_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE ended_at IS NULL AND node_id IS NULL;--> statement-breakpoint
+ALTER TABLE "showing_pages" ADD CONSTRAINT "ck_showing_pages_kind" CHECK (CASE WHEN "showing_pages"."node_id" IS NULL THEN "showing_pages"."judgment_kind" IS NULL AND "showing_pages"."version_key" IS NOT NULL
+               ELSE "showing_pages"."judgment_kind" IN ('assessment', 'quantity_estimate', 'question_assessment') AND "showing_pages"."judgment_id" IS NOT NULL END);--> statement-breakpoint
 ALTER TABLE "showings" ADD CONSTRAINT "ck_showings_kind" CHECK ("showings"."kind" IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement'));--> statement-breakpoint
+ALTER TABLE "showings" ADD CONSTRAINT "ck_showings_subject" CHECK (CASE WHEN "showings"."scope" IN ('node', 'under') THEN "showings"."node_id" IS NOT NULL AND "showings"."kind" = 'page'
+               WHEN "showings"."scope" = 'boundary' THEN "showings"."node_id" IS NULL AND "showings"."kind" = 'page'
+               ELSE "showings"."node_id" IS NULL AND "showings"."subject_ref" IS NOT NULL END);--> statement-breakpoint
+ALTER TABLE "showings" ADD CONSTRAINT "ck_showings_scope" CHECK ("showings"."scope" IN ('node', 'under', 'mandate', 'boundary', 'item'));--> statement-breakpoint
 -- Hand-written from here: what existed before gates had settings is carried over.
 --
 -- Acts so far were a person's (an actor is named) or a standing rule's.
