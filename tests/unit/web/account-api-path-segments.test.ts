@@ -102,6 +102,8 @@ const PATH_FNS: Array<{
   path: (seg: string) => string;
   method: string;
   acting: boolean;
+  /** The query the function always sends, if any (fetchMandateView asks for the whole mandate). */
+  search?: string;
 }> = [
   { name: "revokeApiKey", call: (a, id) => a.revokeApiKey(EXT, id), path: (s) => `/api-keys/${s}`, method: "DELETE", acting: true },
   { name: "createAssessmentOrder", call: (a, id) => a.createAssessmentOrder(EXT, id), path: (s) => `/claims/${s}/order`, method: "POST", acting: true },
@@ -120,7 +122,7 @@ const PATH_FNS: Array<{
   { name: "continueGrantConversation", call: (a, id) => a.continueGrantConversation(EXT, id, "hello"), path: (s) => `/grant-conversations/${s}/messages`, method: "POST", acting: true },
   { name: "fundGrantConversation", call: (a, id) => a.fundGrantConversation(EXT, id, 5), path: (s) => `/grant-conversations/${s}/fund`, method: "POST", acting: true },
   { name: "getGrantConversation", call: (a, id) => a.getGrantConversation(EXT, id), path: (s) => `/grant-conversations/${s}`, method: "GET", acting: true },
-  { name: "fetchMandateView", call: (a, id) => a.fetchMandateView(id, EXT), path: (s) => `/mandates/${s}`, method: "GET", acting: true },
+  { name: "fetchMandateView", call: (a, id) => a.fetchMandateView(id, EXT), path: (s) => `/mandates/${s}`, method: "GET", acting: true, search: "?detail=full" },
   { name: "contributeToMandateApi", call: (a, id) => a.contributeToMandateApi(EXT, id, 2), path: (s) => `/mandates/${s}/contribute`, method: "POST", acting: true },
   { name: "allocateToClaim", call: (a, id) => a.allocateToClaim(EXT, id, 2), path: (s) => `/claims/${s}/contribute`, method: "POST", acting: true },
   { name: "submitPrizeClaim", call: (a, id) => a.submitPrizeClaim(EXT, id, new FormData()), path: (s) => `/claims/${s}/prize-claims`, method: "POST", acting: true },
@@ -160,9 +162,9 @@ describe.each(PATH_FNS)("$name", (f) => {
     await f.call(api, ID);
     expect(requests()).toEqual([
       {
-        raw: `${BASE}${f.path(ID)}`,
+        raw: `${BASE}${f.path(ID)}${f.search ?? ""}`,
         path: f.path(ID),
-        search: "",
+        search: f.search ?? "",
         hash: "",
         method: f.method,
         headers: expect.objectContaining({
@@ -176,7 +178,7 @@ describe.each(PATH_FNS)("$name", (f) => {
   it("requests an upper-case UUID unchanged", async () => {
     const id = ID.toUpperCase();
     await f.call(api, id);
-    expect(requests().map((r) => r.raw)).toEqual([`${BASE}${f.path(id)}`]);
+    expect(requests().map((r) => r.raw)).toEqual([`${BASE}${f.path(id)}${f.search ?? ""}`]);
   });
 
   it.each(CRAFTED)("keeps %j one segment of its own route", async (id) => {
@@ -184,7 +186,7 @@ describe.each(PATH_FNS)("$name", (f) => {
     const got = requests();
     expect(got).toHaveLength(1);
     expect(got[0]!.path).toBe(f.path(encodeURIComponent(id)));
-    expect(got[0]!.search).toBe("");
+    expect(got[0]!.search).toBe(f.search ?? "");
     expect(got[0]!.hash).toBe("");
     expect(got[0]!.method).toBe(f.method);
   });

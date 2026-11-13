@@ -2066,8 +2066,14 @@ objective, narrowed by state (active, paused on a spent budget, finished)
 and read a page at a time. `GET /mandates` (MCP `list_mandates`) serves
 the same: `scope`, `state`, `q`, `order`, `offset` and `limit`, with the
 count in each state and scope; with no parameters it lists the mandates
-open to backing, as it always has. A public scope holds only mandates that
-have started.
+open to backing, as it always has. Each row is short by default (the
+objective's first words, budget, spent and held, the page's link);
+`detail=full` gives every field, as the site asks for. A public scope
+holds only mandates that have started. `GET /mandates/:id` answers a
+summary by default in the same way: the plan's items a page at a time
+(`items_offset`, `items_limit`, `items_state`, each item with who added
+it and when), every other list cut to `list_limit`, and `collections`
+saying how long each is; `detail=full` is what the page renders.
 
 The mandate's page (`/mandates/:id`) sets the mandate itself (title,
 objective, strategy) as a document, and reports on it under it: what is

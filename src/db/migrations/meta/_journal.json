@@ -1030,6 +1030,13 @@
       "when": 1794612184397,
       "tag": "0146_mandate_read_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1794612761297,
+      "tag": "0147_mcp_caller_reads",
+      "breakpoints": true
     }
   ]
 }

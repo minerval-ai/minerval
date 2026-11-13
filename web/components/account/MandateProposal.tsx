@@ -31,6 +31,12 @@ export interface MandateView {
   };
   expected_cost_owls: number;
   notes: string | null;
+  /**
+   * What the funder must read before funding (a stake line that could
+   * identify an anonymous funder, a quote likely to run over). The API
+   * refuses to fund until they are acknowledged.
+   */
+  warnings?: Array<{ id: string; about: string; text: string }>;
 }
 
 /** What an item that waits on a proposal is for: the proposal's kind and wording. */
@@ -61,6 +67,8 @@ export function MandateProposal({
   const [budget, setBudget] = useState(mandate.expected_cost_owls);
   const [funding, setFunding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const warnings = mandate.warnings ?? [];
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const fund = async () => {
     if (funding) return;
@@ -70,7 +78,12 @@ export function MandateProposal({
       const res = await fetch(`/api/grant-conversations/${conversationId}/fund`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ budget_owls: budget }),
+        body: JSON.stringify({
+          budget_owls: budget,
+          ...(warnings.length > 0 && acknowledged
+            ? { acknowledge_warnings: warnings.map((w) => w.id) }
+            : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -120,6 +133,24 @@ export function MandateProposal({
         ))}
       </ul>
       {mandate.notes && <p className="order-caption">{mandate.notes}</p>}
+      {warnings.length > 0 && (
+        <div className="mandate-warnings" role="note">
+          <p className="sc">Before you fund</p>
+          <ul>
+            {warnings.map((w) => (
+              <li key={w.id}>{w.text}</li>
+            ))}
+          </ul>
+          <label>
+            <input
+              type="checkbox"
+              checked={acknowledged}
+              onChange={(e) => setAcknowledged(e.target.checked)}
+            />{" "}
+            I have read {warnings.length === 1 ? "this" : "these"} and want to fund it as drafted
+          </label>
+        </div>
+      )}
       <div className="mandate-fund">
         <label>
           <span className="sc">Budget</span>
@@ -136,7 +167,11 @@ export function MandateProposal({
             owls
           </span>
         </label>
-        <button className="order-button" onClick={fund} disabled={funding}>
+        <button
+          className="order-button"
+          onClick={fund}
+          disabled={funding || (warnings.length > 0 && !acknowledged)}
+        >
           {funding ? "escrowing…" : `Fund this mandate (${budget} owls)`}
         </button>
         <span className="order-caption">

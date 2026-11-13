@@ -172,7 +172,7 @@ export async function getPage(id: string, userId: string): Promise<AssistantPage
  * row `body` is empty and `snapshot` and `versions` are too. The Ask
  * section's sidebar reads this list on every page.
  */
-export async function listPages(userId: string, limit = 100): Promise<AssistantPage[]> {
+export async function listPages(userId: string, limit = 100, offset = 0): Promise<AssistantPage[]> {
   return getDb()
     .select({
       ...getTableColumns(assistantPages),
@@ -183,7 +183,8 @@ export async function listPages(userId: string, limit = 100): Promise<AssistantP
     .from(assistantPages)
     .where(eq(assistantPages.userId, userId))
     .orderBy(desc(assistantPages.savedAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, offset));
 }
 
 export async function deletePage(id: string, userId: string): Promise<boolean> {

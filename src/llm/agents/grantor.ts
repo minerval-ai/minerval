@@ -311,7 +311,7 @@ async function runGrantorImpl(input: {
             strategy,
             // The validated items in their stored form, focus included
             // (#684): a whitelist here once dropped it.
-            items: normalizePlanItems(items),
+            items: normalizePlanItems(items, { by: "grantmaker_planning" }),
           };
           return JSON.stringify({
             success: true,

@@ -87,7 +87,10 @@ unknown.
   node_id, url, partition, variant, focus, rationale, ledger_status,
   ledger_reason, action_id (the ledger row it names), exclusion_group,
   ledger_checked_at, proposed_kind, proposed_text, proposal_ref, node_ref,
-  contribution_id. Join action_id to `ledger` to check a plan against
+  contribution_id, added_by (who put the item in the plan:
+  grantmaker_draft, grantmaker_planning, grantmaker_chat with the funder,
+  or grantmaker_review, its own pass whatever woke it), added_at and
+  added_run_id (null on items added before these were recorded). Join action_id to `ledger` to check a plan against
   what ran: a named row that is missing, or whose status disagrees with
   ledger_status, is a plan out of step with its ledger. A `propose` item
   is a node the plan asked the graph to take in: proposed_kind and

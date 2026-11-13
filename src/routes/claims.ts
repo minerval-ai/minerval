@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { assessmentsInForce } from "../db/schema.js";
 import { claimSearchParams, claimListParams, claimGetParams, claimDependentsParams, claimProposeBody, claimPatchBody, assessmentHistoryParams, claimEventsParams } from "../schemas/claim.js";
-import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
+import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory, getKindJudgmentHistory } from "../services/assessment-service.js";
 import {
   SINCE_ASSESSED_DESCRIPTION,
   getJudgmentInputs,
@@ -1915,7 +1915,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ["claims"],
-        summary: "Get paginated assessment history for a claim",
+        summary:
+          "A node's judgments, newest first, a page at a time: a claim's assessments, a quantity's " +
+          "estimates, or a question's assessments of its standing",
+        description:
+          "Each row carries is_current and the run that wrote it (run_id, for get_run). A claim's " +
+          "rows carry status, confidence and claim_credence; a quantity's carry `estimate` and its " +
+          "work as reasoning_trace; a question's carry standing, confidence and favored_claim_ids. " +
+          "`kind` says which. reasoning_trace is long: leave it out with " +
+          "fields=assessments.id,assessments.status,assessments.assessed_at,assessments.run_id,total.",
         params: {
           type: "object",
           properties: {
@@ -1943,10 +1951,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     id: { type: "string", format: "uuid" },
                     claim_id: { type: "string", format: "uuid" },
                     status: { type: "string" },
-                    confidence: { type: "number" },
+                    confidence: { type: "number", nullable: true },
                     claim_credence: { type: "number", nullable: true },
-                    summary: { type: "string" },
-                    reasoning_trace: { type: "string" },
+                    summary: { type: "string", nullable: true },
+                    reasoning_trace: { type: "string", nullable: true },
                     is_current: { type: "boolean" },
                     subclaim_summary: { type: "object", additionalProperties: true },
                     trigger: { type: "string", nullable: true },
@@ -1954,10 +1962,18 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessed_at: { type: "string", format: "date-time" },
                     model: { type: "string", nullable: true },
                     run_id: { type: "string", nullable: true },
+                    // A quantity's estimate and a question's standing.
+                    kind: { type: "string" },
+                    estimate: { type: "object", nullable: true, additionalProperties: true },
+                    standing: { type: "string", nullable: true },
+                    favored_claim_ids: { type: "array", nullable: true, items: { type: "string" } },
+                    incomplete: { type: "string", nullable: true },
+                    marginal_yield: { type: "number", nullable: true },
                   },
                 },
               },
               total: { type: "integer" },
+              kind: { type: "string" },
             },
           },
           404: errorEnvelope,
@@ -1978,16 +1994,24 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
-        const result = await getAssessmentHistory(claim_id, {
+        const range = {
           limit: params.limit,
           offset: params.offset,
           since: params.since,
           until: params.until,
-        });
+        };
+        // A quantity's and a question's judgments live in their own tables;
+        // the route used to read only a claim's and answered them empty.
+        if (claim.kind === "quantity" || claim.kind === "question") {
+          const history = await getKindJudgmentHistory(claim_id, claim.kind, range);
+          return reply.send({ assessments: history.rows, total: history.total, kind: claim.kind });
+        }
+        const result = await getAssessmentHistory(claim_id, range);
 
         return reply.send({
-          assessments: result.assessments.map(formatAssessmentHistoryRow),
+          assessments: result.assessments.map((a) => ({ ...formatAssessmentHistoryRow(a), kind: "claim" })),
           total: result.total,
+          kind: "claim",
         });
       },
     }
@@ -2089,6 +2113,16 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             limit: { type: "integer", minimum: 1, maximum: 200, default: 100 },
             offset: { type: "integer", minimum: 0, default: 0 },
+            kinds: {
+              type: "string",
+              maxLength: 300,
+              description:
+                "Only events of these kinds, comma-separated (created, assessment, contribution, " +
+                "review, appeal, arbitration, steward_note, state_change, formalization, " +
+                "lean_check, prize, attempt).",
+            },
+            since: { type: "string", format: "date-time", description: "Only events at or after this time." },
+            until: { type: "string", format: "date-time", description: "Only events at or before this time." },
           },
         },
         response: {
@@ -2151,9 +2185,13 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
+        const q = request.query as { kinds?: string; since?: string; until?: string };
         const result = await getClaimEvents(claim, {
           limit: params.limit,
           offset: params.offset,
+          kinds: q.kinds ? q.kinds.split(",").map((k) => k.trim()).filter(Boolean) : undefined,
+          since: q.since ? new Date(q.since) : undefined,
+          until: q.until ? new Date(q.until) : undefined,
         });
 
         return reply.send(result);

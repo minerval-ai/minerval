@@ -476,8 +476,27 @@ read of a claim, use a card.
   `list_grants`, `get_grant`, `approve_grant_plan`, `top_up_grant`,
   `cancel_grant`, `list_mandates`, `get_mandate`, `get_mandate_allocation`
   (the mandate's operations: its operating policy, commissions, decisions
-  and petitions), `fund_mandate`, `withdraw_from_mandate` (take back your
+  and petitions, and what its Grantmaker is watching for: its next
+  check-in and the subscriptions it and the mandate's inbox hold, public
+  ones only), `fund_mandate`, `withdraw_from_mandate` (take back your
   share of a mandate's uncommitted money), `get_mandate_lookout`.
+  Mandate and grant reads carry `page_url` (the mandate's page) and, for
+  its funder, `funder_url` (their page for it, with its Grantmaker); a
+  granting conversation carries its own page and, once funded, the
+  mandate's. `list_mandates` and `list_grants` answer a short row per
+  mandate (`list_mandates` takes `detail: "full"` for every field);
+  `get_mandate` and `get_grant` answer a summary: the plan's items a page
+  at a time (`items_offset`, `items_limit`, `items_state`) with
+  `plan_item_counts` for the whole plan, every other list cut to
+  `list_limit`, and `collections` giving each list's whole length
+  (`detail: "full"` for everything; the site asks for it). Each plan item
+  carries `added_by` and `added_at`. The three reads of a mandate's money
+  count spent and held owls the same way (grantEscrowBreakdown).
+  `fund_grant` refuses a draft that carries warnings
+  (`WARNINGS_UNACKNOWLEDGED`) until the call passes `acknowledge_warnings`
+  after the user has read them; `get_grant_conversation`'s `wait` holds a
+  read up to 120 seconds, and a running turn's `turn.progress` says which
+  step the Grantmaker is on.
 - **Correspondents (#563):** `list_correspondents` (with `claim_id`, the
   ones covering a claim), `get_correspondent`, `list_correspondent_updates`,
   `get_correspondent_update`, `poke_correspondent` (the mandate's manager).

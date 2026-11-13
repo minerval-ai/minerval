@@ -16,6 +16,14 @@
  * prompt: the integrity of the claim graph and the truth outrank the
  * funder, and ideology-warping mandates are declined outright.
  */
+import {
+  draftWarnings,
+  parseGrantmakerWarnings,
+  WARNING_MAX_CHARS,
+  WARNING_TOPICS,
+  WARNINGS_MAX,
+  type MandateWarning,
+} from "../../services/mandate-warnings.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -120,6 +128,13 @@ export interface GrantMandate {
   origin?: string;
   /** The part of the budget its Grantmaker passes may spend, when it has one. */
   grantmaker_share_owls?: number;
+  /**
+   * What the funder must see before funding, as the Grantmaker recorded it
+   * (mandate-warnings.ts); funding is refused until they are acknowledged.
+   */
+  warnings?: MandateWarning[];
+  /** When the funder acknowledged the warnings, set on funding. */
+  warnings_acknowledged_at?: string;
 }
 
 export interface GrantmakerTurnResult {
@@ -243,6 +258,29 @@ const MANDATE_SCHEMA = {
       description:
         "Anything the funder should know: uncertainties in the estimate, " +
         "what you deliberately left out, what a top-up would buy next.",
+    },
+    warnings: {
+      type: "array",
+      maxItems: WARNINGS_MAX,
+      description:
+        "What the funder must see and agree to before paying, which they could miss in the " +
+        "conversation: the stake line could identify a funder who chose not to be named, the " +
+        "quote may well run over, the plan leaves out something they asked for, a conflict of " +
+        "interest. Each is shown beside the Fund button, and funding is refused until it is " +
+        "acknowledged, so the funder (or an agent funding for them) cannot fund past it " +
+        "unread. Say each in your reply as well. Leave it out when there is nothing of the kind.",
+      items: {
+        type: "object",
+        properties: {
+          about: { type: "string", enum: [...WARNING_TOPICS] },
+          text: {
+            type: "string",
+            maxLength: WARNING_MAX_CHARS,
+            description: "What the funder must weigh, in a sentence or two addressed to them.",
+          },
+        },
+        required: ["about", "text"],
+      },
     },
     skills: {
       type: "array",
@@ -399,6 +437,8 @@ async function runGrantmakerTurnImpl(input: {
   funder?: "platform";
   /** The reply's text as it is written, with the model turn it belongs to. */
   onText?: (delta: string, turn: number) => void;
+  /** Each tool the turn calls, as it calls it: what a reader waiting on the reply sees. */
+  onTool?: (name: string, input: Record<string, unknown>) => void;
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
 
@@ -699,6 +739,12 @@ async function runGrantmakerTurnImpl(input: {
     ...(input.onText ? { onText: input.onText } : {}),
     maxIterations: CHAT_MAX_TURNS,
     executeTool: async (name, toolInput) => {
+      // A progress report only: what the turn is doing, for whoever waits on it.
+      try {
+        input.onTool?.(name, toolInput);
+      } catch {
+        // never a reason to fail the tool call
+      }
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
@@ -730,6 +776,8 @@ async function runGrantmakerTurnImpl(input: {
         const raw = toolInput as unknown as GrantMandate;
         const problem = validateMandate(raw);
         if (problem) return JSON.stringify({ success: false, problem });
+        const warned = parseGrantmakerWarnings((toolInput as { warnings?: unknown }).warnings);
+        if (!warned.ok) return JSON.stringify({ success: false, problem: warned.problem });
         mandate = {
           title: String(raw.title).trim(),
           objective: String(raw.objective),
@@ -737,7 +785,7 @@ async function runGrantmakerTurnImpl(input: {
           ...(raw.scope_ref ? { scope_ref: String(raw.scope_ref) } : {}),
           scope_query: raw.scope_query || null,
           // The one stored form every plan path writes (#684).
-          plan: { ...raw.plan, items: normalizePlanItems(raw.plan.items) },
+          plan: { ...raw.plan, items: normalizePlanItems(raw.plan.items, { by: "grantmaker_draft" }) },
           expected_cost_owls: raw.expected_cost_owls,
           funder_named: raw.funder_named,
           funder_stake: /^none\.?$/i.test(String(raw.funder_stake).trim())
@@ -747,10 +795,21 @@ async function runGrantmakerTurnImpl(input: {
           ...(raw.skills && raw.skills.length > 0
             ? { skills: [...new Set(raw.skills.map(String))].sort() }
             : {}),
+          ...(warned.warnings.length > 0 ? { warnings: warned.warnings } : {}),
         };
+        // Every warning the funder will be asked to acknowledge, the ones
+        // the draft implies included, so the reply can say them all.
+        const warnings = draftWarnings(mandate);
         return JSON.stringify({
           success: true,
           recorded_items: mandate.plan.items.length,
+          ...(warnings.length > 0
+            ? {
+                warnings: warnings.map((w) => ({ about: w.about, text: w.text, raised_by: w.raised_by })),
+                warnings_note:
+                  "Funding is refused until the funder acknowledges these; say each in your reply.",
+              }
+            : {}),
         });
       }
       if (name === "decline_mandate") {
@@ -1357,8 +1416,11 @@ export async function executeManagementTool(
       await planIngestUrls(grantId, { executedOnly: true })
     );
     if (problem) return JSON.stringify({ success: false, problem });
-    // Stored in the one plan-item form every path writes (#684).
-    const stored = normalizePlanItems(items);
+    // Stored in the one plan-item form every path writes (#684), stamped
+    // with who added it: the chat, with the funder present, or the review
+    // pass on its own.
+    const inChat = (opts.actor ?? "").includes("chat") || Boolean(opts.confirmedBy);
+    const stored = normalizePlanItems(items, { by: inChat ? "grantmaker_chat" : "grantmaker_review" });
     if (toolInput.preview === true) {
       const { previewPlanOrders } = await import("../../services/standing-order-service.js");
       return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grantId, stored)) });

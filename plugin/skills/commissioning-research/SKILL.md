@@ -208,11 +208,14 @@ conversation.
    send returns your message's place (`message_count`), the draft's hash
    (`mandate_sha256`) and `turn.state`. Get the reply with
    `get_grant_conversation` passing `after` = `message_count`,
-   `mandate_sha256`, and `wait: 25`. It answers when the turn ends, or
-   after 25 seconds, with only the new messages, and the draft only if the
-   reply changed it (otherwise `mandate_unchanged: true`). Repeat with the
-   same values while `turn.state` is `replying` (a drafting turn can take
-   minutes). Never resend a message; it is already saved.
+   `mandate_sha256`, and `wait: 50` (up to 120 if your client lets a tool
+   call run that long). It answers when the turn ends, or when the wait is
+   up, with only the new messages, and the draft only if the reply changed
+   it (otherwise `mandate_unchanged: true`). Repeat with the same values
+   while `turn.state` is `replying` (a drafting turn usually takes one to
+   three minutes); meanwhile `turn.progress.note` says which step the
+   Grantmaker is on and `turn.partial` holds its reply as it writes it.
+   Never resend a message; it is already saved.
 3. Answer its questions with `send_grant_message`. Expect it to survey the
    graph, push back, and quote costs in owls from live estimates. When it
    disagrees with your user's instinct about what would be valuable, take
@@ -224,7 +227,17 @@ conversation.
    stake they have is declined. Never answer for your user.
 4. When it proposes a mandate, show your user the draft and the quote, and
    fund it with `fund_grant` only on their explicit go-ahead. Funding
-   escrows the budget; unspent budget refunds. The draft says how fast the
+   escrows the budget; unspent budget refunds. A draft can carry
+   `warnings`: things your user must weigh before paying, such as a stake
+   line that could identify a funder who chose not to be named, or a
+   quote likely to run over. Show every warning to your user in its own
+   words, before you ask for the go-ahead. `fund_grant` refuses a draft
+   with warnings (`WARNINGS_UNACKNOWLEDGED`, with the warnings) until you
+   pass `acknowledge_warnings`; pass it only once your user has read them
+   and agreed, never on their behalf, and pass the ids of the warnings
+   they read rather than `true`, so a warning added since is not agreed
+   to unread. If a warning changes their mind,
+   tell the Grantmaker and let it revise the draft. The draft says how fast the
    money may be spent: as needed (the work runs as it arrives, which suits
    exploring a question or ingesting a source) or steady (at most so much
    in any rolling day or week, for upkeep or a user who wants it spread
@@ -238,7 +251,18 @@ conversation.
    `extracting` (being read since `extraction_started_at`), `done` or
    `failed`. Sources are read a few at a time, and one takes minutes, so
    tell your user what the pipeline says rather than guessing a time: a
-   queued source is not being read yet. You can keep talking to the Grantmaker in the same
+   queued source is not being read yet.
+   Give your user the links the reads carry rather than building
+   them: `page_url` is the mandate's public page and `funder_url` their own
+   page for it, with its Grantmaker. `get_grant` and `get_mandate` answer a
+   summary by default: the plan's items a page at a time (`items_offset`,
+   `items_limit`, `items_state`), `plan_item_counts` for the whole plan,
+   and every other list cut short, with `collections` saying how long each
+   is; pass `detail: "full"` only when you need everything. Each plan item
+   says who added it and when (`added_by`, `added_at`): the Grantmaker's
+   draft, its planning pass, its chat with the funder, or its own review
+   pass, whatever woke that pass. Do not credit an item to a lookout or
+   anyone else the record does not name. You can keep talking to the Grantmaker in the same
    conversation to adjust the part of the plan whose work has not
    started: it can replace that remainder, or change the model tier or
    budget of a single planned pass, or withdraw it, until that pass is
@@ -273,7 +297,12 @@ what it paid for by kind and how those runs used their budgets (`kinds`:
 the runs it commissioned, and separately its own upkeep, such as its
 Grantmaker's review passes and its lookouts' runs, marked `self_funded`),
 what it spent outside the ledger (`outside_ledger_owls`, mostly the
-Grantmaker's conversation with the funder), and the decisions behind them. A mandate's objective changes
+Grantmaker's conversation with the funder), the decisions behind them, and
+what its Grantmaker is watching for (`watching`: its next scheduled
+check-in and the subscriptions that wake it). `get_grant`, `get_mandate`
+and `get_mandate_allocation` count spent and held owls the same way; money
+committed to work still running is `held_owls`, not spent. `list_mandates`
+answers a short row per mandate; `detail: "full"` gives every field. A mandate's objective changes
 only with its funder's agreement, and every other funder is told; any
 funder may take back their share of the uncommitted money at any time
 with `withdraw_from_mandate`, again only on your user's go-ahead.
