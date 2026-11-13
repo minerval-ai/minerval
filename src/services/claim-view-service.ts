@@ -20,7 +20,7 @@ import { rawQuery } from "../db/client.js";
 import { getClaimById, getClaimInstances } from "./claim-service.js";
 import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
-import { nodeVersions } from "./judgment-version-service.js";
+import { judgmentsInForce, nodeVersions, severalInForceNote } from "./judgment-version-service.js";
 import { holdsMirror, mirroredFacts } from "./mirrored-node-service.js";
 import {
   getArgumentsForClaim,
@@ -360,6 +360,10 @@ export async function getClaimView(
     // and that the reader may read (judgment-version-service.ts). The
     // judgment served just below is the first of them.
     ...(labelled ? { versions: labelled.versions } : {}),
+    // Where more than one of them is in force for the asker, the judgment below is only the most recently made.
+    ...(labelled && labelled.in_force > 1
+      ? { judgments_in_force: labelled.in_force, judgments_in_force_note: severalInForceNote(labelled.in_force) }
+      : {}),
     // That the node is the public graph's, read through the mirror, and as
     // of when (mirrored-node-service.ts). Absent for a node of this
     // deployment's own.
@@ -665,6 +669,8 @@ async function listDirectSubclaims(claimId: string) {
   // Whether each premise has been examined at all (#543), for every kind in
   // one read. A failure loses the field, never the section.
   const covered = await summarizeCoverage(rows.map((sc) => sc.child_id)).catch(() => null);
+  // Where more than one judgment of a premise is in force for the asker, its row says how many.
+  const several = await judgmentsInForce(rows.map((sc) => sc.child_id)).catch(() => new Map<string, number>());
   // An edge this deployment recorded and the public graph's own edge for
   // the same child and relation are the same thing recorded twice
   // (db/schema.ts, the origin column), and are listed once: the public
@@ -698,6 +704,12 @@ async function listDirectSubclaims(claimId: string) {
     assessment_confidence: sc.child_confidence,
     assessment_credence: sc.child_credence,
     ...(covered ? { coverage: coverageRow(covered.get(sc.child_id.toLowerCase())) } : {}),
+    ...(several.has(sc.child_id.toLowerCase())
+      ? {
+          judgments_in_force: several.get(sc.child_id.toLowerCase()),
+          judgments_in_force_note: severalInForceNote(several.get(sc.child_id.toLowerCase())!),
+        }
+      : {}),
     argument_id: sc.argument_id,
     argument_name: sc.argument_name,
     ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),

@@ -5,7 +5,10 @@ import type { PublishedPageView } from "./published";
 import { shapeOfPublishedPage } from "./published-page/shape";
 import type { PublishedPagePackage } from "./published-page/verify";
 import { loadStanding } from "./standing";
-import type { Assessment, ClaimDetail, NodeVersion } from "./types";
+import { whichToOpen } from "./inside-versions";
+import type { ClaimDetail, NodeVersion } from "./types";
+
+export { assessmentOf, byLabelName, detailAt, detailWithoutJudgment } from "./inside-versions";
 
 // A node's page inside a private deployment (docs/architecture.md, "A
 // judgment at each label"; docs/showing-a-page.md, "What the destination
@@ -45,75 +48,6 @@ export interface InsideNode {
     | { kind: "none" };
   /** Whether the reader may ask for this node's page to be shown (holds the permission to direct). */
   mayAsk: boolean;
-}
-
-/** Labels in the order a reader meets them where nothing else orders them: by name, with `public` last. */
-export function byLabelName(a: { label: string }, b: { label: string }): number {
-  if (a.label === b.label) return 0;
-  if (a.label === "public") return 1;
-  if (b.label === "public") return -1;
-  return a.label < b.label ? -1 : 1;
-}
-
-/** A version of a claim's judgment as the claim page's own assessment. */
-export function assessmentOf(version: NodeVersion, served: Assessment | null): Assessment | null {
-  if (typeof version.status !== "string") return null;
-  // What the API serves beside the one judgment it names (who paid, the
-  // developer disclosure) belongs to that judgment and no other.
-  const same = served && served.id === version.id ? served : null;
-  return {
-    ...(same ?? {}),
-    id: version.id,
-    status: version.status,
-    confidence: version.confidence ?? 0,
-    claim_credence: version.claim_credence ?? null,
-    summary: version.summary ?? version.reasoning_trace ?? "",
-    reasoning_trace: version.reasoning_trace ?? "",
-    subclaim_summary: {},
-    assessed_at: version.assessed_at,
-    model: version.model ?? null,
-    run_id: version.run_id ?? null,
-  } as Assessment;
-}
-
-/** The node's detail carrying one version's judgment in the place the page reads its judgment from. */
-export function detailAt(detail: ClaimDetail, version: NodeVersion): ClaimDetail {
-  const served = detail.assessment;
-  const isServed = served?.id === version.id || detail.quantity?.assessed?.assessed_at === version.assessed_at;
-  const out: ClaimDetail = {
-    ...detail,
-    assessment: assessmentOf(version, served),
-    // These two describe the judgment the API named, so they are shown with it and with no other.
-    ...(isServed ? {} : { coverage: undefined, since_assessed: undefined }),
-  };
-  // The public graph's own assessment of a mirrored node was made there, on
-  // what the public graph holds. The API counts whatever is attached to the
-  // node here among what an assessment with no recorded inputs rests on, a
-  // page shown inside this deployment included, which this one cannot have
-  // weighed. So nothing is said here of evidence its reader cannot read.
-  if (isServed && version.label === "public" && detail.mirrored && out.coverage) {
-    out.coverage = { ...out.coverage, on: out.coverage.on.filter((e) => e !== "evidence_this_reader_cannot_read") };
-  }
-  if (detail.claim.kind === "quantity" && detail.quantity && !isServed) {
-    out.quantity = {
-      ...detail.quantity,
-      estimate: (version.estimate ?? null) as typeof detail.quantity.estimate,
-      assessed: {
-        ...(detail.quantity.assessed ?? {}),
-        estimate: version.estimate,
-        summary: version.summary ?? "",
-        work: version.work ?? "",
-        assessed_at: version.assessed_at,
-        model: version.model ?? null,
-      } as NonNullable<typeof detail.quantity.assessed>,
-    };
-  }
-  return out;
-}
-
-/** The node's detail with no judgment in the place the page reads one from: the versions stand above it instead. */
-export function detailWithoutJudgment(detail: ClaimDetail): ClaimDetail {
-  return { ...detail, assessment: null, coverage: undefined, since_assessed: undefined, seed: null };
 }
 
 /** A shown page in the shape the claim page's second tab takes, built from what the API serves of it. */
@@ -236,10 +170,5 @@ export async function loadInsideNode(
     const showing = showings.get(wantedShown.showing_id);
     if (page && showing) return { ...base, open: { kind: "shown", tab: wantedShown, view: viewOfShownPage(wantedShown, showing, page) } };
   }
-  const wanted = query.at ? versions.find((v) => v.label === query.at) : undefined;
-  if (wanted) return { ...base, open: { kind: "version", version: wanted } };
-  const inForce = versions.filter((v) => v.in_force).sort(byLabelName);
-  if (inForce.length > 1) return { ...base, open: { kind: "several", versions: inForce } };
-  if (inForce.length === 1) return { ...base, open: { kind: "version", version: inForce[0]! } };
-  return { ...base, open: { kind: "none" } };
+  return { ...base, open: whichToOpen(versions, query.at) };
 }

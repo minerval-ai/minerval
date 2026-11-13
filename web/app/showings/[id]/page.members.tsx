@@ -6,7 +6,7 @@ import { ActionForm } from "@/components/admin/ActionForm";
 import { can, viewer, when } from "@/components/admin/access";
 import { Hash, WorkNav, day } from "@/components/inside/nav";
 import { fetchOutbound, fetchShowing, fetchShowings, type AskedPage } from "@/lib/inside-api";
-import { END_REASONS, HOLD_REASONS, removalsInWords, stateOfVersion } from "@/lib/inside-words";
+import { removalsInWords, stateOfVersion } from "@/lib/inside-words";
 import { endShowingAction, holdPageAction, payForWorkAction } from "../actions";
 
 export const metadata: Metadata = { title: "A showing · Minerval" };
@@ -31,8 +31,10 @@ export default async function ShowingPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const [showing, listed] = await Promise.all([
     fetchShowing(who.externalId, id).catch(() => null),
-    fetchShowings(who.externalId).catch(() => ({ shown: [], asked: [] })),
+    fetchShowings(who.externalId).catch(() => ({ shown: [], asked: [], hold_reasons: {} as Record<string, string>, end_reasons: {} as Record<string, string> })),
   ]);
+  const HOLD_REASONS = listed.hold_reasons;
+  const END_REASONS = listed.end_reasons;
   const asked = listed.asked.find((a) => a.showing_id === id) ?? null;
   if (!showing && !asked) notFound();
   const outside = (showing?.shown_to ?? asked?.shown_to) === "outside this deployment";
@@ -135,6 +137,15 @@ export default async function ShowingPage({ params }: { params: Promise<{ id: st
                               <Link href={`/showings/${id}/pages/${v.page_id}`}>read it as shown, part by part</Link>
                             </span>
                           )}
+                          {mine?.waiting_on && mine.waiting_on.length > 0 && (
+                            <span className="acct-detail">
+                              Waiting at the release queue:{" "}
+                              {mine.waiting_on
+                                .map((w) => `${w.part === null ? "the page itself" : `part ${w.part}, ${w.kind}`} on ${w.party}${w.standing === "held" ? " (holding it)" : ""}`)
+                                .join("; ")}
+                              .
+                            </span>
+                          )}
                           {mine?.cannot_cross && (
                             <span className="acct-detail">
                               The Redactor found that something always shown with a page could not be shown here without giving away what the
@@ -232,6 +243,15 @@ export default async function ShowingPage({ params }: { params: Promise<{ id: st
                       <td>{day(p.version_of)}</td>
                       <td>
                         {p.stage_in_words.charAt(0).toUpperCase() + p.stage_in_words.slice(1)}.
+                        {p.waiting_on && p.waiting_on.length > 0 && (
+                          <span className="acct-detail">
+                            Waiting at the release queue:{" "}
+                            {p.waiting_on
+                              .map((w) => `${w.part === null ? "the page itself" : `part ${w.part}, ${w.kind}`} on ${w.party}${w.standing === "held" ? " (holding it)" : ""}`)
+                              .join("; ")}
+                            .
+                          </span>
+                        )}
                         {WORK_WAITING[p.stage] && can(who, "fund") && (
                           <ActionForm action={payForWorkAction} submit={`Pay for ${WORK_WAITING[p.stage]}`}>
                             <input type="hidden" name="showing_id" value={id} />

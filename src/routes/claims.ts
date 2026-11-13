@@ -20,7 +20,7 @@ import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDepend
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
 import { getQuestionDetail } from "../services/question-service.js";
-import { nodeVersions } from "../services/judgment-version-service.js";
+import { JUDGMENTS_IN_FORCE_DESCRIPTION, nodeVersions, severalInForceNote } from "../services/judgment-version-service.js";
 import { listRequests } from "../services/request-service.js";
 import { REQUEST_SCHEMA } from "./requests.js";
 import { waitingMessages } from "../services/inbox-service.js";
@@ -122,6 +122,9 @@ const kindItemProperties = {
   standing: { type: "string", nullable: true },
   estimate: looseObject,
   unit: looseObject,
+  // Only where more than one judgment of the node is in force for the reader (judgment-version-service.ts).
+  judgments_in_force: { type: "integer", description: JUDGMENTS_IN_FORCE_DESCRIPTION },
+  judgments_in_force_note: { type: "string" },
 } as const;
 const kindFilterProperties = {
   kind: { type: "string", enum: [...NODE_KINDS], description: "Only nodes of this kind" },
@@ -297,6 +300,8 @@ export const claimCardSchema = {
       description:
         "A claim's current status; null when it has not been assessed, and for a quantity or question.",
     },
+    judgments_in_force: { type: "integer", description: JUDGMENTS_IN_FORCE_DESCRIPTION },
+    judgments_in_force_note: { type: "string" },
     assessment_confidence: {
       type: "number",
       nullable: true,
@@ -869,6 +874,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const response: Record<string, unknown> = {
           claim: labelled ? { ...formatClaim(claim), label: labelled.label } : formatClaim(claim),
           ...(labelled ? { versions: labelled.versions } : {}),
+          // Where more than one of them is in force for the reader, `assessment` below is only the most recently made.
+          ...(labelled && labelled.in_force > 1
+            ? { judgments_in_force: labelled.in_force, judgments_in_force_note: severalInForceNote(labelled.in_force) }
+            : {}),
           ...(mirrored ? { mirrored } : {}),
           assessment: assessment ? formatAssessment(assessment) : null,
           // Beside the judgment, and present where there is none: it is

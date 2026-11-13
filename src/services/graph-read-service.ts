@@ -322,6 +322,13 @@ async function searchClaims(input: Record<string, unknown>): Promise<GraphReadRe
           checked: r.checked ?? null,
           ...(r.kind === "question" ? { standing: r.standing ?? null } : {}),
           ...(r.kind === "quantity" ? { estimate: r.estimate ?? null, unit: r.unit ?? null } : {}),
+          // Where more than one judgment of the node is in force for the asker (judgment-version-service.ts).
+          ...("judgments_in_force" in r
+            ? {
+                judgments_in_force: (r as { judgments_in_force?: number }).judgments_in_force,
+                judgments_in_force_note: (r as { judgments_in_force_note?: string }).judgments_in_force_note,
+              }
+            : {}),
           tags: r.tags.map((t) => ({ slug: t.slug, name: t.name })),
           page_url: claimPageUrl(r.id),
         };

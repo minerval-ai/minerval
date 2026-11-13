@@ -25,12 +25,10 @@ export default async function FileSetsPage() {
   const [{ notice, ways_in: ways, file_sets: sets }, labels, allParties] = await Promise.all([
     fetchFileSets(who.externalId),
     fetchMyLabels(who.externalId),
-    // The list of parties is an administrator's read. A person who directs
-    // and does not administer is offered the parties their own grants name.
+    // An administrator reads the parties in full; a person who directs reads their names, to say whose files a set holds.
     fetchParties(who.externalId).catch(() => null),
   ]);
-  const ownParties = [...new Map(who.mine.grants.filter((g) => g.party).map((g) => [g.party!.id, g.party!])).values()];
-  const parties = allParties ?? ownParties;
+  const parties = allParties ?? [];
 
   return (
     <div className="admin-page">
@@ -111,7 +109,7 @@ export default async function FileSetsPage() {
           <p className="account-empty">
             {allParties
               ? <>A set names the party whose files it holds, and no party is recorded yet. An administrator adds one on <Link href="/admin/labels#parties">Labels and parties</Link>.</>
-              : "A set names the party whose files it holds. The list of parties is read by administrators only, because a deployment may hold material from parties who are not to learn of each other, and your own permissions name no party. So a set cannot be added from this page by you; a person who both directs and administers can add one."}
+              : "A set names the party whose files it holds, and the parties could not be read just now."}
           </p>
         ) : (
           <>
@@ -121,12 +119,6 @@ export default async function FileSetsPage() {
                 "Registering a directory is for data too large to upload: the deployment walks a directory already on its own disk and hashes each file where it lies, copying nothing. It takes the permission to administer, because whoever registers a directory decides what label files already on the disk get. "}
               Either way the set is added at a label you read, and keeps it.
             </p>
-            {!allParties && (
-              <p className="acct-prose acct-measure">
-                The parties offered are the ones your own permissions name, because the full list of parties is read by administrators.
-                If the files belong to another party, an administrator can tell you, or add the set.
-              </p>
-            )}
             <ActionForm action={addFileSetAction} submit="Add this set">
               <fieldset className="admin-fieldset inside-choices">
                 <legend>How it is filled</legend>

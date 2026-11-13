@@ -174,7 +174,16 @@ function VersionBand({ version }: { version: NodeVersion }) {
 }
 
 /** Each of the given assessments in full: the verdict, what it was made on and beside, the summary and the reasoning. */
-export function VersionsInFull({ claimId, detail, versions, texts }: { claimId: string; detail: ClaimDetail; versions: NodeVersion[]; texts?: Map<string, string> }) {
+export function VersionsInFull({
+  claimId, detail, versions, texts, withMadeOn = true,
+}: {
+  claimId: string;
+  detail: ClaimDetail;
+  versions: NodeVersion[];
+  texts?: Map<string, string>;
+  /** Whether each says what it was made on. Left off where the page has said it once for all of them. */
+  withMadeOn?: boolean;
+}) {
   return (
     <div className="versions-columns">
         {versions.map((v) => {
@@ -186,7 +195,7 @@ export function VersionsInFull({ claimId, detail, versions, texts }: { claimId: 
                 <Link href={`/claims/${claimId}?at=${encodeURIComponent(v.label)}`}>{versionTabName(v.label)}</Link>
               </h2>
               <VersionBand version={v} />
-              <p style={quiet}>{madeOn(v, detail)}</p>
+              {withMadeOn && <p style={quiet}>{madeOn(v, detail)}</p>}
               {madeBeside(v).map((line, i) => (
                 <p key={i} style={quiet}>
                   {line}
@@ -221,14 +230,15 @@ export function SeveralInForce({ claimId, detail, versions, texts }: { claimId: 
   return (
     <section className="versions-several" aria-label="The assessments that stand for you">
       <p style={{ ...quiet, margin: "0 0 .9rem" }}>
-        You read at {listOf(labels)}, and {labels.length === 2 ? "neither of those labels reads the other" : "none of those labels reads another"}. So each of
-        these assessments was made without sight of the evidence behind the {labels.length === 2 ? "other" : "others"}, and neither replaces the other.
-        Nothing here combines them or puts one first for being newer: they are in the order of the labels&rsquo; names.
+        You read at {listOf(labels)}, and {labels.length === 2 ? "neither of those labels reads the other" : "none of those labels reads another"}. Each
+        assessment below was made on what is filed at its own label and at the labels that one reads, without sight of the evidence behind
+        the {labels.length === 2 ? "other" : "others"}. Neither replaces the other, and nothing here combines them or puts one first for being
+        newer: they are in the order of the labels&rsquo; names.
       </p>
-      <VersionsInFull claimId={claimId} detail={detail} versions={versions} texts={texts} />
+      <VersionsInFull claimId={claimId} detail={detail} versions={versions} texts={texts} withMadeOn={false} />
       <p style={{ ...quiet, margin: "1rem 0 0" }}>
         What follows is everything else on this node that you may read, at every label you read. Each argument is shown there with one
-        evaluation; where an argument has been evaluated at more than one of your labels, the others are not shown on this page.
+        evaluation; where an argument has been evaluated at more than one of your labels, its own page has each.
       </p>
     </section>
   );

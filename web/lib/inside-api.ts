@@ -41,6 +41,8 @@ export interface AskedPage {
   redact_action_id: string | null;
   cannot_cross?: { category: string; note: string | null };
   audit_reasons?: string;
+  /** For a page at the release gate: which kinds of part wait on which party. Kind and party, never text. */
+  waiting_on?: Array<{ part: number | null; kind: string; party: string; standing: "held" | "waiting" }>;
 }
 
 /** A showing as the side it was asked for at lists it. */
@@ -144,7 +146,7 @@ export interface ShownPage extends ShownVersion {
 export async function fetchShowings(
   externalId: string,
   nodeId?: string
-): Promise<{ shown: ShownShowingRow[]; asked: AskedShowingRow[] }> {
+): Promise<{ shown: ShownShowingRow[]; asked: AskedShowingRow[]; hold_reasons: Record<string, string>; end_reasons: Record<string, string> }> {
   const query = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : "";
   return accountFetch(`/showings${query}`, { actingUser: externalId });
 }
@@ -214,6 +216,11 @@ export interface QueueStanding {
 export interface QueueItem {
   page_id: string;
   showing_id: string;
+  node_id: string;
+  /** The node's wording, where the person reads the node. */
+  node?: string;
+  /** A hold one of the person's parties has already placed on the item. */
+  held?: Array<{ party: { id: string; name: string }; reason: string | null; since: string | null }>;
   audit: string | null;
   waiting_since: string | null;
   /** The part's place on the page; null for the page itself, with its verdict. */
@@ -236,6 +243,8 @@ export interface ReleaseQueue {
   items: QueueItem[];
   more_waiting: boolean;
   deciding_without_reading?: string;
+  /** The fixed list a hold gives its reason from: each key with the words the other side is told. */
+  hold_reasons: Record<string, string>;
   note: string;
 }
 

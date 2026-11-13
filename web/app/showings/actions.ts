@@ -19,7 +19,6 @@ import {
   writeProposal,
   type PolicyCategory,
 } from "../../lib/inside-api";
-import { END_REASONS, HOLD_REASONS } from "../../lib/inside-words";
 
 // What the forms on the pages for showings, the release queue, a boundary's
 // policy and sending outside do. Each acts for the person in the server's
@@ -88,7 +87,7 @@ export async function endShowingAction(_previous: FormState, form: FormData): Pr
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   const reason = text(form, "reason");
-  if (!(reason in END_REASONS)) return { error: "Choose a reason. It is recorded with the date, where the people the page is shown to can read it." };
+  if (!reason) return { error: "Choose a reason. It is recorded with the date, where the people the page is shown to can read it." };
   try {
     await endShowing(user, text(form, "showing_id"), reason);
   } catch (err) {
@@ -103,7 +102,7 @@ export async function holdPageAction(_previous: FormState, form: FormData): Prom
   if (!user) return NOT_SIGNED_IN;
   const lift = text(form, "lift") === "true";
   const reason = text(form, "reason");
-  if (!lift && !(reason in HOLD_REASONS)) return { error: "Choose a reason for the hold. It is all the other side is told." };
+  if (!lift && !reason) return { error: "Choose a reason for the hold. It is all the other side is told." };
   try {
     await holdShownPage(user, text(form, "showing_id"), text(form, "page_id"), lift ? { lift: true } : { reason });
   } catch (err) {
@@ -135,7 +134,7 @@ export async function decideAction(_previous: FormState, form: FormData): Promis
   const decision = text(form, "decision");
   if (decision !== "release" && decision !== "hold" && decision !== "lift") return { error: "Choose release or hold." };
   const reason = text(form, "reason");
-  if (decision === "hold" && !(reason in HOLD_REASONS)) return { error: "A hold gives a reason from the list. It is all the other side is told." };
+  if (decision === "hold" && !reason) return { error: "A hold gives a reason from the list. It is all the other side is told." };
   const items = form
     .getAll("item")
     .map(String)

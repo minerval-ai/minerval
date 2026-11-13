@@ -133,6 +133,19 @@ export function ArgumentView({ page, source }: { page: ArgumentPage; source: Dat
             <p className="argeval">
               <ArgumentText content={page.evaluation.content} />
             </p>
+            {page.evaluations_in_force && page.evaluations_in_force > 1 && (
+              <div className={styles.muted}>
+                <p>
+                  {page.evaluations_in_force} evaluations of this argument stand for you, made at labels that do not read each other. The
+                  one above is the most recently made, and none replaces another. Each in full:
+                </p>
+                {(page.evaluations ?? []).map((e, i) => (
+                  <p className="argeval" key={i}>
+                    <ArgumentVerdictTag verdict={e.verdict} /> <ArgumentText content={e.content} />
+                  </p>
+                ))}
+              </div>
+            )}
             {page.evaluation.stale && (
               <p className={styles.muted}>
                 This rating was made under an earlier assessment of the claim and has not been

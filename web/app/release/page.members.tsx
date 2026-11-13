@@ -6,7 +6,7 @@ import { NeedsPermission, Notice, can, viewer, when } from "@/components/admin/a
 import { WorkNav, day, waited } from "@/components/inside/nav";
 import { fetchMyLabels } from "@/lib/admin-api";
 import { fetchReleaseQueue, fetchReleaseRules, type QueueItem } from "@/lib/inside-api";
-import { HOLD_REASONS, capital } from "@/lib/inside-words";
+import { capital } from "@/lib/inside-words";
 import { decideAction, endRuleAction, setRuleAction } from "../showings/actions";
 import { QueueForm } from "./QueueForm";
 
@@ -85,56 +85,31 @@ export default async function ReleaseQueuePage() {
       />
       <WorkNav who={who} current="/release" />
       <Notice>{queue.note}</Notice>
-
-      <section className="acct-section admin-first" id="limits">
-        <div className="acct-head">
-          <h2>What cannot be done here, and why</h2>
-        </div>
-        <ul className="inside-list acct-measure">
-          <li>
-            <strong>No text is edited.</strong> Each part was hashed when the redaction finished, and the people it is shown to check what
-            they read against that hash. An edited part would no longer match, so a part is released as written or held whole.
-          </li>
-          <li>
-            <strong>A release is not taken back.</strong> Once a part is shown, people have read it. A hold can be lifted later; a release
-            cannot be undone.
-          </li>
-          <li>
-            <strong>Nothing is released by time passing.</strong> An item nobody acts on stays held. The people the page is shown to see
-            that it is held and for how long, so the age beside each page below is what they see too.
-          </li>
-          <li>
-            <strong>A hold gives a reason from a fixed list.</strong> It is all the other side is told, beside who holds the part and
-            since when. Nobody checks it.
-          </li>
-          <li>
-            <strong>You decide for your own parties only.</strong> A part that rests on two parties&rsquo; material needs both, and is shown
-            once both have released it.
-          </li>
-        </ul>
-        {queue.deciding_without_reading && <p className="acct-prose acct-measure queue-unread">{queue.deciding_without_reading}</p>}
-      </section>
+      {queue.deciding_without_reading && <p className="acct-prose acct-measure queue-unread">{queue.deciding_without_reading}</p>}
 
       {uniqueParties.map((party) => {
         const items = queue.items.filter((i) => i.decide_for.some((p) => p.id === party.id));
         const pages = [...new Set(items.map((i) => i.page_id))];
         const anyHeld = items.some((i) => i.rests_on.some((r) => r.party.id === party.id && r.standing === "held"));
         return (
-          <section className="acct-section" key={party.id} id={`party-${party.id}`}>
+          <section className={`acct-section${party.id === uniqueParties[0]!.id ? " admin-first" : ""}`} key={party.id} id={`party-${party.id}`}>
             <div className="acct-head">
               <h2>Waiting on you for {party.name}</h2>
             </div>
             {items.length === 0 ? (
               <p className="account-empty">Nothing waits on you for {party.name}.</p>
             ) : (
-              <QueueForm action={decideAction} partyId={party.id} reasons={HOLD_REASONS} anyHeld={anyHeld}>
+              <QueueForm action={decideAction} partyId={party.id} reasons={queue.hold_reasons} anyHeld={anyHeld}>
                 {pages.map((pageId) => {
                   const ofPage = items.filter((i) => i.page_id === pageId);
                   const first = ofPage[0]!;
                   return (
                     <div className="queue-page" key={pageId}>
                       <p className="queue-page-head">
-                        <strong>A page waiting {waited(first.waiting_since, now)}</strong>, since its redaction was checked on{" "}
+                        <strong>
+                          {first.node ? <Link href={`/claims/${first.node_id}`}>{first.node}</Link> : "A page of a node you do not read"}
+                        </strong>
+                        . Waiting {waited(first.waiting_since, now)}, since its redaction was checked on{" "}
                         {day(first.waiting_since)}. Audit&rsquo;s check of the redaction: {first.audit ?? "not recorded."}{" "}
                         <Link href={`/showings/${first.showing_id}`}>The showing it belongs to</Link> says who asked and who it is shown to.
                       </p>
@@ -149,7 +124,15 @@ export default async function ReleaseQueuePage() {
                               <span>
                                 <span className="sc">{item.part === null ? "The page" : `Part ${item.part}`}</span> {capital(item.kind)}
                                 {item.redactor_least_sure && <span className="tag">the Redactor was least sure here</span>}
-                                {mine?.standing === "held" && <span className="tag">held for {party.name}</span>}
+                                {mine?.standing === "held" && (
+                                  <span className="tag">
+                                    held for {party.name}
+                                    {(() => {
+                                      const hold = item.held?.find((h) => h.party.id === party.id);
+                                      return hold ? `${hold.since ? ` since ${day(hold.since)}` : ""}${hold.reason ? `: ${hold.reason}` : ""}` : "";
+                                    })()}
+                                  </span>
+                                )}
                               </span>
                             </label>
                             {item.part === null && (
@@ -205,6 +188,34 @@ export default async function ReleaseQueuePage() {
         );
       })}
       {queue.more_waiting && <p className="acct-prose acct-measure">More items wait than are listed here. They appear as these are decided.</p>}
+
+      <details className="acct-section queue-limits" id="limits" open={queue.items.length === 0}>
+        <summary>
+          <h2>What cannot be done here, and why</h2>
+        </summary>
+        <ul className="inside-list acct-measure">
+          <li>
+            <strong>No text is edited.</strong> Each part was hashed when the redaction finished, and the people it is shown to check what
+            they read against that hash. An edited part would no longer match, so a part is released as written or held whole.
+          </li>
+          <li>
+            <strong>A release is not taken back.</strong> Once a part is shown, people have read it. A hold can be lifted later; a release
+            cannot be undone.
+          </li>
+          <li>
+            <strong>Nothing is released by time passing.</strong> An item nobody acts on stays held. The people the page is shown to see
+            that it is held and for how long, so the age beside each page below is what they see too.
+          </li>
+          <li>
+            <strong>A hold gives a reason from a fixed list.</strong> It is all the other side is told, beside who holds the part and
+            since when. Nobody checks it.
+          </li>
+          <li>
+            <strong>You decide for your own parties only.</strong> A part that rests on two parties&rsquo; material needs both, and is shown
+            once both have released it.
+          </li>
+        </ul>
+      </details>
 
       <section className="acct-section" id="rules">
         <div className="acct-head">

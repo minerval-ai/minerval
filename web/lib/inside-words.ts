@@ -1,30 +1,8 @@
 // Words the pages for showings, the release queue and sending outside share.
-//
-// The two lists of reasons are the API's own (HOLD_REASONS in
-// src/services/release-gate-service.ts, END_REASONS in
-// src/services/showing-service.ts). The API takes a reason by its key and
-// says it on the other side in these words; it serves neither list, so they
-// are written out here, word for word, and a key it does not know is
-// refused there.
+// The two fixed lists of reasons (for a hold, for ending a showing) are the
+// API's, served with GET /showings and GET /release/queue.
 
 import type { ShownVersion } from "./inside-api";
-
-export const HOLD_REASONS: Record<string, string> = {
-  under_review: "still being reviewed",
-  confidentiality: "confidential to the party",
-  legal: "a legal or contractual reason",
-  security: "a safety or security reason",
-  timing: "not to be shown yet",
-  disputed: "the party disputes what it says",
-  no_reason_given: "no reason given",
-};
-
-export const END_REASONS: Record<string, string> = {
-  no_longer_needed: "it is no longer needed",
-  replaced: "another showing replaces it",
-  asked_in_error: "it was asked for in error",
-  no_reason_given: "no reason given",
-};
 
 /** One of the four states a node under a showing is in, as the people it is shown to are told. */
 export function stateOfVersion(v: Pick<ShownVersion, "state" | "held_because" | "held_for" | "parts_held" | "of_parts" | "held_kinds">): string {

@@ -45,6 +45,10 @@ export type SourceKind =
 
 export interface TreeNode {
   id: string;
+  // Only where more than one judgment of the node, or evaluation of the
+  // argument it sits under, is in force for the reader: how many.
+  judgments_in_force?: number;
+  argument_evaluations_in_force?: number;
   text: string;
   claim_type: ClaimType;
   state: ClaimState;
@@ -536,6 +540,9 @@ export interface NodeVersion {
   made_beside: Array<{ label: string; replaced: boolean }>;
   versions_since: string[];
   made_against_earlier: boolean;
+  // What this judgment was made on, said to the reader, and what has changed beneath it since.
+  coverage?: Coverage | null;
+  since_assessed?: SinceAssessed | null;
   model?: string | null;
   run_id?: string | null;
   // A claim's assessment.
@@ -941,6 +948,8 @@ export interface RequestItem {
 
 export interface SearchResultItem {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   // A claim, a quantity or a question (constitution §2, §7a); absent from an
   // API older than kinds, which listed claims only.
   kind?: NodeKind;
@@ -1830,6 +1839,9 @@ export interface ArgumentPage {
     merged_into: string | null;
   };
   evaluation: ArgumentEvaluationEntry | null;
+  // Only where more than one evaluation is in force for the reader: how many, and each.
+  evaluations_in_force?: number;
+  evaluations?: ArgumentEvaluationEntry[];
   evaluation_history: ArgumentEvaluationEntry[];
   premises: ArgumentPremise[];
   instances: ArgumentInstanceItem[];

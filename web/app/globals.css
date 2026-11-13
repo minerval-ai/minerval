@@ -452,6 +452,9 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 .inside-part-held-words { margin: 0.4rem 0 0; font-family: var(--sans); font-size: 0.82rem; color: var(--ink); }
 .inside-part > .acct-detail { display: block; margin: 0.3rem 0 0; }
 .queue-form { margin-top: 0.6rem; }
+.queue-limits > summary { cursor: pointer; }
+.several-assessments, .several-assessments:visited { color: var(--ink); text-decoration: none; }
+.queue-limits > summary h2 { display: inline; }
 .queue-page { border-top: 2px solid var(--ink); padding: 0.7rem 0 0.4rem; margin-bottom: 1.2rem; max-width: 46rem; }
 .queue-page-head { margin: 0 0 0.4rem; font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
 .queue-page-head strong { color: var(--ink); }

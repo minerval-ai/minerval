@@ -33,10 +33,11 @@ import {
   PERMISSION_DEFINITIONS,
   PERMISSIONS,
   heldPermissions,
+  holdsPermission,
   standingOf,
 } from "../permissions.js";
 import { deploymentHoldsLabels } from "../db/client.js";
-import { requirePermission } from "../server/require-permission.js";
+import { requireAnyPermission, requirePermission } from "../server/require-permission.js";
 import { choosableLabels } from "../services/label-service.js";
 import { getContributorById } from "../services/contributor-service.js";
 import {
@@ -261,10 +262,18 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
   app.get("/parties", {
     schema: {
       tags: ["permissions"],
-      summary: "The parties whose material this deployment holds (administrators)",
+      summary: "The parties whose material this deployment holds (administrators; by name, people who direct the graph)",
+      description:
+        "An administrator reads each party in full. A person who holds the permission to direct reads each " +
+        "party's id and name and whether it is the organization itself, and nothing else: adding a source or a " +
+        "set of files says whose material it is, so whoever adds one has to be able to name the party.",
     },
-    preHandler: administrator,
-    handler: async (_request, reply) => reply.send({ parties: await listParties() }),
+    preHandler: [...signedIn, requireAnyPermission(["administer", "direct"])],
+    handler: async (request, reply) => {
+      const parties = await listParties();
+      if (holdsPermission(standingOf(request.auth), "administer")) return reply.send({ parties });
+      return reply.send({ parties: parties.map((p) => ({ id: p.id, name: p.name, is_own_organization: p.is_own_organization })) });
+    },
   });
 
   app.post<{ Body: { name: string; is_own_organization?: boolean } }>("/parties", {

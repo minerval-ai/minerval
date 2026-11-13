@@ -1,5 +1,6 @@
 "use client";
 
+import { SeveralAssessments } from "./SeveralAssessments";
 import { useState } from "react";
 import Link from "next/link";
 import type { LeanCheckSummary, TreeNode, Stance } from "@/lib/types";
@@ -161,6 +162,7 @@ function BasisNode({ node }: { node: TreeNode }) {
           {node.text}
         </span>{" "}
         <Link className="plain" href={`/claims/${node.id}`} title="open this claim" style={{ color: "var(--faint)" }}>↗&#xFE0E;</Link>
+        {node.judgments_in_force ? <> <SeveralAssessments id={node.id} n={node.judgments_in_force} /></> : null}
         {node.subtree_collapsed && (
           <span
             className="basis-flag"
