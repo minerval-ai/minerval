@@ -219,7 +219,7 @@ export function VersionsInFull({ claimId, detail, versions, texts }: { claimId: 
 export function SeveralInForce({ claimId, detail, versions, texts }: { claimId: string; detail: ClaimDetail; versions: NodeVersion[]; texts?: Map<string, string> }) {
   const labels = versions.map((v) => v.label);
   return (
-    <section className="versions-several" aria-label="The assessments in force for you">
+    <section className="versions-several" aria-label="The assessments that stand for you">
       <p style={{ ...quiet, margin: "0 0 .9rem" }}>
         You read at {listOf(labels)}, and {labels.length === 2 ? "neither of those labels reads the other" : "none of those labels reads another"}. So each of
         these assessments was made without sight of the evidence behind the {labels.length === 2 ? "other" : "others"}, and neither replaces the other.
@@ -347,7 +347,7 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
           Where one person holds both direct and release, whoever directed the work also released it.
         </Row>
         {node && (
-          <Row label="Versions">
+          <Row label="Assessments">
             <ul>
               {node.versions.map((v) => (
                 <li key={v.page_id}>
