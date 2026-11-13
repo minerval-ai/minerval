@@ -846,6 +846,17 @@ a.fnd-card:hover, a.fnd-card:target {
 .reasoning-detail[open] > summary::before { transform: rotate(90deg); }
 .reasoning-detail > summary:hover { color: var(--ink-soft); }
 .reasoning-detail .reasoning { margin-top: 0.6rem; margin-bottom: 0; }
+/* The page's exits (cite, embed): their own block, clear of whatever precedes
+   them. The negative top margin above tucks a fold under the text it
+   explains; here there is no such text, and it ran the first fold into the
+   button above it. */
+.page-exits { margin: 2rem 0 1.6rem; }
+.page-exits > .reasoning-detail { margin: 0.35rem 0; }
+/* No stated views: an invitation at the foot of the column, not a section. */
+.stated-views-empty { margin: 1.8rem 0 1.4rem; font-family: var(--sans); }
+.stated-views-empty > p { margin: 0; font-size: 0.8rem; color: var(--muted); max-width: 36rem; line-height: 1.5; }
+.stated-views-empty > p .sc { margin-right: 0.4rem; color: var(--ink-soft); }
+.stated-views-empty #state-view { margin-top: 0.7rem !important; }
 /* Retired arguments under the decomposition (#541): folded away, quiet. */
 .retired-arguments { margin: 1rem 0 0.6rem; }
 .retired-arguments-note { font-family: var(--sans); font-size: 0.78rem; color: var(--muted); margin: 0.4rem 0 0.3rem; }

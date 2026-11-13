@@ -414,7 +414,7 @@ export function ClaimView({
           graph it holds, in its own words, beside the assessment and never
           inside it. The section says that its place gives it no weight. A
           design fixture has no API to state a view to. */}
-      {!fixture && (
+      {!fixture && statedViews.length > 0 && (
         <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={statedViews} />
       )}
 
@@ -583,10 +583,12 @@ export function ClaimView({
       {/* cite this claim (#290) — the reading column's exit: a conventional
           citation pinned to the current assessment version, plus the evidence
           record for carrying the page's provenance out of the graph. */}
-      <CiteClaim claimId={claim.id} />
-      {/* its neighbour on the way out: the claim shown on another site,
-          with the judgment whole */}
-      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      <div className="page-exits">
+        <CiteClaim claimId={claim.id} />
+        {/* its neighbour on the way out: the claim shown on another site,
+            with the judgment whole */}
+        <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      </div>
       {/* the Assistant, opened from this node (#646): it is told which page
           the question came from */}
       <section className="ask-about">
@@ -604,6 +606,10 @@ export function ClaimView({
           starts. Kept at the end of the reading column so the page itself
           stays unmarked by the exchanges behind it. */}
       <Contribute claimId={claim.id} />
+      {/* with none stated, only the invitation, at the foot */}
+      {!fixture && statedViews.length === 0 && (
+        <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={[]} />
+      )}
 
       <hr className="thin" />
       {/* Funding disclosure (§19), placed here at the bottom deliberately:
