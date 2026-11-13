@@ -16,7 +16,8 @@
  * undecided.
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
-import { loadConfig } from "../config.js";
+import { SOLVER_OFF_WITH_MATHEMATICS, loadConfig } from "../config.js";
+import { featureOn } from "../features.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { owlsToMicroUsd } from "./owl.js";
 import type { AttemptOutcome, AttemptSummary } from "./claim-extras-types.js";
@@ -269,7 +270,7 @@ export type OpenAttemptResult =
   | { ok: true; attempt: AttemptRow; costEstMicroUsd: number }
   | {
       ok: false;
-      code: "NOT_PUBLISHED" | "ALREADY_RUNNING" | "LIFETIME_CAP";
+      code: "NOT_PUBLISHED" | "ALREADY_RUNNING" | "LIFETIME_CAP" | "SOLVER_OFF";
       message: string;
     };
 
@@ -331,6 +332,10 @@ export async function openAttempt(input: {
   }
 
   const variant: AttemptVariant = input.action.variant === "max" ? "max" : "standard";
+  // Mathematics off: the solver has no model, and none is defaulted.
+  if (!featureOn("mathematics", config) || !(input.model ?? config.solverModel)) {
+    return { ok: false, code: "SOLVER_OFF", message: SOLVER_OFF_WITH_MATHEMATICS };
+  }
   const model = input.model ?? config.solverModel;
   const costEst =
     Number(input.action.cost_est_micro_usd) > 0

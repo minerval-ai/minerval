@@ -155,11 +155,11 @@ describe("the operations view", () => {
     const m = await mandateWithTerms(await seedUser("ops-kinds"), 50 * OWL);
     // A review pass the mandate covered at its estimate, run and settled.
     const review = await seedAction({ group: `review:${m.grantId}`, kind: "mandate_review", targetRef: m.grantId, costMicroUsd: 2 * OWL });
-    const reviewAlloc = await seedAllocation({ group: `review:${m.grantId}`, actionId: review, grantId: m.grantId, amountMicroUsd: 2 * OWL });
+    const reviewAlloc = await seedAllocation({ group: `review:${m.grantId}`, actionId: review, grantId: m.grantId, amountMicroUsd: 2 * OWL, commissionedBy: "mandate" });
     await rawQuery(`UPDATE action_allocations SET spent_micro_usd = $2, released_at = now() + interval '1 second' WHERE id = $1`, [reviewAlloc, 1.5 * OWL]);
     // A lookout run under way.
     const lookout = await seedAction({ group: `lookout:${m.grantId}`, kind: "lookout_run", costMicroUsd: OWL, status: "running" });
-    await seedAllocation({ group: `lookout:${m.grantId}`, actionId: lookout, grantId: m.grantId, amountMicroUsd: OWL });
+    await seedAllocation({ group: `lookout:${m.grantId}`, actionId: lookout, grantId: m.grantId, amountMicroUsd: OWL, commissionedBy: "mandate" });
     // A commissioned pass that ran past its budget: its allocation is
     // spent whole (nothing stamps released_at on it), and the overage is a
     // second allocation, created already spent and released.
@@ -187,7 +187,7 @@ describe("the operations view", () => {
   it("shows the policy, the day's use, the commissions and the decisions", async () => {
     const m = await mandateWithTerms(await seedUser("ops-view"), 10 * OWL);
     await rawQuery(
-      `UPDATE grants SET daily_budget_micro_usd = $2,
+      `UPDATE grants SET pace = (CASE WHEN $2::bigint > 0 THEN jsonb_build_object('kind','steady','owls',$2::bigint / 1000000.0,'period_hours',24) ELSE '{"kind":"as_needed"}'::jsonb END),
               mandate = mandate || jsonb_build_object('operating_policy', jsonb_build_object('mission', 'Fund the deep-ocean questions first.'))
         WHERE id = $1`,
       [m.grantId, 5 * OWL]
@@ -205,7 +205,7 @@ describe("the operations view", () => {
     );
     const view = (await getMandateAllocationView(m.grantId))!;
     expect(view.operating_policy).toContain("Fund the deep-ocean questions first.");
-    expect(view.budget).toMatchObject({ daily_rate_owls: 5, used_today_owls: 2, held_owls: 2 });
+    expect(view.budget).toMatchObject({ pace: { kind: "steady", owls: 5, period_hours: 24 }, pace_window_used_owls: 2, held_owls: 2 });
     expect(view.kinds).toEqual([
       { kind: "assess", funding: "commissioned", runs: 1, running: 1, budget_owls: 2, spent_owls: 0 },
     ]);

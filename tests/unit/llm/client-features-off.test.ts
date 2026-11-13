@@ -34,6 +34,8 @@ vi.mock("../../../src/services/trace-service.js", () => ({
   markRunPrivate: vi.fn(),
   startAgentRun: vi.fn(() => null),
   finishAgentRun: vi.fn(),
+  // The log is best-effort here, where untraced() keeps work off it.
+  recordMode: () => false,
 }));
 
 vi.mock("../../../src/llm/budget-tracker.js", () => ({

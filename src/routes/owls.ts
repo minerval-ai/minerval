@@ -5,9 +5,9 @@
  * Mounted only in a members-only deployment (server/app.ts), so the public
  * graph has none of these.
  *
- *   GET  /standing-mandates: the General and Governance mandates, and
- *     whether each has been set up. Any member.
- *   POST /standing-mandates/:name: set one up, in place of the seed
+ *   GET  /standing-mandates: the General mandate, and whether it has
+ *     been set up. Any member.
+ *   POST /standing-mandates/:name: set it up, in place of the seed
  *     script and the operator key the public graph uses.
  *
  * And only where the deployment creates its own owls (OWLS=created):
@@ -51,13 +51,13 @@ export async function standingMandateRoutes(app: FastifyInstance): Promise<void>
     schema: {
       tags: ["mandates"],
       summary:
-        "The deployment's two standing mandates, General and Governance, and whether each has been set up",
+        "The deployment's standing mandate, General, and whether it has been set up",
       description:
-        "General pays for the upkeep whose value is spread across the whole graph. Governance " +
-        "pays for the audits of the graph's decisions. Until both are set up, upkeep and " +
-        "audits have no mandate to fund them. Where the deployment holds material at more than " +
-        "one label, `by_label` says, for each label the caller reads, whether each is set up " +
-        "there: a mandate's work runs at its label.",
+        "General pays for the upkeep whose value is spread across the whole graph, the audits of " +
+        "the graph's decisions among it. Until it is set up, upkeep and audits have no mandate " +
+        "to fund them. Where the deployment holds material at more than one label, `by_label` " +
+        "says, for each label the caller reads, whether it is set up there: a mandate's work " +
+        "runs at its label.",
     },
     preHandler: member,
     handler: async (_request, reply) =>
@@ -71,20 +71,21 @@ export async function standingMandateRoutes(app: FastifyInstance): Promise<void>
     schema: {
       tags: ["mandates"],
       summary:
-        "Set up the General or the Governance mandate (administrators, from a signed-in session)",
+        "Set up the General mandate (administrators, from a signed-in session)",
       description:
         "Creates the mandate with its starting operating policy, which its Grantmaker revises " +
         "from then on. Where this deployment creates its own owls, budget_owls is created " +
         "with it and the act is logged; where owls are sold, leave it out and fund the " +
-        "mandate from a balance. daily_owls is its daily rate (0 for none); left out, it " +
-        "starts at 30 owls a day for General and 5 for Governance. Where the deployment holds " +
-        "material at more than one label, `label` names the label the mandate works at: a " +
-        "mandate's work runs at its label, so each label whose upkeep or audits are to be paid " +
-        "for has a standing mandate of its own, set up by an administrator who reads it.",
+        "mandate from a balance. daily_owls sets its pace: at most that many owls committed in " +
+        "any rolling day, or 0 for as needed, where the budget is the only bound; left out, it " +
+        "starts at 30 owls a day. Its Grantmaker may change the pace from then on. Where the " +
+        "deployment holds material at more than one label, `label` names the label the mandate " +
+        "works at: a mandate's work runs at its label, so each label whose upkeep or audits are " +
+        "to be paid for has a General mandate of its own, set up by an administrator who reads it.",
       params: {
         type: "object",
         required: ["name"],
-        properties: { name: { type: "string", enum: ["general", "governance"] } },
+        properties: { name: { type: "string", enum: ["general"] } },
       },
       body: {
         type: "object",
@@ -98,7 +99,7 @@ export async function standingMandateRoutes(app: FastifyInstance): Promise<void>
     handler: async (request, reply) => {
       const name = request.params.name;
       if (!isStandingMandateName(name)) {
-        return reply.code(404).send({ error: "The standing mandates are general and governance.", code: "NOT_FOUND" });
+        return reply.code(404).send({ error: "The standing mandate is general.", code: "NOT_FOUND" });
       }
       const result = await setUpStandingMandate({
         name,

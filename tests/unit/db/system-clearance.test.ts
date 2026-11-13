@@ -42,6 +42,10 @@ type SystemCall = [reason: string, writes: string];
 const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   "src/index.ts": [
     [
+      "The page-hash fill writes a hash into every source's own row, whatever its label.",
+      "A hash of the source's own URL into the source's own row. Nothing moves between rows.",
+    ],
+    [
       "Migrations change tables, which only their owner may do, and a migration that updates rows must see every one.",
       "What each migration says. A migration that inserts into a labelled table names the label (tests/unit/db/migration-label-stamps.test.ts).",
     ],
@@ -54,12 +58,20 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing.",
     ],
     [
-      "The page-hash fill writes a hash into every source's own row, whatever its label.",
-      "A hash of the source's own URL into the source's own row. Nothing moves between rows.",
-    ],
-    [
       "Shutdown hands back every claim this process holds a lease on, whatever its label.",
       "The lease columns of rows this process leased. No content.",
+    ],
+  ],
+  "src/preflight.ts": [
+    [
+      "The preflight reads the migrator's own record of what has been applied, which belongs to the tables' owner and holds no row of the graph.",
+      "Nothing. It reads the date of each applied migration.",
+    ],
+  ],
+  "src/preflight-deployment.ts": [
+    [
+      "The preflight asks about the whole deployment, whoever reads it: counts over every label of showings, mandates, connections and file sets.",
+      "Nothing. What it reports to the operator, and to an administrator through the setup checklist, is counts and the names of labels: how many showings outside are open, whether a General mandate is set up at each label that holds material, how many connections at each label name a credential variable that is not set, how many file sets are on. No row's text is read.",
     ],
   ],
   "src/db/enforcement.ts": [

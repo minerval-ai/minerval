@@ -12,7 +12,8 @@ import {
   completeAction,
   reconcileActions,
 } from "../../src/services/action-service.js";
-import { commissionAction, commissionNodePass, grantDayUseMicroUsd } from "../../src/services/commission-service.js";
+import { commissionAction, commissionNodePass } from "../../src/services/commission-service.js";
+import { committedWithinMicroUsd } from "../../src/services/pace-service.js";
 import { grantCommittedMicroUsd } from "../../src/services/regrant-service.js";
 import { executeNotifySteward } from "../../src/llm/tools/notify-steward.js";
 import { withPassBudget } from "../../src/llm/usage-context.js";
@@ -63,10 +64,10 @@ describe("commissions", () => {
     expect(m).toEqual({ body: "Look again at the 2023 replication.", paid: true });
 
     // The day counts the held budget; settlement returns what the run didn't spend.
-    expect(await grantDayUseMicroUsd(grantId)).toBe(3 * OWL);
+    expect(await committedWithinMicroUsd(grantId, 24)).toBe(3 * OWL);
     await rawQuery(`UPDATE actions SET status = 'running' WHERE id = $1`, [row.id]);
     await completeAction(row.id, 1.2 * OWL, { meteredJobId: jobId });
-    expect(await grantDayUseMicroUsd(grantId)).toBe(1.2 * OWL);
+    expect(await committedWithinMicroUsd(grantId, 24)).toBe(1.2 * OWL);
     expect(await grantCommittedMicroUsd({ id: grantId, budgetJobId: jobId })).toBe(1.2 * OWL);
   });
 
@@ -78,7 +79,7 @@ describe("commissions", () => {
     const first = await commissionNodePass({ payer: { kind: "grant", grantId }, claimId: a, budgetMicroUsd: 3 * OWL, brief: "a", commissionedBy: "program_officer" });
     expect(first.ok).toBe(true);
     const second = await commissionNodePass({ payer: { kind: "grant", grantId }, claimId: b, budgetMicroUsd: 2 * OWL, brief: "b", commissionedBy: "program_officer" });
-    expect(second).toMatchObject({ ok: false, code: "OVER_DAILY_RATE" });
+    expect(second).toMatchObject({ ok: false, code: "OVER_PACE" });
   });
 
   it("adds a brief to the inbox at no cost when the node's pass is already commissioned", async () => {

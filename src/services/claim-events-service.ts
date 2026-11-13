@@ -31,6 +31,7 @@ import {
   bounties,
   prizeClaims,
   proofAttempts,
+  claimStateChanges,
 } from "../db/schema.js";
 
 // One flat discriminated union rather than nested threads: a review or an
@@ -123,10 +124,28 @@ export type ClaimEvent =
       action: string;
       reasoning: string;
     }
+  | StateChangeEvent
   | FormalizationEvent
   | LeanCheckEvent
   | PrizeEvent
   | AttemptEvent;
+
+/**
+ * The node's lifecycle state changed (#962): archived, restored, merged,
+ * un-merged or deprecated, with who did it, why, and the nodes that carry on
+ * what it stated (claim-lifecycle-service.ts).
+ */
+export interface StateChangeEvent {
+  kind: "state_change";
+  id: string;
+  at: string;
+  actor: string;
+  from_state: string;
+  to_state: string;
+  reason: string;
+  successor_ids: string[];
+  cohort: string | null;
+}
 
 /** A formal statement changed state (docs/mathematics.md §5). */
 export interface FormalizationEvent {
@@ -271,6 +290,16 @@ export interface ClaimEventsInput {
     createdBy: string;
     createdAt: Date;
   }>;
+  stateChanges?: Array<{
+    id: string;
+    fromState: string;
+    toState: string;
+    actor: string;
+    reason: string;
+    successorIds: string[];
+    cohort: string | null;
+    createdAt: Date;
+  }>;
   formalizations?: Array<{
     id: string;
     version: number;
@@ -351,6 +380,8 @@ const KIND_ORDER: Record<ClaimEvent["kind"], number> = {
   lean_check: 8,
   attempt: 9,
   prize: 10,
+  // Last: a node is retired after whatever else happened to it that moment.
+  state_change: 11,
 };
 
 const TERMINAL_PRIZE_CLAIM = new Set([
@@ -497,6 +528,20 @@ export function composeClaimEvents(input: ClaimEventsInput): ClaimEvent[] {
       audit_id: entry.id,
       action: entry.action,
       reasoning: entry.reasoning,
+    });
+  }
+
+  for (const s of input.stateChanges ?? []) {
+    events.push({
+      kind: "state_change",
+      id: `state_change:${s.id}`,
+      at: s.createdAt.toISOString(),
+      actor: s.actor,
+      from_state: s.fromState,
+      to_state: s.toState,
+      reason: s.reason,
+      successor_ids: s.successorIds,
+      cohort: s.cohort,
     });
   }
 
@@ -692,6 +737,7 @@ export async function getClaimEvents(
     bountyRows,
     prizeClaimRows,
     attemptRows,
+    stateChangeRows,
   ] = await Promise.all([
     db.select().from(assessments).where(eq(assessments.claimId, claim.id)),
     db.select().from(contributions).where(eq(contributions.claimId, claim.id)),
@@ -700,6 +746,7 @@ export async function getClaimEvents(
     db.select().from(bounties).where(eq(bounties.claimId, claim.id)),
     db.select().from(prizeClaims).where(eq(prizeClaims.claimId, claim.id)),
     db.select().from(proofAttempts).where(eq(proofAttempts.claimId, claim.id)),
+    db.select().from(claimStateChanges).where(eq(claimStateChanges.claimId, claim.id)),
   ]);
 
   const contributionIds = contributionRows.map((c) => c.id);
@@ -743,6 +790,7 @@ export async function getClaimEvents(
     bounties: bountyRows,
     prizeClaims: prizeClaimRows,
     attempts: attemptRows,
+    stateChanges: stateChangeRows,
   });
 
   return { events: events.slice(offset, offset + limit), total: events.length };

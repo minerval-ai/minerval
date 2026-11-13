@@ -3,7 +3,7 @@ import { tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { describe, it, expect } from "vitest";
-import { PROMPT_SET_FILE, syncFrontendContent } from "../../../scripts/sync-frontend-content.js";
+import { syncFrontendContent } from "../../../scripts/sync-frontend-content.js";
 
 /**
  * Prompt transparency as a CI property (docs/mathematics.md §3.7): what the
@@ -41,14 +41,13 @@ describe.skipIf(!existsSync(vendored))("vendored frontend content", () => {
           ).toBe(true);
         }
       }
-      // The prompt set names the constitution, every role prompt and every
-      // skill by hash, so a change to any of them shows here as well.
-      expect(
-        readFileSync(join(vendored, PROMPT_SET_FILE), "utf-8") ===
-          readFileSync(join(tmp, PROMPT_SET_FILE), "utf-8"),
-        `web/content/${PROMPT_SET_FILE} has drifted from the prompt code; ` +
-          `run: npx tsx scripts/sync-frontend-content.ts`
-      ).toBe(true);
+      // No file here may hold a figure over the whole set: one line that every
+      // prompt change rewrites makes every open PR conflict whenever another
+      // merges. The prompt set's hash is served live (GET /setup/prompt-set).
+      expect(existsSync(join(vendored, "prompt-set.json")), "web/content/prompt-set.json").toBe(false);
+      for (const a of JSON.parse(readFileSync(join(vendored, "agents/index.json"), "utf-8"))) {
+        expect(Object.keys(a), `agents/index.json entry ${a.key}`).not.toContain("fullChars");
+      }
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

@@ -62,7 +62,7 @@ export interface StandingMandateState {
 }
 
 export interface StandingMandate {
-  name: "general" | "governance";
+  name: "general";
   title: string;
   objective: string;
   /** The mandate, or the oldest the reader reads where there is one for each label. */
@@ -497,7 +497,7 @@ export async function fetchStandingMandates(externalId: string): Promise<Standin
 
 export function setUpStandingMandate(
   externalId: string,
-  name: "general" | "governance",
+  name: "general",
   body: { budget_owls?: number; daily_owls?: number; label?: string }
 ): Promise<{ standing_mandate: StandingMandate }> {
   return accountFetch(`/standing-mandates/${name}`, { method: "POST", actingUser: externalId, body });

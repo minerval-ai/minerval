@@ -14,7 +14,7 @@ import {
   materializePlanItems,
   materializeStandingOrders,
 } from "../../src/services/action-service.js";
-import { grantDayUseMicroUsd } from "../../src/services/commission-service.js";
+import { committedWithinMicroUsd } from "../../src/services/pace-service.js";
 import { tendMandates } from "../../src/services/mandate-lifecycle-service.js";
 import { PLAN_ORDER_COMMISSIONER } from "../../src/services/standing-order-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
@@ -108,10 +108,23 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
       [root, kid]
     );
     await rawQuery(`UPDATE claims SET steward_state = 'deferred' WHERE id = ANY($1::uuid[])`, [[kid, outside]]);
+    // A node in scope that is already judged and merely queued for a fresh
+    // look is not what the policy buys (#961): its work is the stubs.
+    const judged = await seedClaim("scope node, judged and queued");
+    await rawQuery(
+      `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning)
+       VALUES ($1, $2, 'requires', 'db test')`,
+      [root, judged]
+    );
+    await rawQuery(
+      `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, is_current, assessed_at)
+       VALUES ($1, 'supported', 0.8, 'db test', true, now() - interval '9 days')`,
+      [judged]
+    );
     // A rate with room for one pass at a time.
     const price = await estimate(root);
     expect(price).toBeLessThan(5 * OWL);
-    await rawQuery(`UPDATE grants SET scope_claim_id = $2, daily_budget_micro_usd = $3 WHERE id = $1`, [
+    await rawQuery(`UPDATE grants SET scope_claim_id = $2, pace = (CASE WHEN $3::bigint > 0 THEN jsonb_build_object('kind','steady','owls',$3::bigint / 1000000.0,'period_hours',24) ELSE '{"kind":"as_needed"}'::jsonb END) WHERE id = $1`, [
       m.grantId,
       root,
       Math.round(price * 1.5),
@@ -125,7 +138,7 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
     expect(Number(placed[0]!.amount)).toBe(price);
     expect(await orders(m.grantId, kid)).toHaveLength(0);
     expect(await orders(m.grantId, outside)).toHaveLength(0);
-    expect(await grantDayUseMicroUsd(m.grantId)).toBe(price);
+    expect(await committedWithinMicroUsd(m.grantId, 24)).toBe(price);
     expect(await grantStatus(m.grantId)).toBe("active");
 
     await runPass(root, 0.25 * price, m.jobId);
@@ -137,6 +150,9 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
 
     await runPass(kid, 0.25 * price, m.jobId);
     await tendMandates();
+    // The judged node was never ordered, and does not keep the mandate open.
+    expect(await orders(m.grantId, judged)).toHaveLength(0);
+    expect(await claimState(judged)).toBe("pending");
     expect(await grantStatus(m.grantId)).toBe("completed");
     // Half a pass's estimate was spent; the rest is back with the funder.
     expect(await owlBalance(funder)).toBe(20 * OWL - 2 * Math.round(0.25 * price));
@@ -146,7 +162,7 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
   it("pauses a mandate whose escrow is all spent, but not one whose escrow is only held by live work", async () => {
     const spent = await mandate({ budget: 2 * OWL });
     const claim = await seedClaim("spent on");
-    await setPlan(spent.grantId, [{ action: "assess", claim_id: claim, rationale: "x", budget_owls: 2 }]);
+    await setPlan(spent.grantId, [{ action: "assess", claim_id: claim, rationale: "x", variant: "standard", budget_owls: 2 }]);
     await materializePlanItems(spent.grantId);
     // The whole escrow is held by the pass that is waiting: not the floor.
     await tendMandates();
@@ -174,7 +190,7 @@ describe("mandates no agent ends (the direct steward lane's other work)", () => 
        VALUES ('grant_planning', $1, 'standard', $2, 'planned', 1, 'done', $3)`,
       [`plan:${m.grantId}`, m.grantId, 1 * OWL]
     );
-    await setPlan(m.grantId, [{ action: "reassess", claim_id: claim, rationale: "the claim itself", budget_owls: 2 }]);
+    await setPlan(m.grantId, [{ action: "reassess", claim_id: claim, rationale: "the claim itself", variant: "standard", budget_owls: 2 }]);
     // Not yet materialized: the item is still to become work.
     await tendMandates();
     expect(await grantStatus(m.grantId)).toBe("active");

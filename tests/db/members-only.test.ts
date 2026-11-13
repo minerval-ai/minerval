@@ -439,6 +439,7 @@ describe("what a permission guards", () => {
       "POST /grants/:id/approve": ["direct"],
       "POST /correspondents/:id/poke": ["direct"],
       "POST /sources": ["direct"],
+      "POST /claims/:claim_id/stated-views": ["direct"],
       "POST /showings": ["direct"],
       "POST /showings/:showing_id/end": ["direct"],
       "POST /showings/:showing_id/pages/:page_id/hold": ["direct"],

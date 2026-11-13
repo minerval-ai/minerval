@@ -169,7 +169,7 @@ import { openInbox } from "../../src/services/inbox-service.js";
 import { recordIngestFocus } from "../../src/services/ingest-focus-service.js";
 import { runAtMandateLabel, runAtMandateLabelOutsideAnyRun } from "../../src/services/label-service.js";
 import { createLookout, flagNote, getLookout, listLookoutFlags, queueLookoutEvent } from "../../src/services/lookout-service.js";
-import { collectMandateEvents, pendingMandateEvents, wakeDueMandateReviews } from "../../src/services/mandate-event-service.js";
+import { collectMandateEvents, pendingMandateEvents, openReviewsForEscalations } from "../../src/services/mandate-event-service.js";
 import { raiseToMandate } from "../../src/services/mandate-inbox-service.js";
 import { amendObjective } from "../../src/services/mandate-terms-service.js";
 import { writeOperatingPolicy } from "../../src/services/operating-policy-service.js";
@@ -318,7 +318,10 @@ async function writeOneOfEach() {
   const made = await createGrant({ funderUserId: funder, name: `Mandate ${tag}`, policy: "cover", budgetOwls: 300, scopeClaimId: claim });
   if (!made.ok) throw new Error(made.message);
   const grantId = made.grant.id;
-  await rawQuery(`UPDATE grants SET events_scanned_at = now() - interval '1 minute', daily_budget_micro_usd = $2 WHERE id = $1`, [grantId, 100 * OWL]);
+  await rawQuery(`UPDATE grants SET events_scanned_at = now() - interval '1 minute', pace = $2::jsonb WHERE id = $1`, [
+    grantId,
+    JSON.stringify({ kind: "steady", owls: 100, period_hours: 24, reason: "A test mandate's pace." }),
+  ]);
   expect(await writeOperatingPolicy({ grantId, content: `Commission what the plan names (${tag}).`, note: "A first policy.", author: "grantmaker" }))
     .toMatchObject({ ok: true });
   expect(await amendObjective({ grantId, objective: `Find what the claim turns on (${tag}).`, note: `Sharper (${tag}).`, author: "grantmaker" }))
@@ -389,7 +392,7 @@ async function writeOneOfEach() {
   await adjustReputation({ contributorId: contributor, delta: -1 });
 
   // The Curator asked to look, a sweep and what it flagged, an audit finding.
-  const curation = await requestCuration({ anchorClaimId: claim, otherClaimId: other, source: "operator", concern: `These may be one node (${tag}).` });
+  const curation = await requestCuration({ anchorClaimId: claim, otherClaimId: other, source: "operator", defect: "duplicate", concern: `These may be one node (${tag}).` });
   if (!curation.ok) throw new Error(curation.problem);
   const sweepId = await startSweep({ tagId: null, partition: "residual", label: "The rest", assessed: 1 } as never, "standard");
   // Closed at once, so no other file finds a sweep in progress.
@@ -573,8 +576,14 @@ describe("the columns", () => {
       // A per-account allowance: a number.
       "assistant_allowances",
       "contributors",
+      // What is wrong with the deployment itself, one row for each kind of fault and provider (the credit ran out, a
+      // key was refused): the same whoever asks. Its last_error is the provider's own message for a failure of
+      // that kind, and is shown on no surface (deployment-fault-service.ts).
+      "deployment_faults",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
+      // Where the subscription router has read the event log to: a number.
+      "event_router_state",
       // The labels themselves.
       "label_reads",
       "labels",
@@ -680,7 +689,7 @@ describe("a mandate's work", () => {
     await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
       grantId,
       JSON.stringify({ strategy: "s", items: [
-        { action: "assess", claim_id: claim, rationale: "first", budget_owls: 3 },
+        { action: "assess", claim_id: claim, rationale: "first", budget_owls: 3, variant: "standard" },
         { action: "ingest", url, rationale: "a source" },
       ] }),
     ]);
@@ -770,13 +779,20 @@ describe("a mandate's work", () => {
     expect(await labelsWhere("mandate_events", "grant_id = $1", [grantId])).toEqual([SECOND]);
     expect((await pendingMandateEvents(grantId)).total).toBe(1);
 
-    // A review row from an earlier pass, finished, at public: the wake reopens it by UPDATE.
+    // A review row from an earlier pass, finished, at public, and an item an
+    // officer escalated with no Grantmaker session live to receive it: the
+    // wake reopens the row by UPDATE.
     const row = await seedAction({ group: REVIEW_GROUP(grantId), costMicroUsd: 1, status: "done" });
     await rawQuery(`UPDATE actions SET kind = 'mandate_review', target_ref = $2, updated_at = now() - interval '2 hours' WHERE id = $1`, [row, grantId]);
     expect(await labelOf("actions", row)).toBe(PUBLIC_LABEL);
-    expect(await wakeDueMandateReviews()).toBeGreaterThanOrEqual(1);
+    await inRunAt(SECOND, () => raiseToMandate({ grantId, source: "a lookout", summary: "Escalated for the Grantmaker." }));
+    await rawQuery(`UPDATE mandate_inbox SET escalated_at = now() WHERE grant_id = $1`, [grantId]);
+    expect(await openReviewsForEscalations()).toBeGreaterThanOrEqual(1);
     const [woken] = await rawQuery<{ status: string; sensitivity_label: string }>(`SELECT status, sensitivity_label FROM actions WHERE id = $1`, [row]);
     expect(woken).toEqual({ status: "open", sensitivity_label: SECOND });
+    // Leave no review open for the next test's runner to pick.
+    await rawQuery(`UPDATE mandate_inbox SET handled_at = now() WHERE grant_id = $1`, [grantId]);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE id = $1`, [row]);
   });
 });
 

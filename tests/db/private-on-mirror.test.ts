@@ -504,7 +504,7 @@ describe("work at public on a mirrored node", () => {
     expect(await ledger(id.child)).toEqual([]);
     await system(() => rawQuery(`UPDATE claims SET steward_state = 'deferred' WHERE id = $1`, [id.child]));
     const curated = await runAt(PUBLIC_LABEL, () =>
-      requestCuration({ anchorClaimId: id.parent, source: "steward_escalation", concern: "Its structure looks off." })
+      requestCuration({ anchorClaimId: id.parent, source: "steward_escalation", defect: "other", concern: "Its structure looks off." })
     );
     expect(curated).toMatchObject({ ok: false });
     expect((curated as { problem: string }).problem).toContain("belongs to the public graph and is read here through the mirror");
@@ -763,7 +763,7 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       expectWritten("add_relationship_edge", await tool("add_relationship_edge", { parent_id: id.parent, child_id: id.survivor, relation: "supports", reasoning: "Marsh soils are one case." }));
       expectWritten("add_related_claim", await tool("add_related_claim", { claim_id: id.parent, other_claim_id: id.other, kind: "related", reasoning: "The upland comparison." }));
       expectWritten("log_stewardship_decision", await tool("log_stewardship_decision", { claim_id: id.parent, action_taken: "no_change", reasoning: "Looked, and the version at a stands." }));
-      expectWritten("escalate_to_curator", await tool("escalate_to_curator", { claim_id: id.parent, concern: "Two of our nodes under it look like one." }));
+      expectWritten("escalate_to_curator", await tool("escalate_to_curator", { claim_id: id.parent, defect: "duplicate", concern: "Two of our nodes under it look like one." }));
       expectWritten("record_argument_instance", await tool("record_argument_instance", { argument_id: id.argument, url: `https://intranet.example/${tag}/field-notes`, verbatim_text: "Our cores show the soil still accumulating.", stance: "advances", reading: "full" }));
       expectWritten("notify_steward", await tool("notify_steward", { claim_id: id.other, target_ids: [id.parent], message: "Our upland cores bear on this." }));
       // A mirrored node it thinks is wrong is a request, which stays at the run's label.

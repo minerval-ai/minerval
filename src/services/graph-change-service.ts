@@ -42,6 +42,8 @@ export const EVENT_CHANGE_KINDS = [
   "ruling",
   "petition_decided",
   "request_filed",
+  // A node archived, restored, merged or deprecated, with who and why (#962).
+  "state_changed",
 ] as const;
 export const GRAPH_CHANGE_KINDS = [...VERDICT_CHANGE_KINDS, ...EVENT_CHANGE_KINDS] as const;
 export type GraphChangeKind = (typeof GRAPH_CHANGE_KINDS)[number];
@@ -183,7 +185,10 @@ export function graphChangeDefinition(audience: GraphChangeAudience): GraphChang
       "Returns ids and summaries, not whole nodes: open what matters with get_claim. " +
       "Ask for more than verdicts with `kinds`: work_commissioned and run_finished " +
       "(the ledger), message_arrived and message_answered (nodes' inboxes), " +
-      "contribution_accepted, ruling, petition_decided and request_filed." +
+      "contribution_accepted, ruling, petition_decided and request_filed, and " +
+      "state_changed (a node archived, restored, merged or deprecated: its " +
+      "summary says from and to, by whom, why, and the successors that carry " +
+      "on what it stated, if any)." +
       (audience === "caller" ? " Free." : ""),
     input_schema: {
       type: "object",
@@ -366,6 +371,13 @@ async function listEventChanges(
        SELECT q.id, q.created_at, 'request_filed', q.keeper_claim_id, left(q.ask, 200)
          FROM requests q
         WHERE q.keeper_claim_id IS NOT NULL AND 'request_filed' = ANY($6)
+       UNION ALL
+       SELECT s.id, s.created_at, 'state_changed', s.claim_id,
+              left(concat(s.from_state, ' -> ', s.to_state, ' by ', s.actor, ': ', s.reason,
+                          CASE WHEN cardinality(s.successor_ids) > 0
+                               THEN concat(' (successors: ', array_to_string(s.successor_ids, ', '), ')') ELSE '' END), 500)
+         FROM claim_state_changes s
+        WHERE 'state_changed' = ANY($6)
      )
      SELECT ev.id, to_char(ev.at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at, ev.kind,
             ev.claim_id, left(c.text, 240) AS claim_text, ev.summary

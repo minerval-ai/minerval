@@ -1,5 +1,5 @@
 {
-  "id": "763ad489-b020-4566-895e-4c03c819bd08",
+  "id": "faa9f8ef-2154-4bcd-9612-de50e726539b",
   "prevId": "547cb647-675a-49a5-a0c6-09e736e25a98",
   "version": "7",
   "dialect": "postgresql",
@@ -19940,7 +19940,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'public'"
+          "default": "minerval_default_label()"
         }
       },
       "indexes": {
@@ -20447,10 +20447,10 @@
       "name": "argument_evaluations_in_force",
       "schema": "public",
       "isExisting": false,
-      "materialized": false,
       "with": {
         "securityInvoker": true
-      }
+      },
+      "materialized": false
     },
     "public.assessments_in_force": {
       "columns": {
@@ -20592,10 +20592,10 @@
       "name": "assessments_in_force",
       "schema": "public",
       "isExisting": false,
-      "materialized": false,
       "with": {
         "securityInvoker": true
-      }
+      },
+      "materialized": false
     },
     "public.quantity_estimates_in_force": {
       "columns": {
@@ -20700,10 +20700,10 @@
       "name": "quantity_estimates_in_force",
       "schema": "public",
       "isExisting": false,
-      "materialized": false,
       "with": {
         "securityInvoker": true
-      }
+      },
+      "materialized": false
     },
     "public.question_assessments_in_force": {
       "columns": {
@@ -20833,10 +20833,10 @@
       "name": "question_assessments_in_force",
       "schema": "public",
       "isExisting": false,
-      "materialized": false,
       "with": {
         "securityInvoker": true
-      }
+      },
+      "materialized": false
     }
   },
   "_meta": {

@@ -168,7 +168,11 @@ Steward's earlier passes failed; `get_decomposition` marks such a claim
 `steward_parked`, with the class of failure), the result carries a `note`
 saying since when, after how many failures and why, and that the money buys
 another attempt, not a guaranteed verdict: tell your user before they pay
-again. `fund_deep_decomposition` (5 owls or
+again. If the platform cannot run the work yet (a deployment fault, such as
+its account with a model provider being out of credits), the result's
+`note` says the work is placed but waiting and since when: nothing about
+the claim failed, no attempt is charged, the platform retries it on its
+own, and paying again buys nothing. The owls stay held for it meanwhile. `fund_deep_decomposition` (5 owls or
 more) funds a mandate on the claim: a fresh pass on it first, then the
 claims that bear on it, most consequential first, with a tenth of the
 budget for the Grantmaker that plans the work and the rest refunded when
@@ -220,13 +224,22 @@ conversation.
    stake they have is declined. Never answer for your user.
 4. When it proposes a mandate, show your user the draft and the quote, and
    fund it with `fund_grant` only on their explicit go-ahead. Funding
-   escrows the budget; unspent budget refunds. If `get_grant` shows the
+   escrows the budget; unspent budget refunds. The draft says how fast the
+   money may be spent: as needed (the work runs as it arrives, which suits
+   exploring a question or ingesting a source) or steady (at most so much
+   in any rolling day or week, for upkeep or a user who wants it spread
+   out). Ask your user which they want; only they can change it later. If `get_grant` shows the
    plan awaiting approval, `approve_grant_plan` starts it, again only with
    your user's agreement.
 5. Follow it with `get_grant` (spend, plan progress, the assessments it
    funded). You can keep talking to the Grantmaker in the same
-   conversation to adjust the unexecuted part of the plan; it holds the
-   same refusal duties then as at design time.
+   conversation to adjust the part of the plan whose work has not
+   started: it can replace that remainder, or change the model tier or
+   budget of a single planned pass, or withdraw it, until that pass is
+   running, and a budget the pass held comes back to the escrow. Each
+   plan item in `get_grant` says its tier and, when it is waiting,
+   blocked or cancelled, why. It holds the same refusal duties then as at
+   design time.
 
 **Something made from the graph.** If your user wants something produced
 from the graph on a schedule or as it changes,

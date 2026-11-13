@@ -159,7 +159,7 @@ describe("funding a request", () => {
     const id = await file({ budgetUsd: 20 });
     const funder = await seedUser("request mandate");
     const mandate = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 8 * OWL });
-    await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [mandate.grantId]);
+    await rawQuery(`UPDATE grants SET status = 'active', pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [mandate.grantId]);
 
     // More than the escrow holds: refused whole, never clipped.
     expect(
@@ -284,7 +284,7 @@ describe("running a funded request", () => {
     await setRequestBudget({ requestId: id, budgetUsd: 3 });
     const funder = await seedUser("under-quote mandate");
     const mandate = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 20 * OWL });
-    await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [mandate.grantId]);
+    await rawQuery(`UPDATE grants SET status = 'active', pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [mandate.grantId]);
     const again = await allocateMandateToRequest({ grantId: mandate.grantId, requestId: id, microUsd: 3 * OWL });
     expect(again).toMatchObject({ ok: true, status: "commissioned", quote: { quoteMicroUsd: 3 * OWL, underQuote: false } });
     if (!again.ok) throw new Error("expected a commission");

@@ -328,7 +328,7 @@ export interface SourceRelationship {
  * refers to it (cites it, reports the debate). Posing and mentioning take no
  * side; a mention is shown apart from the voices that take a position.
  */
-export type InstanceStance = "affirms" | "denies" | "poses" | "mentions";
+export type InstanceStance = "affirms" | "denies" | "poses" | "mentions" | "qualifies" | "gives_probability";
 
 export interface Instance {
   id: string;
@@ -626,6 +626,10 @@ export interface ClaimDetail {
   // The public contribution record (#171); absent when the API predates the
   // /claims/:id/record endpoint or the fetch fails.
   record?: ContributionExchange[];
+  // Views stated to the graph directly on this node (constitution §4),
+  // newest first, earlier statements of a speaker included; absent when the
+  // API predates them or the fetch fails.
+  stated_views?: StatedView[];
   // Topic tags (#272) with the provenance of each; empty when the API omits
   // them or none has been attached yet.
   tags?: ClaimTag[];
@@ -1196,6 +1200,18 @@ export type ClaimEvent =
       audit_id: string;
       action: string;
       reasoning: string;
+    }
+  | {
+      // The node archived, restored, merged or deprecated (#962).
+      kind: "state_change";
+      id: string;
+      at: string;
+      actor: string;
+      from_state: string;
+      to_state: string;
+      reason: string;
+      successor_ids: string[];
+      cohort: string | null;
     };
 
 export interface ClaimEventsPage {
@@ -1287,6 +1303,8 @@ export interface ContributionDetail {
     reviewed_at: string;
     reviewed_by: string;
   } | null;
+  // Present on a view stated to the graph directly (§4).
+  stated_view?: ContributionStatedView;
 }
 
 // "Cite this claim" (#290): the conventional citation served by
@@ -1972,4 +1990,85 @@ export interface ClaimCard {
   page_url: string;
   /** Null unless the id asked for was merged into another node (#884). */
   resolved_from?: ResolvedFrom | null;
+}
+
+// --- views stated to the graph directly (constitution §4) --------------------
+
+export type StatedViewRelation = "differs" | "agrees" | "not_assessed" | "not_comparable";
+
+/** What became of the reasons a stated view gave: waiting for the node's Steward, or its answer. */
+export interface StatedViewChallenge {
+  state: "waiting" | "answered";
+  sent_at: string;
+  answered_at: string | null;
+  outcome: "changed" | "no_change" | "disagree" | null;
+  note: string | null;
+}
+
+/**
+ * One account's statement of its own view on a node, set beside the judgment
+ * in force. The statement, the stance and the stake are the speaker's; the
+ * judgment and the comparison are the graph's.
+ */
+export interface StatedView {
+  id: string;
+  contribution_id: string;
+  instance_id: string;
+  source_id: string | null;
+  node: { id: string; kind: "claim" | "quantity" | "question"; text: string; page_url: string };
+  speaker: { id: string; name: string; verified: boolean };
+  stated_at: string;
+  current: boolean;
+  stance: string;
+  stance_as_stated?: string;
+  probability: number | null;
+  figure: QuantityEstimate | null;
+  statement: string;
+  stake: string | null;
+  gave_reasons: boolean;
+  challenge: StatedViewChallenge | null;
+  record_url: string;
+  detached?: { reason: string | null };
+  judgment: {
+    status: string | null;
+    credence: number | null;
+    estimate: QuantityEstimate | null;
+    standing: string | null;
+    assessed_at: string;
+  } | null;
+  comparison: {
+    relation: StatedViewRelation;
+    direction: string | null;
+    basis: string | null;
+    summary: string;
+  };
+  stated: "before_current_assessment" | "after_current_assessment" | null;
+}
+
+export interface StatedViewList {
+  summary: {
+    total: number;
+    by_relation: Record<StatedViewRelation, number>;
+    by_direction: Record<string, number>;
+  };
+  stated_views: StatedView[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** The stated view a contribution carries, on the contribution's own record. */
+export interface ContributionStatedView {
+  id: string;
+  speaker: { id: string; name: string; verified: boolean };
+  stated_at: string;
+  stance: string;
+  probability: number | null;
+  figure: QuantityEstimate | null;
+  statement: string;
+  reasons: string | null;
+  stake: string | null;
+  source_id: string | null;
+  instance_id: string | null;
+  challenge: StatedViewChallenge | null;
 }

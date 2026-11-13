@@ -47,7 +47,7 @@ export interface GrantEscrowBreakdown {
   /** The part of `spent` that no allocation share accounts for: metered
    * to the mandate's job outside the ledger (the Grantmaker's chat with
    * the funder, a run's overage on a row no mandate allocation covered).
-   * It draws on the escrow and is not held to the daily rate. */
+   * It draws on the escrow and is not held to the pace. */
   outsideLedger: number;
   /** Unspent remainders of allocations not yet released: money held by
    * commissioned work that is waiting or running. */

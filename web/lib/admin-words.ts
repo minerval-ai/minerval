@@ -130,6 +130,25 @@ const PREFLIGHT_WORDS: Record<string, { title: string; todo?: string }> = {
     title: "Work that leaves no log",
     todo: "No setting changes this yet. It is listed so that whoever runs the deployment knows.",
   },
+  provider_labels: { title: "The labels the provider setting names" },
+  model_clearance: { title: "Model providers cleared for each label" },
+  embeddings_clearance: { title: "Embeddings cleared for each label" },
+  outside_service_clearance: { title: "Outside services cleared for each label" },
+  database_tls: { title: "How the database is reached" },
+  database_owner: { title: "The role that owns the tables" },
+  owls: { title: "Owls" },
+  model_prices: { title: "A price for each model" },
+  usage_report: { title: "The usage report" },
+  standing_mandates: { title: "A General mandate at each label" },
+  own_organization: { title: "The organisation as a party" },
+  publishing: { title: "Signing pages shown outside" },
+  public_graph: { title: "The public graph" },
+  public_acts: { title: "Who may act on the public graph" },
+  private_run_fetches: { title: "The addresses a private run may fetch" },
+  connections: { title: "Connections' credentials" },
+  file_sets: { title: "Where sets of files are kept" },
+  sandbox: { title: "The sandbox" },
+  sandbox_confinement: { title: "What a command in the sandbox can reach" },
 };
 
 export function preflightTitle(check: Pick<PreflightCheck, "name">): string {
@@ -381,8 +400,8 @@ function partiesItem(c: SetupChecklist): ChecklistItem {
 }
 
 function mandatesItem(c: SetupChecklist): ChecklistItem {
-  const WHAT: Record<string, string> = { general: "upkeep has", governance: "audits have" };
-  // One line for each mandate, or, where the deployment holds material at
+  const WHAT: Record<string, string> = { general: "upkeep and audits have" };
+  // One line for the mandate, or, where the deployment holds material at
   // more than one label, for each mandate at each label the reader reads: a
   // mandate's work runs at its label, so a label with none has nobody
   // paying for its upkeep or its audits.
@@ -394,7 +413,7 @@ function mandatesItem(c: SetupChecklist): ChecklistItem {
   const facts = each.map(({ m, mandate, where, short }) => {
     if (!mandate) return `${m.title}${short}: not set up. Until it is, ${WHAT[m.name] ?? "its work has"} no mandate to pay for it${where}.`;
     if (mandate.budget_owls <= 0) return `${m.title}${short}: set up with no budget, so it can pay for nothing yet.`;
-    const daily = mandate.daily_owls > 0 ? `, at most ${owlsText(mandate.daily_owls)} a day` : "";
+    const daily = mandate.daily_owls > 0 ? `, at most ${owlsText(mandate.daily_owls)} in any rolling day` : "";
     const waiting = mandate.running ? "" : " It is not running: its budget is spent, or it is waiting for one.";
     return `${m.title}${short}: set up with a budget of ${owlsText(mandate.budget_owls)}${daily}.${waiting}`;
   });
@@ -402,14 +421,14 @@ function mandatesItem(c: SetupChecklist): ChecklistItem {
   const missing = each.some(({ mandate }) => !mandate);
   return {
     key: "standing_mandates",
-    title: "The General and Governance mandates",
+    title: "The General mandate",
     state: ready ? "done" : "to_do",
     facts,
     ...(ready
       ? {}
       : {
           next: missing
-            ? "An administrator sets them up. No agent work runs unless a mandate pays for it."
+            ? "An administrator sets it up. No agent work runs unless a mandate pays for it."
             : "An administrator adds to the budget, or anyone who holds the permission to fund backs the mandate.",
         }),
     href: "/admin/owls#standing-mandates",

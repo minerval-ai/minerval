@@ -25,8 +25,10 @@
  * administrator offered tool by tool, and not to the open web; an address
  * inside that system is not one a search could have given.
  *
- * Where the rule does not apply, which is everywhere on the public graph,
- * the toolset and the executor come back as they were passed.
+ * Where the rule does not apply, the toolset and the executor come back as
+ * they were passed. That is everywhere on the public graph, and everywhere
+ * in a deployment that has not turned the rule on (PRIVATE_RUN_FETCHES,
+ * off unless set to "given"; services/given-addresses.ts).
  */
 import { isConnectionToolName } from "../connections.js";
 import {
@@ -99,6 +101,69 @@ export function searchResultAddresses(rawContent: readonly unknown[]): string[] 
   return found;
 }
 
+/**
+ * Whether a turn holds the results of a search its provider ran: a block
+ * whose type names a search's result and that is not the report of an
+ * error. Wider than what searchResultAddresses reads, on purpose: it is how
+ * a shape of result this code does not know is noticed.
+ */
+export function holdsSearchResults(rawContent: readonly unknown[]): boolean {
+  return rawContent.some((block) => {
+    if (!block || typeof block !== "object") return false;
+    const record = block as Record<string, unknown>;
+    const type = typeof record.type === "string" ? record.type : "";
+    if (!/search/.test(type) || !/result/.test(type)) return false;
+    const content = record.content;
+    if (Array.isArray(content)) return content.length > 0;
+    // An error is reported as one object, not a list of results.
+    if (content && typeof content === "object") return !/error/.test(String((content as { type?: unknown }).type ?? ""));
+    return content !== undefined && content !== null && content !== "";
+  });
+}
+
+const UNREAD_SEARCH_TITLE = "A provider's search returned results and no address could be read from them";
+
+/**
+ * A provider's search returned results and this code read no address from
+ * them. Under the rule the run then meets only refusals, which say an
+ * address was not given and nothing of why. The cause is in Minerval's
+ * machinery (the shape of a provider's response this code does not read),
+ * so it is raised as a report on that machinery, once: repeats collapse
+ * onto the one report. The report holds the shape of the blocks and none of
+ * their content.
+ */
+async function reportUnreadSearchResults(rawContent: readonly unknown[]): Promise<void> {
+  const shapes = rawContent
+    .filter((b): b is Record<string, unknown> => !!b && typeof b === "object")
+    .map((b) => {
+      const content = b.content;
+      const inner = Array.isArray(content)
+        ? `[${[...new Set(content.map((c) => String((c as { type?: unknown } | null)?.type ?? typeof c)))].join(", ")}]`
+        : typeof content;
+      return `${String(b.type)}: ${inner}`;
+    });
+  try {
+    const { raiseIssue } = await import("../services/report-service.js");
+    await raiseIssue({
+      agent: "platform",
+      origin: "internal",
+      kind: "system_failure",
+      severity: "blocking",
+      surface: "private_run_fetches (llm/address-rule.ts)",
+      title: UNREAD_SEARCH_TITLE,
+      body:
+        "This deployment holds the fetches of runs that read private material to addresses it was given " +
+        "(PRIVATE_RUN_FETCHES=given). A search run by the model's provider returned results in a turn, and " +
+        "searchResultAddresses read no address from them, so nothing that search found can be fetched and the " +
+        "run is told only that each address was not given. The shape of the provider's response is not one this " +
+        "code reads. The turn's blocks, by type and the types inside them, with none of their content: " +
+        shapes.join("; ").slice(0, 2500),
+    });
+  } catch (err) {
+    console.error("[address-rule] could not report unread search results:", err instanceof Error ? err.message : err);
+  }
+}
+
 export async function underAddressRule<T extends object, R>(
   tools: T[],
   executeTool: (name: string, input: Record<string, unknown>) => Promise<R>
@@ -131,7 +196,9 @@ export async function underAddressRule<T extends object, R>(
       return refused;
     },
     afterTurn: async (rawContent) => {
-      await noteGiven(searchResultAddresses(rawContent), "search");
+      const addresses = searchResultAddresses(rawContent);
+      if (addresses.length === 0 && holdsSearchResults(rawContent)) await reportUnreadSearchResults(rawContent);
+      await noteGiven(addresses, "search");
     },
   };
 }

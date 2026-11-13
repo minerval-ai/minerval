@@ -36,7 +36,7 @@
  *    live curation request on it, under the largest funder. Metered and
  *    consumed like the rest; the requests it read are marked consumed.
  *  - audit (#363): one Audit Agent run for the audit_runs row named in
- *    target_ref, under its funder (a Governance mandate, or the bounty's
+ *    target_ref, under its funder (the General mandate, or the bounty's
  *    prize-review reserve for a prize audit). The run row records its
  *    completion and findings count.
  *  - request (Part VIII): one Researcher run on the request named in
@@ -46,8 +46,8 @@
  *    outcome as work for the request's keeper to judge.
  *
  * The unfunded fallback lane: with BACKGROUND_FALLBACK_LANE_ENABLED and no
- * mandate that could fund the kind (no active General mandate for curate,
- * no active Governance mandate for audit), an uncovered curate or audit row
+ * mandate that could fund the kind (no active General mandate, which owns
+ * both curation and audit), an uncovered curate or audit row
  * runs attributed to nobody, as the Steward's fallback lane does. It exists
  * for fresh dev databases and corpus runs; a deployment with its mandates
  * seeded never takes it.
@@ -57,7 +57,11 @@ import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
-import { runMandateReview } from "../llm/agents/mandate-review.js";
+import { routeEvents } from "../services/subscription-router.js";
+import { microUsdToOwls } from "../services/owl.js";
+import { releaseHolds } from "../services/petition-service.js";
+import { deploymentFaultsTick } from "../services/deployment-fault-service.js";
+import { runMandateReview, grantmakerWakeDigest } from "../llm/agents/mandate-review.js";
 import { runLookout } from "../llm/agents/lookout.js";
 import { recordLookoutRun } from "../services/lookout-service.js";
 import { runCorrespondent } from "../llm/agents/correspondent.js";
@@ -76,7 +80,6 @@ import {
 } from "../services/curation-service.js";
 import {
   getGeneralMandate,
-  getGovernanceMandateIds,
 } from "../services/allocation-policy-service.js";
 import { getPlatformAccountId, getReserveJob } from "../services/bounty-service.js";
 import { loadConfig } from "../config.js";
@@ -85,7 +88,10 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import type { OperatingPolicy } from "../services/operating-policy-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
-import { renderResearchReport } from "../services/research-commission-service.js";
+import { followedRunOf, renderReaderAnswers, renderResearchReport } from "../services/research-commission-service.js";
+import { answersInOrder } from "../services/reader-answers.js";
+import { sourceTextMarksOfResearch } from "../services/separate-reader.js";
+import { READER_RETURN_NOTE } from "../llm/tools/research-tools.js";
 import { deliverReply, resumeMessages, sessionPrivateReasons, takeSessionForResume } from "../services/session-service.js";
 import { runConsistencyChecker } from "../llm/agents/consistency-checker.js";
 import {
@@ -128,8 +134,10 @@ import {
   nextRunnableAction,
   releaseAction,
   actionBudgetMicroUsd,
+  actionWaitingOn,
   type RunnableAction,
 } from "../services/action-service.js";
+import type { PlatformFaultReason } from "../services/deployment-fault.js";
 
 export type EngineDrainStatus =
   | "processed"
@@ -144,6 +152,13 @@ export interface EngineProcessResult {
   grantId?: string;
   ok?: boolean;
   error?: string;
+  /**
+   * With 'transient': the class of the platform fault the row now waits on
+   * (action-service.ts, releaseAction). The row paces itself, so the drain
+   * may go on to other work; absent, the row could be picked again at once
+   * and the drain stops.
+   */
+  waitingOn?: PlatformFaultReason;
 }
 
 /** Cancel a group whose subject is gone; the ledger must not spin on it. */
@@ -171,6 +186,16 @@ export async function processNextEngineAction(
   // A mandate whose work produced something since its last review gets its
   // review reopened here, then funded just below like its other own rows.
   await mandateEventsTick().catch(() => ({ recorded: 0, woken: 0 }));
+  // Subscriptions (subscription-router.ts): events not yet delivered, and
+  // check-ins and thresholds that have come due. The router runs here, on
+  // the tick, and nowhere else.
+  await routeEvents().catch(() => 0);
+  // Holds whose time has come, or whose runs have settled, go back to be
+  // decided; the officers' sittings and the Grantmaker's session take them.
+  await releaseHolds().catch(() => []);
+  // A deployment fault that is over is closed here, and the rows that
+  // waited on it are tried at once (deployment-fault-service.ts).
+  await deploymentFaultsTick();
   await fundGrantSelfActions().catch(() => 0);
 
   // Request rows wait, funded, while the operator has the researcher off
@@ -201,7 +226,26 @@ export async function processNextEngineAction(
   // handler is inside, not only the agent's run: what it enqueues before
   // and after (a job for an ingest, a follow-up, a reopened row) is work
   // this row started, and takes its label the same way.
-  return runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, async (): Promise<EngineProcessResult> => {
+  const result = await runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () => runEngineAction(action, opts));
+  if (result.status === "transient") {
+    const waitingOn = await waitingOnOrNull(action.id);
+    if (waitingOn) return { ...result, waitingOn };
+  }
+  return result;
+}
+
+/** The fault the row now waits on; null when it cannot be read (the drain then stops, as before). */
+async function waitingOnOrNull(actionId: string): Promise<PlatformFaultReason | null> {
+  try {
+    return await actionWaitingOn(actionId);
+  } catch {
+    return null;
+  }
+}
+
+/** Claim one engine row and run its kind's handler. */
+async function runEngineAction(action: RunnableAction, opts: { model?: string }): Promise<EngineProcessResult> {
+  {
     if (!(await claimAction(action.id, action.sensitivity_label))) return { status: "empty" };
 
     if (action.kind === "ingest") return runIngestAction(action);
@@ -218,7 +262,7 @@ export async function processNextEngineAction(
     if (action.kind === "research") return runResearchAction(action);
     if (action.kind === "resume") return runResumeAction(action);
     return runGrantAgentAction(action, opts);
-  });
+  }
 }
 
 /** Unfunded fallback-lane Curator runs this process (CURATOR_MAX_RUNS). */
@@ -232,18 +276,19 @@ export function resetFallbackCuratorRuns(): void {
 /**
  * The oldest uncovered curate or audit row the fallback lane may run, or
  * null. Only with BACKGROUND_FALLBACK_LANE_ENABLED, and only for a kind no
- * mandate could fund: an active General mandate owns curation's funding,
- * an active Governance mandate (or a bounty's reserve) owns audit's.
+ * mandate could fund: an active General mandate owns curation's funding
+ * and audit's (a bounty's reserve also pays for its own audits).
  */
 async function nextFallbackAction(): Promise<RunnableAction | null> {
   const config = loadConfig();
   if (!config.backgroundFallbackLaneEnabled) return null;
   const kinds: string[] = [];
   const curatorCap = config.curatorMaxRuns ?? 0;
-  if (!(await getGeneralMandate()) && (curatorCap <= 0 || fallbackCuratorRuns < curatorCap)) {
+  const general = await getGeneralMandate();
+  if (!general && (curatorCap <= 0 || fallbackCuratorRuns < curatorCap)) {
     kinds.push("curate");
   }
-  if ((await getGovernanceMandateIds()).length === 0) kinds.push("audit");
+  if (!general) kinds.push("audit");
   if (kinds.length === 0) return null;
   const [row] = await rawQuery<RunnableAction>(
     `SELECT a.id, a.kind, a.exclusion_group, a.variant, a.claim_id,
@@ -251,6 +296,9 @@ async function nextFallbackAction(): Promise<RunnableAction | null> {
             0::bigint AS coverage_micro_usd
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
+        -- Not inside the wait a platform fault put on it (action-service.ts,
+        -- NOT_WAITING_ON_FAULT_SQL).
+        AND (a.retry_after IS NULL OR a.retry_after <= now())
         AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL)
@@ -303,14 +351,11 @@ function maintenanceBudget(
   kind: "curate" | "audit",
   what: string
 ): { microUsd: number; source: string; funding: RunFunding } {
-  const config = loadConfig();
-  const owls = kind === "curate" ? config.curateRunBudgetOwls : config.auditRunBudgetOwls;
-  const floor = Math.round((owls ?? 5) * (config.owlCostMicroUsd ?? 1_000_000));
-  const covered = actionBudgetMicroUsd(action);
-  const funding = { actionId: action.id };
-  return covered >= floor
-    ? { microUsd: covered, source: `the allocations funding ${what}`, funding }
-    : { microUsd: floor, source: `${what}'s run budget, which its funding mandate covers`, funding };
+  // Every run is commissioned whole, at the budget its payer chose: the run
+  // works to that budget, never one raised past it (a payer who wants more
+  // for it grants a petition).
+  void kind;
+  return { microUsd: actionBudgetMicroUsd(action), source: `the commission funding ${what}`, funding: { actionId: action.id } };
 }
 
 /**
@@ -367,7 +412,7 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
             context:
               `${requests.length} structural concern${requests.length === 1 ? "" : "s"} ` +
               `about this claim are waiting, and this run was funded to answer them:\n` +
-              describeCurationRequests(requests),
+              describeCurationRequests(requests, anchorClaimId),
           })
         )
     );
@@ -383,11 +428,11 @@ async function runCurateAction(action: RunnableAction): Promise<EngineProcessRes
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -449,11 +494,11 @@ async function runRequestCurateAction(action: RunnableAction): Promise<EnginePro
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "transient", actionId: action.id, kind: "curate", grantId: funder.grantId, error: msg };
     }
     await settle(billedMicroUsd);
@@ -503,7 +548,9 @@ export function requestKeeperBrief(request: RequestView): string {
  * A decomposition's plan opens with a pass on its claim: a reassessment
  * when the claim has been assessed, else its first (the item's kind is
  * resolved when it materializes). Prepended unless the Grantmaker already
- * put one first.
+ * put one first. On the standard tier, as any item that names none is
+ * stored (#956): a Grantmaker that wants the strong model on the claim puts
+ * its own first item there and says so, at a budget its escrow can hold.
  */
 function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: string }> }>(
   plan: P,
@@ -521,6 +568,7 @@ function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: 
       {
         action: "reassess",
         claim_id: claimId,
+        variant: "standard",
         rationale: "The claim this decomposition was funded for: a fresh pass on it comes first.",
       },
       ...items,
@@ -540,8 +588,38 @@ function withOpeningPass<P extends { items?: Array<{ action: string; claim_id?: 
  * returned.
  */
 /**
+ * A fresh review pass for a mandate whose Grantmaker asked for one
+ * (fresh_start), at the pass budget as it stands now, funded by the next
+ * drain iteration out of the mandate's pace (fundGrantSelfActions). A
+ * mandate whose passes have a share of their own reopens one only while the
+ * share holds something. The policy is read fresh: the last sitting may have
+ * changed its own figure. Failing here leaves the row for the reconcile
+ * sweep, which opens a pass for any mandate with no live session.
+ */
+async function reopenReview(grantId: string): Promise<void> {
+  try {
+    const [g] = await rawQuery<{ id: string; mandate: Record<string, unknown> | null }>(
+      `SELECT id, mandate FROM grants WHERE id = $1 AND status = 'active'`,
+      [grantId]
+    );
+    if (!g) return;
+    const share = await grantmakerShareLeftMicroUsd(g as never).catch(() => null);
+    if (share && share.leftMicroUsd <= 0) return;
+    const estimate = await reviewPassBudgetMicroUsd(g as never, "review", share);
+    await rawQuery(
+      `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, updated_at = now()
+        WHERE exclusion_group = $1 AND kind = 'mandate_review' AND status IN ('done', 'superseded', 'cancelled')`,
+      [`review:${grantId}`, estimate]
+    );
+  } catch (err) {
+    console.error(`[engine] could not open a fresh review for ${grantId}: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/**
  * resume: a paused session of the Curator, the Consistency Checker, the Audit
- * Agent or a Correspondent got back what it waited for (session-service.ts).
+ * Agent, a Correspondent or a mandate's Grantmaker got back what it waited
+ * for, or something it subscribed to came (session-service.ts).
  * The agent is rebuilt from the input its run was called with, and continues
  * the conversation it left with the answers appended, under the budget this
  * row was commissioned with. It may pause again.
@@ -554,7 +632,18 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
   }
   const { session, replies } = taken;
   const funder = await funderContext(action);
-  const messages = await resumeMessages(session, replies, {});
+  // A Grantmaker wakes to more than the answer: what its officers escalated,
+  // where its pace stands, and what re-reading this conversation costs.
+  // Every resumed run is told the budget this sitting has, which is not the
+  // paused run's: a resumption is commissioned afresh (session-service.ts).
+  const budgetLine =
+    `This resumed sitting has a budget of ${microUsdToOwls(actionBudgetMicroUsd(action))} owls, ` +
+    `metered as before; each tool result shows what you have spent.`;
+  const extra =
+    session.role === "grantmaker"
+      ? { newMessages: await grantmakerWakeDigest(session), budgetLine }
+      : { budgetLine };
+  const messages = await resumeMessages(session, replies, extra);
   const resume = { sessionId: session.id, messages, privateReasons: sessionPrivateReasons(session, replies) };
   const input = (session.context?.input ?? {}) as never;
   let billedMicroUsd = 0;
@@ -578,6 +667,13 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
             case "consistency_checker":
               await runConsistencyChecker(input, resume);
               return;
+            case "grantmaker": {
+              const grantId = (session.context?.input as { grantId?: string } | undefined)?.grantId;
+              if (!grantId) throw new Error("A Grantmaker session with no mandate.");
+              const review = await runMandateReview({ grantId }, resume);
+              if (review.freshStart) await reopenReview(grantId);
+              return;
+            }
             case "correspondent": {
               const run = await runCorrespondent(input, resume);
               const correspondentId = (session.context?.input as { correspondentId?: string } | undefined)?.correspondentId;
@@ -598,7 +694,7 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
   if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
     // Nothing ran: the session is ready again, and the row waits.
     await rawQuery(`UPDATE agent_sessions SET status = 'ready', updated_at = now() WHERE id = $1 AND status = 'running'`, [session.id]);
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, failure).catch(() => {});
     return {
       status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
       actionId: action.id,
@@ -640,6 +736,13 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
   // its claim's map (#865), opened when it was commissioned.
   const examination = run.examination_id ? await getExaminationRow(run.examination_id).catch(() => null) : null;
 
+  // A reader (separate-reader.ts) answers its Steward's questions; a
+  // follow-up opens with an earlier run's report and notebook, and so
+  // starts with that run's marks for the source text it was given.
+  const questions = (run.questions ?? []).length > 0 ? run.questions! : null;
+  const followed = followedRunOf(run.task);
+  const carriedMarks = followed ? await sourceTextMarksOfResearch(followed) : [];
+
   let billedMicroUsd = 0;
   let result: Awaited<ReturnType<typeof runResearcher>> | null = null;
   let failure: unknown = null;
@@ -664,6 +767,8 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
                 ceiling_micro_usd: run.ceiling_micro_usd,
                 notebook: run.notebook,
                 job_id: run.job_id,
+                questions,
+                carried_marks: carriedMarks,
               },
               claim,
               examination: researcherExamination(examination),
@@ -678,7 +783,7 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
 
   if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
     // Nothing ran and it was not the research's fault: the row waits again.
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, failure).catch(() => {});
     return {
       status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
       actionId: action.id,
@@ -695,6 +800,7 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
     turns: result?.turns,
     servedModels: result?.servedModels,
     error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
+    answers: questions ? (result?.answers ?? answersInOrder(questions, new Map())) : null,
   }).catch(() => null);
   await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId }).catch((err) =>
     console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
@@ -705,15 +811,23 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
     `SELECT reply_to_session, deliver_to_node FROM research_runs WHERE id = $1`,
     [run.id]
   );
-  const text = renderResearchReport({
+  const outcome = {
     id: run.id,
     status: closed?.status ?? (failure ? "failed" : (result?.status ?? "failed")),
     spent_micro_usd: billedMicroUsd,
     ceiling_micro_usd: Number(run.ceiling_micro_usd),
-    report: result?.report ?? null,
-    notebook: closed?.notebook ?? run.notebook ?? {},
-    error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
-  });
+  };
+  // A reader's commissioner is given the answers, each beside its question,
+  // and nothing in the reader's own words: no report, no notebook section
+  // names, no error text.
+  const text = questions
+    ? renderReaderAnswers(outcome, questions, closed?.answers ?? answersInOrder(questions, new Map()), READER_RETURN_NOTE)
+    : renderResearchReport({
+        ...outcome,
+        report: result?.report ?? null,
+        notebook: closed?.notebook ?? run.notebook ?? {},
+        error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
+      });
   await deliverReply({
     sessionId: route?.reply_to_session ?? null,
     kind: "research",
@@ -883,7 +997,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   if (failure && billedMicroUsd === 0 && (failure instanceof LlmBudgetExceededError || isTransientApiError(failure))) {
     // Nothing ran and it was not the request's fault: the row goes back to
     // waiting on its funding.
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, failure).catch(() => {});
     return {
       status: failure instanceof LlmBudgetExceededError ? "budget" : "transient",
       actionId: action.id,
@@ -1202,11 +1316,11 @@ async function runAuditAction(action: RunnableAction): Promise<EngineProcessResu
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1318,11 +1432,11 @@ async function runFormalizeAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1412,11 +1526,11 @@ async function runLookoutAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1497,11 +1611,11 @@ async function runCorrespondentAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "transient", actionId: action.id, kind: "correspondent_run", grantId: row.grant_id, error: msg };
     }
     await recordCorrespondentRun({
@@ -1588,11 +1702,11 @@ async function runConsistencySweepAction(action: RunnableAction): Promise<Engine
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1652,7 +1766,7 @@ async function runGrantAgentAction(
   const funder: { jobId?: string; userId?: string; grantId?: string } =
     await largestActionFunder(action.id).catch(() => ({}));
   try {
-    let continueRequested = false;
+    let freshStart = false;
     const { billedMicroUsd } = await runWithUsageContext(
       { userId: grant.funder_user_id, jobId: funder.jobId ?? null },
       () =>
@@ -1679,7 +1793,7 @@ async function runGrantAgentAction(
               grantId: grant.id,
               model: opts.model,
             });
-            continueRequested = review.continueRequested;
+            freshStart = review.freshStart;
           }
         })
     );
@@ -1698,38 +1812,7 @@ async function runGrantAgentAction(
       const { materializeLivePlan } = await import("../services/action-service.js");
       await materializeLivePlan(grant.id);
     }
-    // A mandate whose passes have a share of their own reopens a review only
-    // while the share holds something.
-    const share = await grantmakerShareLeftMicroUsd(grant).catch(() => null);
-    if (continueRequested && (!share || share.leftMicroUsd > 0)) {
-      // The agent judged a fresh pass the better way on: reopen its review
-      // action at the pass budget as it stands now, so the next drain
-      // iteration funds and runs another out of the mandate's day
-      // (fundGrantSelfActions). The policy is read fresh: this pass may
-      // have changed its own figure.
-      // The pass itself is done and settled: a failure here leaves the row
-      // closed for the sweep to reopen on its cadence, and is not the run's.
-      try {
-        const [now] = await rawQuery<{ mandate: typeof grant.mandate }>(
-          `SELECT mandate FROM grants WHERE id = $1`,
-          [grant.id]
-        );
-        const estimate = await reviewPassBudgetMicroUsd(
-          { id: grant.id, mandate: now?.mandate ?? grant.mandate },
-          "review",
-          share
-        );
-        await rawQuery(
-          `UPDATE actions SET status = 'open', cost_est_micro_usd = $2, updated_at = now()
-            WHERE id = $1 AND status = 'done'`,
-          [action.id, estimate]
-        );
-      } catch (err) {
-        console.error(
-          `[engine] continue_review could not reopen ${action.id}: ${err instanceof Error ? err.message : err}`
-        );
-      }
-    }
+    if (freshStart) await reopenReview(grant.id);
     return {
       status: "processed",
       actionId: action.id,
@@ -1740,11 +1823,11 @@ async function runGrantAgentAction(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return { status: "budget", actionId: action.id, error: msg };
     }
     if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
       return {
         status: "transient",
         actionId: action.id,
@@ -1831,7 +1914,7 @@ async function runIngestAction(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await releaseAction(action.id).catch(() => {});
+    await releaseAction(action.id, err).catch(() => {});
     return {
       status: "transient",
       actionId: action.id,

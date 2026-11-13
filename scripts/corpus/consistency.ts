@@ -170,7 +170,10 @@ const WRITTEN_SCHEMA = {
  */
 async function writePlantedAssessment(instruction: string, claimText: string, oldTrace: string): Promise<WrittenAssessment> {
   const { completeStructured } = await import("../../src/llm/client.js");
-  return completeStructured<WrittenAssessment>({
+  const { withAgent } = await import("../../src/llm/usage-context.js");
+  // A run of its own, like the judge's and the red team's, so the call is
+  // logged and its cost is separable from the checker under test.
+  return withAgent("plant", () => completeStructured<WrittenAssessment>({
     model: loadConfig().stewardModel,
     schema: WRITTEN_SCHEMA,
     schemaName: "PlantedAssessment",
@@ -184,7 +187,7 @@ async function writePlantedAssessment(instruction: string, claimText: string, ol
         `the original.\n\n${instruction}\n\nDo not mention that this is a test, a revision, ` +
         `or a re-examination.\n\nCLAIM: ${claimText}\n\nEXISTING REASONING:\n${oldTrace.slice(0, 6000)}`,
     }],
-  });
+  }));
 }
 
 async function plant(n: number, outDir: string): Promise<void> {
@@ -354,9 +357,9 @@ async function seedGeneralMandate(dailyMicroUsd: number): Promise<string> {
     [platform, dailyMicroUsd * 10]
   );
   const [grant] = await rawQuery<{ id: string }>(
-    `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, is_platform, daily_budget_micro_usd)
-     VALUES ($1, $2, 'General assessment (eval)', 'general', 'active', true, $3) RETURNING id`,
-    [platform, job!.id, dailyMicroUsd]
+    `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, is_platform, pace)
+     VALUES ($1, $2, 'General assessment (eval)', 'general', 'active', true, $3::jsonb) RETURNING id`,
+    [platform, job!.id, JSON.stringify({ kind: "steady", owls: dailyMicroUsd / 1_000_000, period_hours: 24, reason: "The eval's day of upkeep." })]
   );
   return grant!.id;
 }
@@ -397,7 +400,7 @@ async function arm(name: ArmName, outDir: string): Promise<void> {
     [cadenceK, plantClaims]
   );
   // The General mandate commissions each cadence pass whole, at the
-  // standard tier's estimate, within its daily rate, as its officers would
+  // standard tier's estimate, within its pace, as its officers would
   // under an upkeep policy.
   for (const c of cadence) {
     await enqueueSteward({ claimId: c.id, trigger: "staleness_check", context: "Periodic refresh (eval cadence)." });

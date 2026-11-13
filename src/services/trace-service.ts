@@ -52,6 +52,13 @@
  *     stay untraced whoever calls them.
  * Retention bounds how long a trace lives; these rules decide whether one
  * exists at all.
+ *
+ * Both rules are an exemption of the best-effort log, and record mode has
+ * none: there every run is logged, a reader's own content included, because
+ * a deployment that keeps its log as a record holds material whose handling
+ * has to be on it (docs/run-log.md, "Record mode"). A run over such content
+ * starts private (READERS_OWN_REASON), and the model seam refuses a call
+ * that has no run to be logged in (llm/logged-run.ts).
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -121,15 +128,27 @@ export interface RunAttribution {
   requestId?: string | null;
   /** The label the run writes at (src/labels.ts); absent means public. */
   label?: string;
+  /**
+   * Set by untraced() (usage-context.ts): the work is over a reader's own
+   * content. Such a run is opened only in record mode, and starts private.
+   */
+  untraced?: true;
 }
+
+/**
+ * Why a run over a reader's own content is private (llm/run-visibility.ts):
+ * its transcript holds a page they had open, a passage they handed to an
+ * analysis tool, or the message that opened their conversation.
+ */
+export const READERS_OWN_REASON = "input:readers-own-content";
 
 /**
  * The trace level in force, optionally for one agent. TRACE_ALWAYS_AGENTS
  * (docs/mathematics.md §7.4; `math_solver` by default) forces tracing on
  * for the named agents even where TRACE_LEVEL=off has switched it off: the
  * solver's transcript is the evidence a prize review relies on. Otherwise
- * the default is full everywhere but vitest. In record mode every
- * traceable run is traced.
+ * the default is full everywhere but vitest. In record mode every run is
+ * traced.
  */
 export function traceLevel(agent?: string): "off" | "full" {
   const config = loadConfig();
@@ -141,18 +160,20 @@ export function traceLevel(agent?: string): "off" | "full" {
 }
 
 /**
- * Agents never traced, at any TRACE_LEVEL: everything they are given is a
- * reader's own page or conversation (#356). The extension agent judges the
- * phrasings on whatever page is open in the browser and answers questions
- * typed about it; neither is the graph's to keep.
+ * Agents never traced while the log is best-effort, at any TRACE_LEVEL:
+ * everything they are given is a reader's own page (#356). The extension
+ * agent judges the phrasings on whatever page is open in the browser, which
+ * is not the public graph's to keep.
  */
 const NEVER_TRACED: ReadonlySet<string> = new Set(["extension"]);
 
 /**
- * Whether a run of `agent` may be recorded at all. Never-traced wins over
- * everything, including TRACE_ALWAYS_AGENTS.
+ * Whether a run of `agent` may be recorded at all. In record mode every run
+ * is. Otherwise never-traced wins over everything, including
+ * TRACE_ALWAYS_AGENTS.
  */
 export function traceable(agent: string): boolean {
+  if (recordMode()) return true;
   return !NEVER_TRACED.has(agent) && traceLevel(agent) !== "off";
 }
 
@@ -199,9 +220,24 @@ export function startAgentRun(
   attribution: RunAttribution
 ): AgentTrace | null {
   if (!traceable(agent)) return null;
+  return openAgentRun(agent, attribution);
+}
+
+/**
+ * Open a run without asking whether `agent` is traced here. startAgentRun is
+ * the way in for the agents' work. The one other caller is the preflight's
+ * test of the log itself (src/preflight.ts), which has to write a run and
+ * check it where TRACE_LEVEL is off too.
+ */
+export function openAgentRun(agent: string, attribution: RunAttribution): AgentTrace {
   const runId = randomUUID();
   const agentReason = agentPrivateReason(agent);
-  const initialReasons = agentReason ? [agentReason] : [];
+  const initialReasons = [
+    ...(agentReason ? [agentReason] : []),
+    // The agent's default covers its ordinary input (a submitted source is
+    // public); a reader's own content handed to the same agent is not.
+    ...(attribution.untraced ? [READERS_OWN_REASON] : []),
+  ];
   // The label the run writes at, from the context that opened it, so the
   // run row, its steps and the rows the run writes carry the same one.
   const label = attribution.label ?? PUBLIC_LABEL;

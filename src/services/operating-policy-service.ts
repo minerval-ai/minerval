@@ -19,10 +19,17 @@ import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { currentLabel } from "../llm/usage-context.js";
 
-export const POLICY_SECTIONS = ["mission", "priorities", "budgets", "petitions", "delegation"] as const;
+export const POLICY_SECTIONS = ["current", "mission", "priorities", "budgets", "petitions", "delegation"] as const;
 export type PolicySection = (typeof POLICY_SECTIONS)[number];
 
 export interface OperatingPolicy {
+  /**
+   * The Grantmaker's direction for now, beside the standing policy: which
+   * branches are promising, what to grant and what to hold until which work
+   * reports. Rewritten often; dated when written, and rendered first.
+   */
+  current?: string;
+  current_at?: string;
   mission?: string;
   priorities?: string;
   budgets?: string;
@@ -38,6 +45,7 @@ export interface OperatingPolicy {
 }
 
 const HEADINGS: Record<PolicySection, string> = {
+  current: "Current direction",
   mission: "Mission",
   priorities: "Priorities",
   budgets: "Budgets",
@@ -56,7 +64,9 @@ export async function getOperatingPolicy(grantId: string): Promise<OperatingPoli
 /** The policy as the officers and the public read it. */
 export function renderOperatingPolicy(policy: OperatingPolicy): string {
   const parts = POLICY_SECTIONS.filter((s) => policy[s]?.trim()).map(
-    (s) => `### ${HEADINGS[s]}\n${policy[s]!.trim()}`
+    (s) =>
+      `### ${HEADINGS[s]}${s === "current" && policy.current_at ? ` (written ${policy.current_at.slice(0, 16).replace("T", " ")} UTC)` : ""}\n` +
+      policy[s]!.trim()
   );
   return parts.length > 0
     ? parts.join("\n\n")
@@ -80,7 +90,7 @@ export function officerLimit(policy: OperatingPolicy): { microUsd: number; reaso
  * The budget a review pass of this mandate works to: the policy's own
  * figure, or the platform's default while the Grantmaker has set none
  * (DEFAULT_REVIEW_PASS_BUDGET_OWLS). A ceiling paid from the mandate's
- * escrow within its day's rate; the pass returns what it does not spend.
+ * escrow within its pace; the pass returns what it does not spend.
  */
 export function reviewPassBudget(policy: OperatingPolicy | null | undefined): {
   microUsd: number;
@@ -128,6 +138,7 @@ export async function writeOperatingPolicy(input: {
       return { ok: false, message: `section must be one of ${POLICY_SECTIONS.join(", ")}.` };
     }
     next[input.section] = content;
+    if (input.section === "current") next.current_at = new Date().toISOString();
   } else if (content) {
     // A whole policy: split on its own ### headings when it has them;
     // otherwise it is the mission section, read whole.
@@ -159,6 +170,13 @@ export async function writeOperatingPolicy(input: {
      VALUES ($1, 'policy', $2, $3::jsonb, $4, $5, $6)`,
     [input.grantId, input.section ?? null, JSON.stringify(next), note, input.author, currentLabel()]
   );
+  const { recordEvent } = await import("./event-service.js");
+  await recordEvent({
+    kind: "mandate_changed",
+    grantId: input.grantId,
+    refs: { part: "policy", section: input.section ?? null },
+    summary: `The operating policy${input.section ? `'s ${input.section} section` : ""} was rewritten: ${note}`,
+  });
   return { ok: true, policy: next };
 }
 

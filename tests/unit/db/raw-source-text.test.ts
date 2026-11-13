@@ -75,6 +75,9 @@ describe("a source's stored text", () => {
     // that writes a shown page, and reads the text for a reader's passage to
     // be cut from: at most 600 characters of it reach the launching Steward,
     // as a passage an agent chose, which reading at the label covers.
+    // stated-view-service writes a statement to the graph into a new
+    // source's text when the view is filed, and reads none back: a view's
+    // words are served from its own row (stated_views.statement).
     expect(mentioning("services", /raw_content|rawContent\b/)).toEqual([
       "services/analysis-service.ts",
       "services/examination-service.ts",
@@ -89,6 +92,7 @@ describe("a source's stored text", () => {
       "services/source-map-service.ts",
       "services/source-segment-service.ts",
       "services/source-service.ts",
+      "services/stated-view-service.ts",
     ]);
     expect(mentioning("mcp", STORED_TEXT)).toEqual([]);
     // The one route that serves a document, and it passes the reader's permission.

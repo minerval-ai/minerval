@@ -23,11 +23,10 @@ vi.mock("../../src/llm/client.js", async (orig) => {
 import { rawQuery } from "../../src/db/client.js";
 import { seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 import {
-  WAKE_AFTER_MINUTES,
   collectMandateEvents,
   describeMandateEvent,
   pendingMandateEvents,
-  wakeDueMandateReviews,
+  openReviewsForEscalations,
 } from "../../src/services/mandate-event-service.js";
 import { runMandateReview } from "../../src/llm/agents/mandate-review.js";
 
@@ -150,39 +149,33 @@ describe("collecting a mandate's events", () => {
   });
 });
 
-describe("waking a mandate's review", () => {
-  it("reopens the review once the last pass is old enough and something is pending", async () => {
+describe("events no longer wake a review; escalations reach a mandate with no live session", () => {
+  it("leaves the review closed while events wait, and opens one for an escalation nobody can receive", async () => {
     const { grantId, jobId } = await mandate();
-    const [review] = await rawQuery<{ id: string }>(
-      `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, status, updated_at)
-       VALUES ('mandate_review', $1, 'standard', $2, 'review', 500000, 'done', now())
-       RETURNING id`,
-      [`review:${grantId}`, grantId]
-    );
-    const node = await seedClaim("wake node");
-    await rawQuery(`INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, funded_by_job_id) VALUES ($1, 'supported', 0.7, 't', $2)`, [node, jobId]);
-    await collectMandateEvents(grantId);
-
-    // The pass just ended: the burst waits to be judged together.
-    expect(await wakeDueMandateReviews()).toBe(0);
-    await rawQuery(
-      `UPDATE actions SET updated_at = now() - make_interval(mins => $2) WHERE id = $1`,
-      [review!.id, WAKE_AFTER_MINUTES + 1]
-    );
-    expect(await wakeDueMandateReviews()).toBeGreaterThanOrEqual(1);
-    expect(await rawQuery(`SELECT status FROM actions WHERE id = $1`, [review!.id])).toEqual([{ status: "open" }]);
-  });
-
-  it("leaves a quiet mandate's review to its daily heartbeat", async () => {
-    const { grantId } = await mandate();
     const [review] = await rawQuery<{ id: string }>(
       `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, status, updated_at)
        VALUES ('mandate_review', $1, 'standard', $2, 'review', 500000, 'done', now() - interval '2 hours')
        RETURNING id`,
       [`review:${grantId}`, grantId]
     );
-    await wakeDueMandateReviews();
+    const node = await seedClaim("wake node");
+    await rawQuery(`INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, funded_by_job_id) VALUES ($1, 'supported', 0.7, 't', $2)`, [node, jobId]);
+    await collectMandateEvents(grantId);
+    // Events wait for the Grantmaker's next briefing; they open nothing.
+    expect(await openReviewsForEscalations()).toBe(0);
     expect(await rawQuery(`SELECT status FROM actions WHERE id = $1`, [review!.id])).toEqual([{ status: "done" }]);
+
+    // An escalated petition, and no Grantmaker session live to receive it.
+    await rawQuery(
+      `INSERT INTO petitions (grant_id, kind, asked_micro_usd, plan, status, waiting)
+       VALUES ($1, 'more_budget', 1000000, 'read the replication', 'escalated', true)`,
+      [grantId]
+    );
+    expect(await openReviewsForEscalations()).toBeGreaterThanOrEqual(1);
+    expect(await rawQuery(`SELECT status FROM actions WHERE id = $1`, [review!.id])).toEqual([{ status: "open" }]);
+    // Leave nothing escalated behind for later files' executor ticks.
+    await rawQuery(`UPDATE petitions SET status = 'refused' WHERE grant_id = $1`, [grantId]);
+    await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE id = $1`, [review!.id]);
   });
 });
 
@@ -197,7 +190,7 @@ describe("a review pass and its inbox", () => {
     await runMandateReview({ grantId });
     expect(seen.briefing).toContain("Since your last pass");
     expect(seen.briefing).toContain("contradicted");
-    expect(seen.briefing).toContain(`${WAKE_AFTER_MINUTES} minutes`);
+    expect(seen.briefing).toContain("You work in one long session on this mandate");
     expect((await pendingMandateEvents(grantId)).total).toBe(0);
   });
 });

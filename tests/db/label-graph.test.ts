@@ -788,7 +788,7 @@ describe("work that starts from a claim", () => {
     const swept = await seedClaim("graph plan item, swept");
     await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
       grantId,
-      JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", budget_owls: 3 }] }),
+      JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", variant: "standard", budget_owls: 3 }] }),
     ]);
     // The scheduler materializes the plan outside any run. The mandate is public.
     await materializePlanItems(grantId);

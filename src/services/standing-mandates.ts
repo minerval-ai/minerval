@@ -1,15 +1,16 @@
 /**
- * The standing mandates a deployment sets up for itself: General and
- * Governance (constitution §19; docs/allocation.md, "Platform mandates").
+ * The standing mandate a deployment sets up for itself: General
+ * (constitution §19; docs/allocation.md, "Platform mandates").
  *
- * General pays for the upkeep whose value is spread across the whole graph;
- * Governance pays for the audits of the graph's decisions and never an
- * audit of itself. Every deployment needs both, because no agent work runs
- * except by allocation, and the allocation engine finds each by what it is
- * (the General mandate by `is_platform` and policy 'general', the
- * Governance mandate by policy 'governance').
+ * General pays for the upkeep whose value is spread across the whole graph,
+ * the audits of the graph's decisions among it, and never for an audit
+ * whose subject is itself. Every deployment needs one, because no agent
+ * work runs except by allocation, and the allocation engine finds it by
+ * what it is (`is_platform` and policy 'general'). A separate Governance
+ * mandate once paid for the audits; it was folded into General (#976), and
+ * nothing is routed to a row that still carries policy 'governance'.
  *
- * Two paths create them, from the one definition here:
+ * Two paths create it, from the one definition here:
  *
  *  - On the public graph, scripts/seed-platform-mandates.ts, run with the
  *    database's credentials, with Minerval's money bought at cost.
@@ -36,22 +37,16 @@ import { owlsToMicroUsd } from "./owl.js";
 /** Whose standing mandate the text speaks of: Minerval's on the public graph, the deployment's own elsewhere. */
 export type StandingMandateOwner = "minerval" | "deployment";
 
-const WHOSE: Record<StandingMandateOwner, { general: string; governed: string; audit: string; lane: string }> = {
+const WHOSE: Record<StandingMandateOwner, { general: string }> = {
   minerval: {
     general:
       "This is Minerval's own standing mandate: its " +
       "budget is the money the platform puts into the graph's upkeep,",
-    governed: "Minerval's",
-    audit: "Minerval's own standing mandate for audit",
-    lane: "the platform lane",
   },
   deployment: {
     general:
       "This is the deployment's own standing mandate: its " +
       "budget is what the organization that runs it puts into the graph's upkeep,",
-    governed: "this graph's",
-    audit: "the deployment's own standing mandate for audit",
-    lane: "the General mandate",
   },
 };
 
@@ -64,7 +59,8 @@ export interface StandingMandate {
   scopeQuery: string | null;
   strategy: string;
   budgetOwls: number;
-  policy: "general" | "governance" | "cover";
+  policy: "general" | "cover";
+  /** A steady pace of this many owls per rolling 24 hours; 0 is as needed. */
   dailyBudgetOwls: number;
   /** The mandate's domain skills (grants.skills); none for the General mandate. */
   skills: string[];
@@ -81,6 +77,8 @@ export interface StandingMandate {
     budgets?: string;
     petitions?: string;
     delegation?: string;
+    /** The Grantmaker's direction for now; seeds leave it to the Grantmaker. */
+    current?: string;
     officer_limit_owls?: number;
     officer_limit_reason?: string;
     review_pass_owls?: number;
@@ -104,14 +102,22 @@ export interface StandingMandate {
   };
 }
 
-/** The keys the two standing mandates are stored under (mandate.seed_key). */
+/** The key the General mandate is stored under (mandate.seed_key). */
 export const GENERAL_MANDATE_KEY = "general-assessment";
-export const GOVERNANCE_MANDATE_KEY = "governance";
+
+/** The pace a seeded figure stands for: steady per rolling day, or as needed at 0. */
+export function steadyPerDay(
+  owlsPerDay: number
+): { kind: "steady"; owls: number; period_hours: number; reason: string } | { kind: "as_needed" } {
+  return owlsPerDay > 0
+    ? { kind: "steady", owls: owlsPerDay, period_hours: 24, reason: "the platform's upkeep, spread evenly" }
+    : { kind: "as_needed" };
+}
 
 /**
- * The General and Governance mandates, in that order, worded for whose
- * they are. The "minerval" wording is the public graph's, character for
- * character as the seed has always written it.
+ * The standing mandates, worded for whose they are: the General mandate,
+ * and no other since Governance was folded into it. The "minerval" wording
+ * is the public graph's, character for character as the seed writes it.
  */
 export function standingMandates(owner: StandingMandateOwner): StandingMandate[] {
   const whose = WHOSE[owner];
@@ -159,10 +165,14 @@ export function standingMandates(owner: StandingMandateOwner): StandingMandate[]
           "by default. A reconcile candidate is worth it at similarity 0.95 " +
           "or more, or where either claim has dependents. Decline only a " +
           "curation whose concern names nothing, and say so in the reason.\n" +
-          "2. Audits put before this mandate. They come here when the " +
-          "Governance mandate is the audit's subject, or when no Governance " +
-          "mandate is active. Fund them all; decline only one that duplicates " +
-          "an audit open or finished in the last week, and name it.\n" +
+          "2. Audits. Every audit the system raises comes here. Fund them " +
+          "all; decline only one that duplicates an audit open or finished in " +
+          "the last week, and name it. If the day cannot cover them all, take " +
+          "prize acceptances and bad-faith flags first (real money or a " +
+          "contributor's standing turns on them), then arbitration overturns " +
+          "and suspensions, then anomalies the monitors raised, then periodic " +
+          "sweeps; an audit that has waited more than a week moves up a rank. " +
+          "Audit buys scrutiny, never a conclusion.\n" +
           "3. Consistency flags. The pass a flag asks for, when its expected " +
           "gain is 0.3 or more, or the primary has dependents or importance " +
           "0.5 or more.\n" +
@@ -257,60 +267,6 @@ export function standingMandates(owner: StandingMandateOwner): StandingMandate[]
       budgetOwls: 200,
       policy: "general",
       dailyBudgetOwls: 30,
-      skills: [],
-      allocationPolicy: null,
-    },
-    {
-      key: "governance",
-      title: "Governance",
-      objective:
-        `Pay for the audits that keep ${whose.governed} governance honest: the ` +
-        "Audit Agent's reviews of contribution decisions, arbitration " +
-        "overturns, bad-faith flags, suspensions, anomalies the monitors " +
-        "raise, and the periodic sweeps over recent decisions. This is " +
-        `${whose.audit}, kept apart from the ` +
-        "General mandate so that audits never compete with other upkeep " +
-        `for the same day's budget, and so that ${whose.lane}` +
-        ", whose allocation judgments are themselves audited, is never " +
-        "the party deciding whether an audit of it runs.",
-      scopeQuery: null,
-      strategy:
-        "Fund the audits the system raises, in order of what prompted them " +
-        "(prize and bad-faith audits first, periodic sweeps last), and let " +
-        "an audit that has waited rise. Never fund an audit of this mandate " +
-        "itself: those are the General mandate's. An audit this mandate " +
-        "declines stays open on the ledger, with its age, for anyone to see.",
-      operatingPolicy: {
-        mission:
-          "Keep the graph's governance honest by paying for the audits of its " +
-          "decisions. Audit buys scrutiny, never a conclusion.",
-        priorities:
-          "Prize acceptances and bad-faith flags first: real money or a " +
-          "contributor's standing turns on them. Then arbitration overturns " +
-          "and suspensions, then anomalies the monitors raised, then periodic " +
-          "sweeps. An audit that has waited more than a week moves up a rank. " +
-          "Decline an audit only when an equivalent one is open or recently " +
-          "finished, and say which.",
-        budgets:
-          "Set each audit's budget at the high end of what the costing skill " +
-          "says such an audit costs; a prize audit the bounty's reserve only " +
-          "partly covers needs the rest.",
-        petitions:
-          "Grant the Audit Agent more when its plan names the decisions it " +
-          "still has to read and why they bear on the finding.",
-        delegation:
-          "Officers decide up to their limit; send the Grantmaker anything " +
-          "touching this mandate's own conduct, and anything larger.",
-        officer_limit_owls: 3,
-        officer_limit_reason: "Three owls covers an ordinary audit; larger ones are rare.",
-      },
-      // A first-run number, like General's: audits have never been metered
-      // (they ran unattributed before #363), so the first week of ledger
-      // runs is what sizes this. Five owls a day covers several times the
-      // audit volume the dedupe keys allow on an ordinary day.
-      budgetOwls: 50,
-      policy: "governance",
-      dailyBudgetOwls: 5,
       skills: [],
       allocationPolicy: null,
     },
@@ -449,15 +405,15 @@ export async function createStandingMandate(input: {
       );
     }
 
-    // 'general' = the allocation engine's platform lane; 'governance' = the
-    // formula mandate that funds audits (#363); 'cover' = the coverage
-    // selector over a topical scope. All standing mandates.
+    // 'general' = the platform's upkeep mandate (curation, audits, sweeps,
+    // waiting work); 'cover' = the coverage selector over a topical scope.
+    // All standing mandates.
     const [grant] = await tx.query<{ id: string }>(
       `INSERT INTO grants
          (funder_user_id, budget_job_id, name, scope_query, policy, status,
-          plan, mandate, is_platform, daily_budget_micro_usd, skills,
+          plan, mandate, is_platform, pace, skills,
           allocation_policy, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $7, 'active', $5::jsonb, $6::jsonb, true, $8, $9,
+       VALUES ($1, $2, $3, $4, $7, 'active', $5::jsonb, $6::jsonb, true, $8::jsonb, $9,
                $10::jsonb, $11)
        RETURNING id`,
       [
@@ -468,7 +424,7 @@ export async function createStandingMandate(input: {
         JSON.stringify({ strategy: m.strategy, items: [] }),
         JSON.stringify(mandate),
         m.policy,
-        owlsToMicroUsd(m.dailyBudgetOwls),
+        JSON.stringify(steadyPerDay(m.dailyBudgetOwls)),
         m.skills,
         m.allocationPolicy ? JSON.stringify(m.allocationPolicy) : null,
         label,

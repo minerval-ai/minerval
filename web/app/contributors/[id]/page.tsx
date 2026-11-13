@@ -21,6 +21,7 @@ const TYPE_LABELS: Record<string, string> = {
   propose_argument: "argument",
   propose_claim: "proposed claim",
   propose_source: "proposed source",
+  state_view: "stated view",
 };
 
 export async function generateMetadata({
@@ -106,6 +107,17 @@ export default async function ContributorPage({
             </span>
           )}
         </div>
+      </section>
+
+      {/* Views this account has stated to the graph directly (§4), each
+          beside the assessment of what it was stated on. */}
+      <section>
+        <h2>Stated views</h2>
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".86rem" }}>
+          <Link href={`/stated-views?speaker=${encodeURIComponent(id)}`}>
+            Where this account&rsquo;s stated views and the graph&rsquo;s assessments differ →
+          </Link>
+        </p>
       </section>
 
       {profile.recent_contributions.length > 0 && (

@@ -67,7 +67,8 @@ starts with public Minerval's own settings and you change the ones you need.
    that are not commented out have no starting value and must be filled in:
    the site's address, three passwords and keys of the deployment's own
    (`openssl rand -hex 32` makes one), your identity provider's three
-   values, and the model for each of seven roles. Leave the rest commented
+   values, and the model for each of six roles (and the solver's, unless
+   you switch mathematics off with `FEATURES_OFF`). Leave the rest commented
    out unless you want to change them.
 
    `.env` is the one place this deployment's secrets live. It is ignored by
@@ -111,8 +112,10 @@ starts with public Minerval's own settings and you change the ones you need.
    reads to a clearance when you define your first label (step 7).
 
    If `docker compose` stops with `Set X in .env`, that setting is empty.
-   If the API's log ends in an error that names `SOLVER_MODEL`, the solver's
-   model is not one the API accepts (`env.example` says which it does).
+   If the API's log ends in an error that names `SOLVER_MODEL`, mathematics
+   is on and the solver's model is missing or is not one the API accepts
+   (`env.example` says which it does). With mathematics in `FEATURES_OFF`
+   the setting is not read.
 
 5. **Sign in and become the first administrator.** Open the site. You are
    asked to sign in, and sent to your identity provider. If you did not set
@@ -123,9 +126,12 @@ starts with public Minerval's own settings and you change the ones you need.
    had an administrator, is granted every permission. It works once.
 
 6. **Open the setup checklist.** It is the page at `/admin`. It reads the
-   deployment and says what needs someone now: permissions, labels, the
-   standing mandates, owls, material. It also says that this build does not
-   check its own configuration (see below).
+   deployment and says what needs someone now: the deployment's own checks
+   of its configuration (the preflight; [deployment.md](deployment.md),
+   "Preflight"), then permissions, labels, the General mandate, owls and
+   material. Read what the checks say fails: a wrong setting is named there
+   with what to change. Once a label is defined, agent work does not start
+   until the checks that block it pass, and the API's log says which.
 
 7. **Define your labels.** On `/admin/labels`, define a label and say which
    labels it reads. Defining the first one takes about ten seconds: the
@@ -144,8 +150,8 @@ starts with public Minerval's own settings and you change the ones you need.
 
 8. **Carry on in the web app.** Grant permissions (`/admin/people`), clear
    your model providers for your labels (`PROVIDER_LABELS` in `.env`, then
-   `docker compose up -d`), create owls and set up the General and
-   Governance mandates, and add material. The checklist page says where
+   `docker compose up -d`), create owls and set up the General mandate,
+   and add material. The checklist page says where
    each of these stands.
 
 To stop: `docker compose down`. The database and the uploaded file sets are
@@ -183,8 +189,10 @@ and `pg_trgm` extensions. This arrangement has not been tried.
 The Compose file gives the sandbox what its README asks for: one network,
 marked internal, shared with the API alone; the file sets mounted read-only;
 a scratch directory in memory; a read-only root filesystem, no capabilities
-and a memory limit. To see that it holds, run the sandbox's own probe from
-the machine (no page or route of the API shows it yet):
+and a memory limit. The setup checklist shows whether it holds: the
+preflight runs the sandbox's own probe (`sandbox_confinement`), and where a
+label is defined agent work waits until it passes. To run the probe
+yourself from the machine:
 
 ```
 docker compose exec sandbox python3 -c "import os,urllib.request as u; print(u.urlopen(u.Request('http://127.0.0.1:8080/probe', method='POST', headers={'Authorization':'Bearer '+os.environ['SANDBOX_TOKEN']})).read().decode())"
@@ -199,12 +207,12 @@ sandbox, and an administrator registers directories under it as file sets.
 
 ## What this package does not do yet
 
-- **It does not check its own configuration.** The config file and the
-  preflight exist on another line of work and are not in this build. The
-  settings live in `.env`, and the checklist page says that the deployment's
-  own checks are not reported. A wrong setting is found when the thing it
-  governs is first used, or at start for the few the API refuses to start
-  on.
+- **Its settings are not in a config file.** The API reads one where it is
+  named (`MINERVAL_CONFIG`; [deployment.md](deployment.md)), and every
+  setting in `env.example` that is not a secret has a place in it. The
+  Compose file does not mount one yet: it hands the settings in `.env` to
+  each container as environment variables, which is the layer a config file
+  sits under.
 - **No TLS.** The web app and the API listen on plain HTTP, on this machine
   only unless `BIND_ADDRESS` says otherwise. Put a reverse proxy in front.
 - **No published images.** You build from the repository.
@@ -214,10 +222,6 @@ sandbox, and an administrator registers directories under it as file sets.
   them up yourself.
 - **No model server.** The package runs no model. An endpoint of your own is
   yours to run and to name in `MODEL_ENDPOINTS`.
-- **It cannot be set up with no Anthropic model named.** The solver's model
-  has to be an Anthropic one for the API to start, even on a deployment
-  that runs everything else on its own endpoint and has mathematics
-  switched off. No key is needed for it to start.
 - **No mirror of the public graph unless you set it up.** With
   `MIRROR_FEED_URL` unset the deployment holds no copy of the public graph.
 - **The Lean checker is not in the package.** Mathematics' machine checks

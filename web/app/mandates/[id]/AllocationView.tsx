@@ -84,8 +84,15 @@ export async function AllocationSection({ mandateId }: { mandateId: string }) {
       <div className="usage-chips">
         <span className="summary-chip">
           <OwlMark size={14} className="owl-mark" />
-          {owls(b.used_today_owls)} of {owls(b.daily_rate_owls)} owls of today&rsquo;s rate used
+          {b.pace.kind === "steady"
+            ? `${owls(b.pace_window_used_owls ?? 0)} of ${owls(b.pace.owls)} owls committed in the last ${b.pace.period_hours === 24 ? "day" : b.pace.period_hours === 168 ? "week" : `${b.pace.period_hours} hours`}`
+            : "paced as needed: the escrow is the only bound"}
         </span>
+        {b.reserve_owls > 0 && (
+          <span className="summary-chip" title={b.reserve_reason ?? undefined}>
+            {owls(b.reserve_owls)} held in reserve by the Grantmaker
+          </span>
+        )}
         <span className="summary-chip">{owls(b.held_owls)} held by running work</span>
         {b.outside_ledger_owls > 0 && (
           <span className="summary-chip">{owls(b.outside_ledger_owls)} spent outside the ledger</span>

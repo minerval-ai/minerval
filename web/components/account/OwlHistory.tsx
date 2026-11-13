@@ -147,29 +147,63 @@ function entryLabel(e: OwlLedgerEntry): string {
   return op ? `${reason} · ${op}` : reason;
 }
 
+/** How many lines of the history one page shows, in each reading. */
+export const HISTORY_LINES_PER_PAGE = 20;
+export const HISTORY_ENTRIES_PER_PAGE = 50;
+
+/** The address of a page of the history, in one reading or the other. */
+function historyHref(view: "work" | "entries", page: number): string {
+  const p = new URLSearchParams();
+  if (view === "entries") p.set("history", "entries");
+  if (page > 1) p.set("hp", String(page));
+  const q = p.toString();
+  return `/account${q ? `?${q}` : ""}#owls`;
+}
+
 export function OwlHistory({
   entries,
   view,
   limit,
+  page = 1,
   ...names
 }: Names & {
   entries: OwlLedgerEntry[];
   view: "work" | "entries";
   /** How many entries were asked for; reaching it means there are older ones. */
   limit: number;
+  /** Which page of the history to show, from 1. */
+  page?: number;
 }) {
-  const days = view === "work" ? groupOwlHistory(entries) : [];
   const o = (micro: number) => owls(micro / names.owlCost);
+  // A page is a run of lines, newest first. A day that straddles two pages
+  // is headed on both, and a folded run of like lines counts as one line.
+  const lines =
+    view === "work"
+      ? groupOwlHistory(entries).flatMap((day) =>
+          foldDay(day.lines).map((item) => ({ date: day.date, item }))
+        )
+      : [];
+  const per = view === "work" ? HISTORY_LINES_PER_PAGE : HISTORY_ENTRIES_PER_PAGE;
+  const total = view === "work" ? lines.length : entries.length;
+  const pages = Math.max(1, Math.ceil(total / per));
+  const at = Math.min(Math.max(1, page), pages);
+  const from = (at - 1) * per;
+  const shownLines = lines.slice(from, from + per);
+  const shownEntries = view === "entries" ? entries.slice(from, from + per) : [];
+  const days = [...new Set(shownLines.map((l) => l.date))].map((date) => ({
+    date,
+    items: shownLines.filter((l) => l.date === date).map((l) => l.item),
+  }));
 
   return (
     <>
       <div className="acct-head">
         <h2>Owl history</h2>
         <nav className="acct-switch" aria-label="How to list the history">
-          <a href="/account#owls" aria-current={view === "work" ? "true" : undefined}>
+          <a href={historyHref("work", 1)} aria-current={view === "work" ? "true" : undefined}>
             By piece of work
           </a>
-          <a href="/account?history=entries#owls" aria-current={view === "entries" ? "true" : undefined}>
+          <a href={historyHref("entries", 1)} aria-current={view === "entries" ? "true" : undefined}>
             Every entry
           </a>
         </nav>
@@ -184,7 +218,7 @@ export function OwlHistory({
           {days.map((day) => (
             <div key={day.date}>
               <div className="acct-day sc">{day.date}</div>
-              {foldDay(day.lines).map((item) =>
+              {day.items.map((item) =>
                 isFold(item) ? (
                   <details className="acct-fold" key={`fold-${item.op}`}>
                     <summary className="acct-line">
@@ -225,7 +259,7 @@ export function OwlHistory({
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e) => (
+                {shownEntries.map((e) => (
                   <tr key={e.id}>
                     <td className="acct-num-left">{dateish(e.created_at)}</td>
                     <td>
@@ -245,10 +279,19 @@ export function OwlHistory({
           </div>
         </>
       )}
-      {entries.length >= limit && (
+      {pages > 1 && (
+        <nav className="acct-pager" aria-label="Pages of the owl history">
+          {at > 1 ? <a href={historyHref(view, at - 1)}>← Newer</a> : <span />}
+          <span className="acct-note">
+            {from + 1} to {Math.min(from + per, total)} of {total}
+          </span>
+          {at < pages ? <a href={historyHref(view, at + 1)}>Older →</a> : <span />}
+        </nav>
+      )}
+      {entries.length >= limit && at === pages && (
         <p className="acct-note">
-          These are the latest {limit} entries. Older ones are on the ledger, which the API
-          returns in full (<code>GET /billing/ledger</code>).
+          This is as far back as the page reads: the latest {limit} ledger entries. Older ones
+          are on the ledger, which the API returns in full (<code>GET /billing/ledger</code>).
         </p>
       )}
     </>

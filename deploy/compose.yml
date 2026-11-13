@@ -132,7 +132,8 @@ services:
       - RESEARCHER_STRONG_MODEL
       - RESEARCHER_STANDARD_MODEL
       - RESEARCHER_CHEAP_MODEL
-      - SOLVER_MODEL=${SOLVER_MODEL:?Set SOLVER_MODEL in .env, the model the solver runs on}
+      # Empty where mathematics is off (FEATURES_OFF): the API asks for it only where the feature is on.
+      - SOLVER_MODEL=${SOLVER_MODEL:-}
       - FILE_SET_UPLOAD_MAX_BYTES
       - SANDBOX_HOUR_COST_MICRO_USD
       - MIRROR_FEED_URL
@@ -144,6 +145,7 @@ services:
       - PUBLIC_GRAPH_API_URL
       - PUBLIC_GRAPH_API_KEY
       - PUBLIC_ACTS_BY
+      - PRIVATE_RUN_FETCHES
       - PUBLIC_GRAPH_PRICE
       - USAGE_REPORT_URL
       - USAGE_REPORT_API_KEY

@@ -398,6 +398,30 @@ export async function publicContributionRefusal(claimId: string | null | undefin
 }
 
 /**
+ * What a person is told when they state a view on a mirrored node at the
+ * node's own label. A stated view is filed as a contribution: it is
+ * reviewed, recorded as an instance of the node, and its reasons go to the
+ * node's Steward, all of it work at that label on a node the public graph
+ * judges.
+ */
+export function publicStatedViewNotTakenMessage(label: string, pageUrl: string | null): string {
+  return (
+    `This node belongs to the public graph and is read here through the mirror, so its page at "${label}" is ` +
+    `the public graph's own. A view stated on it at "${label}" would be reviewed and recorded by work at ` +
+    `"${label}" on the node, which is not done here, so it was not taken and nothing was recorded. State the ` +
+    `view at a label that reads "${label}" by naming that label: it is then recorded here, beside this ` +
+    `deployment's own assessment of the node, for the people who read that label. To state it to everyone, ` +
+    `state it on the public graph${pageUrl ? ` (${pageUrl})` : ""}; that shows the public graph what you hold.`
+  );
+}
+
+/** The refusal of a view stated on a mirrored node at the node's own label, or null where it is taken. */
+export async function publicStatedViewRefusal(claimId: string): Promise<string | null> {
+  if (!(await publicGraphJudges(claimId))) return null;
+  return publicStatedViewNotTakenMessage(currentLabel(), await publicGraphPageUrl(claimId));
+}
+
+/**
  * Refuse work on a mirrored node at the node's own label: throws
  * PublicGraphNodeError where the work in progress is that, and returns
  * otherwise. Called where a person starts work (an order, funding, a

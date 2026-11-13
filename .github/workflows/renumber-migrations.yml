@@ -1,0 +1,409 @@
+name: Renumber migrations and regenerate content
+
+# Two kinds of conflict need no judgment, and between them they are most of
+# the conflicts open PRs have with main:
+#
+# - Two open PRs that each add a migration take the same number, so whichever
+#   merges second conflicts in src/db/migrations (CLAUDE.md). The fix is
+#   always the same: merge main, leave those conflicts, run
+#   `npm run db:renumber`.
+# - web/content/ is generated (scripts/sync-frontend-content.ts) from the
+#   constitution, the prompts, the skills and the docs. Two PRs that change
+#   the same one conflict there as well as in the source. Once the source
+#   merges, the fix is always the same: regenerate it.
+#
+# This workflow does that for every open PR, each time main moves, so a PR
+# doesn't sit conflicted until someone notices.
+#
+# It acts only on a PR whose conflicts with main are all inside
+# src/db/migrations or web/content. A PR that also conflicts anywhere else is
+# left alone, named in the run's summary: that needs a person (or an agent)
+# to resolve the code first. A PR that merges cleanly is not touched. It merges and
+# pushes; it never rebases or force-pushes, so a push that lost a race with
+# someone else's is rejected and the PR is left for the next run.
+#
+# The push uses MIGRATION_RENUMBER_TOKEN, not the built-in token: a push made
+# with the built-in token starts no workflows, so CI would never run on the
+# renumbered branch and the PR could not merge. The token is a fine-grained
+# personal access token limited to this repository, with Contents: read and
+# write and nothing else. Setup is in docs/infrastructure.md, "Migration
+# renumbering".
+#
+# Both fixes run each branch's own code: scripts/renumber-migrations.ts,
+# src/db/schema.ts through drizzle-kit, and scripts/sync-frontend-content.ts
+# with everything it imports. That token can write to the
+# repository, and an admin's token can push to main past the ruleset, so the
+# two never share a runner. `prepare` runs the branch code holding no secret
+# (the built-in read token is used to list and fetch before any branch code
+# starts, and is not left in git's config). It hands each merge it made to
+# `push` as a git bundle. `push` runs no branch code: for each bundle it
+# checks, against its own fetch of the branch and main, that the commit is a
+# merge of main into the branch's current tip, that the PR's only conflicts
+# with main are in src/db/migrations or web/content, that it differs from
+# git's own merge only inside those folders, and that every .sql file in the
+# migrations folder is byte for byte one that main or the branch already has.
+# Only then does it push. So even a branch whose code tampered with `prepare`
+# can get nothing pushed but a renumbering of SQL its authors already wrote
+# and a change to its own web/content, which is the site's copy of text, not
+# code anything runs. That copy is checked the way any push's is: CI's drift
+# test regenerates it and fails if it differs.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One at a time: two runs renumbering the same branch would race.
+concurrency:
+  group: renumber-migrations
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # The main both jobs merge and check against, fixed for the whole run.
+  MAIN: ${{ github.sha }}
+  LC_ALL: C
+  # The folders whose conflicts this workflow resolves, and the only ones a
+  # merge it pushes may differ from git's own merge in.
+  RESOLVABLE: '^(src/db/migrations|web/content)/'
+
+jobs:
+  prepare:
+    # A manual run from another branch would merge that branch into every PR.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ready: ${{ steps.renumber.outputs.ready }}
+    steps:
+      # Only whether it is set, never its value: this job holds no secret.
+      - name: Require the push token
+        env:
+          HAS_TOKEN: ${{ secrets.MIGRATION_RENUMBER_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            echo "::error::MIGRATION_RENUMBER_TOKEN is not set, so no PR's migrations are renumbered. See docs/infrastructure.md, \"Migration renumbering\"."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Before any branch's code runs, so the read token is gone by then.
+      - name: List open PRs from this repository and fetch their branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr list --repo "$REPO" --base main --state open --limit 200 \
+            --json number,headRefName,isCrossRepository,author \
+            --jq '.[] | select(.isCrossRepository | not) | select(.author.login != "dependabot[bot]" and .author.login != "app/dependabot") | "\(.number) \(.headRefName)"' \
+            > "$RUNNER_TEMP/prs.txt"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          while read -r number branch; do
+            [ -z "$number" ] && continue
+            git -c "http.https://github.com/.extraheader=$auth" fetch --quiet origin \
+              "+refs/heads/$branch:refs/remotes/origin/$branch" \
+              || echo "#$number: could not fetch $branch; skipped."
+          done < "$RUNNER_TEMP/prs.txt"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # Main's dependencies serve every branch: renumbering needs only tsx and
+      # drizzle-kit, which a branch does not change. A branch whose content
+      # sync needs a dependency main lacks fails to regenerate and is left alone.
+      - run: npm ci --ignore-scripts
+
+      - name: Merge main into each PR whose only conflicts are migrations or generated content, and fix them
+        id: renumber
+        run: |
+          # Actions runs bash with -e, but git merge-tree and git merge exit 1 on a
+          # conflict, which is the case this handles: each failure is checked below.
+          set +e -uo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p "$RUNNER_TEMP/renumbered"
+
+          ready=""
+          left=""
+          while read -r number branch; do
+            [ -z "$number" ] && continue
+            git rev-parse --verify --quiet "origin/$branch" >/dev/null || continue
+
+            out=$(git merge-tree --write-tree --name-only "$MAIN" "origin/$branch")
+            status=$?
+            [ $status -eq 0 ] && continue
+            if [ $status -ne 1 ]; then
+              echo "#$number ($branch): git merge-tree failed; left alone."
+              left="$left #$number"
+              continue
+            fi
+            # Line 1 is the tree; the conflicted paths follow, up to a blank line.
+            conflicted=$(printf '%s\n' "$out" | sed -n '2,/^$/p' | sed '/^$/d')
+            elsewhere=$(printf '%s\n' "$conflicted" | grep -Ev "$RESOLVABLE" || true)
+            if [ -n "$elsewhere" ]; then
+              echo "#$number ($branch) conflicts outside src/db/migrations and web/content; left alone:"
+              printf '    %s\n' $elsewhere
+              left="$left #$number"
+              continue
+            fi
+            migrations=$(printf '%s\n' "$conflicted" | grep -q '^src/db/migrations/' && echo yes)
+            content=$(printf '%s\n' "$conflicted" | grep -q '^web/content/' && echo yes)
+            if [ -n "$migrations" ] && ! git cat-file -e "origin/$branch:scripts/renumber-migrations.ts" 2>/dev/null; then
+              echo "#$number ($branch) has no scripts/renumber-migrations.ts; left alone."
+              left="$left #$number"
+              continue
+            fi
+
+            echo "::group::#$number ($branch)"
+            if ! git checkout --quiet -B renumber "origin/$branch"; then
+              echo "#$number ($branch): could not check it out; left alone."
+              left="$left #$number"
+              git checkout --quiet --force --detach "$MAIN"
+              echo "::endgroup::"
+              continue
+            fi
+            git merge --no-edit "$MAIN" >/dev/null 2>&1
+            fixed=true
+            done_what=""
+            if [ -n "$content" ]; then
+              # Take main's side of each conflicted generated file, then
+              # regenerate them all from the merged source.
+              for f in $(git diff --name-only --diff-filter=U -- web/content); do
+                if git cat-file -e "$MAIN:$f" 2>/dev/null; then
+                  git checkout --quiet "$MAIN" -- "$f"
+                else
+                  git rm --quiet -- "$f"
+                fi
+              done
+              if npx tsx scripts/sync-frontend-content.ts >/dev/null; then
+                # The sync also writes plugin/skills and web/public. Only
+                # web/content is this job's to change: put the rest back as
+                # git merged it, and CI's drift test says if it needs a sync.
+                git checkout --quiet -- . ':(exclude)web/content' ':(exclude)src/db/migrations'
+                git clean -fdq -- . ':(exclude)web/content' ':(exclude)src/db/migrations'
+                git add -A web/content
+                done_what="regenerate web/content"
+              else
+                echo "The content sync failed on the merge of #$number."
+                fixed=false
+              fi
+            fi
+            if $fixed && [ -n "$migrations" ]; then
+              if npx tsx scripts/renumber-migrations.ts --base "$MAIN"; then
+                done_what="${done_what:+$done_what; }renumber this branch's migrations after main's (db:renumber)"
+              else
+                fixed=false
+              fi
+            fi
+            if $fixed && [ -z "$(git diff --name-only --diff-filter=U)" ]; then
+              git commit --quiet --no-edit -m "Merge main; $done_what
+
+          Done by .github/workflows/renumber-migrations.yml: the only conflicts with main were in src/db/migrations or web/content."
+              git update-ref "refs/renumbered/$number" HEAD
+              git bundle create "$RUNNER_TEMP/renumbered/$number.bundle" \
+                "refs/renumbered/$number" "^$MAIN" "^origin/$branch" 2>/dev/null
+              ready="$ready #$number"
+            else
+              echo "Could not fix #$number's conflicts; left alone."
+              git merge --abort 2>/dev/null || git reset --quiet --hard
+              left="$left #$number"
+            fi
+            git checkout --quiet --detach "$MAIN"
+            echo "::endgroup::"
+          done < "$RUNNER_TEMP/prs.txt"
+
+          echo "Merged and fixed, to be checked and pushed:${ready:- none}"
+          echo "Left for a person:${left:- none}"
+          {
+            echo "**Merged and fixed, to be checked and pushed:**${ready:- none}"
+            echo
+            echo "**Left for a person:**${left:- none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$ready" ]; then echo "ready=true" >> "$GITHUB_OUTPUT"; fi
+
+      - if: steps.renumber.outputs.ready == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: renumbered
+          path: ${{ runner.temp }}/renumbered/
+          retention-days: 1
+
+  push:
+    needs: prepare
+    if: needs.prepare.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          token: ${{ secrets.MIGRATION_RENUMBER_TOKEN }}
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: renumbered
+          path: ${{ runner.temp }}/renumbered/
+
+      # No branch's code runs here; only git, reading what prepare made.
+      - name: Check each merge and push it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Actions runs bash with -e, but git merge-tree and git merge exit 1 on a
+          # conflict, which is the case this handles: each failure is checked below.
+          set +e -uo pipefail
+          sql_blobs() {
+            git ls-tree -r "$1" -- src/db/migrations/ \
+              | awk -F'\t' '$2 ~ /\.sql$/ { split($1, f, " "); print f[3] }' | sort -u
+          }
+
+          renumbered=""
+          left=""
+          refuse() {
+            echo "::warning::#$number ($branch): $1; not pushed."
+            left="$left #$number"
+          }
+
+          # The PR list is this job's own: a branch name never comes from prepare.
+          prs=$(gh pr list --repo "$REPO" --base main --state open --limit 200 \
+            --json number,headRefName,isCrossRepository,author \
+            --jq '.[] | select(.isCrossRepository | not) | select(.author.login != "dependabot[bot]" and .author.login != "app/dependabot") | "\(.number) \(.headRefName)"')
+
+          while read -r number branch; do
+            [ -z "$number" ] && continue
+            bundle="$RUNNER_TEMP/renumbered/$number.bundle"
+            [ -f "$bundle" ] || continue
+
+            if ! git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"; then
+              refuse "could not fetch $branch"; continue
+            fi
+            # A bundle whose branch tip has since gone (a force-push) fails here.
+            if ! git fetch --quiet "$bundle" "+refs/renumbered/$number:refs/renumbered/$number" 2>/dev/null; then
+              refuse "the branch moved since the merge was made; the next run tries again"; continue
+            fi
+            commit=$(git rev-parse "refs/renumbered/$number^{commit}")
+            tip=$(git rev-parse "origin/$branch")
+
+            if [ "$(git rev-list --parents -n 1 "$commit")" != "$commit $tip $MAIN" ]; then
+              refuse "not a merge of main into the branch's current tip (the branch may have moved; the next run tries again)"; continue
+            fi
+            out=$(git merge-tree --write-tree --name-only "$MAIN" "$tip")
+            if [ $? -ne 1 ]; then
+              refuse "merges with main without a conflict, or git merge-tree failed"; continue
+            fi
+            merged=$(printf '%s\n' "$out" | head -n 1)
+            if printf '%s\n' "$out" | sed -n '2,/^$/p' | sed '/^$/d' | grep -Evq "$RESOLVABLE"; then
+              refuse "conflicts with main outside src/db/migrations and web/content"; continue
+            fi
+            outside=$(git diff --name-only "$merged" "$commit" -- . ':(exclude)src/db/migrations/' ':(exclude)web/content/')
+            if [ -n "$outside" ]; then
+              refuse "differs from git's merge outside src/db/migrations and web/content ($(echo $outside))"; continue
+            fi
+            new_sql=$(comm -13 <({ sql_blobs "$MAIN"; sql_blobs "$tip"; } | sort -u) <(sql_blobs "$commit"))
+            if [ -n "$new_sql" ]; then
+              refuse "has migration SQL that neither main nor the branch has"; continue
+            fi
+
+            # A plain push: if the branch moved since the fetch, it is rejected and the next run tries again.
+            if git push --quiet origin "$commit:refs/heads/$branch"; then
+              echo "#$number ($branch): fixed and pushed."
+              renumbered="$renumbered #$number"
+            else
+              refuse "the push was rejected (the branch moved); the next run tries again"
+            fi
+          done <<< "$prs"
+
+          echo "Fixed:${renumbered:- none}"
+          echo "Not pushed:${left:- none}"
+          {
+            echo "**Fixed:**${renumbered:- none}"
+            echo
+            echo "**Not pushed:**${left:- none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  notify:
+    # GitHub sends no event when a PR starts to conflict with main, so whoever
+    # watches the PR (its author, or the Claude session that opened it and is
+    # subscribed to its activity) does not hear of it. A comment is an event.
+    # So after the fixes above are pushed, each PR that still conflicts gets
+    # one comment naming the files, and the merge-conflict label, which also
+    # shows the conflict in the PR list. A PR is told once per head commit: it
+    # is told again only if it conflicts again after someone pushed to it.
+    # Runs no branch code: only git and gh.
+    needs: [prepare, push]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Comment on each PR that conflicts with main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # git merge-tree exits 1 on a conflict, which is the case this handles.
+          set +e -uo pipefail
+          gh label create merge-conflict --repo "$REPO" --color B60205 \
+            --description "Conflicts with main in a way the renumber workflow cannot fix" >/dev/null 2>&1
+
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          told=""
+          prs=$(gh pr list --repo "$REPO" --base main --state open --limit 200 \
+            --json number,headRefName,isCrossRepository,author,labels \
+            --jq '.[] | select(.isCrossRepository | not) | select(.author.login != "dependabot[bot]" and .author.login != "app/dependabot") | "\(.number) \(.headRefName) \([.labels[].name] | index("merge-conflict") != null)"')
+
+          while read -r number branch labelled; do
+            [ -z "$number" ] && continue
+            # Fetched afresh, so a branch the push job just fixed reads as fixed.
+            git -c "http.https://github.com/.extraheader=$auth" fetch --quiet origin \
+              "+refs/heads/$branch:refs/remotes/origin/$branch" || continue
+            tip=$(git rev-parse "origin/$branch")
+            out=$(git merge-tree --write-tree --name-only "$MAIN" "$tip")
+            status=$?
+            if [ $status -eq 0 ]; then
+              [ "$labelled" = true ] && gh pr edit "$number" --repo "$REPO" --remove-label merge-conflict >/dev/null
+              continue
+            fi
+            [ $status -ne 1 ] && continue
+            [ "$labelled" = true ] || gh pr edit "$number" --repo "$REPO" --add-label merge-conflict >/dev/null
+
+            marker="<!-- merge-conflict-notice head=$tip -->"
+            if gh pr view "$number" --repo "$REPO" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+              continue
+            fi
+            files=$(printf '%s\n' "$out" | sed -n '2,/^$/p' | sed '/^$/d' | sed 's/^/- `/; s/$/`/')
+            {
+              echo "$marker"
+              echo "This PR now conflicts with main (at ${MAIN:0:8}) in:"
+              echo
+              echo "$files"
+              echo
+              echo "Merge main into this branch and resolve them; do not rebase or force-push. Conflicts that are only in \`src/db/migrations\` or \`web/content\` are fixed by .github/workflows/renumber-migrations.yml, so whatever is listed here needs a person or an agent."
+            } | gh pr comment "$number" --repo "$REPO" --body-file - >/dev/null && told="$told #$number"
+          done <<< "$prs"
+
+          echo "Told of a conflict:${told:- none}"
+          echo "**Told of a conflict:**${told:- none}" >> "$GITHUB_STEP_SUMMARY"

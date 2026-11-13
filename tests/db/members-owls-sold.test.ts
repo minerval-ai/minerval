@@ -151,6 +151,6 @@ describe("a members-only deployment that sells its owls", () => {
       mandate: { budget_owls: number; running: boolean } | null;
     }>;
     expect(after.find((m) => m.name === "general")!.mandate).toMatchObject({ budget_owls: 40, running: true });
-    expect(after.find((m) => m.name === "governance")!.mandate).toBeNull();
+    expect(after.map((m) => m.name)).toEqual(["general"]);
   });
 });

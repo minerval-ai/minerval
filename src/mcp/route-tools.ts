@@ -45,6 +45,7 @@ import {
   standingOf,
   type PermissionName,
 } from "../permissions.js";
+import { loadConfig } from "../config.js";
 
 export interface RouteTool {
   name: string;
@@ -152,6 +153,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "POST /pages": { name: "save_page" },
   "GET /pages": { name: "list_pages" },
   "GET /pages/:id": { name: "get_page" },
+  "GET /shared-pages/:token": { name: "get_shared_page" },
 
   // ---- correspondents (#563) ----
   "GET /correspondents": { name: "list_correspondents" },
@@ -177,6 +179,35 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /sources/:source_id/examinations": { name: "get_source_examinations" },
   "GET /sources/:source_id/document": { name: "get_source_document" },
   "GET /jobs/:job_id": { name: "get_job" },
+
+  // ---- views stated to the graph directly (constitution §4) ----
+  "POST /claims/:claim_id/stated-views": {
+    name: "state_view",
+    // A getter, so the limits are read from the configuration when the tool
+    // is registered and not when this module loads.
+    get note() {
+      const config = loadConfig();
+      return (
+        "For your user's own view, or their organization's when the account is the organization's, and only " +
+        "when they ask: it is published under the account's name, in the words you pass, and is not edited " +
+        "or withdrawn afterwards. It does not change the assessment. Nobody edits one: the statement is " +
+        "recorded as a source and shown beside it, and placement there gives it no weight. The Contribution " +
+        "Reviewer admits it on form and good faith, never on whether the view is right; track it with " +
+        "get_contribution_status. Free, and so it counts toward the cap on contributions (" +
+        `${config.contributionRateLimitPerHour} per hour, ${config.newContributorRateLimitPerHour} for accounts ` +
+        "under a day old or below 50 reputation), because each one commands a review nobody pays for; past " +
+        "it you get CONTRIBUTION_RATE_LIMITED."
+      );
+    },
+  },
+  "GET /stated-views": {
+    name: "list_stated_views",
+    note:
+      "Free. With speaker_id, how one account's statements have held up against the graph's assessments; " +
+      "with claim_id, what has been stated on one node. A stated view is its speaker's and the judgment is " +
+      "the graph's: report each as whose it is. not_assessed means nobody has examined the node, which is " +
+      "not agreement.",
+  },
 
   // ---- contributions, appeals, contributors ----
   "GET /contributions": { name: "list_contributions" },
@@ -448,6 +479,11 @@ const ASSISTANT_GATE =
   "would let it press its own button; the route also requires a signed-in " +
   "dashboard session.";
 
+const PAGE_SHARING =
+  "Making a private page readable by anyone with the link, or withdrawing that, is the " +
+  "user's own act: it takes the signed-in dashboard session, so nothing an agent reads can " +
+  "publish what the user keeps.";
+
 const ADMINISTRATION_SESSION =
   "Changes who may read, release or do what in a members-only deployment, so it takes a " +
   "signed-in dashboard session as well as the permission to administer: a leaked key, an " +
@@ -585,6 +621,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /billing/checkout": SESSION_ONLY,
   "POST /billing/webhook": "Stripe's signature-verified callback, not a caller surface.",
 
+  "GET /setup/preflight":
+    "Reports this deployment's configuration to whoever runs it (which keys " +
+    "are missing, where reports are filed, the state of the database): " +
+    "requires the operator key, which is held outside every deployment " +
+    "surface, an MCP client included (docs/deployment.md).",
   "POST /operator/platform-mandates/fund": OPERATOR_ONLY,
   "POST /operator/platform-grantmaking-keys": OPERATOR_ONLY,
   "GET /operator/platform-grantmaking-keys": OPERATOR_ONLY,
@@ -618,6 +659,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "the server never learns which page a reader is on. An MCP caller is " +
     "authenticated and names its page anyway, so get_page_analysis takes " +
     "the URL directly.",
+  "GET /assistant/conversations/:id/stream":
+    "An event stream of a running turn, for a person watching the reply form. A tool call " +
+    "returns once; get_assistant_conversation holds the same text, and the finished reply.",
   "POST /assistant/conversations": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/messages": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/stop": ASSISTANT_CONVERSATION,
@@ -625,12 +669,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /assistant/conversations/:id": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/held/:action_id": ASSISTANT_GATE,
   "PUT /assistant/allowance": ASSISTANT_GATE,
+  "POST /pages/:id/share": PAGE_SHARING,
+  "DELETE /pages/:id/share": PAGE_SHARING,
   "DELETE /pages/:id":
     "A page is its user's to throw away: deleting takes the signed-in dashboard session, so " +
     "nothing an agent reads can have it delete what the user keeps.",
-  "POST /extension/chat":
-    "The extension's chat over the page open in the browser; an MCP client " +
-    "is itself the conversation, with the graph tools in hand.",
 };
 
 /** Whole route families excluded by prefix, each with its reason. */

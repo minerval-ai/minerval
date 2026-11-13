@@ -74,7 +74,12 @@ import {
   executeNotifySteward,
   getNotifyStewardToolDefinition,
 } from "./notify-steward.js";
-import { requestCuration } from "../../services/curation-service.js";
+import {
+  requestCuration,
+  CURATION_DEFECTS,
+  CURATION_DEFECT_DESCRIPTION,
+  type CurationDefect,
+} from "../../services/curation-service.js";
 import { demotePublishedFormalization } from "../../services/formalization-service.js";
 import { setArgumentShows } from "../../services/quantity-service.js";
 import { addAnswer, addSubquestion } from "../../services/question-service.js";
@@ -97,6 +102,7 @@ import {
 import { ownershipRefusal } from "./steward-ownership.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { MARGINAL_YIELD_DESCRIPTION } from "./judgment-fields.js";
+import { malformedIdRefusal, writeIdCandidates } from "./id-repair.js";
 import {
   executeStewardStructureTool,
   getStewardStructureToolDefinitions,
@@ -1318,7 +1324,11 @@ export function getStewardToolDefinitions(): Tool[] {
         "not yours; raise it and let the Curator adjudicate. The concern goes on the " +
         "ledger as a curation request: curation is funded work, so it runs when a " +
         "mandate judges it worth buying, and one run reads every concern waiting on " +
-        "the claim. Name the other claim when you know it. An argument " +
+        "the claim. Say which defect you suspect (defect) and name the other claim " +
+        "when you know it: the mandate's officers decide on what the request names, " +
+        "and a concern with no structural defect is not one for the Curator. A node " +
+        "that only wants a first assessment is not either: it already has its " +
+        "assessment on the ledger. An argument " +
         "recorded on the wrong side of your claim is not one of these: its stance " +
         "is yours to correct with revise_argument, and the Curator, which never " +
         "flips an argument's stance itself, would send it back to you.",
@@ -1335,13 +1345,19 @@ export function getStewardToolDefinitions(): Tool[] {
               "Optional: the UUID of the suspected duplicate, counterpart, or claim it " +
               "should be linked to.",
           },
+          defect: {
+            type: "string",
+            enum: [...CURATION_DEFECTS],
+            description: CURATION_DEFECT_DESCRIPTION,
+          },
           concern: {
             type: "string",
             description:
-              "What you noticed (e.g. 'likely duplicate of <id>', 'conflates X and Y')",
+              "What you noticed and why it is that defect (e.g. 'likely duplicate of <id>: " +
+              "both state ...', 'conflates X and Y')",
           },
         },
-        required: ["claim_id", "concern"],
+        required: ["claim_id", "defect", "concern"],
       },
     },
     // Correcting structure already built (#741): remove, retype, ungroup,
@@ -1466,10 +1482,19 @@ export async function executeStewardTool(
           if (unknown.length > 0) {
             return JSON.stringify({
               success: false,
+              code: "CLAIM_NOT_FOUND",
               message:
                 `These linked claims do not exist: ${unknown.join(", ")}. ` +
                 `Link only real claims (ids from get_claim or from ` +
-                `this run), or drop the link and name the claim in plain text.`,
+                `this run), or drop the link and name the claim in plain text. ` +
+                `Nothing was written, and no link is corrected for you: ` +
+                `\`unresolved\` lists, for each, the nearest ids this run has seen.`,
+              unresolved: await Promise.all(
+                unknown.map(async (id) => {
+                  const { code: _code, ...candidates } = await writeIdCandidates(id);
+                  return candidates;
+                })
+              ),
             });
           }
         }
@@ -1490,6 +1515,17 @@ export async function executeStewardTool(
         }
 
         const db = getDb();
+        // The verdict in force before this one, for the event a subscriber
+        // reads; never a reason to fail the verdict itself.
+        let before: { status: string | null } | undefined;
+        try {
+          [before] = await db
+            .select({ status: assessmentsInForce.status })
+            .from(assessmentsInForce)
+            .where(eq(assessmentsInForce.claimId, claimId));
+        } catch {
+          before = undefined;
+        }
 
         // Retire this label's current version, and no other label's: each
         // stays in force for the readers and runs that go by it.
@@ -1542,6 +1578,18 @@ export async function executeStewardTool(
         // standing with inputs_recorded false, which readers report as "not
         // recorded", rather than failing a verdict that is already written.
         if (written?.id) {
+          const { recordEvent } = await import("../../services/event-service.js");
+          await recordEvent({
+            kind: "assessed",
+            nodeId: claimId,
+            refs: { assessment: written.id },
+            summary: before?.status
+              ? before.status === status
+                ? `Reassessed: still ${status} (confidence ${confidence}).`
+                : `Its verdict moved from ${before.status} to ${status} (confidence ${confidence}).`
+              : `First assessed: ${status} (confidence ${confidence}).`,
+            payload: { status_before: before?.status ?? null, status_after: status, confidence },
+          });
           try {
             await recordJudgmentInputs(rawQuery, "assessment", written.id, claimId);
             await recordMadeBeside(rawQuery, "assessments", "assessment", written.id, claimId);
@@ -1654,6 +1702,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Claim not found: ${claimId}`,
+            ...(await writeIdCandidates(claimId)),
           });
         }
         // A figure is an instance of its quantity, and a question is asked or
@@ -2326,6 +2375,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Argument not found: ${argumentId}`,
+            ...(await writeIdCandidates(argumentId, "argument")),
           });
         }
         if (argument.retiredAt) {
@@ -2437,6 +2487,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Argument not found: ${argumentId}`,
+            ...(await writeIdCandidates(argumentId, "argument")),
           });
         }
         if (argument.retiredAt) {
@@ -2596,6 +2647,7 @@ export async function executeStewardTool(
             return JSON.stringify({
               success: false,
               message: `Argument not found: ${argumentId}`,
+              ...(await writeIdCandidates(argumentId, "argument")),
             });
           }
           if (argument.claimId !== parentId) {
@@ -2620,6 +2672,7 @@ export async function executeStewardTool(
             message:
               `Claim not found: ${childId}. Link only real claims (ids from ` +
               `match_claim, get_claim, or add_decomposition_edge).`,
+            ...(await writeIdCandidates(childId)),
           });
         }
 
@@ -2694,6 +2747,7 @@ export async function executeStewardTool(
             message:
               `Claim not found: ${otherClaimId}. Link only real claims (ids from ` +
               `match_claim or get_claim).`,
+            ...(await writeIdCandidates(otherClaimId)),
           });
         }
         const { linked, linkId } = await linkClaims({
@@ -2736,6 +2790,7 @@ export async function executeStewardTool(
             return JSON.stringify({
               success: false,
               message: `Argument not found: ${argumentId}`,
+              ...(await writeIdCandidates(argumentId, "argument")),
             });
           }
           if (argument.claimId !== parentId) {
@@ -3069,6 +3124,7 @@ export async function executeStewardTool(
           return JSON.stringify({
             success: false,
             message: `Claim not found: ${claimId}. Pass the id of the node you steward.`,
+            ...(await writeIdCandidates(claimId)),
           });
         }
         const childKind = ((child.kind as NodeKind | undefined) ?? "claim") as NodeKind;
@@ -3249,6 +3305,7 @@ export async function executeStewardTool(
               `Claim not found: ${parentId}. Propose edges only into real claims ` +
               `(ids from match_claim or get_claim); if the proposition ` +
               `does not exist, mint it with add_parent_claim.`,
+            ...(await writeIdCandidates(parentId)),
           });
         }
         const parentKind = ((parent.kind as NodeKind | undefined) ?? "claim") as NodeKind;
@@ -3350,6 +3407,7 @@ export async function executeStewardTool(
           anchorClaimId: claimId,
           otherClaimId,
           source: "steward_escalation",
+          defect: input.defect as CurationDefect,
           concern,
           requestedByClaimId: escalatingCtx.claimId ?? null,
           requestedByRunId: escalatingCtx.runId ?? null,
@@ -3376,6 +3434,10 @@ export async function executeStewardTool(
       }
     }
   } catch (err) {
+    // A malformed uuid reaches the database as a syntax error (22P02).
+    // Nothing was written; say which id is malformed and offer the ids the
+    // run has seen nearest it, rather than the bare database message.
+    if ((err as { code?: string } | null)?.code === "22P02") return malformedIdRefusal(input);
     // The database's refusal of a write across labels is told whole, with
     // its reason: a limit the agent works under, not a fault of the tool.
     const refusal = mirroredRefusalForAgent(err) ?? refusalForCaller(err);

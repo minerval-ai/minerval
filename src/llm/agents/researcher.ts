@@ -484,6 +484,12 @@ export interface ResearcherInput {
      * its answers are what comes back.
      */
     questions?: ReaderQuestion[] | null;
+    /**
+     * For a follow-up: the marks of the run it continues, for the source
+     * text that run was given (`source-text@<label>`). The follow-up opens
+     * with that run's report and notebook, so it starts with its marks.
+     */
+    carried_marks?: readonly string[];
   };
   /**
    * The node the run serves. kind is the node's kind; absent is read as
@@ -600,6 +606,7 @@ export async function runResearcher(input: ResearcherInput): Promise<ResearcherR
       const nodeIds = input.claim ? [input.claim.id] : (input.requestNodes ?? []).map((n) => n.id);
       const rule = await sourceTextRuleFor(nodeIds);
       const asReader = (input.run.questions ?? []).length > 0;
+      for (const mark of input.run.carried_marks ?? []) markCurrentRunPrivate(mark);
       return withSourceTextRule(rule ? { ...rule, reader: asReader } : null, () => runResearcherImpl(input));
     })
   );
@@ -615,14 +622,12 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const sandbox = resolveProvider(model) === "anthropic";
   const longRun = sandbox && modelSupportsLongRun(model);
   const ceiling = Math.max(1, run.ceiling_micro_usd);
-  // A delegated run's launcher blocks on the report, so it gets the short
-  // cap; a request run from the ledger has nobody waiting, and its budget
-  // bounds it, so it gets only a long backstop (#734). The task message
-  // states whichever applies, with its reason.
+  // Nobody blocks on a research run: every one is commissioned on the
+  // ledger and its report returns to a session or an inbox when it ends, so
+  // its budget bounds it and the wall clock is only a long backstop for a
+  // run that has stopped making progress (#734). The task message says so.
   const runsRequest = run.requested_by === "request" || run.requested_by === "request_scope";
-  const maxWallMs =
-    input.maxWallMs ??
-    (runsRequest ? config.researcherRequestMaxWallMinutes : config.researcherMaxWallMinutes) * 60_000;
+  const maxWallMs = input.maxWallMs ?? config.researcherRequestMaxWallMinutes * 60_000;
   const maxTurns = input.maxTurns ?? RUN_TURN_GUARD;
 
   // Skills load on demand; the claim's recorded domains point to the domain
@@ -723,7 +728,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...graphReadTools,
     ...readTools.definitions,
     // SQL over the public views. The Researcher runs inside another run's
-    // budget (delegate_research) or a request's, so it has no commission or
+    // budget (a commission) or a request's, so it has no commission or
     // petition of its own: what its work shows is needed, its report says.
     getSqlToolDefinition(),
     getReadPageToolDefinition(),

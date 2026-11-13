@@ -76,7 +76,12 @@ const fetched: string[] = [];
 /** What the stub serves: a body, or a redirect. Anything else is a 404. */
 const pages = new Map<string, { body?: string; type?: string; redirect?: string }>();
 
+// The rule is a deployment's choice and starts off (PRIVATE_RUN_FETCHES). This
+// file is a deployment that has turned it on; the last block turns it off.
+const fetchesBefore = loadConfig().privateRunFetches;
+
 beforeAll(async () => {
+  Object.assign(loadConfig(), { privateRunFetches: "given" });
   setNoContextSessionForTests(null);
   await system(async () => {
     await rawQuery(
@@ -98,6 +103,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  Object.assign(loadConfig(), { privateRunFetches: fetchesBefore });
   vi.unstubAllGlobals();
   deployment.providerLabels = loaded;
   resetProviderClearanceForTests();
@@ -510,5 +516,46 @@ describe("a run at public, in the same deployment", () => {
     const theirs = `${HOST}/submitted-by-a-person?token=abc`;
     const source = await runAtLabel(A, "a person's request", () => getOrCreateSource({ url: theirs }));
     expect(source).toMatchObject({ url: theirs, sensitivityLabel: A });
+  });
+});
+
+describe("a deployment that has not turned the rule on, which is how every deployment starts", () => {
+  beforeAll(() => {
+    Object.assign(loadConfig(), { privateRunFetches: "any" });
+  });
+  afterAll(() => {
+    Object.assign(loadConfig(), { privateRunFetches: "given" });
+  });
+
+  it("starts off: the setting's own default is any address", async () => {
+    expect(fetchesBefore).toBe("any");
+  });
+
+  it("a run at a private label fetches the address it wrote, as written, with the tools and the brief it had before the rule, and nothing is recorded", async () => {
+    const before = await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM given_addresses`));
+    const composed = `${HOST}/built-while-off?page=2&doi=10.1000/xyz`;
+    pages.set(composed, { body: `<p>Page two. Next: ${HOST}/built-while-off?page=3</p>` });
+    fetched.length = 0;
+    const { sent, results, toolResults } = await run(A, () =>
+      scripted([
+        {
+          server: [{ type: "web_search_tool_result", tool_use_id: "s1", content: [{ type: "web_search_result", url: `${HOST}/a-hit-while-off`, title: "Hit" }] }],
+          calls: [{ name: "read_page", input: { url: composed } }],
+        },
+        {},
+      ])
+    );
+    expect(fetched).toEqual([composed]);
+    expect(JSON.parse(results[0]!)).toMatchObject({ ok: true, url: composed });
+    expect(toolResults.join("\n")).not.toContain("is not an address this graph has been given");
+    // No resolve_identifier beside it, and no note in the brief.
+    expect(sent[0]!.tools.map((t) => t.name)).toEqual(["read_page"]);
+    expect(JSON.stringify(sent[0]!.messages)).not.toContain("Addresses this run's tools take");
+    await run(A, async () => {
+      const source = await getOrCreateSource({ url: `${HOST}/recorded-while-off?x=1` });
+      expect(source.url).toBe(`${HOST}/recorded-while-off?x=1`);
+      expect(source.sensitivityLabel).toBe(A);
+    });
+    expect(await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM given_addresses`))).toEqual(before);
   });
 });

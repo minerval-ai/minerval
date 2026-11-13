@@ -10,6 +10,7 @@ import { StatusBadge, StandingBadge, Dispute, Importance, Swatch, Unassessed } f
 import { AssessmentText } from "@/components/AssessmentText";
 import { Term } from "@/components/Term";
 import { Contribute } from "@/components/claim/Contribute";
+import { StatedViews } from "@/components/claim/StatedViews";
 import { CiteClaim } from "@/components/claim/CiteClaim";
 import { EmbedClaim } from "@/components/claim/EmbedClaim";
 import styles from "./question.module.css";
@@ -109,8 +110,11 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
   const a = q.assessment?.summary ? { ...q.assessment, summary: q.assessment.summary } : null;
   const texts = buildClaimTextMap(detail.tree);
   const standing = isStanding(q.standing) ? q.standing : null;
-  const asks = q.instances.filter((i) => i.role === "asks");
-  const answers = q.instances.filter((i) => i.role === "answers");
+  // Views stated to the graph directly (§4) have a section of their own,
+  // so their instances are left out of the lists below.
+  const stated = new Set((detail.stated_views ?? []).map((v) => v.instance_id));
+  const asks = q.instances.filter((i) => i.role === "asks" && !stated.has(i.id));
+  const answers = q.instances.filter((i) => i.role === "answers" && !stated.has(i.id));
   const answerText = new Map(q.answers.map((x) => [x.id, x.text]));
 
   return (
@@ -200,6 +204,10 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
           {isExamined(detail.coverage, !!standing) ? "Not yet assessed." : notExaminedLine("question")}
         </p>
       )}
+
+      {/* stated views (§4): what a person or an organisation has told the
+          graph it holds, beside the assessment and never inside it. */}
+      {!fixture && <StatedViews claimId={claim.id} kind="question" views={detail.stated_views ?? []} />}
 
       {q.answers.length > 0 && <Answers q={q} />}
 

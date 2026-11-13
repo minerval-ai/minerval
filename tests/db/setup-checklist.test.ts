@@ -39,6 +39,7 @@ import { ensureEnforcement } from "../../src/db/enforcement.js";
 import { PLATFORM_EXTERNAL_ID } from "../../src/services/platform-account.js";
 import type { SetupChecklist } from "../../src/services/setup-checklist-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
+import { PREFLIGHT_CHECKS } from "../../src/preflight.js";
 
 let app: FastifyInstance;
 
@@ -150,11 +151,18 @@ describe("who may read the checklist", () => {
 });
 
 describe("what the checklist says", () => {
-  it("carries no report of the deployment's own checks, in a build that has no preflight", async () => {
-    // The preflight is a separate change (services/deployment-checks.ts). Until the two meet the part is
-    // null, and the page says the checks are not in this build.
+  it("carries the preflight's report: every check by name, each with a status and a sentence", async () => {
     const { preflight } = await checklist(admin);
-    expect(preflight).toBeNull();
+    expect(preflight).not.toBeNull();
+    expect(preflight!.checks.map((c) => c.name)).toEqual(PREFLIGHT_CHECKS.map((c) => c.name));
+    for (const check of preflight!.checks) {
+      expect(["pass", "fail", "not_applicable"], check.name).toContain(check.status);
+      expect(check.message.length, check.name).toBeGreaterThan(10);
+    }
+    expect(["allowed", "refused"]).toContain(preflight!.agent_work);
+    // What it says of the deployment's own tables was read, whoever asked.
+    expect(preflight!.checks.find((c) => c.name === "database")!.message).not.toMatch(/cannot be reached/);
+    expect(preflight!.checks.find((c) => c.name === "own_organization")!.message).not.toMatch(/could not be checked/);
   });
 
   it("counts who holds each permission, by label and by party where it is granted at one", async () => {
@@ -205,7 +213,6 @@ describe("what the checklist says", () => {
     const before = await checklist(admin);
     expect(before.standing_mandates.map((m) => [m.name, m.mandate])).toEqual([
       ["general", null],
-      ["governance", null],
     ]);
     expect(before.owls.created_here).toBe(true);
     expect(before.usage_report).toMatchObject({ price: "metered", reporting: true, destination: "none", destination_ready: false });
@@ -230,7 +237,7 @@ describe("what the checklist says", () => {
       budget_owls: 0,
       daily_owls: 4,
     });
-    expect(after.standing_mandates.find((m) => m.name === "governance")!.mandate).toBeNull();
+    expect(after.standing_mandates.map((m) => m.name)).toEqual(["general"]);
     expect(after.owls.created_total_owls).toBe(before.owls.created_total_owls! + 25);
   });
 

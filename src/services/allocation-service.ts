@@ -18,11 +18,11 @@
  */
 import { labelInContext } from "../llm/usage-context.js";
 import { rawQuery } from "../db/client.js";
-import { allocationDayUseSql } from "./day-use.js";
+import { windowRoomSql } from "./pace-service.js";
 import { loadConfig } from "../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { REQUEST_GROUP, ensureRequestActions } from "./action-service.js";
-import { commissionAction, commissionNodePass } from "./commission-service.js";
+import { commissionAction, commissionNodePass, commissionNoteField } from "./commission-service.js";
 import {
   POLICY_BOUNDS,
   getEffectiveAllocationPolicy,
@@ -104,7 +104,7 @@ export async function allocateToClaimAssessment(input: {
     unspentOwls: microUsdToOwls(budget),
     covered: true,
     actionId: result.actionId,
-    ...(result.parked ? { note: result.parked.note } : {}),
+    ...commissionNoteField(result),
   };
 }
 
@@ -212,7 +212,7 @@ export type MandateRequestAllocateResult =
 
 /**
  * A mandate commissions the work on a request whole, by its Grantmaker's
- * decision (fund_request), within its daily rate and escrow like any of its
+ * decision (fund_request), within its pace and escrow like any of its
  * commissions.
  */
 export async function allocateMandateToRequest(input: {
@@ -358,7 +358,7 @@ export function shortPassFunding(input: {
   costEstMicroUsd: number;
   /** The estimate less what already backs the row. */
   neededMicroUsd: number;
-  /** What the day's rate and the escrow both still allow. */
+  /** What the pace and the escrow both still allow. */
   roomMicroUsd: number;
   floorMicroUsd: number;
 }): number | null {
@@ -379,12 +379,22 @@ export function shortPassFunding(input: {
  * nothing to co-fund). The engine executor then runs whatever is covered.
  *
  * Deliberation pays its own way: these allocations come out of the same
- * daily rate as everything else the mandate commissions, so thinking about
+ * pace as everything else the mandate commissions, so thinking about
  * the work competes with the work. Bounded by escrow headroom too
  * (committed money includes these allocations and any regrants out). A
  * row the day or the escrow cannot cover waits, except the Grantmaker's
  * own passes, which start short and are told (shortPassFunding).
  */
+/** Why a mandate commissions its own upkeep, as its record reads. */
+const SELF_REASON: Record<string, string> = {
+  grant_planning: "The mandate's planning pass.",
+  mandate_review: "A sitting of the mandate's Grantmaker.",
+  lookout_run: "A run of one of the mandate's lookouts.",
+  correspondent_run: "A run of one of the mandate's Correspondents.",
+  ingest: "An ingest item of the mandate's plan.",
+  consistency_sweep: "A consistency sweep the mandate funds.",
+};
+
 export async function fundGrantSelfActions(): Promise<number> {
   const rows = await rawQuery<{
     exclusion_group: string;
@@ -395,10 +405,14 @@ export async function fundGrantSelfActions(): Promise<number> {
     cost_est: number;
     needed: number;
     headroom: number;
-    /** Null when the mandate has no daily rate: unpaced, escrow-bounded only. */
+    /** Null when the mandate's pace is as needed: escrow-bounded only. */
     day_room: number | null;
+    /** The Grantmaker's reserve, which only its own passes may draw on. */
+    reserve: number;
   }>(
-    `SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
+    `SELECT * FROM (
+     SELECT a.exclusion_group, a.id AS action_id, a.claim_id, g.id AS grant_id, a.kind,
+            a.created_at AS row_created_at,
             a.cost_est_micro_usd::bigint AS cost_est,
             -- What this row still needs: its cost less what already backs
             -- it (an allocation placed on its group as a whole, or on this
@@ -437,16 +451,11 @@ export async function fundGrantSelfActions(): Promise<number> {
                            WHERE r.from_grant_id = g.id), 0)
               - ${prizeCommitmentSql("g.id")})::bigint
               AS headroom,
-            -- The day's remaining room under the mandate's rate, counted the
-            -- same way a commission counts it (grantDayUseMicroUsd). A rate
-            -- of 0 means unpaced.
-            (CASE WHEN g.daily_budget_micro_usd > 0
-                  THEN GREATEST(0, g.daily_budget_micro_usd
-                    - COALESCE((SELECT SUM(${allocationDayUseSql("al")})
-                                  FROM minerval_whole.allocation_money al
-                                 WHERE al.grant_id = g.id
-                                   AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0))
-                  ELSE NULL END)::bigint AS day_room
+            -- The room the mandate's pace leaves in its rolling window,
+            -- counted the way a commission counts it (pace-service.ts);
+            -- null for a pace that is as needed.
+            ${windowRoomSql("g")}::bigint AS day_room,
+            g.reserve_micro_usd::bigint AS reserve
        FROM actions a
        JOIN grants g
          ON (a.kind IN ('grant_planning', 'mandate_review') AND a.target_ref = g.id::text)
@@ -536,7 +545,16 @@ export async function fundGrantSelfActions(): Promise<number> {
                                             WHERE al.action_id = sib.id
                                               AND al.released_at IS NULL
                                               AND al.spent_micro_usd < al.amount_micro_usd)))
-      ORDER BY a.created_at ASC
+     ) r
+      -- Rows the money is there for now first, oldest first; then the rest.
+      -- A row waiting for room (its mandate's pace, reserve or escrow) is
+      -- asked again on every pass, and taking the oldest 100 regardless let
+      -- enough waiting rows keep a new one that would fit from ever being
+      -- looked at (#838 was the same starvation by covered rows).
+      ORDER BY (r.needed <= LEAST(
+                 r.headroom - CASE WHEN r.kind IN ('mandate_review', 'grant_planning') THEN 0 ELSE r.reserve END,
+                 COALESCE(r.day_room, r.headroom))) DESC,
+               r.row_created_at ASC
       LIMIT 100`,
     [
       loadConfig().consistencySweepsEnabled === true,
@@ -566,7 +584,11 @@ export async function fundGrantSelfActions(): Promise<number> {
       row.day_room === null
         ? Number.POSITIVE_INFINITY
         : Number(row.day_room) - drawn;
-    const room = Math.min(Number(row.headroom) - drawn, dayRoom);
+    // The Grantmaker's own passes may draw on its reserve; the mandate's
+    // routine runs (lookouts, Correspondents, plan ingests, sweeps) may not.
+    const ownPass = row.kind === "mandate_review" || row.kind === "grant_planning";
+    const reserve = ownPass ? 0 : Math.max(0, Number(row.reserve ?? 0));
+    const room = Math.min(Number(row.headroom) - drawn - reserve, dayRoom);
     // Work is funded whole or not at all, except the Grantmaker's own
     // passes: a review or planning pass the day or the escrow cannot fund
     // in full is started with what there is (shortPassFunding), because a
@@ -584,15 +606,18 @@ export async function fundGrantSelfActions(): Promise<number> {
             })
           : null;
     if (amount === null) continue;
+    // A commission like any other: whole, from one payer, with the reason
+    // on the mandate's record. The mandate's own upkeep is commissioned by
+    // the mandate itself, at the row's estimate.
     const inserted = await rawQuery<{ id: string }>(
       // A mandate's money on its own row, placed by the sweep: at the
       // label of the row it pays for, where no run is in progress.
       `INSERT INTO action_allocations
-         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, (SELECT sensitivity_label FROM actions WHERE id = $2)))
+         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, 'mandate', $6, COALESCE($7, (SELECT sensitivity_label FROM actions WHERE id = $2)))
        ON CONFLICT DO NOTHING
        RETURNING id`,
-      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, labelInContext()]
+      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, SELF_REASON[row.kind] ?? "The mandate's own upkeep.", labelInContext()]
     );
     if (inserted.length === 0) continue;
     if (amount < needed) {

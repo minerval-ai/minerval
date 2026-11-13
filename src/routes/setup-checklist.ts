@@ -1,7 +1,7 @@
 /**
  * GET /setup/checklist: what a members-only deployment's administrators
  * read to see what has been set up and what is still to do
- * (services/setup-checklist-service.ts; docs/setup-checklist.md). Mounted
+ * (services/setup-checklist-service.ts; docs/deployment.md, "The setup checklist"). Mounted
  * only where READS=members (server/app.ts), so the public graph does not
  * have it.
  *
@@ -34,8 +34,8 @@ export async function setupChecklistRoutes(app: FastifyInstance): Promise<void> 
         "cleared to receive text at it, and the roles whose model's provider is not cleared, " +
         "whose runs at that label are refused. `undefined_labels_in_provider_setting` names " +
         "labels the provider setting uses that are not defined here; while there is one, every " +
-        "call to a provider is refused. `standing_mandates` are the General and Governance " +
-        "mandates and whether each is set up, at each label the caller reads where the deployment " +
+        "call to a provider is refused. `standing_mandates` is the General " +
+        "mandate and whether it is set up, at each label the caller reads where the deployment " +
         "has more than one. `owls` says whether the deployment creates its own " +
         "owls and which configured models have no price. `usage_report` says whether usage is " +
         "reported, where to, and how many reports wait to be sent. `connections` counts the " +

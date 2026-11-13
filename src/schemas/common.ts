@@ -148,6 +148,37 @@ export const isMatchedInstanceStance = (v: unknown): v is MatchedInstanceStance 
   (MATCHED_INSTANCE_STANCES as readonly unknown[]).includes(v);
 
 /**
+ * How a speaker that states its view to the graph directly stands toward the
+ * node, in its own terms (§4), by the node's kind. On a claim it may affirm
+ * it, deny it, qualify it (hold it only with a condition or a limit the
+ * statement gives), give it a probability and take no side, or treat it as
+ * open. On a quantity it states a figure or treats the value as open. On a
+ * question it answers in its own words or treats the question as open.
+ */
+export const STATED_VIEW_STANCES = {
+  claim: ["affirms", "denies", "qualifies", "gives_probability", "open"],
+  quantity: ["states", "open"],
+  question: ["answers", "open"],
+} as const satisfies Record<NodeKind, readonly string[]>;
+export type StatedViewStance = (typeof STATED_VIEW_STANCES)[NodeKind][number];
+
+/**
+ * The stance the instance of a stated view carries. A view that treats the
+ * matter as open is recorded as the instance stance the node's kind already
+ * has for that ("poses", or "asks" on a question). "qualifies" and
+ * "gives_probability" are instance stances only a stated view writes today:
+ * like posing and mentioning, they take no side, and nothing that counts
+ * affirming and denying sources counts them.
+ */
+export function instanceStanceForStatedView(kind: NodeKind, stance: StatedViewStance): string {
+  if (stance === "open") return kind === "question" ? "asks" : "poses";
+  return stance;
+}
+
+/** Instance stances that record a position without taking a side on the claim as worded (§4). */
+export const SIDELESS_STATED_STANCES: ReadonlySet<string> = new Set(["qualifies", "gives_probability"]);
+
+/**
  * How a passage stands toward an argument it is an instance of (§4, §7,
  * #541). "advances": the passage makes the argument. "criticizes": it
  * attacks the argument (a paper rebutting it is also an instance of the
@@ -247,11 +278,20 @@ export function proposedNodeKind(type: string): NodeKind | null {
 // must keep refusing it.
 export const prizeContributionTypeEnum = z.enum(["claim_prize"]);
 
+// A view stated to the graph directly (constitution §4): an ordinary
+// contribution, so that it passes the Contribution Reviewer and can be
+// appealed like any outside material, but created only by its own route
+// (POST /claims/:id/stated-views), because it carries a stance and a stake
+// and is stored as a source. Deliberately not in contributionTypeEnum.
+export const statedViewContributionTypeEnum = z.enum(["state_view"]);
+export const STATED_VIEW_CONTRIBUTION_TYPE = "state_view";
+
 // Every type a contribution row can carry — for list filters and display.
 export const anyContributionTypeEnum = z.enum([
   ...contributionTypeEnum.options,
   ...intakeContributionTypeEnum.options,
   ...prizeContributionTypeEnum.options,
+  ...statedViewContributionTypeEnum.options,
 ]);
 
 export const reviewDecisionEnum = z.enum([

@@ -1322,9 +1322,22 @@ export async function countNewReportsSince(since: Date, recordedAt?: string): Pr
 }
 
 /**
+ * How long a fresh report is left to its raise-time filing before the
+ * backlog takes it. raiseIssue() files the issue in the background, and
+ * the row carries no number until GitHub has answered; a sync tick that
+ * landed in that window filed the same report a second time (#952 and
+ * #953 are one report, filed twice in the same second). The raise-time
+ * filing makes at most a few requests of REQUEST_TIMEOUT_MS each, so this
+ * is well past any filing still in flight, and a filing that failed is
+ * picked up on a later tick.
+ */
+export const ISSUE_FILING_GRACE_SECONDS = 300;
+
+/**
  * Open reports with no GitHub issue yet, oldest first: the sync worker's
  * backlog. Withdrawn reports are never filed; closed statuses are, so the
- * tracker carries the record, but after the open ones.
+ * tracker carries the record, but after the open ones. A report raised in
+ * the last ISSUE_FILING_GRACE_SECONDS is still its raise-time filing's.
  *
  * Only reports at `public` are ever selected, whoever asks: a tracker is
  * outside the deployment, and a report a private run filed stays inside it.
@@ -1341,9 +1354,10 @@ export async function listReportsAwaitingIssue(
         AND status <> 'withdrawn'
         AND ($2::boolean OR origin = 'internal')
         AND sensitivity_label = $3
+        AND first_seen_at < now() - make_interval(secs => $4)
       ORDER BY (status IN ('new', 'triaged')) DESC, first_seen_at ASC
       LIMIT $1`,
-    [Math.max(1, limit), opts.includeExternal, PUBLIC_LABEL]
+    [Math.max(1, limit), opts.includeExternal, PUBLIC_LABEL, ISSUE_FILING_GRACE_SECONDS]
   );
 }
 

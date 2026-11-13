@@ -40,7 +40,7 @@ describe("commissions from one mandate", () => {
       )
     );
     expect(results.filter((r) => r.ok).length).toBe(3);
-    expect(results.filter((r) => !r.ok).every((r) => !r.ok && r.code === "OVER_DAILY_RATE")).toBe(true);
+    expect(results.filter((r) => !r.ok).every((r) => !r.ok && r.code === "OVER_PACE")).toBe(true);
     const [sum] = await rawQuery<{ total: string }>(
       `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS total
          FROM action_allocations WHERE grant_id = $1 AND released_at IS NULL`,

@@ -35,6 +35,8 @@ import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
 import { handleArbitrationMessage } from "./workers/arbitration-pipeline.js";
 import { abandonStewardLeases } from "./services/steward-lease.js";
+import { startGatedWork } from "./workers/agent-work-gate.js";
+import { ConfigFileError } from "./config-file.js";
 import type {
   QueuedClaimPipelineMessage,
   UrlExtractionMessage,
@@ -42,102 +44,25 @@ import type {
   ArbitrationMessage,
 } from "./services/queue-service.js";
 
-async function main() {
-  const config = loadConfig();
-  // Every tool a domain skill declares must have an executor and a name
-  // that collides with nothing; a defective skill fails the process here,
-  // not mid-run inside a Steward's toolset.
-  assertSkillToolsRegistered();
-  // A deployment set to publish the mirror feed without a signing key, or
-  // to apply one without the key to check it against, stops here with the
-  // reason, not later with a feed nobody can use.
-  const mirrorProblems = mirrorConfigProblems(config);
-  if (mirrorProblems.length > 0) {
-    throw new Error(`The mirror is misconfigured:\n- ${mirrorProblems.join("\n- ")}`);
-  }
+type WorkLogger = {
+  info: (...args: unknown[]) => void;
+  error: (...args: unknown[]) => void;
+};
 
-  if (config.env === "production") {
-    console.log("Running database migrations...");
-    // As the tables' owner, seeing every row: a migration that updates rows
-    // must reach all of them, whatever their labels.
-    await withSystemClearance(
-      "Migrations change tables, which only their owner may do, and a migration that updates rows must see every one.",
-      async () => {
-        const db = getDb();
-        await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`);
-        await migrate(db, {
-          migrationsFolder: join(process.cwd(), "drizzle-migrations"),
-        });
-      }
-    );
-    console.log("Migrations complete.");
-
-    // Read-only SQL's login roles live in the database, not in the stack, so
-    // a deployment that never made them answers every query UNAVAILABLE.
-    // Made here, after migrations (which create the group role they join),
-    // and set again on every start, which also applies a rotated secret.
-    // A failure is logged, not fatal: SQL is one feature, and the rest of
-    // the API should still serve.
-    const roles = {
-      agentUser: config.sqlAgentDbUser,
-      agentPassword: config.sqlAgentDbPassword,
-      callerUser: config.sqlCallerDbUser,
-      callerPassword: config.sqlCallerDbPassword,
-    };
-    if (hasSqlRoleCredentials(roles)) {
-      try {
-        const lines = await withSystemClearance(
-          "Creating and updating read-only SQL's login roles is the owner's to do.",
-          () => ensureSqlRoles((text, params) => rawQuery(text, params), roles)
-        );
-        for (const line of lines) console.log(`[sql] ${line}`);
-      } catch (err) {
-        console.error("[sql] could not ensure the read-only SQL roles; SQL will answer UNAVAILABLE:", err);
-      }
-    }
-  }
-
-  // Where the deployment has more than one label, the database holds every
-  // read and write to a clearance (db/clearance.ts). The step that covers
-  // each labelled table runs here, after migrations, so a table a migration
-  // just added is covered before anything is served. On the public graph it
-  // finds nothing to do. A failure stops the start where a second label
-  // exists, since a table could be left uncovered; where `public` is the
-  // only label there is nothing to hold, and the API starts.
-  try {
-    const { on, changes } = await ensureEnforcement();
-    for (const line of changes) console.log(`[labels] ${line}`);
-    if (on) {
-      // The step has run; now look at what is really there, a live cleared
-      // connection included. Anything wrong (a table without its policy, a
-      // view that reads as the owner, a materialized view, a cleared role
-      // nothing binds) stops the start: the catch below lets a failure pass
-      // only where `public` is the only label, and here it is not.
-      const problems = enforcementProblems(await enforcementFacts());
-      for (const problem of problems) console.error(`[labels] ${problem}`);
-      if (problems.length > 0) {
-        throw new Error(`The database is not holding reads to a clearance as it should: ${problems.length} problem(s), listed above.`);
-      }
-      console.log("[labels] reads and writes are held to a clearance in the database");
-    }
-  } catch (err) {
-    const others = await withSystemClearance(
-      "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",
-      () => rawQuery(`SELECT 1 FROM labels WHERE name <> 'public' LIMIT 1`)
-    ).catch(() => null);
-    if (others === null || others.length > 0) throw err;
-    console.error("[labels] the enforcement step failed; public is the only label, so nothing is held:", err);
-  }
-
-  const app = await buildApp();
+/**
+ * Start everything that takes work: the queue pollers, the in-process
+ * runner, and the schedulers and sweeps around them. Called by the gate
+ * (workers/agent-work-gate.ts) and by nothing else, so that there is one
+ * place agent work begins.
+ */
+function startWork(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  config: ReturnType<typeof loadConfig>,
+  logger: WorkLogger
+): Array<{ stop: () => void }> {
   const pollers: Array<{ stop: () => void }> = [];
 
   // Start queue pollers for configured queues
-  const logger = {
-    info: (...args: unknown[]) => app.log.info(args),
-    error: (...args: unknown[]) => app.log.error(args),
-  };
-
   if (config.sqsClaimPipelineQueue) {
     // The queue may still hold messages from before the label field
     // (workers/claim-pipeline.ts), so the poller hands over either shape.
@@ -271,6 +196,112 @@ async function main() {
   // recorded once, so every task may run it.
   if (usageReporting(config)) pollers.push(startUsageReports({ logger }));
 
+  return pollers;
+}
+
+async function main() {
+  const config = loadConfig();
+  // Every tool a domain skill declares must have an executor and a name
+  // that collides with nothing; a defective skill fails the process here,
+  // not mid-run inside a Steward's toolset.
+  assertSkillToolsRegistered();
+  // A deployment set to publish the mirror feed without a signing key, or
+  // to apply one without the key to check it against, stops here with the
+  // reason, not later with a feed nobody can use.
+  const mirrorProblems = mirrorConfigProblems(config);
+  if (mirrorProblems.length > 0) {
+    throw new Error(`The mirror is misconfigured:\n- ${mirrorProblems.join("\n- ")}`);
+  }
+
+  if (config.env === "production") {
+    console.log("Running database migrations...");
+    // As the tables' owner, seeing every row: a migration that updates rows
+    // must reach all of them, whatever their labels.
+    await withSystemClearance(
+      "Migrations change tables, which only their owner may do, and a migration that updates rows must see every one.",
+      async () => {
+        const db = getDb();
+        await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`);
+        await migrate(db, {
+          migrationsFolder: join(process.cwd(), "drizzle-migrations"),
+        });
+      }
+    );
+    console.log("Migrations complete.");
+
+    // Read-only SQL's login roles live in the database, not in the stack, so
+    // a deployment that never made them answers every query UNAVAILABLE.
+    // Made here, after migrations (which create the group role they join),
+    // and set again on every start, which also applies a rotated secret.
+    // A failure is logged, not fatal: SQL is one feature, and the rest of
+    // the API should still serve.
+    const roles = {
+      agentUser: config.sqlAgentDbUser,
+      agentPassword: config.sqlAgentDbPassword,
+      callerUser: config.sqlCallerDbUser,
+      callerPassword: config.sqlCallerDbPassword,
+    };
+    if (hasSqlRoleCredentials(roles)) {
+      try {
+        const lines = await withSystemClearance(
+          "Creating and updating read-only SQL's login roles is the owner's to do.",
+          () => ensureSqlRoles((text, params) => rawQuery(text, params), roles)
+        );
+        for (const line of lines) console.log(`[sql] ${line}`);
+      } catch (err) {
+        console.error("[sql] could not ensure the read-only SQL roles; SQL will answer UNAVAILABLE:", err);
+      }
+    }
+  }
+
+  // Where the deployment has more than one label, the database holds every
+  // read and write to a clearance (db/clearance.ts). The step that covers
+  // each labelled table runs here, after migrations, so a table a migration
+  // just added is covered before anything is served. On the public graph it
+  // finds nothing to do. A failure stops the start where a second label
+  // exists, since a table could be left uncovered; where `public` is the
+  // only label there is nothing to hold, and the API starts.
+  try {
+    const { on, changes } = await ensureEnforcement();
+    for (const line of changes) console.log(`[labels] ${line}`);
+    if (on) {
+      // The step has run; now look at what is really there, a live cleared
+      // connection included. Anything wrong (a table without its policy, a
+      // view that reads as the owner, a materialized view, a cleared role
+      // nothing binds) stops the start: the catch below lets a failure pass
+      // only where `public` is the only label, and here it is not.
+      const problems = enforcementProblems(await enforcementFacts());
+      for (const problem of problems) console.error(`[labels] ${problem}`);
+      if (problems.length > 0) {
+        throw new Error(`The database is not holding reads to a clearance as it should: ${problems.length} problem(s), listed above.`);
+      }
+      console.log("[labels] reads and writes are held to a clearance in the database");
+    }
+  } catch (err) {
+    const others = await withSystemClearance(
+      "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",
+      () => rawQuery(`SELECT 1 FROM labels WHERE name <> 'public' LIMIT 1`)
+    ).catch(() => null);
+    if (others === null || others.length > 0) throw err;
+    console.error("[labels] the enforcement step failed; public is the only label, so nothing is held:", err);
+  }
+
+  const app = await buildApp();
+
+  const logger = {
+    info: (...args: unknown[]) => app.log.info(args),
+    error: (...args: unknown[]) => app.log.error(args),
+  };
+
+  // Agent work starts behind the preflight's gate and nowhere else
+  // (workers/agent-work-gate.ts): a deployment that holds private material
+  // starts none until its blocking checks pass, and says which failed. A
+  // deployment that holds only public material is asked nothing further and
+  // starts as it always has. The API listens either way, so the checks can
+  // be read at GET /setup/preflight while work is held.
+  const work = startGatedWork({ start: () => startWork(app, config, logger), logger });
+  const pollers: Array<{ stop: () => void }> = [work];
+
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands
   // its claim back (#482) as the last DB write before exit, so the next
@@ -303,6 +334,9 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  // A config file that cannot be used is the installer's to fix, and its
+  // message says how; a stack trace under it would bury that.
+  if (err instanceof ConfigFileError) console.error(err.message);
+  else console.error("Fatal error:", err);
   process.exit(1);
 });

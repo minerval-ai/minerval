@@ -350,7 +350,7 @@ export async function executeLookoutManagementTool(
       note:
         "Posted. Its first run is due now (the ledger funds it from your " +
         "escrow on the next sweep); it will leave a note on the mandate " +
-        "page each run and its flags reach you in your review briefing." +
+        "page each run and its flags reach you in your session's briefing." +
         (feeds.length > 0
           ? " Each feed's current items are recorded as already seen; new ones wake it by the feed's rule."
           : ""),

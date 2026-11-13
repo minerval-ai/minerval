@@ -69,6 +69,7 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   decline_taken_up_request: "submit",
   ask_mandate_for_assessment: "fund",
   fund_outward_work: "fund",
+  state_view: "submit",
   submit_appeal: "submit",
   challenge_prize_claim: "submit",
   order_assessment: "assess",
@@ -108,6 +109,7 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   decline_taken_up_request: "Say on a request's record that you will not do the work you took up",
   ask_mandate_for_assessment: "Ask a mandate you fund to pay for a fresh assessment of a node",
   fund_outward_work: "Pay for the reading of what the public said about a page, or the redaction of a report",
+  state_view: "State your view on a node, under your name",
   submit_appeal: "Appeal a decision",
   challenge_prize_claim: "Challenge a prize claim",
   order_assessment: "Order an assessment",
@@ -140,8 +142,8 @@ export const RUNS_WITHOUT_ASKING: Readonly<Record<string, string>> = {
     "Private to the user and free; it publishes nothing, and replacing a page keeps the earlier text.",
   raise_issue: "A report to Minerval's maintainers about the tools; free, and it touches no claim.",
   query_sql: "A read; priced by database time past a free daily allowance, which its description states.",
-  match_claim: "A private analysis, metered and charged as its description states; it writes nothing.",
-  extract_claims: "As match_claim: private, metered, and it writes nothing.",
+  match_claim: "A private analysis, metered and charged as its description states; it writes nothing to the graph.",
+  extract_claims: "As match_claim: private, metered, and it writes nothing to the graph.",
   assess_text: "As match_claim: private, metered, and it writes nothing to the graph.",
 };
 

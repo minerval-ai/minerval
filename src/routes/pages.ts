@@ -22,8 +22,12 @@ import {
   PAGE_MAX_NODES,
   PAGE_MAX_TITLE_CHARS,
   PAGE_VERSIONS_KEPT,
+  getSharedPage,
   savePage,
   serializePage,
+  serializeSharedPage,
+  sharePage,
+  unsharePage,
   serializePageSummary,
 } from "../services/page-service.js";
 
@@ -135,6 +139,38 @@ export async function pageRoutes(app: FastifyInstance) {
     },
   });
 
+  app.post<{ Params: { id: string } }>("/:id/share", {
+    schema: {
+      tags: ["pages"],
+      summary: "Share one of your pages: anyone who holds the link can read it",
+      params: ID_PARAMS,
+    },
+    preHandler: sessionGuards,
+    handler: async (request, reply) => {
+      const result = await sharePage(request.params.id, request.auth!.userId!);
+      if (!result.ok) {
+        return reply
+          .code(result.code === "NOT_FOUND" ? 404 : 409)
+          .send({ error: result.message, code: result.code });
+      }
+      return reply.send({ page: serializePageSummary(result.page) });
+    },
+  });
+
+  app.delete<{ Params: { id: string } }>("/:id/share", {
+    schema: {
+      tags: ["pages"],
+      summary: "Stop sharing one of your pages: its link stops working",
+      params: ID_PARAMS,
+    },
+    preHandler: sessionGuards,
+    handler: async (request, reply) => {
+      const done = await unsharePage(request.params.id, request.auth!.userId!);
+      if (!done) return reply.code(404).send({ error: "Page not found", code: "NOT_FOUND" });
+      return reply.send({ shared: false });
+    },
+  });
+
   app.delete<{ Params: { id: string } }>("/:id", {
     schema: { tags: ["pages"], summary: "Delete one of your pages", params: ID_PARAMS },
     preHandler: sessionGuards,
@@ -142,6 +178,31 @@ export async function pageRoutes(app: FastifyInstance) {
       const deleted = await deletePage(request.params.id, request.auth!.userId!);
       if (!deleted) return reply.code(404).send({ error: "Page not found", code: "NOT_FOUND" });
       return reply.send({ deleted: true });
+    },
+  });
+}
+
+/**
+ * GET /shared-pages/:token — a page its owner shared, read by its link. No
+ * account is needed: holding the link is the permission. It returns the
+ * page and the nodes it embeds as they stand now, and nothing about whose
+ * it is.
+ */
+export async function sharedPageRoutes(app: FastifyInstance) {
+  app.get<{ Params: { token: string } }>("/:token", {
+    schema: {
+      tags: ["pages"],
+      summary:
+        "Read a page its owner shared by link: its markdown, and the nodes it embeds as the graph holds them now",
+      params: {
+        type: "object",
+        properties: { token: { type: "string", minLength: 20, maxLength: 64 } },
+      },
+    },
+    handler: async (request, reply) => {
+      const page = await getSharedPage(request.params.token);
+      if (!page) return reply.code(404).send({ error: "No page is shared at this link", code: "NOT_FOUND" });
+      return reply.send({ page: await serializeSharedPage(page) });
     },
   });
 }

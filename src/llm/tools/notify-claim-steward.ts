@@ -19,6 +19,7 @@ type Tool = Anthropic.Tool;
 import { rawQuery } from "../../db/client.js";
 import { enqueueSteward } from "../../services/queue-service.js";
 import { isIntakeContributionType } from "../../services/intake-service.js";
+import { STATED_VIEW_CONTRIBUTION_TYPE } from "../../schemas/common.js";
 
 export const NOTIFY_CLAIM_STEWARD = "notify_claim_steward";
 
@@ -120,6 +121,13 @@ export async function buildHandoff(
   const [published] = await rawQuery(`SELECT 1 FROM published_pages WHERE contribution_id = $1`, [c.id]);
   if (published) {
     return { error: "A published page reaches the node's Steward when its submission is admitted; nothing to hand over." };
+  }
+  if (c.contribution_type === STATED_VIEW_CONTRIBUTION_TYPE) {
+    return {
+      error:
+        "A stated view's reasons reach the node's Steward when the view is admitted, and one that " +
+        "gave no reasons has nothing for the Steward to answer; nothing to hand over.",
+    };
   }
   const targets = [c.claim_id, c.merge_target_claim_id].filter(Boolean) as string[];
   const claimId = input.claimId?.trim() || c.claim_id;

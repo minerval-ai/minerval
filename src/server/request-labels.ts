@@ -162,6 +162,14 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     ),
     orReader: true,
   },
+  "POST /claims/:claim_id/stated-views": {
+    ...from(
+      "claim",
+      "claim_id",
+      "A view is stated on this node, at the node's label or at one that reads it: what an organization holds about a public node is its own material, and its review, its instance and its reasons to the Steward are work at the label it was stated at."
+    ),
+    orReader: true,
+  },
   "PATCH /claims/:claim_id": from("claim", "claim_id", "An argument written onto this node."),
   "POST /claims/:claim_id/prize-claims": from("claim", "claim_id", "A prize claim is made on this node."),
 
@@ -237,6 +245,12 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     why: "Replacing a page keeps the page's label. A page saved without an id is new.",
   },
   "DELETE /pages/:id": from("page", "id", "Deletes this page."),
+  "POST /pages/:id/share": from(
+    "page",
+    "id",
+    "Writes this page's link onto the page's own row. Only a page at `public` is shared (services/page-service.ts)."
+  ),
+  "DELETE /pages/:id/share": from("page", "id", "Takes this page's link off the page's own row."),
 
   // ---- reports and findings (service callers) ----
   "PATCH /reports/:id": from("report", "id", "Sets this report's triage status."),
@@ -262,7 +276,6 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     rule: "chosen",
     why: "An analysis of a page the reader has open is new, and what is kept of it carries a label.",
   },
-  "POST /extension/chat": { rule: "chosen", why: "A question about a page the reader has open is new." },
 
   // ---- MCP ----
   "POST /mcp": {

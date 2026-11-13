@@ -29,6 +29,7 @@ import {
   backfillReportEmbeddings,
   findNearReports,
   getReportView,
+  listReportsAwaitingIssue,
   raiseIssue,
   searchReports,
 } from "../../src/services/report-service.js";
@@ -257,5 +258,20 @@ describe("backfillReportEmbeddings on a real database", () => {
     // Nothing left to do: the next pass reads and embeds nothing.
     const again = await backfillReportEmbeddings(50);
     expect(again).toEqual({ pending: 0, embedded: 0, failed: 0 });
+  });
+});
+
+describe("listReportsAwaitingIssue on a real database", () => {
+  it("leaves a report raised moments ago to its raise-time filing, and backfills it later (#952, #953)", async () => {
+    const id = await raise({ title: `fresh report awaiting its issue ${seq}`, embedding: axis(7) });
+    const fresh = await listReportsAwaitingIssue(1000, { includeExternal: true });
+    expect(fresh.map((r) => r.id)).not.toContain(id);
+
+    await rawQuery(
+      `UPDATE agent_reports SET first_seen_at = now() - interval '10 minutes' WHERE id = $1`,
+      [id]
+    );
+    const later = await listReportsAwaitingIssue(1000, { includeExternal: true });
+    expect(later.map((r) => r.id)).toContain(id);
   });
 });

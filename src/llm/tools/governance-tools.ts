@@ -29,6 +29,8 @@ import {
 import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
 import { executeGraphReadTool, getClaimToolDefinition } from "./graph-read-tools.js";
 import { MANDATE_LABEL } from "../../services/contribution-service.js";
+import { STATED_VIEW_CONTRIBUTION_TYPE } from "../../schemas/common.js";
+import { statedViewForContribution } from "../../services/stated-view-service.js";
 
 const HISTORY_DEFAULT = 10;
 const HISTORY_MAX = 30;
@@ -90,7 +92,11 @@ export function getGovernanceToolDefinitions(): Tool[] {
         "content, evidence, proposed wording, merge target), who filed it " +
         "(a contributor's id and name, or \"a funded mandate\"), the target " +
         "claim, any existing review, the reviewer's escalation reason, any " +
-        "human-review reason, the prize claim a challenge targets, any " +
+        "human-review reason, the prize claim a challenge targets, for a " +
+        "state_view the view as stated (`stated_view`: how the speaker stands " +
+        "toward the node, any probability or figure, its words, its reasons, " +
+        "the stake it declared, whether the account is verified, and what " +
+        "became of the reasons), any " +
         "appeals (with the appellant's reasoning), and prior arbitration " +
         "results. Reputation is not here: " +
         "get_contributor_profile has it, for when bad faith or coordination " +
@@ -445,6 +451,11 @@ async function getContributionDetails(
         .limit(1)
     : [undefined];
 
+  const statedView =
+    contribution.contributionType === STATED_VIEW_CONTRIBUTION_TYPE
+      ? await statedViewForContribution(contribution.id)
+      : null;
+
   return {
     contribution: {
       id: contribution.id,
@@ -473,7 +484,11 @@ async function getContributionDetails(
         ? { challenged_prize_claim_id: contribution.challengedPrizeClaimId }
         : {}),
     },
-    ...(source
+    // A view stated to the graph (§4): how the speaker stands, its stake and
+    // its reasons, as it gave them, and whether anyone has checked who is
+    // behind the account.
+    ...(statedView ? { stated_view: statedView } : {}),
+    ...(source && !statedView
       ? {
           proposed_source: {
             id: source.id,

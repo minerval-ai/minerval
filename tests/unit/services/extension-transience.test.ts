@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   insertValues: vi.fn(async () => undefined),
   updateWhere: vi.fn(async () => undefined),
   seen: [] as Array<Record<string, unknown>>,
+  runLogMode: "best_effort" as "best_effort" | "record",
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -32,6 +33,8 @@ vi.mock("../../../src/config.js", () => ({
     env: "production",
     // Production's setting: everything traceable is traced.
     traceLevel: "full",
+    // The public graph's log is best-effort; the last tests switch to a record.
+    runLogMode: mocks.runLogMode,
     publicWebBaseUrl: "https://minerval.ai",
     extensionModel: "test-model",
     extensionMaxClaims: 10,
@@ -100,11 +103,6 @@ vi.mock("../../../src/llm/agents/extension-agent.js", async () => {
         mocks.seen.push({ ...getUsageContext() });
         return [{ index: 0, verdict: "fine", why: "", confidence: 0.9 }];
       }),
-    extensionChat: () =>
-      withAgent("extension", async () => {
-        mocks.seen.push({ ...getUsageContext() });
-        return { reply: "The graph holds this claim as inconclusive." };
-      }),
   };
 });
 
@@ -121,13 +119,12 @@ vi.mock("../../../src/services/assessment-service.js", () => ({
 }));
 
 import {
-  chatAboutPage,
   resetAnalysisCache,
   startAnalysis,
 } from "../../../src/services/extension-service.js";
 import { extractClaims } from "../../../src/llm/agents/extractor.js";
 import { matchClaim } from "../../../src/llm/agents/matcher.js";
-import { extensionChat } from "../../../src/llm/agents/extension-agent.js";
+import { assessPageClaims } from "../../../src/llm/agents/extension-agent.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 import { traceLevel } from "../../../src/services/trace-service.js";
 
@@ -146,6 +143,7 @@ beforeEach(() => {
   mocks.insertValues.mockClear();
   mocks.updateWhere.mockClear();
   mocks.seen.length = 0;
+  mocks.runLogMode = "best_effort";
 });
 
 describe("extension transience (#356)", () => {
@@ -174,20 +172,6 @@ describe("extension transience (#356)", () => {
     }
   });
 
-  it("chat writes nothing either", async () => {
-    const { reply } = await asUser(() =>
-      chatAboutPage({
-        messages: [{ role: "user", content: "is this true? my doctor says otherwise" }],
-        page: { url: PAGE.url, title: PAGE.title, claims: [] },
-      })
-    );
-    expect(reply).toContain("inconclusive");
-    expect(mocks.insertValues).not.toHaveBeenCalled();
-    expect(mocks.updateWhere).not.toHaveBeenCalled();
-    expect(mocks.seen).toHaveLength(1);
-    expect(mocks.seen[0]).toMatchObject({ agent: "extension", untraced: true });
-  });
-
   it("negative control: the same agents outside the extension path do open runs", async () => {
     // The extractor and matcher trace on the ingestion path, where the source
     // is public by construction — so the mocks above would have written a row
@@ -204,8 +188,49 @@ describe("extension transience (#356)", () => {
     // The extension agent is untraced by name, whoever calls it.
     mocks.insertValues.mockClear();
     await asUser(() =>
-      extensionChat({ messages: [], pageUrl: null, pageTitle: null, pageClaims: [] })
+      assessPageClaims({ pageUrl: PAGE.url, pageTitle: PAGE.title, claims: [] })
     );
     expect(mocks.insertValues).not.toHaveBeenCalled();
+  });
+});
+
+// The exemption above belongs to the best-effort log. A deployment that
+// keeps its log as a record (RUN_LOG_MODE=record) has none: the same
+// pipeline is logged there, each run private to the reader.
+describe("the extension in record mode", () => {
+  const openedRuns = () =>
+    mocks.insertValues.mock.calls
+      .map((c) => c[0] as unknown as { agent?: string; userId?: string | null; privateReasons?: string[] })
+      .filter((row) => row.agent !== undefined);
+
+  it("page analysis opens a run for each agent, private and attributed, and answers as before", async () => {
+    mocks.runLogMode = "record";
+    const result = await asUser(() => startAnalysis(PAGE, { graceMs: 2000 }));
+    expect(result.state).toBe("ready");
+    if (result.state !== "ready") return;
+    expect(result.analysis.annotations[0]?.claim?.id).toBe(CLAIM_ID);
+
+    expect(openedRuns()).toEqual([
+      expect.objectContaining({ agent: "extractor", userId: "user-1", privateReasons: ["input:readers-own-content"] }),
+      expect.objectContaining({ agent: "matcher", userId: "user-1", privateReasons: ["input:readers-own-content"] }),
+      expect.objectContaining({
+        agent: "extension",
+        userId: "user-1",
+        privateReasons: ["agent:extension", "input:readers-own-content"],
+      }),
+    ]);
+    // Each run was closed (and sealed) before the pipeline moved on.
+    expect(mocks.updateWhere).toHaveBeenCalledTimes(3);
+    for (const ctx of mocks.seen) {
+      expect(ctx.untraced).toBe(true);
+      expect(ctx.trace).toBeDefined();
+      expect(typeof ctx.runId).toBe("string");
+    }
+  });
+
+  it("still writes no source and no instance: the runs and their seals are the only rows", async () => {
+    mocks.runLogMode = "record";
+    await asUser(() => startAnalysis(PAGE, { graceMs: 2000 }));
+    expect(mocks.insertValues.mock.calls.length).toBe(openedRuns().length);
   });
 });

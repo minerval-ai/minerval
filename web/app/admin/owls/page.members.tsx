@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 
 // Owls in a private deployment: what one is here, how many its
 // administrators have created and where they went, what its agents' runs
-// have spent, the prices an owl is counted at, and the two standing mandates
+// have spent, the prices an owl is counted at, and the standing mandate
 // every deployment needs. Every member may read all of it, because there is
 // no ceiling on what an administrator may create and this page is what
 // stands in a ceiling's place. Creating owls and setting up a mandate are
@@ -59,8 +59,8 @@ export default async function OwlsPage() {
         title="Owls"
         lede={
           createdHere
-            ? "What an owl is in this deployment, how many have been created and by whom, what the agents' runs have spent, and the two standing mandates."
-            : "Owls in this deployment, and the two standing mandates."
+            ? "What an owl is in this deployment, how many have been created and by whom, what the agents' runs have spent, and the standing mandate."
+            : "Owls in this deployment, and the standing mandate."
         }
       />
       {administers && <AdminNav current="/admin/owls" />}
@@ -352,20 +352,20 @@ export default async function OwlsPage() {
       {/* ------------------------------------------------ standing mandates */}
       <section className="acct-section" id="standing-mandates">
         <div className="acct-head">
-          <h2>The standing mandates</h2>
+          <h2>The standing mandate</h2>
         </div>
         <p className="acct-prose acct-measure">
-          No agent work runs unless a mandate pays for it. Two mandates are the
+          No agent work runs unless a mandate pays for it. One mandate is the
           deployment&rsquo;s own: General, which pays for the upkeep whose value is spread across
-          the whole graph, and Governance, which pays for the audits of the graph&rsquo;s
-          decisions. An administrator sets each up once. From then on its Grantmaker stewards it
-          and revises its policy, and its page shows what it paid for.
+          the whole graph, the audits of the graph&rsquo;s decisions among it. An administrator
+          sets it up once. From then on its Grantmaker stewards it and revises its policy, and
+          its page shows what it paid for.
         </p>
         {standing.some((m) => m.by_label) && (
           <p className="acct-prose acct-measure">
             This deployment holds material at more than one label, and a mandate&rsquo;s work runs
             at its label: its Grantmaker reads what that label reads, and what it pays for is work
-            at that label. So each label has a General and a Governance mandate of its own, set up
+            at that label. So each label has a General mandate of its own, set up
             by an administrator who reads it. A label with none has nobody paying for its upkeep
             or its audits. The labels listed are the ones you read.
           </p>
@@ -396,8 +396,8 @@ export default async function OwlsPage() {
                 <p>
                   A budget of {owls(m.mandate.budget_owls)} {owlWord(m.mandate.budget_owls)}
                   {m.mandate.daily_owls > 0
-                    ? `, spending at most ${owls(m.mandate.daily_owls)} a day`
-                    : ", with no daily rate"}
+                    ? `, committing at most ${owls(m.mandate.daily_owls)} in any rolling day`
+                    : ", paced as needed"}
                   . {m.mandate.running ? "It is running." : "It is not running: its budget is spent, or it is waiting for one."}{" "}
                   {createdHere
                     ? "More is added by creating owls into it, above, or by anyone who holds the permission to fund work backing it."
@@ -416,11 +416,11 @@ export default async function OwlsPage() {
                       </label>
                     )}
                     <label>
-                      Most it may spend in a day, in owls
-                      <input name="daily_owls" type="number" min="0" step="any" placeholder={m.name === "general" ? "30" : "5"} />
+                      Most it may commit in a rolling day, in owls
+                      <input name="daily_owls" type="number" min="0" step="any" placeholder="30" />
                       <small>
-                        Empty for {m.name === "general" ? "30" : "5"} a day, and 0 for no rate. It
-                        is the most the mandate may commission in one day, whatever its budget.
+                        Empty for 30 a day, and 0 for as needed, where the budget is the only
+                        bound. Its Grantmaker may change the pace later.
                       </small>
                     </label>
                   </div>

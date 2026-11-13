@@ -43,7 +43,21 @@
  * followed: where it leads is the answering server's choice, not the
  * run's.
  *
- * Where it applies. Only to a call an agent's run makes (an agent on the
+ * It is a deployment's choice, and off unless the deployment turns it on
+ * (PRIVATE_RUN_FETCHES=given; private_runs.fetches in the config file).
+ * Nearly every run in a private graph reads private material, so the rule
+ * changes what almost every run can fetch; an organization may want that
+ * and many will not. While it is off nothing here does anything: no address
+ * is recorded, no call is held, no tool is added and no run is told of it,
+ * so a run's tools and brief are what they are on the public graph. A
+ * deployment that turns it on later starts with no address recorded as
+ * given. Runs can still use the address of every recorded source they can
+ * read and of every feed a lookout follows, which need no record here, and
+ * everything a search, a page or the identifier tool gives from then on.
+ * What they lose is an address that an earlier run was given and that was
+ * never recorded as a source: they search for it again.
+ *
+ * Where it applies, once on. Only to a call an agent's run makes (an agent on the
  * usage context), and only where that run reads a label other than
  * `public`. A run at `public` in a deployment with other labels reads what
  * a run on the public graph reads and is briefed with nothing labelled, so
@@ -52,6 +66,7 @@
  * the public graph, where `public` is the only label, nothing here reads
  * or writes anything.
  */
+import { loadConfig } from "../config.js";
 import { rawQuery, currentReadClearance } from "../db/client.js";
 import { enforcementLastKnown } from "../db/clearance.js";
 import { PUBLIC_LABEL } from "../labels.js";
@@ -91,6 +106,9 @@ export class AddressNotGivenError extends Error {
 
 /** Whether the work in progress reads a label other than `public`. False on the public graph. */
 async function readsMoreThanPublic(): Promise<boolean> {
+  // The deployment's choice comes first: unless it holds private runs to
+  // given addresses, nothing below is asked and nothing here applies.
+  if (loadConfig().privateRunFetches !== "given") return false;
   // A process that knows `public` is the only label asks nothing. One that
   // has not yet asked the database asks now, and a failure there (no
   // database at all, as when a service is driven alone) is read as the

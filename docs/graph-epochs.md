@@ -28,13 +28,14 @@ compiler fix — nothing of record is lost, provided we snapshot first.
 - **The prompt set's hash** — the epoch is a name someone bumps; the prompt
   set is the exact identity. `src/services/prompt-set.ts` builds one manifest
   from the running code (the constitution's hash, each role prompt's, each
-  skill's version and hash) and one hash over it. `scripts/sync-frontend-content.ts`
-  writes it to `web/content/prompt-set.json`, the drift test fails when that
-  copy is stale, `GET /setup/prompt-set` (`get_prompt_set`) serves the
-  deployed one, and every traced run records the hash it ran under on its
+  skill's version and hash) and one hash over it. `GET /setup/prompt-set`
+  (`get_prompt_set`) serves the deployed one, and every traced run records the hash it ran under on its
   prompt step (`setup.promptSet`, shown by `get_run`). So "which prompts was
   this made under" has an answer that does not depend on anyone remembering
-  to bump the epoch, and two deployments can be compared by one string.
+  to bump the epoch, and two deployments can be compared by one string. It is
+  not committed: a copy in the repository was one line that every prompt
+  change rewrote, so every open PR conflicted on it whenever another merged.
+  The hash of any commit's prompt set can be recomputed from that commit.
 - **`state='archived'`** — a retired cohort leaves search, matching, browse,
   trees, dependents, and the candidate set (every read path filters
   `state = 'active'`, as an allowlist), but keeps its rows, provenance,
@@ -44,6 +45,18 @@ compiler fix — nothing of record is lost, provided we snapshot first.
 - **`scripts/archive-legacy-claims.ts`** — archives a cohort (`pipeline_epoch
   IS NULL` by default, or `--epoch=<tag>`). Dry-run by default; `--confirm` to
   write; `--restore --confirm` to undo.
+- **Every archive and restore is on record** (#962). The script writes a
+  `claim_state_changes` row for each node it moves, in the same statement:
+  `--actor` (who ran it), `--reason` (or the cohort file's `reason`), the
+  cohort, and the successors a cohort file names under `successors` (a map
+  from a node to the nodes that carry on what it stated). The node's history
+  (`state_change` events), the changes stream and the `changes` view
+  (`state_changed`), and get_claim's `retired` section read it, and a plan
+  item for an archived node is refused with it. A retired node's inbox takes
+  no messages; one addressed to it goes to a live successor if it has one.
+  Archives run before the record existed get theirs with `--record-only
+  --at=<when>`; `scripts/close-retired-inboxes.ts` closes messages that sat
+  on retired nodes from before.
 - **Domain skills version with epochs.** A skill (`skills/<name>/SKILL.md`)
   carries `metadata.minerval.version`, bumped on any change to its text or
   tools, and `since_epoch`, the pipeline epoch its current version took
@@ -106,11 +119,18 @@ snapshot taken, passed as `--ids-file=<path>`. Restoring with the same file
 undoes exactly that archive. `2026-10-ai-pre-assessment-as-thinking.json` is
 the first: the AI claims minted under the constitution before #523/#526.
 
-Review the samples, then re-run with `--confirm`. In prod, run it the same way
+Review the samples, then re-run with `--confirm --actor=<you>` (and
+`--reason=<why>` unless the cohort file says). In prod, run it the same way
 one-off scripts are run against the prod DB: an ECS run-task using the API task
 definition with the command overridden to `npx tsx scripts/archive-legacy-claims.ts …`
 (the image ships `scripts/`; `npx` fetches `tsx` on demand). Reversal at any
-time: `--restore --confirm`.
+time: `--restore --confirm --actor=<you> --reason=<why>`.
+
+Where some of the cohort's propositions are worth a live page, say so: put the
+nodes that will carry them in the cohort file's `successors`, or re-ingest
+their sources (step 3) before archiving, so the retired node names where its
+proposition went. A node archived with no successor reads as "the graph holds
+no live page for this".
 
 Archived claims remain visible by direct link (the UI shows an `archived` tag)
 and listable on request via `GET /claims?state=archived`.

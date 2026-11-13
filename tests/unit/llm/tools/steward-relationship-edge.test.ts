@@ -57,6 +57,8 @@ import {
 } from "../../../../src/services/relationship-service.js";
 import { getArgument } from "../../../../src/services/argument-service.js";
 import { linkClaims } from "../../../../src/services/reconciliation-service.js";
+import { rawQuery } from "../../../../src/db/client.js";
+import { SeenIds, withSeenIds } from "../../../../src/llm/seen-ids.js";
 
 const argument = {
   id: ARG_ID,
@@ -244,5 +246,81 @@ describe("steward add_related_claim (#436)", () => {
     );
     expect(out.success).toBe(false);
     expect(linkClaims).not.toHaveBeenCalled();
+  });
+});
+
+describe("a Steward's write never corrects a mistyped id (#934)", () => {
+  // The run has seen the child and the argument; the model then mistypes one.
+  const record = () => {
+    const r = new SeenIds();
+    r.addToolOutput(
+      JSON.stringify({
+        claim: { id: PARENT_ID, canonical_form: "the parent" },
+        subclaims: [{ id: CHILD_ID, text: "the child" }],
+        arguments: [{ id: ARG_ID, name: "Cosmological argument" }],
+      })
+    );
+    return r;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    childRows.length = 0;
+    vi.mocked(getArgument).mockResolvedValue(argument as never);
+    // The nearest-ids lookup: the child and parent are nodes, the argument an argument.
+    vi.mocked(rawQuery).mockImplementation((async (sql: string, params: unknown[]) => {
+      const ids = Array.isArray(params?.[0]) ? (params[0] as string[]) : [];
+      if (sql.includes("FROM claims WHERE id = ANY")) {
+        return ids
+          .filter((id) => id === CHILD_ID || id === PARENT_ID)
+          .map((id) => ({ id, text: id === CHILD_ID ? "the child" : "the parent" }));
+      }
+      if (sql.includes("FROM arguments WHERE id = ANY")) {
+        return ids.filter((id) => id === ARG_ID).map((id) => ({ id, text: "Cosmological argument", claim_id: PARENT_ID }));
+      }
+      return [];
+    }) as never);
+  });
+
+  it("refuses an edge to a child id one digit off, and offers the child it has seen", async () => {
+    const typo = `${CHILD_ID.slice(0, -1)}c`;
+    const parsed = JSON.parse(await withSeenIds(record(), () => call({ child_id: typo })));
+    expect(parsed.success).toBe(false);
+    expect(parsed.code).toBe("CLAIM_NOT_FOUND");
+    expect(parsed.requested_id).toBe(typo);
+    expect(parsed.nearest_seen_ids[0]).toEqual({ id: CHILD_ID, text: "the child" });
+    expect(parsed.correction).toContain("never corrected here");
+    expect(insertRelationshipEdge).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unknown argument and offers the argument ids it has seen", async () => {
+    vi.mocked(getArgument).mockResolvedValue(null as never);
+    childRows.push({ id: CHILD_ID, state: "active" });
+    const typo = `${ARG_ID.slice(0, -1)}b`;
+    const parsed = JSON.parse(await withSeenIds(record(), () => call({ argument_id: typo })));
+    expect(parsed).toMatchObject({ success: false, code: "ARGUMENT_NOT_FOUND", requested_id: typo });
+    expect(parsed.nearest_seen_ids[0]).toMatchObject({ id: ARG_ID, claim_id: PARENT_ID });
+    expect(insertRelationshipEdge).not.toHaveBeenCalled();
+  });
+
+  it("names a malformed id the database refused, instead of the bare syntax error", async () => {
+    vi.mocked(insertRelationshipEdge).mockRejectedValue(
+      Object.assign(new Error("invalid input syntax for type uuid"), { code: "22P02" })
+    );
+    childRows.push({ id: CHILD_ID, state: "active" });
+    const parsed = JSON.parse(
+      await withSeenIds(record(), () =>
+        executeStewardTool("add_relationship_edge", {
+          parent_id: `${PARENT_ID}c`,
+          child_id: CHILD_ID,
+          relation: "requires",
+          reasoning: "r",
+        })
+      )
+    );
+    expect(parsed).toMatchObject({ success: false, code: "INVALID_CLAIM_ID" });
+    expect(parsed.message).toContain("parent_id");
+    expect(parsed.message).toContain("13 hex digits");
+    expect(parsed.unresolved[0].nearest_seen_ids[0].id).toBe(PARENT_ID);
   });
 });

@@ -602,7 +602,7 @@ export type AdministrativeAction =
   // owls into an account's balance or a mandate's budget
   // (owl-creation-service.ts).
   | "owls_created"
-  // An administrator set up the General or the Governance mandate
+  // An administrator set up the General mandate
   // (standing-mandates.ts).
   | "standing_mandate_created";
 

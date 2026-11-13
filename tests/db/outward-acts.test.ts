@@ -303,7 +303,7 @@ beforeAll(async () => {
   await publicRequest("r2", id.q!, "Show the calibration certificates for the plant's meters");
   const [job] = await pubRows<{ id: string }>(`INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status) VALUES ($1, 'grant', 50000000, 'running') RETURNING id`, [id.orgAccount]);
   const [mandate] = await pubRows<{ id: string }>(
-    `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, daily_budget_micro_usd) VALUES ($1, $2, $3, 'custom', 'active', 5000000) RETURNING id`,
+    `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, pace) VALUES ($1, $2, $3, 'custom', 'active', '{"kind":"steady","owls":5,"period_hours":24}'::jsonb) RETURNING id`,
     [id.orgAccount, job!.id, `Fresh public assessments of nodes Halden Works names ${tag}`]
   );
   await pubRows(`INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, job_id) VALUES ($1, -50000000, 'escrow_hold', $2)`, [id.orgAccount, job!.id]);
@@ -798,7 +798,7 @@ describe("keeping the public version current", () => {
     // A mandate the organization has no money in: the public graph refuses, as it would any account.
     const [job] = await pubRows<{ id: string }>(`INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status) VALUES ($1, 'grant', 1000000, 'running') RETURNING id`, [id.readerAccount]);
     const [other] = await pubRows<{ id: string }>(
-      `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, daily_budget_micro_usd) VALUES ($1, $2, 'Someone else''s mandate', 'custom', 'active', 100000) RETURNING id`,
+      `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, pace) VALUES ($1, $2, 'Someone else''s mandate', 'custom', 'active', '{"kind":"steady","owls":0.1,"period_hours":24}'::jsonb) RETURNING id`,
       [id.readerAccount, job!.id]
     );
     await as("director", { method: "PUT", url: "/outside/choices/keep_public_current", payload: { on: true, public_mandate_id: other!.id, delay_hours: 0 } });

@@ -114,13 +114,18 @@ export async function seedAllocation(input: {
   amountMicroUsd: number;
   spentMicroUsd?: number;
   released?: boolean;
+  /**
+   * Who commissioned it. Every run is commissioned, so a seeded placement is
+   * a commission unless a test passes null for loose money that funds nothing.
+   */
+  commissionedBy?: string | null;
 }): Promise<string> {
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO action_allocations
        (exclusion_group, action_id, claim_id, grant_id, user_id,
-        amount_micro_usd, spent_micro_usd, released_at)
+        amount_micro_usd, spent_micro_usd, released_at, commissioned_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7,
-             CASE WHEN $8 THEN now() ELSE NULL END)
+             CASE WHEN $8 THEN now() ELSE NULL END, $9)
      RETURNING id`,
     [
       input.group,
@@ -131,6 +136,7 @@ export async function seedAllocation(input: {
       input.amountMicroUsd,
       input.spentMicroUsd ?? 0,
       input.released ?? false,
+      input.commissionedBy === undefined ? "test" : input.commissionedBy,
     ]
   );
   return rows[0]!.id;
@@ -160,6 +166,7 @@ export async function seedGrantWithJob(input: {
   budgetMicroUsd: number;
   grantStatus?: string;
   jobStatus?: string;
+  /** A steady pace of this much per rolling 24 hours; 0 or absent is as needed. */
   dailyBudgetMicroUsd?: number;
   policy?: string;
   withEscrowHold?: boolean;
@@ -180,15 +187,19 @@ export async function seedGrantWithJob(input: {
   const grantRows = await rawQuery<{ id: string }>(
     `INSERT INTO grants
        (funder_user_id, budget_job_id, name, policy, status,
-        daily_budget_micro_usd)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        pace)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING id`,
     [
       input.funderId,
       jobId,
       `DB-test mandate ${randomUUID().slice(0, 8)}`,
       input.policy ?? "agent",
       input.grantStatus ?? "active",
-      input.dailyBudgetMicroUsd ?? 0,
+      JSON.stringify(
+        (input.dailyBudgetMicroUsd ?? 0) > 0
+          ? { kind: "steady", owls: input.dailyBudgetMicroUsd! / 1_000_000, period_hours: 24 }
+          : { kind: "as_needed" }
+      ),
     ]
   );
   return { grantId: grantRows[0]!.id, jobId };
@@ -251,10 +262,17 @@ export async function readViewsAs(
   const { runReadOnlyQuery } = await import("../../src/services/sql-service.js");
   const { runWithUsageContext } = await import("../../src/llm/usage-context.js");
   const { TEST_DATABASE_URL } = await import("./urls.js");
-  await rawQuery(`DO $$ BEGIN
+  // Made as the tables' owner: a test that has put its own out-of-context
+  // work on a cleared connection (setNoContextSessionForTests(null)) may not
+  // create a role, and on a cluster that has never run the suite the role
+  // is not there yet.
+  const { withSystemClearance } = await import("../../src/db/clearance.js");
+  await withSystemClearance("A test fixture: the login role the read-only SQL tests connect as.", () =>
+    rawQuery(`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${SQL_TEST_ROLE}') THEN
       CREATE ROLE ${SQL_TEST_ROLE} LOGIN PASSWORD '${SQL_TEST_PASSWORD}' CONNECTION LIMIT 3 IN ROLE minerval_sql;
-    END IF; END $$`);
+    END IF; END $$`)
+  );
   const config = loadConfig();
   if (!config.sqlAgentDatabaseUrl) {
     const url = new URL(TEST_DATABASE_URL);

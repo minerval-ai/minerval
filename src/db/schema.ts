@@ -3228,6 +3228,18 @@ export const actions = pgTable(
     // opened again takes the label of the work that reopens it
     // (LABEL_ON_REOPEN_SQL in services/action-service.ts).
     sensitivityLabel: sensitivityLabelColumn(),
+    // The wait of a row whose last attempt a platform fault stopped (#971;
+    // services/deployment-fault.ts): the fault's public class
+    // (credits_fault | credentials_fault | provider_unavailable), when the
+    // row first failed on it, how many attempts it has stopped in a row,
+    // and when the executors may pick the row again. Set by releaseAction,
+    // cleared when the row leaves open/running (trigger
+    // actions_clear_fault, so no closing statement can forget to). All null
+    // or zero on a row that is not waiting on a fault.
+    faultReason: text("fault_reason"),
+    faultSince: timestamp("fault_since", { withTimezone: true }),
+    faultAttempts: integer("fault_attempts").notNull().default(0),
+    retryAfter: timestamp("retry_after", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -3247,6 +3259,44 @@ export const actions = pgTable(
 );
 
 export type Action = typeof actions.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// deployment_faults — a fault the operator must fix, while it lasts (#971).
+//
+// One open row per (class, provider): a provider that refuses calls because
+// the deployment's account is out of credits, or rejects its key
+// (services/deployment-fault-service.ts). Every failure of that class
+// collapses onto the open row, so a fault that fails a thousand calls is one
+// record, one report to maintainers, and one line on /monitors. The row
+// closes when the provider serves a call again after a quiet spell. The raw
+// provider text is kept here for maintainers and is never served publicly;
+// public surfaces show the class.
+// ---------------------------------------------------------------------------
+
+export const deploymentFaults = pgTable(
+  "deployment_faults",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // credits_fault | credentials_fault
+    reason: text("reason").notNull(),
+    // anthropic | openai | openrouter | endpoint:<name> | embeddings | unknown
+    provider: text("provider").notNull(),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    occurrences: integer("occurrences").notNull().default(1),
+    // The provider's own words on the latest failure. Service-only.
+    lastError: text("last_error"),
+    // When maintainers were told (the agents' report channel, #366).
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
+    clearedAt: timestamp("cleared_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_deployment_faults_open")
+      .on(table.reason, table.provider)
+      .where(sql`${table.clearedAt} IS NULL`),
+    index("idx_deployment_faults_first_seen").on(table.firstSeenAt),
+  ]
+);
 
 // ---------------------------------------------------------------------------
 // mandate_valuations — each mandate's own opinions, sparse.
@@ -3498,13 +3548,21 @@ export const grants = pgTable(
     // Platform-run mandates (Minerval's own: Mathematics, AI Economics, …)
     // get pride of place on the public /mandates page.
     isPlatform: boolean("is_platform").notNull().default(false),
-    // Optional spend rate: at most this much metered cost per UTC day
-    // (0 = no rate cap, pace bounded by escrow alone). Shared mandate
-    // infrastructure — Minerval's General mandate paces itself
-    // with this, and any funder can set one on their own mandate.
-    dailyBudgetMicroUsd: bigint("daily_budget_micro_usd", { mode: "number" })
-      .notNull()
-      .default(0),
+    // How fast the money may be committed (services/pace-service.ts):
+    // {kind: 'as_needed'}, the escrow the only bound, or {kind: 'steady',
+    // owls, period_hours}, at most that much committed in any rolling
+    // window. Drafted with the funder and changed only with the funder.
+    pace: jsonb("pace").notNull().default(sql`'{"kind":"as_needed"}'::jsonb`),
+    // Owls only the Grantmaker may commit (set_reserve), with its reason:
+    // money held back for the directions worth pursuing once the first
+    // wave of work reports. Officers, lookouts and routine runs see it and
+    // cannot draw on it.
+    reserveMicroUsd: bigint("reserve_micro_usd", { mode: "number" }).notNull().default(0),
+    reserveReason: text("reserve_reason"),
+    // The Grantmaker's long-lived session (session-service.ts): where
+    // escalations, funder notes and the check-ins it sets are delivered.
+    // A mandate whose session has ended opens a fresh review pass.
+    grantmakerSessionId: uuid("grantmaker_session_id"),
     // The mandate's own figures for pricing and pacing work: cost priors,
     // the re-check cadence, attempt bounds, sweep and scan settings
     // (services/allocation-policy-service.ts). Null = the shared defaults.
@@ -4585,6 +4643,8 @@ export const assistantPages = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     // The label of the run or request that made the page (src/labels.ts).
     sensitivityLabel: sensitivityLabelColumn(),
+    // Set while the user shares the page: whoever holds the link reads it.
+    shareToken: text("share_token").unique(),
   },
   (table) => [index("idx_assistant_pages_user").on(table.userId, table.savedAt)]
 );
@@ -5057,6 +5117,12 @@ export const curationRequests = pgTable(
     // steward_escalation | consistency_sweep | audit | matcher | reconcile_candidate | operator
     source: text("source").notNull(),
     concern: text("concern").notNull(),
+    // What the requester suspects is wrong (#955), from CURATION_DEFECTS in
+    // services/curation-service.ts: duplicate | conflation | wrong_kind |
+    // mislabeled_edge | missing_link | bad_merge | other. Every request
+    // records one; null only on requests recorded before it existed (the
+    // migration classified the Matcher's and the scan's as duplicate).
+    defect: text("defect"),
     // reconcile_candidate: the scan's similarity score (0–1). Null otherwise.
     signal: real("signal"),
     // The claim whose Steward escalated (bounds live escalations per claim).
@@ -5095,6 +5161,10 @@ export const curationRequests = pgTable(
       "ck_curation_requests_source",
       sql`source IN ('steward_escalation', 'consistency_sweep', 'audit', 'matcher', 'reconcile_candidate', 'operator')`
     ),
+    check(
+      "ck_curation_requests_defect",
+      sql`defect IS NULL OR defect IN ('duplicate', 'conflation', 'wrong_kind', 'mislabeled_edge', 'missing_link', 'bad_merge', 'other')`
+    ),
   ]
 );
 
@@ -5126,6 +5196,46 @@ export const reconciliationEvents = pgTable("reconciliation_events", {
   // when it is written.
   sensitivityLabel: sensitivityLabelColumn(),
 });
+
+// ---------------------------------------------------------------------------
+// claim_state_changes
+//
+// One row per change to a node's lifecycle state (claims.state): archived,
+// restored, merged, un-merged, deprecated (#962). The state column says what a
+// node is now; this says when it became so, who did it, why, and which nodes
+// carry on what it stated (`successor_ids`: a merge's survivor, a split's
+// parts). Before it, an archive was a bare UPDATE and left a node reading as
+// dead with nothing to say who retired it or where its proposition went.
+// Append-only. The node's history (claim events), the changes stream and the
+// refusal a write to a retired node meets all read it.
+// ---------------------------------------------------------------------------
+export const claimStateChanges = pgTable(
+  "claim_state_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    fromState: text("from_state").notNull(),
+    toState: text("to_state").notNull(),
+    // Who made the change: 'curator' for surgery, 'operator:<name>' for a
+    // script an operator ran.
+    actor: text("actor").notNull(),
+    reason: text("reason").notNull(),
+    // Nodes that carry on what this one stated, when there are any.
+    successorIds: uuid("successor_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    // The cohort an archive script retired the node with (its file's name or
+    // epoch tag), so one retirement reads as one act.
+    cohort: text("cohort"),
+    // The Curator's reversible-surgery event the change was part of.
+    reconciliationEventId: uuid("reconciliation_event_id").references(() => reconciliationEvents.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [index("idx_claim_state_changes_claim").on(table.claimId, table.createdAt)]
+);
 
 // ---------------------------------------------------------------------------
 // audit_log
@@ -5599,7 +5709,7 @@ export const researchRuns = pgTable(
     error: text("error"),
     // A commissioned run (commission kind research): the agent session its
     // report returns to (agent_sessions), or, with none waiting, the node
-    // whose inbox gets it. Null on a run launched inline (delegate_research)
+    // whose inbox gets it. Null on a run that reports back only to its session
     // or for a request.
     replyToSession: uuid("reply_to_session"),
     deliverToNode: uuid("deliver_to_node").references((): AnyPgColumn => claims.id, {
@@ -6808,6 +6918,16 @@ export const petitions = pgTable(
     // The session that asked (agent_sessions): the decision returns into it,
     // shown mid-run or resuming it if it paused (session-service.ts).
     replyToSession: uuid("reply_to_session"),
+    // What the asking run says it has established so far and what is still
+    // open, so the officer judges the ask against the work, not the money.
+    doneSoFar: text("done_so_far"),
+    // A petition an officer held for perspective (status 'held'): until a
+    // time, or until named runs settle, whichever comes first, with what it
+    // is waiting to learn. It comes back to the officers then, never refused
+    // by the passing of time.
+    heldUntil: timestamp("held_until", { withTimezone: true }),
+    holdRefs: jsonb("hold_refs").notNull().default([]),
+    holdReason: text("hold_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     // The label of the run that asked (src/labels.ts). A sitting works the
@@ -6819,7 +6939,7 @@ export const petitions = pgTable(
     check("petitions_kind_check", sql`${table.kind} IN ('more_budget', 'follow_up')`),
     check(
       "petitions_status_check",
-      sql`${table.status} IN ('pending', 'escalated', 'granted', 'refused', 'follow_up')`
+      sql`${table.status} IN ('pending', 'held', 'escalated', 'granted', 'refused', 'follow_up')`
     ),
   ]
 );
@@ -6849,6 +6969,11 @@ export const mandateInbox = pgTable(
     handledBy: text("handled_by"),
     escalatedAt: timestamp("escalated_at", { withTimezone: true }),
     escalationNote: text("escalation_note"),
+    // Held by an officer until a time or until named runs settle, with what
+    // it waits to learn (as a petition is held).
+    heldUntil: timestamp("held_until", { withTimezone: true }),
+    holdRefs: jsonb("hold_refs").notNull().default([]),
+    holdReason: text("hold_reason"),
     // The label of the run that raised it (src/labels.ts). A sitting works
     // the items of its mandate's label.
     sensitivityLabel: sensitivityLabelColumn(),
@@ -6955,6 +7080,9 @@ export const agentSessions = pgTable(
     deadline: timestamp("deadline", { withTimezone: true }),
     resumedAt: timestamp("resumed_at", { withTimezone: true }),
     resumes: integer("resumes").notNull().default(0),
+    // Not resumed before this (a Grantmaker's quiet_minutes): what arrives
+    // in a burst is read by one resumption rather than one each.
+    wakeAfter: timestamp("wake_after", { withTimezone: true }),
     // Money granted to the session while it was paused (a petition decided
     // after its run ended): [{grantId, microUsd}], each placed on the pass
     // that resumes it, beside what the paused run had left.
@@ -6978,6 +7106,91 @@ export const agentSessions = pgTable(
     ),
   ]
 );
+
+// ---------------------------------------------------------------------------
+// The event log (services/event-service.ts): one append-only row per thing
+// that happened which someone may want to be told of: a run settling, a
+// petition decided or escalated, an item raised to a mandate, a node's
+// assessment, a source's retraction, a message answered. Each carries the
+// refs it touches, so a subscription can match on any of them, and a
+// sequence number, so every reader (the subscription router, and later
+// feeds and webhooks) reads it in order from a cursor.
+// ---------------------------------------------------------------------------
+export const events = pgTable(
+  "events",
+  {
+    seq: bigint("seq", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    kind: text("kind").notNull(),
+    nodeId: uuid("node_id"),
+    actionId: uuid("action_id"),
+    grantId: uuid("grant_id"),
+    sourceId: uuid("source_id"),
+    // Any other refs: {petition, research_run, request, lookout, correspondent, session, ...}.
+    refs: jsonb("refs").notNull().default({}),
+    summary: text("summary").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    // The label the event was recorded at (src/labels.ts): a delivery never
+    // carries a summary to a subscriber that may not read it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_events_node").on(table.nodeId, table.seq),
+    index("idx_events_action").on(table.actionId),
+    index("idx_events_grant").on(table.grantId, table.seq),
+    index("idx_events_kind").on(table.kind, table.seq),
+  ]
+);
+
+// A standing interest in events, or in a time or a money threshold
+// (services/subscription-service.ts). The subscriber is a session (its
+// agent is told, and a paused session is woken when the delivery is
+// `wake`), a mandate's inbox, a node's inbox, a lookout or a correspondent.
+// `filter` names what to match: kinds and refs (action ids, node ids, the
+// subtree under a node, the nodes resting on a node, tags, sources,
+// mandates). `due_at` makes it a scheduled check-in; `condition` a
+// threshold the router evaluates (money committed since it was set). A
+// `once` subscription ends at its first delivery.
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    subscriberKind: text("subscriber_kind").notNull(),
+    subscriberRef: text("subscriber_ref").notNull(),
+    filter: jsonb("filter").notNull().default({}),
+    condition: jsonb("condition"),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    delivery: text("delivery").notNull().default("wake"),
+    once: boolean("once").notNull().default(false),
+    reason: text("reason").notNull(),
+    // Who made it: the agent role, or 'system' for one made on an agent's behalf.
+    createdBy: text("created_by").notNull(),
+    active: boolean("active").notNull().default(true),
+    deliveries: integer("deliveries").notNull().default(0),
+    lastDeliveredAt: timestamp("last_delivered_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    // The label of the run that made it (src/labels.ts): its reason is that
+    // run's words.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_subscriptions_subscriber").on(table.subscriberKind, table.subscriberRef, table.active),
+    index("idx_subscriptions_due").on(table.dueAt).where(sql`${table.active} AND ${table.dueAt} IS NOT NULL`),
+    check("subscriptions_delivery_check", sql`${table.delivery} IN ('wake', 'queue')`),
+    check(
+      "subscriptions_subscriber_check",
+      sql`${table.subscriberKind} IN ('session', 'mandate_inbox', 'node_inbox', 'lookout', 'correspondent')`
+    ),
+  ]
+);
+
+// Where the subscription router has read the event log to.
+export const eventRouterState = pgTable("event_router_state", {
+  id: integer("id").primaryKey(),
+  lastSeq: bigint("last_seq", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // judgment_inputs: what each judgment was made against (#566)

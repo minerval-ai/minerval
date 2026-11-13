@@ -1,6 +1,6 @@
 /**
  * The setup checklist of a members-only deployment
- * (docs/setup-checklist.md): one read of what an administrator needs in
+ * (docs/deployment.md, "The setup checklist"): one read of what an administrator needs in
  * order to see what has been set up and what is still to do.
  *
  * It decides nothing and holds no list of steps. Each part is a fact the
@@ -39,6 +39,7 @@ import { PERMISSION_DEFINITIONS, PERMISSIONS, type PermissionName } from "../per
 import { clearedLabels, knownProviderNames, OUTSIDE_SERVICE_NAMES } from "../provider-labels.js";
 import { connectionsNotShown, listConnections } from "./connection-service.js";
 import { deploymentChecks, type PreflightReport } from "./deployment-checks.js";
+import { CONFIG_FILE_KEYS } from "../config-file.js";
 import { listLabels } from "./label-admin-service.js";
 import { undefinedLabels } from "./label-service.js";
 import { owlsCreatedHere } from "./owl.js";
@@ -82,7 +83,9 @@ export interface ChecklistLabel {
 export interface SetupChecklist {
   /**
    * The deployment's own checks of its configuration: the preflight's
-   * report. Null where the build has no preflight (services/deployment-checks.ts).
+   * report (services/deployment-checks.ts). The type allows null for a
+   * client reading a deployment built before the preflight; this build
+   * always carries a report.
    */
   preflight: PreflightReport | null;
   /** Each permission and how many accounts and groups hold it now. */
@@ -95,7 +98,7 @@ export interface SetupChecklist {
    * (llm/provider-clearance.ts), so it is the first thing to put right.
    */
   undefined_labels_in_provider_setting: string[];
-  /** The General and the Governance mandate, each with its mandate once set up. */
+  /** The General mandate, with its mandate once set up. */
   standing_mandates: StandingMandateView[];
   owls: {
     /** Whether this deployment creates its own owls (OWLS=created) or sells them. */
@@ -210,38 +213,13 @@ const ROLE_FEATURE: Readonly<Record<string, FeatureName>> = {
 
 /**
  * The roles the configuration names a model for, each with the field of the
- * config schema (src/config.ts) that holds it. The config file, where a
- * build has one, names the same roles under `models.`; this list is kept
- * here because this build has no config file to read them from.
+ * config schema (src/config.ts) that holds it: the rows of the config
+ * file's `models.` group (src/config-file.ts), so that the checklist, the
+ * preflight and the file name the same roles.
  */
-const ROLE_MODEL_FIELDS: ReadonlyArray<[role: string, field: keyof Config]> = [
-  ["steward", "stewardModel"],
-  ["steward_strong", "stewardStrongModel"],
-  ["curator", "curatorModel"],
-  ["extractor", "extractorModel"],
-  ["extractor_fallback", "extractorFallbackModel"],
-  ["matcher", "matcherModel"],
-  ["tagger", "taggerModel"],
-  ["contribution_reviewer", "governanceModel"],
-  ["audit", "auditModel"],
-  ["redactor", "redactorModel"],
-  ["arbitration", "arbitrationModel"],
-  ["grantmaker", "grantmakerModel"],
-  ["program_officer", "programOfficerModel"],
-  ["lookout", "lookoutModel"],
-  ["correspondent", "correspondentModel"],
-  ["consistency", "consistencyModel"],
-  ["consistency_strong", "consistencyStrongModel"],
-  ["assistant", "assistantModel"],
-  ["assistant_standard", "assistantStandardModel"],
-  ["assistant_title", "assistantTitleModel"],
-  ["extension", "extensionModel"],
-  ["researcher_strong", "researcherStrongModel"],
-  ["researcher_standard", "researcherStandardModel"],
-  ["researcher_cheap", "researcherCheapModel"],
-  ["solver", "solverModel"],
-  ["judge", "judgeModel"],
-];
+const ROLE_MODEL_FIELDS: ReadonlyArray<[role: string, field: keyof Config]> = CONFIG_FILE_KEYS.filter(
+  (key) => key.key.startsWith("models.") && key.field
+).map((key) => [key.key.slice("models.".length), key.field as keyof Config]);
 
 /** Every role the configuration names a model for, with the provider that serves it. */
 function roleProviders(config: Config): Array<{ role: string; model: string; provider: string | null }> {

@@ -39,8 +39,8 @@ per period by `REWARD_BUDGET_PERIOD`), deliberately small and deliberately
 less than the company's bank balance. An offer reserves its full maximum at
 creation; the reservation follows the reward through pending and payable;
 paid releases it. When the budget is committed, `propose_offer` returns a
-budget error and the agent moves on, exactly as an allocator does when its
-daily rate is spent. There is no path by which the sum of what Minerval has
+budget error and the agent moves on, exactly as a mandate's agent does
+when a commission is refused past its pace. There is no path by which the sum of what Minerval has
 promised exceeds what it set aside, so "everything gets claimed at once" is
 survivable by construction. Per-offer and per-contributor caps
 (`REWARD_MAX_PER_CONTRIBUTION_MICRO_USD`,

@@ -420,10 +420,31 @@ class Sandbox:
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            # The confining helper's own error stream, apart from the
+            # command's output: the helper joins the command's error stream
+            # to its output itself, at the moment it starts the command
+            # (confine.py). So what is stored as a command's output is what
+            # the command printed, and never a line from the interpreter
+            # that runs the helper.
+            stderr=subprocess.PIPE,
             start_new_session=True,
         )
-        state = {"output": bytearray(), "over": False}
+        state = {"output": bytearray(), "over": False, "helper": bytearray()}
+
+        def read_helper():
+            fd = child.stderr.fileno()
+            while True:
+                try:
+                    block = os.read(fd, 65536)
+                except OSError:
+                    return
+                if not block:
+                    return
+                if len(state["helper"]) < 65536:
+                    state["helper"] += block
+
+        helper_reader = threading.Thread(target=read_helper, daemon=True)
+        helper_reader.start()
 
         def read_output():
             fd = child.stdout.fileno()
@@ -473,10 +494,23 @@ class Sandbox:
         # Anything the command left running goes with it: a later command is a new process.
         kill_session(child.pid)
         reader.join(timeout=2)
-        try:
-            child.stdout.close()
-        except OSError:
-            pass
+        helper_reader.join(timeout=2)
+        for stream in (child.stdout, child.stderr):
+            try:
+                stream.close()
+            except OSError:
+                pass
+        # The helper's own words: a refusal it made before the command began
+        # ("sandbox: ...", exit 126) is what the caller needs to read, so it
+        # is given as the output of a command that printed nothing. Anything
+        # else it wrote is this service's to log, not the command's output.
+        helper_said = bytes(state["helper"]).decode("utf-8", "replace")
+        refusals = [line for line in helper_said.splitlines() if line.startswith("sandbox: ")]
+        if child.returncode == 126 and refusals and not state["output"]:
+            state["output"] += ("\n".join(refusals) + "\n").encode("utf-8")
+        noise = [line for line in helper_said.splitlines() if line.strip() and not line.startswith("sandbox: ")]
+        if noise:
+            sys.stderr.write("confine.py: " + " | ".join(noise)[:2000] + "\n")
         duration_ms = int((time.monotonic() - started) * 1000)
 
         if state["over"]:
