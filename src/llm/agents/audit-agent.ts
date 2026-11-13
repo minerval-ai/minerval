@@ -29,7 +29,8 @@ import { oneLabelOnly } from "../../services/judgment-version-service.js";
 /** The tools of a redaction_fidelity audit, which exist only where a deployment has more than one label. */
 const REDACTION_CHECK_TOOLS: ReadonlySet<string> = new Set(["get_redaction_to_check", "record_fidelity_outcome"]);
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
+import { REDACTION_CHECK_REASON } from "../run-visibility.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
@@ -67,6 +68,10 @@ async function runAuditImpl(input: {
 }, sess: AgentSession): Promise<void> {
   const config = loadConfig();
   const model = input.model ?? config.auditModel;
+  // What this run is handed is the id of a page whose redaction it checks,
+  // at the page's label, and no operator data: the run says so, so that its
+  // log can be read by those who read that label (llm/run-visibility.ts).
+  if (input.auditType === "redaction_fidelity") markCurrentRunPrivate(REDACTION_CHECK_REASON);
 
   // Skills load on demand; the domains of the claims in the decisions under
   // review, found through the claims and contributions the context names,

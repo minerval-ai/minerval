@@ -39,6 +39,7 @@ import {
   ShowingError,
   bothSides,
   destinationOf,
+  ownOrganizationParty,
   type Actor,
   type FidelityAnswer,
   type PageStage,
@@ -732,19 +733,40 @@ export async function holdPage(input: { actor: GateActor; pageId: string; lift?:
 
 // ---- the queue --------------------------------------------------------------------
 
-const TEXT_WITHHELD =
-  "You are deciding this without reading it. You hold the permission to release this party's material and not the " +
-  "permission to read at the label this page was written at, so its text is not shown to you: you see what kind of " +
-  "part it is, what was removed from it by category, and Audit's answer. An administrator of this deployment can " +
-  "grant you reading at that label, and you can leave the item held until one has.";
+/**
+ * What a person who holds `release` for a party and does not read the
+ * page's label is told, on each item. A gate held by someone who cannot see
+ * what passes through it is not a gate, so they are shown what their
+ * decision would release: the part as it would be shown, with what is
+ * always shown of the page and the node's wording as they would be shown.
+ * That text is bound for readers who read less than this person is trusted
+ * to decide for. What the Redactor took out, and what it and Audit wrote
+ * about the page, were written at the page's label and stay with those who
+ * read it. One exception: what was taken out of a part that rests only on
+ * the material of an outside party this person releases for is that
+ * party's own, and is shown. The organization's own party is not such a
+ * party here: a part that rests on no outside party's material is the
+ * organization's by default, at a label this person does not read, and
+ * what a policy removed from it is what that label holds.
+ */
+const SHOWN_AS_RELEASED =
+  "You hold the permission to release this party's material and do not read the label this page was written at. " +
+  "You are shown what your decision would release, as it would be shown: the part with each removal marked, what " +
+  "is always shown of the page, and the node's wording. You are not shown the passages the Redactor removed, its " +
+  "notes, or why it flagged a part. The one exception is a passage removed from a part that rests only on the " +
+  "material of an outside party you release for, which is that party's own. An administrator of this deployment " +
+  "grants reading at a label.";
 
 /**
  * What waits on a person at the gate: every item at the gate that rests on
  * a party they release for and that party has not released, oldest page
  * first, and within a page the parts the Redactor was least sure of first.
- * Each item carries the Redactor's removals as differences with their
- * categories and Audit's answer. The text is included where the person
- * also reads at the page's label.
+ * Each item carries the part as it would be shown if released, the
+ * Redactor's removals by category, whether the Redactor flagged it, and
+ * Audit's answer, with what is always shown of its page and the node's
+ * wording as they would be shown. A person who also reads at the page's
+ * label is given the part as written, each removed passage with the
+ * Redactor's note, and why a part was flagged.
  */
 export async function releaseQueue(actor: GateActor, opts: { limit?: number } = {}): Promise<Record<string, unknown>> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
@@ -757,6 +779,7 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
       [[...actor.releaseParties]]
     );
     const names = await partyNames(actor.releaseParties as string[]);
+    const ownOrganization = (await ownOrganizationParty())?.id ?? null;
     const items: Array<Record<string, unknown>> = [];
     let more = false;
     for (const page of pages) {
@@ -791,14 +814,28 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
               since: hold?.at.toISOString() ?? null,
             };
           });
+      // The node's wording as the page would show it: where the node is at
+      // the page's label its wording is a part of the page, and what would
+      // be shown is that part after the Redactor's removals. Where the node
+      // is at another label the page does not carry its wording, and it is
+      // given only to a person who reads the node (`node`, below).
+      const wording = parts.find((p) => p.kind === "wording");
       const base = {
         page_id: page.id,
         showing_id: page.showing_id,
         node_id: page.node_id,
         ...(node && actor.clearance.includes(node.label) ? { node: node.text } : {}),
+        // What is shown whenever anything of the page is shown, and so with any part this person releases.
+        always_shown: JSON.parse(page.header),
+        ...(wording ? { wording_as_it_would_be_shown: wording.redacted ?? wording.original } : {}),
         audit: page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : null,
         waiting_since: page.checked_at?.toISOString() ?? null,
+        ...(reads ? {} : { shown_as_released: SHOWN_AS_RELEASED }),
       };
+      // A part that rests on the material of outside parties this person releases for, and on nobody else's:
+      // what was removed from it is those parties' own.
+      const theirsAlone = (needs: string[]) =>
+        needs.length > 0 && needs.every((party) => party !== ownOrganization && actor.releaseParties.includes(party));
       const pageItems: Array<Record<string, unknown> & { order: number }> = [];
       if (mine(null, page.rests_on).length > 0) {
         pageItems.push({
@@ -808,7 +845,6 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
           decide_for: mine(null, page.rests_on).map((id) => ({ id, name: names.get(id) ?? "" })),
           rests_on: wait(null, page.rests_on),
           ...(heldBy(null).length > 0 ? { held: heldBy(null) } : {}),
-          ...(reads ? { always_shown: JSON.parse(page.header) } : { text_withheld: TEXT_WITHHELD }),
           order: -1,
         });
       }
@@ -826,14 +862,16 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
           ...(heldBy(part.id).length > 0 ? { held: heldBy(part.id) } : {}),
           removals_by_category: counts,
           redactor_least_sure: unsure(part).length > 0,
+          as_it_would_be_shown: part.redacted ?? part.original,
           ...(reads
             ? {
                 as_written: part.original,
-                as_it_would_be_shown: part.redacted ?? part.original,
                 removals: own.map((r) => ({ passage: part.original.slice(r.start_offset, r.end_offset), category: r.category, redactor_note: r.note })),
                 ...(unsure(part).length > 0 ? { why_least_sure: unsure(part).map((l) => l.why) } : {}),
               }
-            : { text_withheld: TEXT_WITHHELD }),
+            : theirsAlone(part.rests_on) && own.length > 0
+              ? { removals: own.map((r) => ({ passage: part.original.slice(r.start_offset, r.end_offset), category: r.category })) }
+              : {}),
           order: unsure(part).length > 0 ? 0 : part.position,
         });
       }
@@ -847,16 +885,16 @@ export async function releaseQueue(actor: GateActor, opts: { limit?: number } = 
       }
       if (more) break;
     }
-    const unread = items.filter((i) => "text_withheld" in i).length;
+    const unread = items.filter((i) => "shown_as_released" in i).length;
     return {
       items,
       more_waiting: more,
       ...(unread > 0
         ? {
-            deciding_without_reading:
-              `${unread} of these ${items.length} item${items.length === 1 ? "" : "s"} ${unread === 1 ? "is" : "are"} shown to you without ${unread === 1 ? "its" : "their"} text, because you do not hold the ` +
-              `permission to read at the label ${unread === 1 ? "it was" : "they were"} written at. A release of one is a release of text you have not read. ` +
-              `An administrator of this deployment grants reading at a label.`,
+            not_reading_the_label:
+              `${unread} of these ${items.length} item${items.length === 1 ? "" : "s"} ${unread === 1 ? "is" : "are"} of a page written at a label you do not read. ` +
+              `For each you are shown the text your decision would release, as it would be shown, and not what was removed from it or what ` +
+              `the Redactor wrote about it.`,
           }
         : {}),
       // The fixed list a hold gives its reason from, each key with the words the other side is told.

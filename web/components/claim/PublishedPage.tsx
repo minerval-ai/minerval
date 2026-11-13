@@ -399,9 +399,9 @@ export function PublishedSaidBack({ view, claimId }: { view: PublishedPageView; 
     <section className="section" id="said-back">
       <h2>What readers have said back</h2>
       <p className="section-note">
-        Anyone may challenge this page, or propose to the claim through it. A contribution made that way is reviewed here like any other, and{" "}
-        {view.publisher.name}&rsquo;s graph reads it from this graph&rsquo;s public record. Below is each one with what that graph has said became of
-        it. A contribution with no reassessment paid for there stands unanswered.{" "}
+        Anyone may challenge this page, or propose to the claim through it. A contribution made that way is reviewed here like any other. Once
+        admitted, {view.publisher.name}&rsquo;s graph takes it from this graph&rsquo;s public record and gives it, as written, to the agent that
+        wrote the page. Below is each one with what that graph has said became of it. A contribution with no reassessment paid for there stands unanswered.{" "}
         <Link href={`/claims/${claimId}?contribute=challenge&through=${view.published_page_id}#contribute`}>Challenge this page, or propose through it</Link>.
       </p>
       {said.length === 0 ? (

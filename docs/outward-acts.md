@@ -63,7 +63,7 @@ written at a label.
 | Leave a mandate or a node out of keeping public versions current | `direct` | session | no |
 | Send a redacted report to Minerval's maintainers | `release` for the organization itself, and reading the report's label | session or card | yes |
 | Send the facts of a tool failure | `direct` | session or card | yes |
-| Pay for the reading of what the public said, or the redaction of a report | `fund` | any credential | yes |
+| Pay for the redaction of a report | `fund` | any credential | yes |
 
 ## 1. What the public says back
 
@@ -81,32 +81,36 @@ Reviewer like any other. The second tab of the node's page offers
 (`feed_contributions`). `takeInPublicContributions`
 (`src/services/inbound-service.ts`) takes in those that name a page this
 deployment published, once the public graph's own review has admitted
-them, and opens their reading on the ledger at `public` (action kind
-`inbound_review`). It runs when it is paid for.
+them. One whose text is the same as an earlier one's on the node is
+recorded as a repeat of it and opens nothing: repeats count once. The check
+is exact, on the text. Whether a contribution in other words says what an
+earlier one said is the Steward's judgment (constitution §14).
 
-**Untrusted text is read by one run.** The Contribution Reviewer, at
-`public`, is given the contribution's text and records one of three things
-for each (`src/llm/agents/inbound-reviewer.ts`): a summary in its own
-words, that it repeats one already summarized, or that it is set aside for
-a reason from a fixed list. No other run is given the text: the table that
-holds it is not among the views an agent's SQL reads, and no tool returns
-it.
+**To the Steward.** `deliverPublicContributions` gives the contribution
+itself to the node's Steward at the label the page came from: its text as
+written, its type and date, the addresses it cites and its id on the public
+graph, inside fixed sentences that say the text was written outside the
+deployment. It is public text on the public graph, which that Steward
+reads through the mirror already, and an agent that has not read a
+challenge cannot answer it. Every agent is told that what it reads is
+data; nothing more is said of that here. The message opens a reassessment
+at that label, which runs when a mandate or a person pays for it. Under a
+standing showing its result goes out as the next version by the path every
+version takes.
 
-**To the Steward.** `deliverSummaries` gives the summary, inside fixed
-sentences, to the node's Steward at the label the page came from, and that
-opens a reassessment there, which runs when a mandate or a person pays for
-it. Under a standing showing its result goes out as the next version by
-the path every version takes. A repeat opens nothing: repeats count once.
+Members read the same on `GET /outside/said-back` and on the page made
+from it: each contribution as it was written, with where its reassessment
+stands.
 
 **What the outside is told.** No new kind of object. The page's next
 package carries `record.said_back`: each contribution received by its
-public id, whether it has been read, and where the reassessment stands in
-fixed words (not paid for; paid for, and not yet made; made). The public
-graph shows that on the contribution's own record and on the second tab,
-beside the versions the package already lists: received and not yet read;
-unanswered, where no reassessment has been paid for; and, once one is
-made, whether a version made since is published or held. No word of a
-contribution or of a summary is in a package.
+public id, whether it was counted with an earlier one of the same text,
+and where the reassessment stands in fixed words (not paid for; paid for,
+and not yet made; made). The public graph shows that on the contribution's
+own record and on the second tab, beside the versions the package already
+lists: received; unanswered, where no reassessment has been paid for; and,
+once one is made, whether a version made since is published or held. No
+word of a contribution is in a package.
 
 ## 2. Taking up a request in public
 
@@ -245,9 +249,9 @@ The three standing choices are set in the app and stored in
 
 ## What this does not do
 
-- No model has run any of it: the Contribution Reviewer's reading, the
-  Redactor's pass over a report and Audit's `about` were driven through
-  their tools.
+- No model has run any of it: the Redactor's pass over a report and
+  Audit's `about` were driven through their tools, and no Steward has yet
+  been given a public contribution in a run with a model.
 - The contribution record's reasoning and the work on a request are not in
   the feed.
 - A report's redaction has no check by Audit of its own, as a page's has:

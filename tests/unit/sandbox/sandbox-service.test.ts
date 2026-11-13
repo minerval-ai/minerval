@@ -63,6 +63,8 @@ beforeAll(async () => {
     SANDBOX_OUTPUT_BYTES: "20000",
     SANDBOX_MEMORY_MB: "150",
     SANDBOX_SCRATCH_MB: "20",
+    SANDBOX_MAX_COMMANDS: "3",
+    SANDBOX_QUEUE_SECONDS: "30",
     SANDBOX_PROBE_CONNECT: `127.0.0.1:${listenerPort}`,
     SANDBOX_PROBE_RESOLVE: "localhost",
   });
@@ -82,7 +84,7 @@ afterAll(async () => {
 });
 
 describe("what the service says of itself", () => {
-  it("reports its version, what it has, where the sets are and its four limits", async () => {
+  it("reports its version, what it has, where the sets are and its limits", async () => {
     needsLandlock(sandbox);
     const health = await sandboxHealth(config);
     expect(health.ok, JSON.stringify(health)).toBe(true);
@@ -93,7 +95,14 @@ describe("what the service says of itself", () => {
     expect(health.value.landlockAbi).toBeGreaterThanOrEqual(1);
     expect(health.value.tools).toEqual(expect.arrayContaining(["find", "grep", "sed"]));
     expect(health.value.paths).toEqual({ store: sandbox.storeDir, directoryRoot: sandbox.directoryRoot });
-    expect(health.value.limits).toEqual({ commandSeconds: 4, outputBytes: 20000, memoryMb: 150, scratchMb: 20 });
+    expect(health.value.limits).toEqual({
+      commandSeconds: 4,
+      outputBytes: 20000,
+      memoryMb: 150,
+      scratchMb: 20,
+      commandsAtOnce: 3,
+      queueSeconds: 30,
+    });
   });
 
   it("answers only a caller that holds its token", async () => {

@@ -104,13 +104,13 @@ export interface ReceivedContribution {
   type: string;
   submitted_at: string;
   received_at: string;
-  read: string;
-  summary?: string;
+  /** The contribution as it was made on the public graph: public text, written outside this deployment. */
+  text_written_outside_this_deployment?: string;
+  addresses_it_cites?: string[];
   repeats?: string;
-  set_aside_because?: string;
+  given_to_the_steward_at?: string;
   reassessment?: string;
   reassessment_as_of?: string | null;
-  reading_action_id?: string;
 }
 
 export interface ReportForSending {

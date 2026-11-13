@@ -210,7 +210,6 @@ export async function processNextEngineAction(
       "curate",
       "audit",
       "redact",
-      "inbound_review",
       "redact_report",
       "ingest",
       "formalize",
@@ -253,7 +252,6 @@ async function runEngineAction(action: RunnableAction, opts: { model?: string })
     if (action.kind === "curate") return runCurateAction(action);
     if (action.kind === "audit") return runAuditAction(action);
     if (action.kind === "redact") return runRedactAction(action);
-    if (action.kind === "inbound_review") return runInboundReviewAction(action);
     if (action.kind === "redact_report") return runRedactReportAction(action);
     if (action.kind === "request") return runRequestAction(action);
     if (action.kind === "research") return runResearchAction(action);
@@ -1083,8 +1081,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
 }
 
 /**
- * inbound_review and redact_report (services/inbound-service.ts,
- * services/report-sending-service.ts): one run on the row's target, at the
+ * redact_report (services/report-sending-service.ts): one run on the row's target, at the
  * row's label, under its largest funder and to the budget its allocations
  * give it. `stillOpen` says, after the run, whether the work is left
  * undone, in which case the row is opened again so that it can be paid for
@@ -1092,7 +1089,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
  */
 async function runOutwardAction(
   action: RunnableAction,
-  kind: "inbound_review" | "redact_report",
+  kind: "redact_report",
   what: string,
   run: () => Promise<void>,
   stillOpen: () => Promise<boolean>,
@@ -1129,25 +1126,6 @@ async function runOutwardAction(
   }
 }
 
-async function runInboundReviewAction(action: RunnableAction): Promise<EngineProcessResult> {
-  const nodeId = action.target_ref ?? "";
-  const { stillToRead, deliverSummaries } = await import("../services/inbound-service.js");
-  if (!nodeId || (await stillToRead(nodeId)) === 0) {
-    await cancelGroup(action.exclusion_group);
-    return { status: "empty" };
-  }
-  const { runInboundReview } = await import("../llm/agents/inbound-reviewer.js");
-  return runOutwardAction(
-    action,
-    "inbound_review",
-    "the allocations funding this reading",
-    () => runInboundReview({ nodeId }),
-    async () => (await stillToRead(nodeId)) > 0,
-    async () => {
-      await deliverSummaries();
-    }
-  );
-}
 
 async function runRedactReportAction(action: RunnableAction): Promise<EngineProcessResult> {
   const reportId = action.target_ref ?? "";

@@ -100,9 +100,7 @@ export interface PackageAct {
 export interface PackageSaidBack {
   contribution: string;
   received_at: string;
-  read: string;
   repeats?: string;
-  set_aside_because?: string;
   reassessment?: "not paid for" | "paid for, and not yet made" | "made";
   reassessment_as_of?: string;
 }

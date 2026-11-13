@@ -176,8 +176,14 @@ tools:
 
 - `get_redaction_policy`: the policy for the boundary.
 - `get_page_to_redact`: the page part by part as written, what is always
-  shown, and the sources the page drew on with their labels; with a source,
-  that source's stored text.
+  shown, and the sources the page rests on with their labels; with a
+  source, that source's stored text. The sources are the set the gate works
+  out whose release is needed from ("The gate", below), recorded when the
+  page is opened (`showing_pages.source_ids`): what the version rests on
+  and what each part rests on, so a reading or an analysis kept in work on
+  the node, and a source cited through an argument or a subclaim, can be
+  opened whether or not an instance on the node was recorded from them. The
+  sources listed as always shown are among them.
 - `redact`: remove one passage, given exactly as it appears, under one of
   the policy's categories, with a note. The passage is replaced by
   `[redacted: <category>]`. Nothing else in the part changes.
@@ -295,14 +301,27 @@ may hold `direct` and `release`.
   directs the graph may hold a page that has not been shown.
 - **Nothing is released by time passing.** An item nobody has acted on
   shows as held, with how long it has waited.
-- **The queue** (`GET /release/queue`) shows each item with the Redactor's
-  removals as differences with their categories, the parts it was least
-  sure of first, and Audit's answer. A person who holds `release` for a
-  party and does not read at the page's label sees each item's kind, its
-  removals by category and Audit's answer, and not its text. The queue says
-  so on each such item and once for the whole answer: that they are deciding
-  without reading it, and that an administrator grants reading at a label.
-  They may still decide.
+- **The queue** (`GET /release/queue`) shows each item as it would be
+  shown if released: the part after the Redactor's removals, with the
+  marks, and with it what is always shown of the page and the node's
+  wording as they would be shown. The parts the Redactor was least sure of
+  come first, and each item has its removals by category and Audit's
+  answer. Every holder of `release` for a party is shown that, whether or
+  not they read at the page's label: it is the text their decision would
+  release, to readers who read less than they are trusted to decide for,
+  and a gate held by someone who cannot see what passes through it is not a
+  gate. A holder who also reads at the page's label is given the part as
+  written, each removed passage with the Redactor's note, and why a part
+  was flagged. One who does not is given none of those, since they were
+  written at the page's label, with one exception: a passage removed from a
+  part that rests only on the material of outside parties they release for
+  is those parties' own, and is shown to them with its category and without
+  the note. The organization's own party is not counted there. A part that
+  rests on no outside party's material is the organization's by default, so
+  for a holder of `release` for the organization the exception would open
+  every removed passage of every such page, at a label they do not read.
+  They see that a part was flagged and not why. The queue says what they
+  are and are not shown on each such item and once for the whole answer.
 - **Standing rules.** A party's holders of `release` may set a rule at one
   boundary, as a condition the system tests from the record: release a part
   when the Redactor removed nothing from it and it rests on this party's

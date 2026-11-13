@@ -13,6 +13,8 @@ import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
 import type { GateActor } from "../../src/services/release-gate-service.js";
 import { askShowing } from "../../src/services/showing-service.js";
+import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
+import { runAtLabel, withAgent } from "../../src/llm/usage-context.js";
 import { summarizeCoverage } from "../../src/services/coverage-service.js";
 import { A, C, asPerson, seedNode, seedUser, system, unwall, version, wall } from "./review-3-common.js";
 
@@ -178,6 +180,79 @@ describe("a page whose run kept a reading", () => {
     const page = await pageOf(asked.showing_id);
     expect(page.rests_on).toEqual([id.org]);
     expect(page.header.sources).toEqual([]);
+  });
+});
+
+describe("what a Redactor can open", () => {
+  const redactor = async (pageId: string, input: Record<string, unknown> = {}) =>
+    JSON.parse(
+      await runAtLabel(C, "a redactor's run", () => withAgent("redactor", () => executeRedactorTool("get_page_to_redact", input, { pageId })))
+    ) as Record<string, any>;
+  const pageIdOf = async (node: string) =>
+    (await system(() => rawQuery<{ id: string; source_ids: string[] | null }>(`SELECT id, source_ids FROM showing_pages WHERE node_id = $1 ORDER BY opened_at DESC LIMIT 1`, [node])))[0]!;
+
+  it("is every source the page rests on, a kept reading and a kept analysis with no instance among them", async () => {
+    const rested = await pageIdOf(id.rested!);
+    // The set is recorded with the page: it is what the gate worked out whose release is needed from.
+    expect(rested.source_ids).toEqual([id.keptSource]);
+    const page = await redactor(rested.id);
+    expect(page.sources.map((s: any) => s.source_id)).toEqual([id.keptSource]);
+    expect(page.sources[0]).toMatchObject({ title: "Corvid warehouse: read_rows", label: C, stored_text_chars: "A reading.".length });
+    const opened = await redactor(rested.id, { source_id: id.keptSource });
+    expect(opened).toMatchObject({ success: true, text: "A reading.", total_chars: "A reading.".length });
+
+    const compared = await pageIdOf(id.compared!);
+    expect((await redactor(compared.id)).sources.map((s: any) => s.source_id)).toEqual([id.analysisSource]);
+    expect((await redactor(compared.id, { source_id: id.analysisSource })).text).toBe("An analysis.");
+
+    // A page that rests on nothing kept offers nothing, and a source another page rests on is not this page's.
+    const looked = await pageIdOf(id.looked!);
+    expect((await redactor(looked.id)).sources).toEqual([]);
+    const notIts = await redactor(looked.id, { source_id: id.keptSource });
+    expect(notIts).toMatchObject({ success: false, code: "SOURCE_NOT_FOUND", message: "That is not one of the sources this page rests on." });
+  });
+
+  it("includes a source cited through an argument, which the gate asks its party about", async () => {
+    const node = await seedNode(C, "The warehouse's March count was checked by a second party");
+    await version(node, C, "supported", "A second count agrees.");
+    const cited = await system(async () => {
+      const [source] = await rawQuery<{ id: string }>(
+        `INSERT INTO sources (url, title, raw_content, sensitivity_label, party_id)
+         VALUES ($1, 'Dunlin recount', 'Dunlin counted 4,112 units.', $2, $3) RETURNING id`,
+        [`https://example.org/kept-material/${randomUUID()}`, C, id.dunlin]
+      );
+      const [argument] = await rawQuery<{ id: string }>(
+        `INSERT INTO arguments (claim_id, stance, name, content, created_by, sensitivity_label)
+         VALUES ($1, 'for', 'From the recount', 'A second count by another party agrees.', 'steward', $2) RETURNING id`,
+        [node, C]
+      );
+      await rawQuery(
+        `INSERT INTO argument_instances (argument_id, source_id, verbatim_text, stance, created_by, sensitivity_label) VALUES ($1, $2, 'Dunlin counted 4,112 units.', 'makes', 'steward', $3)`,
+        [argument!.id, source!.id, C]
+      );
+      return source!.id;
+    });
+    try {
+      const asked = await askShowing({ nodeId: node, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+      const parts = await system(() =>
+        rawQuery<{ kind: string; rests_on: string[] }>(
+          `SELECT p.kind, p.rests_on FROM showing_parts p JOIN showing_pages g ON g.id = p.page_id WHERE g.showing_id = $1 ORDER BY p.position`,
+          [asked.showing_id]
+        )
+      );
+      // The gate asks Dunlin about the argument.
+      expect(parts.find((p) => p.kind === "argument")!.rests_on).toEqual([id.dunlin]);
+      // No instance on the node was recorded from the source, and the Redactor can open it.
+      const page = await pageIdOf(node);
+      expect(page.source_ids).toEqual([cited]);
+      expect((await redactor(page.id)).sources.map((s: any) => s.source_id)).toEqual([cited]);
+      expect((await redactor(page.id, { source_id: cited })).text).toBe("Dunlin counted 4,112 units.");
+    } finally {
+      await system(async () => {
+        await rawQuery(`DELETE FROM argument_instances WHERE source_id = $1`, [cited]);
+        await rawQuery(`DELETE FROM sources WHERE id = $1`, [cited]);
+      }).catch(() => {});
+    }
   });
 });
 

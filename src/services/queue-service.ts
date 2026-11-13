@@ -114,8 +114,8 @@ export interface StewardMessage {
     | "page_shown"
     // A reader of a page this graph published of the node made a
     // contribution on the public graph through it (inbound-service.ts). The
-    // context is the summary this deployment's Contribution Reviewer wrote
-    // at `public`, and never the contribution's own text.
+    // context is the contribution as it was made, public text from the
+    // public graph's own record, said to be written outside the deployment.
     | "public_contribution"
     // The public graph merged or withdrew a node that work at this label
     // rests on, and the batch of the mirror that says so is in

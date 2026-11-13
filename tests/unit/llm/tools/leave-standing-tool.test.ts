@@ -20,7 +20,10 @@ describe("leave_judgment_standing", () => {
         "reasoning. If this run's label has a judgment of the node, that judgment is retired and stays in the " +
         "node's history. A judgment recorded at this run's label later takes this record's place. When the " +
         "judgment left standing is replaced, a reassessment at this run's label is opened, which runs when it " +
-        "is funded."
+        "is funded. It is refused where this run's label has a judgment of the node and the node's page at " +
+        "this label is under a standing showing, because the readers that page is shown to would be left " +
+        "with a page whose judgment had been withdrawn and nothing to tell them so; there, record your " +
+        "judgment as it now stands."
     );
     expect(tool.description).not.toMatch(/\bmust\b|\bonly\b|\bnever\b|\balways\b|attached|material/);
     expect((tool.input_schema as { required: string[] }).required).toEqual(["claim_id", "reasoning"]);

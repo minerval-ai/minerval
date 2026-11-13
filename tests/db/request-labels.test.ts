@@ -110,7 +110,8 @@ import {
 } from "../../src/services/oauth-service.js";
 import { connectionLabelNote } from "../../src/mcp/server.js";
 import { withheldRunSourceText, withheldSourceText } from "../../src/raw-sources.js";
-import { getUsageContext, runAtLabel, withAgent } from "../../src/llm/usage-context.js";
+import { getUsageContext, markCurrentRunPrivate, runAtLabel, withAgent } from "../../src/llm/usage-context.js";
+import { REDACTION_CHECK_REASON } from "../../src/llm/run-visibility.js";
 import { recordAgentStep } from "../../src/services/trace-service.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -1031,6 +1032,104 @@ describe("opening raw sources", () => {
 
     const open = (await as(opener, { url: `/runs/${runId}/steps/${toolStep}` })).json();
     expect(open.content[0].output).toBe(JSON.stringify({ text: TEXT }));
+  });
+
+  // A run with private reasons, at a label, and its log (services/run-view-service.ts; llm/run-visibility.ts,
+  // REASONS_A_LABEL_COVERS). Each run is one model turn and one batch of tool results.
+  async function privateRun(agent: string, reasons: string[], results: Array<{ name: string; output: string }>): Promise<{ id: string; toolStep: number; sayStep: number }> {
+    let id = "";
+    await runAtLabel(A, "a test", () =>
+      withAgent(agent, async () => {
+        const trace = getUsageContext().trace!;
+        id = trace.runId;
+        for (const reason of reasons) markCurrentRunPrivate(reason);
+        recordAgentStep(trace, "assistant", { content: [{ type: "text", text: "I will look at what the system holds." }], stopReason: "tool_use" });
+        recordAgentStep(trace, "tool_results", results.map((r) => ({ ...r, input: {} })));
+        await trace.tail;
+      })
+    );
+    const steps = await rawQuery<{ seq: number; kind: string }>(`SELECT seq, kind FROM agent_steps WHERE run_id = $1 ORDER BY seq`, [id]);
+    return { id, toolStep: steps.find((s) => s.kind === "tool_results")!.seq, sayStep: steps.find((s) => s.kind === "assistant")!.seq };
+  }
+  const ROWS = JSON.stringify({ rows: [["units", 4112]] });
+  const PRINTED = JSON.stringify({ stdout: "4112 units in runs/run-7.jsonl" });
+
+  it("serves the log of a run that read an organization's data to a member who reads the run's label, with what came back held to read_sources", async () => {
+    const run = await privateRun("steward", ["tool:warehouse__run_query", "tool:run_command", "tool:keep_reading", "tool:notebook_write"], [
+      { name: "warehouse__run_query", output: ROWS },
+      { name: "run_command", output: PRINTED },
+      { name: "keep_reading", output: JSON.stringify({ address: "reading:1" }) },
+    ]);
+    const [row] = await rawQuery<{ private_reasons: string[] }>(`SELECT private_reasons FROM agent_runs WHERE id = $1`, [run.id]);
+    expect(row!.private_reasons).toEqual(expect.arrayContaining(["tool:warehouse__run_query", "tool:run_command"]));
+
+    // A member who reads rl-a and may not open its sources: the run, its reasoning and its calls, and not what came back.
+    const summary = (await as(reader, { url: `/runs/${run.id}` })).json();
+    expect(summary).toMatchObject({ id: run.id, agent: "steward", public: false, steps_recorded: 2 });
+    expect(summary.withheld).toBeUndefined();
+    const said = (await as(reader, { url: `/runs/${run.id}/steps/${run.sayStep}` })).json();
+    expect(said.content.content[0].text).toBe("I will look at what the system holds.");
+    const step = (await as(reader, { url: `/runs/${run.id}/steps/${run.toolStep}` })).json();
+    expect(step.content[0].output).toEqual(withheldRunSourceText(A, [A]));
+    expect(step.content[1].output).toEqual(withheldRunSourceText(A, [A]));
+    expect(step.content[2].output).toBe(JSON.stringify({ address: "reading:1" }));
+    const listed = JSON.stringify((await as(reader, { url: `/runs/${run.id}/steps` })).json());
+    expect(listed).not.toContain("4112");
+    expect((await as(reader, { url: `/runs/${run.id}/verify` })).json()).toMatchObject({ run_id: run.id, intact: true });
+
+    // One who may open raw sources at rl-a reads what came back too.
+    const opened = (await as(opener, { url: `/runs/${run.id}/steps/${run.toolStep}` })).json();
+    expect(opened.content[0].output).toBe(ROWS);
+    expect(opened.content[1].output).toBe(PRINTED);
+
+    // A member who does not read rl-a is told nothing of the run, as of any row at a label they do not read.
+    const elsewhere = await member("raw-elsewhere", [B]);
+    for (const url of [`/runs/${run.id}`, `/runs/${run.id}/steps`, `/runs/${run.id}/steps/${run.toolStep}`, `/runs/${run.id}/verify`]) {
+      expect((await as(elsewhere, { url })).statusCode).toBe(404);
+    }
+  });
+
+  it("serves a Redactor's run and Audit's check of a redaction the same way, and no other Audit run", async () => {
+    const redaction = await privateRun("redactor", ["tool:get_page_to_redact", "tool:redact", "tool:finish_redaction"], [
+      { name: "get_page_to_redact", output: JSON.stringify({ text: TEXT }) },
+      { name: "redact", output: JSON.stringify({ part_now_reads: "The count was [redacted: commercial figures]." }) },
+    ]);
+    const forReader = (await as(reader, { url: `/runs/${redaction.id}/steps/${redaction.toolStep}` })).json();
+    expect(forReader.content[0].output).toEqual(withheldRunSourceText(A, [A]));
+    expect(forReader.content[1].output).toBe(JSON.stringify({ part_now_reads: "The count was [redacted: commercial figures]." }));
+    expect((await as(opener, { url: `/runs/${redaction.id}/steps/${redaction.toolStep}` })).json().content[0].output).toBe(JSON.stringify({ text: TEXT }));
+
+    const check = await privateRun("audit", [REDACTION_CHECK_REASON, "tool:get_redaction_to_check", "tool:record_fidelity_outcome"], [
+      { name: "get_redaction_to_check", output: JSON.stringify({ parts: [] }) },
+    ]);
+    expect((await as(reader, { url: `/runs/${check.id}` })).json()).toMatchObject({ agent: "audit", public: false, steps_recorded: 2 });
+
+    // An audit of anything else starts private because its context can carry operator data, and a label does not cover that.
+    const other = await privateRun("audit", ["tool:get_redaction_policy"], [{ name: "get_redaction_policy", output: "{}" }]);
+    expect((await as(reader, { url: `/runs/${other.id}` })).json()).toMatchObject({ withheld: true, private_reasons: ["agent:audit", "tool:get_redaction_policy"] });
+  });
+
+  it("keeps withheld from members a run with a reason no label covers, whatever else it read", async () => {
+    // A report's record is served to nobody but the service, a funder's words and a person's own conversation are theirs.
+    for (const [agent, reasons] of [
+      ["steward", ["tool:warehouse__run_query", "tool:raise_issue"]],
+      ["steward", ["tool:run_command", "tool:get_research_run"]],
+      ["researcher", ["tool:run_command", "input:grantmaker-brief"]],
+      ["lookout", ["tool:warehouse__run_query", "input:lookout-poke-note"]],
+      ["assistant", ["tool:warehouse__run_query"]],
+      ["grantmaker", []],
+    ] as Array<[string, string[]]>) {
+      const run = await privateRun(agent, reasons, [{ name: "warehouse__run_query", output: ROWS }]);
+      for (const who of [reader, opener]) {
+        const summary = (await as(who, { url: `/runs/${run.id}` })).json();
+        expect(summary.withheld, `${agent} ${reasons.join(",")}`).toBe(true);
+        expect(summary.private_reasons).toEqual(expect.arrayContaining(reasons));
+        const step = (await as(who, { url: `/runs/${run.id}/steps/${run.toolStep}` })).json();
+        expect(step.withheld).toBe(true);
+        expect(JSON.stringify(step)).not.toContain("4112");
+        expect((await as(who, { url: `/runs/${run.id}/verify` })).json().withheld).toBe(true);
+      }
+    }
   });
 });
 

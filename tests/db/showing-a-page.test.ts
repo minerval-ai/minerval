@@ -305,7 +305,7 @@ describe("Audit's check", () => {
 });
 
 describe("the gate", () => {
-  it("shows each holder of release the items that rest on their party, least sure first, with the text only where they read the page's label", async () => {
+  it("shows each holder of release the items that rest on their party, least sure first, as they would be shown, and the page as written only where they read its label", async () => {
     const forAcme = (await releaseQueue(actor.acme!)) as { items: any[] };
     // The verdict, the paragraphs of the summary and the reasoning, and Acme's own reading. Not Borealis's reading, and not the organization's parts.
     expect(forAcme.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 8, 10]);
@@ -318,18 +318,85 @@ describe("the gate", () => {
     expect(figure.audit).toBe("The reasoning shown supports the verdict in part.");
     expect(figure.rests_on.map((r: any) => r.standing)).toEqual(["waiting", "waiting"]);
 
+    // Acme's reviewer reads the page's label: nothing tells them they are shown less.
+    expect((forAcme as any).not_reading_the_label).toBeUndefined();
+    expect(forAcme.items.every((i) => i.shown_as_released === undefined)).toBe(true);
+
+    // Borealis's reviewer holds release for Borealis and reads `public` alone. They are shown what their decision would release.
     const forBorealis = (await releaseQueue(actor.borealis!)) as { items: any[] };
     expect(forBorealis.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 9, 11]);
-    expect(JSON.stringify(forBorealis)).not.toContain(SECRET);
-    expect(JSON.stringify(forBorealis)).not.toContain("meter");
-    expect(forBorealis.items[1].text_withheld).toBe(
-      "You are deciding this without reading it. You hold the permission to release this party's material and not the permission to read at the label this page was written at, so its text is not shown to you: you see what kind of part it is, what was removed from it by category, and Audit's answer. An administrator of this deployment can grant you reading at that label, and you can leave the item held until one has."
+    const recorded = await system(() =>
+      rawQuery<{ position: number; original: string; redacted: string | null }>(`SELECT position, original, redacted FROM showing_parts WHERE page_id = $1 ORDER BY position`, [id.page])
     );
-    expect((forBorealis as any).deciding_without_reading).toBe(
-      "8 of these 8 items are shown to you without their text, because you do not hold the permission to read at the label they were written at. A release of one is a release of text you have not read. An administrator of this deployment grants reading at a label."
-    );
-    expect((forAcme as any).deciding_without_reading).toBeUndefined();
+    const [header] = await system(() => rawQuery<{ header: string }>(`SELECT header FROM showing_pages WHERE id = $1`, [id.page]));
+    for (const item of forBorealis.items) {
+      // What is always shown of the page is with every item, as recorded: no part is shown without it.
+      expect(item.always_shown).toEqual(JSON.parse(header!.header));
+      expect(item.shown_as_released).toBe(
+        "You hold the permission to release this party's material and do not read the label this page was written at. You are shown what your decision would release, as it would be shown: the part with each removal marked, what is always shown of the page, and the node's wording. You are not shown the passages the Redactor removed, its notes, or why it flagged a part. The one exception is a passage removed from a part that rests only on the material of an outside party you release for, which is that party's own. An administrator of this deployment grants reading at a label."
+      );
+      if (item.part === null) continue;
+      const part = recorded.find((p) => p.position === item.part)!;
+      // Each part exactly as it would be shown if released: after the Redactor's removals, with the marks.
+      expect(item.as_it_would_be_shown).toBe(part.redacted ?? part.original);
+    }
+    expect(forBorealis.items.find((i) => i.part === 3).as_it_would_be_shown).toBe("The meter data shows [redacted: commercial figures] against [redacted: commercial figures].");
+    expect(forBorealis.items.find((i) => i.part === 3).removals_by_category).toEqual({ "commercial figures": 2 });
+    // The part the Redactor flagged says that it was flagged, and not why.
+    expect(forBorealis.items[1].part).toBe(4);
+    expect(forBorealis.items[1].redactor_least_sure).toBe(true);
     expect(forBorealis.items[1].removals_by_category).toEqual({});
+    expect((forBorealis as any).not_reading_the_label).toBe(
+      "8 of these 8 items are of a page written at a label you do not read. For each you are shown the text your decision would release, as it would be shown, and not what was removed from it or what the Redactor wrote about it."
+    );
+  });
+
+  it("shows a holder who does not read the page's label nothing but what their decision would release", async () => {
+    const forBorealis = (await releaseQueue(actor.borealis!)) as { items: any[] };
+    const said = JSON.stringify(forBorealis);
+    // No removed passage: the figure, and the target that bounds it. Each is in a part that rests on Acme's material too.
+    expect(said).not.toContain(SECRET);
+    expect(said).not.toContain("4500");
+    // No word of the Redactor's notes or of why it flagged a part, and none of Audit's reasons.
+    for (const written of [
+      "An output figure a counterparty could use",
+      "The same figure, quoted in the reading",
+      "Bounds the figure",
+      "calibration month may identify",
+      "The figures are gone and nothing else was removed",
+      "lets a reader bound the figure",
+    ]) {
+      expect(said).not.toContain(written);
+    }
+    // No part that is not theirs to decide: Acme's reading and supplier, and the organization's arguments and subclaim.
+    for (const notTheirs of ["Acme's meter data", "paid by output", "The meters record more than the target", "Unread logs could hide a shortfall", "Complete logs would close the caveat"]) {
+      expect(said).not.toContain(notTheirs);
+    }
+    // No page as written, no passage, no note and no reason on any item: only the keys below.
+    const allowed = new Set([
+      "page_id", "showing_id", "node_id", "node", "always_shown", "audit", "waiting_since", "shown_as_released",
+      "part", "kind", "decide_for", "rests_on", "held", "removals_by_category", "redactor_least_sure", "as_it_would_be_shown",
+    ]);
+    for (const item of forBorealis.items) expect(Object.keys(item).filter((k) => !allowed.has(k))).toEqual([]);
+    // The node is a public one, which they read like anyone; the page carries no wording of its own.
+    expect(forBorealis.items[0].node).toMatch(/^The plant met its output target/);
+
+    // A passage removed from a part that rests only on the material of an outside party the holder releases for is
+    // that party's own, and is shown: the passage and its category, without the Redactor's note. Here, a holder of
+    // release for Acme who reads `public` alone.
+    const acmeOutside: GateActor = { ...actor.acme!, clearance: ["public"] };
+    const forAcmeOutside = (await releaseQueue(acmeOutside)) as { items: any[] };
+    const reading = forAcmeOutside.items.find((i) => i.part === 8);
+    expect(reading.rests_on.map((r: any) => r.party.id)).toEqual([id.acme]);
+    expect(reading.removals).toEqual([{ passage: SECRET, category: "commercial figures" }]);
+    expect(reading.as_it_would_be_shown).toContain("[redacted: commercial figures]");
+    expect(reading.as_written).toBeUndefined();
+    // The same figure removed from a paragraph that rests on Borealis's material too is not shown to them.
+    const figure = forAcmeOutside.items.find((i) => i.part === 3);
+    expect(figure.removals).toBeUndefined();
+    expect(JSON.stringify(forAcmeOutside)).not.toContain("4500");
+    expect(JSON.stringify(forAcmeOutside)).not.toContain("The same figure, quoted in the reading");
+    expect(forAcmeOutside.items.every((i) => i.as_written === undefined && i.why_least_sure === undefined)).toBe(true);
   });
 
   it("releases a part that rests on two parties only when both have released it, and shows nothing until the page itself is released", async () => {
@@ -801,6 +868,12 @@ describe("a quantity's page and a question's page", () => {
     expect(page.always_shown.verdict).toEqual({ estimate: { central: 13200, low: 12800, high: 13600, unit: "units" } });
     expect(page.always_shown.sources).toEqual([{ source: 1, kind: "unknown", fingerprint: null, supplied_by: "an_outside_party", interest_recorded: true }]);
     await throughTheCheck(pageId, { answer: "supports" });
+
+    // A holder of release who reads neither the page's label nor the node is shown the node's wording as the page would show it.
+    const outside = (await releaseQueue({ ...actor.acme!, clearance: ["public"] })) as { items: any[] };
+    const ofPage = outside.items.filter((i) => i.page_id === pageId);
+    expect(ofPage.length).toBeGreaterThan(0);
+    expect(ofPage.every((i) => i.node === undefined && i.wording_as_it_would_be_shown === page.parts[0].text)).toBe(true);
 
     // Acme releases everything of its own but its name and the words of its interest.
     await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: [{ page_id: pageId, part: 6 }], decision: "hold", reason: "confidentiality" });

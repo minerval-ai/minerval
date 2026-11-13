@@ -156,12 +156,6 @@ export type ActionKind =
   // again each time Audit returns the work; it runs when a mandate that
   // values it or the person who asked pays for it.
   | "redact"
-  // One run of the Contribution Reviewer, at `public`, on what the public
-  // said about a page this deployment published of one node
-  // (inbound-service.ts): group `inbound:<node id>`, target_ref the node.
-  // It reads the contributions' own text, which no other run is given, and
-  // writes a summary of each for the node's Steward at the page's label.
-  | "inbound_review"
   // One Redactor run over the words of an agent's report that is to be
   // offered for sending to Minerval's maintainers
   // (report-sending-service.ts): group `report:<agent_reports.id>`,

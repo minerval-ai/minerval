@@ -246,8 +246,8 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   ],
   "src/services/inbound-service.ts": [
     [
-      "A summary of what the public said about a published page is written at `public` and delivered to the node's Steward at the label the page came from, which `public` does not read; and where that label's reassessment stands is copied back in fixed words for the outside.",
-      "Upward: a message in the node's inbox at the page's label, whose words are a summary written at `public` (which that label reads) inside fixed sentences. Downward, onto the `public` row of the contribution: one of three fixed words for where the reassessment at the page's label stands (not paid for, paid for, made) and a date. That a reassessment was paid for or made is what the published page's record says outside by design; no text written at the page's label is read or copied.",
+      "A contribution made on the public graph about a published page is public text, read at `public`, and is delivered to the node's Steward at the label the page came from, which `public` does not read; and where that label's reassessment stands is copied back in fixed words for the outside.",
+      "Upward: a message in the node's inbox at the page's label, whose words are the contribution as it was made on the public graph (its text, type, date, cited addresses and public id, all at `public`, which that label reads) inside fixed sentences. Downward, onto the `public` row of the contribution: the time it was given, one of three fixed words for where the reassessment at the page's label stands (not paid for, paid for, made) and a date. That a reassessment was paid for or made is what the published page's record says outside by design; no text written at the page's label is read or copied.",
     ],
   ],
   "src/services/report-sending-service.ts": [

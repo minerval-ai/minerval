@@ -24,7 +24,9 @@ What it holds and what it does:
     the agent before it calls: the time a command may run, the output it
     may print, the memory it may use, and the size its scratch directory
     may reach. A command that passes one is stopped, and the answer says
-    which.
+    which. Two more are reported with them and stated the same way: how
+    many commands run at once, and how long one waits for a place before
+    it fails as busy.
   - POST /probe checks the things the deployment has to provide and this
     process cannot give itself: that the sets are mounted read-only and
     that there is no route out.
@@ -291,6 +293,8 @@ class Sandbox:
                 "output_bytes": c.output_bytes,
                 "memory_mb": c.memory_mb,
                 "scratch_mb": c.scratch_mb,
+                "commands_at_once": c.max_commands,
+                "queue_seconds": c.queue_seconds,
             },
             **(
                 {}

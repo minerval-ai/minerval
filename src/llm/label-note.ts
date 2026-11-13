@@ -143,6 +143,17 @@ export function labelNote(
         `it refuses. The reason is that this run has read material at ${own}, and what a run at ${own} ` +
         `writes reaches readers who are not cleared for ${own} only as a page shown to them, with what was ` +
         `removed marked. What ${own} has to say about such a thing is recorded as something new, at ${own}.`;
+  // A report is filed for Minerval's maintainers on the public graph, and
+  // the tool's description says so. Here it is not (github-issue-service.ts,
+  // staysInside), and a run is told that before it files one, with how a
+  // report does reach them (docs/outward-acts.md, "An agent's report, sent to Minerval's maintainers").
+  const reports =
+    label === PUBLIC_LABEL
+      ? ""
+      : ` A problem report this run files (raise_issue) is kept in this deployment and not filed as an ` +
+        `issue for Minerval's maintainers, because a report quotes what its run was working on; it reaches ` +
+        `them when the people who may release for the organization send it on, which takes Audit finding ` +
+        `it to be about Minerval's machinery and a Redactor's pass over it.`;
   const judgments = opts.writesJudgments ? judgmentsForAWriter(label, others, mirror) : judgmentsForAReader(others, mirror);
   const paragraphs = [
     `${LABEL_NOTE_HEADING}` +
@@ -151,7 +162,7 @@ export function labelNote(
     `${canRead} No tool returns anything else, so a search or a read that comes back empty has looked ` +
       `only there.${mirror ? ` ${mirrorWhatItIs(mirror, `what is labeled ${tick(PUBLIC_LABEL)}`)}` : ""}`,
     `What you write: everything this run records carries the label ${own}, whatever you read to write ` +
-      `it. ${whoReads}${othersRows}${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}`,
+      `it. ${whoReads}${othersRows}${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}${reports}`,
     judgments,
     opts.writesJudgments ? shownBelowNote(label) : "",
     `If the work cannot be done well on what this label can read, say so in what you record, so that ` +

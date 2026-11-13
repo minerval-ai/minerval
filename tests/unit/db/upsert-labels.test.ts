@@ -22,8 +22,6 @@ import { describe, expect, it } from "vitest";
  * give it sameLabelOnly and writtenAtOwnLabel.
  */
 const OTHERWISE: Record<string, string> = {
-  "src/services/inbound-service.ts actions":
-    "The ledger row for reading what the public said about one node's page, keyed by the node and always at `public`: the update reopens a finished row and changes no text.",
   "src/services/mirror-feed-service.ts feed_contributions":
     "The public record as the mirror's feed carries it, on a graph that publishes: such a graph has one label, and the row is a copy of public columns of a contribution, which no run at another label can have written.",
   "src/services/mirror-feed-service.ts feed_requests": "As feed_contributions: a copy of a request's public columns, on a graph whose only label is `public`.",

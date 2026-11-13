@@ -159,14 +159,28 @@ and when.
 **Which agents.** The Claim Steward, the Question Steward, and the
 Researcher when a Steward launched it or it takes up a request. These are
 the roles whose work is to weigh evidence about the world and that record
-sources, so a reading has somewhere to go on the record. The Extractor and
-the Matcher read only the text they are handed. The Curator, the
-Consistency Checker, the Contribution Reviewer, the Dispute Arbitrator and
-Audit judge what the graph already records, where a kept reading is a
-source like any other. A mandate's agents and the research they launch
-write nothing to the graph, and research for the Curator or Audit reads
-and reports, so none of them is given a live read of an organization's
-system.
+sources, so a reading has somewhere to go on the record.
+
+A mandate's Lookouts are offered the same connections, to look and not to
+keep: the connections' tools and `open_reading`, without `keep_reading`.
+A lookout's work is to notice that something changed where it was posted
+to watch, and nothing tells the graph that data behind a connection
+changed unless a run looks. The tools are the ones an administrator
+picked, under the same limits, stated in the same words. A lookout records
+nothing on the graph and keeps no reading as a source. What it raises to
+its officers, as it raises anything, says which tool it called and with
+what arguments, so that the Steward who takes it up can make the call
+itself and keep what its judgment rests on. Each call a lookout makes is
+recorded like any call (`connection_calls`), with its result, at the
+lookout's label.
+
+The Extractor and the Matcher read only the text they are handed. The
+Curator, the Consistency Checker, the Contribution Reviewer, the Dispute
+Arbitrator and Audit judge what the graph already records, where a kept
+reading is a source like any other. A mandate's Grantmaker, its officers
+and Correspondents, and the research they launch, write nothing to the
+graph, and research for the Curator or Audit reads and reports, so none of
+them is given a live read of an organization's system.
 
 **When.** A run is offered a connection when the label it works at reads
 the connection's label: the same definition that makes up a person's
@@ -323,7 +337,8 @@ reading is a source, and its document view is held to the same permission.
 What the agent quoted from it is what reading at the label covers.
 
 **When the node's page is shown to readers who do not read its label.** A
-kept reading is a source the page drew on: it is among the sources the page
+kept reading is a source the page rests on: it is among the sources the
+Redactor may open, among the sources the page
 says exist, the supplier's name and the words of its stake are a part of
 the page, and the party whose system it was read from is among those whose
 holders of `release` are asked ([showing-a-page.md](showing-a-page.md),
@@ -346,8 +361,10 @@ constitution's rule on private persons (§2) binds what an agent records
 from them, and every connection tool's description ends with one sentence
 that says so. No role prompt gains a rule.
 
-A run that calls a connection's tool, or opens or keeps a reading, has a
-private transcript (`src/llm/run-visibility.ts`).
+A run that calls a connection's tool, or opens or keeps a reading, is not
+public (`src/llm/run-visibility.ts`). Its log is read by members who read
+the run's label, with what the tools returned held to the permission to
+open raw sources, as above ([run-log.md](run-log.md), "Who reads a log").
 
 ## When something fails
 

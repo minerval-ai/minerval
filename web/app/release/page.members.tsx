@@ -16,10 +16,14 @@ export const dynamic = "force-dynamic";
 // The release queue (GET /release/queue; docs/showing-a-page.md, "The
 // gate"): for a person who holds release for a party, the parts of redacted
 // pages that rest on that party's material and wait on them, oldest page
-// first. Each part is shown as it would go, with the Redactor's removals as
-// a difference against what the Steward wrote, where the person reads at
-// the label the page was written at. Where they do not, the API withholds
-// the text and says so; the page shows what the API gives and its sentence.
+// first. Each part is shown as it would go, with what is always shown of
+// its page and the node's wording as they would go: that is the text the
+// person's decision releases. Where the person reads at the label the page
+// was written at, the Redactor's removals are a difference against what the
+// Steward wrote, with its notes. Where they do not, they see the marks and
+// not what was removed, except in a part that rests only on the material of
+// an outside party they release for, and the API's sentence says so; the
+// page shows what the API gives and its sentence.
 
 /** A part as it would be shown, with each removed passage struck through in front of the mark that replaces it. */
 function Difference({ item }: { item: QueueItem }) {
@@ -33,7 +37,7 @@ function Difference({ item }: { item: QueueItem }) {
     if (found === -1) return;
     out.push(shown.slice(at, found));
     out.push(
-      <del key={`d${i}`} className="queue-removed" title={`The Redactor's note: ${r.redactor_note}`}>
+      <del key={`d${i}`} className="queue-removed" title={r.redactor_note ? `The Redactor's note: ${r.redactor_note}` : undefined}>
         {r.passage}
       </del>
     );
@@ -73,8 +77,8 @@ export default async function ReleaseQueuePage() {
   const parties = who.mine.grants.filter((g) => g.permission === "release" && g.party).map((g) => g.party!);
   const uniqueParties = [...new Map(parties.map((p) => [p.id, p])).values()];
   const now = Date.now();
-  // The API says on every item whose text it withholds why it does. The page gives its sentence in full once, on the first.
-  const firstUnread = queue.items.find((i) => i.text_withheld);
+  // The API says on every item of a page the person does not read the label of what they are and are not shown. The page gives its sentence in full once, on the first.
+  const firstUnread = queue.items.find((i) => i.shown_as_released);
   const ruleLabels = (labels?.labels ?? []).filter((l) => l.name !== "public");
 
   return (
@@ -85,7 +89,7 @@ export default async function ReleaseQueuePage() {
       />
       <WorkNav who={who} current="/release" />
       <Notice>{queue.note}</Notice>
-      {queue.deciding_without_reading && <p className="acct-prose acct-measure queue-unread">{queue.deciding_without_reading}</p>}
+      {queue.not_reading_the_label && <p className="acct-prose acct-measure queue-unread">{queue.not_reading_the_label}</p>}
 
       {uniqueParties.map((party) => {
         const items = queue.items.filter((i) => i.decide_for.some((p) => p.id === party.id));
@@ -107,7 +111,13 @@ export default async function ReleaseQueuePage() {
                     <div className="queue-page" key={pageId}>
                       <p className="queue-page-head">
                         <strong>
-                          {first.node ? <Link href={`/claims/${first.node_id}`}>{first.node}</Link> : "A page of a node you do not read"}
+                          {first.node ? (
+                            <Link href={`/claims/${first.node_id}`}>{first.node}</Link>
+                          ) : first.wording_as_it_would_be_shown ? (
+                            <>A page of a node you do not read, whose wording would be shown as: {first.wording_as_it_would_be_shown}</>
+                          ) : (
+                            "A page of a node you do not read"
+                          )}
                         </strong>
                         . Waiting {waited(first.waiting_since, now)}, since its redaction was checked on{" "}
                         {day(first.waiting_since)}. Audit&rsquo;s check of the redaction: {first.audit ?? "not recorded."}{" "}
@@ -141,29 +151,51 @@ export default async function ReleaseQueuePage() {
                                 holds the whole page, whatever is decided about its parts.
                               </p>
                             )}
-                            {item.text_withheld ? (
+                            {item.shown_as_released && (
                               <p className="queue-fact queue-unread">
-                                {item === firstUnread ? item.text_withheld : "Its text is not shown to you, for the reason given on the first item above: you are deciding this without reading it."}
+                                {item === firstUnread
+                                  ? item.shown_as_released
+                                  : "You are shown this as it would be released, and not what was removed from it, as said on the first item above."}
                               </p>
-                            ) : item.part === null ? (
-                              <p className="queue-text">{alwaysShown(item.always_shown ?? {})}</p>
+                            )}
+                            {item.part === null ? (
+                              <>
+                                <p className="queue-text">{alwaysShown(item.always_shown ?? {})}</p>
+                                <details className="admin-args">
+                                  <summary>everything that is always shown, as recorded</summary>
+                                  <pre className="queue-text">{JSON.stringify(item.always_shown ?? {}, null, 2)}</pre>
+                                </details>
+                              </>
                             ) : (
-                              <Difference item={item} />
+                              <>
+                                <Difference item={item} />
+                                <p className="queue-fact">Shown with it whenever it is shown: {alwaysShown(item.always_shown ?? {})}</p>
+                              </>
                             )}
                             {item.part !== null && (
                               <p className="queue-fact">
                                 {removed.length === 0
                                   ? "The Redactor removed nothing from this part."
                                   : `Removed under the policy: ${removed.map(([c, n]) => `${c} (${n})`).join(", ")}.`}{" "}
-                                {!item.text_withheld && removed.length > 0 && "Each removed passage is struck through above, in front of the mark that will stand in its place; the people it is shown to see only the mark."}
+                                {removed.length > 0 &&
+                                  ((item.removals ?? []).length > 0
+                                    ? "Each removed passage is struck through above, in front of the mark that will stand in its place; the people it is shown to see only the mark."
+                                    : "Each mark above stands where a passage was removed; the people it is shown to see the same marks.")}
                               </p>
                             )}
-                            {!item.text_withheld &&
-                              (item.removals ?? []).map((r, i) => (
+                            {(item.removals ?? [])
+                              .filter((r) => r.redactor_note)
+                              .map((r, i) => (
                                 <p className="queue-fact" key={i}>
                                   The Redactor&rsquo;s note on &ldquo;{r.passage}&rdquo; ({r.category}): {r.redactor_note}
                                 </p>
                               ))}
+                            {item.redactor_least_sure && (item.why_least_sure ?? []).length === 0 && (
+                              <p className="queue-fact">
+                                The Redactor flagged this part as one it was least sure of. Why it did is written at the label the page was
+                                written at, and is shown to people who read that label.
+                              </p>
+                            )}
                             {(item.why_least_sure ?? []).map((why, i) => (
                               <p className="queue-fact" key={i}>
                                 Why the Redactor was least sure: {why}

@@ -272,7 +272,7 @@ export function sourceTextOf(
     ...((pkg.record.said_back ?? []).length > 0
       ? [
           `Contributions made here through this page that the deployment says it received: ${pkg.record.said_back!
-            .map((e) => `${day(e.received_at)}, ${e.read}${e.reassessment ? `, reassessment ${e.reassessment}` : ""}`)
+            .map((e) => `${day(e.received_at)}${e.repeats ? ", the same text as an earlier one" : ""}${e.reassessment ? `, reassessment ${e.reassessment}` : ""}`)
             .join("; ")}.`,
         ]
       : []),

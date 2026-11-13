@@ -7775,6 +7775,13 @@ export const showingPages = pgTable(
     // The parties whose release the verdict takes: every party whose
     // material the version read. Empty means the organization's own.
     restsOn: uuid("rests_on").array().notNull().default([]),
+    // Every source the page and its parts rest on, as worked out when the
+    // page was opened: the sources the parties above were read from, before
+    // any is left out because the destination already reads it. The
+    // Redactor opens these and no others, so that what it can read and what
+    // the gate asks about are one set. Null on a page opened before this
+    // was kept.
+    sourceIds: uuid("source_ids").array(),
     // The Redactor's own words, which stay at the page's label.
     leastSure: jsonb("least_sure"),
     cannotCrossCategory: text("cannot_cross_category"),
@@ -8399,13 +8406,12 @@ export const outwardSettings = pgTable("outward_settings", {
 
 // A contribution made on the public graph through a page this deployment
 // published, as it came in with the mirror. The contribution's own text is
-// in feed_contributions and is read by one run only: the Contribution
-// Reviewer's, at `public`, which writes `summary` here. Work at any other
-// label is given the summary and never the text. `repeats` names an
-// earlier row that says the same thing: a repeat is counted once and opens
-// nothing. The reassessment a contribution opens is at the label the page
-// came from, so what became of it is copied here in fixed words for the
-// package that tells the outside ('not_funded', 'funded', 'made').
+// in feed_contributions, at `public`, and is given as written to the node's
+// Steward at the label the page came from (`delivered_at`). `repeats` names
+// an earlier row on the node with the same text: a repeat is counted once
+// and opens nothing. The reassessment a contribution opens is at the label
+// the page came from, so what became of it is copied here in fixed words
+// for the package that tells the outside ('not_funded', 'funded', 'made').
 export const inboundContributions = pgTable(
   "inbound_contributions",
   {
@@ -8417,15 +8423,11 @@ export const inboundContributions = pgTable(
     contributionType: text("contribution_type").notNull(),
     submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
-    // 'to_read' | 'summarized' | 'repeat' | 'set_aside'.
-    state: text("state").notNull().default("to_read"),
-    summary: text("summary"),
+    // 'received' | 'repeat'.
+    state: text("state").notNull().default("received"),
     repeats: uuid("repeats"),
-    // For 'set_aside': one of a fixed list (inbound-service.ts).
-    setAsideBecause: text("set_aside_because"),
-    readByRun: uuid("read_by_run"),
-    readAt: timestamp("read_at", { withTimezone: true }),
-    actionId: uuid("action_id"),
+    // When it was given to the node's Steward at the page's label.
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     // What became of the reassessment it opened, for the outside.
     reassessment: text("reassessment"),
     reassessmentAt: timestamp("reassessment_at", { withTimezone: true }),
@@ -8434,7 +8436,7 @@ export const inboundContributions = pgTable(
   (table) => [
     uniqueIndex("uq_inbound_contributions_public").on(table.publicContributionId),
     index("idx_inbound_contributions_node").on(table.showingId, table.nodeId),
-    check("ck_inbound_contributions_state", sql`${table.state} IN ('to_read', 'summarized', 'repeat', 'set_aside')`),
+    check("ck_inbound_contributions_state", sql`${table.state} IN ('received', 'repeat')`),
     check(
       "ck_inbound_contributions_reassessment",
       sql`${table.reassessment} IS NULL OR ${table.reassessment} IN ('not_funded', 'funded', 'made')`

@@ -516,7 +516,7 @@ How much can be inspected differs from one publisher to the next: who controls t
 
 Removals and holds are evidence too, and the admin reads them as it reads any omission: what kind of thing is missing, under what policy, by whose decision, and whether a favorable page would have been treated the same. A matching fingerprint shows that the released page is what the Steward wrote, less what was removed and held. It does not show that the logged assessment was the only one made where the publisher controls the machine, and it does not remove the publisher's choice of which nodes to show. The admin says in its reasoning what it took on the record's word.
 
-The public page holds one assessment, of everything public, the published page included. An admitted page is shown beside it in the same form, its marks in place, so that a reader can turn from one to the other. Anyone may challenge it. A challenge reaches the private graph's Steward as a summary written by a Contribution Reviewer working at `public`, and whether it was read and what followed is shown on the public record.
+The public page holds one assessment, of everything public, the published page included. An admitted page is shown beside it in the same form, its marks in place, so that a reader can turn from one to the other. Anyone may challenge it. A challenge the public graph's review admits reaches the private graph's Steward as it was written, and that it was received and what followed are shown on the public record.
 
 ---
 
@@ -579,7 +579,7 @@ the page is held.
 1. get_redaction_policy returns the policy for this boundary with its
    version. Its categories are the only grounds for a removal.
 2. get_page_to_redact returns the page part by part as written, and lists
-   the sources it drew on with their labels. Called with one of those
+   the sources it rests on with their labels. Called with one of those
    sources, it returns that source's stored text, so that you can tell
    what a passage gives away.
 3. For each part, ask what a reader on the other side would learn from it

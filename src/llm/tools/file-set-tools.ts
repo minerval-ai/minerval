@@ -329,8 +329,14 @@ export function fileSetsNote(
         `is stopped, because its output is stored whole in one row: write a large result to a file in the ` +
         `scratch directory and print what matters. A command that uses more than ${fmt(limits.memoryMb)} MB ` +
         `of memory, or leaves more than ${fmt(limits.scratchMb)} MB in the scratch directory, is stopped, ` +
-        `because the sandbox is one machine that every run shares. Each result says how its command ended ` +
-        `and how much of each limit it used. ` +
+        `because the sandbox is one machine that every run shares. ` +
+        (limits.commandsAtOnce !== undefined && limits.queueSeconds !== undefined
+          ? `For the same reason it runs at most ${fmt(limits.commandsAtOnce)} ` +
+            `${limits.commandsAtOnce === 1 ? "command" : "commands"} at once across all runs: a command that ` +
+            `arrives when it is full waits up to ${fmt(limits.queueSeconds)} seconds for a place, and then ` +
+            `fails and says the sandbox was busy. `
+          : "") +
+        `Each result says how its command ended and how much of each limit it used. ` +
         costSentence(hourCostMicroUsd),
       `Every command is stored whole with its output, the hash of that output and the time; you are shown ` +
         `the first part of the output, and ${OPEN_OUTPUT_TOOL_NAME} shows the rest. A command is not yet a ` +

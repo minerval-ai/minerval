@@ -108,7 +108,7 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   take_up_request: "Say on a request's record, under your name, that you are taking it up",
   decline_taken_up_request: "Say on a request's record that you will not do the work you took up",
   ask_mandate_for_assessment: "Ask a mandate you fund to pay for a fresh assessment of a node",
-  fund_outward_work: "Pay for the reading of what the public said about a page, or the redaction of a report",
+  fund_outward_work: "Pay for the redaction of a report that is offered for sending to Minerval's maintainers",
   state_view: "State your view on a node, under your name",
   submit_appeal: "Appeal a decision",
   challenge_prize_claim: "Challenge a prize claim",

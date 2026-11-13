@@ -23,6 +23,7 @@ const sandbox = await vi.hoisted(async () => {
   const started = await startSandbox({
     SANDBOX_COMMAND_SECONDS: "3",
     SANDBOX_OUTPUT_BYTES: "30000",
+    SANDBOX_MAX_COMMANDS: "3",
   });
   process.env.READS = "members";
   process.env.API_KEYS = "file-sets-web-tier-key";
@@ -845,7 +846,9 @@ describe("what a run is told", () => {
         "sandbox. A command that has printed 30,000 bytes is stopped, because its output is stored whole in one " +
         "row: write a large result to a file in the scratch directory and print what matters. A command that " +
         "uses more than 2,048 MB of memory, or leaves more than 1,024 MB in the scratch directory, is stopped, " +
-        "because the sandbox is one machine that every run shares. Each result says how its command ended and " +
+        "because the sandbox is one machine that every run shares. For the same reason it runs at most 3 " +
+        "commands at once across all runs: a command that arrives when it is full waits up to 60 seconds for a " +
+        "place, and then fails and says the sandbox was busy. Each result says how its command ended and " +
         "how much of each limit it used. A command's time in the sandbox is charged to this run's budget at " +
         "$3600.00 an hour, which is $60.00 a minute.\n\n" +
         "Every command is stored whole with its output, the hash of that output and the time; you are shown the " +

@@ -231,18 +231,29 @@ export interface QueueItem {
   removals_by_category?: Record<string, number>;
   redactor_least_sure?: boolean;
   why_least_sure?: string[];
+  /** The part as the Steward wrote it, where the person reads at the label the page was written at. */
   as_written?: string;
+  /** The part as it would be shown if released: after the Redactor's removals, with the marks. */
   as_it_would_be_shown?: string;
-  removals?: Array<{ passage: string; category: string; redactor_note: string }>;
+  /**
+   * The passages removed from the part. With the Redactor's note where the
+   * person reads at the page's label; without it, and only for a part that
+   * rests on the material of outside parties they release for and no one
+   * else's, where they do not.
+   */
+  removals?: Array<{ passage: string; category: string; redactor_note?: string }>;
+  /** What is shown whenever anything of the page is shown. */
   always_shown?: Record<string, unknown>;
-  /** The API's sentence, where the person does not read at the label the page was written at. */
-  text_withheld?: string;
+  /** The node's wording as the page would show it, where the node is at the page's label. */
+  wording_as_it_would_be_shown?: string;
+  /** The API's sentence, where the person does not read at the label the page was written at: what they are and are not shown. */
+  shown_as_released?: string;
 }
 
 export interface ReleaseQueue {
   items: QueueItem[];
   more_waiting: boolean;
-  deciding_without_reading?: string;
+  not_reading_the_label?: string;
   /** The fixed list a hold gives its reason from: each key with the words the other side is told. */
   hold_reasons: Record<string, string>;
   note: string;

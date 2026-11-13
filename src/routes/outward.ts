@@ -163,11 +163,12 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { node_id?: string } }>("/outside/said-back", {
     schema: {
       tags: TAG,
-      summary: "What readers on the public graph said about the pages this deployment published: each contribution received, its summary, and where the reassessment it opened stands",
+      summary: "What readers on the public graph said about the pages this deployment published: each contribution received, as it was written, and where the reassessment it opened stands",
       description:
-        "A contribution made on the public graph through a published page comes in with the mirror. Its own text is read by one run, the " +
-        "Contribution Reviewer's at `public`, and is not served here: this gives that run's summary. The node's Steward at the label the page came " +
-        "from is given the same summary, and a reassessment is opened there that runs when it is paid for.",
+        "A contribution made on the public graph through a published page comes in with the mirror, once the public graph's own review has " +
+        "admitted it. This gives each one as it was made: its text, which was written outside this deployment, its type and date, the addresses " +
+        "it cites and its id on the public graph. The node's Steward at the label the page came from is given the same, and a reassessment is " +
+        "opened there that runs when it is paid for.",
       querystring: { type: "object", properties: { node_id: UUID } },
     },
     preHandler: signedIn,
@@ -441,16 +442,16 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { action_id: string }; Body: { owls: number } }>("/outside/work/:action_id/commission", {
     schema: {
       tags: TAG,
-      summary: "Pay for the reading of what the public said about a published page, or for the redaction of a report offered for sending",
+      summary: "Pay for the redaction of a report offered for sending",
       description:
-        "Each is a run on the ledger that happens when it is paid for. You set its budget in owls and pay it whole; what the run does not spend " +
+        "It is a run on the ledger that happens when it is paid for. You set its budget in owls and pay it whole; what the run does not spend " +
         "comes back. Paying buys the work, not what it finds or removes.",
       params: { type: "object", required: ["action_id"], properties: { action_id: UUID } },
       body: { type: "object", required: ["owls"], properties: { owls: { type: "number", exclusiveMinimum: 0 } } },
     },
     preHandler: [...signedIn, requirePermission("fund")],
     handler: async (request, reply) => {
-      const [action] = await rawQuery<{ id: string; kind: string; status: string }>(`SELECT id, kind, status FROM actions WHERE id = $1 AND kind IN ('inbound_review', 'redact_report')`, [
+      const [action] = await rawQuery<{ id: string; kind: string; status: string }>(`SELECT id, kind, status FROM actions WHERE id = $1 AND kind = 'redact_report'`, [
         request.params.action_id,
       ]);
       if (!action) return reply.code(404).send({ error: "No such work is open at a label you read.", code: "NOT_FOUND" });
@@ -465,7 +466,7 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
       if (!result.ok) return reply.code(result.code === "INSUFFICIENT_OWLS" ? 402 : 400).send({ error: result.message, code: result.code });
       return reply.send({
         status: result.status,
-        work: action.kind === "inbound_review" ? "the reading of what the public said" : "the redaction of the report",
+        work: "the redaction of the report",
         ...(result.status === "already_commissioned" ? { note: "This work is already paid for; nothing was charged." } : {}),
       });
     },

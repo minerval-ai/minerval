@@ -44,6 +44,13 @@ export interface SandboxLimits {
   outputBytes: number;
   memoryMb: number;
   scratchMb: number;
+  /**
+   * How many commands the sandbox runs at once, across all runs, and how
+   * long one waits for a place before it fails as busy. Absent where the
+   * service does not report them.
+   */
+  commandsAtOnce?: number;
+  queueSeconds?: number;
 }
 
 export interface SandboxHealth {
@@ -169,7 +176,14 @@ interface RawHealth {
   tools?: string[];
   landlock_abi?: number;
   paths?: { store?: string; directory_root?: string | null };
-  limits?: { command_seconds?: number; output_bytes?: number; memory_mb?: number; scratch_mb?: number };
+  limits?: {
+    command_seconds?: number;
+    output_bytes?: number;
+    memory_mb?: number;
+    scratch_mb?: number;
+    commands_at_once?: number;
+    queue_seconds?: number;
+  };
 }
 
 /** How long a run waits to learn whether the sandbox is there, when its toolset is being put together. */
@@ -217,6 +231,9 @@ export async function sandboxHealth(config: SandboxConfig = loadConfig()): Promi
         outputBytes: limits.output_bytes!,
         memoryMb: limits.memory_mb!,
         scratchMb: limits.scratch_mb!,
+        ...(Number.isFinite(limits.commands_at_once) && Number.isFinite(limits.queue_seconds)
+          ? { commandsAtOnce: limits.commands_at_once!, queueSeconds: limits.queue_seconds! }
+          : {}),
       },
     },
   };

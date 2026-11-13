@@ -32,7 +32,6 @@ export type AnswerState =
   | "not_acknowledged"
   | "received"
   | "repeat"
-  | "set_aside"
   | "unanswered"
   | "paid_for"
   | "made"
@@ -66,10 +65,9 @@ export function answerOf(input: {
     };
   }
   const received = `Received by ${publisher}'s graph on ${day(entry.received_at)}.`;
-  if (entry.read === "not yet read") return { state: "received", in_words: `${received} It has not been read there yet.` };
-  if (entry.repeats) return { state: "repeat", in_words: `${received} It was read there and found to repeat an earlier contribution, so it is counted with that one.` };
-  if (entry.set_aside_because) return { state: "set_aside", in_words: `${received} It was read there and set aside: ${entry.set_aside_because}.` };
-  if (!entry.reassessment || entry.reassessment === "not paid for") {
+  if (entry.repeats) return { state: "repeat", in_words: `${received} Its text is the same as an earlier contribution's, so it is counted with that one.` };
+  if (!entry.reassessment) return { state: "received", in_words: `${received} It has not yet been given to the node's Steward there.` };
+  if (entry.reassessment === "not paid for") {
     return { state: "unanswered", in_words: `${received} The reassessment it opened there has not been paid for, so it stands unanswered.` };
   }
   if (entry.reassessment === "paid for, and not yet made") {

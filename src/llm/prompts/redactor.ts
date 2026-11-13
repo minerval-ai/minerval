@@ -47,7 +47,7 @@ the page is held.
 1. get_redaction_policy returns the policy for this boundary with its
    version. Its categories are the only grounds for a removal.
 2. get_page_to_redact returns the page part by part as written, and lists
-   the sources it drew on with their labels. Called with one of those
+   the sources it rests on with their labels. Called with one of those
    sources, it returns that source's stored text, so that you can tell
    what a passage gives away.
 3. For each part, ask what a reader on the other side would learn from it

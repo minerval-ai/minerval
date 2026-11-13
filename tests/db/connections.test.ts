@@ -730,6 +730,44 @@ describe("what a run is told", () => {
     expect(bundle.note).not.toContain(INTERNAL);
     expect(bundle.note).not.toMatch(/—/);
   });
+
+  it("offers a lookout the same tools under the same limits in the same words, to look and not to keep", async () => {
+    // The two connections of the test above stand.
+    const steward = await bundleAt(INTERNAL);
+    const asLookout = { runId: randomUUID(), agent: "lookout" };
+    const lookout = await runAtLabel(INTERNAL, "the connections test", () =>
+      runWithUsageContext(asLookout, () => createConnectionTools({ keeps: false }))
+    );
+    // The administrator's picks, with the system's own descriptions, and open_reading. Not keep_reading.
+    expect(lookout.definitions).toEqual(steward.definitions.filter((d) => d.name !== "keep_reading"));
+    expect(lookout.definitions.map((d) => d.name)).toEqual(["ledger__read_rows", "ledger__search_notes", "orrin__read_rows", "open_reading"]);
+    // The passage is the Steward's, limits and reasons included, but for what a reading becomes.
+    expect(lookout.note).toBe(
+      steward.note.replace(
+        "A call is not yet a source: when a judgment rests on a reading, keep_reading makes it one and returns the address to cite it by.",
+        "You record nothing on the graph and keep no reading as a source. When what you read warrants work, raise it as you raise anything else, " +
+          "and say which tool you called and with what arguments, so that the Steward who takes it up can make the call itself and keep what its judgment rests on."
+      )
+    );
+    expect(lookout.note).not.toBe(steward.note);
+    expect(lookout.note).not.toContain("keep_reading");
+
+    const out = await run(INTERNAL, lookout, "ledger__read_rows", { table: "refunds" }, asLookout);
+    expect(out).toMatchObject({
+      success: true,
+      note: "This is the whole result. If you raise what this shows, say the tool and the arguments you called it with.",
+    });
+    // keep_reading is not this bundle's tool, so nothing it read becomes a source.
+    expect(await runAtLabel(INTERNAL, "the connections test", () => lookout.execute("keep_reading", { reading: out.reading }))).toBeNull();
+    const [call] = await rawQuery<{ agent: string | null; tool: string; source_id: string | null; label: string }>(
+      `SELECT agent, tool, source_id, sensitivity_label AS label FROM connection_calls WHERE id = $1`,
+      [out.reading]
+    );
+    expect(call).toEqual({ agent: "lookout", tool: "read_rows", source_id: null, label: INTERNAL });
+    // It can read on in what it called, like any run.
+    const more = await run(INTERNAL, lookout, "open_reading", { reading: out.reading }, asLookout);
+    expect(more.success).toBe(true);
+  });
 });
 
 describe("a reading", () => {

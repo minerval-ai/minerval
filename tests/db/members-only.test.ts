@@ -823,11 +823,19 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(JSON.parse(await at("redactor", () => executeRedactorTool("finish_redaction", { least_sure: [] }, { pageId }))).success).toBe(true);
       expect(JSON.parse(await at("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: pageId, outcome: "pass", answer: "supports", reasons: "One code removed." }, {}))).success).toBe(true);
 
-      // The gate: a person who directs does not release, and a holder of release who does not read the label decides without the text.
+      // The gate: a person who directs does not release. A holder of release for the organization who does not read the
+      // label is shown each part as it would be shown if released, and not what the Redactor removed: a part that rests
+      // on no outside party's material is the organization's by default, and what was removed from it stays at its label.
       expect((await as(director, { url: "/release/queue" })).statusCode).toBe(403);
       const queue = (await as(releaser, { url: "/release/queue" })).json();
       expect(queue.items.map((i: { part: number | null }) => i.part)).toEqual([null, 1, 2, 3, 4]);
-      expect(JSON.stringify(queue)).not.toContain("vault");
+      expect(queue.items[4].as_it_would_be_shown).toBe("The log also gives [redacted: security detail].");
+      expect(queue.items[1].as_it_would_be_shown).toMatch(/^The vault was resealed/);
+      expect(queue.items[4].wording_as_it_would_be_shown).toBe(queue.items[1].as_it_would_be_shown);
+      expect(JSON.stringify(queue)).not.toContain(SECRET);
+      expect(JSON.stringify(queue)).not.toContain("9931");
+      expect(JSON.stringify(queue)).not.toContain("A code.");
+      expect(queue.items.every((i: Record<string, unknown>) => i.removals === undefined && i.as_written === undefined && typeof i.shown_as_released === "string")).toBe(true);
       expect(queue.items[4].removals_by_category).toEqual({ "security detail": 1 });
       const refusedForDirector = await as(director, { method: "POST", url: "/release/decisions", payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }] } });
       expect(refusedForDirector.statusCode).toBe(403);

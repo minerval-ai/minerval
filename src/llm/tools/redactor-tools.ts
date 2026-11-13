@@ -39,7 +39,7 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
     {
       name: "get_page_to_redact",
       description:
-        "The page as written: what is always shown with it (always_shown), each part with its number, its kind and its text, the removals made so far, and the sources the page drew on with their labels. With source_id, returns that source's stored text instead, 20,000 characters at a time from offset, so that you can tell what a passage gives away.",
+        "The page as written: what is always shown with it (always_shown), each part with its number, its kind and its text, the removals made so far, and the sources the page rests on with their labels. These are the sources the release gate counts for the page, so a reading or an analysis a judgment rests on, and a source cited through an argument or a subclaim, are among them. With source_id, returns that source's stored text instead, 20,000 characters at a time from offset, so that you can tell what a passage gives away.",
       input_schema: {
         type: "object",
         properties: {

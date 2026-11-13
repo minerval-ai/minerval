@@ -391,9 +391,13 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
       tags: ["showings"],
       summary: "What waits on you at the release gate: the parts of redacted pages that rest on a party whose material you release",
       description:
-        "Each item is one part of a page, or the page itself with its verdict, with the Redactor's removals as " +
-        "differences with their categories, the parts it was least sure of first, and Audit's answer. An item is " +
-        "released or held whole. Nothing is released by time passing.",
+        "Each item is one part of a page, or the page itself with its verdict, as it would be shown if released: " +
+        "after the Redactor's removals, with the marks, and with what is always shown of the page and the node's " +
+        "wording as they would be shown. The parts the Redactor was least sure of come first, and each item has " +
+        "its removals by category and Audit's answer. A person who also reads at the label the page was written " +
+        "at is given the part as written, each removed passage with the Redactor's note, and why a part was " +
+        "flagged; a person who does not is given a removed passage only from a part that rests on the material " +
+        "of an outside party they release for and on no one else's. An item is released or held whole. Nothing is released by time passing.",
       querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 200 } } },
     },
     preHandler: [...signedIn, requirePermission("release")],

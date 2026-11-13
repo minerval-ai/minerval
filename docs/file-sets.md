@@ -283,8 +283,11 @@ task message, for example:
 > row: write a large result to a file in the scratch directory and print
 > what matters. A command that uses more than 2,048 MB of memory, or leaves
 > more than 1,024 MB in the scratch directory, is stopped, because the
-> sandbox is one machine that every run shares. Each result says how its
-> command ended and how much of each limit it used. A command's time in the
+> sandbox is one machine that every run shares. For the same reason it
+> runs at most 2 commands at once across all runs: a command that arrives
+> when it is full waits up to 60 seconds for a place, and then fails and
+> says the sandbox was busy. Each result says how its command ended and how
+> much of each limit it used. A command's time in the
 > sandbox is charged to this run's budget at $0.05 an hour, so a few
 > minutes of computation costs well under a cent.
 >
@@ -298,7 +301,7 @@ task message, for example:
 > commands it ran before are still stored and can be opened and kept.
 
 The Python version, the libraries and the tools are what the running
-service reports of itself, and the four limits are the ones it will
+service reports of itself, and the limits are the ones it will
 enforce, so the brief cannot drift from the sandbox. The label is not named
 to the agent. A Steward whose session resumes is told again.
 
@@ -308,8 +311,11 @@ tools carry: *A result may carry personal detail about staff or customers:
 the constitution's rule on private persons (§2) applies to anything you
 record from it.* No role prompt gains a rule.
 
-A run that calls any of the four has a private transcript
-(`src/llm/run-visibility.ts`).
+A run that calls any of the four is not public
+(`src/llm/run-visibility.ts`). Its log is read by members who read the
+run's label, with what a command printed held to the permission to open
+raw sources ("Who may open what was read", below; [run-log.md](run-log.md),
+"Who reads a log").
 
 ## A command, and the source it becomes
 
@@ -439,6 +445,12 @@ scratch directory*):
   (`SANDBOX_SCRATCH_MB`, 1,024): the sandbox is one machine that every run
   shares, and nothing prices a command that takes all of it.
 
+A fifth is on the sandbox and not on any one command, and is stated to the
+agent with the others: it runs at most `SANDBOX_MAX_COMMANDS` commands at
+once across all runs (the number of processors unless set; 2 in the
+packaged deployment), and a command that arrives when it is full waits up
+to `SANDBOX_QUEUE_SECONDS` (60) for a place and then fails as busy.
+
 ## When something fails
 
 - **No sandbox configured, or it does not answer when a run starts.** The
@@ -488,8 +500,8 @@ permission.
 
 When a node's page is shown to readers who do not read its label
 ([showing-a-page.md](showing-a-page.md), "The gate"), an analysis kept in
-work on the node is a source the page drew on, whether or not an instance
-was recorded from it: the call's row says which node its run was working
+work on the node is a source the page rests on, and one its Redactor may
+open, whether or not an instance was recorded from it: the call's row says which node its run was working
 on. It rests on the party of every set its command had mounted, so an
 analysis over two parties' sets takes both parties' release. A kept file
 counts where an instance or the judgment's own record ties it to the node,

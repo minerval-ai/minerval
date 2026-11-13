@@ -480,6 +480,8 @@ interface RecordedPage {
   parts: RecordedPart[];
   /** The sources the whole version rests on. */
   sources: string[];
+  /** Every source the page rests on: the version's and each part's (sourcesOfPage). */
+  restsOn: string[];
 }
 
 const RATINGS: Record<string, string> = {
@@ -790,7 +792,18 @@ async function readPage(
       paid_for: await paidForFacts((version.funded_by_job_id as string | null) ?? null),
     },
   };
-  return { header, parts, sources: versionSources };
+  return { header, parts, sources: versionSources, restsOn: sourcesOfPage(versionSources, parts) };
+}
+
+/**
+ * Every source a page rests on: what its version rests on, and what each
+ * of its parts rests on (an argument's passages and premises and a
+ * subclaim's node reach sources the version's own record may not). It is
+ * the set the gate works out whose release is needed from, the set the
+ * header's source facts are drawn from, and the set the Redactor may open.
+ */
+function sourcesOfPage(versionSources: readonly string[], parts: readonly { sources: readonly string[] }[]): string[] {
+  return [...new Set([...versionSources, ...parts.flatMap((p) => p.sources)])].sort();
 }
 
 /**
@@ -924,9 +937,9 @@ async function openPage(
   const pageId = await withTransaction(async (tx) => {
     const [row] = await tx.query<{ id: string; opened_at: Date }>(
       `INSERT INTO showing_pages
-         (showing_id, node_id, judgment_kind, judgment_id, judged_at, policy_id, header, header_salt, rests_on, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid[], $10) RETURNING id, opened_at`,
-      [showing.id, node.id, judgmentKind, version.id, version.assessed_at, policy.id, JSON.stringify(page.recorded.header), newSalt(), page.needs, showing.page_label]
+         (showing_id, node_id, judgment_kind, judgment_id, judged_at, policy_id, header, header_salt, rests_on, source_ids, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid[], $11::uuid[], $10) RETURNING id, opened_at`,
+      [showing.id, node.id, judgmentKind, version.id, version.assessed_at, policy.id, JSON.stringify(page.recorded.header), newSalt(), page.needs, showing.page_label, page.recorded.restsOn]
     );
     let position = 1;
     for (const [i, part] of page.recorded.parts.entries()) {
@@ -984,6 +997,7 @@ interface PageRow {
   header_salt: string;
   root: string | null;
   rests_on: string[];
+  source_ids: string[] | null;
   least_sure: unknown;
   cannot_cross_category: string | null;
   cannot_cross_note: string | null;
@@ -995,7 +1009,7 @@ interface PageRow {
 }
 
 const PAGE_COLUMNS = `id, showing_id, node_id, judgment_kind, judgment_id, judged_at, stage, round, policy_id, header, header_salt, root,
-  rests_on, least_sure, cannot_cross_category, cannot_cross_note, audit_answer, audit_reasons, redact_action_id, checked_at,
+  rests_on, source_ids, least_sure, cannot_cross_category, cannot_cross_note, audit_answer, audit_reasons, redact_action_id, checked_at,
   sensitivity_label AS page_label`;
 
 interface PartRow {
@@ -1048,19 +1062,34 @@ const removalsOf = (pageId: string) =>
 export const SOURCE_SLICE_CHARS = 20_000;
 
 /**
+ * Which sources a Redactor may open for a page: the ones the page rests on,
+ * as recorded when it was opened (showing_pages.source_ids). That is the set
+ * the gate asked about, so a kept reading or analysis a judgment rests on,
+ * and a source cited through an argument or a subclaim, are in it whether
+ * or not an instance on the node was recorded from them. A page opened
+ * before the set was kept falls back to the sources with an instance on its
+ * node. Read at the page's label, so a source that label does not read is
+ * not found.
+ */
+const SOURCES_BEHIND_PAGE_SQL = `(
+  CASE WHEN $2::uuid[] IS NOT NULL THEN s.id = ANY($2::uuid[])
+       ELSE EXISTS (SELECT 1 FROM claim_instances i WHERE i.source_id = s.id AND i.claim_id = $1 AND i.detached_at IS NULL) END)`;
+
+/**
  * The page a Redactor works on, as recorded: what is always shown, each
- * part as written with the removals made so far, the sources the page drew
- * on, and what Audit said if it returned the work. Read at the page's label.
+ * part as written with the removals made so far, the sources the page
+ * rests on, and what Audit said if it returned the work. Read at the page's
+ * label.
  */
 export async function pageToRedact(pageId: string): Promise<Record<string, unknown>> {
   const page = await pageAtOwnLabel(pageId);
   const parts = await partsOf(pageId);
   const removals = await removalsOf(pageId);
   const sources = await rawQuery<{ id: string; title: string; source_type: string; label: string; party: string | null; chars: number | null }>(
-    `SELECT DISTINCT s.id, s.title, s.source_type, s.sensitivity_label AS label, p.name AS party, length(s.raw_content) AS chars
-       FROM claim_instances i JOIN sources s ON s.id = i.source_id LEFT JOIN parties p ON p.id = s.party_id
-      WHERE i.claim_id = $1 AND i.detached_at IS NULL ORDER BY s.title, s.id`,
-    [page.node_id]
+    `SELECT s.id, s.title, s.source_type, s.sensitivity_label AS label, p.name AS party, length(s.raw_content) AS chars
+       FROM sources s LEFT JOIN parties p ON p.id = s.party_id
+      WHERE ${SOURCES_BEHIND_PAGE_SQL} ORDER BY s.title, s.id`,
+    [page.node_id, page.source_ids]
   );
   return {
     page_id: page.id,
@@ -1087,16 +1116,16 @@ export async function pageToRedact(pageId: string): Promise<Record<string, unkno
   };
 }
 
-/** One slice of a source the page drew on, for judging what a passage gives away. */
+/** One slice of a source the page rests on, for judging what a passage gives away. */
 export async function sourceBehindPage(pageId: string, sourceId: string, offset = 0): Promise<Record<string, unknown>> {
   const page = await pageAtOwnLabel(pageId);
   const [source] = await rawQuery<{ id: string; title: string; text: string | null; chars: number | null }>(
-    `SELECT s.id, s.title, substr(s.raw_content, $3::int + 1, $4::int) AS text, length(s.raw_content) AS chars
+    `SELECT s.id, s.title, substr(s.raw_content, $4::int + 1, $5::int) AS text, length(s.raw_content) AS chars
        FROM sources s
-      WHERE s.id = $2 AND EXISTS (SELECT 1 FROM claim_instances i WHERE i.source_id = s.id AND i.claim_id = $1)`,
-    [page.node_id, sourceId, Math.max(0, Math.floor(offset)), SOURCE_SLICE_CHARS]
+      WHERE s.id = $3 AND ${SOURCES_BEHIND_PAGE_SQL}`,
+    [page.node_id, page.source_ids, sourceId, Math.max(0, Math.floor(offset)), SOURCE_SLICE_CHARS]
   );
-  if (!source) throw new ShowingError("SOURCE_NOT_FOUND", "That is not one of the sources this page drew on.");
+  if (!source) throw new ShowingError("SOURCE_NOT_FOUND", "That is not one of the sources this page rests on.");
   return {
     source_id: source.id,
     title: source.title,

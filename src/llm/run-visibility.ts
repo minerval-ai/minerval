@@ -28,6 +28,19 @@
  *
  * tests/unit/llm/run-visibility.test.ts fails when a tool defined in the code
  * is missing here, so every new tool gets a decision.
+ *
+ * Inside a members-only deployment some of these reasons are what a label
+ * already holds. A run that read an organization's data through a
+ * connection, ran a command over its files, or redacted a page written at a
+ * label, is private here because that material is not the public's. It is
+ * at the run's label, and a member who reads that label reads what the
+ * agents wrote there, their runs included (constitution §26, §11).
+ * REASONS_A_LABEL_COVERS lists those reasons; a run all of whose reasons
+ * are on it is served to members who read its label
+ * (services/run-view-service.ts), with source text held to `read_sources`
+ * as in any log. Every other reason keeps a run withheld from members too:
+ * a person's own conversation, a funder's words, account and payee detail,
+ * operator data, reports.
  */
 
 import { isConnectionToolName } from "../connections.js";
@@ -104,9 +117,7 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
 /** Every tool an agent can call, by what its output can carry. */
 export const TOOL_READS: Readonly<Record<string, Classification>> = {
   finish_report_redaction: { reads: "private", why: "confirms the redaction of a report written at a label only some readers read" },
-  get_public_contributions: { reads: "public", why: "contributions on the public graph's own record, and summaries kept at `public`" },
   get_report_to_redact: { reads: "private", why: "an agent's report as written at a label only some readers read" },
-  record_public_contribution: { reads: "public", why: "an acknowledgement and a count of what is waiting" },
   redact_report: { reads: "private", why: "the report's text as it reads after a removal" },
   restore_report: { reads: "private", why: "the report's text as it reads after a removal is taken back" },
   cannot_cross: { reads: "private", why: "confirms a finding about a page held at a label only some readers read" },
@@ -377,4 +388,55 @@ export function toolPrivateReason(tool: string): string | null {
   const c = TOOL_READS[tool];
   if (!c) return `tool:${tool}:unclassified`;
   return c.reads === "private" ? `tool:${tool}` : null;
+}
+
+/** The reason an Audit run carries when what it was handed is a page whose redaction it checks, and nothing else. */
+export const REDACTION_CHECK_REASON = "input:redaction-check";
+
+/**
+ * The private reasons that a label covers in a members-only deployment:
+ * what each protects is material at the run's own label, written or read
+ * there by an agent, which a member who reads that label reads. Each with
+ * why. Text a tool returned from a source is still withheld from a reader
+ * without `read_sources` (TOOLS_RETURNING_SOURCE_TEXT, returnsSourceText).
+ *
+ * A reason not listed keeps its run withheld from everyone but a direct
+ * service caller, in every deployment. tests/unit/llm/run-visibility.test.ts
+ * holds this list to private reasons that exist.
+ */
+export const REASONS_A_LABEL_COVERS: Readonly<Record<string, string>> = {
+  "agent:redactor": "the page it is handed is the page at the run's label, which readers of that label read",
+  [REDACTION_CHECK_REASON]: "the page whose redaction Audit checks is the page at the run's label",
+  "input:research-report": "a report by research this run commissioned, written at the run's label",
+  "tool:get_page_to_redact": "the page at the run's label; its sources' text is held to read_sources",
+  "tool:redact": "a part of the page at the run's label",
+  "tool:restore": "a part of the page at the run's label",
+  "tool:cannot_cross": "a finding about the page at the run's label",
+  "tool:finish_redaction": "the fingerprint and removal counts of the page at the run's label",
+  "tool:get_redaction_policy": "the policy as the run's label reads it",
+  "tool:get_redaction_policies": "the policies as the run's label reads them",
+  "tool:get_redaction_to_check": "the page at the run's label, as written and as redacted, with the Redactor's notes",
+  "tool:record_fidelity_outcome": "an outcome on the page at the run's label",
+  "tool:open_reading": "an organization's data read at the run's label; held to read_sources",
+  "tool:keep_reading": "a source kept at the run's label",
+  "tool:run_command": "a command over an organization's files at the run's label; its output is held to read_sources",
+  "tool:open_output": "the output of such a command; held to read_sources",
+  "tool:keep_analysis": "a source kept at the run's label",
+  "tool:keep_file": "a source kept at the run's label",
+  "tool:notebook_read": "the run's own working notes, written at its label",
+  "tool:notebook_write": "the run's own working notes, written at its label",
+};
+
+/**
+ * Whether a label covers this private reason, among all of a run's
+ * reasons. A connection's tools are known by the shape of the name, as in
+ * toolPrivateReason, and what they return is held to read_sources. An Audit
+ * run starts private because an audit's context can carry operator data;
+ * the label covers that only where the run says its context was a page to
+ * check (REDACTION_CHECK_REASON).
+ */
+export function labelCoversReason(reason: string, all: readonly string[]): boolean {
+  if (reason === "agent:audit") return all.includes(REDACTION_CHECK_REASON);
+  if (reason in REASONS_A_LABEL_COVERS) return true;
+  return reason.startsWith("tool:") && isConnectionToolName(reason.slice("tool:".length));
 }
