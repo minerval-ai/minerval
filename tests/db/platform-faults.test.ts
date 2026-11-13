@@ -226,6 +226,11 @@ describe("a ledger row whose run a provider refuses for credits", () => {
     const otherTier = await fundedRow({ variant: tier(), status: "open" });
     // Not funded: it waits on money, as it did before, not on the fault.
     const unfunded = await seedAction({ group: `faulttest:${randomUUID()}`, kind: "lookout_run", variant, costMicroUsd: 10_000 });
+    // Money on it and no commission: no executor picks it, so it waits on a
+    // payer, not on the fault, and nothing would ever try it and clear a mark.
+    const looseGroup = `faulttest:${randomUUID()}`;
+    const loose = await seedAction({ group: looseGroup, kind: "lookout_run", variant, costMicroUsd: 10_000 });
+    await seedAllocation({ group: looseGroup, actionId: loose, userId: (payer ??= await seedUser("fault-payer")), amountMicroUsd: 50_000, commissionedBy: null });
 
     await releaseAction(a.id, refused());
     const first = await row(a.id);
@@ -234,6 +239,7 @@ describe("a ledger row whose run a provider refuses for credits", () => {
     expect(held.retry_after?.getTime()).toBe(first.retry_after?.getTime());
     expect((await row(otherTier.id)).fault_reason).toBeNull();
     expect((await row(unfunded)).fault_reason).toBeNull();
+    expect((await row(loose)).fault_reason).toBeNull();
 
     // The sibling is tried when the wait ends and is refused too: the count
     // is the kind's, so the wait doubles whichever row was tried.
@@ -286,6 +292,72 @@ describe("a ledger row whose run a provider refuses for credits", () => {
     const other = await row(elsewhere.id);
     expect(other.fault_reason).toBe("credits_fault");
     expect(other.wait_seconds).toBeLessThanOrEqual(0);
+  });
+
+  it("stops waiting when any row of its kind and tier runs, not only one that had waited", async () => {
+    // 2026-11-13: the row picked when a wait ended was one commissioned after
+    // the fault, never marked; nine such sweeps finished and thirteen rows
+    // went on reading as waiting.
+    const variant = tier();
+    const a = await fundedRow({ variant });
+    const sibling = await fundedRow({ variant, status: "open" });
+    const elsewhere = await fundedRow({ kind: "consistency_sweep", variant: tier() });
+    const otherClass = await fundedRow({ kind: "correspondent_run", variant: tier() });
+    await releaseAction(a.id, refused());
+    await releaseAction(elsewhere.id, refused());
+    await releaseAction(otherClass.id, Object.assign(new Error("503"), { status: 503 }));
+    // Placed after the fault, and not marked.
+    const fresh = await fundedRow({ variant });
+    expect((await row(fresh.id)).fault_reason).toBeNull();
+
+    // A row that closes having spent nothing says nothing about the provider.
+    const idle = await fundedRow({ variant });
+    await completeAction(idle.id, 0);
+    expect((await row(a.id)).fault_reason).toBe("credits_fault");
+    expect((await row(sibling.id)).fault_reason).toBe("credits_fault");
+
+    await completeAction(fresh.id, 12_000);
+    expect(await row(a.id)).toMatchObject({ status: "open", fault_reason: null, fault_since: null, fault_attempts: 0, retry_after: null });
+    expect(await row(sibling.id)).toMatchObject({ status: "open", fault_reason: null, retry_after: null });
+    // Another kind on the same class is tried now; one on another class waits on.
+    const other = await row(elsewhere.id);
+    expect(other.fault_reason).toBe("credits_fault");
+    expect(other.wait_seconds).toBeLessThanOrEqual(0);
+    expect((await row(otherClass.id)).wait_seconds).toBeGreaterThan(0);
+  });
+
+  it("reads as due, not waiting, once its next attempt has come", async () => {
+    const variant = tier();
+    const a = await fundedRow({ variant });
+    await releaseAction(a.id, refused());
+    const read = async () => {
+      const [pub] = await rawQuery<{ waiting_on: string | null; waiting_since: Date | null; next_attempt_at: Date | null }>(
+        `SELECT waiting_on, waiting_since, next_attempt_at FROM public_read.ledger WHERE action_id = $1`,
+        [a.id]
+      );
+      const mine = (await queueHealth()).waitingOnFault.filter((w) => w.kind === "lookout_run" && w.reason === "credits_fault");
+      return { pub: pub!, rows: mine.reduce((n, w) => n + w.rows, 0), due: mine.reduce((n, w) => n + w.due, 0) };
+    };
+    const waiting = await read();
+    expect(waiting.pub.waiting_on).toBe("credits_fault");
+    expect(waiting.rows).toBeGreaterThanOrEqual(1);
+
+    // The wait ends and nothing has picked the row yet. The fault stays on
+    // it (a second refusal continues the doubling), and no surface says it
+    // is waiting on one.
+    await rawQuery(`UPDATE actions SET retry_after = now() - interval '1 second' WHERE id = $1`, [a.id]);
+    const due = await read();
+    expect((await row(a.id)).fault_reason).toBe("credits_fault");
+    expect(due.pub).toMatchObject({ waiting_on: null, waiting_since: null, next_attempt_at: null });
+    expect(due.rows).toBe(waiting.rows - 1);
+    expect(due.due).toBe(waiting.due + 1);
+    expect(await actionWaitingOn(a.id)).toBeNull();
+
+    // Refused again: waiting again, the count carried on.
+    await rawQuery(`UPDATE actions SET status = 'running' WHERE id = $1`, [a.id]);
+    await releaseAction(a.id, refused());
+    expect((await row(a.id)).fault_attempts).toBe(2);
+    expect((await read()).pub.waiting_on).toBe("credits_fault");
   });
 
   it("never reads as waiting once it is closed, whichever statement closed it", async () => {

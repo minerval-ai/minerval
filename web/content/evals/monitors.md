@@ -416,9 +416,16 @@ out of credits (`credits_fault`) or its key is rejected
 (`credentials_fault`), with the provider, since when, how many calls it has
 failed, and how many ledger rows wait on that class. An empty list is the
 healthy reading; anything in it is the operator's to fix, and paid work is
-waiting until they do. `waitingOnFault` counts the open ledger rows waiting
-on a platform fault of any class, by class and kind (`provider_unavailable`
-usually clears on its own). A fault is filed on the agents' channel once,
+waiting until they do. `waitingOnFault` counts the open ledger rows a
+platform fault of any class last stopped, by class and kind
+(`provider_unavailable` usually clears on its own): `rows` are waiting,
+their next attempt still ahead, and `due` are those whose next attempt has
+come. A due row still carries the fault, so that a second refusal continues
+the same doubling, but it is not waiting on it: the executors may pick it,
+and a `due` count that stays is rows waiting on something else. Counting
+both as waiting showed thirteen rows held by a fault that had ended hours
+before (2026-11-13). The rows a deployment fault lists as waiting, the
+public ledger view and a mandate's briefing use the same test. A fault is filed on the agents' channel once,
 at severity blocking, when it opens (`noteDeploymentFault`), and closes
 here when the provider has served a call and refused none for ten minutes.
 The provider's own text is in the log line and the service-scoped report

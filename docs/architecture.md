@@ -1990,9 +1990,15 @@ faults, the operator's to fix. A row whose run a platform fault stops goes
 back to open, uncounted and still funded, with the class, since when, and
 when it is tried next (`actions.fault_reason`, `fault_since`, `retry_after`;
 `waiting_on`, `waiting_since` and `next_attempt_at` in the public ledger
-view), and the funded rows of the same kind and tier wait with it, since the
-same model serves them. The wait is 30 seconds, doubling to 10 minutes; it
-ends when one of the rows runs. It is a wait and not a limit: the row is
+view), and the rows of the same kind and tier that an executor would pick
+(funded, with a live commission) wait with it, since the same model serves
+them. The wait is 30 seconds, doubling to 10 minutes; it ends when a row of
+that kind and tier runs and meters spend, whether or not that row had been
+waiting. A row whose next attempt has come is due, not waiting: it keeps the
+fault on it until then, so a second refusal continues the doubling, and
+every surface (the ledger view, `/monitors`, a plan item's reason, the
+briefing) says waiting only while the next attempt is ahead
+(`waitingOnFaultSql`). It is a wait and not a limit: the row is
 retried for as long as the fault lasts, and money cannot pace it, because a
 call refused for credits or credentials is answered before anything is
 billed. A deployment fault does not stop the drain or slow the runner: the
