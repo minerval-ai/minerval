@@ -169,8 +169,7 @@ async function mirrorBrief(): Promise<MirrorBrief | null> {
 async function withMirrorAlone(messages: MessageParam[]): Promise<MessageParam[]> {
   const mirror = await mirrorBrief();
   if (!mirror) return messages;
-  const writesJudgments = ROLES_THAT_WRITE_JUDGMENTS.has(getUsageContext().agent ?? "");
-  return withLabelNote(messages, mirrorNote(mirror, { writesJudgments }), MIRROR_NOTE_HEADING);
+  return withLabelNote(messages, mirrorNote(mirror), MIRROR_NOTE_HEADING);
 }
 
 /**
