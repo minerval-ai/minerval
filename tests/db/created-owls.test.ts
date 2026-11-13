@@ -620,11 +620,13 @@ describe("the standing mandates", () => {
     const res = await as(admin, { method: "POST", url: "/standing-mandates/general", payload: { budget_owls: 40, label: "internal" } });
     expect(res.statusCode, res.body).toBe(201);
     const general = res.json().standing_mandate as { by_label: Array<{ label: string; mandate: { id: string; budget_owls: number } | null }> };
-    expect(general.by_label.map((l) => [l.label, l.mandate?.budget_owls ?? null])).toEqual([
+    // One entry for each label the administrator reads (a shared scratch database may hold other files' labels too).
+    const here = general.by_label.filter((l) => l.label === "internal" || l.label === "public");
+    expect(here.map((l) => [l.label, l.mandate?.budget_owls ?? null])).toEqual([
       ["internal", 40],
       ["public", expect.any(Number)],
     ]);
-    const internalId = general.by_label[0]!.mandate!.id;
+    const internalId = here[0]!.mandate!.id;
     const [stamped] = await rawQuery<{ grant_label: string; job_label: string }>(
       `SELECT g.sensitivity_label AS grant_label, j.sensitivity_label AS job_label
          FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,

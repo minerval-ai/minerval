@@ -1323,6 +1323,13 @@ describe("every route that writes, driven against a private target", () => {
    * the route needs first (not counted) and returns the request to count.
    */
   const FROM_A_ROW: Record<string, () => Promise<Drive>> = {
+    // Mounted only where the deployment creates its own owls (OWLS=created), which this one does not, so the
+    // request is answered as not found here. tests/db/created-owls.test.ts creates owls into a mandate at a
+    // private label and reads who is shown what of it.
+    "POST /owls/created": async () => {
+      const mandate = await mandateAt(A, both);
+      return () => post(admin, "/owls/created", { amount_owls: 1, mandate_id: mandate.grantId });
+    },
     // Sets of files: a director's upload, and an administrator's walk of a registered directory.
     "PUT /file-sets/:file_set_id/files/*": async () => {
       const id = await fileSetAt(A, "open");
@@ -1571,6 +1578,8 @@ describe("every route that writes, driven against a private target", () => {
 
   /** One request for each route that starts something new, with rl-a named. */
   const NEW_AT_A: Record<string, () => Promise<Drive>> = {
+    // A standing mandate at rl-a: its grant, its budget job and its lookouts are rows at rl-a.
+    "POST /standing-mandates/:name": async () => () => post(admin, "/standing-mandates/governance", { label: A }),
     "POST /file-sets": async () => {
       const party = await ownParty();
       return () =>
@@ -1647,6 +1656,7 @@ describe("every route that writes, driven against a private target", () => {
    * upload's form, a bounty's window).
    */
   const ADDS_ROWS = [
+    "POST /standing-mandates/:name",
     "POST /connections",
     "POST /file-sets",
     "POST /file-sets/register",
