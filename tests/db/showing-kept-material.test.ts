@@ -1,0 +1,133 @@
+/**
+ * What a run read through a connection and kept is a source its node's page
+ * drew on (docs/showing-a-page.md, "The gate"), whether or not an instance
+ * was recorded from it: an agent keeps a reading when a judgment rests on
+ * it. So when the page is shown to readers who do not read its label, the
+ * party whose system the reading came from is among those asked, and the
+ * source is among those the page says exist.
+ *
+ * Labels as the review tests use them: `r3-c` reads `r3-a`.
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { randomUUID } from "node:crypto";
+import { rawQuery } from "../../src/db/client.js";
+import type { GateActor } from "../../src/services/release-gate-service.js";
+import { askShowing } from "../../src/services/showing-service.js";
+import { A, C, seedNode, seedUser, system, unwall, version, wall } from "./review-3-common.js";
+
+const id: Record<string, string> = {};
+let director: GateActor;
+
+/** A call through the connection by a run working on `node`, at `label`, kept as a source or not. */
+async function call(node: string, label: string, kept: boolean): Promise<{ call: string; source: string | null }> {
+  return system(async () => {
+    const callId = randomUUID();
+    let source: string | null = null;
+    if (kept) {
+      const [row] = await rawQuery<{ id: string }>(
+        `INSERT INTO sources (url, title, raw_content, content_hash, page_url_hash, facts_checked_at, sensitivity_label, party_id)
+         VALUES ($1, 'Corvid warehouse: read_rows', 'A reading.', $2, '', now(), $3, $4) RETURNING id`,
+        [`reading:corvid/${callId}`, `hash-${callId}`, label, id.corvid]
+      );
+      source = row!.id;
+      await rawQuery(
+        `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, sensitivity_label)
+         VALUES ($1, NULL, 'Corvid', 'Corvid is paid on the figures its warehouse shows.', 'connection', $2)`,
+        [source, label]
+      );
+    }
+    await rawQuery(
+      `INSERT INTO connection_calls
+         (id, connection_id, tool, arguments, outcome, result, result_hash, result_chars, claim_id, party_id, source_id, kept_at, sensitivity_label)
+       VALUES ($1, $2, 'read_rows', '{}'::jsonb, 'answered', 'A reading.', 'h', 10, $3, $4, $5, $6, $7)`,
+      [callId, id.connection, node, id.corvid, source, kept ? new Date() : null, label]
+    );
+    return { call: callId, source };
+  });
+}
+
+async function pageOf(showingId: string): Promise<{ rests_on: string[]; header: { sources: Array<Record<string, unknown>> } }> {
+  const [page] = await system(() =>
+    rawQuery<{ rests_on: string[]; header: string }>(`SELECT rests_on, header FROM showing_pages WHERE showing_id = $1`, [showingId])
+  );
+  return { rests_on: page!.rests_on, header: JSON.parse(page!.header) };
+}
+
+beforeAll(async () => {
+  await wall();
+  await system(async () => {
+    const [own] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+    if (own) id.org = own.id;
+    else {
+      const [made] = await rawQuery<{ id: string }>(
+        `INSERT INTO parties (name, is_own_organization) VALUES ($1, true) RETURNING id`,
+        [`The organization ${Date.now()}`]
+      );
+      id.org = made!.id;
+      id.orgMadeHere = "yes";
+    }
+    const [corvid] = await rawQuery<{ id: string }>(`INSERT INTO parties (name) VALUES ($1) RETURNING id`, [`Corvid ${Date.now()}`]);
+    id.corvid = corvid!.id;
+    const [connection] = await rawQuery<{ id: string }>(
+      `INSERT INTO connections (name, tool_prefix, url, party_id, stake, sensitivity_label)
+       VALUES ($1, $2, 'https://warehouse.corvid.example/mcp', $3, 'Corvid is paid on the figures its warehouse shows.', $4) RETURNING id`,
+      [`Corvid warehouse ${Date.now()}`, `corvid${Date.now() % 100000}`, id.corvid, A]
+    );
+    id.connection = connection!.id;
+  });
+  id.director = await seedUser();
+  director = { id: id.director!, holding: ["direct"], clearance: [C, A, "public"], releaseParties: [], direct: true };
+
+  // Two nodes at c, each with a judgment at c and no instance recorded. The
+  // run on the first kept its reading; the run on the second looked and kept nothing.
+  id.rested = await seedNode(C, "The warehouse shipped more than it received in March");
+  id.looked = await seedNode(C, "The warehouse was audited in March");
+  await version(id.rested!, C, "supported", "The warehouse's own rows show it.");
+  await version(id.looked!, C, "inconclusive", "Nothing found either way.");
+  id.keptSource = (await call(id.rested!, C, true)).source!;
+  await call(id.looked!, C, false);
+}, 180_000);
+
+afterAll(async () => {
+  await system(async () => {
+    await rawQuery(`DELETE FROM connections WHERE id = $1`, [id.connection]);
+    await rawQuery(`DELETE FROM sources WHERE id = $1`, [id.keptSource]);
+  }).catch((err: unknown) => console.warn("[showing-kept-material] cleanup:", err instanceof Error ? err.message : err));
+  await unwall();
+  await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.corvid, ...(id.orgMadeHere ? [id.org] : [])]])).catch(
+    (err: unknown) => console.warn("[showing-kept-material] cleanup:", err instanceof Error ? err.message : err)
+  );
+}, 180_000);
+
+describe("a page whose run kept a reading", () => {
+  it("rests on the party whose system the reading came from, and says the source exists", async () => {
+    const asked = await askShowing({ nodeId: id.rested!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+    const page = await pageOf(asked.showing_id);
+    // The version read nothing else, so the party of the reading is the one asked.
+    expect(page.rests_on).toEqual([id.corvid]);
+    expect(page.header.sources).toEqual([
+      { source: 1, kind: "unknown", fingerprint: expect.stringMatching(/^hash-/), supplied_by: "an_outside_party", interest_recorded: true },
+    ]);
+    // The supplier's name and the words of its interest are a part of their own, resting on that party.
+    const parts = await system(() =>
+      rawQuery<{ kind: string; rests_on: string[]; original: string }>(
+        `SELECT p.kind, p.rests_on, p.original FROM showing_parts p JOIN showing_pages g ON g.id = p.page_id WHERE g.showing_id = $1 ORDER BY p.position`,
+        [asked.showing_id]
+      )
+    );
+    const supplier = parts.find((p) => p.kind === "supplier")!;
+    expect(supplier.original).toContain("Recorded interest: Corvid. Corvid is paid on the figures its warehouse shows.");
+    expect(supplier.rests_on).toEqual([id.corvid]);
+    // Every paragraph of the version rests on what the version rests on.
+    for (const p of parts.filter((x) => x.kind === "summary" || x.kind === "reasoning" || x.kind === "wording")) {
+      expect(p.rests_on, p.kind).toEqual([id.corvid]);
+    }
+  });
+
+  it("a call that was made and not kept is not a source: the page rests on the organization alone", async () => {
+    const asked = await askShowing({ nodeId: id.looked!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+    const page = await pageOf(asked.showing_id);
+    expect(page.rests_on).toEqual([id.org]);
+    expect(page.header.sources).toEqual([]);
+  });
+});

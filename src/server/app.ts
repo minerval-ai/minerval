@@ -60,6 +60,7 @@ import { outboundRoutes } from "../routes/outbound.js";
 import { publishedPageRoutes } from "../routes/published-pages.js";
 import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
+import { connectionRoutes } from "../routes/connections.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -173,6 +174,9 @@ export async function buildApp() {
     await app.register(showingRoutes);
     // A page shown outside leaves from here (docs/published-pages.md).
     await app.register(outboundRoutes);
+    // Connections to an organization's own systems are an administrator's
+    // to add (src/connections.ts), so they exist where administrators do.
+    await app.register(connectionRoutes);
   }
   // Every graph admits pages other graphs publish, as sources their
   // publishers submit (docs/published-pages.md). It is the public graph

@@ -36,6 +36,7 @@ import {
 } from "../../db/schema.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { getOrCreateSource } from "../../services/source-service.js";
+import { sourceAddressProblem } from "../../services/reading-address.js";
 import {
   ARGUMENT_VERDICTS,
   addArgument,
@@ -1611,13 +1612,15 @@ export async function executeStewardTool(
         const optText = (v: unknown): string | undefined =>
           typeof v === "string" && v.trim() ? v.trim() : undefined;
 
-        if (!/^https?:\/\//i.test(url)) {
-          return JSON.stringify({
-            success: false,
-            message:
-              "url must be the http(s) URL of the source you read; an " +
-              "instance without provenance is not recordable.",
-          });
+        // An http(s) URL, or the address of a reading kept from a
+        // connection (services/reading-address.ts).
+        const addressProblem = await sourceAddressProblem(
+          url,
+          "url must be the http(s) URL of the source you read; an " +
+            "instance without provenance is not recordable."
+        );
+        if (addressProblem) {
+          return JSON.stringify({ success: false, message: addressProblem });
         }
         if (!verbatimText) {
           return JSON.stringify({

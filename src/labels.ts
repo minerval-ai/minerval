@@ -23,7 +23,15 @@
  * page kept for a user, a review and a ruling, an audit's findings and the
  * audit trail on a claim, a sweep and its flags, a bounty and a prize
  * claim, a lookout and a correspondent with what each queues, flags and
- * publishes. The tables that carry none are the accounts and their keys,
+ * publishes. And so do the rows of a connection to an organization's own
+ * system (src/connections.ts): the connection, the tools its server lists,
+ * and each call a run makes through it. The connection's label is named by
+ * the administrator who adds it and says which runs are offered it. A tool's
+ * definition is the system describing itself, the same whoever looks, so it
+ * carries the connection's label, and so does what any run finds out about
+ * the connection (that its server answered, that a tool changed). A call,
+ * and the source kept from one, are the run's: its arguments are the run's
+ * own words. The tables that carry none are the accounts and their keys,
  * the owl ledger and what is paid from it, the platform's own switches and
  * counters, and the labels themselves.
  * The column is not simply `label` because that name is already a display

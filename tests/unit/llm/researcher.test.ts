@@ -40,6 +40,17 @@ const mocks = vi.hoisted(() => ({
   },
   paused: false,
   meter: { billedMicroUsd: 0 },
+  // The connection tools a run is given (tools/connection-tools.ts): null
+  // for a deployment with no connection, which is every test but the ones
+  // about connections. `asked` counts the runs that asked for them.
+  connections: {
+    asked: 0,
+    bundle: null as null | {
+      definitions: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>;
+      note: string;
+      execute: (name: string, input: Record<string, unknown>) => Promise<string | null>;
+    },
+  },
   config: {
     researcherMaxWallMinutes: 20,
     leanCheckerUrl: "",
@@ -164,6 +175,17 @@ vi.mock("../../../src/llm/tools/elicit-tools.js", () => ({
   isElicitTool: (n: string) => n.startsWith("elicit_"),
 }));
 
+vi.mock("../../../src/llm/tools/connection-tools.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../../src/llm/tools/connection-tools.js")>();
+  return {
+    ...original,
+    createConnectionTools: vi.fn(async () => {
+      mocks.connections.asked += 1;
+      return mocks.connections.bundle ?? original.NO_CONNECTION_TOOLS;
+    }),
+  };
+});
+
 import { runResearcher } from "../../../src/llm/agents/researcher.js";
 import { getConstitution } from "../../../src/llm/prompts/constitution.js";
 
@@ -205,6 +227,8 @@ beforeEach(() => {
   mocks.script.extraTurns = 0;
   mocks.paused = false;
   mocks.meter.billedMicroUsd = 0;
+  mocks.connections.asked = 0;
+  mocks.connections.bundle = null;
 });
 
 const FORBIDDEN_TABLES = [
@@ -1004,5 +1028,73 @@ describe("the budget guide", () => {
     };
     expect(buildResearcherTaskMessage({ ...base, contributionBudget: line })).toContain(line);
     expect(buildResearcherTaskMessage({ ...base, contributionBudget: null })).not.toContain("submit_contribution");
+  });
+});
+
+describe("connections (src/connections.ts)", () => {
+  const NOTE = "This deployment's administrators have connected it to systems where an organization's data lives.";
+  const bundle = () => ({
+    definitions: [
+      { name: "warehouse__run_query", description: "Run a query.", input_schema: { type: "object", properties: {} } },
+      { name: "open_reading", description: "o", input_schema: { type: "object", properties: {} } },
+      { name: "keep_reading", description: "k", input_schema: { type: "object", properties: {} } },
+    ],
+    note: NOTE,
+    execute: async (name: string, toolInput: Record<string, unknown>) =>
+      name === "warehouse__run_query" ? JSON.stringify({ success: true, reading: "r1", asked: toolInput }) : null,
+  });
+
+  function task(): string {
+    const opts = mocks.toolLoopCalls.at(-1) ?? mocks.longRunCalls.at(-1);
+    const first = (opts!.initialMessages as Array<{ content: string }>)[0]!;
+    return first.content;
+  }
+
+  function toolNames(): string[] {
+    const opts = mocks.toolLoopCalls.at(-1) ?? mocks.longRunCalls.at(-1);
+    return (opts!.tools as Array<{ name: string }>).map((t) => t.name);
+  }
+
+  it("gives a run that may record on the graph the connections' tools, tells it of them, and runs their calls", async () => {
+    for (const requestedBy of ["claim_steward", "request"]) {
+      mocks.toolLoopCalls.length = 0;
+      mocks.connections.bundle = bundle();
+      mocks.script.calls = [{ name: "warehouse__run_query", input: { sql: "select 1" } }];
+      mocks.script.outputs = [];
+      const i = input();
+      i.run.requested_by = requestedBy;
+      await runResearcher(i);
+      expect(toolNames(), requestedBy).toEqual(expect.arrayContaining(["warehouse__run_query", "open_reading", "keep_reading"]));
+      const message = task();
+      // Listed among the run's tools, and the passage comes last.
+      expect(message).toMatch(/Tools in this run: .*warehouse__run_query, open_reading, keep_reading/);
+      expect(message.endsWith(`\n\n${NOTE}`)).toBe(true);
+      expect(JSON.parse(mocks.script.outputs[0]!)).toEqual({ success: true, reading: "r1", asked: { sql: "select 1" } });
+    }
+    expect(mocks.connections.asked).toBe(2);
+  });
+
+  it("gives none to research for a mandate, the Curator or the Audit Agent, or to a scoping run, and does not look", async () => {
+    mocks.connections.bundle = bundle();
+    for (const requestedBy of ["grantmaker", "curator", "audit", "request_scope"]) {
+      mocks.toolLoopCalls.length = 0;
+      mocks.script.calls = [{ name: "warehouse__run_query", input: {} }];
+      mocks.script.outputs = [];
+      const i = input();
+      i.run.requested_by = requestedBy;
+      await runResearcher(i);
+      expect(toolNames().filter((n) => /__|^(open|keep)_reading$/.test(n)), requestedBy).toEqual([]);
+      expect(task(), requestedBy).not.toContain(NOTE);
+      expect(JSON.parse(mocks.script.outputs[0]!).message, requestedBy).toMatch(/not in this run's toolset/);
+    }
+    expect(mocks.connections.asked).toBe(0);
+  });
+
+  it("changes nothing in a run's tools or task where the deployment has no connection", async () => {
+    await runResearcher(input());
+    const without = { tools: toolNames(), task: task() };
+    expect(without.tools.filter((n) => /__|^(open|keep)_reading$/.test(n))).toEqual([]);
+    expect(without.task).not.toMatch(/connect/i);
+    expect(mocks.connections.asked).toBe(1);
   });
 });

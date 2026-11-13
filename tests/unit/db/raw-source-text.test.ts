@@ -22,6 +22,7 @@ import {
   AGENTS_GIVEN_SOURCE_TEXT,
   TOOL_READS,
   TOOLS_RETURNING_SOURCE_TEXT,
+  returnsSourceText,
 } from "../../../src/llm/run-visibility.js";
 import { withholdSourceText } from "../../../src/services/run-view-service.js";
 import { mayOpenRawSources, withheldRunSourceText, withheldSourceText } from "../../../src/raw-sources.js";
@@ -65,9 +66,13 @@ describe("a source's stored text", () => {
     // Redactor a window of a source its page drew on, through a tool named
     // below. published-page-service writes a published page's text into a
     // new source when its package is admitted, and returns none.
+    // reading-service writes a kept reading's text into a new source and
+    // returns none of it: a run reads a reading's stored result through
+    // open_reading, named below.
     expect(mentioning("services", /raw_content|rawContent\b/)).toEqual([
       "services/examination-service.ts",
       "services/published-page-service.ts",
+      "services/reading-service.ts",
       "services/release-gate-service.ts",
       "services/showing-service.ts",
       "services/source-content.ts",
@@ -94,7 +99,24 @@ describe("a source's stored text", () => {
       "examination_outline",
       "get_contribution_details",
       "get_page_to_redact",
+      "open_reading",
       "provenance_read_source",
+    ]);
+    // A connection's own tools are named by an administrator's prefix and a
+    // server, so they are known by the shape of the name.
+    expect(returnsSourceText("warehouse__run_query")).toBe(true);
+    expect(returnsSourceText("open_reading")).toBe(true);
+    expect(returnsSourceText("keep_reading")).toBe(false);
+    expect(returnsSourceText("search_claims")).toBe(false);
+    const notice = withheldRunSourceText("internal", ["internal"]);
+    expect(
+      withholdSourceText("claim_steward", "tool_results", [
+        { name: "warehouse__run_query", output: "rows" },
+        { name: "keep_reading", output: "kept" },
+      ], notice)
+    ).toEqual([
+      { name: "warehouse__run_query", output: notice },
+      { name: "keep_reading", output: "kept" },
     ]);
   });
 });

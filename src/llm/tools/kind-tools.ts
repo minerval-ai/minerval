@@ -32,6 +32,7 @@ import { claims } from "../../db/schema.js";
 import { loadConfig } from "../../config.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { getOrCreateSource, type SourceKindOutcome } from "../../services/source-service.js";
+import { sourceAddressProblem } from "../../services/reading-address.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { insertRelationshipEdge } from "../../services/relationship-service.js";
 import { enqueueClaimPipeline, enqueueSteward } from "../../services/queue-service.js";
@@ -852,7 +853,9 @@ async function sourceFor(
   input: Record<string, unknown>
 ): Promise<{ id: string; kind: SourceKindOutcome | Record<string, never> } | { error: string }> {
   const url = str(input.url);
-  if (!/^https?:\/\//i.test(url)) return { error: "url must be the http(s) URL of the source you read." };
+  // An http(s) URL, or the address of a reading kept from a connection.
+  const addressProblem = await sourceAddressProblem(url, "url must be the http(s) URL of the source you read.");
+  if (addressProblem) return { error: addressProblem };
   const kindRefusal = sourceKindRefusal(input.source_kind);
   if (kindRefusal) return { error: kindRefusal };
   const source = await getOrCreateSource({ url, title: optStr(input.title) });

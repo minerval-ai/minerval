@@ -74,6 +74,7 @@ export const CARRIERS = {
   prize_claim: { table: "prize_claims", noun: "prize claim" },
   showing_page: { table: "showing_pages", noun: "page under a showing" },
   proof_attempt: { table: "proof_attempts", noun: "proof attempt" },
+  connection: { table: "connections", noun: "connection" },
 } as const;
 
 export type Carrier = keyof typeof CARRIERS;
@@ -305,6 +306,27 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /release/rules": { rule: "none", why: SHOWING },
   "DELETE /release/rules/:rule_id": { rule: "none", why: SHOWING },
   "PUT /redaction-policies": { rule: "none", why: SHOWING },
+
+  // ---- connections to an organization's systems: members-only deployments only ----
+  "POST /connections": {
+    rule: "chosen",
+    why: "A connection is new, and its label says which runs are offered it. The administrator names it among the labels they read: administering does not by that alone let a person read at a label, and the connection's tools and calls are read there.",
+  },
+  "PATCH /connections/:connection_id": from(
+    "connection",
+    "connection_id",
+    "Changes the connection's own row, which is changed by work at its own label. An administrator who does not read that label is told the connection does not exist."
+  ),
+  "POST /connections/:connection_id/look": from(
+    "connection",
+    "connection_id",
+    "Stores the tools the connection's server lists, which are the system describing itself and carry the connection's label."
+  ),
+  "PUT /connections/:connection_id/tools": from(
+    "connection",
+    "connection_id",
+    "Changes which of the connection's tools are offered: rows at the connection's label."
+  ),
 
   // ---- a shown page leaves the deployment: members-only deployments only ----
   "POST /outbound/send": { rule: "none", why: OUTBOUND },

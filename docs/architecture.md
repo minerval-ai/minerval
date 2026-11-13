@@ -635,6 +635,17 @@ recorded notice, of any kind, is on the source's page and is counted for a
 judgment made against the source before it (`since_assessed.source_events`):
 that is the record, and the message is the prompt.
 
+A source need not be a document at a URL. In a members-only deployment
+whose administrators have connected it to a system where an organization's
+data lives, a source can be a **reading**: one call an agent made through
+the connection and what came back, kept as the call and its result
+together, hashed and dated, so the evidence does not move when the data
+does. A reading has an address of its own in place of a URL
+(`reading:<prefix>/<id>`), belongs to the party whose system it is, and
+carries that party's recorded stake. It is cited and read like any other
+source, and nothing outside is asked about it. The public graph has no
+connections. [connections.md](connections.md) has the whole of it.
+
 #### Source provenance: what the support rests on
 
 A count of a claim's instances treats every appearance as one independent
@@ -2358,8 +2369,11 @@ direct the graph, to release one party's material, to fund, to read at a
 label, to open raw sources at a label, and to administer. The setting, the
 permissions, how the first administrator is established, and sign-in
 through an organization's identity provider are in
-[accounts.md](accounts.md), "Members-only deployments". With the setting at
-its starting value none of that code runs.
+[accounts.md](accounts.md), "Members-only deployments". Such a deployment's
+administrators can also connect it to the organization's own systems, so
+that its agents read data where it lives
+([connections.md](connections.md)). With the setting at its starting value
+none of that code runs.
 
 ---
 

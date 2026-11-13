@@ -34,6 +34,8 @@ const OTHERWISE: Record<string, string> = {
   "src/services/attempt-service.ts lean_checks":
     "The checker's verdict on one submission, keyed by the submission's hash and the checker's version: the same output whoever asks.",
   "src/services/formalization-service.ts lean_checks": "The checker's verdict on one submission, as above.",
+  "src/services/connection-service.ts connection_tools":
+    "A tool's definition as its connection's server lists it: the system describing itself, the same whoever looks. It is written at the connection's label, by an administrator's request that works at that label (server/request-labels.ts), onto rows that carry it.",
   "src/services/feed-service.ts lookout_feeds":
     "A feed's settings and the title the feed itself gives, on the lookout's own row for that address.",
   "src/services/session-service.ts agent_sessions": "What a paused session is waiting for, added by that session's own run to its own row.",
@@ -86,7 +88,7 @@ describe("an upsert onto a labelled table", () => {
   const tables = labelledTables();
 
   it("writes its words only into a row at its writer's own label, or is listed here with why it writes none", () => {
-    expect(tables.sql.size).toBe(118);
+    expect(tables.sql.size).toBe(121);
     const unheld = new Set<string>();
     let held = 0;
     for (const path of sourceFiles(join(repo, "src"))) {

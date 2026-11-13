@@ -499,6 +499,27 @@ const ratingWords = (verdict: string, decisive: boolean): string =>
  * taken to rest on what is attached to its node now. Run at the page's
  * label, so it walks only what that label reads.
  */
+/**
+ * The sources kept in work on these nodes: a reading made through a
+ * connection that a run working on the node turned into a source
+ * (services/reading-service.ts). An agent keeps a reading when a judgment
+ * rests on it, so a kept reading is a source the node's page drew on whether
+ * or not an instance was recorded from it, and the party whose system it
+ * was read from is asked like any source's. The call's row says which node
+ * its run was working on. Read at the page's label, so it finds what that
+ * label reads.
+ */
+const KEPT_IN_WORK_ON_SQL = `SELECT DISTINCT source_id FROM connection_calls WHERE claim_id = ANY($1::uuid[]) AND source_id IS NOT NULL`;
+
+async function keptInWorkOn(nodeIds: readonly string[], atLabel?: string): Promise<string[]> {
+  if (nodeIds.length === 0) return [];
+  const rows = await rawQuery<{ source_id: string }>(
+    atLabel === undefined ? KEPT_IN_WORK_ON_SQL : `${KEPT_IN_WORK_ON_SQL} AND sensitivity_label = $2`,
+    atLabel === undefined ? [[...nodeIds]] : [[...nodeIds], atLabel]
+  );
+  return rows.map((r) => r.source_id);
+}
+
 async function sourcesUnder(nodeIds: readonly string[], memo: Map<string, string[]>): Promise<string[]> {
   const key = [...nodeIds].sort().join(",");
   const cached = memo.get(key);
@@ -508,6 +529,7 @@ async function sourcesUnder(nodeIds: readonly string[], memo: Map<string, string
   let frontier = [...new Set(nodeIds)];
   while (frontier.length > 0 && seen.size < WALK_LIMIT) {
     for (const id of frontier) seen.add(id);
+    for (const kept of await keptInWorkOn(frontier)) sources.add(kept);
     const judged = await rawQuery<{ claim_id: string; id: string; kind: string; inputs_recorded: boolean }>(
       `SELECT claim_id, id, 'assessment' AS kind, inputs_recorded FROM assessments_in_force WHERE claim_id = ANY($1::uuid[])
        UNION ALL
@@ -638,7 +660,8 @@ async function readPage(
     `SELECT s.id, s.source_type, s.content_hash, p.name AS party, p.is_own_organization AS own
        FROM sources s LEFT JOIN parties p ON p.id = s.party_id
       WHERE s.id = ANY($1::uuid[]) ORDER BY s.retrieved_at, s.id`,
-    [[...new Set(instances.map((i) => i.source_id))]]
+    // The sources of the readings recorded at this label, and the sources kept at this label in work on the node.
+    [[...new Set([...instances.map((i) => i.source_id), ...(await keptInWorkOn([node.id], label))])]]
   );
   const interests = await rawQuery<{ source_id: string; party: string; stake: string }>(
     `SELECT source_id, party, stake FROM source_interests

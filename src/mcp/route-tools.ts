@@ -17,9 +17,9 @@
  * a feature off (src/features.ts) does not mount that feature's routes, so
  * their generated tools are absent there: registerRouteTools walks the
  * catalog of mounted routes. The hand-written tools of a feature are gated
- * in server.ts. The routes for permissions, parties and labels are mounted
- * only by a members-only deployment (src/permissions.ts), so their tools
- * exist only there.
+ * in server.ts. The routes for permissions, parties, labels and connections
+ * are mounted only by a members-only deployment (src/permissions.ts), so
+ * their tools exist only there.
  *
  * In a members-only deployment a route may ask for a permission
  * (server/require-permission.ts). A caller who does not hold it is not
@@ -289,6 +289,11 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "graph's, with its publisher and what its record says, and keep it apart from this graph's own assessment of the node.",
   },
   "GET /published-pages/:published_page_id/package": { name: "get_published_page_package" },
+  // Connections to an organization's systems (src/connections.ts), in the
+  // same deployments. The reads; the writes are excluded below.
+  "GET /connections": { name: "list_connections" },
+  "GET /connections/:connection_id": { name: "get_connection" },
+  "GET /connections/:connection_id/calls": { name: "list_connection_calls" },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
@@ -383,6 +388,13 @@ const OUTBOUND_SESSION =
   "signed-in dashboard session, as asking for a showing does. Reading where things stand " +
   "(list_pages_going_outside) and sending what has been released (send_pages_outside) are tools.";
 
+const CONNECTION_SESSION =
+  "Changes which of an organization's systems agents may read, and which tools they are offered " +
+  "there, so it takes a signed-in dashboard session as well as the permission to administer: a " +
+  "leaked key, an access token, or an agent following text it read can then never point the " +
+  "deployment at a server or widen what agents are offered. The matching reads " +
+  "(list_connections, get_connection, list_connection_calls) are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /outbound/proposals": OUTBOUND_SESSION,
@@ -396,6 +408,10 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /release/rules": SHOWING_SESSION,
   "DELETE /release/rules/:rule_id": SHOWING_SESSION,
   "PUT /redaction-policies": SHOWING_SESSION,
+  "POST /connections": CONNECTION_SESSION,
+  "PATCH /connections/:connection_id": CONNECTION_SESSION,
+  "POST /connections/:connection_id/look": CONNECTION_SESSION,
+  "PUT /connections/:connection_id/tools": CONNECTION_SESSION,
   "POST /permissions/grants": ADMINISTRATION_SESSION,
   "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
   "POST /parties": ADMINISTRATION_SESSION,

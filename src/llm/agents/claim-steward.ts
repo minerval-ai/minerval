@@ -30,6 +30,7 @@ import {
   getMatcherToolDefinition,
   executeMatcherTool,
 } from "../tools/matcher-tools.js";
+import { createConnectionTools } from "../tools/connection-tools.js";
 import {
   getElicitToolDefinitions,
   executeElicitTool,
@@ -634,6 +635,10 @@ async function runClaimStewardImpl(input: {
   // Pangram (AI-writing detection, original-source search), priced per
   // word against the run's budget inside the bundle.
   const pangramTools = createPangramTools({ config });
+  // The reading tools of the systems this deployment is connected to, for
+  // a run whose label reads them (tools/connection-tools.ts). None on the
+  // public graph, where this reads nothing and adds nothing.
+  const connectionTools = await createConnectionTools({ config });
 
   // Skills load on demand (load_skill): the prompt carries the catalog,
   // and the claim's recorded domains point the task at the domain skills
@@ -703,6 +708,7 @@ async function runClaimStewardImpl(input: {
     getMatcherToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
+    ...connectionTools.definitions,
     ...skillLoader.definitions,
     ...skillTools,
     ...researchTools.definitions,
@@ -795,7 +801,7 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
-${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
+${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.
@@ -820,7 +826,9 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
   const session = { id: resumed?.session.id ?? randomUUID(), role: "steward", nodeId: input.claimId };
   const initialMessages = resumed
     ? await resumeMessages(resumed.session, resumed.replies, {
-        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief].filter(Boolean).join("\n\n"),
+        // The connections are said again on resume: which of them the run
+        // has, and which of their tools, may have changed while it was paused.
+        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief, connectionTools.note].filter(Boolean).join("\n\n"),
         budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
       })
     : [{ role: "user" as const, content: userMessage }];
@@ -914,6 +922,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     if (research !== null) return research;
     const pangram = await pangramTools.execute(name, toolInput);
     if (pangram !== null) return pangram;
+    const connection = await connectionTools.execute(name, toolInput);
+    if (connection !== null) return connection;
     if (name === "match_claim") {
       // The Matcher receives the domains its caller knows.
       return executeMatcherTool(name, toolInput, { domains: claimDomains });

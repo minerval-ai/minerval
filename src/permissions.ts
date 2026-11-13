@@ -116,8 +116,9 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "administer the deployment",
     covers:
       "Grant and remove permissions, define labels and which label reads which, add parties, " +
-      "say whose material a source is, save the redaction policy of a boundary, and sign the statement that " +
-      "registers the deployment's key to an account on the public graph.",
+      "say whose material a source is, save the redaction policy of a boundary, sign the statement that " +
+      "registers the deployment's key to an account on the public graph, and connect the deployment to an " +
+      "organization's systems and pick which of their tools agents are offered.",
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",

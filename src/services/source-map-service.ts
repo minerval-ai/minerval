@@ -29,6 +29,8 @@ import { runAtSourceLabel } from "./label-service.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
 import { getOrCreateSource, recordSourceKind } from "./source-service.js";
+import { noKeptReading, sourceAddressProblem } from "./reading-address.js";
+import { isReadingAddress } from "../connections.js";
 import { refreshSourceFactsOnce } from "./source-facts-service.js";
 import { segmentSourceOnce } from "./source-segment-service.js";
 import {
@@ -372,6 +374,12 @@ export async function readSourceContent(input: {
 }): Promise<SourceReadResult> {
   let source = await findSource(input);
   if (!source && input.url) {
+    // A reading address no source holds is not a document to be created
+    // and fetched: a reading exists only as it was kept
+    // (services/reading-address.ts).
+    if (isReadingAddress(input.url)) {
+      throw new SourceMapError(noKeptReading(input.url));
+    }
     const created = await getOrCreateSource({ url: input.url });
     source = {
       id: created.id,
@@ -650,9 +658,9 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
     }
   } else if (input.toSourceUrl) {
     const url = requiredText(input.toSourceUrl, "to_source_url", 2000);
-    if (!/^https?:\/\//i.test(url)) {
-      throw new SourceMapError("to_source_url must be an http(s) URL.");
-    }
+    // An http(s) URL, or the address of a reading kept from a connection.
+    const addressProblem = await sourceAddressProblem(url, "to_source_url must be an http(s) URL.");
+    if (addressProblem) throw new SourceMapError(addressProblem);
     const created = await getOrCreateSource({
       url,
       title: optionalText(input.toSourceTitle, "to_source_title", 500) ?? undefined,

@@ -26,7 +26,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
-import { AGENTS_GIVEN_SOURCE_TEXT, TOOLS_RETURNING_SOURCE_TEXT } from "../llm/run-visibility.js";
+import { AGENTS_GIVEN_SOURCE_TEXT, returnsSourceText } from "../llm/run-visibility.js";
 import { withheldRunSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { labelsReadableFrom } from "./permission-service.js";
 import { chainChecker, RUN_LOG_FORMAT, type ChainedStep, type ChainProblem } from "./run-log.js";
@@ -179,7 +179,7 @@ async function sourceTextNotice(run: RunRow, reader: RunReader): Promise<Withhel
 export function withholdSourceText(agent: string, kind: string, content: unknown, notice: WithheldSourceText): unknown {
   if (kind === "tool_results" && Array.isArray(content)) {
     return content.map((result) =>
-      result && typeof result === "object" && String((result as { name?: unknown }).name) in TOOLS_RETURNING_SOURCE_TEXT
+      result && typeof result === "object" && returnsSourceText(String((result as { name?: unknown }).name))
         ? { ...(result as Record<string, unknown>), output: notice }
         : result
     );

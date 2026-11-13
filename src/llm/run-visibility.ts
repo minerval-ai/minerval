@@ -28,6 +28,8 @@
  * is missing here, so every new tool gets a decision.
  */
 
+import { isConnectionToolName } from "../connections.js";
+
 export type Reads = "public" | "private";
 
 export interface Classification {
@@ -53,10 +55,23 @@ export const AGENTS_GIVEN_SOURCE_TEXT: Readonly<Record<string, string>> = {
 
 export const TOOLS_RETURNING_SOURCE_TEXT: Readonly<Record<string, string>> = {
   get_page_to_redact: "with source_id, a window of the stored text of a source the page drew on",
+  open_reading: "a window of what an organization's system returned through a connection, which is the text of the source a kept reading becomes",
   provenance_read_source: "a window of the source's stored text",
   examination_outline: "the opening words of each segment of the examined document",
   get_contribution_details: "an excerpt of the stored text of a source proposed for intake",
 };
+
+/**
+ * Whether a tool's output holds a source's text. Beside the list above, a
+ * connection's own tools: each returns what an organization's system holds,
+ * as it holds it, and that result is the text of the source a kept reading
+ * becomes. They are named by an administrator's prefix and a server, so no
+ * list can hold them, and are known by the shape of the name
+ * (src/connections.ts).
+ */
+export function returnsSourceText(tool: string): boolean {
+  return tool in TOOLS_RETURNING_SOURCE_TEXT || isConnectionToolName(tool);
+}
 
 /** Agents whose inputs are public by construction; any other agent starts private. */
 export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
@@ -177,6 +192,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   grant_overview: { reads: "private", why: "the grant workspace and funder notes, which no route serves" },
   importance_distribution: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
   ingestion_report: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
+  keep_reading: { reads: "private", why: "a reading of an organization's own data, kept from a connection" },
   lean_check: { reads: "public", why: "checker and Mathlib output for text the run sent; checks are public on GET /lean-checks/:id" },
   lean_elaborate: { reads: "public", why: "checker and Mathlib output for text the run sent; checks are public on GET /lean-checks/:id" },
   lean_search: { reads: "public", why: "checker and Mathlib output for text the run sent; checks are public on GET /lean-checks/:id" },
@@ -209,6 +225,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   notebook_write: { reads: "private", why: "a run's notebook, unpublished (solver) or not served (researcher)" },
   notify_claim_steward: { reads: "public", why: "confirms the run's own write to public graph records" },
   notify_steward: { reads: "public", why: "confirms the message; the budget left it reports is run spend, public on GET /changes" },
+  open_reading: { reads: "private", why: "an organization's own data, as a connection returned it" },
   pangram_check_ai: { reads: "public", why: "third-party analysis of a passage or URL the run chose" },
   pangram_find_sources: { reads: "public", why: "third-party analysis of a passage or URL the run chose" },
   petition_mandate: { reads: "public", why: "a mandate's decision on a petition, public on the mandate's routes" },
@@ -326,8 +343,15 @@ export function agentPrivateReason(agent: string): string | null {
   return c.reads === "private" ? `agent:${agent}` : null;
 }
 
-/** The reason executing `tool` makes a run private, or null when its output is public. */
+/**
+ * The reason executing `tool` makes a run private, or null when its output
+ * is public. A connection's tools are named by its administrator's prefix
+ * and its server, so no list can hold them: they are known by the shape of
+ * the name (src/connections.ts), and what they return is an organization's
+ * own data.
+ */
 export function toolPrivateReason(tool: string): string | null {
+  if (isConnectionToolName(tool)) return `tool:${tool}`;
   const c = TOOL_READS[tool];
   if (!c) return `tool:${tool}:unclassified`;
   return c.reads === "private" ? `tool:${tool}` : null;

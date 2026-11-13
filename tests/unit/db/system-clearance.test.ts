@@ -112,6 +112,18 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "The removal mark on one grant.",
     ],
   ],
+  "src/services/reading-service.ts": [
+    [
+      "A connection's rate protects the organization's system from every run together, so the count of calls in the last minute is of calls at every label.",
+      "Nothing. It returns how many calls were made through one connection in the last minute and when the oldest was: a number and a time, which the calling run is told as the rate's state, all runs together. No row's content is read.",
+    ],
+  ],
+  "src/services/connection-service.ts": [
+    [
+      "An administrator is told how many connections, and how many of a connection's calls, their clearance leaves out of a list; the count is of rows at every label.",
+      "Nothing. It returns a count, which the route gives the administrator as how many rows the list leaves out. No row's content is read.",
+    ],
+  ],
   "src/services/setup-service.ts": [
     [
       "A setup part is stored once for every label and numbered across all of them, so storing one must see them all.",
@@ -369,7 +381,7 @@ describe("work that sees every label", () => {
       .filter((path) => /new (?:pg\.)?(?:Pool|Client)\(\{/.test(readFileSync(path, "utf-8")))
       .map(rel)
       // An MCP client is not a database connection.
-      .filter((file) => !/assistant-tools|elicit-tools/.test(file))
+      .filter((file) => !/assistant-tools|elicit-tools|connection-client/.test(file))
       .sort();
     expect(opening).toEqual(Object.keys(OWN_CONNECTIONS).sort());
   });

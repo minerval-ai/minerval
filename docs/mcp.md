@@ -138,6 +138,11 @@ Their reads are tools; their writes are excluded, because a change to who
 may do what takes a signed-in session. In such a deployment a tool whose
 route needs a permission is offered only to a caller whose account holds
 it, and the server's instructions name the tools left out and say why.
+The routes for connections to an organization's systems
+(docs/connections.md) are in the same case: `list_connections`,
+`get_connection` and `list_connection_calls` are tools for a caller who
+holds `administer`, and adding a connection, changing one, and picking
+which of its tools the graph's agents are offered take a session.
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
