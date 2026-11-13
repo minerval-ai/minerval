@@ -268,49 +268,26 @@ describe("contributions from a mandate's research", () => {
     mocks.reviewCost = 0;
   });
 
-  it("is offered to the Researcher only with a budget a Grantmaker delegates, and reported back to it", async () => {
-    const funder = await seedUser("funder");
-    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 100_000_000 });
-    const seen: Array<{ budget: number | undefined; requestedBy: string }> = [];
-    const stub = async (input: { run: { requested_by: string; contribution_budget_micro_usd?: number } }) => {
-      seen.push({ budget: input.run.contribution_budget_micro_usd, requestedBy: input.run.requested_by });
-      return { status: "completed" as const, report: { outcome: "answered", answer: "a" }, turns: 1, stopReason: "report", servedModels: [], toolNames: [], error: null };
-    };
-    const brief = "Survey the regional mortality literature for the 1918 pandemic and say which estimates have stated methods.";
-    const gm = createResearchTools({ requestedBy: "grantmaker", grantId, runResearcher: stub as never });
-    const delegated = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 2.5 }))!);
-    expect(delegated.contribution_reviews).toMatch(/^Contribution reviews: \$0\.00 of \$2\.50 committed across 0 submissions, \$2\.50 left\./);
-    const read = JSON.parse((await gm.execute("get_research_run", { research_run_id: delegated.research_run_id }))!);
-    expect(read.research_run.contribution_reviews).toBe(delegated.contribution_reviews);
-    // No backstop clamps what the Grantmaker delegates.
-    await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 40 });
-    const none = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1 }))!);
-    expect(none.contribution_reviews).toBeUndefined();
-    const negative = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: -1 }))!);
-    expect(negative.success).toBe(false);
-    const stewardClaim = await seedClaim("c");
-    await withPassBudget({ microUsd: 5_000_000, source: "the test lane" }, async () => {
-      const steward = createResearchTools({ requestedBy: "claim_steward", claimId: stewardClaim, runResearcher: stub as never });
-      await steward.execute("delegate_research", { task: brief, model_tier: "cheap", budget_usd: 1, contribution_budget_usd: 5 });
-    });
-    expect(seen).toEqual([
-      { budget: 2_500_000, requestedBy: "grantmaker" },
-      { budget: 40_000_000, requestedBy: "grantmaker" },
-      { budget: 0, requestedBy: "grantmaker" },
-      { budget: 0, requestedBy: "claim_steward" },
-    ]);
-  });
-
-  it("are paid from the mandate's uncommitted budget, whatever the amount, and refused past it", async () => {
+  it("is delegated by the Grantmaker's research commission, from the mandate's money, and refused past the escrow", async () => {
     const funder = await seedUser("funder");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 8_000_000 });
-    const stub = async () => ({ status: "completed" as const, report: { outcome: "answered", answer: "a" }, turns: 1, stopReason: "report", servedModels: [], toolNames: [], error: null });
     const brief = "Survey the regional mortality literature for the 1918 pandemic and say which estimates have stated methods.";
-    const gm = createResearchTools({ requestedBy: "grantmaker", grantId, runResearcher: stub as never });
-    const ok = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "strong", budget_usd: 7, contribution_budget_usd: 1 }))!);
-    expect(ok).toMatchObject({ success: true, budget_left: "$8.00 left in the mandate's uncommitted budget" });
-    const over = JSON.parse((await gm.execute("delegate_research", { task: brief, model_tier: "strong", budget_usd: 9 }))!);
-    expect(over.message).toMatch(/asks for \$9\.00, and the mandate's uncommitted budget has \$8\.00 left/);
+    const { executeMandateOperationsTool } = await import("../../src/llm/agents/program-officer.js");
+    const commission = async (entry: Record<string, unknown>) =>
+      JSON.parse((await executeMandateOperationsTool(grantId, "commission", { entries: [{ kind: "research", brief, reason: "the mission needs it", ...entry }] }, { chat: false }))!);
+    const ok = await commission({ budget_owls: 3, research_tier: "cheap", contribution_budget_owls: 2.5 });
+    expect(ok.results[0]).toMatchObject({ ok: true });
+    const [run] = await rawQuery<{ grant_id: string; requested_by: string; contribution_budget_micro_usd: string; ceiling_micro_usd: string }>(
+      `SELECT grant_id, requested_by, contribution_budget_micro_usd, ceiling_micro_usd FROM research_runs WHERE grant_id = $1`,
+      [grantId]
+    );
+    expect(run).toMatchObject({ grant_id: grantId, requested_by: "grantmaker" });
+    expect(Number(run!.contribution_budget_micro_usd)).toBe(2_500_000);
+    expect(Number(run!.ceiling_micro_usd)).toBe(3_000_000);
+    // Past what the escrow holds uncommitted, nothing is commissioned.
+    const over = await commission({ budget_owls: 9 });
+    expect(over.results[0]).toMatchObject({ ok: false });
+    expect(over.results[0].message).toMatch(/more than the escrow holds uncommitted/);
   });
 });
 

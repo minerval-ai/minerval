@@ -73,7 +73,7 @@ import { createResearchTools } from "../tools/research-tools.js";
 import {
   REPORT_NOT_GIVEN,
   currentSourceTextRule,
-  mayBeGivenReportOfResearch,
+  mayBeGivenReplyOfResearch,
   sourceTextRuleFor,
   withSourceTextRule,
   writerNote,
@@ -700,14 +700,13 @@ async function runClaimStewardImpl(input: {
   // The delegation channel (#298): the researcher, launched from this run
   // on this claim and paid from this pass's budget. The bundle counts the
   // runs it launches for the record; money, not the count, bounds them.
-  // Under a standing showing of this node's page, delegate_research can
-  // launch the researcher as a reader, and the run is told what it is not
+  // Under a standing showing of this node's page, commission (kind research)
+  // can launch the researcher as a reader, and the run is told what it is not
   // given and why (services/separate-reader.ts).
   const sourceTextRule = currentSourceTextRule();
   const researchTools = createResearchTools({
     requestedBy: "claim_steward",
     claimId: input.claimId,
-    launchesReaders: !!sourceTextRule,
   });
   const readerNote = sourceTextRule
     ? writerNote(sourceTextRule, {
@@ -734,7 +733,7 @@ async function runClaimStewardImpl(input: {
     ...figureTools.definitions,
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
     ...getInboxToolDefinitions(),
-    ...getSpendToolDefinitions(),
+    ...getSpendToolDefinitions({ launchesReaders: !!sourceTextRule }),
     ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
     // Where a page may be shown below its label, the policy it would be
@@ -867,16 +866,29 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
   // read, is given a fixed sentence in the report's place.
   if (resumed) {
     for (const reply of resumed.replies) {
-      if (reply.kind === "research" && !(await mayBeGivenReportOfResearch(reply.ref))) reply.text = REPORT_NOT_GIVEN;
+      if (reply.kind === "research" && !(await mayBeGivenReplyOfResearch(reply.ref))) reply.text = REPORT_NOT_GIVEN;
     }
   }
   const session = { id: resumed?.session.id ?? randomUUID(), role: "steward", nodeId: input.claimId };
   const initialMessages = resumed
     ? await resumeMessages(resumed.session, resumed.replies, {
+        // A pass that came for its own reason (not merely to resume) brings
+        // that reason: its trigger, its task and what changed, or the
+        // resumed run would answer a task it never saw.
         // The connections are said again on resume: which of them the run
         // has, and which of their tools, may have changed while it was paused.
         // So are the file sets, and that the scratch directory starts empty.
-        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief, connectionTools.note, fileSetTools.note, readerNote].filter(Boolean).join("\n\n"),
+        newMessages: [
+          input.trigger !== "session_resume"
+            ? `This pass came for its own reason as well. Today's date: ${today}. Trigger: ${input.trigger}.\n\n${task.text}` +
+              (changesNote ? `\n\n${changesNote}` : "")
+            : "",
+          input.context.trim() ? `Context: ${input.context}` : "",
+          inbox.brief,
+          connectionTools.note,
+          fileSetTools.note,
+          readerNote,
+        ].filter(Boolean).join("\n\n"),
         budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
       })
     : [{ role: "user" as const, content: userMessage }];

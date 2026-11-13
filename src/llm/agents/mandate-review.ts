@@ -3,7 +3,7 @@
  * autonomously and with discretion.
  *
  * A mandate's scope is defined in WORDS; which work falls under it is a
- * judgment call. On a cadence, the ledger opens a `mandate_review` action
+ * judgment call. When its Grantmaker has no live session, the ledger opens a `mandate_review` action
  * for every active mandate (self-funded from its escrow, metered under a
  * cap), and the engine executor runs this agent: the same Grantmaker that
  * designed the mandate, now reviewing it the way any person entrusted with
@@ -22,9 +22,13 @@
  *
  * Cost discipline lives in the mechanism, never in narrowed affordances:
  * the pass itself is capped and metered, everything it queues is priced
- * against the escrow, and daily rates pace the spend. The refusal duties
+ * against the escrow, and a pace bounds the spend. The refusal duties
  * that govern mandate design govern this pass equally.
  */
+import { openSession, executeSessionTool, getSessionToolDefinitions, type SessionResume } from "../tools/session-tools.js";
+import { executeSubscriptionTool, getSubscriptionToolDefinitions } from "../tools/subscription-tools.js";
+import { escalationDigest } from "./program-officer.js";
+import { paceRoom } from "../../services/pace-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -77,7 +81,7 @@ import {
 } from "../../services/action-service.js";
 import { getMandateOperationsToolDefinitions } from "./program-officer.js";
 import { reflectionSections } from "../../services/mandate-reflection-service.js";
-import { allocationDayUseSql } from "../../services/day-use.js";
+import { platformFaultBriefing } from "../../services/deployment-fault-service.js";
 import { grantmakerShareNote } from "../../services/claim-mandate-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import {
@@ -87,7 +91,6 @@ import {
 } from "../../services/regrant-service.js";
 import { refundUnspentBudget } from "../../services/budget-job-service.js";
 import {
-  WAKE_AFTER_MINUTES,
   consumeMandateEvents,
   describeMandateEvent,
   pendingMandateEvents,
@@ -128,15 +131,21 @@ const CLOSE_CONFIRM_WINDOW_DAYS = 7;
 export interface MandateReviewResult {
   note: string;
   planItemsAdded: number;
-  /** The agent judged one pass wasn't enough: run another now (funded out
-   * of the mandate's day like the rest of its work). */
-  continueRequested: boolean;
+  /**
+   * The agent asked for a fresh start (fresh_start): its session ends and a
+   * new review pass opens now from its workspace, rather than this
+   * conversation continuing.
+   */
+  freshStart: boolean;
 }
+
+/** The check-in a Grantmaker gets when it sets none, stated in its briefing. */
+export const DEFAULT_CHECK_IN_HOURS = 24;
 
 /**
  * add_to_pass_budget: more of the mandate's own escrow onto the review row
  * this pass is running on, through placeCommission, the path a granted
- * petition takes (petition-service.ts), so the day's rate and the escrow
+ * petition takes (petition-service.ts), so the pace and the escrow
  * are checked under the mandate's lock and a refusal carries the figures.
  * The run's ceiling rises by what was placed, and the row settles as it
  * always does: what the pass metered is spent, the rest is freed.
@@ -170,7 +179,9 @@ export async function addToPassBudget(
   const { placeCommission } = await import("../../services/commission-service.js");
   const { creditRunBudget } = await import("../run-funding.js");
   const placed = await placeCommission({
-    group: REVIEW_GROUP(grantId),
+    // The row this sitting runs on: the review row, or a resumption's own
+    // row when the session resumed (resume:<session>:<n>).
+    group: (await rawQuery<{ g: string }>(`SELECT exclusion_group AS g FROM actions WHERE id = $1`, [actionId]))[0]?.g ?? REVIEW_GROUP(grantId),
     actionId,
     claimId: null,
     payer: { kind: "grant", grantId },
@@ -185,8 +196,8 @@ export async function addToPassBudget(
       code: placed.code,
       problem:
         placed.message +
-        (placed.code === "OVER_DAILY_RATE"
-          ? " Ask for what is left, or raise the rate with set_daily_rate if the mission warrants it."
+        (placed.code === "OVER_PACE"
+          ? " Ask for what is left; the pace is the funder's to change (note_to_funder)."
           : placed.code === "OVER_ESCROW"
             ? " Ask for what is left; more escrow is the funder's to add (note_to_funder)."
             : ""),
@@ -201,21 +212,22 @@ export async function addToPassBudget(
     left_owls: microUsdToOwls(left),
     note:
       `Added. This pass's budget is now ${microUsdToOwls(budget.microUsd)} owls, with ` +
-      `${microUsdToOwls(left)} left; the addition is held against today's rate like the rest, and what you ` +
+      `${microUsdToOwls(left)} left; the addition is held against the mandate's pace like the rest, and what you ` +
       `do not spend is freed when the pass ends.`,
   });
 }
 
 export function runMandateReview(
-  input: Parameters<typeof runMandateReviewImpl>[0]
+  input: Parameters<typeof runMandateReviewImpl>[0],
+  resume?: SessionResume
 ): ReturnType<typeof runMandateReviewImpl> {
-  return withAgent("mandate_review", () => runMandateReviewImpl(input));
+  return withAgent("mandate_review", () => runMandateReviewImpl(input, resume));
 }
 
 async function runMandateReviewImpl(input: {
   grantId: string;
   model?: string;
-}): Promise<MandateReviewResult> {
+}, resume?: SessionResume): Promise<MandateReviewResult> {
   const config = loadConfig();
   // Anchors the two-pass closure rule: a close request is only
   // confirmable by a pass that STARTED after it was recorded.
@@ -231,7 +243,6 @@ async function runMandateReviewImpl(input: {
     mandate: GrantMandate | null;
     plan: { strategy?: string; items?: PlanItem[] } | null;
     plan_cursor: number;
-    daily_budget_micro_usd: number;
     budget_job_id: string;
     budget_micro_usd: number;
     workspace: string | null;
@@ -239,7 +250,7 @@ async function runMandateReviewImpl(input: {
     skills: string[] | null;
   }>(
     `SELECT g.id, g.name, g.policy, g.mandate, g.plan, g.plan_cursor,
-            g.daily_budget_micro_usd, g.budget_job_id, j.budget_micro_usd,
+            g.budget_job_id, j.budget_micro_usd,
             g.workspace, g.funder_user_id, g.skills
        FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
       WHERE g.id = $1 AND g.status = 'active'`,
@@ -256,21 +267,11 @@ async function runMandateReviewImpl(input: {
     id: grant.id,
     budgetJobId: grant.budget_job_id,
   });
-  // Today's draw on the daily rate, so a decision to chain another pass is
-  // made knowing what the day has left for everything else.
-  const [todayRow] = await rawQuery<{ allocated: string | number; passes: number }>(
-    `SELECT COALESCE(SUM(${allocationDayUseSql("al")}), 0)::bigint AS allocated,
-            COUNT(*) FILTER (WHERE a.kind = 'mandate_review')::int AS passes
-       FROM minerval_whole.allocation_money al
-       LEFT JOIN actions a ON a.id = al.action_id
-      WHERE al.grant_id = $1
-        AND al.created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [grant.id]
-  ).catch(() => []);
-  const today = {
-    allocatedMicroUsd: Number(todayRow?.allocated ?? 0),
-    reviewPasses: Number(todayRow?.passes ?? 0),
-  };
+  // Where the pace stands, so a decision to chain another pass, or to
+  // hold money back, is made knowing what the mandate has left.
+  const pace = await paceRoom(grant.id, "grantmaker");
+  // What the officers sent and the Grantmaker has not decided, by id.
+  const escalations = await escalationDigest(grant.id);
 
   // Web search on every provider: the server runs it on an Anthropic model,
   // the loop executes it elsewhere (tools/web-search-tool.ts).
@@ -286,7 +287,7 @@ async function runMandateReviewImpl(input: {
   // The delegation channel (#298, #683): the same instrument and the same
   // request funding the management chat carries. The pass is where a
   // mandate is stewarded, so it holds the affordances its prompt describes
-  // (§19); delegate_research and fund_request refuse past the uncommitted
+  // (§19); research commissions and fund_request refuse past the uncommitted
   // budget, and the move caps below are for money leaving the mandate.
   const researchTools = createResearchTools({ requestedBy: "grantmaker", grantId: grant.id });
   // A decomposition's Grantmaker share, in owls (0 for every other mandate).
@@ -330,9 +331,12 @@ async function runMandateReviewImpl(input: {
         "Append new items to your mandate's plan: sources you found that should be ingested, claims that " +
         "need passes, a claim, quantity or question the graph does not hold yet with the passes you want on it. Each item is priced and bounded by your escrow, and " +
         "executes through the ledger like everything else: a pass you plan " +
-        "is commissioned from this mandate, within its daily rate, as soon " +
-        "as the rate and escrow have the room. Appends only; " +
-        "already-planned work stays. The items are materialized onto the " +
+        "is commissioned from this mandate, within its pace and outside your reserve, as soon " +
+        "as there is room. Appends only; " +
+        "already-planned work stays, and amend_plan_items is how you change " +
+        "the tier or budget of a standing order already in the plan, or " +
+        "withdraw it, until its pass is running. Pass preview: true to see " +
+        "what the items would commission before anything is written. The items are materialized onto the " +
         "ledger in this same call and the result reports each one's " +
         "standing (open, running, done, cancelled, waiting, blocked) with " +
         "the reason, so read it: a blocked item will not become work until " +
@@ -343,6 +347,14 @@ async function runMandateReviewImpl(input: {
         properties: {
           items: { type: "array", items: PLAN_ITEM_SCHEMA },
           note: { type: "string", description: "One sentence: why." },
+          preview: {
+            type: "boolean",
+            description:
+              "true to see what these items would commission without writing anything: each " +
+              "stewarding item's tier and budget per pass, whether its node's pass would be bought " +
+              "or is already met, the children a deepen item would order by id, and the total " +
+              "against the pace's room and the escrow.",
+          },
         },
         required: ["items", "note"],
       },
@@ -386,17 +398,6 @@ async function runMandateReviewImpl(input: {
       },
     },
     {
-      name: "set_daily_rate",
-      description:
-        "Set your mandate's daily allocation rate, in owls per day. The " +
-        "escrow is the hard bound either way.",
-      input_schema: {
-        type: "object" as const,
-        properties: { owls_per_day: { type: "number" } },
-        required: ["owls_per_day"],
-      },
-    },
-    {
       name: "pipeline_report",
       description:
         "What your mandate's ingestion has actually produced: each source " +
@@ -417,10 +418,9 @@ async function runMandateReviewImpl(input: {
             description:
               "Add to this pass's budget from your mandate's escrow, so the pass can finish what it is doing. " +
               "The amount is placed on this pass the way a granted petition is placed on a run: it is held " +
-              "against today's rate and the escrow at once, and what the pass does not spend is freed when it " +
-              "ends. It is refused, with the figures, when today's rate or the uncommitted escrow has less than " +
-              "you ask for; ask for what is left, or raise the rate with set_daily_rate if the mission " +
-              "warrants it. This is the cheap way to carry on: continue_review starts a new pass, which pays " +
+              "against the mandate's pace and escrow at once (your reserve included), and what the pass does not " +
+              "spend is freed when it ends. It is refused, with the figures, when the pace or the uncommitted escrow " +
+              "has less than you ask for; ask for what is left. This is the cheap way to carry on: fresh_start begins a new session, which pays " +
               "for the opening turn again. If you keep adding, your policy's review_pass_owls is set too low.",
             input_schema: {
               type: "object" as const,
@@ -433,18 +433,15 @@ async function runMandateReviewImpl(input: {
           },
         ]),
     {
-      name: "continue_review",
+      name: "fresh_start",
       description:
-        "Declare this pass finished but the work not: another review pass " +
-        "runs right away, at your review-pass budget, funded from your escrow out of today's room under " +
-        "your daily rate, the same room your assessments and lookouts draw " +
-        "on (the briefing says what is left). The new pass starts from your workspace with none of this " +
-        "one's context, and pays for its opening turn (instructions, tool list, briefing) again. So when " +
-        "this pass only needs more money, use add_to_pass_budget; use this when a fresh start is worth " +
-        "that cost: this pass's context has grown long enough that each further turn is expensive, or the " +
-        "work divides into stages that each read cleanly from the workspace. " +
-        "Update your workspace first so the next pass starts " +
-        "where this one stopped.",
+        "End this session and start a fresh one now, from your workspace, with today's full briefing and " +
+        "none of this conversation. Every time your session resumes it re-reads this whole conversation, " +
+        "so a long one makes every later sitting dearer; the resume message states its size. Use this when " +
+        "that cost has grown larger than what the conversation is still worth to you, or when the work " +
+        "divides into stages that each read cleanly from the workspace. Your subscriptions and check-ins end " +
+        "with this session: the fresh one sets its own. Update your workspace first, so the fresh session " +
+        "starts where this one stopped.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -615,6 +612,10 @@ async function runMandateReviewImpl(input: {
         (inbox.total > inbox.events.length
           ? `\n- ...and ${inbox.total - inbox.events.length} more, shown on your next pass.`
           : ``);
+  // Platform faults (#971): open ones, ones that came and went since the
+  // last pass, and this mandate's rows waiting on one. A fault wakes no
+  // review; this is where the mandate reads of it.
+  const faultText = await platformFaultBriefing(grant.id, lastReviewAt ?? null).catch(() => "");
   const briefing =
     `## Mandate review pass\n\n` +
     `You are taking your autonomous review of the live mandate you ` +
@@ -622,17 +623,15 @@ async function runMandateReviewImpl(input: {
     `person entrusted with the budget and the mission.\n\n` +
     `Your mandate:\n\n${mandateText}\n\n` +
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
-    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties), ` +
-    `daily rate ${microUsdToOwls(Number(grant.daily_budget_micro_usd))} owls ` +
-    `(yours to set)` +
-    (Number(grant.daily_budget_micro_usd) > 0
-      ? `, of which ${microUsdToOwls(today.allocatedMicroUsd)} owls is committed so far today ` +
-        `(UTC), ${today.reviewPasses} review pass${today.reviewPasses === 1 ? "" : "es"} included. ` +
-        `A commission that would take the day past its rate is refused, by your officers' tools ` +
-        `and yours alike; running work frees what it leaves as it finishes`
-      : ``) +
+    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties). ` +
+    (pace ? `${pace.sentence} ` : ``) +
+    `The pace is the funder's, agreed at funding (propose a change with note_to_funder); the reserve is yours ` +
+    `(set_reserve): money your officers, lookouts and plan orders cannot commit and you can, for the ` +
+    `directions worth pursuing once results are in. A commission past the pace is refused, by your officers' ` +
+    `tools and yours alike; running work frees what it leaves as it finishes` +
     `. Plan: ${describePlanCounts(countPlanItems(items, grant.plan_cursor))} ` +
-    `(grant_overview itemises; "done" counts the items whose work ran).\n\n` +
+    `(grant_overview itemises, with each item's index, tier, budget and reason; "done" counts the ` +
+    `items whose work ran; amend_plan_items changes or withdraws a standing order until its pass is running).\n\n` +
     (reflection ? `${reflection}\n\n` : ``) +
     `Start from what happened, not from scratch. The sections above are what your money did and ` +
     `where the agents doing the work told you it fell short. Where a shortfall recurs, fix its cause ` +
@@ -643,10 +642,19 @@ async function runMandateReviewImpl(input: {
     `the mission needs this pass.\n\n` +
     `Since your last pass (assessments on the nodes you funded, decisions on ` +
     `your contributions, sources you ingested, your lookouts' flags):\n\n${inboxText}\n\n` +
-    `Your reviews wake when your mandate's work produces something like ` +
-    `this, ${WAKE_AFTER_MINUTES} minutes or more after your last pass ended so that ` +
-    `a burst is judged together, and otherwise once a day. Each pass is ` +
-    `paid from your escrow within your daily rate.\n\n` +
+    `You work in one long session on this mandate, as a person running a large project would: commission ` +
+    `work, carry on with what does not depend on it, and when there is nothing more to do now, end your ` +
+    `turn. Your session then pauses, with this conversation intact, until something you asked to be told ` +
+    `of arrives. You decide what that is. You are always told when your officers escalate something to ` +
+    `you and when your funder writes. Beyond that, subscribe to what matters to your mission: the runs you ` +
+    `commissioned settling, nodes or subtrees moving, money committed past a figure, and a time to look ` +
+    `again (subscribe; list_subscriptions shows what you hold). Waiting for several results before you ` +
+    `decide is often better than answering each one as it lands; queue what can wait for your next turn. ` +
+    `If you end a turn holding no check-in, you get one ${DEFAULT_CHECK_IN_HOURS} hours out. Each time your ` +
+    `session resumes it is a sitting paid from your escrow within the mandate's pace, at your review-pass ` +
+    `budget, and it re-reads this conversation; when that has grown dear, fresh_start begins again from ` +
+    `your workspace.\n\n` +
+    (faultText ? `${faultText}\n\n` : ``) +
     `Your lookouts (standing watches you fund; list_lookouts for detail):\n\n${lookoutText}\n\n` +
     `Your correspondents (readers you fund for an audience; correspondent_report for detail):\n\n${correspondentText}\n\n` +
     `Your workspace (your own notes from previous passes):\n\n` +
@@ -658,9 +666,9 @@ async function runMandateReviewImpl(input: {
     `Do what the mandate needs this pass and skip what doesn't need doing; ` +
     `your spending lever is the operating policy your program officers carry out ` +
     `(write_operating_policy) and direct commissions (commission). Before finishing, update your workspace so ` +
-    `the next pass starts where this one stopped. If this pass runs low with work in hand, ` +
+    `a fresh session would start where this one stopped. If this sitting runs low with work in hand, ` +
     (shareOwls > 0 ? `` : `add to its budget (add_to_pass_budget); `) +
-    `call continue_review when a fresh pass from your workspace is the better way on. Finish with a short note, at most ` +
+    `call fresh_start when beginning again from your workspace is the better way on. End each sitting with a short note, at most ` +
     `${REVIEW_NOTE_MAX_CHARS} characters, recorded on the mandate's public page: ` +
     `what you did and why.\n\n` +
     shareNote +
@@ -681,13 +689,13 @@ async function runMandateReviewImpl(input: {
     ),
     fromShare: shareOwls > 0,
     floorOwls: config.reviewPassFloorOwls ?? 1,
-    dailyRateMicroUsd: Number(grant.daily_budget_micro_usd),
-    dayUsedMicroUsd: today.allocatedMicroUsd,
+    windowMicroUsd: pace?.windowMicroUsd ?? null,
+    windowUsedMicroUsd: pace?.windowUsedMicroUsd ?? null,
     escrowFreeMicroUsd: Number(grant.budget_micro_usd) - committed,
   });
 
   let planItemsAdded = 0;
-  let continueRequested = false;
+  let freshStart = false;
   let movedThisPassMicro = 0;
   const checkMoveCap = async (
     owls: number
@@ -727,11 +735,19 @@ async function runMandateReviewImpl(input: {
 
   const availableTools = tools;
 
-  const result = await withSkills([], () => toolUseLoop({
-    initialMessages: [
-      { role: "user", content: `${briefing}\n\n${turnBudgetLine(REVIEW_PASS_MAX_TURNS, { basis: budgetBasis })}${skillLoader.pointerNote}` },
-    ],
-    tools: [webSearch.tool, ...availableTools, ...skillLoader.definitions, ...getActiveSkillToolDefinitions(listSkills(), "grantmaker")],
+  // The Grantmaker's one session on this mandate (session-tools.ts): a
+  // fresh one opens with today's briefing; a resumed one continues its
+  // conversation with what woke it.
+  const sess = openSession("grantmaker", null, { grantId: grant.id }, resume);
+  await rawQuery(`UPDATE grants SET grantmaker_session_id = $2 WHERE id = $1`, [grant.id, sess.session.id]);
+  const result = await sess.run(async () => {
+    if (!resume) await standingSubscriptions(grant.id);
+    const out = await withSkills([], () => toolUseLoop({
+    initialMessages: sess.initialMessages([
+      { role: "user", content: `${briefing}\n\n${escalations.text ? `${escalations.text}\n\n` : ""}${turnBudgetLine(REVIEW_PASS_MAX_TURNS, { basis: budgetBasis })}${skillLoader.pointerNote}` },
+    ]),
+    ...sess.loop,
+    tools: [webSearch.tool, ...availableTools, ...getSubscriptionToolDefinitions(), ...getSessionToolDefinitions(), ...skillLoader.definitions, ...getActiveSkillToolDefinitions(listSkills(), "grantmaker")],
     system,
     model,
     // A turn may carry a whole-workspace rewrite or a long extend_plan:
@@ -743,6 +759,10 @@ async function runMandateReviewImpl(input: {
     maxIterations: REVIEW_PASS_MAX_TURNS,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+      const subscribed = await executeSubscriptionTool(name, toolInput, { role: "grantmaker", grantId: grant.id });
+      if (subscribed !== null) return subscribed;
+      const waited = await executeSessionTool(name, toolInput);
+      if (waited !== null) return waited;
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
       if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "grantmaker" });
@@ -815,6 +835,10 @@ async function runMandateReviewImpl(input: {
         if (problem) return JSON.stringify({ success: false, problem });
         // Stored in the one plan-item form every path writes (#684).
         const stored = normalizePlanItems(newItems);
+        if (toolInput.preview === true) {
+          const { previewPlanOrders } = await import("../../services/standing-order-service.js");
+          return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grant.id, stored)) });
+        }
         const [appended] = await rawQuery<{ before: number }>(
           `UPDATE grants
               SET plan = jsonb_set(
@@ -896,22 +920,6 @@ async function runMandateReviewImpl(input: {
         if (res.ok) recordMove(owls);
         return JSON.stringify(res);
       }
-      if (name === "set_daily_rate") {
-        const owlsPerDay = Number(toolInput.owls_per_day);
-        if (!Number.isFinite(owlsPerDay) || owlsPerDay < 0) {
-          return JSON.stringify({
-            success: false,
-            problem: "owls_per_day must be a non-negative number",
-          });
-        }
-        const micro = owlsToMicroUsd(owlsPerDay);
-        await rawQuery(
-          `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now()
-            WHERE id = $1`,
-          [grant.id, micro]
-        );
-        return JSON.stringify({ success: true, owls_per_day: owlsPerDay });
-      }
       if (name === "pipeline_report") {
         const { getMandatePipeline } = await import(
           "../../services/mandate-service.js"
@@ -922,14 +930,13 @@ async function runMandateReviewImpl(input: {
       if (name === "add_to_pass_budget") {
         return addToPassBudget(grant.id, toolInput, shareOwls > 0);
       }
-      if (name === "continue_review") {
-        continueRequested = true;
+      if (name === "fresh_start") {
+        freshStart = true;
         return JSON.stringify({
           success: true,
           note:
-            "Another pass runs after this one at your review-pass budget, paid from what is left of " +
-            "today's rate; if the day or the escrow cannot cover that budget it starts with what there is, " +
-            "and not at all below the floor your briefing states. Make sure your workspace is current, then finish.",
+            "When you finish this turn, this session ends and a fresh review pass opens at your review-pass " +
+            "budget, within the mandate's pace, from your workspace. Make sure your workspace is current, then finish.",
         });
       }
       if (name === "complete_mandate") {
@@ -999,7 +1006,7 @@ async function runMandateReviewImpl(input: {
             WHERE id = $1`,
           [grant.id]
         );
-        continueRequested = false;
+        freshStart = false;
         return JSON.stringify({
           success: true,
           closed: true,
@@ -1010,6 +1017,22 @@ async function runMandateReviewImpl(input: {
       return JSON.stringify({ error: `unknown tool ${name}` });
     },
   }));
+    if (freshStart) {
+      // A fresh start ends this session and what it held.
+      await rawQuery(
+        `UPDATE subscriptions SET active = false, ended_at = now()
+          WHERE subscriber_kind = 'session' AND subscriber_ref = $1 AND active`,
+        [sess.session.id]
+      );
+    } else {
+      await ensureCheckIn(sess.session.id);
+    }
+    await sess.close(model);
+    if (freshStart) {
+      await rawQuery(`UPDATE agent_sessions SET status = 'closed', updated_at = now() WHERE id = $1 AND status IN ('waiting', 'ready')`, [sess.session.id]);
+    }
+    return out;
+  });
 
   // Stated in the briefing; past it the note is cut, since it is a
   // summary line on the mandate's public page, not a report.
@@ -1024,6 +1047,70 @@ async function runMandateReviewImpl(input: {
       WHERE id = $1`,
     [grant.id, note || "(review completed without a note)"]
   );
-  await consumeMandateEvents(grant.id, inbox.events.map((e) => e.id)).catch(() => {});
-  return { note, planItemsAdded, continueRequested };
+  if (!resume) await consumeMandateEvents(grant.id, inbox.events.map((e) => e.id)).catch(() => {});
+  return { note, planItemsAdded, freshStart };
+}
+
+/**
+ * What every Grantmaker's session is told of, whatever else it subscribes
+ * to: what its officers escalate, and what its funder writes. Both wake it.
+ */
+async function standingSubscriptions(grantId: string): Promise<void> {
+  const { ensureSessionRow } = await import("../../services/session-service.js");
+  const { createSubscription } = await import("../../services/subscription-service.js");
+  const sessionId = await ensureSessionRow();
+  if (!sessionId) return;
+  await createSubscription({
+    subscriberKind: "session",
+    subscriberRef: sessionId,
+    filter: { kinds: ["escalated"], grant_ids: [grantId] },
+    reason: "what your officers send you",
+    createdBy: "system",
+  });
+  await createSubscription({
+    subscriberKind: "session",
+    subscriberRef: sessionId,
+    filter: { kinds: ["inbox_item"], grant_ids: [grantId], refs: { item_kind: ["funder_note"] } },
+    reason: "what your funder writes",
+    createdBy: "system",
+  });
+}
+
+/** A Grantmaker that ends a turn holding no check-in gets the default one, as its briefing says. */
+async function ensureCheckIn(sessionId: string): Promise<void> {
+  const { createSubscription, nextDueAt } = await import("../../services/subscription-service.js");
+  if (await nextDueAt({ kind: "session", ref: sessionId })) return;
+  await createSubscription({
+    subscriberKind: "session",
+    subscriberRef: sessionId,
+    dueAt: new Date(Date.now() + DEFAULT_CHECK_IN_HOURS * 3_600_000),
+    once: true,
+    reason: `the default check-in: you ended a turn holding none, so you look again in ${DEFAULT_CHECK_IN_HOURS} hours`,
+    createdBy: "system",
+  });
+}
+
+/**
+ * What a Grantmaker reads when its session resumes, beside what woke it:
+ * what its officers have escalated and it has not decided, where its pace
+ * stands, and what this sitting costs to open, so it can judge when a fresh
+ * start is cheaper than carrying the conversation on.
+ */
+export async function grantmakerWakeDigest(session: { context: { input?: unknown } | null; transcript: unknown[] | null }): Promise<string> {
+  const grantId = (session.context?.input as { grantId?: string } | undefined)?.grantId;
+  if (!grantId) return "";
+  const [pace, escalations] = await Promise.all([paceRoom(grantId, "grantmaker"), escalationDigest(grantId)]);
+  const chars = JSON.stringify(session.transcript ?? []).length;
+  const pendingEvents = await pendingMandateEvents(grantId, 1).then((r) => r.total).catch(() => 0);
+  return [
+    escalations.text,
+    pace ? `## Where your money stands\n\n${pace.sentence}` : null,
+    pendingEvents > 0
+      ? `${pendingEvents} event(s) on your mandate's work have arrived since your last fresh briefing (assessments on nodes you funded, decisions on your contributions, your lookouts' flags); grant_overview and allocation_report read them, and a fresh session lists them.`
+      : null,
+    `This conversation is about ${Math.round(chars / 1000)} thousand characters; each sitting re-reads it before ` +
+      `anything else. When that has grown dearer than the context is worth, fresh_start begins again from your workspace.`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }

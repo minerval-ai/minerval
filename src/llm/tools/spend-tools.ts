@@ -10,9 +10,9 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { getUsageContext } from "../usage-context.js";
-import { creditRunBudget, debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
-import { commissionNodePass } from "../../services/commission-service.js";
-import { awaitDecision, filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
+import { debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
+import { commissionNodePass, commissionNoteText } from "../../services/commission-service.js";
+import { filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { loadConfig } from "../../config.js";
 import { rawQuery } from "../../db/client.js";
@@ -20,13 +20,24 @@ import { registerAwait } from "../../services/session-service.js";
 import { commissionResearch } from "../../services/research-commission-service.js";
 import type { ResearchModelTier } from "../../services/research-run-service.js";
 import { figureTiersSentence, researcherToolsSentence, sandboxTiersSentence } from "./research-tools.js";
+import { ANSWER_FORMS, parseQuestions, type ReaderQuestion } from "../../services/reader-answers.js";
+import { QUESTIONS_DESCRIPTION, currentSourceTextRule } from "../../services/separate-reader.js";
 
 type Tool = Anthropic.Tool;
 
 export const COMMISSION = "commission";
 export const PETITION_MANDATE = "petition_mandate";
 
-export function getSpendToolDefinitions(): Tool[] {
+export function getSpendToolDefinitions(
+  opts: {
+    /**
+     * Whether this run may commission research as a reader
+     * (services/separate-reader.ts): a Steward whose node's page is under a
+     * standing showing. Nothing is added to the tool for any other run.
+     */
+    launchesReaders?: boolean;
+  } = {}
+): Tool[] {
   return [
     {
       name: COMMISSION,
@@ -51,8 +62,12 @@ export function getSpendToolDefinitions(): Tool[] {
         "report goes to this node's inbox for a later pass. The resumption is paid from what this " +
         "run has left, by whoever paid for this run. Without wait, the report goes to this node's " +
         "inbox for its next pass. follow_up_of continues an earlier research run from where it " +
-        "stopped, with its notebook. For a quick check you need inside this turn, delegate_research " +
-        "runs the Researcher inline instead.",
+        "stopped, with its notebook." +
+        (opts.launchesReaders
+          ? " With questions, research is a reader instead: it has open to it the sources that readers of this " +
+            "node's shown page cannot read, it answers each question in the form you set, and its answers come " +
+            "back in place of a report. Your brief says why."
+          : ""),
       input_schema: {
         type: "object" as const,
         properties: {
@@ -92,8 +107,8 @@ export function getSpendToolDefinitions(): Tool[] {
             description:
               "For research from a Steward: run it as an examination of one document in your node's map, by " +
               "its source id. The Researcher records what it examined and what it found on the document's own " +
-              "passages, a record that sits on the document's page for whoever reads it next, as with " +
-              "delegate_research. A review of a document for its own sake, beyond what your node needs, is " +
+              "passages, a record that sits on the document's page for whoever reads it next. A review of a " +
+              "document for its own sake, beyond what your node needs, is " +
               "asked for as a request bearing on it (file_request with its source).",
           },
           facets: {
@@ -103,6 +118,25 @@ export function getSpendToolDefinitions(): Tool[] {
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", \"method\"). " +
               "The Researcher may add one the document turns out to call for.",
           },
+          ...(opts.launchesReaders
+            ? {
+                questions: {
+                  type: "array",
+                  description: `For research: ${QUESTIONS_DESCRIPTION}`,
+                  items: {
+                    type: "object",
+                    properties: {
+                      ask: { type: "string", description: "What you want to know, written for a reader that knows nothing of this node." },
+                      form: { type: "string", enum: [...ANSWER_FORMS] },
+                      unit: { type: "string", description: "For a number: the unit you want it in." },
+                      options: { type: "array", items: { type: "string" }, description: "For a choice: the options." },
+                    },
+                    required: ["ask", "form"],
+                    additionalProperties: false,
+                  },
+                },
+              }
+            : {}),
         },
         required: ["budget_owls", "brief"],
       },
@@ -118,12 +152,15 @@ export function getSpendToolDefinitions(): Tool[] {
         "with the money, why your budget can't cover it, and what you will " +
         "conclude if the answer is no. A program officer reads your petition " +
         "with the mandate's policy, its recent decisions and how this run came " +
-        "to be funded, and answers in seconds; what is beyond the officer goes " +
-        "to the mandate's Grantmaker, which takes a minute or two. Asking " +
+        "to be funded. A routine one is usually decided within a minute or two; " +
+        "the officer may hold one until related work reports, which can take " +
+        "hours, and what is beyond the officer goes to the mandate's Grantmaker, " +
+        "which decides when it next sits. Asking " +
         "doesn't stop you: carry on, and the decision appears in a later tool " +
         "result, a grant raising your budget then; with nothing else to do, " +
         "wait_for_answers waits for it briefly, and past that your session " +
-        "pauses and resumes with it. Asking costs " +
+        "pauses and resumes with it, a grant decided meanwhile funding the pass " +
+        "that resumes you. Asking costs " +
         "you nothing: the mandate pays for its own decision. Its answer is a " +
         "judgment about money, never about your conclusion, and no answer " +
         "obliges you to conclude anything.",
@@ -147,17 +184,23 @@ export function getSpendToolDefinitions(): Tool[] {
               "it is worth it: the searches, sources, analysis or commissions, and " +
               "the question it settles.",
           },
+          done_so_far: {
+            type: "string",
+            description:
+              "What you have established so far and what is still open: the officer weighs the ask against the " +
+              "work, and against other work on the same part of the graph.",
+          },
           why: { type: "string", description: "Why your current budget can't cover it, and why it matters for this work." },
           if_refused: { type: "string", description: "What you will conclude or record if the answer is no." },
           wait: {
             type: "boolean",
             description:
-              "true (the default for more_budget) to have the decision come back to you: in a run that can " +
-              "pause, it arrives in a later tool result while you carry on; otherwise this call waits for it. " +
-              "false to send it and carry on without the answer.",
+              "true (the default for more_budget) to have the decision come back to you: it arrives in a later " +
+              "tool result while you carry on, or resumes your session if you have paused. false to send it and " +
+              "carry on without the answer (a granted follow-up starts its own pass).",
           },
         },
-        required: ["kind", "owls", "plan"],
+        required: ["kind", "owls", "plan", "done_so_far"],
       },
     },
   ];
@@ -230,18 +273,40 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
         message:
           `That node already has a pass commissioned or underway (${res.ageMinutes} minutes ago). Your brief ` +
           `went to its inbox instead, at no cost. Commission again after it finishes if it doesn't cover what you need.` +
-          (res.parked ? ` ${res.parked.note}` : ""),
+          commissionNoteText(res),
       });
     }
     debitRunBudget(budget);
     const after = runBudgetLeft();
+    // An agent in a session hears how the pass it paid for went, on its next
+    // turn, without being woken for it (subscription-service.ts).
+    let told = false;
+    if (ctx.session) {
+      const { ensureSessionRow } = await import("../../services/session-service.js");
+      const { createSubscription } = await import("../../services/subscription-service.js");
+      const sessionId = await ensureSessionRow();
+      if (sessionId) {
+        await createSubscription({
+          subscriberKind: "session",
+          subscriberRef: sessionId,
+          filter: { kinds: ["run_settled", "run_closed"], action_ids: [res.actionId] },
+          delivery: "queue",
+          once: true,
+          reason: `the pass you commissioned on ${String(input.target)}`,
+          createdBy: ctx.agent ?? "agent",
+        });
+        told = true;
+      }
+    }
     return JSON.stringify({
       success: true,
       message:
         `Commissioned a ${res.tier} pass on ${String(input.target)} with a budget of ${owls(budget)} owls from your budget` +
         (after !== null ? `; you have ${owls(after)} left` : "") +
-        `. It runs on its own; its outcome is recorded on the node.` +
-        (res.parked ? ` ${res.parked.note}` : ""),
+        `. It runs on its own; its outcome is recorded on the node` +
+        (told ? `, and you are told when it settles, in a later tool result or when your session next resumes (it does not wake you)` : "") +
+        `.` +
+        commissionNoteText(res),
     });
   }
 
@@ -262,11 +327,12 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
           `to petition. Work with the budget you have and record what you could and couldn't establish.`,
       });
     }
-    const wait = input.wait === undefined ? kind === "more_budget" : input.wait === true;
-    // In a session (a Steward's run), a petition never blocks: the decision
-    // returns into the session, shown in the next tool result, or resuming it
-    // if it paused (session-service.ts). Without one, the run waits here.
-    const inSession = Boolean(ctx.session) && kind === "more_budget" && wait;
+    // A petition never blocks: the decision returns into the asking session,
+    // shown in its next tool result, or resuming it if it paused
+    // (session-service.ts). A run with no session cannot receive it, so it
+    // sends the petition without waiting.
+    const wait = Boolean(ctx.session) && (input.wait === undefined ? kind === "more_budget" : input.wait === true);
+    const inSession = wait && kind === "more_budget";
     const petitionId = await filePetition({
       grantId,
       kind,
@@ -279,6 +345,7 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
       requesterNodeId: ctx.claimId ?? null,
       spentMicroUsd: ctx.passBudget?.meter.billedMicroUsd,
       waiting: wait,
+      doneSoFar: input.done_so_far ? String(input.done_so_far) : null,
     });
     if (inSession) {
       const sessionId = await registerAwait("petition", petitionId);
@@ -296,49 +363,11 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
         });
       }
     }
-    if (!wait) {
-      workSoon(grantId);
-      return JSON.stringify({
-        success: true,
-        message: "Sent. The mandate will decide it; a granted follow-up starts its own pass with your plan as its brief.",
-      });
-    }
-    const p = await awaitDecision(petitionId, work);
-    const who = p?.decided_by === "grantmaker" ? "Grantmaker" : "program officer";
-    if (!p || p.status === "pending" || p.status === "escalated") {
-      return JSON.stringify({
-        success: false,
-        message:
-          "The mandate has not decided within its time. The petition stays open; if it is granted after this " +
-          "run ends, it funds a follow-up pass with your plan as its brief. Carry on with the budget you have.",
-      });
-    }
-    if (p.status === "refused") {
-      return JSON.stringify({
-        success: false,
-        message:
-          `Refused by the mandate's ${who}. Reason: ${p.reason}. Work with the budget you have and record what ` +
-          `you could and couldn't establish. The refusal is about money, not your conclusion.`,
-      });
-    }
-    const granted = Number(p.granted_micro_usd ?? 0);
-    if (p.status === "follow_up") {
-      return JSON.stringify({
-        success: true,
-        message:
-          `The mandate funded a follow-up pass of ${owls(granted)} owls with your plan as its brief. Record what ` +
-          `you have now; the follow-up starts from it.`,
-      });
-    }
-    creditRunBudget(granted);
-    const budget = ctx.passBudget;
+    workSoon(grantId);
     return JSON.stringify({
       success: true,
-      message:
-        `Granted by the mandate's ${who}: ${owls(granted)} of ${owls(asked)} owls. Reason: ${p.reason}.` +
-        (budget
-          ? ` Your budget is now ${owls(budget.microUsd)} owls, with ${owls(Math.max(0, budget.microUsd - budget.meter.billedMicroUsd))} left.`
-          : ""),
+      petition_id: petitionId,
+      message: "Sent. The mandate will decide it; a granted follow-up starts its own pass with your plan as its brief.",
     });
   }
   return null;
@@ -372,14 +401,17 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
     });
   }
   const ctx = getUsageContext();
-  const nodeId = ctx.session?.nodeId ?? ctx.claimId ?? null;
+  // Only a Steward's research serves its node: the Curator's session is
+  // anchored on a node it is curating, but what it asks is about structure,
+  // and its report is the Curator's, not that node's Steward's.
+  const nodeId = ctx.agent === "curator" ? null : ctx.session?.nodeId ?? ctx.claimId ?? null;
   // With a session the report returns into it; without one it goes to the
   // node's inbox, so a run with neither has nowhere to receive it.
   if (!nodeId && !ctx.session) {
     return JSON.stringify({
       success: false,
       message:
-        "Research commissioned from here has no node to report back to. Use delegate_research, which runs the Researcher inside this run.",
+        "Research commissioned from here has no node or session to report back to, so nothing was commissioned.",
     });
   }
   const tierRaw = String(input.tier ?? "standard");
@@ -389,9 +421,33 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
   if (!examineSourceId && input.facets !== undefined) {
     return JSON.stringify({ success: false, message: "facets go with examine_source_id: name the document to examine." });
   }
+  // A reader (services/separate-reader.ts): commissioned with questions, by
+  // a Steward whose node's page is under a standing showing. Whether this
+  // run is one is read from the rule it works under, not from its input.
+  let questions: ReaderQuestion[] | null = null;
+  if (input.questions !== undefined) {
+    const rule = currentSourceTextRule();
+    if (!rule || rule.reader || ctx.agent !== "steward" || !nodeId) {
+      return JSON.stringify({
+        success: false,
+        message:
+          "questions launch a reader, which a Steward does where its node's page is under a standing showing. Here, commission the research without them.",
+      });
+    }
+    if (examineSourceId || input.facets !== undefined) {
+      return JSON.stringify({
+        success: false,
+        message: "A reader answers questions and records nothing on a document, so it takes no examine_source_id.",
+      });
+    }
+    const parsed = parseQuestions(input.questions);
+    if (typeof parsed === "string") return JSON.stringify({ success: false, message: parsed });
+    questions = parsed;
+  }
   const res = await commissionResearch({
     payer,
     nodeId,
+    questions,
     task: brief,
     budgetMicroUsd: budget,
     tier,
@@ -407,7 +463,8 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
   const spent =
     `with a budget of ${owls(budget)} owls from your budget` +
     (after !== null ? ` (you have ${owls(after)} left)` : "") +
-    (examineSourceId ? ", as an examination of the document: its findings go on the document's page and in provenance_get_map" : "");
+    (examineSourceId ? ", as an examination of the document: its findings go on the document's page and in provenance_get_map" : "") +
+    (questions ? ", as a reader: what returns is its answers, one for each question, and its report stays with its run" : "");
   return JSON.stringify({
     success: true,
     research_run_id: res.runId,
@@ -416,7 +473,10 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
         `without it, and record what you can already conclude. When that is done, end your turn: your session ` +
         `pauses and resumes when the report arrives, with this conversation intact. If it arrives while you ` +
         `are still working, it appears in your next tool result. ` +
-        `The session waits at most ${loadConfig().sessionWaitHours} hours; after that the report goes to this node's inbox.`
+        (nodeId
+          ? `The session waits at most ${loadConfig().sessionWaitHours} hours; after that the report goes to this node's inbox.`
+          : `The session waits at most ${loadConfig().sessionWaitHours} hours; after that the report stays on the research run, ` +
+            `where a later run reads it with get_research_run.`)
       : `Commissioned research run ${res.runId} ${spent}. ` +
         (wantsWait
           ? `This run can't pause to wait for it, so its report goes to this node's inbox for its next pass.`

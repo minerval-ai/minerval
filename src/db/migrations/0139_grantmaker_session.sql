@@ -1,0 +1,1 @@
+ALTER TABLE "grants" ADD COLUMN "grantmaker_session_id" uuid;

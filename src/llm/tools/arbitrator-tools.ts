@@ -275,7 +275,7 @@ export async function executeArbitratorTool(
         let materialization: IntakeMaterializationResult | null = null;
         let acceptanceNote = "";
         if (outcome === "overturn" && target && target.reviewStatus !== "accepted") {
-          const effects = await applyAcceptanceEffects(contributionId, input);
+          const effects = await applyAcceptanceEffects(contributionId, input, "dispute_arbitrator");
           if (!effects.ok) return JSON.stringify({ success: false, error: effects.error });
           materialization = effects.materialization;
           acceptanceNote = effects.note;

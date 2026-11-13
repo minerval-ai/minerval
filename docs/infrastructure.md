@@ -371,7 +371,8 @@ storage past about 5 GB, or a second region.
   operator key") for the eight operator routes: the fund deposit, the
   bounty confirmation, the prize-claim sign-off, the void, the sanctions
   screening, the owl grant, the release of a `check_error` hold, and the
-  operator page, plus the platform-mandate routes (#529). The API task
+  operator page, plus the platform-mandate routes (#529) and the
+  deployment's preflight (`GET /setup/preflight`, docs/deployment.md). The API task
   reads it from the Secrets Manager entry `episteme/operator-key`, which
   the operator creates by hand before deploying (the secrets stack imports
   it by name, so its value never passes through CloudFormation). The web
@@ -484,6 +485,51 @@ on `main` (Settings → Rules → Rulesets, not classic branch protection,
 since the workflow reads the ruleset API) requiring the status checks
 `check`, `db-tests`, `web` and `extension`; the workflow refuses to act
 without the ruleset.
+
+**Migration renumbering.** Two open PRs that each add a migration take the
+same number, so whichever merges second conflicts in `src/db/migrations`
+(CLAUDE.md). Two that change the same prompt, skill or document conflict in
+`web/content` as well, which `scripts/sync-frontend-content.ts` generates.
+`.github/workflows/renumber-migrations.yml` runs on every push to `main`.
+For each open PR from this repository whose conflicts with main are all
+inside those two folders, it merges main, takes main's side of the
+generated files and regenerates them from the merged source, runs
+`npm run db:renumber` if the migrations conflicted, and pushes the merge to
+the PR's branch. CI then
+runs on the result as it would on any push. A PR that also conflicts
+elsewhere is left alone and named in the run's summary; so is one where
+`db:renumber` cannot reconcile the schema, such as when main changed a
+default that a table new on the branch was created without. It never
+rebases or force-pushes: a push that loses a race is rejected and the next
+run tries again.
+
+It pushes with the repository secret `MIGRATION_RENUMBER_TOKEN`, because a
+push made with the built-in token starts no workflows, so CI would never run
+on the renumbered branch. Use a fine-grained personal access token for this
+repository only, with **Contents: read and write** and nothing else (listing
+PRs uses the built-in token). Without the secret every run fails and says
+why.
+
+Both fixes run each branch's own code (its `renumber-migrations.ts`, its
+`schema.ts` through drizzle-kit, and its content sync), and an admin's token can push to
+`main` past the ruleset, so the two never share a runner. The `prepare` job
+merges and renumbers holding no secret, and hands each merge to the `push`
+job as a git bundle. `push` runs no branch code. It pushes a merge only if
+it is a merge of main into the branch's current tip, the PR's only
+conflicts with main are in those two folders, it differs from git's own
+merge only inside them, and every `.sql` file in the migrations folder is
+one main or the branch already has. The regenerated `web/content` is the
+site's copy of text, not code anything runs, and CI's drift test checks it
+as it would on any push. Anything else is refused and named in the run's
+summary.
+
+A PR that still conflicts after that gets one comment from the workflow's
+`notify` job, naming the files, and the `merge-conflict` label, which is
+removed once it merges cleanly. GitHub sends no event when a PR starts to
+conflict, so without the comment nobody watching the PR (its author, or the
+Claude session that opened it and is subscribed to its activity) would hear
+of it. A PR is told once per head commit, so it is not told again on every
+push to main, only when it conflicts again after someone has pushed to it.
 
 **The weekly maintenance pass** takes what the workflow leaves: major
 bumps, maintainer changes (check the release's npm provenance:
@@ -602,8 +648,30 @@ When a cash rail exists the same job compares the provider's ledger. A
 discrepancy is an `admin_adjust` entry with a note, never an edit of an
 existing row.
 
+**A deployment fault (a provider account out of credits, a rejected key).**
+The signs: an error line `[deployment-fault] OPENED credits_fault on
+<provider>` (or `credentials_fault`) in the API task's log, one report on
+the agents' channel titled `deployment fault: the <provider> account is out
+of credits` at severity blocking, and `deploymentFaults` non-empty in
+`GET /monitors/queue_health`, with the count of ledger rows waiting on it.
+The fix is outside the code: add credits to the deployment's account with
+that provider (or raise the key's limit), or rotate the key in Secrets
+Manager and redeploy. A nearly empty account refuses large requests while
+small ones still pass, so some calls succeeding does not mean it is funded.
+Nothing needs requeueing afterwards: rows that waited are retried on their
+own, at most ten minutes apart, an ingest included, and the fault closes
+(`[deployment-fault] CLEARED`) once the provider has served a call and
+refused none for ten minutes. Work on other providers is not held up
+meanwhile. The cheap tier (the Matcher, the tagger, lookouts, program
+officers, consistency sweeps) runs on OpenRouter and the Stewards on
+Anthropic, so the two accounts fail separately (docs/architecture.md, "A
+platform fault makes the ledger row wait").
+
 ## Monitoring
 
+- `deploymentFaults` in `GET /monitors/queue_health`: empty when healthy.
+  Anything in it means paid work is waiting on the operator. Worth an alarm
+  on the `[deployment-fault] OPENED` log line.
 - Checker queue depth and per-check wall time, from `/health` and
   `lean_checks.resource`.
 - The solver's daily spend against its cap, and attempts `running` past

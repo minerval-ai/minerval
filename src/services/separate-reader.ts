@@ -15,8 +15,8 @@
  * sources than the answers hold.
  *
  * Nothing here is a new kind of run. The reader is the Researcher, launched
- * by the Steward as an instrument with delegate_research, as it always
- * could be. What differs at this boundary is what comes back from it: its
+ * by the Steward as it commissions any research (commission, kind
+ * research), with questions added. What differs at this boundary is what comes back from it: its
  * answers pass, and its report does not.
  *
  * The rule in one line: on a node under a standing showing, a run is given
@@ -158,7 +158,7 @@ export function sourceTextNotGiven(what: string): string {
   return (
     `${what} is stored at a label the readers of this node's shown page cannot read, and this run ` +
     `writes that page, so its text is not given to this run. To learn what it says, launch a reader: ` +
-    `delegate_research with questions. A page of the open web can be read again at its address with read_page.`
+    `commission with kind research and questions. A page of the open web can be read again at its address with read_page.`
   );
 }
 
@@ -273,8 +273,8 @@ async function labelsGivenTo(runId: string): Promise<string[] | null> {
 export const REPORT_NOT_GIVEN =
   "This run had open to it sources that the readers of this node's shown page cannot read, and its report is in its " +
   "own words, so the report and the notebook are not given to the run that writes that page. They are kept with the " +
-  "run for the people who may open those sources. To learn what those sources say, launch a reader: delegate_research " +
-  "with questions.";
+  "run for the people who may open those sources. To learn what those sources say, launch a reader: commission with " +
+  "kind research and questions.";
 
 /**
  * A Researcher's report, in its own words, is about to be given to the
@@ -291,6 +291,46 @@ export async function mayBeGivenReportOf(researcherRunId: string | null | undefi
   for (const l of labels) markCurrentRunPrivate(`${SOURCE_TEXT_REASON}${l}`);
   return true;
 }
+
+/**
+ * What comes back from a research run, about to be given to the enclosing
+ * run: a reader's answers, which pass and mark nothing (they are in set
+ * forms, composed by code from what the reader recorded), or a report in
+ * the Researcher's own words, which is held to mayBeGivenReportOf. Asked
+ * wherever a reply reaches a run: when a session resumes, when a reply
+ * arrives mid-run, and when an inbox message from the Researcher is read.
+ */
+export async function mayBeGivenReplyOfResearch(researchRunId: string): Promise<boolean> {
+  if (oneLabelOnly()) return true;
+  const [row] = await rawQuery<{ run_id: string | null; reader: boolean }>(
+    `SELECT run_id, (questions IS NOT NULL AND jsonb_array_length(questions) > 0) AS reader FROM research_runs WHERE id = $1`,
+    [researchRunId]
+  ).catch(() => [] as Array<{ run_id: string | null; reader: boolean }>);
+  if (row?.reader) return true;
+  return mayBeGivenReportOf(row?.run_id ?? null);
+}
+
+/**
+ * The marks a research run carries for having been given a source's text
+ * (`source-text@<label>`), by its own id. For a follow-up, which opens with
+ * the earlier run's report and notebook: the run that continues it holds
+ * what that run wrote, so it carries the same marks.
+ */
+export async function sourceTextMarksOfResearch(researchRunId: string): Promise<string[]> {
+  if (oneLabelOnly()) return [];
+  const [row] = await rawQuery<{ run_id: string | null }>(`SELECT run_id FROM research_runs WHERE id = $1`, [researchRunId]).catch(
+    () => [] as Array<{ run_id: string | null }>
+  );
+  const labels = row?.run_id ? ((await labelsGivenTo(row.run_id)) ?? []) : [];
+  return labels.map((l) => `${SOURCE_TEXT_REASON}${l}`);
+}
+
+/** What a run is told when it asks to follow up a run whose report it is not given. */
+export const FOLLOW_UP_NOT_GIVEN =
+  "That run had open to it sources that the readers of this node's shown page cannot read, and a follow-up opens " +
+  "with its report and notebook, which are in its own words. A run whose report returns to the run that writes " +
+  "that page is not given them, so nothing was commissioned. To learn more of what those sources say, launch a " +
+  "reader: commission with kind research and questions.";
 
 /** The same, for research runs named by their own ids (a reply in a session names the research run). */
 export async function mayBeGivenReportOfResearch(researchRunId: string): Promise<boolean> {
@@ -369,7 +409,7 @@ export function writerNote(rule: SourceTextRule, notOffered: { connections: read
       `not say where a text came from: read_page reads it again at its address. A document that ` +
       `provenance_read_source fetches from its address in this run opens as before. What is already recorded from ` +
       `such sources, on this node and on others, you read as before, and the open web as before.`,
-    `A reader opens them for you. delegate_research with \`questions\` launches the researcher at ${own} with those ` +
+    `A reader opens them for you. commission with kind research and \`questions\` launches the researcher at ${own} with those ` +
       `sources open to it. Each question says what you want to know and the form its answer takes: ${FORMS_SENTENCE}. ` +
       `One answer comes back for each question, in that form, with the address of the source it rests on, which the ` +
       `reader keeps so that you can cite it. A passage is cut from the source's stored text at the place the ` +
@@ -378,8 +418,9 @@ export function writerNote(rule: SourceTextRule, notOffered: { connections: read
       `who may open the sources.`,
     `What this costs: you cannot read these sources yourself or follow what you find in them, so you learn what you ` +
       `ask. A question the reader does not answer comes back with one of four fixed reasons and no explanation. Each ` +
-      `launch is a researcher's run, paid from this pass's budget, and your run waits for it. Research launched ` +
-      `without questions works as before and returns its report; it is not given these sources either. If the ` +
+      `launch is a researcher's run, paid from this pass's budget, and its answers return as a report would: into ` +
+      `this session, or to this node's inbox. Research commissioned without questions works as before and returns ` +
+      `its report; it is not given these sources either, and a follow-up to a run that had them is refused. If the ` +
       `assessment needed something this could not get you, say so in what you record.`,
   ].join("\n\n");
 }
@@ -443,11 +484,11 @@ export function withoutSourcesNote(rule: SourceTextRule, notOffered: { connectio
   );
 }
 
-/** The passage added to delegate_research's description for a Steward that launches readers. */
+/** The description of commission's `questions`, for a Steward that launches readers. */
 export const QUESTIONS_DESCRIPTION =
   `Launch the run as a reader of the sources that readers of this node's shown page cannot read, which you are ` +
   `not given: ` +
   `a list of questions, each {ask, form} with form one of ${ANSWER_FORMS.join(", ")}; a number may name its unit, ` +
   `and a choice lists its options. The run answers each in its form and returns the answers and nothing else. ` +
-  `task still carries the context the reader needs. A question left unanswered comes back as one of: ` +
+  `brief still carries the context the reader needs. A question left unanswered comes back as one of: ` +
   `${Object.values(NO_ANSWER_REASONS).map((r) => `"${r}"`).join(" ")}`;

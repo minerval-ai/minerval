@@ -40,7 +40,6 @@ function dayOne(): SetupChecklist {
     undefined_labels_in_provider_setting: [],
     standing_mandates: [
       { name: "general", title: "General maintenance", objective: "Keep the graph sound.", mandate: null },
-      { name: "governance", title: "Governance", objective: "Pay for the audits.", mandate: null },
     ],
     owls: { created_here: true, created_total_owls: 0, spent_total_owls: 0, unpriced_models: [] },
     usage_report: {
@@ -242,7 +241,7 @@ describe("the setup checklist", () => {
   });
 });
 
-describe("a build with no preflight, and a deployment that holds material at more than one label", () => {
+describe("a checklist from a build with no preflight, and a deployment that holds material at more than one label", () => {
   it("says the build does not check its own configuration, and marks nothing as passed", () => {
     const c = dayOne();
     c.preflight = null;
@@ -259,15 +258,12 @@ describe("a build with no preflight, and a deployment that holds material at mor
     const state = { id: "m1", status: "active", budget_owls: 40, daily_owls: 0, running: true };
     c.standing_mandates = [
       { name: "general", title: "General maintenance", objective: "", mandate: state, by_label: [{ label: "internal", mandate: state }, { label: "public", mandate: null }] },
-      { name: "governance", title: "Governance", objective: "", mandate: null, by_label: [{ label: "internal", mandate: null }, { label: "public", mandate: null }] },
     ];
     const item = checklistItems(c).find((i) => i.key === "standing_mandates")!;
     expect(item.state).toBe("to_do");
     expect(item.facts).toEqual([
       "General maintenance at internal: set up with a budget of 40 owls.",
-      "General maintenance at public: not set up. Until it is, upkeep has no mandate to pay for it at the label public.",
-      "Governance at internal: not set up. Until it is, audits have no mandate to pay for it at the label internal.",
-      "Governance at public: not set up. Until it is, audits have no mandate to pay for it at the label public.",
+      "General maintenance at public: not set up. Until it is, upkeep and audits have no mandate to pay for it at the label public.",
     ]);
   });
 
@@ -339,8 +335,8 @@ describe("the log, as sentences", () => {
       logSentence({ event: "owls_created", at, by: "Alice", amount_owls: 100, account: "Dave", note: "For the first mandates" })
     ).toBe("Alice created 100 owls into Dave's balance. Note: For the first mandates");
     expect(
-      logSentence({ event: "standing_mandate_created", at, by: "Alice", amount_owls: 60, mandate: { id: "m", title: "Governance" } })
-    ).toBe("Alice set up the mandate Governance, creating 60 owls as its budget.");
+      logSentence({ event: "standing_mandate_created", at, by: "Alice", amount_owls: 60, mandate: { id: "m", title: "General maintenance" } })
+    ).toBe("Alice set up the mandate General maintenance, creating 60 owls as its budget.");
     // An act added to the API later still reads as something that happened.
     expect(logSentence({ event: "something_new", at, by: "Alice" })).toBe("Alice: something new.");
   });

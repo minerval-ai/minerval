@@ -308,9 +308,9 @@ Importance says how much a claim is worth getting right; it does not by itself s
 
 Budgets are set at the high end of what work of that kind costs, so that a run has what it needs to finish the job and most runs finish well inside it. When the work turns out to need more, its agent **petitions** the mandate paying for the run, without stopping its work, and says what it would do with the money, why its budget cannot cover it, and what it will conclude if the answer is no. The answer is a judgment about money, never about the conclusion, and no answer obliges an agent to conclude anything. Any agent with a budget may also commission another agent's run from it. A petition is routed along the chain of runs that led to the one asking, to the mandate whose money is behind it; the agent asking is never told which mandate that is, since its work serves the graph and not its funder.
 
-The judgment of what to pay for is each mandate's own, and it is an agent's judgment, not a filter's. A mandate's scope is defined in words, its mission, and which work falls under it is a call its Grantmaker makes with the discretion of any person entrusted with a budget and a mission. The Grantmaker writes the mandate's **operating policy** in prose: its mission in working terms, what comes first, how to budget each kind of work, how to answer petitions, and what to send to the Grantmaker. **Program officers**, on a cheaper model, work the mandate's inbox under it: petitions from the runs its money pays for, what its lookouts raise, and the work the system puts in front of it. Each officer decides up to a limit the policy states with its reason, and sends the rest to the Grantmaker, who decides it as the policy would and, where the policy did not settle it, changes the policy so the next one is settled. Every decision is logged with its reason. The graph's own work runs through the same machinery, not a privileged lane. Minerval maintains a standing General mandate for the graph's upkeep: its budget is the dollars the platform puts into keeping the graph sound, and its scope genuinely is everything. It buys the work whose value is spread across the whole graph, which no funder of one region would buy for its own: reading assessments against each other, merging, splitting and linking what the graph holds, work someone is waiting on, and fresh passes where something a published verdict rests on has changed. It does not buy coverage; what the graph comes to hold and assess is for the mandates and readers who care about it, except where a published verdict already rests on a claim no one has assessed. A Governance mandate pays for the audits of the graph's decisions and never an audit of itself. Work no one commissions remains on the ledger, open and visible with its age; that is an acceptable steady state, and there is no queue in the waiting-your-turn sense.
+The judgment of what to pay for is each mandate's own, and it is an agent's judgment, not a filter's. A mandate's scope is defined in words, its mission, and which work falls under it is a call its Grantmaker makes with the discretion of any person entrusted with a budget and a mission. The Grantmaker writes the mandate's **operating policy** in prose: its mission in working terms, what comes first, how to budget each kind of work, how to answer petitions, and what to send to the Grantmaker. **Program officers**, on a cheaper model, work the mandate's inbox under it: petitions from the runs its money pays for, what its lookouts raise, and the work the system puts in front of it. Each officer decides up to a limit the policy states with its reason, and sends the rest to the Grantmaker, who decides it as the policy would and, where the policy did not settle it, changes the policy so the next one is settled. Every decision is logged with its reason. The graph's own work runs through the same machinery, not a privileged lane. Minerval maintains a standing General mandate for the graph's upkeep: its budget is the dollars the platform puts into keeping the graph sound, and its scope genuinely is everything. It buys the work whose value is spread across the whole graph, which no funder of one region would buy for its own: reading assessments against each other, merging, splitting and linking what the graph holds, auditing the graph's decisions, work someone is waiting on, and fresh passes where something a published verdict rests on has changed. It never pays for an audit of itself, and no mandate does. It does not buy coverage; what the graph comes to hold and assess is for the mandates and readers who care about it, except where a published verdict already rests on a claim no one has assessed. Work no one commissions remains on the ledger, open and visible with its age; that is an acceptable steady state, and there is no queue in the waiting-your-turn sense.
 
-Mandates steward themselves. There is no human bottleneck between a funded mission and the work: on a cadence, and more often when the mission demands it, a mandate's Grantmaker takes an autonomous review pass with real affordances. It reads back what its money did (what it commissioned and how those runs used their budgets, the petitions it heard and how its officers answered them, the work that ran short without asking, the messages waiting on the nodes it pays for), searches the graph and the open web for what its mission needs, keeps its own durable working notes, revises the operating policy so the causes of recurring shortfalls are fixed rather than each case, grows its own plan, sets its own pace, and moves money. Between passes its **lookouts** keep standing watch: they follow the graph's change stream in their territory and query the graph, commission what they find within the limit they are given, and raise the rest to the officers. Cost discipline lives in the mechanism (every run is metered against its budget, every commission is bounded by the mandate's escrow and its daily rate) and never in narrowing what the agent is allowed to see or do: an agent cannot be given responsibility for a thing without the affordances to do the job. And mandates fund each other as peers (**regrants**): a mandate may put part of its budget behind a sibling, or spawn a new mandate with its own budget and its own agent to steward a slice of the mission. Money moves between mandates; command never does. A regrant buys the target more reach and the source no say, and closing an agent-stewarded mandate is its agent's or its funder's judgment, with unspent budget refunding to everyone who funded it, mandates included, pro rata.
+Mandates steward themselves. There is no human bottleneck between a funded mission and the work: a mandate's Grantmaker runs it in one long session, with real affordances, as a person managing a large project would. It commissions work and waits for the results rather than checking for them, telling the system what it wants to be told of and when it will look again; it acts at once on what cannot wait and waits for related results before deciding where that is wiser. It reads back what its money did (what it commissioned and how those runs used their budgets, the petitions it heard and how its officers answered them, the work that ran short without asking, the messages waiting on the nodes it pays for), searches the graph and the open web for what its mission needs, keeps its own durable working notes, revises the operating policy so the causes of recurring shortfalls are fixed rather than each case, grows its own plan, holds money in reserve for the directions worth pursuing within the pace its funder chose, and moves money. While it waits, its **lookouts** keep standing watch: they follow the graph's change stream in their territory and query the graph, commission what they find within the limit they are given, and raise the rest to the officers. Cost discipline lives in the mechanism (every run is metered against its budget, every commission is bounded by the mandate's escrow and the pace its funder chose) and never in narrowing what the agent is allowed to see or do: an agent cannot be given responsibility for a thing without the affordances to do the job. And mandates fund each other as peers (**regrants**): a mandate may put part of its budget behind a sibling, or spawn a new mandate with its own budget and its own agent to steward a slice of the mission. Money moves between mandates; command never does. A regrant buys the target more reach and the source no say, and closing an agent-stewarded mandate is its agent's or its funder's judgment, with unspent budget refunding to everyone who funded it, mandates included, pro rata.
 
 A mandate's terms, its title and objective, are what its funder approved by funding it. They change only when the funder asks for it or agrees; everyone else who funded the mandate is told at once, and any funder may take back their share of the uncommitted money at any time. The operating policy, the decisions, the commissions and what they spent are public on the mandate's page, so "why was this paid for and not that" is always answerable. None of it appears in an assessment: what a mandate chose to pay for orders work and selects effort, never truth.
 
@@ -547,20 +547,37 @@ petitions, decline what isn't worth it, and send to the Grantmaker what the
 operating policy doesn't settle or is beyond your authority.
 
 Work as an experienced officer would. Read the operating policy as the
-Grantmaker's instructions to you. Where it is silent, decide as the
-Grantmaker would from it and from its recent decisions; where you can't
-tell, escalate. Set budgets at the high end of what the costing skill says
+Grantmaker's instructions to you, its current direction first: which
+branches look promising now, and what to grant or hold until which work
+reports. Where it is silent, decide as the Grantmaker would from it and from
+its recent decisions; where you can't tell, escalate. Set budgets at the high end of what the costing skill says
 such work costs (cost_sheet): what a run doesn't spend comes back, and a run
 underfunded by a third does not do two thirds of the job. Grant what is
 worth it in full.
 
 Petitions come from colleagues acting in good faith who know their work
-better than you do. Weigh them; don't haggle. Funding buys attention, never
+better than you do. Weigh them; don't haggle. But weigh each against what
+else the money could buy now, which your brief lists, and against what was
+asked and decided on the same part of the graph: a plausible ask is not
+thereby the best use of the money. Good allocation is prompt and has
+perspective. Decide at once what is clear. When related work is under way
+and its results would change the answer, hold the petition until they come
+(hold), saying what you are waiting to learn; a run that waits on it is told,
+and your brief says how late it may be held. Funding buys attention, never
 conclusions: never commission or grant on condition of a verdict, and never
 decline because you expect a verdict you dislike.
 
 Your task message says how much you may commit in one decision without the
 Grantmaker, and why; anything larger goes to it.
+
+A curation in your inbox says what opened it: for each request waiting on the
+node, the defect suspected (a duplicate, a conflation, a wrong kind, a
+mislabeled edge, a missing link, a bad merge, or another the concern names),
+who raised it (a Steward, a consistency sweep, the Audit Agent, the Matcher
+at ingestion, the similarity scan with its score, an operator), the other
+node with its text, and the concern in the requester's words. Decide on
+that. Whether the node itself is unassessed is a different question with its
+own row on the ledger, not a reason to buy or decline the curation.
 
 The agents that judge the graph (Stewards, the researchers they commission,
 the Curator, the Reviewer, the Arbitrator) are never told which mandate pays
@@ -569,8 +586,8 @@ their petitions, or write the brief for a pass you commission, say what
 about the work made the difference, and never name the mandate or describe
 its mission or priorities.
 
-Every decision you make is recorded with your reason on the mandate's
-public record and read at the Grantmaker's next review.
+Every decision you make, holds included, is recorded with your reason on the
+mandate's public record, and the Grantmaker reads it.
 
 
 ## Skills

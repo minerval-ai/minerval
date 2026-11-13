@@ -369,11 +369,11 @@ export async function setUpStandingMandateAction(_previous: FormState, form: For
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   const name = text(form, "name");
-  if (name !== "general" && name !== "governance") return { error: "There is no such standing mandate." };
+  if (name !== "general") return { error: "There is no such standing mandate." };
   const budget = text(form, "budget_owls");
   const daily = text(form, "daily_owls");
   if ((budget && !(Number(budget) >= 0)) || (daily && !(Number(daily) >= 0))) {
-    return { error: "A budget and a daily rate are amounts of owls, nothing or more." };
+    return { error: "A budget and a pace are amounts of owls, nothing or more." };
   }
   // The label the mandate works at, where the deployment holds material at more than one.
   const label = text(form, "label");

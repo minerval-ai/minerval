@@ -4,7 +4,9 @@
  * accept a contribution, so both run these effects: a proposed request is
  * filed in the request's own form, material offered to meet a request is
  * recorded as work on it for its keeper (Part VIII), and an intake proposal
- * is materialized through the Matcher (#157). Before this lived only in the
+ * is materialized through the Matcher (#157), and a view stated to the graph
+ * becomes an instance of its node, with its reasons put to the node's
+ * Steward (§4, stated-view-service.ts). Before this lived only in the
  * Reviewer's tool, an overturned propose_request read "accepted" with no
  * request on the graph.
  *
@@ -21,6 +23,8 @@ import {
   type IntakeMaterializationResult,
 } from "./intake-service.js";
 import { getContributionById, MANDATE_LABEL } from "./contribution-service.js";
+import { STATED_VIEW_CONTRIBUTION_TYPE } from "../schemas/common.js";
+import { admitStatedView, statedViewAdmissionRefusal } from "./stated-view-service.js";
 
 type SchemaProperty = Anthropic.Tool["input_schema"]["properties"];
 
@@ -103,6 +107,9 @@ export async function checkAcceptanceInput(
       return "Accepting an answer_request needs request_id, the request the material is offered for. Nothing was recorded.";
     }
   }
+  if (c.contributionType === STATED_VIEW_CONTRIBUTION_TYPE) {
+    return statedViewAdmissionRefusal(contributionId);
+  }
   return null;
 }
 
@@ -113,7 +120,9 @@ export async function checkAcceptanceInput(
  */
 export async function applyAcceptanceEffects(
   contributionId: string,
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  /** Who is accepting: the Reviewer, or the Arbitrator on an overturn. */
+  by: "contribution_reviewer" | "dispute_arbitrator" = "contribution_reviewer"
 ): Promise<AcceptanceEffects> {
   const refusal = await checkAcceptanceInput(contributionId, input);
   if (refusal) return { ok: false, error: refusal };
@@ -186,6 +195,19 @@ export async function applyAcceptanceEffects(
       note = taken.attached
         ? " The published page is attached to the node as a source, and the node's Steward has been told; do not call notify_claim_steward."
         : " The publication is admitted to the node's record and its Steward has been told; no page has been released yet, so there is nothing to attach. Do not call notify_claim_steward.";
+    }
+  }
+
+  if (c.contributionType === STATED_VIEW_CONTRIBUTION_TYPE) {
+    try {
+      const admitted = await admitStatedView(contributionId, by);
+      note =
+        ` The view is recorded as instance ${admitted.instanceId} of its node, with the speaker's declared stake.` +
+        (admitted.reasonsSent
+          ? " Its reasons are in the inbox of the node's Steward, which answers them (§14); do not call notify_claim_steward."
+          : " It gave no reasons, so nothing goes to the node's Steward; do not call notify_claim_steward.");
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 

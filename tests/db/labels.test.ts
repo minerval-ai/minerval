@@ -178,7 +178,8 @@ describe("the labels table", () => {
     // there too, each with its reason. One more is the mirror's: what a
     // batch changed on a mirrored node, which is the public graph's own
     // text and is written as `public` by the applier
-    // (private-on-mirror.test.ts).
+    // (private-on-mirror.test.ts). And claim_state_changes, the record of a
+    // node's archive, restore or merge, stamped by claim-lifecycle-service.ts.
     expect(rows).toEqual(
       [
         "action_allocations", "actions", "adopted_requests", "agent_finding_sightings", "agent_findings",
@@ -189,9 +190,9 @@ describe("the labels table", () => {
         "audit_log", "audit_notes", "audit_runs", "bounties", "budget_jobs",
         "claim_formalizations", "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
         "claim_predictions", "claim_provenance_edges", "claim_provenance_roots", "claim_relationships", "claim_source_maps",
-        "claims", "connection_calls", "connection_tools", "connections", "consistency_flags",
+        "claim_state_changes", "claims", "connection_calls", "connection_tools", "connections", "consistency_flags",
         "consistency_sweeps", "contribution_reviews", "contributions", "correspondent_events", "correspondent_plan_items",
-        "correspondent_updates", "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
+        "correspondent_updates", "correspondents", "curation_requests", "enqueue_events", "events", "examination_coverage",
         "examination_findings", "examinations", "feed_contributions", "feed_request_targets", "feed_requests",
         "file_set_files", "file_set_keeps", "file_sets", "given_addresses", "grant_conversations", "grant_sources",
         "grants", "inbound_contributions", "ingest_focuses", "jobs", "judgment_inputs",
@@ -207,7 +208,7 @@ describe("the labels table", () => {
         "shared_page_analyses", "showing_acts", "showing_pages", "showing_parts", "showing_removals",
         "showings", "shown_nodes", "shown_pages", "shown_parts", "shown_showings",
         "source_events", "source_extractions", "source_interests", "source_relationships", "source_segments",
-        "sources", "stated_views", "steward_slots", "taggings", "tags",
+        "sources", "stated_views", "steward_slots", "subscriptions", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });

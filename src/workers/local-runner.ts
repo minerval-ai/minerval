@@ -32,6 +32,7 @@ import { LlmBudgetExceededError } from "../llm/errors.js";
 import { loadConfig } from "../config.js";
 import { featureOn } from "../features.js";
 import { withSystemClearance } from "../db/clearance.js";
+import { isDeploymentFaultReason } from "../services/deployment-fault.js";
 
 export type LocalQueueName =
   | "claimPipeline"
@@ -300,6 +301,28 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
         if (surfaceBudget) checkBudget();
         return { ...budgetFlag(), processed, errors, capped: false };
       }
+      if (e.status === "transient" && isDeploymentFaultReason(e.waitingOn)) {
+        // A deployment fault (the provider's account out of credits, its
+        // key rejected) stopped the row, and the row now waits with the
+        // funded rows of its kind and tier (action-service.ts,
+        // releaseAction). That is no reason to stop the drain or slow the
+        // runner: the fault is not load, backing off does not clear it, and
+        // the lanes behind this one may run on a provider that is healthy.
+        // On 2026-11-12 stopping here on one lookout's refused call, every
+        // few minutes for thirteen hours, kept every Steward pass from
+        // starting (#971).
+        seq++;
+        errors.engine = (errors.engine ?? 0) + 1;
+        opts.onEvent?.({
+          seq,
+          queue: "engine",
+          message: { actionId: e.actionId, kind: e.kind, grantId: e.grantId, waitingOn: e.waitingOn },
+          ok: false,
+          error: e.error,
+          durationMs: now() - startedAt,
+        });
+        continue;
+      }
       if (e.status === "transient") {
         return { ...budgetFlag(), processed, errors, capped: true, stoppedOnTransient: true };
       }
@@ -402,6 +425,21 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
       if (surfaceBudget) checkBudget();
       return { ...budgetFlag(), processed, errors, capped: false };
     }
+    if (r.status === "transient" && isDeploymentFaultReason(r.waitingOn)) {
+      // As in the engine lane above: the pass's row waits on a deployment
+      // fault and paces itself, so the drain goes on to what else is covered.
+      seq++;
+      errors.steward = (errors.steward ?? 0) + 1;
+      opts.onEvent?.({
+        seq,
+        queue: "steward",
+        message: { claimId: r.claimId, trigger: r.trigger, waitingOn: r.waitingOn },
+        ok: false,
+        error: r.error,
+        durationMs: now() - startedAt,
+      });
+      continue;
+    }
     if (r.status === "transient") {
       // A transient API/infra failure (billing/credit/429/5xx/network). The
       // claim was requeued untouched (#97). Stop this pass cleanly — the API is
@@ -438,7 +476,12 @@ export async function drainLocalQueues(opts: DrainOptions = {}): Promise<DrainSt
  * How many drains the continuous runner may run at once, and when it may
  * start the next one. A ceiling (STEWARD_CONCURRENCY), not a target:
  *
- *  - A transient failure (429, 5xx, overload, network: the provider or the
+ *  - A deployment fault (a provider's account out of credits, its key
+ *    rejected) is not the governor's business either: no pace clears it, the
+ *    row it stopped waits on its own (action-service.ts, releaseAction), and
+ *    the drain goes on to the other lanes, which may run on a provider that
+ *    is healthy (#971).
+ *  - Any other transient failure (429, 5xx, overload, network: the provider or the
  *    network is struggling, not the work) halves the live limit, never below
  *    one, and pauses every slot for a backoff that doubles with each
  *    consecutive transient stop, from 5 s to at most 5 minutes. The SDK has

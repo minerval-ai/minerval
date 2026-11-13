@@ -103,7 +103,7 @@ Tool calls follow the same free-vs-metered split as the REST API (#70):
 | Tier | Tools | Cost |
 |------|-------|------|
 | Free reads | `search_claims`, `list_tags`, `get_claim`, `get_argument`, `get_decomposition`, `get_dependents`, `list_graph_changes`, `get_contribution_status`, `get_bounty_terms`, `get_page_analysis`, `get_text_analysis` | never metered |
-| Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap. `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
+| Agentic | `match_claim`, `extract_claims`, `assess_text` | charged in owls as `text_analysis` (cap `CAP_TEXT_ANALYSIS_OWLS`, settled to metered cost); rate-limited; `INSUFFICIENT_OWLS` when the balance doesn't cover the cap; `PLATFORM_FAULT` when a deployment fault kept the work from running (the platform's account with a model provider out of credits, or its key rejected: not the caller's balance, and nothing is charged). `extract_claims` and `assess_text` run in the background (read them with the free `get_text_analysis`); the quota is checked before they start, and the charge is taken when the work starts |
 | Writes | `submit_contribution` | free for good-faith contributors; goes through the contribution review pipeline and reputation rules (#71) — capped at 10 an hour, 3 for new/low-reputation accounts (`CONTRIBUTION_RATE_LIMITED`), stated in the tool description; priced proposals (`propose_claim`, `submit_source`) are bounded by the caller's balance instead and don't count, and an account flagged for suspected bad faith is blocked with `DEPOSIT_REQUIRED` until the flag is appealed |
 | Feedback | `raise_issue` | free; attributed and rate-limited (`REPORT_RATE_LIMITED`). Reports about the server or its tools land in the same `agent_reports` table as the internal agents' own reports (#366) and are triaged separately as external testimony; in production each is also filed as a GitHub issue labelled `origin/external` |
 | Route tools | everything listed under [Route tools](#route-tools) | exactly what the REST route charges, because the route runs: reads are free, `propose_claim` / `submit_source` / `order_assessment` charge their caps, funding tools escrow owls ([accounts.md](accounts.md)) |
@@ -149,7 +149,7 @@ tools for a caller who holds `direct`, and adding a set, uploading into
 one, closing one and switching one off take a session. Registering a
 directory as a set takes a session and `administer`.
 `get_setup_checklist` is the administrators' read of how far the
-deployment's setup has got (docs/setup-checklist.md).
+deployment's setup has got (docs/deployment.md, "The setup checklist").
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
@@ -262,7 +262,8 @@ read is free, an agent which signals allocation turns on.
   - `"provenance"`: the instances, each with its `stance` (`affirms`,
     `denies`, `poses` an open question, or `mentions`: it cites the claim or
     reports the debate without taking a side, and is never a vote for either
-    side) and the Steward's `reading` of its source (whether the source's own evidence bears its assertion, the
+    side; an instance of a view stated to the graph directly may also be
+    `qualifies` or `gives_probability`, which take no side either) and the Steward's `reading` of its source (whether the source's own evidence bears its assertion, the
     mechanical quote check, whether it is worth reading closely; null until
     recorded), plus `provenance_edges` (which assertions draw on which
     documents, with fidelity) and `source_relationships` (documents that are
@@ -376,7 +377,9 @@ read is free, an agent which signals allocation turns on.
   so far, for `assess_text` the judgments made so far), `complete` with the
   full result (`{claims}` / `{claims_extracted, judgments}`), or `failed`
   with an `error`. Only the account that started an analysis can read it,
-  and the text itself is not stored. The public `GET /jobs/:id` does not
+  and the text itself is not stored (a deployment that keeps its run log
+  as a record logs the analysis, privately: [run-log.md](run-log.md)). The
+  public `GET /jobs/:id` does not
   serve these jobs. Free. A running analysis keeps a heartbeat; one whose
   process died reads as `failed` and is started again.
 - **`submit_contribution`** `{claim_id?, contribution_type, content,
@@ -510,6 +513,16 @@ read of a claim, use a card.
   `get_job`.
 - **Contributions:** `list_contributions`, `submit_appeal`, `get_appeal`,
   `list_contributors`, `get_contributor`.
+- **Stated views** (constitution §4): `state_view` (the account's own view
+  on a node, in its own words, with how it stands, its stake, and reasons if
+  it gives any; reviewed on form and good faith before it shows, public and
+  not edited or withdrawn afterwards; free, inside the hourly contribution
+  limit) and `list_stated_views` (stated views beside the judgments in
+  force: where they differ and which way, where they agree, where the node
+  has not been assessed, and where the two cannot be compared; for one
+  speaker, one node, or all). `get_contribution_status` on a stated view
+  returns it as `stated_view`, with what the node's Steward answered to its
+  reasons.
 - **Your account:** `get_account` (balance, entitlement, the cap list),
   `get_usage`, `list_owl_packs`, `get_owl_ledger`, `list_api_keys`.
 - **Requests:** `list_requests`, `get_request`, `fund_request_work`

@@ -1326,7 +1326,7 @@ launch it and judges it as the launching admin of any instrument would. A
 Steward whose verdict turns on an attempt that no plan funds files a
 request for one (skills/mathematics, "When your verdict needs an
 attempt"); a Grantmaker that reads it may plan the `attempt_proof` item.
-`delegate_research` is not a route to an attempt: the researcher has no
+Research (`commission` kind `research`) is not a route to an attempt: the researcher has no
 `lean_check`, so it can bring back a sketch or a route, never a checked
 proof.
 
@@ -1389,11 +1389,11 @@ select.
   claim's `attempt_proof` plan item, bounded at twice the policy key;
   checked at group opening and again before a run: `SUM(llm_usage.cost_micro_usd WHERE claim_id AND agent =
   'math_solver')`.
-- **Mandate daily rate.** Attempts count against the funding mandate's day
-  room like any allocation (`allocation-service.ts:376-382` skips an
-  increment larger than the day's room outright), so the Mathematics
-  mandate's rate must exceed one attempt's estimate or attempts never fund
-  (section 10.7).
+- **Mandate pace.** Attempts count against the funding mandate's pace
+  like any commission (`paceRoom`, `src/services/pace-service.ts`; one
+  larger than a steady pace's whole window is refused outright), so on a
+  steady pace the Mathematics mandate's window must exceed one attempt's
+  estimate or attempts never fund (section 10.7).
 - **Solver breaker.** A durable daily cap independent of any mandate:
   `checkSolverBudget()` in `src/llm/solver-budget.ts` compares today's
   `SUM(llm_usage.cost_micro_usd WHERE agent = 'math_solver')` plus Lean rows
@@ -2788,31 +2788,31 @@ a say in acceptance; and any attempt on a claim the Steward has not tagged
 and stewarded. Integrity outranks revenue (`docs/allocation.md`, invariant
 6).
 
-### 10.7 Escrow, daily rate, and sizing
+### 10.7 Escrow, pace, and sizing
 
-The seeded rate of 10 owls a day cannot fund any attempt:
-`runMandateAllocator` skips an increment larger than the day's room outright
-(`src/services/allocation-service.ts`), and `fundGrantSelfActions`
-applies the same day room. All sizing is read from the environment rather
+A steady pace of 10 owls a day cannot fund any attempt: a commission
+larger than a steady pace's whole window is refused outright
+(`src/services/pace-service.ts`, docs/allocation.md "Pace and reserve"),
+and `fundGrantSelfActions` applies the same window. All sizing is read from the environment rather
 than written as literals (`MATH_MANDATE_ESCROW_OWLS`,
 `MATH_MANDATE_DAILY_OWLS`, `MATH_PRIZES_ESCROW_OWLS`), and the shape is
 what makes the program robust to far more money: move caps as fractions of
 escrow (`src/config.ts`), bounty bounds as fractions of the posting
-mandate's escrow, the day's room as a rate the Grantmaker sets, cost
+mandate's escrow, the pace as the funder's choice (the platform's, for these mandates), cost
 estimates as p80 of live runs, and only safety ceilings as absolute
-numbers an operator raises by configuration. The prizes mandate has no
-daily rate (rate 0 is "escrow-bounded" in the grants schema): its spend is
+numbers an operator raises by configuration. The prizes mandate's pace is
+as needed (escrow-bounded; a seeded figure of 0): its spend is
 prizes, which are paced by the per-pass and per-day fractions, and its own
 review passes. Two worked examples for the first commitment:
 
-| First commitment | Mathematics escrow (owls) | Daily rate | Mathematics prizes escrow (owls) | What it buys |
+| First commitment | Mathematics escrow (owls) | Steady pace (owls per 24 hours) | Mathematics prizes escrow (owls) | What it buys |
 |---|---|---|---|---|
 | $3,000 | 2,000 | 200 | 1,000 | The corpus baseline, about forty formalizations, the calibration runs, ten to fifteen attempts at the priors, and two or three first bounties of 250 to 500 owls. |
 | $5,000 | 2,500 | 200 | 2,500 | The same compute plus room for a first bounty of 1,000 owls and several smaller ones. |
 
-The daily rate of 200 owls sits above one `max` attempt's prior (150) plus a
-day of review passes and formalizations, so the allocator can place an
-attempt without accumulation; the global solver cap (400 owls a day; 100
+The steady pace of 200 owls in any rolling 24 hours sits above one `max`
+attempt's prior (150) plus a day of review passes and formalizations, so an
+attempt can be commissioned without accumulation; the global solver cap (400 owls a day; 100
 during calibration) is the outer bound. The first bounties are small and
 deliberately tractable, and one is posted on a problem whose purpose is to
 exercise the whole path end to end, said so publicly. The split (roughly two
@@ -2842,13 +2842,13 @@ mandate reaches a live deployment only through a new path. Add
 paragraph), `grants.skills`, and the allocation policy keys, for either
 of the two platform mandates. Two explicit flags change money, because the platform is the
 funder of its own mandates and no review pass can raise an escrow:
-`--daily-owls N` sets the rate, and `--top-up-owls N` mints and escrows
+`--daily-owls N` sets a steady pace of N owls per rolling 24 hours, and `--top-up-owls N` mints and escrows
 more platform owls under a batch-keyed idempotency key, exactly as the seed
 does on creation. Before Phase 2 the operator runs it once with the
 environment's figures, so the live row reaches the 200 owls a day that
 section 10.7 requires; both flags are recorded on the mandate page. The update is recorded on the mandate's page as a note ("the
 mandate text was revised on DATE by the platform"), and the Grantmaker's
-next review pass reads the new text in its briefing. A management
+next fresh session reads the new text in its briefing. A management
 conversation with the mandate's Grantmaker is the other path and is the one
 for later revisions.
 

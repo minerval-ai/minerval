@@ -48,18 +48,48 @@ describe("a stewarding item's budget and tier", () => {
     expect(stored[2]).not.toHaveProperty("budget_owls");
   });
 
-  it("buys the strong tier unless the item says standard", () => {
-    expect(orderTier(undefined)).toBe("strong");
+  it("stores every stewarding item with its tier: the one it names, or standard (#956)", () => {
+    const stored = normalizePlanItems([
+      item({}),
+      item({ action: "deepen", variant: "strong" }),
+      item({ action: "reassess", variant: "standard" }),
+      { action: "ingest", url: "https://example.org/a", rationale: "r" } as PlanItem,
+      { action: "sweep", partition: "residual", rationale: "r" } as PlanItem,
+    ]);
+    expect(stored.map((s) => s.variant)).toEqual(["standard", "strong", "standard", undefined, undefined]);
+  });
+
+  it("reads a tier only where the item names one: an item without is never given the strong tier by default (#956)", () => {
     expect(orderTier("strong")).toBe("strong");
     expect(orderTier("standard")).toBe("standard");
-    // A legacy or foreign value falls to the default, never throws.
-    expect(orderTier("max")).toBe("strong");
+    // An item stored before items named their tier, or a foreign value.
+    expect(orderTier(undefined)).toBeNull();
+    expect(orderTier("max")).toBeNull();
+  });
+
+  it("tells the Grantmaker the rules it works under, in the tool text (#956, #961)", async () => {
+    const { PLAN_KIND_RULES, PLAN_ITEM_SCHEMA } = await import("../../../src/services/grant-service.js");
+    const { AMEND_PLAN_ITEMS } = await import("../../../src/llm/agents/program-officer.js");
+    // The tier is named, and the default is the cheap one.
+    expect(PLAN_KIND_RULES).toMatch(/names none is stored and commissioned as standard/);
+    expect(PLAN_ITEM_SCHEMA.properties.variant.description).toMatch(/names none is stored and commissioned as standard/);
+    expect(PLAN_KIND_RULES).not.toMatch(/strong when you name none/);
+    // An order that does not fit does not hold the plan, and the cost of that is said.
+    expect(PLAN_KIND_RULES).toMatch(/never holds the ones after it/);
+    expect(PLAN_KIND_RULES).toMatch(/can be passed over/);
+    // What "started" means, and what can change before then.
+    expect(PLAN_KIND_RULES).toMatch(/started once its pass is running/);
+    expect(AMEND_PLAN_ITEMS.description).toMatch(/started once its pass is running/);
+    expect(AMEND_PLAN_ITEMS.description).toMatch(/comes straight back/);
+    // Which children a deepen item orders.
+    expect(PLAN_KIND_RULES).toMatch(/each direct child that carries no assessment/);
+    expect(PLAN_KIND_RULES).toMatch(/never ordered a fresh pass by a deepen item/);
   });
 
   it("prices each item in the plan's cost floor at what its order would commission", async () => {
     const floor = await planCostFloorOwls([
-      { action: "assess" }, // strong estimate: 2
-      { action: "reassess", variant: "standard" }, // 0.4
+      { action: "assess" }, // names no tier: standard, 0.4
+      { action: "reassess", variant: "strong" }, // 2
       { action: "deepen", budget_owls: 5 }, // its own budget
       { action: "propose" },
     ]);

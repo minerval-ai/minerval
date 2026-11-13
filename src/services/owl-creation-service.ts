@@ -36,12 +36,12 @@ import { logAdministrativeEvent } from "./permission-service.js";
 import { getPlatformAccountId } from "./platform-account.js";
 import {
   GENERAL_MANDATE_KEY,
-  GOVERNANCE_MANDATE_KEY,
   STANDING_NOTES,
   createStandingMandate,
   ensureLookouts,
   standingMandates,
 } from "./standing-mandates.js";
+import { parsePace, type Pace } from "./pace-service.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -217,22 +217,28 @@ export async function createOwls(input: {
 
 // ---- the standing mandates ---------------------------------------------------
 
-/** The names the routes call the two standing mandates by, and the key each is stored under. */
+/**
+ * The name the routes call the standing mandate by, and the key it is
+ * stored under. There is one, General: audits are part of the upkeep it
+ * pays for, since the Governance mandate was folded into it (#976).
+ */
 export const STANDING_MANDATE_KEYS = {
   general: GENERAL_MANDATE_KEY,
-  governance: GOVERNANCE_MANDATE_KEY,
 } as const;
+
+const STANDING_MANDATE_NAMES = Object.keys(STANDING_MANDATE_KEYS) as StandingMandateName[];
 
 export type StandingMandateName = keyof typeof STANDING_MANDATE_KEYS;
 
 export function isStandingMandateName(value: string): value is StandingMandateName {
-  return value === "general" || value === "governance";
+  return (STANDING_MANDATE_NAMES as string[]).includes(value);
 }
 
 interface StandingMandateState {
   id: string;
   status: string;
   budget_owls: number;
+  /** A steady pace's owls per rolling day; 0 where the mandate is paced as needed (pace-service.ts). */
   daily_owls: number;
   /** Whether its budget job is running, or waiting for a budget. */
   running: boolean;
@@ -259,7 +265,7 @@ export interface StandingMandateView {
   by_label?: Array<{ label: string; mandate: StandingMandateState | null }>;
 }
 
-/** Both standing mandates, each with the mandate it is if it has been set up. */
+/** The standing mandates (one: General), each with the mandate it is if it has been set up. */
 export async function listStandingMandates(): Promise<StandingMandateView[]> {
   const definitions = standingMandates("deployment");
   const views: StandingMandateView[] = [];
@@ -267,7 +273,7 @@ export async function listStandingMandates(): Promise<StandingMandateView[]> {
   // the reader reads: their own, so naming them to the reader shows nothing new.
   const held = await deploymentHoldsLabels();
   const labels = held ? [...currentClearance()].sort() : [];
-  for (const name of ["general", "governance"] as const) {
+  for (const name of STANDING_MANDATE_NAMES) {
     const definition = definitions.find((d) => d.key === STANDING_MANDATE_KEYS[name])!;
     // Every one the reader reads, oldest first: one for each label an
     // administrator set one up at (the database returns those at labels the
@@ -276,14 +282,14 @@ export async function listStandingMandates(): Promise<StandingMandateView[]> {
       id: string;
       status: string;
       budget: string;
-      daily: string;
+      pace: unknown;
       job_status: string;
       title: string | null;
       objective: string | null;
       label: string;
     }>(
       `SELECT g.id, g.status, j.budget_micro_usd::bigint AS budget,
-              g.daily_budget_micro_usd::bigint AS daily, j.status AS job_status,
+              g.pace, j.status AS job_status,
               g.mandate->>'title' AS title, g.mandate->>'objective' AS objective,
               g.sensitivity_label AS label
          FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
@@ -295,7 +301,7 @@ export async function listStandingMandates(): Promise<StandingMandateView[]> {
       id: row.id,
       status: row.status,
       budget_owls: microUsdToOwls(Number(row.budget)),
-      daily_owls: microUsdToOwls(Number(row.daily)),
+      daily_owls: owlsPerDay(parsePace(row.pace)),
       running: row.job_status === "running",
     });
     const first = rows[0];
@@ -317,6 +323,11 @@ export async function listStandingMandates(): Promise<StandingMandateView[]> {
   return views;
 }
 
+/** A pace as owls per rolling day: a steady pace's figure over its period, and 0 for as needed. */
+function owlsPerDay(pace: Pace): number {
+  return pace.kind === "steady" ? Math.round(((pace.owls * 24) / pace.period_hours) * 100) / 100 : 0;
+}
+
 export type SetUpStandingMandateResult =
   | { ok: true; mandate_id: string }
   | {
@@ -336,8 +347,9 @@ const STANDING_MANDATE_LOCK = `SELECT pg_advisory_xact_lock(hashtext('minerval:s
  * public graph, created here by an administrator. `budgetOwls` is created
  * with it where the deployment creates its own owls; where owls are sold a
  * budget cannot be created, so the mandate starts with none and waits to be
- * funded from a balance. `dailyOwls` is its daily rate; left out, it is the
- * rate the definition starts with.
+ * funded from a balance. `dailyOwls` sets its pace: steady at that many
+ * owls in any rolling day, or as needed at 0 (pace-service.ts); left out,
+ * it is the pace the definition starts with.
  */
 export async function setUpStandingMandate(input: {
   name: StandingMandateName;
@@ -353,7 +365,8 @@ export async function setUpStandingMandate(input: {
     return {
       ok: false,
       code: "INVALID_AMOUNT",
-      message: "The daily rate is a number of owls, zero or more. Zero means no daily rate.",
+      message:
+        "The pace is a number of owls in a rolling day, zero or more. Zero means as needed: the budget is then the only bound.",
     };
   }
   if (budgetOwls > 0 && !owlsCreatedHere()) {

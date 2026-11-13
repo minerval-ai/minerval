@@ -2163,6 +2163,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                         "appeal",
                         "arbitration",
                         "steward_note",
+                        // The node archived, restored, merged or deprecated (#962).
+                        "state_change",
                         // Mathematics (docs/mathematics.md §11.1).
                         "formalization",
                         "lean_check",

@@ -30,7 +30,6 @@ import {
 } from "fs";
 import { resolve, dirname, join } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
-import { execSync } from "child_process";
 
 import { API_STACK_PATH, parseModelPins } from "./corpus/production-pins.js";
 import {
@@ -94,7 +93,6 @@ import {
   SIMULATION_NOTICE,
 } from "./corpus/persona-prompts.js";
 import type { PersonaEntry } from "./corpus/personas-lib.js";
-import { getPromptSet } from "../src/services/prompt-set.js";
 import {
   ROLE_VIEW,
   SKILL_ROLES,
@@ -163,7 +161,7 @@ const AGENTS: AgentMeta[] = [
     model: modelLabel(MODELS.frontier), fn: getDisputeArbitratorSystemPrompt },
   { key: "audit-agent", name: "Audit Agent", stage: 7, group: "governance",
     tagline: "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
-    invokedWhen: "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, the prize decisions (a large bounty, an accepted prize claim, a checker failure), and, in a deployment that holds material at more than one label, the check of each redaction before a page is shown to readers who do not read its label. Each is a ledger action the Governance mandate funds.",
+    invokedWhen: "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, the prize decisions (a large bounty, an accepted prize claim, a checker failure), and, in a deployment that holds material at more than one label, the check of each redaction before a page is shown to readers who do not read its label. Each is a ledger action the General mandate funds.",
     model: "Claude Opus 5.5", fn: getAuditAgentSystemPrompt },
   { key: "grantmaker", name: "Grantmaker", stage: 8, group: "governance",
     tagline: "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
@@ -218,9 +216,6 @@ const AGENTS: AgentMeta[] = [
     model: `${modelLabel(MODELS.frontier)} by default; the user may choose ${modelLabel(MODELS.strong)} for a conversation`, fn: getAssistantSystemPrompt },
 ];
 
-/** The prompt set's manifest (src/services/prompt-set.ts), beside the content it names. */
-export const PROMPT_SET_FILE = "prompt-set.json";
-
 export interface AgentIndexEntry {
   key: string;
   name: string;
@@ -230,8 +225,6 @@ export interface AgentIndexEntry {
   invokedWhen: string;
   model: string;
   hasConstitution: boolean;
-  roleChars: number;
-  fullChars: number;
   /** The skills that can be spliced into this agent, with the sections it receives. */
   skills: Array<{ name: string; sections: string[] }>;
 }
@@ -259,8 +252,7 @@ export interface SkillIndexEntry {
 /**
  * Write the vendored content into `contentDir`: the three verbatim documents,
  * the agents' role and full prompts plus their index, the skills' bodies,
- * per-role spliced blocks, and index, and the prompt set (prompt-set.json:
- * one hash over the constitution, every role prompt and every skill). Pure with respect to everything but the
+ * per-role spliced blocks, and index. Pure with respect to everything but the
  * filesystem, so the drift test can target a temporary directory.
  */
 export function syncFrontendContent(contentDir: string): {
@@ -292,11 +284,11 @@ export function syncFrontendContent(contentDir: string): {
   }
   copyFileSync(resolve(root, "docs/terms-of-service.md"), resolve(contentDir, "terms-of-service.md"));
 
-  // ---- the prompt set: the identity of everything vendored below ----------
-  writeFileSync(
-    resolve(contentDir, PROMPT_SET_FILE),
-    JSON.stringify(getPromptSet(), null, 2) + "\n"
-  );
+  // Nothing written here holds a figure over the whole set (a hash over every
+  // prompt, a length that counts the constitution). Such a line changes in
+  // every PR that touches any prompt, so every open PR would conflict on it
+  // whenever another merged. The prompt set's hash is served live instead
+  // (GET /setup/prompt-set) and recorded on every run (docs/graph-epochs.md).
 
   const skills = listSkills();
 
@@ -317,8 +309,6 @@ export function syncFrontendContent(contentDir: string): {
     return {
       ...meta,
       hasConstitution,
-      roleChars: role.length,
-      fullChars: full.length,
       skills: agentSkills,
     };
   });
@@ -377,8 +367,10 @@ export function syncFrontendContent(contentDir: string): {
  * scorecards and review sheets, the fixtures, and an index of what production
  * runs on, at what price, over which clusters. The page reads only from
  * web/content/evals/; nothing on the public site touches a corpus database.
- * Kept apart from syncFrontendContent because its output carries a timestamp
- * and the git commit, so the drift test does not diff it.
+ * Kept apart from syncFrontendContent, and not diffed by the drift test.
+ * It records neither the time it ran nor the commit: either would be a line
+ * every PR that runs this rewrites, so every open PR would conflict on it
+ * whenever another merged.
  */
 export function syncEvalsContent(contentDir: string): {
   scorecards: number;
@@ -390,7 +382,6 @@ export function syncEvalsContent(contentDir: string): {
   contributions: number;
   replays: number;
   pinnedAgents: number;
-  gitCommit: string | null;
 } {
   const corpusDir = resolve(root, "corpus");
   const evalsDir = resolve(contentDir, "evals");
@@ -489,13 +480,6 @@ export function syncEvalsContent(contentDir: string): {
       }
       return { ...index, name };
     });
-
-  let gitCommit: string | null = null;
-  try {
-    gitCommit = execSync("git rev-parse --short HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
-  } catch {
-    gitCommit = null;
-  }
 
   // The exact texts the evals run on, so the guide shows the artifact rather
   // than describing it: the judge's prompt (rendered with placeholders where a
@@ -657,8 +641,6 @@ export function syncEvalsContent(contentDir: string): {
   copyFileSync(resolve(root, "docs", "monitors.md"), resolve(evalsDir, "monitors.md"));
 
   const evalsIndex = buildEvalsIndex({
-    syncedAt: new Date().toISOString(),
-    gitCommit,
     pins: parseModelPins(readFileSync(API_STACK_PATH, "utf8")),
     // The judge's default (JUDGE_MODEL unset): src/config.ts pins it to Sonnet.
     judgeModel: MODELS.sonnet,
@@ -686,7 +668,6 @@ export function syncEvalsContent(contentDir: string): {
     contributions: contributions.length,
     replays: replays.length,
     pinnedAgents: evalsIndex.pins.length,
-    gitCommit,
   };
 }
 
@@ -777,11 +758,7 @@ if (invokedDirectly) {
   console.log(
     `Synced ${agents.length} agents + ${skills.length} skill(s) + 3 docs into web/content/`
   );
-  console.log(
-    agents
-      .map((a) => `  ${a.stage}. ${a.name} — role ${a.roleChars}c, full ${a.fullChars}c`)
-      .join("\n")
-  );
+  console.log(agents.map((a) => `  ${a.stage}. ${a.name}`).join("\n"));
   console.log(
     skills
       .map(
@@ -796,6 +773,6 @@ if (invokedDirectly) {
     `Synced the eval record into web/content/evals/: ${evals.scorecards} scorecard(s), ` +
       `${evals.goldenRuns} golden run(s), ${evals.reviews} review sheet(s), ` +
       `${evals.clusters} clusters, ${evals.goldenPairs} golden pairs, ${evals.predictions} predictions, ` +
-      `${evals.contributions} contribution scenario(s), ${evals.replays} replay(s); pins from ${evals.pinnedAgents} agents @ ${evals.gitCommit ?? "unknown commit"}`
+      `${evals.contributions} contribution scenario(s), ${evals.replays} replay(s); pins from ${evals.pinnedAgents} agents`
   );
 }

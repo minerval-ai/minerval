@@ -168,7 +168,7 @@ function oneCall(system: string) {
 
 async function mandate(): Promise<string> {
   const { grantId } = await seedGrantWithJob({ funderId: await seedUser("runs-mandate"), budgetMicroUsd: 50 * OWL });
-  await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [grantId]);
+  await rawQuery(`UPDATE grants SET status = 'active' WHERE id = $1`, [grantId]);
   return grantId;
 }
 

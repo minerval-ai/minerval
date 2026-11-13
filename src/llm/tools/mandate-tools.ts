@@ -129,9 +129,9 @@ export function applyWorkspaceWrite(
 /**
  * A floor on what a plan's ledger items cost, in owls: for each assess,
  * reassess, and deepen item the budget its standing order commissions (the
- * item's budget_owls, else one Steward pass on its variant, strong when it
- * names none, so submit_plan says "strong"; a deepen costs more, by the
- * children it orders a pass on) and one ingestion for each ingest item, at
+ * item's budget_owls, else one Steward pass on its variant, standard when
+ * it names none, as it is stored; a deepen costs more, by the children it
+ * orders a pass on) and one ingestion for each ingest item, at
  * the estimates the ledger itself prices rows with. The planning pass
  * refuses a plan whose floor already overruns the escrow; it is a backstop,
  * not a quote. The Grantmaker prices plans itself from cost_sheet.
@@ -140,10 +140,11 @@ export async function planCostFloorOwls(
   items: readonly { action: string; variant?: string; budget_owls?: number }[]
 ): Promise<{
   floor_owls: number;
-  per_item_owls: { steward_pass: number; ingest: number };
+  per_item_owls: { steward_pass: number; steward_pass_strong: number; ingest: number };
 }> {
   const tiers = await stewardTierCostEstimates();
-  const pass = microUsdToOwls(tiers.strongMicroUsd);
+  const pass = microUsdToOwls(tiers.standardMicroUsd);
+  const strong = microUsdToOwls(tiers.strongMicroUsd);
   const ingest = capOwls("source_ingest");
   let floor = 0;
   for (const it of items) {
@@ -151,15 +152,15 @@ export async function planCostFloorOwls(
       floor +=
         Number(it.budget_owls) > 0
           ? Number(it.budget_owls)
-          : it.variant === "standard"
-            ? microUsdToOwls(tiers.standardMicroUsd)
+          : it.variant === "strong"
+            ? strong
             : pass;
     }
     else if (it.action === "ingest") floor += ingest;
   }
   return {
     floor_owls: Math.round(floor * 100) / 100,
-    per_item_owls: { steward_pass: pass, ingest },
+    per_item_owls: { steward_pass: pass, steward_pass_strong: strong, ingest },
   };
 }
 

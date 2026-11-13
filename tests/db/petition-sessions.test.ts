@@ -42,7 +42,7 @@ beforeAll(async () => {
 /** A Steward's pass, commissioned by a mandate and running. */
 async function runningPass() {
   const { grantId } = await seedGrantWithJob({ funderId: await seedUser("petition-funder"), budgetMicroUsd: 50 * OWL });
-  await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [grantId]);
+  await rawQuery(`UPDATE grants SET status = 'active', pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [grantId]);
   const claimId = await seedClaim("petition node");
   const res = await commissionNodePass({
     payer: { kind: "grant", grantId },

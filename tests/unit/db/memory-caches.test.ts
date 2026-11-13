@@ -55,6 +55,9 @@ const MODULE_STATE: Record<string, string> = {
 
   // ---- clients, configuration and files ---------------------------------------
   "src/config.ts:_config": "The process's configuration, from its environment.",
+  "src/config-file.ts:applied": "What the last reading of the deployment's config file put in the environment: setting names from a file on disk.",
+  "src/config-file.ts:placed": "The environment variables the config file set, so a second reading can tell them from the operator's. From a file on disk.",
+  "src/llm/prompts/curator.ts:through": "Not state: a line of the Curator's prompt that begins with the word \"let\".",
   "src/llm/prompts/constitution.ts:_constitution": "The constitution's text, read from a file in the repository.",
   "src/llm/prompts/skills.ts:_skills": "The skills, read from files in the repository.",
   "src/llm/providers/anthropic.ts:_client": "A model provider's client.",
@@ -100,6 +103,10 @@ const MODULE_STATE: Record<string, string> = {
 
   // ---- work in flight and timers ------------------------------------------------
   "src/llm/budget-tracker.ts:_counters": "The process's spend counters: numbers of tokens and money, for the circuit breaker.",
+  "src/services/assistant-stream.ts:live": "A running turn's reply so far, keyed by its conversation, for a stream opened on the process that runs it. It is the turn's own output on its way to the conversation's row, and the one route that reads it (routes/assistant.ts) first reads the conversation as its owner, under the request's clearance.",
+  "src/services/deployment-fault-service.ts:lastNoted": "When each platform fault was last noted, keyed by its reason and provider, so that one outage is recorded once and not at every failed call. Times and counts; no rows.",
+  "src/services/deployment-fault-service.ts:lastTickAt": "A time: when this process last looked for faults that have cleared.",
+  "src/services/subscription-router.ts:routing": "The one routing of events in flight in this process. A promise of a count.",
   "src/services/assistant-service.ts:pendingTurns": "The turns in flight, kept so that shutdown and tests can wait for them. Promises of nothing.",
   "src/services/claim-events-service.ts:listeners": "The functions to tell when a claim event fires. Nothing in src registers one. A listener added later is handed events at every label and must hold what it passes on to what its own reader may read.",
   "src/services/github-issue-service.ts:closureCursor": "How far the tracker's closed issues have been read: a cursor of the tracker's.",

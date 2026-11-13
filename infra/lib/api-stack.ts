@@ -255,7 +255,7 @@ export class ApiStack extends cdk.Stack {
         // Officers sit on what waits in a mandate's inbox (what lookouts
         // and the system raised) when no run is waiting on the answer.
         // Without them nothing but a waiting petition is ever decided, and
-        // the General and Governance mandates fund nothing they are asked.
+        // the General mandate funds nothing it is asked.
         OFFICER_SITTINGS_ENABLED: "true",
         // The Correspondent (#563): reads the graph for an audience and
         // writes updates people read, on the standard tier. Pinned to the

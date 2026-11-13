@@ -76,7 +76,8 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "direct the graph",
     covers:
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
-      "Correspondent for an update, add sources, among them sets of files they upload, ask for a node's page to be shown to readers " +
+      "Correspondent for an update, add sources, among them sets of files they upload, state the organization's own view on a node, " +
+      "ask for a node's page to be shown to readers " +
       "who do not read its label, end a standing showing, hold a page that has not been shown, send what a " +
       "showing outside has released to the public graph, and write the words a node is proposed there in. " +
       "Adopt a request from the public graph, and leave a mandate or a node out of keeping public versions current. " +

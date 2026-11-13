@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { figureWords, stanceWords } from "@/lib/stated-views";
 import { notFound } from "next/navigation";
 import {
   apiConfigured,
@@ -27,6 +28,7 @@ const TYPE_LABELS: Record<string, string> = {
   propose_split: "Split proposal",
   propose_claim: "Proposed claim",
   propose_source: "Proposed source",
+  state_view: "Stated view",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -97,8 +99,14 @@ export default async function ContributionPage({
   const contributor = await fetchContributorProfile(c.contributor_id);
 
   const typeLabel = TYPE_LABELS[c.contribution_type] ?? c.contribution_type.replace(/_/g, " ");
+  // A view stated to the graph directly (§4). Its review admits it or does
+  // not: an accept says the statement met the bar of form and good faith,
+  // never that the view is right, so the page says "admitted".
+  const sv = detail.stated_view ?? null;
   const statusLabel =
-    STATUS_LABELS[c.review_status] ?? c.review_status.replace(/_/g, " ");
+    sv && c.review_status === "accepted"
+      ? "Admitted"
+      : (STATUS_LABELS[c.review_status] ?? c.review_status.replace(/_/g, " "));
   const isIntake = c.claim_id === null;
   // An accepted proposal: the claim, question or quantity it became (#157).
   const becameId =
@@ -154,7 +162,7 @@ export default async function ContributionPage({
       )}
 
       <section>
-        <h2>The contribution</h2>
+        <h2>{sv ? "The statement" : "The contribution"}</h2>
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
           Submitted {fmtDate(c.submitted_at)}
           {contributor && (
@@ -172,15 +180,50 @@ export default async function ContributionPage({
             Proposed wording: {c.proposed_canonical_form}
           </blockquote>
         )}
-        <div className="assessment-body">
-          {c.content.split(/\n{2,}/).map((para, i) => (
-            <p key={i}>{para}</p>
-          ))}
-        </div>
+        {sv ? (
+          <>
+            <p style={{ fontFamily: "var(--sans)", fontSize: ".84rem", color: "var(--ink-soft)" }}>
+              A view stated to the graph directly by{" "}
+              <Link href={`/contributors/${sv.speaker.id}`}>{sv.speaker.name}</Link>
+              {sv.speaker.verified
+                ? ", an account Minerval has verified"
+                : ". The name is the account\u2019s own, and nobody has checked who is behind it"}
+              . It {stanceWords(sv.stance, claim?.claim.kind ?? "claim")}
+              {sv.probability != null ? `, with a probability of ${sv.probability.toFixed(2)}` : ""}
+              {figureWords(sv.figure) ? `: ${figureWords(sv.figure)}` : ""}.
+            </p>
+            <div className="instance">
+              <blockquote>{sv.statement}</blockquote>
+            </div>
+            <h3 style={{ fontSize: "1rem", margin: "1rem 0 .3rem" }}>Stake, as declared</h3>
+            <p style={{ fontFamily: "var(--sans)", fontSize: ".86rem" }}>
+              {sv.stake ?? "The speaker declares no stake in the answer."}
+            </p>
+            <p style={{ fontFamily: "var(--sans)", fontSize: ".78rem", color: "var(--muted)", marginTop: "-.5rem" }}>
+              A stake is a fact about a source, not a finding against it.
+            </p>
+            {sv.reasons && (
+              <>
+                <h3 style={{ fontSize: "1rem", margin: "1rem 0 .3rem" }}>Its reasons</h3>
+                <div className="assessment-body">
+                  {sv.reasons.split(/\n{2,}/).map((para, i) => (
+                    <p key={i}>{para}</p>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <div className="assessment-body">
+            {c.content.split(/\n{2,}/).map((para, i) => (
+              <p key={i}>{para}</p>
+            ))}
+          </div>
+        )}
         {c.evidence_urls.length > 0 && (
           <>
             <p style={{ fontFamily: "var(--sans)", fontSize: ".8rem", color: "var(--muted)", marginBottom: ".2rem" }}>
-              Evidence submitted with it:
+              {sv ? "Links given with it:" : "Evidence submitted with it:"}
             </p>
             <ul style={{ marginTop: 0 }}>
               {c.evidence_urls.map((u) => (
@@ -232,6 +275,12 @@ export default async function ContributionPage({
                 ))}
               </p>
             )}
+            {sv && c.review_status === "accepted" && (
+              <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)" }}>
+                Admitted means the statement met the bar of form and good faith. It is not a
+                finding that the view is right, and it gives the view no weight in the assessment.
+              </p>
+            )}
             {c.review_status === "rejected" && (
               <p style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)" }}>
                 A rejection can be appealed through the API
@@ -250,10 +299,53 @@ export default async function ContributionPage({
         )}
       </section>
 
+      {/* What became of a stated view's reasons (§14): they go to the
+          Steward when the view is admitted, and its answer is kept here,
+          in the record, and not on the claim's page. */}
+      {sv?.reasons && (
+        <section>
+          <h2>The Steward&rsquo;s answer</h2>
+          {!sv.instance_id ? (
+            <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
+              The reasons go to the Steward once the statement is admitted.
+            </p>
+          ) : !sv.challenge ? (
+            <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
+              No message to the Steward is recorded for these reasons.
+            </p>
+          ) : sv.challenge.state === "waiting" ? (
+            <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
+              The reasons were put to the Steward as a challenge on {fmtDate(sv.challenge.sent_at)}.
+              They have not been weighed yet: they wait for the next assessment pass, and the
+              answer will appear here.
+            </p>
+          ) : (
+            <>
+              <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+                Answered {fmtDate(sv.challenge.answered_at ?? sv.challenge.sent_at)} ·{" "}
+                {sv.challenge.outcome === "changed"
+                  ? "the page changed"
+                  : sv.challenge.outcome === "disagree"
+                    ? "the Steward disagreed"
+                    : "weighed, and nothing changed"}
+              </p>
+              {sv.challenge.note && (
+                <div className="assessment-body">
+                  {sv.challenge.note.split(/\n{2,}/).map((para, i) => (
+                    <p key={i}>{para}</p>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
       <hr className="thin" />
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
-        Contributions are evaluated on their merits, and every decision is
-        recorded with its reasoning, open to inspection and challenge.
+        {sv
+          ? "A stated view is reviewed for form and good faith, never for whether it is right, and every decision is recorded with its reasoning, open to inspection and challenge."
+          : "Contributions are evaluated on their merits, and every decision is recorded with its reasoning, open to inspection and challenge."}
       </p>
     </div>
   );

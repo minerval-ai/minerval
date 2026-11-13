@@ -1,4 +1,4 @@
-# Method skill: Costing (version 7)
+# Method skill: Costing (version 9)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -21,8 +21,9 @@ officer decides to pay for), set the budget at the high end of what
 cost_sheet says such work costs, not the middle: a run that has what it
 needs finishes the work, and the rest returns. Go higher when you expect
 this run to be larger than most, and say why in the brief. A budget is
-held against its payer's daily rate while the run is working, so a padded
-one delays other work by a few minutes; a short one stops work half done.
+held against its payer's pace while the run is working, so a padded one
+can delay other work a little where the pace is steady; a short one stops
+work half done.
 
 **When your own run needs more.** If doing the work properly needs more
 than your budget holds, ask with petition_mandate: say what you would do

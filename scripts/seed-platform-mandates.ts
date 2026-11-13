@@ -13,8 +13,12 @@
  * mandate does: its program officers commission work under an OPERATING
  * POLICY written in prose, which its Grantmaker revises as the record of
  * what its money did accumulates, and its lookouts watch the graph for
- * what needs doing. GOVERNANCE is its counterpart for audit (#363): it pays
- * for the Audit Agent's runs, never an audit of itself.
+ * what needs doing. Audits are part of that upkeep (#363): General pays for
+ * the Audit Agent's runs, and never for an audit whose subject is itself.
+ * (A separate Governance mandate once paid for audits. Nothing audits
+ * General's own decisions, so the separation guarded against nothing and
+ * cost a second mandate's overhead; it was folded in. A row seeded with
+ * policy 'governance' is left alone, and nothing is routed to it.)
  * Beside them: Mathematics and Mathematics prizes (docs/mathematics.md §10
  * and Appendix B: one mandate funds formalizations, attempts, and
  * stewardship; the other offers prizes from its own escrow and funds
@@ -68,7 +72,8 @@
  *   --note "<why>"           the public reason recorded with --replace-policy.
  *   --mandate <key>          the mandate a money flag applies to; defaults
  *                            to the --update-mandate key when both are given.
- *   --daily-owls N           set the mandate's daily rate.
+ *   --daily-owls N           set the mandate's pace to steady at N owls per
+ *                            rolling 24 hours (0: as needed, escrow-bound).
  *   --top-up-owls N          mint and escrow N more platform owls into the
  *                            mandate under a batch-keyed idempotency key
  *                            (see --top-up-batch), exactly as creation does.
@@ -84,6 +89,7 @@ import {
   ensureLookouts as ensureMandateLookouts,
   mandateJson,
   standingMandates,
+  steadyPerDay,
   type StandingMandate,
 } from "../src/services/standing-mandates.js";
 
@@ -310,7 +316,7 @@ function mathematicsPrizesMandate(): PlatformMandate {
 
 function mandates(): PlatformMandate[] {
   return [
-    // General and Governance: one definition, shared with the routes a
+    // General: one definition, shared with the routes a
     // members-only deployment sets its own up through
     // (src/services/standing-mandates.ts). Here they are Minerval's.
     ...standingMandates("minerval"),
@@ -505,11 +511,15 @@ async function applyMoney(
   const revisions: string[] = [];
   if (args.dailyOwls !== null) {
     await tx.query(
-      `UPDATE grants SET daily_budget_micro_usd = $2, updated_at = now() WHERE id = $1`,
-      [existing.id, owlsToMicroUsd(args.dailyOwls)]
+      `UPDATE grants SET pace = $2::jsonb, updated_at = now() WHERE id = $1`,
+      [existing.id, JSON.stringify(steadyPerDay(args.dailyOwls))]
     );
-    revisions.push(`The daily rate was set to ${owls(args.dailyOwls)} owls on ${today}.`);
-    console.log(`~ ${m.title}: daily rate ${owls(args.dailyOwls)} owls`);
+    revisions.push(
+      args.dailyOwls > 0
+        ? `The pace was set to ${owls(args.dailyOwls)} owls per rolling day on ${today}.`
+        : `The pace was set to as needed on ${today}.`
+    );
+    console.log(`~ ${m.title}: pace ${args.dailyOwls > 0 ? `${owls(args.dailyOwls)} owls per rolling day` : "as needed"}`);
   }
   if (args.topUpOwls !== null) {
     const micro = owlsToMicroUsd(args.topUpOwls);
@@ -730,7 +740,7 @@ function renderMandateMarkdown(m: PlatformMandate): string {
   const keys = m.allocationPolicy
     ? Object.entries(m.allocationPolicy).map(([k, v]) => `\`${k}\` ${v}`).join("; ")
     : "none";
-  const rate = m.dailyBudgetOwls > 0 ? `daily rate [${owls(m.dailyBudgetOwls)}] owls` : "no daily rate (escrow-bounded)";
+  const rate = m.dailyBudgetOwls > 0 ? `steady pace [${owls(m.dailyBudgetOwls)}] owls per rolling day` : "paced as needed (escrow-bounded)";
   const parts = [
     `### ${m.title}`,
     `**Title.** ${m.title}`,

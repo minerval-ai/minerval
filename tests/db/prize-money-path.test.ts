@@ -214,7 +214,7 @@ describe("the escrow hold", () => {
     // A commission reads the same number: a budget of 1,960 owls is larger
     // than the 1,950 owls of room the held bounty leaves, so it is refused;
     // once the bounty expires the room returns and it is placed.
-    await rawQuery(`UPDATE grants SET daily_budget_micro_usd = 0 WHERE id = $1`, [m.grantId]);
+    await rawQuery(`UPDATE grants SET pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [m.grantId]);
     const claimId = await seedClaim("alloc-room");
     const actionId = await seedAction({ group: `assess:${claimId}`, claimId, costMicroUsd: OWL });
     const commission = () =>

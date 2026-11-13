@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
     leanCheckerUrl: "http://lean-checker.test",
     traceLevel: "off",
     researcherEnabled: true,
-    researcherMaxWallMinutes: 20,
+    researcherRequestMaxWallMinutes: 240,
   },
 }));
 
@@ -160,8 +160,7 @@ describe("Steward toolset without a domain tag", () => {
       ...PROVENANCE_TOOLS,
     ];
     expect(names.slice(first + 1, first + 1 + skillTools.length)).toEqual(skillTools);
-    expect(names.slice(-10)).toEqual([
-      "delegate_research",
+    expect(names.slice(-9)).toEqual([
       "get_research_run",
       "raise_issue",
       "update_issue",
@@ -190,7 +189,7 @@ describe("Steward toolset without a domain tag", () => {
       view: await opts.executeTool("load_skill", { name: "provenance" }),
       recorded: [...(getUsageContext().skills ?? [])],
     }));
-    expect(view.startsWith("# Method skill: Provenance (version 9)")).toBe(true);
+    expect(view.startsWith("# Method skill: Provenance (version 10)")).toBe(true);
     expect(view).toContain("## For the Claim Steward");
     expect(recorded).toEqual(["provenance"]);
     const unknown = JSON.parse(await opts.executeTool("load_skill", { name: "alchemy" }));

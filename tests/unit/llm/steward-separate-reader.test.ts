@@ -120,9 +120,9 @@ describe("a Steward whose node's page is under no showing", () => {
     const open = await run();
     expect(mocks.queries.filter((q) => /showings/.test(q))).toEqual([]);
     expect(open.initialMessages[0]!.content).not.toMatch(/standing showing|launch a reader|cannot read/);
-    const delegate = open.tools.find((t) => t.name === "delegate_research")!;
-    expect(Object.keys(delegate.input_schema!.properties!)).not.toContain("questions");
-    expect(delegate.description).not.toContain("reader");
+    const commission = open.tools.find((t) => t.name === "commission")!;
+    expect(Object.keys(commission.input_schema!.properties!)).not.toContain("questions");
+    expect(commission.description).not.toContain("reader");
 
     // The same run with the lookup answering that no rule applies is the same, to the byte.
     mocks.rule = null;
@@ -141,9 +141,9 @@ describe("a Steward whose node's page is under a standing showing", () => {
     expect(message).toContain("## Sources this page's readers cannot read");
     expect(message).toContain("This node's page at `restricted` is under a standing showing");
     expect(message).toContain('and the connection "Finance ledger" is not offered, nor a reading or an output made from them.');
-    expect(message).toContain("A reader opens them for you. delegate_research with `questions` launches the researcher at `restricted`");
-    const delegate = shown.tools.find((t) => t.name === "delegate_research")!;
-    expect(Object.keys(delegate.input_schema!.properties!)).toContain("questions");
+    expect(message).toContain("A reader opens them for you. commission with kind research and `questions` launches the researcher at `restricted`");
+    const commission = shown.tools.find((t) => t.name === "commission")!;
+    expect(Object.keys(commission.input_schema!.properties!)).toContain("questions");
   });
 
   it("holds no tool that hands it a source's text but the one that asks the rule first", async () => {

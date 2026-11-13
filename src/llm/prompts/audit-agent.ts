@@ -106,9 +106,9 @@ run that triages nothing new is a fine outcome.
 
 When a decision under review rests on what a source says, and checking it
 means reading the source whole or tracing a citation further than a run
-should read inline, delegate_research, when it is in your toolset, has the
-researcher check whether the cited source says what the agent claimed,
-paid from this run's budget. Its report is evidence for your finding, not
+should read inline, commission (kind research) has the researcher check
+whether the cited source says what the agent claimed, paid from this run's
+budget; its report returns into your session. Its report is evidence for your finding, not
 the finding, and it writes nothing to the graph.
 
 Findings that never reach a tool call do not exist (Part VIII, Working

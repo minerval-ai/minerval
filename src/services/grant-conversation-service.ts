@@ -19,6 +19,7 @@
  * Grantmaker finishes, which can take minutes. One turn at a time, and no
  * funding while one runs.
  */
+import { parsePace } from "./pace-service.js";
 import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import {
@@ -561,6 +562,9 @@ export async function fundConversationMandate(input: {
       name: mandate.title,
       scopeClaimId: mandate.scope_claim_id ?? null,
       scopeQuery: mandate.scope_query ?? null,
+      // The pace the funder agreed in the draft (pace-service.ts); as
+      // needed when the draft names none or names it badly.
+      pace: parsePace((mandate as { pace?: unknown }).pace),
       policy: "agent",
       status: "active",
       plan: mandate.plan,

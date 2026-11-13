@@ -26,7 +26,6 @@ const { state } = vi.hoisted(() => ({
     funder: { jobId: "job-1", grantId: "g-1" } as Record<string, unknown>,
     fallbackLane: false,
     generalMandate: null as null | Record<string, unknown>,
-    governance: [] as string[],
     contexts: [] as Array<Record<string, unknown>>,
     budgets: [] as Array<{ microUsd: number; source: string }>,
     curatorCalls: [] as Array<Record<string, unknown>>,
@@ -98,7 +97,8 @@ vi.mock("../../../src/services/action-service.js", () => ({
   }),
 }));
 
-vi.mock("../../../src/services/curation-service.js", () => ({
+vi.mock("../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   liveCurationRequests: vi.fn(async () => state.requests),
   consumeCurationRequests: vi.fn(async (ids: string[], actionId: string) => {
     state.consumed.push({ ids, actionId });
@@ -109,7 +109,6 @@ vi.mock("../../../src/services/curation-service.js", () => ({
 
 vi.mock("../../../src/services/allocation-policy-service.js", () => ({
   getGeneralMandate: vi.fn(async () => state.generalMandate),
-  getGovernanceMandateIds: vi.fn(async () => state.governance),
 }));
 
 vi.mock("../../../src/services/bounty-service.js", () => ({
@@ -215,7 +214,6 @@ beforeEach(() => {
   state.funder = { jobId: "job-1", grantId: "g-1" };
   state.fallbackLane = false;
   state.generalMandate = null;
-  state.governance = [];
   state.contexts = [];
   state.curatorCalls = [];
   state.auditCalls = [];
@@ -244,12 +242,12 @@ describe("the curate action", () => {
     expect(state.reopened).toEqual([]);
   });
 
-  it("works to the 5-owl run budget when its allocations cover less, and says whose it is", async () => {
+  it("works to the budget its commission set, never raised past it, and says whose it is", async () => {
     state.covered = curateAction();
     await processNextEngineAction();
     expect(state.budgets[0]).toEqual({
-      microUsd: 5_000_000,
-      source: "this curation's run budget, which its funding mandate covers",
+      microUsd: 250_000,
+      source: "the commission funding this curation",
       funding: { actionId: expect.any(String) },
     });
   });
@@ -347,7 +345,8 @@ describe("the audit action", () => {
     expect(state.contexts[0]).toEqual({ userId: "u-funder", jobId: "gov-job" });
     expect(state.completed).toEqual([{ id: "act-a", metered: 120_000, meteredJobId: "gov-job" }]);
     expect(state.auditClosed).toEqual([[RUN_ID]]);
-    expect(state.budgets[0]!.microUsd).toBe(5_000_000);
+    // The commission's budget, as placed: nothing raises it.
+    expect(state.budgets[0]!.microUsd).toBe(500_000);
   });
 
   it("runs a prize audit under the bounty's reserve job and the platform account", async () => {
@@ -388,9 +387,17 @@ describe("the unfunded fallback lane", () => {
   it("never runs unfunded work a seeded mandate could fund", async () => {
     state.fallbackLane = true;
     state.generalMandate = { grantId: "g-general" };
-    state.governance = ["g-gov"];
     state.fallback = [{ ...curateAction(), coverage_micro_usd: 0 }];
     const r = await processNextEngineAction();
     expect(r.status).toBe("empty");
+  });
+
+  it("leaves an uncovered audit to the General mandate when there is one", async () => {
+    state.fallbackLane = true;
+    state.generalMandate = { grantId: "g-general" };
+    state.fallback = [{ ...auditAction(), coverage_micro_usd: 0 }];
+    const r = await processNextEngineAction();
+    expect(r.status).toBe("empty");
+    expect(state.auditCalls).toHaveLength(0);
   });
 });

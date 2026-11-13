@@ -21,8 +21,8 @@ const facts = (over: Partial<Parameters<typeof reviewPassBudgetBasis>[0]> = {}) 
   figure: { microUsd: 5_000_000, fromPolicy: false, reason: "the platform's default until the Grantmaker sets one" },
   fromShare: false,
   floorOwls: 1,
-  dailyRateMicroUsd: 25_000_000,
-  dayUsedMicroUsd: 9_000_000,
+  windowMicroUsd: 25_000_000,
+  windowUsedMicroUsd: 9_000_000,
   escrowFreeMicroUsd: 400_000_000,
   ...over,
 });
@@ -33,7 +33,7 @@ describe("reviewPassBudgetBasis", () => {
     expect(b).toContain("the platform's default for a review pass, 5 owls");
     expect(b).toContain("because your operating policy names none");
     expect(b).toContain("review_pass_owls in write_operating_policy");
-    expect(b).toContain("held against today's rate while this pass runs");
+    expect(b).toContain("held against your pace's window while this pass runs");
     expect(b).toContain("opening turn");
     expect(b).toContain("add_to_pass_budget");
     expect(b).not.toContain("started with less");
@@ -52,23 +52,23 @@ describe("reviewPassBudgetBasis", () => {
       facts({
         ceilingMicroUsd: 3_000_000,
         figure: { microUsd: 8_000_000, fromPolicy: true, reason: "r" },
-        dailyRateMicroUsd: 10_000_000,
-        dayUsedMicroUsd: 10_000_000,
+        windowMicroUsd: 10_000_000,
+        windowUsedMicroUsd: 10_000_000,
         escrowFreeMicroUsd: 40_000_000,
       })
     );
     expect(b).toContain("This pass was started with less than that, 3 owls");
-    expect(b).toContain("10 of 10 owls of today's rate are committed, this pass's budget included");
+    expect(b).toContain("10 of 10 owls of the pace's window are committed, this pass's budget included");
     expect(b).toContain("40 owls of escrow are uncommitted");
     expect(b).toContain("at least 1 owls can be found");
-    expect(b).toContain("set_daily_rate");
+    expect(b).toContain("the pace is the funder's to change");
   });
 
   it("speaks of the escrow alone for a mandate with no daily rate", () => {
-    const b = reviewPassBudgetBasis(facts({ dailyRateMicroUsd: 0 }));
+    const b = reviewPassBudgetBasis(facts({ windowMicroUsd: null, windowUsedMicroUsd: null }));
     expect(b).toContain("held from your escrow while this pass runs");
-    expect(b).not.toContain("today's rate");
-    expect(b).not.toContain("set_daily_rate");
+    expect(b).not.toContain("pace's window");
+    expect(b).not.toContain("the pace is the funder's to change");
   });
 
   it("tells a decomposition its share is the bound, and offers no addition", () => {

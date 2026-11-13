@@ -3,7 +3,7 @@
  * label. It was written for one case, a mandate taking back a regrant it
  * made, whole (withdrawFromMandate), and the money view a regrant is
  * deleted through reads every label. The guard now lets that case through
- * and no other (migration 0137).
+ * and no other (migration 0148).
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { rawQuery } from "../../src/db/client.js";

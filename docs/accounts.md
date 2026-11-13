@@ -78,7 +78,7 @@ Trust levels, enforced by route guards:
 | `requireUser` | a resolved account | `GET /users/me`, `GET /usage`, `GET /api-keys` |
 | `requireSession` | service caller acting for a signed-in user (the dashboard) | `POST/DELETE /api-keys` — a leaked consumer key can never mint or revoke keys |
 | `requireService` | first-party only | `POST /users/provision`, `GET /usage/system` |
-| `requireOperator` | the operator key, held outside the web deployment | the prize routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below); and the platform-mandate routes: funding a pinned draft (`POST /operator/platform-mandates/fund`) and minting, listing and revoking platform-grantmaking keys (`/operator/platform-grantmaking-keys`) |
+| `requireOperator` | the operator key, held outside the web deployment | the prize routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below); and the platform-mandate routes: funding a pinned draft (`POST /operator/platform-mandates/fund`) and minting, listing and revoking platform-grantmaking keys (`/operator/platform-grantmaking-keys`); and the deployment's preflight (`GET /setup/preflight`, docs/deployment.md), which moves no money but reports the deployment's configuration |
 
 Reads (`GET /claims…`, search, trees, jobs) remain open and free.
 
@@ -155,12 +155,12 @@ code decides who should hold which.
 
 | permission | held | lets its holder | never lets anyone |
 |---|---|---|---|
-| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, among them sets of files they upload, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)), adopt a public request, and, unless the deployment names another permission for it (`PUBLIC_ACTS_BY`), act on the public graph in the organization's name ([outward-acts.md](outward-acts.md)) | edit an assessment or a run's log |
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, among them sets of files they upload, state the organization's own view on a node, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)), adopt a public request, and, unless the deployment names another permission for it (`PUBLIC_ACTS_BY`), act on the public graph in the organization's name ([outward-acts.md](outward-acts.md)) | edit an assessment or a run's log |
 | `release` | for one party | release or hold, part by part, what a page shown to readers who do not read its label carries of that party's material, set standing rules for it ([showing-a-page.md](showing-a-page.md)), release the words a node is proposed to the public graph in, and, for the organization's own material, send an agent's report as redacted to Minerval's maintainers ([outward-acts.md](outward-acts.md)) | edit what the agents wrote, or release another party's material |
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
-| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files, set up the General and Governance mandates, create owls where the deployment creates its own, read and send the usage reports | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files, set up the General mandate, create owls where the deployment creates its own, read and send the usage reports | act under a permission they have not also been granted, or change who may do what without a log entry |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
@@ -181,6 +181,7 @@ The routes a permission guards, in each mode (`requirePermission` in
 |---|---|---|
 | `POST /grant-conversations`, `POST /grant-conversations/:id/messages`, `POST /grants/:id/approve`, `POST /correspondents/:id/poke` | an account | `direct` |
 | `POST /sources` | any valid key, and the owl charge | `direct` |
+| `POST /claims/:claim_id/stated-views` | an account that may contribute | `direct`: stating the organization's own view on a node is part of directing the graph |
 | `POST /grant-conversations/:id/fund`, `POST /grants/:id/topup`, `POST /mandates/:id/contribute`, `POST /claims/:claim_id/order`, `POST /claims/:claim_id/contribute`, `POST /claims/:claim_id/decompose`, `POST /requests/:request_id/contribute`, `POST /budget-jobs/:id/topup` | an account, and the owls | `fund` |
 | `POST /grants` | a direct service caller | `direct` and `fund` |
 | the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
@@ -235,6 +236,13 @@ as `public`.
   node's own judgment and the work at its own label are untouched and do
   not wait on it. A label the person holds that does not read the node's
   answers `400 LABEL_DOES_NOT_READ` with the ones that do.
+- **A view stated on a node, the same way.** `POST /claims/:claim_id/stated-views`
+  takes the same optional `label`: what an organization holds about a public
+  node is its own material, so the statement, its review, the instance it
+  becomes and its reasons to the Steward are at the label it was stated at,
+  and are read only there. On a node the mirror brought, a view at the
+  node's own label is not taken (`409 PUBLIC_GRAPH_NODE`), as a contribution
+  is not: name a label that reads it, or state the view on the public graph.
 
 `GET /labels/mine` returns what a page needs to offer the choice: the
 labels the person may read, each with its description, what else its
@@ -344,7 +352,7 @@ Mounted only where `READS=members`:
 | `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
 | `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
 | `POST /operator/administrators` | the operator key | grant `administer` to an account, by its sign-in identity |
-| `GET /setup/checklist` | `administer` | what the deployment's setup has done and what is still to do, with the deployment's own checks where the build has them ([setup-checklist.md](setup-checklist.md)) |
+| `GET /setup/checklist` | `administer` | what the deployment's setup has done and what is still to do, with the deployment's own checks where the build has them ([deployment.md](deployment.md), "The setup checklist") |
 
 Every write takes a signed-in session, as minting an API key does, so a
 leaked key, an access token, or an agent following text it read can never
@@ -485,7 +493,7 @@ says so where an administrator's list leaves rows out.
 
 | page | who | what it is |
 |---|---|---|
-| `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` ([setup-checklist.md](setup-checklist.md)). Its words are in `web/lib/admin-words.ts` |
+| `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` ([deployment.md](deployment.md), "The setup checklist"). Its words are in `web/lib/admin-words.ts` |
 | `/admin/people` | every member; controls for `administer` | What each permission covers, what the reader holds, and the log, with a withheld name shown as withheld. For administrators: who holds what by person and by group, granting and removing, and the accounts that have signed in and hold nothing |
 | `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form, and that defining the first label takes about ten seconds; what each label is cleared to be sent to; the parties, with the organization's own named here; whose material a source is |
 | `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection at a label the administrator reads, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls the administrator reads with which were kept. A connection's label is shown and not offered for change |
@@ -556,7 +564,7 @@ reader. For a reader with one judgment in force each is what it was.
 | The nanopublication | The assertion states the pinned assessment; the publication info names every one in force (`mv:assessmentInForce`) |
 | The MIRA export | Every assessment in force is a node of its own (`mv:Assessment`, for a claim and for a question), with its label, verdict and reasoning. A neighbour whose status is one of several carries `mv:judgmentsInForce` |
 | Findings | No count: one judgment is not chosen at all. A filter by the claim's status finds a finding under the status of either judgment in force, the counts beside the filter count it under each, and a cited assessment is `current` while it is its own label's current one (a judgment at another label does not make it old). `cited_assessments` carries the count |
-| Read-only SQL's `assessments` view | One row for each judgment: `is_current` is true for every judgment in force for the session (migration 0146), so a join on it returns a row for each and nothing is chosen by date. The note on the result says so to a reader of more than one label besides `public` |
+| Read-only SQL's `assessments` view | One row for each judgment: `is_current` is true for every judgment in force for the session (migration 0154), so a join on it returns a row for each and nothing is chosen by date. The note on the result says so to a reader of more than one label besides `public` |
 
 On the web, the rails (what depends on a node, see also, a question's
 rail), the compass and the map count each node once, by the one status its
@@ -672,16 +680,16 @@ have no price, so the gap can be closed before a run meets it.
 
 ### The standing mandates, set up in the app
 
-Every deployment needs a General mandate (upkeep) and a Governance mandate
-(audits): no agent work runs except by allocation (docs/allocation.md,
-"Platform mandates"). On the public graph a seed script creates them with
-the database's credentials. In a members-only deployment an administrator
-does, from a signed-in session:
+Every deployment needs a General mandate, which pays for upkeep and, since
+the Governance mandate was folded into it, for audits: no agent work runs
+except by allocation (docs/allocation.md, "Platform mandates"). On the
+public graph a seed script creates it with the database's credentials. In a
+members-only deployment an administrator does, from a signed-in session:
 
 | route | who | |
 |---|---|---|
-| `GET /standing-mandates` | a member | the two mandates, and whether each has been set up |
-| `POST /standing-mandates/:name` (`general` or `governance`) | `administer`, from a signed-in session | set one up, with `budget_owls` and `daily_owls` |
+| `GET /standing-mandates` | a member | the General mandate, and whether it has been set up |
+| `POST /standing-mandates/:name` (`general`) | `administer`, from a signed-in session | set it up, with `budget_owls` and `daily_owls`, which sets its pace: at most that many owls committed in any rolling day, or `0` for as needed |
 
 The mandate is the one the seed creates (the same starting operating policy
 and lookouts, from one definition in `src/services/standing-mandates.ts`),
@@ -697,8 +705,7 @@ Grantmaker reads what that label reads, and what it pays for is work at
 that label. So where a deployment holds material at more than one label,
 the request that sets a standing mandate up names the label it is for
 (`label`, among the labels the administrator reads), and each label whose
-upkeep or audits are to be paid for has its own General or Governance
-mandate. Setting one up at a label says nothing about another label, and
+upkeep and audits are to be paid for has its own General mandate. Setting one up at a label says nothing about another label, and
 is refused only where that label already has one. `GET /standing-mandates`
 then carries `by_label`: for each label the caller reads, the mandate set
 up there or none. A label with no General mandate has nobody paying for
@@ -734,7 +741,7 @@ review — is *system* usage (`user_id IS NULL`): the graph's upkeep belongs
 to everyone, and good-faith contribution stays free (#71). Curator
 reconciliation and audits are funded ledger actions (#363), so their spend
 lands on the mandate that chose to buy them (usually the platform's own
-General and Governance mandates) rather than on the contributor or on
+General mandate) rather than on the contributor or on
 nobody. The meter is **internal cost observability**;
 what the user owes is the owl ledger, below.
 
@@ -770,7 +777,6 @@ spent (§15):
 | order a claim assessment | **up to 2 owls** | `CAP_ASSESSMENT_OWLS` |
 | submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
 | extension page analysis | up to 1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
-| extension chat exchange | up to 0.1 owl | `CAP_EXTENSION_CHAT_OWLS` |
 | MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
 
 A page analysis's cap is above its average run on purpose: it is also the
@@ -853,7 +859,10 @@ model, running with the full constitution, surveys the scope, quotes
 expected costs in owls, pushes back where judgment differs, and drafts a
 mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows
 the budget and starts the grant with the mandate as its plan; nothing runs
-or is charged before that.
+or is charged before that. The draft carries the mandate's pace, agreed
+with the funder: as needed (the escrow is the only bound, the default) or
+steady (at most so many owls committed in any rolling window), which only
+the funder changes afterwards (docs/allocation.md, "Pace and reserve").
 
 The Grantmaker replies in the background. Sending a message saves it and
 returns at once with the message's place (`message.index`,
@@ -879,11 +888,12 @@ and can be taken over by the next message. The Grantmaker works for the integrit
 graph and declines mandates that attempt to steer conclusions, at any
 budget. Mandate plans mix `assess`, `reassess`, `deepen`, and `ingest`
 items. A live mandate executes through the action ledger
-(docs/allocation.md): planning runs, its Grantmaker's periodic review
-passes, and ingest items are self-funded ledger actions run by the engine
+(docs/allocation.md): planning runs, the sittings of its Grantmaker's
+session, and ingest items are ledger actions the mandate commissions
+itself, run by the engine
 executor (`src/workers/engine-executor.ts`); a plan's claim items, and
 the nodes a 'deepen' policy mandate's scope holds waiting, are Steward
-passes the mandate commissions within its daily rate and escrow
+passes the mandate commissions within its pace and escrow
 (`src/services/standing-order-service.ts`), run with every other
 commissioned pass; everything else a mandate pays for, its officers and
 lookouts commission under its operating policy. Mandates also fund each other as peers (regrants) and can spawn
@@ -975,12 +985,25 @@ Assistant's own progress line) and `turn.partial` (the text of the reply
 once it starts writing). A reply usually opens with a long run of tool
 calls and no text, so the page shows the activity.
 
+That saved state is written about once a second. For a person watching,
+`GET /assistant/conversations/:id/stream` is the same turn as an event
+stream: `text` events carry the reply as it is written, `activity` and
+`note` the steps as they start, and `done` says the turn has ended and is
+saved. The process running the turn publishes these as they happen
+(`services/assistant-stream.ts`); a stream opened on another process
+re-reads the saved state instead and sends it as `state` events. The page
+uses the stream and keeps reading the conversation beside it, so a stream
+that drops or cannot open costs only the speed.
+
 **Names.** A conversation is named from its first message by a small
-model (`ASSISTANT_TITLE_MODEL`, the cheap tier by default), in the
+model (`ASSISTANT_TITLE_MODEL`, Claude Haiku by default, so a
+conversation's text goes to one provider), in the
 background while the Assistant starts on the reply: two to six words in
 place of the message's opening words, which stand in until the name
-arrives and stay if the call fails. The call is untraced, and its cost (a
-fraction of a cent) is charged with the conversation's.
+arrives and stay if the call fails. The call is untraced while the run log
+is best-effort, and a logged run where it is kept as a record
+(docs/run-log.md); its cost (a fraction of a cent) is charged with the
+conversation's either way.
 
 **The page.** `/ask` is laid out as a chat, not as an article
 (`web/app/ask/layout.tsx`): a sidebar of the user's conversations, pages
@@ -1022,10 +1045,18 @@ with a section of the prompt for the narrow panel in place of the site's.
 The extension reads the conversation until the turn is idle, shows what the
 reply cost, and can stop it. It holds only an API key, so it cannot release
 a held action: the reply says one is waiting and links to the conversation
-on minerval.ai, which is the same conversation. The older
-`POST /extension/chat`, with its own flat price and prompt, is kept for
-installed versions of the extension that still call it and can be removed
-once they have updated.
+on minerval.ai, which is the same conversation. Versions of
+the extension before 0.4.0 called `POST /extension/chat`, which had its own
+flat price and prompt and is gone: their chat tab fails until they update.
+
+**Sharing a page.** A page is private until its user shares it:
+`POST /pages/:id/share` gives it a link (`/p/:token`, a random token, not
+the page's id) that anyone can read it by, signed in or not, and
+`DELETE /pages/:id/share` withdraws it; sharing again makes a new link.
+`GET /shared-pages/:token` is the public read: the page and the nodes it
+embeds as they stand, and nothing about whose it is. Both writes take the
+signed-in session and are not MCP tools, so no agent can publish what the
+user keeps. Only a page at the public label can be shared (`src/labels.ts`).
 
 **Other doors.** Node pages and `/mandates` carry an ask box that opens
 `/ask` with the question written and, from a node, the node named to the
@@ -1239,7 +1270,10 @@ have to cover (#356), so the promise stays keepable as tables are added.
   never reach the database: the pipeline runs untraced and keeps its result
   only in an in-memory cache (see the extension section of
   [architecture.md](architecture.md)). Erasure has nothing to find here,
-  which is the point of keeping it that way.
+  which is the point of keeping it that way. This is true of a deployment
+  whose run log is best-effort, as the public graph's is. One that keeps
+  its log as a record (`RUN_LOG_MODE=record`) logs that work, privately,
+  and keeps the log (docs/run-log.md).
 - **Rows keyed to the account** (`contributors.id`), deletable outright:
   `api_keys`, `oauth_tokens`, `oauth_authorization_requests`,
   `grant_conversations`, `assessment_orders`, `budget_jobs`, `grants`
@@ -1268,6 +1302,14 @@ have to cover (#356), so the promise stays keepable as tables are added.
   `external_id`, `display_name`, `email`, and `avatar_url` so the row
   survives as an anonymous contributor, rather than unpublishing the
   exchange; the same treatment Wikipedia gives a vanished editor.
+- **Stated views** (constitution §4). An account that states its view on a
+  node publishes a statement under its own name: the source's title and
+  author and the instance's speaker carry the name the account had then. The
+  form says so before anything is submitted, and that a statement is not
+  withdrawn. Deleting the account detaches the `contributions` row like any
+  other and leaves the statement standing as a source under the name it was
+  made with, the way a signed letter outlives its author's membership.
+  `stated_views` holds what was submitted and is keyed to the contribution.
 - **The claim layer** carries no account identity: claims, instances, and
   assessments name sources and speakers, never users. Personal detail there
   is a constitutional violation (§2), handled as a correction to the graph,

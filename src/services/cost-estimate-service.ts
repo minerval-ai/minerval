@@ -52,7 +52,7 @@ export function resetCostEstimateCache(): void {
  *
  * This number is used as a cap: the allocator covers an action for it, the run
  * then costs what it costs, and any excess is consumed off the escrow WITHOUT
- * passing through an allocation — so it escapes the mandate's daily rate and is
+ * passing through an allocation — so it escapes the mandate's pace and is
  * bounded only by the escrow. An estimate set at the mean is therefore wrong
  * about half the time, and always in the expensive direction.
  *
@@ -64,7 +64,7 @@ export function resetCostEstimateCache(): void {
  * p80 is the default: it funds the large majority of runs completely while
  * still reflecting typical cost, and the tail that remains is small. Raising it
  * further trades throughput for tightness — a bigger per-action estimate means
- * fewer actions clear the same daily rate.
+ * fewer actions clear the same pace.
  */
 /**
  * The solver's series is keyed by `run_id`, not `claim_id`: several attempts

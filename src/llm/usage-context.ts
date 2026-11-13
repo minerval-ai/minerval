@@ -59,11 +59,13 @@ export interface UsageContext {
    */
   skills?: string[];
   /**
-   * Set by untraced(): the work in progress handles content that must stay
-   * transient — a reader's page text, a chat question, a passage handed to
-   * the MCP for on-demand analysis (#356). withAgent opens no run inside it
-   * and no step is recorded, whatever TRACE_LEVEL says. Metering is
-   * unaffected: llm_usage rows carry counts and cost, never content.
+   * Set by untraced(): the work in progress handles a reader's own content
+   * — a page's text, a chat question, a passage handed to the MCP for
+   * on-demand analysis (#356). While the log is best-effort, withAgent opens
+   * no run inside it and no step is recorded, whatever TRACE_LEVEL says. In
+   * record mode the work is logged like any other and its runs start
+   * private (trace-service.ts, READERS_OWN_REASON). Metering is unaffected:
+   * llm_usage rows carry counts and cost, never content.
    */
   untraced?: true;
   /**
@@ -278,7 +280,10 @@ export function withAgent<T>(agent: string, fn: () => T): T {
 
 function openAgentRun<T>(agent: string, fn: () => T): T {
   const context = getUsageContext();
-  const trace = context.untraced ? null : startAgentRun(agent, context);
+  // A reader's own content is kept off a best-effort log (untraced below).
+  // Record mode has no such exemption: startAgentRun opens the run, private.
+  const exempt = context.untraced === true && !recordMode();
+  const trace = exempt ? null : startAgentRun(agent, context);
   if (!trace) return runWithUsageContext({ agent }, fn);
   return runWithUsageContext({ agent, runId: trace.runId, trace }, () => {
     let result: T;
@@ -352,7 +357,8 @@ export function noteSkillLoaded(skill: string): void {
 }
 
 /**
- * Run `fn` with tracing suppressed, whatever TRACE_LEVEL says. This is the
+ * Run `fn` as work over a reader's own content, with tracing suppressed
+ * while the log is best-effort, whatever TRACE_LEVEL says. This is the
  * privacy seam of the trace substrate (#356): the transcript of an agent
  * run is verbatim — the page it read, the question it was asked — so work
  * over content a user never published runs inside this wrapper, and nothing
@@ -360,8 +366,19 @@ export function noteSkillLoaded(skill: string): void {
  * handle from an enclosing run is dropped too, so a nested agent cannot
  * append its steps to an outer run. Independent of the metering context,
  * which keeps attributing tokens and cost as usual.
+ *
+ * In record mode nothing is suppressed. A deployment that keeps its log as a
+ * record does so because it holds material whose handling has to be on that
+ * log, and a reader's passage there is such material: every run inside is
+ * opened, waits on its seal and fails if its log could not be written, like
+ * any other. The mark stays on the context, so those runs start private and
+ * a report raised from them still leaves its body out (report-tools.ts).
+ *
+ * tests/unit/llm/logged-runs.test.ts lists the files that may call this,
+ * each with its reason.
  */
 export function untraced<T>(fn: () => T): T {
+  if (recordMode()) return runWithUsageContext({ untraced: true }, fn);
   return runWithUsageContext(
     { untraced: true, trace: undefined, runId: null },
     fn

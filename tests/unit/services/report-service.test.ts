@@ -39,6 +39,7 @@ import {
   AmbiguousReportIdError,
   computeDedupeKey,
   formatAgentReport,
+  ISSUE_FILING_GRACE_SECONDS,
   listReportsAwaitingIssue,
   parseIssueNumbers,
   raiseIssue,
@@ -849,7 +850,14 @@ describe("listReportsAwaitingIssue", () => {
     expect(String(sql)).toContain("status <> 'withdrawn'");
     // Only public reports are ever selected: a tracker is outside the deployment.
     expect(String(sql)).toContain("sensitivity_label = $3");
-    expect(params).toEqual([20, false, "public"]);
+    expect(params).toEqual([20, false, "public", ISSUE_FILING_GRACE_SECONDS]);
+  });
+
+  it("leaves a fresh report to its raise-time filing (#952, #953)", async () => {
+    await listReportsAwaitingIssue(20, { includeExternal: false });
+    const [sql] = mocks.rawQuery.mock.calls[0]!;
+    expect(String(sql)).toContain("first_seen_at < now() - make_interval(secs => $4)");
+    expect(ISSUE_FILING_GRACE_SECONDS).toBeGreaterThanOrEqual(60);
   });
 });
 

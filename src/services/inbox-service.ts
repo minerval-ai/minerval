@@ -18,6 +18,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { REPORT_NOT_GIVEN, mayBeGivenReplyOfResearch } from "./separate-reader.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 
 export type MessageSenderKind =
@@ -75,6 +76,13 @@ export function defaultSenderFor(trigger: string): MessageSender {
  */
 export const INBOX_FULL_TEXT_CHARS = 40_000;
 
+/**
+ * Keep a message in a node's inbox. Only an active node has one: no Steward
+ * works a merged, deprecated or archived node, so a message there would sit
+ * unread for good and read, to anyone looking, as work waiting (#962). Null
+ * when nothing was kept. enqueueSteward forwards what it is handed for a
+ * retired node to its successor, if it has one.
+ */
 export async function postMessage(input: {
   nodeId: string;
   trigger: string;
@@ -90,7 +98,7 @@ export async function postMessage(input: {
     `INSERT INTO node_messages
        (node_id, trigger, sender_kind, sender_node_id, sender_ref, body, paid, reply_to, sensitivity_label)
      SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9::text
-      WHERE EXISTS (SELECT 1 FROM claims WHERE id = $1)
+      WHERE EXISTS (SELECT 1 FROM claims WHERE id = $1 AND state = 'active')
      RETURNING id`,
     [
       input.nodeId,
@@ -202,6 +210,23 @@ export function describeSender(m: Pick<MessageRow, "sender_kind" | "sender_node_
   }
 }
 
+/**
+ * A message from the Researcher holds a research run's report, where no
+ * session was there to take it. It is a report in the Researcher's own
+ * words all the same, so it reaches the run that reads the inbox on the
+ * terms a reply in a session does (separate-reader.ts): the run takes on
+ * the marks of the run that wrote it, or, where it writes a shown page and
+ * that run had sources the page's readers cannot read, reads a fixed
+ * sentence in the report's place. Where `public` is the only label nothing
+ * is asked.
+ */
+async function withheldResearchReports(rows: Array<Pick<MessageRow, "sender_kind" | "sender_ref" | "body">>): Promise<void> {
+  for (const m of rows) {
+    if (m.sender_kind !== "researcher" || !m.sender_ref) continue;
+    if (!(await mayBeGivenReplyOfResearch(m.sender_ref))) m.body = REPORT_NOT_GIVEN;
+  }
+}
+
 export interface OpenedInbox {
   /** The brief's inbox section, or "" when the inbox is empty. */
   brief: string;
@@ -220,6 +245,8 @@ export async function openInbox(nodeId: string, now: number = Date.now()): Promi
   const rows = await unreadMessages(nodeId, true);
   const labels = new Map<string, string>();
   if (rows.length === 0) return { brief: "", labels, ids: [] };
+
+  await withheldResearchReports(rows);
 
   // Give the newest messages their text first, within the budget.
   const full = new Set<string>();
@@ -290,6 +317,7 @@ export async function readMessage(
     [id]
   );
   if (!m) return JSON.stringify({ success: false, message: `Message ${label} is no longer in the inbox.` });
+  await withheldResearchReports([m]);
   return JSON.stringify({
     success: true,
     label,
@@ -350,6 +378,33 @@ export async function answerMessages(
       continue;
     }
     recorded.push(label);
+    {
+      // Every answer is on the log, so a sender that is not a Steward (the
+      // Curator, the Audit Agent, a Checker, a lookout) can be told too.
+      const { recordEvent } = await import("./event-service.js");
+      await recordEvent({
+        kind: "message_answered",
+        nodeId,
+        refs: { message: id, sender_kind: m.sender_kind, sender_node: m.sender_node_id },
+        summary: `The Steward of ${nodeId} answered a message from ${m.sender_kind} ("${quoteHead(m.body)}"): ${OUTCOME_WORDS[outcome]}.` + (note ? ` ${note}` : ""),
+        payload: { outcome },
+      });
+    }
+    if (m.sender_kind !== "steward" && m.reply_to_session) {
+      // A sender with no node (the Curator, the Audit Agent, a Checker)
+      // that waits for the answer in its session gets it there.
+      const { deliverReply } = await import("./session-service.js");
+      const routed = await deliverReply({
+        sessionId: m.reply_to_session,
+        kind: "reply",
+        ref: id,
+        text:
+          `The Steward of ${nodeId} answered your message ("${quoteHead(m.body)}"): ${OUTCOME_WORDS[outcome]}.` +
+          (note ? ` ${note}` : ""),
+        fallback: null,
+      });
+      if (routed !== "dropped") replies++;
+    }
     if (m.sender_kind === "steward" && m.sender_node_id && m.sender_node_id !== nodeId) {
       const date = new Date(m.created_at).toISOString().slice(0, 10);
       const body =
