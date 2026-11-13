@@ -107,12 +107,12 @@ describe("the task message", () => {
     await withPassBudget({ microUsd: 1_400_000, source: "the allocations funding this pass" }, async () => {
         const line = turnBudgetLine(200);
         expect(line).toMatch(
-          /^Budget: This run has a budget of \$1\.40, from the allocations funding this pass\. It is set at the high end/
+          /^Budget: This run has a budget of \$1\.40, from the allocations funding this pass, for doing this work properly\. Use what the work needs/
         );
-        expect(line).toContain("what you leave goes back to whoever paid");
+        expect(line).toContain("What you do not spend goes back to whoever paid");
         // Only a run that has the tools is told about them.
         expect(line).not.toContain("petition_mandate");
-        expect(turnBudgetLine(200, { canSpend: true })).toContain("ask with petition_mandate");
+        expect(turnBudgetLine(200, { canSpend: true })).toContain("ask with petition_mandate as soon as you see that");
         expect(line).toContain("Separately, you have up to 200 tool-use turns");
       });
   });
@@ -134,15 +134,12 @@ describe("toolUseLoop with a budget", () => {
           executeTool: spend(450_000),
         }));
     const first = trailingText(2);
-    expect(first[0]).toBe(
-      "Budget: $0.45 of $1.00 spent (45%). Your last turn cost $0.45; at that rate about 1 turn " +
-        "remain, fewer as the conversation grows. Turn 1 of 200 used; 199 remain."
-    );
+    expect(first[0]).toBe("Budget: $0.45 of $1.00 spent (45%). Turn 1 of 200 used; 199 remain.");
     expect(first).toHaveLength(1);
-    // Past 85%: the spend line, then the wrap-up notice, once.
+    // Past 70%: the spend line with the turns left, then the notice, once.
     const second = trailingText(3);
-    expect(second[0]).toMatch(/^Budget: \$0\.90 of \$1\.00 spent \(90%\)/);
-    expect(second[1]).toMatch(/^Budget notice: most of this run's budget is spent/);
+    expect(second[0]).toMatch(/^Budget: \$0\.90 of \$1\.00 spent \(90%\)\. Your last turn cost \$0\.45/);
+    expect(second[1]).toMatch(/^Budget notice: \$0\.10 of this run's budget is left\./);
     const third = trailingText(4);
     expect(third[0]).toMatch(/^Budget: \$1\.35 of \$1\.00 spent \(100%\)\. Turn 3 of 200/);
     expect(third[1]).toMatch(/^Budget notice: this run has spent its whole budget/);

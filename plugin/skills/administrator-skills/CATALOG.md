@@ -5,7 +5,7 @@ administrators' prompts in `src/llm/prompts/`. Do not edit by hand.
 
 ## Skills
 
-### Costing (`skills/costing.md`, version 9, method skill)
+### Costing (`skills/costing.md`, version 10, method skill)
 
 How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.
 

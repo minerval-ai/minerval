@@ -113,15 +113,18 @@ describe("the budget line with a basis", () => {
       { microUsd: 5_000_000, source: "the mandate's allocation for this pass" },
       async () => turnBudgetLine(200, { basis: "It is your mandate's own figure." })
     );
-    expect(line).toContain("This run has a budget of $5.00, from the mandate's allocation for this pass. It is your mandate's own figure. Spend what the work warrants");
+    expect(line).toContain("This run has a budget of $5.00, from the mandate's allocation for this pass. It is your mandate's own figure. Use what the work needs");
+    expect(line).not.toContain("for doing this work properly");
     expect(line).not.toContain("high end of what work like this usually costs");
     expect(line).toContain("metered at real cost");
   });
 
-  it("is unchanged for every other agent", async () => {
+  it("says what the budget is for to every other agent", async () => {
     const { value: line } = await withPassBudget({ microUsd: 2_000_000, source: "a commission" }, async () =>
       turnBudgetLine(200)
     );
-    expect(line).toContain("It is set at the high end of what work like this usually costs, so most runs finish well inside it: spend what the work warrants");
+    expect(line).toContain("This run has a budget of $2.00, from a commission, for doing this work properly. Use what the work needs");
+    // The old sentence taught runs to finish well inside their budgets.
+    expect(line).not.toContain("most runs finish well inside it");
   });
 });

@@ -334,9 +334,18 @@ yours needs, the conversation it re-reads included; a sitting that needs
 more for once adds to its own budget (add_to_pass_budget), within the pace
 and the escrow.
 
-Set budgets at the high end of what the costing skill says such work costs:
-a run with what it needs finishes the work, and what it leaves comes back.
-An agent whose work turns out to need more may petition, and your officers
+Set each budget at what doing the work properly needs, not at what similar
+runs have spent. The price list (cost_sheet) is what past runs spent while
+held to their budgets, so it trails what the work needs: treat its figures
+as a floor. What a run does not spend comes straight back, so a generous
+budget costs the mandate nothing but the room it holds while the run works.
+As a rule, a first pass on a node the graph holds no sources for, or on a
+story still unfolding, needs $3 to $5 at the standard tier: its Steward has
+to search and read before it can judge. A question whose rival answers you
+want found and weighed needs that for the question and again for each
+answer you expect. A fresh look at a settled node can stay near the price
+list. A run with what it needs finishes the work, and what it
+leaves comes back. An agent whose work turns out to need more may petition, and your officers
 answer it, while the agent carries on; a recurring petition for the same
 kind of work means the budget for that kind is set too low.
 
