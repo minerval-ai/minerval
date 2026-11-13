@@ -584,10 +584,11 @@ export async function fundConversationMandate(input: {
     .returning();
   // The plan is live: its proposals (#656) are filed and its standing orders
   // (#849) placed now, from the escrow just made, rather than a sweep later.
-  if (mandate.plan.items.length > 0) {
-    const { materializeLivePlan } = await import("./action-service.js");
-    await materializeLivePlan(grant!.id);
-  }
+  const { materializeLivePlan, openMandateFirstSitting } = await import("./action-service.js");
+  if (mandate.plan.items.length > 0) await materializeLivePlan(grant!.id);
+  // Its Grantmaker's first sitting is opened now too, and the executor's
+  // next tick funds it, rather than the next six-hourly sweep (never throws).
+  await openMandateFirstSitting(grant!.id);
   return { ok: true, conversation: updated!, grantId: grant!.id };
 }
 

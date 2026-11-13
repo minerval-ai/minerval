@@ -88,6 +88,13 @@ async function deliverDue(): Promise<number> {
   const conditions = await rawQuery<SubscriptionRow>(`SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND condition IS NOT NULL`);
   for (const s of conditions) {
     const c = s.condition!;
+    if (c.kind === "work_settled") {
+      const { mandateWorkInFlight } = await import("./action-service.js");
+      if ((await mandateWorkInFlight(c.grant_id)) > 0) continue;
+      if (!(await claimEnd(s.id))) continue;
+      if (await deliver({ ...s, once: false }, null, `All the work your mandate set going is settled: no pass, ingest or other run it commissioned is waiting to run or running, and no plan item is waiting for its ingests (set ${c.since.slice(0, 16).replace("T", " ")} UTC).`)) n++;
+      continue;
+    }
     if (c.kind !== "committed_owls") continue;
     const hours = Math.max(1, (Date.now() - new Date(c.since).getTime()) / 3_600_000);
     const committed = await committedWithinMicroUsd(c.grant_id, Math.ceil(hours));

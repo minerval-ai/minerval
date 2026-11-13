@@ -154,5 +154,8 @@ export async function createClaimMandate(input: {
      RETURNING id`,
     [input.userId, job!.id, text.title, claim.id, JSON.stringify(mandate), currentLabel()]
   );
+  // Its planning pass opens now, not at the next sweep (never throws).
+  const { openMandateFirstSitting } = await import("./action-service.js");
+  await openMandateFirstSitting(grant!.id);
   return { ok: true, grantId: grant!.id, budgetJobId: job!.id };
 }

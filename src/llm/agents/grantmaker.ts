@@ -265,7 +265,12 @@ const UUID_RE =
  * Mechanical mandate validation; exported for tests. `knownRefs` are the
  * proposal refs of the plan the items are joining (extend_plan, adjust_plan).
  */
-export function validateMandate(raw: GrantMandate, knownRefs: readonly string[] = []): string | null {
+export function validateMandate(
+  raw: GrantMandate,
+  knownRefs: readonly string[] = [],
+  /** The ingest urls of the plan the items join, which an item's `after` may name. */
+  knownIngestUrls: readonly string[] = []
+): string | null {
   if (raw.skills !== undefined) {
     if (!Array.isArray(raw.skills)) return "skills must be an array of skill names";
     const known = new Set(listSkills().map((s) => s.name));
@@ -296,7 +301,7 @@ export function validateMandate(raw: GrantMandate, knownRefs: readonly string[] 
       return `scope_ref "${String(raw.scope_ref)}" names no propose item in the plan`;
     }
   }
-  return validatePlanItems(raw.plan.items, knownRefs);
+  return validatePlanItems(raw.plan.items, knownRefs, undefined, knownIngestUrls);
 }
 
 /**
@@ -313,6 +318,22 @@ export async function planProposalRefs(grantId: string, opts: { executedOnly?: b
     [grantId, opts.executedOnly ?? false]
   );
   return rows.map((r) => r.ref);
+}
+
+/**
+ * The ingest urls a live mandate's plan already carries, which items
+ * joining it may wait for (`after`): all of them (extend_plan), or those of
+ * the executed items an adjust_plan keeps (`executedOnly`).
+ */
+export async function planIngestUrls(grantId: string, opts: { executedOnly?: boolean } = {}): Promise<string[]> {
+  const rows = await rawQuery<{ url: string }>(
+    `SELECT t.e->>'url' AS url
+       FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) WITH ORDINALITY t(e, i)
+      WHERE g.id = $1 AND t.e->>'action' = 'ingest' AND t.e->>'url' IS NOT NULL
+        AND ($2::boolean IS NOT TRUE OR t.i <= g.plan_cursor)`,
+    [grantId, opts.executedOnly ?? false]
+  );
+  return rows.map((r) => r.url);
 }
 
 /**
@@ -1330,7 +1351,11 @@ export async function executeManagementTool(
       funder_named: true,
       funder_stake: "none",
     };
-    const problem = validateMandate(probe, await planProposalRefs(grantId, { executedOnly: true }));
+    const problem = validateMandate(
+      probe,
+      await planProposalRefs(grantId, { executedOnly: true }),
+      await planIngestUrls(grantId, { executedOnly: true })
+    );
     if (problem) return JSON.stringify({ success: false, problem });
     // Stored in the one plan-item form every path writes (#684).
     const stored = normalizePlanItems(items);

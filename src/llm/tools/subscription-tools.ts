@@ -30,10 +30,13 @@ export function getSubscriptionToolDefinitions(): Tool[] {
       name: SUBSCRIBE,
       description:
         "Say what you want to be told of, or when you want to look again, so you can end your turn and wait " +
-        "for it rather than check repeatedly. Three kinds, one per call: an event (name kinds and/or refs: " +
+        "for it rather than check repeatedly. Four kinds, one per call: an event (name kinds and/or refs: " +
         "runs by action id, nodes, everything beneath a node, the nodes resting on a node, tags, sources, " +
-        "mandates, or other refs such as a petition or research run), a time (at, or in_hours: a check-in), or " +
-        "money committed (when_committed_owls: owls committed by your mandate from now). delivery wake (the " +
+        "mandates, or other refs such as a petition or research run), a time (at, or in_hours: a check-in), " +
+        "money committed (when_committed_owls: owls committed by your mandate from now), or your mandate's " +
+        "work settling (when_work_settled: once, when none of the passes, ingests and other runs your mandate " +
+        "commissioned is waiting to run or running, and no plan item waits for its ingests: one delivery for a " +
+        "whole wave rather than one per run). delivery wake (the " +
         "default) resumes your session when it fires; queue holds it for your next turn without waking you. " +
         "once ends it at its first delivery. While you hold a subscription that wakes you, ending your turn " +
         "pauses your session instead of ending it, and it waits at least until your latest check-in. Each " +
@@ -59,6 +62,10 @@ export function getSubscriptionToolDefinitions(): Tool[] {
           at: { type: "string", description: "A time (ISO 8601, UTC) to look again." },
           in_hours: { type: "number", description: "Or: look again this many hours from now." },
           when_committed_owls: { type: "number", description: "Wake when your mandate has committed this many more owls." },
+          when_work_settled: {
+            type: "boolean",
+            description: "Wake once, when all the work your mandate has commissioned has settled (nothing waiting to run or running).",
+          },
           delivery: { type: "string", enum: ["wake", "queue"] },
           once: { type: "boolean" },
           reason: { type: "string", description: "Why you want it: shown back to you with every delivery." },
@@ -129,6 +136,20 @@ export async function executeSubscriptionTool(
       subscriberKind: "session",
       subscriberRef: session.id,
       condition: { kind: "committed_owls", grant_id: opts.grantId, at_least_micro_usd: owlsToMicroUsd(owls), since: new Date().toISOString() },
+      delivery,
+      once: true,
+      reason,
+      createdBy: opts.role,
+    });
+    return JSON.stringify({ success: true, id: s.id, message: describeSubscription(s) });
+  }
+  // A mandate's work settling.
+  if (input.when_work_settled === true) {
+    if (!opts.grantId) return JSON.stringify({ success: false, message: "when_work_settled is for a mandate's agents; this run serves no mandate." });
+    const s = await createSubscription({
+      subscriberKind: "session",
+      subscriberRef: session.id,
+      condition: { kind: "work_settled", grant_id: opts.grantId, since: new Date().toISOString() },
       delivery,
       once: true,
       reason,

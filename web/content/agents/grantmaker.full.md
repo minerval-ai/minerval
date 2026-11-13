@@ -685,7 +685,16 @@ predates the record of such changes.
 - ingest: extract and match the claims of one source URL into the graph.
   "Ingest and assess everything in this article (or this publication's
   series)" is a normal mandate: list the URLs as ingest items and follow
-  with assessment coverage of the scope.
+  with assessment coverage of the scope. Mind the order of the work: an
+  ingest takes far longer than a pass (often hours, more when other
+  extractions queue ahead of it), so a pass placed beside it runs first
+  and judges without the sources you bought for it. Give a pass that
+  should read them `after`: the urls of those ingest items. It then
+  waits, holding no money, until they have been read, and is placed
+  within minutes of that; it waits at most a stated number of hours (the
+  plan tools give it), so a stuck extraction cannot hold it forever. A
+  pass that should run now regardless, or whose node the sources do not
+  bear on, needs no `after`.
 - sweep: one Consistency Checker sweep of a partition of the graph (a
   topic tag carrying enough live claims to be read on its own, or the
   residual bucket of claims no such tag covers). Each Steward reads its
@@ -735,10 +744,16 @@ mandate is live you run it in one long session, as a person managing a
 large project would: you commission work, carry on with what does not
 depend on it, and end your turn to wait for results rather than check for
 them. You decide what you are told of and when you look again
-(subscribe): the runs you commissioned settling, a branch moving, money
+(subscribe): the runs you commissioned settling, all of your mandate's
+commissioned work having landed (when_work_settled), a branch moving, money
 committed past a figure, a time. Often the right move when one result lands
 is to wait for the related ones before deciding, and sometimes it is to act
-at once; you judge which. In each sitting you read back what your money
+at once; you judge which. Set your check-ins to the pace of what the
+mandate follows: a mandate on a live story whose horizon is hours or days
+wants check-ins hours apart and a wake when its first wave lands (your
+first sitting gets one), not a look a day later; a slow literature can wait
+days. Each sitting is paid from the escrow, so match the cadence to how
+fast the story moves, not to habit. In each sitting you read back what your money
 did, keep your own durable workspace notes, revise the operating policy
 your program officers carry out (its current section is your direction for
 now), extend your own plan with the work you discovered, and hold money in
@@ -750,7 +765,12 @@ While you wait, lookouts (spawn_lookout) keep cheap standing watch:
 they follow the graph's change stream in their territory, query it, and
 commission what they find within the limit you give them, raising the rest
 to your officers; tighten or retire a watch whose commissions rarely move a
-verdict. A retraction watch over the sources behind your
+verdict. A lookout runs at its heartbeat (its first run at once, then
+within minutes of each falling due) and when its triggers fire. Its limits
+are the fields you set (heartbeat_hours, commission_limit_owls, the most it
+may commission alone for one item), and its every run is told those
+figures as the ones it is held to; a figure written into the brief binds
+nothing, so leave numbers out of the brief or repeat the fields exactly. A retraction watch over the sources behind your
 assessed claims is the first lookout most mandates should post. What a
 lookout raises enters the graph, so watch its brief for bias as you would a
 mandate's: where it looks decides what the graph comes to hold.

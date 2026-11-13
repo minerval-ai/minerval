@@ -384,5 +384,8 @@ export async function spawnFundedMandate(input: {
     await rawQuery(`DELETE FROM budget_jobs WHERE id = $1`, [job!.id]);
     return regranted;
   }
+  // The new mandate's planning pass opens now, not at the next sweep.
+  const { openMandateFirstSitting } = await import("./action-service.js");
+  await openMandateFirstSitting(grant!.id);
   return { ok: true, grantId: grant!.id, regrantId: regranted.regrantId };
 }
