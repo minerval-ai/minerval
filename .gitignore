@@ -7,6 +7,8 @@ dist/
 # Environment
 .env
 .envrc
+# A local deployment's config file (docs/deployment.md); the example is in deploy/.
+/minerval.toml
 # GitHub App private keys (downloaded from github.com; live in Secrets Manager)
 *.private-key.pem
 

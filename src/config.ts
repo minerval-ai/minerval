@@ -9,6 +9,9 @@ import {
   unknownFeatureNames,
   unknownFeaturesMessage,
 } from "./features.js";
+import { applyConfigFile } from "./config-file.js";
+import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
+import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
 
 /**
  * Requests per minute one IP address may make without credentials. The one
@@ -111,6 +114,38 @@ const configSchema = z.object({
     })
     .prefault(""),
 
+  // Who this deployment serves (src/permissions.ts; docs/accounts.md,
+  // "Members-only deployments"). "open", the starting value, is the public
+  // graph: a read needs no account and the rules for every act are the ones
+  // each route already carries. "members" serves nothing to anyone who is
+  // not signed in, and what a signed-in person may do follows from the
+  // permissions the deployment's administrators have granted them.
+  reads: z.enum(["open", "members"]).default("open"),
+  // The sign-in identity ("<provider>:<subject>", as an account's
+  // external_id reads) of the person setting a members-only deployment up.
+  // It is used once: the first time that person signs in while the
+  // deployment has never had an administrator, they are granted every
+  // permission, and the grants are logged as made by this setting. After
+  // that it does nothing, whatever it says. Empty by default.
+  firstAdministrator: z
+    .string()
+    .trim()
+    .refine((id) => id === "" || /^[a-z0-9_-]+:.+$/i.test(id), {
+      message:
+        'FIRST_ADMINISTRATOR must be a sign-in identity of the form "<provider>:<subject>", ' +
+        'for example "oidc:00u1abcd". A person who has signed in and holds no permission is ' +
+        "shown their own.",
+    })
+    .default(""),
+  // How long a sign-in vouches for the groups it carried, in hours, in a
+  // members-only deployment. The API never asks the identity provider
+  // anything, so a person removed from a group there is known here only by
+  // their next sign-in: a group's grants reach an account while its latest
+  // sign-in is younger than this. The web app ends a session at the same
+  // age (web/auth.ts reads the same variable), so a person at work signs in
+  // again before their groups lapse.
+  signInValidHours: z.coerce.number().positive().default(12),
+
   // CORS
   corsOrigins: z.string().default(""),
 
@@ -160,6 +195,36 @@ const configSchema = z.object({
   // run on a cheap-tier model wants (a slow host there turns an hour into a
   // day). Any value still routes only to data_collection: deny hosts.
   openrouterProviderSort: z.enum(["price", "throughput", "latency"]).optional(),
+
+  // Endpoints this deployment serves models from itself (vLLM, llama.cpp's
+  // server, TGI, Ollama): a JSON list, one object per endpoint, with its
+  // name, its base URL, the name of the environment variable that holds its
+  // key if it takes one, and what a call costs
+  // (src/llm/providers/endpoint-config.ts). A model id of the shape
+  // "endpoint:<name>/<model>" routes to one. Empty by default: none.
+  modelEndpoints: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseModelEndpoints(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseModelEndpoints(raw).endpoints)
+    .prefault(""),
+  // The labels each model provider and outside service may receive text at
+  // (src/provider-labels.ts): a JSON object from a provider's name to a
+  // list of label names. Empty by default, and a provider it does not name
+  // is cleared for `public` alone, so a deployment with another label
+  // serves nothing at it until this says who may.
+  providerLabels: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseProviderLabels(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseProviderLabels(raw).labels)
+    .prefault(""),
   awsRegion: z.string().default("us-east-1"),
 
   // Accounts / owls (#70, owl economy)
@@ -195,7 +260,6 @@ const configSchema = z.object({
   // So it is set for the work a long page needs rather than at the average
   // run, which settles back well under it.
   capExtensionAnalysisOwls: z.coerce.number().default(1),
-  capExtensionChatOwls: z.coerce.number().default(0.1),
   capTextAnalysisOwls: z.coerce.number().default(0.1),
   // One lookout run (kind 'lookout_run'): a cheap-tier agent reading its
   // brief, the graph, and the open web, and raising candidates. Set near
@@ -246,11 +310,6 @@ const configSchema = z.object({
   // Grantmaker's run deciding what its officers escalated at the second.
   // Both are ceilings; a run returns what it does not spend.
   officerRunBudgetOwls: z.coerce.number().positive().default(1),
-  grantmakerDecisionBudgetOwls: z.coerce.number().positive().default(4),
-  // How long a run waiting on its petition waits. A run is paused on the
-  // answer, which is the reason the decision has a clock at all; past it
-  // the petition stays open and, if granted later, funds a follow-up pass.
-  petitionWaitSeconds: z.coerce.number().int().positive().default(180),
   // How long a paused agent session waits for what it asked for before its
   // answers go to its node's inbox instead (session-service.ts). Stated to
   // the agent in the tools that pause it.
@@ -278,7 +337,7 @@ const configSchema = z.object({
   // survey and its decisions to pay for (#820 saw 1 owl leave nothing after
   // the opening turn). A ceiling: the pass returns what it does not spend.
   defaultReviewPassBudgetOwls: z.coerce.number().positive().default(5),
-  // The least a review or planning pass is started with when today's rate
+  // The least a review or planning pass is started with when the pace
   // or the escrow cannot fund its budget in full
   // (allocation-service.ts, fundGrantSelfActions). Money alone cannot
   // serve here: a pass started with less than its opening turn costs
@@ -428,12 +487,15 @@ const configSchema = z.object({
   traceLevel: z.enum(["off", "full"]).optional(),
   // How much a run depends on its log (#552). "best_effort", the default:
   // a step that cannot be written is logged and the run carries on, closing
-  // unsealed. "record": every traceable run is traced whatever TRACE_LEVEL
-  // says, nothing in a step is cut to a size cap, the run does not return
-  // until its log is sealed, a run whose log could not be written whole
-  // fails, and the retention sweep deletes nothing. A private graph runs in
-  // record mode, since a page it publishes names its log; the public graph
-  // stays best-effort until record mode has run somewhere in earnest.
+  // unsealed. "record": every run is traced whatever TRACE_LEVEL says, the
+  // ones over a reader's own content included (untraced in
+  // llm/usage-context.ts), a model call with no run to log it in is refused
+  // (llm/logged-run.ts), nothing in a step is cut to a size cap, the run
+  // does not return until its log is sealed, a run whose log could not be
+  // written whole fails, and the retention sweep deletes nothing. A private
+  // graph runs in record mode, since a page it publishes names its log; the
+  // public graph stays best-effort until record mode has run somewhere in
+  // earnest.
   runLogMode: z.enum(["best_effort", "record"]).default("best_effort"),
   // How long agent_runs (and, by cascade, agent_steps) are kept before the
   // retention sweep (workers/trace-retention.ts) deletes them. Runs that
@@ -499,7 +561,7 @@ const configSchema = z.object({
   //
   // What it was really standing in for was fan-out cost, and that now has a
   // proper control: extracted claims become ledger actions, and a mandate's
-  // allocator funds only what clears its daily rate. Claims beyond what anyone
+  // allocator funds only what clears its pace. Claims beyond what anyone
   // will pay to assess simply sit pending — bounded by money, which is the
   // honest bound, rather than by a count chosen in advance. The claim bar in
   // the extractor's own prompt ("emit only claims that pass the bar; a short
@@ -552,7 +614,7 @@ const configSchema = z.object({
   // and p80 3.30. A prior that low is not a harmless guess — it under-funds
   // every action until the live series exists, and the shortfall is spent off
   // the escrow without passing through an allocation, so it escapes the
-  // mandate's daily rate entirely. These now sit near the p80 of a real run at
+  // mandate's pace entirely. These now sit near the p80 of a real run at
   // each tier, which is what the live estimate converges to.
   estStewardRunCostOwls: z.coerce.number().default(1.4),
   estStewardRunCostStrongOwls: z.coerce.number().default(3.3),
@@ -562,13 +624,13 @@ const configSchema = z.object({
   //
   // The estimate is a CAP: the allocator covers an action for it, the run costs
   // what it costs, and the excess is drawn off the escrow outside any
-  // allocation — unpaced by the daily rate. Run cost is right-skewed (mean 2.31
+  // allocation — unpaced by the pace. Run cost is right-skewed (mean 2.31
   // owls against a p90 of 4.36 and a max of 7.01 in the first epoch), so the
   // mean under-funds about half of all runs and always in the expensive
   // direction. p80 funds the large majority outright.
   //
   // Higher is tighter but slower: a bigger per-action estimate means fewer
-  // actions clear the same daily rate. 0.5 reproduces the old median-ish
+  // actions clear the same pace. 0.5 reproduces the old median-ish
   // behaviour if throughput ever matters more than pacing accuracy.
   costEstimatePercentile: z.coerce.number().min(0).max(1).default(0.8),
   // The background lane's total metered spend per UTC day, in owls
@@ -642,7 +704,7 @@ const configSchema = z.object({
   // The allocation scheduler (workers/allocation-scheduler.ts): how often to
   // refresh pending priorities and check assessed claims for staleness
   // (0 disables). Every claim past its interval is re-enqueued; which of
-  // them run is the ledger's call, bounded by the mandates' daily rates.
+  // them run is the ledger's call, bounded by the mandates' paces.
   allocationSweepIntervalHours: z.coerce.number().default(6),
   stalenessBaseDays: z.coerce.number().default(60),
   // Grant policy 'maintain': in-scope assessments older than this many days
@@ -680,6 +742,18 @@ const configSchema = z.object({
   // without a blunt depth cap. 0.25 = the ontology's "peripheral" ceiling, so
   // only genuinely peripheral subclaims are gated; set 0 to disable.
   stewardEnqueueMinImportance: z.coerce.number().default(0.25),
+  // Whether this deployment uses each paid outside service at all, said in
+  // so many words (the config file's outside_services.*.use,
+  // docs/deployment.md). Each service's key is a secret and lives in the
+  // environment, so without these a config file could not say whether the
+  // service is used. Unset, the default, is today's rule: the service is on
+  // when its key is set. "false" switches it off whatever keys are present
+  // (loadConfig blanks them below). "true" changes nothing here; it is the
+  // deployment saying it means to use the service, which the preflight
+  // holds it to by failing when the key is missing (src/preflight.ts).
+  elicitEnabled: z.enum(["true", "false"]).optional(),
+  pangramEnabled: z.enum(["true", "false"]).optional(),
+  paymentsEnabled: z.enum(["true", "false"]).optional(),
   // Elicit domain connector for the Steward (#299): scholarly search over
   // Elicit's remote MCP server. Empty key (the default) disables the
   // connector entirely — the Steward's toolset simply omits the elicit_*
@@ -806,14 +880,11 @@ const configSchema = z.object({
     .string()
     .transform((s) => s === "true")
     .prefault("false"),
-  // What a researcher run may spend is its ceiling, which the launcher sets
-  // out of its own budget (the run is billed to the launcher's), or out of
-  // the mandate's uncommitted budget when a Grantmaker funds it. Two bounds
-  // remain, neither of them a judgment: the durable daily cap on researcher
-  // spend no funder pays for (an operator's circuit breaker), and the
-  // wall-clock cap on one run, because the launching agent's run blocks on
-  // the report and holds its lease while it waits. The researcher is told
-  // the wall cap up front.
+  // What a researcher run may spend is its ceiling, the budget its
+  // commission placed (from the commissioning run's budget, or from a
+  // mandate's money when its Grantmaker commissions it). Beside it remain
+  // the durable daily cap on researcher spend no funder pays for (an
+  // operator's circuit breaker) and the wall-clock backstop below.
   researcherDailyCapOwls: z.coerce.number().min(0).default(50),
   // The review cost each contribution from a mandate's research reserves
   // against the budget its Grantmaker delegated (Part VIII) until its review
@@ -829,12 +900,10 @@ const configSchema = z.object({
   // instance.
   contributionReviewBudgetUsd: z.coerce.number().min(0).default(1),
   arbitrationBudgetUsd: z.coerce.number().min(0).default(3),
-  researcherMaxWallMinutes: z.coerce.number().min(1).default(20),
-  // A request run from the ledger (#734) has no launcher waiting on it, so
-  // the 20-minute cap above has no reason there: its budget, the quote its
-  // funders paid, bounds the work. This is only a backstop against a run
-  // that has stopped making progress without spending, and the run is told
-  // it with that reason.
+  // No research run has a launcher blocked on it (every one is commissioned
+  // on the ledger, #734): its budget bounds the work. This is only a
+  // backstop against a run that has stopped making progress without
+  // spending, and the run is told it with that reason.
   researcherRequestMaxWallMinutes: z.coerce.number().min(1).default(240),
   // Per-attempt ceiling = cost_est × (1 + this) (§7.3): the dollar bound
   // the beforeTurn hook stops at. It is the attempt's only budget: every
@@ -938,7 +1007,7 @@ const configSchema = z.object({
   // --- Mathematics: the mandates' sizing (§10.7) ---
   // Read from the environment rather than written as literals in the seed,
   // so the program is robust to far more money without a code change: the
-  // Mathematics mandate's escrow (owls at cost) and daily rate (must exceed
+  // Mathematics mandate's escrow (owls at cost) and steady pace per day (must exceed
   // one max attempt's prior plus a day of passes, or attempts never fund),
   // and the Mathematics prizes mandate's escrow, the only source of its
   // prizes.
@@ -1014,8 +1083,8 @@ const configSchema = z.object({
   // ARBITRATION_MODEL=claude-fable-5-2 (the frontier tier: few runs, each one
   // final).
   arbitrationModel: modelId(MODELS.sonnet),
-  // The extension agent judges on-page phrasings against graph state and
-  // powers the extension chat — user-facing latency-sensitive work (#72).
+  // The extension agent judges on-page phrasings against graph state:
+  // user-facing latency-sensitive work (#72).
   extensionModel: modelId(MODELS.sonnet),
   // The Grantmaker runs the granting conversation: mandate design, cost
   // quoting, and the authority to refuse mandates that would warp the
@@ -1028,9 +1097,9 @@ const configSchema = z.object({
   // for a conversation.
   assistantModel: modelId(MODELS.frontier),
   assistantStandardModel: modelId(MODELS.strong),
-  // Names a conversation from its first message: a few words from the
-  // cheapest capable model.
-  assistantTitleModel: modelId(OPENROUTER_MODELS.flash),
+  // Names a conversation from its first message: a few words from a small
+  // model. A Claude one, so a conversation's text goes to one provider.
+  assistantTitleModel: modelId(MODELS.haiku),
   // The corpus-run scorer's LLM judge (#99). Grades agent OUTPUT quality against
   // the constitution, so it should be a capable model distinct from the agent
   // under test — never let an agent grade its own trace with its own framing.
@@ -1196,14 +1265,77 @@ const configSchema = z.object({
   sqsContributionQueue: z.string().default(""),
   sqsArbitrationQueue: z.string().default(""),
   sqsStewardQueue: z.string().default(""),
+
+  // The mirror feed (docs/mirror.md). A deployment is a publisher, an
+  // applier, both or neither, and it is neither unless these say so: with
+  // none of them set no route is mounted, no worker starts and nothing is
+  // read or written.
+  //
+  // Publishing. "true" makes this deployment cut signed batches of its
+  // public rows on the cadence below and serve them at /mirror/feed. The
+  // signing key is an Ed25519 private key in PEM form, held as a secret;
+  // its public half is served at /mirror/feed/key and stated in every batch.
+  mirrorPublish: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true"),
+  mirrorSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // How often a cut is made. Each cut reads and hashes the replicated
+  // tables, so this is also what the feed costs the database.
+  mirrorPublishIntervalSeconds: z.coerce.number().default(900),
+  // The most bytes of rows one batch holds. A cut larger than this (a
+  // snapshot, mostly) is split into consecutive batches, so that no batch
+  // outgrows what one process can hold and one request can carry.
+  mirrorBatchMaxBytes: z.coerce.number().default(24_000_000),
+  // Applying. Where this deployment's mirror of the public graph is fed
+  // from: the publisher's API address, or a directory of batch files where
+  // the network does not reach it. Either makes this deployment an applier.
+  mirrorFeedUrl: z.string().default(""),
+  mirrorFeedDir: z.string().default(""),
+  // The key the applier presents when it fetches a batch (x-api-key).
+  mirrorFeedApiKey: z.string().default(""),
+  // The feed's public key or keys, comma-separated, each as GET
+  // /mirror/feed/key gives it. A batch is applied only if one of these
+  // verifies its signature; the key a batch carries is never trusted.
+  mirrorFeedPublicKeys: z
+    .string()
+    .default("")
+    .transform((s) => s.split(",").map((k) => k.trim()).filter((k) => k.length > 0)),
+  mirrorApplyIntervalSeconds: z.coerce.number().default(300),
 });
 
 export type Config = z.infer<typeof configSchema>;
 
 let _config: Config | null = null;
 
+/**
+ * What is wrong with `value`, as the environment would hold it, for one
+ * field of the schema above; null when the field accepts it. The config
+ * file's reader asks this of each setting it holds (src/config-file.ts), so
+ * a bad value is reported against its name in the file and what a value may
+ * be is written only here.
+ */
+export function configFieldProblem(field: string, value: string): string | null {
+  const schema = (configSchema.shape as Record<string, z.ZodType | undefined>)[field];
+  if (!schema) return `the config schema has no field named ${field}.`;
+  const result = schema.safeParse(value);
+  if (result.success) return null;
+  // The schema library's own wording, less its preamble, with a choice of
+  // values read as a choice.
+  const said = result.error.issues
+    .map((issue) => issue.message.replace(/^Invalid (option|input): /, "").replace(/"\|"/g, '", "'))
+    .join("; ");
+  return /[.!?]$/.test(said) ? said : `${said}.`;
+}
+
 export function loadConfig(): Config {
   if (_config) return _config;
+
+  // The deployment's config file, when it names one, is a layer under the
+  // environment: each setting it holds becomes its environment variable
+  // unless the environment already has one (src/config-file.ts). With no
+  // file this does nothing, and everything below reads what it always read.
+  applyConfigFile(configFieldProblem);
 
   const rawDatabaseUrl = process.env.DATABASE_URL ?? DEFAULT_DB_URL;
 
@@ -1213,6 +1345,8 @@ export function loadConfig(): Config {
     host: process.env.HOST,
     logLevel: process.env.LOG_LEVEL,
     featuresOff: process.env.FEATURES_OFF,
+    modelEndpoints: process.env.MODEL_ENDPOINTS,
+    providerLabels: process.env.PROVIDER_LABELS,
     databaseUrl: rawDatabaseUrl,
     dbHost: process.env.DB_HOST,
     dbPort: process.env.DB_PORT,
@@ -1221,6 +1355,9 @@ export function loadConfig(): Config {
     dbPassword: process.env.DB_PASSWORD,
     apiKeys: process.env.API_KEYS,
     apiKeyContributors: process.env.API_KEYS,
+    reads: process.env.READS || undefined,
+    firstAdministrator: process.env.FIRST_ADMINISTRATOR,
+    signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
     corsOrigins: process.env.CORS_ORIGINS,
     publicReadMaxAgeSeconds: process.env.PUBLIC_READ_MAX_AGE_SECONDS,
     publicReadStaleWhileRevalidateSeconds:
@@ -1239,7 +1376,6 @@ export function loadConfig(): Config {
     capAssessmentOwls: process.env.CAP_ASSESSMENT_OWLS,
     capSourceIngestOwls: process.env.CAP_SOURCE_INGEST_OWLS,
     capExtensionAnalysisOwls: process.env.CAP_EXTENSION_ANALYSIS_OWLS,
-    capExtensionChatOwls: process.env.CAP_EXTENSION_CHAT_OWLS,
     capTextAnalysisOwls: process.env.CAP_TEXT_ANALYSIS_OWLS,
     capLookoutRunOwls: process.env.CAP_LOOKOUT_RUN_OWLS,
     capCorrespondentRunOwls: process.env.CAP_CORRESPONDENT_RUN_OWLS,
@@ -1305,6 +1441,9 @@ export function loadConfig(): Config {
     stewardMaxRuns: process.env.STEWARD_MAX_RUNS,
     stewardConcurrency: process.env.STEWARD_CONCURRENCY,
     stewardEnqueueMinImportance: process.env.STEWARD_ENQUEUE_MIN_IMPORTANCE,
+    elicitEnabled: process.env.ELICIT_ENABLED || undefined,
+    pangramEnabled: process.env.PANGRAM_ENABLED || undefined,
+    paymentsEnabled: process.env.PAYMENTS_ENABLED || undefined,
     elicitApiKey: process.env.ELICIT_API_KEY,
     elicitMcpUrl: process.env.ELICIT_MCP_URL,
     elicitUsdPerCall: process.env.ELICIT_USD_PER_CALL,
@@ -1333,7 +1472,6 @@ export function loadConfig(): Config {
     contributionReviewEstimateUsd: process.env.CONTRIBUTION_REVIEW_ESTIMATE_USD,
     contributionReviewBudgetUsd: process.env.CONTRIBUTION_REVIEW_BUDGET_USD,
     arbitrationBudgetUsd: process.env.ARBITRATION_BUDGET_USD,
-    researcherMaxWallMinutes: process.env.RESEARCHER_MAX_WALL_MINUTES,
     researcherRequestMaxWallMinutes: process.env.RESEARCHER_REQUEST_MAX_WALL_MINUTES,
     attemptOverageFraction: process.env.ATTEMPT_OVERAGE_FRACTION,
     traceAlwaysAgents: process.env.TRACE_ALWAYS_AGENTS,
@@ -1384,8 +1522,6 @@ export function loadConfig(): Config {
     lookoutModel: process.env.LOOKOUT_MODEL,
     programOfficerModel: process.env.PROGRAM_OFFICER_MODEL,
     officerRunBudgetOwls: process.env.OFFICER_RUN_BUDGET_OWLS,
-    grantmakerDecisionBudgetOwls: process.env.GRANTMAKER_DECISION_BUDGET_OWLS,
-    petitionWaitSeconds: process.env.PETITION_WAIT_SECONDS,
     sessionWaitHours: process.env.SESSION_WAIT_HOURS,
     sessionMaxTranscriptChars: process.env.SESSION_MAX_TRANSCRIPT_CHARS,
     sessionWaitForAnswersSeconds: process.env.SESSION_WAIT_FOR_ANSWERS_SECONDS,
@@ -1449,7 +1585,25 @@ export function loadConfig(): Config {
     sqsContributionQueue: process.env.SQS_CONTRIBUTION_QUEUE,
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
+    mirrorPublish: process.env.MIRROR_PUBLISH,
+    mirrorSigningKey: process.env.MIRROR_SIGNING_KEY,
+    mirrorPublishIntervalSeconds: process.env.MIRROR_PUBLISH_INTERVAL_SECONDS,
+    mirrorBatchMaxBytes: process.env.MIRROR_BATCH_MAX_BYTES,
+    mirrorFeedUrl: process.env.MIRROR_FEED_URL,
+    mirrorFeedDir: process.env.MIRROR_FEED_DIR,
+    mirrorFeedApiKey: process.env.MIRROR_FEED_API_KEY,
+    mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
+    mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
   });
+
+  // What the two provider settings can only be checked for together: a name
+  // in PROVIDER_LABELS that is no provider here, and a model field that
+  // routes to an endpoint MODEL_ENDPOINTS does not declare.
+  const providerProblems = providerSettingProblems(_config);
+  if (providerProblems.length > 0) {
+    _config = null;
+    throw new Error(providerProblems.join("\n"));
+  }
 
   // If DATABASE_URL is the default and individual DB fields are set, construct URL
   if (_config.databaseUrl === DEFAULT_DB_URL && _config.dbHost) {
@@ -1479,6 +1633,15 @@ export function loadConfig(): Config {
       sqlAgentDatabaseUrl: _config.sqlAgentDatabaseUrl ?? url(_config.sqlAgentDbUser, _config.sqlAgentDbPassword),
       sqlCallerDatabaseUrl: _config.sqlCallerDatabaseUrl ?? url(_config.sqlCallerDbUser, _config.sqlCallerDbPassword),
     };
+  }
+
+  // An outside service the deployment has switched off is off whatever keys
+  // the environment holds: each of these services is "configured" when its
+  // key is set, so the switch is honored by not carrying the key.
+  if (_config.elicitEnabled === "false") _config = { ..._config, elicitApiKey: "" };
+  if (_config.pangramEnabled === "false") _config = { ..._config, pangramApiKey: "" };
+  if (_config.paymentsEnabled === "false") {
+    _config = { ..._config, stripeSecretKey: "", stripeWebhookSecret: "" };
   }
 
   // The constitution's "strongest model for non-saturating assessment" mandate

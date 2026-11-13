@@ -34,7 +34,12 @@ import {
   getAssessmentHistory,
 } from "../../services/assessment-service.js";
 import { getClaimEvents } from "../../services/claim-events-service.js";
-import { requestCuration } from "../../services/curation-service.js";
+import {
+  requestCuration,
+  CURATION_DEFECTS,
+  CURATION_DEFECT_DESCRIPTION,
+  type CurationDefect,
+} from "../../services/curation-service.js";
 import {
   getPrizeClaimForAgent,
   recordPrizeAuditOutcome,
@@ -47,6 +52,7 @@ import {
   REPORT_STATUSES,
   TRIAGE_NOTE_MAX_LENGTH,
 } from "../../services/report-service.js";
+import { currentLabel } from "../usage-context.js";
 
 /** Everything a run's tool executions need to know about the run itself. */
 export interface AuditToolContext {
@@ -543,8 +549,9 @@ export function getAuditToolDefinitions(): Tool[] {
       description:
         "Send a structural decision to the Curator: opens a curation " +
         "request on the claim (naming the other claim, for a suspected bad " +
-        "merge, missed duplicate or conflation) carrying the finding and " +
-        "your reason. The Curator runs when curation of the claim is " +
+        "merge, missed duplicate or conflation) carrying the defect you " +
+        "suspect, the finding and your reason, which is what the mandate's " +
+        "officers decide on. The Curator runs when curation of the claim is " +
         "funded, as for any request, and decides. Requires the finding_id " +
         "from flag_issue documenting why.",
       input_schema: {
@@ -552,10 +559,11 @@ export function getAuditToolDefinitions(): Tool[] {
         properties: {
           claim_id: { type: "string", description: "The UUID of the claim the concern is about" },
           other_claim_id: { type: "string", description: "The other claim involved, if any" },
+          defect: { type: "string", enum: [...CURATION_DEFECTS], description: CURATION_DEFECT_DESCRIPTION },
           finding_id: { type: "string", description: "The finding documenting why" },
           reason: { type: "string", description: "What the Curator should look at, and why" },
         },
-        required: ["claim_id", "finding_id", "reason"],
+        required: ["claim_id", "defect", "finding_id", "reason"],
       },
     },
   ];
@@ -680,8 +688,8 @@ export async function executeAuditTool(
         const rows = await rawQuery<{ id: string }>(
           `INSERT INTO audit_findings
              (run_id, severity, category, description, evidence,
-              recommendation, claim_id, contribution_id, review_id, contributor_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+              recommendation, claim_id, contribution_id, review_id, contributor_id, sensitivity_label)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            RETURNING id`,
           [
             context.runId ?? null,
@@ -694,6 +702,7 @@ export async function executeAuditTool(
             (input.contribution_id as string | undefined) ?? null,
             (input.review_id as string | undefined) ?? null,
             (input.contributor_id as string | undefined) ?? null,
+            currentLabel(),
           ]
         );
 
@@ -1047,6 +1056,7 @@ export async function executeAuditTool(
           anchorClaimId: claimId,
           otherClaimId,
           source: "audit",
+          defect: input.defect as CurationDefect,
           concern:
             `Audit finding ${finding.id} (${finding.severity}, ${finding.category}): ` +
             `${reason}\nFinding: ${finding.description}\nEvidence: ${finding.evidence}`,
@@ -1277,9 +1287,9 @@ export async function executeAuditTool(
             `INSERT INTO audit_findings
                (run_id, severity, category, description, evidence,
                 recommendation, contributor_id, status, resolution_note,
-                resolved_by, resolved_at)
+                resolved_by, resolved_at, sensitivity_label)
              VALUES ($1, 'low', 'suspension_lifted', $2, $3, $4, $5,
-                     'resolved', $6, 'audit_agent', now())
+                     'resolved', $6, 'audit_agent', now(), $7)
              RETURNING id`,
             [
               context.runId ?? null,
@@ -1290,6 +1300,7 @@ export async function executeAuditTool(
               reason,
               contributorId,
               note,
+              currentLabel(),
             ]
           );
           recordedFindingId = rows[0]?.id ?? null;

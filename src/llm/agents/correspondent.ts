@@ -30,7 +30,7 @@ import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { getUsageContext, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
@@ -60,8 +60,6 @@ const WINDOW_SHOWN_IN_FULL = 120;
 const RECENT_UPDATES_SHOWN = 5;
 /** Recently closed plan items shown, so it remembers what it finished or gave up. */
 const RECENT_CLOSED_PLAN_SHOWN = 5;
-
-const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
 
 /** One change as a line of the briefing. */
 export function renderChange(c: GraphChange): string {
@@ -163,7 +161,19 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   const openPlan = await listPlanItems(c.id, { status: "open", limit: 200 });
   const closedPlan = await listPlanItems(c.id, { status: "closed", limit: RECENT_CLOSED_PLAN_SHOWN });
 
+  // One update a run, and a resumed run is the same run: an update this
+  // session already published counts (the session began before it).
   let published: { updateId: string } | null = null;
+  const sessionId = getUsageContext().session?.id ?? null;
+  if (sessionId) {
+    const [already] = await rawQuery<{ id: string }>(
+      `SELECT u.id FROM correspondent_updates u JOIN agent_sessions s ON s.id = $2
+        WHERE u.correspondent_id = $1 AND u.created_at >= s.created_at
+        ORDER BY u.created_at DESC LIMIT 1`,
+      [c.id, sessionId]
+    ).catch(() => []);
+    if (already) published = { updateId: already.id };
+  }
   const changesDef = graphChangeDefinition("agent");
 
   const tools: Tool[] = [
@@ -313,9 +323,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     `### Your bounds\n\n` +
     `- ${runBudgetSentence({ canSpend: true }) || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
     (room
-      ? `- Your mandate has ${usd(room.headroomMicroUsd)} uncommitted in escrow` +
-        (room.dayRoomMicroUsd !== null ? ` and ${usd(room.dayRoomMicroUsd)} left of today's rate` : "") +
-        `. Your runs are paid from it alongside the mandate's other work; when it runs short, a run waits ` +
+      ? `- Your mandate's money: ${room.sentence} Your runs are paid from it alongside the mandate's other work; when it runs short, a run waits ` +
         `until it is funded, and your next update starts from wherever you left off.\n`
       : "") +
     `- Heartbeat: ${c.heartbeat_hours > 0 ? `every ${c.heartbeat_hours}h` : "none (event-driven)"}; ` +
@@ -324,7 +332,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
       ? `; a change in scope wakes you at most once every ${c.min_wake_hours}h, so your readers are not sent ` +
         `an update every few minutes`
       : "") +
-    `.\n- At most one update a run.\n\n` +
+    `.\n- At most one update a run, so your readers get one considered update for each time you run rather than a ` +
+    `stream of partial ones; a run that resumes after waiting is the same run.\n\n` +
     `### What woke you\n\n${events.length === 0 ? "(your heartbeat)" : events.map(renderEvent).join("\n")}\n\n` +
     `### Your window: material changes in scope since your last update\n\n` +
     (last

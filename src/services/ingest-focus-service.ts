@@ -20,6 +20,7 @@
  */
 import { createHash } from "node:crypto";
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export const FOCUS_MAX_CHARS = 1_000;
 
@@ -45,10 +46,10 @@ export function ingestGroup(url: string, focus?: string | null): string {
 /** Record the focus behind a scoped ingest group, for the executor to read. */
 export async function recordIngestFocus(group: string, url: string, focus: string): Promise<void> {
   await rawQuery(
-    `INSERT INTO ingest_focuses (exclusion_group, url, focus)
-     VALUES ($1, $2, $3)
+    `INSERT INTO ingest_focuses (exclusion_group, url, focus, sensitivity_label)
+     VALUES ($1, $2, $3, $4)
      ON CONFLICT (exclusion_group) DO NOTHING`,
-    [group, url, focus]
+    [group, url, focus, currentLabel()]
   );
 }
 
@@ -100,8 +101,8 @@ export async function recordExtraction(input: {
   await rawQuery(
     `INSERT INTO source_extractions
        (source_id, focus, grant_id, job_id, claims_extracted, claims_created, claims_matched,
-        claims_undecided, undecided, document_problem, document_problem_note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        claims_undecided, undecided, document_problem, document_problem_note, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
     [
       input.sourceId,
       normalizeFocus(input.focus),
@@ -114,6 +115,9 @@ export async function recordExtraction(input: {
       undecided.length > 0 ? JSON.stringify(undecided) : null,
       input.documentProblem?.kind ?? null,
       input.documentProblem?.note ?? null,
+      // The extraction runs at its job's label, and this is its record: it
+      // carries that label, whatever the document's (src/labels.ts).
+      currentLabel(),
     ]
   );
 }

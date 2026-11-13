@@ -16,7 +16,7 @@ const { state } = vi.hoisted(() => ({
       note: "",
       valuationsWritten: 0,
       planItemsAdded: 0,
-      continueRequested: false,
+      freshStart: false,
     },
     submitted: [] as string[],
     submittedScopes: [] as unknown[],
@@ -216,7 +216,7 @@ beforeEach(() => {
     note: "",
     valuationsWritten: 0,
     planItemsAdded: 0,
-    continueRequested: false,
+    freshStart: false,
   };
   state.submitted = [];
   state.submittedScopes = [];
@@ -289,17 +289,17 @@ describe("processNextEngineAction", () => {
     expect(state.livePlans).toEqual(["g-1"]);
   });
 
-  it("runs a mandate review; continue_review reopens the action", async () => {
+  it("runs a mandate review; fresh_start opens a fresh one", async () => {
     state.grant!.status = "active";
     state.action = action({ kind: "mandate_review", exclusion_group: "review:g-1" });
-    state.reviewResult.continueRequested = true;
+    state.reviewResult.freshStart = true;
     const r = await processNextEngineAction();
     expect(r).toMatchObject({ status: "processed", ok: true });
     expect(state.reviewRuns).toBe(1);
     expect(state.completed).toHaveLength(1);
-    expect(state.reopened).toHaveLength(1); // another pass runs next drain
+    expect(state.reopened).toHaveLength(1); // a fresh session opens next drain
     // Reopened at the mandate's pass budget, not at whatever the row held.
-    expect(state.reopened[0]).toEqual(["act-1", 7_000_000]);
+    expect(state.reopened[0]).toEqual(["review:g-1", 7_000_000]);
   });
 
   it("enqueues an ingest and leaves the action running for the meter", async () => {

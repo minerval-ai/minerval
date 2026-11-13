@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Mark } from "./Mark";
 import { THEME_SCRIPT } from "./theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { MembersGate } from "@/components/MembersGate";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -43,7 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ThemeToggle />
           </div>
         </header>
-        <main className="frame">{children}</main>
+        {/* On the public graph the gate is the page itself. In a members-only
+            deployment it stands in for the page until the visitor is a
+            signed-in member (components/MembersGate.tsx). */}
+        <main className="frame">
+          <MembersGate>{children}</MembersGate>
+        </main>
         <footer className="site">
           <div className="inner">
             <p style={{ margin: "0 0 .7rem" }}>
@@ -60,6 +66,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {/* the findings feed (#394): the record of what the
                   administrators found worth telling people */}
               <Link href="/findings">findings</Link>
+              {/* what people and organisations have told the graph they hold,
+                  beside what the graph assesses (constitution §4) */}
+              <Link href="/stated-views">stated views</Link>
               {/* /contributors stays reachable by URL but is not linked until
                   the contributor experience is ready (#191) */}
               <Link href="/account">account</Link>

@@ -29,6 +29,12 @@ export function stanceTag(stance: Instance["stance"]): { word: string; title: st
         word: "mentions",
         title: "This source refers to the claim without taking a side: it cites it or reports the debate. It is not counted as affirming or denying.",
       };
+    // A view stated to the graph directly may stand in terms that take no
+    // side on the claim as worded (§4).
+    case "qualifies":
+      return { word: "qualifies it", title: "This source holds the claim only with a condition or limit it states." };
+    case "gives_probability":
+      return { word: "gives it a probability", title: "This source gives the claim a probability and takes no side." };
     default:
       return null;
   }

@@ -78,7 +78,7 @@ Trust levels, enforced by route guards:
 | `requireUser` | a resolved account | `GET /users/me`, `GET /usage`, `GET /api-keys` |
 | `requireSession` | service caller acting for a signed-in user (the dashboard) | `POST/DELETE /api-keys` — a leaked consumer key can never mint or revoke keys |
 | `requireService` | first-party only | `POST /users/provision`, `GET /usage/system` |
-| `requireOperator` | the operator key, held outside the web deployment | the prize routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below); and the platform-mandate routes: funding a pinned draft (`POST /operator/platform-mandates/fund`) and minting, listing and revoking platform-grantmaking keys (`/operator/platform-grantmaking-keys`) |
+| `requireOperator` | the operator key, held outside the web deployment | the prize routes: bounty confirmation, prize-claim sign-off, void, screening, owl grant, check retry, and the operator page (below); and the platform-mandate routes: funding a pinned draft (`POST /operator/platform-mandates/fund`) and minting, listing and revoking platform-grantmaking keys (`/operator/platform-grantmaking-keys`); and the deployment's preflight (`GET /setup/preflight`, docs/deployment.md), which moves no money but reports the deployment's configuration |
 
 Reads (`GET /claims…`, search, trees, jobs) remain open and free.
 
@@ -111,6 +111,195 @@ workflow calls with the operator key (held in GitHub secrets) once a
 merged pull request pins the Grantmaker's draft (#529). The service key
 alone moves no money.
 
+## Members-only deployments
+
+Everything above describes a deployment anyone may read, which is the public
+graph and the starting point of every deployment. One setting changes that:
+`READS`. At `open`, its starting value, nothing in this section applies and
+no code in it runs. At `members` the deployment is private:
+
+- **Nothing is served to anyone who is not signed in.** One hook
+  (`src/server/plugins/members-only.ts`) authenticates every request before
+  its route runs, so a route added later is closed without anyone
+  remembering to close it. The dev bypass does not exist here, whatever the
+  environment.
+- **What a signed-in person may do follows from their permissions**, which
+  the deployment's own administrators grant (`src/permissions.ts`).
+- **A member is an account with at least one live grant.** An account that
+  has signed in and holds none is served only who it is (`GET /users/me`)
+  and what it holds (`GET /permissions/mine`), which is how the web app
+  tells the person they have no access yet and shows the identity an
+  administrator will know them by.
+
+What stays reachable without being a signed-in member is written out in
+that file and nowhere else:
+
+| who | routes | why |
+|---|---|---|
+| anyone | `GET /health` | the load balancer's liveness probe |
+| anyone | `GET /.well-known/oauth-authorization-server[/mcp]`, `GET /.well-known/oauth-protected-resource[/mcp]`, `POST /oauth/register`, `GET /oauth/authorize`, `POST /oauth/token` | how an MCP client signs in: these have to be reachable before there is a credential. None reads the graph; approving a client still takes a signed-in member on the consent page |
+| a credential of the route's own | every route that takes the operator key; `POST /billing/webhook` (Stripe's signature) | each checks its own credential, as before |
+| the web tier's service key, nobody named | `POST /users/provision` | creates or refreshes the account when a person signs in |
+| any signed-in account | `GET /users/me`, `GET /permissions/mine` | so a person with no grant can be told so |
+
+A CORS preflight is answered, with headers and no content. Everything else,
+a request for an address that does not exist included, answers `401
+SIGN_IN_REQUIRED` to a request with no credential or with a key that acts
+for no person, and `403 NOT_A_MEMBER` to an account that holds no grant.
+
+### Permissions
+
+Six permissions, each granted on its own, to an account or to a group the
+identity provider names. One person may hold several, and nothing in the
+code decides who should hold which.
+
+| permission | held | lets its holder | never lets anyone |
+|---|---|---|---|
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources | edit an assessment or a run's log |
+| `release` | for one party | release or hold what would leave the deployment of that party's material (publishing outward is not built; the grant records who holds the gate) | edit what the agents wrote, or release another party's material |
+| `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
+| `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
+| `read_sources` | at one label | open the sources themselves at that label | change a source |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is | act under a permission they have not also been granted, or change who may do what without a log entry |
+
+A request's **standing** is resolved once, when it arrives: the live grants
+that reach its account (its own, and those made to a group its latest
+sign-in carried), and its **clearance**, the labels it may read: `public`,
+each label a `read` grant names, and every label those read, following
+`label_reads` to the end. The clearance is on the request's async context
+(`currentClearance()` in `src/llm/usage-context.ts`). Nothing holds a read
+to it yet: that is the database's work and comes separately. Until it does,
+`read` and `read_sources` grants are recorded and resolved and change
+nothing a member is served.
+
+The routes a permission guards, in each mode (`requirePermission` in
+`src/server/require-permission.ts`; the list is asserted in
+`tests/db/members-only.test.ts`):
+
+| route | open (the public graph) | members-only adds |
+|---|---|---|
+| `POST /grant-conversations`, `POST /grant-conversations/:id/messages`, `POST /grants/:id/approve`, `POST /correspondents/:id/poke` | an account | `direct` |
+| `POST /sources` | any valid key, and the owl charge | `direct` |
+| `POST /grant-conversations/:id/fund`, `POST /grants/:id/topup`, `POST /mandates/:id/contribute`, `POST /claims/:claim_id/order`, `POST /claims/:claim_id/contribute`, `POST /claims/:claim_id/decompose`, `POST /requests/:request_id/contribute`, `POST /budget-jobs/:id/topup` | an account, and the owls | `fund` |
+| `POST /grants` | a direct service caller | `direct` and `fund` |
+| the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
+
+Taking money back asks for no permission in either mode: withdrawing from a
+mandate, cancelling a grant, a job or an order. A funder may take back
+their share at any time (constitution §19), and a permission removed later
+must not stand between a person and their own owls. Proposing, contributing
+and appealing ask for none either: any member may.
+
+An MCP caller is not offered a tool whose route needs a permission its
+account lacks, and is told which and why: the Assistant in its brief
+(`src/llm/permissions-note.ts`), an outside client in the server's
+instructions.
+
+### Granting, and the log
+
+Mounted only where `READS=members`:
+
+| route | who | |
+|---|---|---|
+| `GET /permissions` | a member | what each permission covers |
+| `GET /permissions/mine` | any signed-in account | what the account holds, its clearance and groups |
+| `GET /permissions/log` | a member | every grant, removal and administrative change, newest first |
+| `GET /permissions/grants`, `GET /permissions/accounts`, `GET /parties`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the parties; the labels |
+| `POST /permissions/grants`, `DELETE /permissions/grants/:grant_id` | `administer`, from a signed-in session | grant; remove |
+| `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
+| `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
+| `POST /operator/administrators` | the operator key | grant `administer` to an account, by its sign-in identity |
+
+Every write takes a signed-in session, as minting an API key does, so a
+leaked key, an access token, or an agent following text it read can never
+widen what anyone may read or release. For the same reason the writes are
+not MCP tools; the reads are.
+
+`permission_grants` is state and log in one. A row is a grant; removing it
+marks the same row with who removed it and when; no row is deleted. The
+other administrative acts (a label defined, a pair of labels added or
+removed, a party added, a source's party set) each write a row to
+`administrative_events` in the same transaction as the change. The last
+live grant of `administer` cannot be removed.
+
+The log is open to every member, because who holds power over a graph is
+part of what its readers weigh. People appear by display name. The name of
+a label the reader is not cleared for, or of a party that is neither the
+organization itself nor one the reader holds `release` for, is replaced by
+`{"withheld": true}`: a deployment may hold material from parties who are
+not to learn of each other. That an act happened, who did it, to whom and
+when is always shown.
+
+### The first administrator
+
+Set `FIRST_ADMINISTRATOR` to the sign-in identity of the person setting the
+deployment up (`<provider>:<subject>`, for instance `oidc:00u1abcd`). The
+first time that person signs in, while the deployment has never had an
+administrator, they are granted every permission: `direct`, `fund` and
+`administer`, `read` and `read_sources` at each label that exists besides
+`public`, and `release` for each party that exists. The grants are rows
+like any other, marked as made by the setting. From then on they hand
+permissions out, to themselves included when they define a new label.
+
+The setting works once. Once any administrator has existed, removed ones
+included, it does nothing whatever it says, so a person the administrators
+later removed cannot return by signing in, and a stale setting grants no
+one anything. A person does not need to know their identity in advance:
+anyone who signs in and holds nothing is shown their own.
+
+If a deployment loses its administrators (the only one can no longer sign
+in, or the only grant went to a group nobody is in), the way back is the
+operator key: `POST /operator/administrators`. It grants `administer` and
+nothing else, and the grant is marked as made with the operator key.
+
+### Single sign-on and groups
+
+The web app signs people in through the organization's own identity
+provider, any that speaks OpenID Connect: `AUTH_OIDC_ISSUER`,
+`AUTH_OIDC_ID` and `AUTH_OIDC_SECRET` in the web app's environment
+(`web/.env.example`), with `<site>/api/auth/callback/oidc` registered at
+the provider. The API never talks to the provider. An account's identity
+is `oidc:<subject>`, and it is created the first time the person signs in,
+holding nothing.
+
+The provider's groups reach the API with the sign-in: the web app reads
+them from the ID token (the `groups` claim, or the one
+`AUTH_OIDC_GROUPS_CLAIM` names) and passes them when it provisions the
+account, where they replace the account's rows in `account_groups`. A grant
+made to a group reaches every account whose latest sign-in carried it.
+
+The API learns that a person has left a group only from their next sign-in,
+so a sign-in vouches for its groups for a limited time:
+`SIGN_IN_VALID_HOURS`, 12 by default. After that the groups count for
+nothing until the person signs in again, and the web app ends a session at
+the same age, so someone at work is sent back through the provider before
+their groups lapse. Grants made to an account directly do not lapse; an
+administrator removes them.
+
+### The web app
+
+The web app reads the same setting (`READS=members`, set where it runs and
+when it is built). It then asks every visitor to sign in, sends who is
+reading on every read (`x-acting-user`), keeps no copy of a read to share
+between readers, and never falls back to the design fixtures: a read that
+is refused or fails shows nothing. Started as members-only on a build made
+without the setting, it serves nothing and its log says why, because pages
+prepared at build time would otherwise be served without a sign-in
+(`web/instrumentation.ts`). Whatever the web app believes, a read the API
+refuses as members-only is never answered from a fixture.
+
+The gate stands in for every page until the visitor is a signed-in member,
+and each page is still rendered behind it: what a visitor who is not signed
+in receives carries the page's empty frame, with no read behind it
+answered. Stopping the render itself needs the web app's pages to sit under
+a layout that can turn a visitor away, which comes with the private web
+shell.
+
+To run one locally: set `READS=members` and an `API_KEYS` entry on the API
+(there is no dev bypass), the same key and `READS=members` on the web app,
+and sign in with the development login, whose identities read
+`dev:<username>`.
+
 ## The per-token meter
 
 Every Anthropic call flows through `src/llm/client.ts`, which writes one
@@ -135,7 +324,7 @@ review — is *system* usage (`user_id IS NULL`): the graph's upkeep belongs
 to everyone, and good-faith contribution stays free (#71). Curator
 reconciliation and audits are funded ledger actions (#363), so their spend
 lands on the mandate that chose to buy them (usually the platform's own
-General and Governance mandates) rather than on the contributor or on
+General mandate) rather than on the contributor or on
 nobody. The meter is **internal cost observability**;
 what the user owes is the owl ledger, below.
 
@@ -171,7 +360,6 @@ spent (§15):
 | order a claim assessment | **up to 2 owls** | `CAP_ASSESSMENT_OWLS` |
 | submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
 | extension page analysis | up to 1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
-| extension chat exchange | up to 0.1 owl | `CAP_EXTENSION_CHAT_OWLS` |
 | MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
 
 A page analysis's cap is above its average run on purpose: it is also the
@@ -254,7 +442,10 @@ model, running with the full constitution, surveys the scope, quotes
 expected costs in owls, pushes back where judgment differs, and drafts a
 mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows
 the budget and starts the grant with the mandate as its plan; nothing runs
-or is charged before that.
+or is charged before that. The draft carries the mandate's pace, agreed
+with the funder: as needed (the escrow is the only bound, the default) or
+steady (at most so many owls committed in any rolling window), which only
+the funder changes afterwards (docs/allocation.md, "Pace and reserve").
 
 The Grantmaker replies in the background. Sending a message saves it and
 returns at once with the message's place (`message.index`,
@@ -280,11 +471,12 @@ and can be taken over by the next message. The Grantmaker works for the integrit
 graph and declines mandates that attempt to steer conclusions, at any
 budget. Mandate plans mix `assess`, `reassess`, `deepen`, and `ingest`
 items. A live mandate executes through the action ledger
-(docs/allocation.md): planning runs, its Grantmaker's periodic review
-passes, and ingest items are self-funded ledger actions run by the engine
+(docs/allocation.md): planning runs, the sittings of its Grantmaker's
+session, and ingest items are ledger actions the mandate commissions
+itself, run by the engine
 executor (`src/workers/engine-executor.ts`); a plan's claim items, and
 the nodes a 'deepen' policy mandate's scope holds waiting, are Steward
-passes the mandate commissions within its daily rate and escrow
+passes the mandate commissions within its pace and escrow
 (`src/services/standing-order-service.ts`), run with every other
 commissioned pass; everything else a mandate pays for, its officers and
 lookouts commission under its operating policy. Mandates also fund each other as peers (regrants) and can spawn
@@ -374,12 +566,25 @@ Assistant's own progress line) and `turn.partial` (the text of the reply
 once it starts writing). A reply usually opens with a long run of tool
 calls and no text, so the page shows the activity.
 
+That saved state is written about once a second. For a person watching,
+`GET /assistant/conversations/:id/stream` is the same turn as an event
+stream: `text` events carry the reply as it is written, `activity` and
+`note` the steps as they start, and `done` says the turn has ended and is
+saved. The process running the turn publishes these as they happen
+(`services/assistant-stream.ts`); a stream opened on another process
+re-reads the saved state instead and sends it as `state` events. The page
+uses the stream and keeps reading the conversation beside it, so a stream
+that drops or cannot open costs only the speed.
+
 **Names.** A conversation is named from its first message by a small
-model (`ASSISTANT_TITLE_MODEL`, the cheap tier by default), in the
+model (`ASSISTANT_TITLE_MODEL`, Claude Haiku by default, so a
+conversation's text goes to one provider), in the
 background while the Assistant starts on the reply: two to six words in
 place of the message's opening words, which stand in until the name
-arrives and stay if the call fails. The call is untraced, and its cost (a
-fraction of a cent) is charged with the conversation's.
+arrives and stay if the call fails. The call is untraced while the run log
+is best-effort, and a logged run where it is kept as a record
+(docs/run-log.md); its cost (a fraction of a cent) is charged with the
+conversation's either way.
 
 **The page.** `/ask` is laid out as a chat, not as an article
 (`web/app/ask/layout.tsx`): a sidebar of the user's conversations, pages
@@ -421,10 +626,18 @@ with a section of the prompt for the narrow panel in place of the site's.
 The extension reads the conversation until the turn is idle, shows what the
 reply cost, and can stop it. It holds only an API key, so it cannot release
 a held action: the reply says one is waiting and links to the conversation
-on minerval.ai, which is the same conversation. The older
-`POST /extension/chat`, with its own flat price and prompt, is kept for
-installed versions of the extension that still call it and can be removed
-once they have updated.
+on minerval.ai, which is the same conversation. Versions of
+the extension before 0.4.0 called `POST /extension/chat`, which had its own
+flat price and prompt and is gone: their chat tab fails until they update.
+
+**Sharing a page.** A page is private until its user shares it:
+`POST /pages/:id/share` gives it a link (`/p/:token`, a random token, not
+the page's id) that anyone can read it by, signed in or not, and
+`DELETE /pages/:id/share` withdraws it; sharing again makes a new link.
+`GET /shared-pages/:token` is the public read: the page and the nodes it
+embeds as they stand, and nothing about whose it is. Both writes take the
+signed-in session and are not MCP tools, so no agent can publish what the
+user keeps. Only a page at the public label can be shared (`src/labels.ts`).
 
 **Other doors.** Node pages and `/mandates` carry an ask box that opens
 `/ask` with the question written and, from a node, the node named to the
@@ -634,7 +847,10 @@ have to cover (#356), so the promise stays keepable as tables are added.
   never reach the database: the pipeline runs untraced and keeps its result
   only in an in-memory cache (see the extension section of
   [architecture.md](architecture.md)). Erasure has nothing to find here,
-  which is the point of keeping it that way.
+  which is the point of keeping it that way. This is true of a deployment
+  whose run log is best-effort, as the public graph's is. One that keeps
+  its log as a record (`RUN_LOG_MODE=record`) logs that work, privately,
+  and keeps the log (docs/run-log.md).
 - **Rows keyed to the account** (`contributors.id`), deletable outright:
   `api_keys`, `oauth_tokens`, `oauth_authorization_requests`,
   `grant_conversations`, `assessment_orders`, `budget_jobs`, `grants`
@@ -663,6 +879,14 @@ have to cover (#356), so the promise stays keepable as tables are added.
   `external_id`, `display_name`, `email`, and `avatar_url` so the row
   survives as an anonymous contributor, rather than unpublishing the
   exchange; the same treatment Wikipedia gives a vanished editor.
+- **Stated views** (constitution §4). An account that states its view on a
+  node publishes a statement under its own name: the source's title and
+  author and the instance's speaker carry the name the account had then. The
+  form says so before anything is submitted, and that a statement is not
+  withdrawn. Deleting the account detaches the `contributions` row like any
+  other and leaves the statement standing as a source under the name it was
+  made with, the way a signed letter outlives its author's membership.
+  `stated_views` holds what was submitted and is keyed to the contribution.
 - **The claim layer** carries no account identity: claims, instances, and
   assessments name sources and speakers, never users. Personal detail there
   is a constitutional violation (§2), handled as a correction to the graph,

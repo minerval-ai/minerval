@@ -72,7 +72,7 @@ vi.mock("../../../src/services/correspondent-service.js", async (importOriginal)
     ...real,
     pendingCorrespondentEvents: vi.fn(async () => state.events),
     correspondentWindow: vi.fn(async () => state.window),
-    mandateRoom: vi.fn(async () => ({ headroomMicroUsd: 12_000_000, dayRoomMicroUsd: 2_000_000 })),
+    mandateRoom: vi.fn(async () => ({ sentence: "Pace as needed: the escrow is the only bound. Committed so far 3 of 15 owls in escrow; 12 uncommitted." })),
     consumeCorrespondentEvents: vi.fn(async (_id: string, ids: string[]) => {
       state.consumed.push(ids);
     }),
@@ -160,7 +160,7 @@ describe("runCorrespondent", () => {
     expect(b).toContain("Tell the readers following X");
     expect(b).toContain(`claim ${CLAIM_A} "Claim A" and everything beneath it`);
     expect(b).toContain("- tag ai-safety");
-    expect(b).toContain("$12.00 uncommitted in escrow and $2.00 left of today's rate");
+    expect(b).toContain("Your mandate's money: Pace as needed");
     expect(b).toContain("at most once every 24h");
     expect(b).toContain("- (seen) change c1");
     expect(b).toContain("- change c3");

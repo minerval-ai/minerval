@@ -19,6 +19,7 @@
  * Grantmaker finishes, which can take minutes. One turn at a time, and no
  * funding while one runs.
  */
+import { parsePace } from "./pace-service.js";
 import { and, desc, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import {
@@ -382,7 +383,8 @@ export async function startConversation(input: {
   const db = getDb();
   const [convo] = await db
     .insert(grantConversations)
-    .values({ userId: input.userId })
+    // The label of the request that opens the conversation (src/labels.ts).
+    .values({ userId: input.userId, sensitivityLabel: currentLabel() })
     .returning();
   return beginTurn(convo!, input.message.trim());
 }
@@ -553,10 +555,16 @@ export async function fundConversationMandate(input: {
     .insert(grants)
     .values({
       funderUserId: input.userId,
+      // The mandate takes the label of the request that funds it, which is
+      // the conversation's when the funder speaks at one (src/labels.ts).
+      sensitivityLabel: currentLabel(),
       budgetJobId: job!.id,
       name: mandate.title,
       scopeClaimId: mandate.scope_claim_id ?? null,
       scopeQuery: mandate.scope_query ?? null,
+      // The pace the funder agreed in the draft (pace-service.ts); as
+      // needed when the draft names none or names it badly.
+      pace: parsePace((mandate as { pace?: unknown }).pace),
       policy: "agent",
       status: "active",
       plan: mandate.plan,

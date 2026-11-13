@@ -41,12 +41,35 @@ loop or single call has one for each), and its content carries a `setup`
 object: the commit the code was built from, the hash of the prompt set
 (`promptSet`), the model and its settings, the parts the setup was made of
 (the constitution, the role prompt, each tool) by hash, the `label` the
-run wrote at, and the features that were switched off for it
-(`featuresOff`).
+run wrote at, the `provider` that served it, and the features that were
+switched off for it (`featuresOff`).
 
 A label says who may read a row (`src/labels.ts`). Every judgment and source
-a run writes is stamped with the run's label (the `sensitivity_label`
-column), and so is its `agent_runs` row. Recording the label in the setup puts it under the chain: the label a
+a run writes, every row of the graph's own content (a node, an edge, an
+argument, a tag, a formal statement), and everything it records from or
+about a source (an instance, a reading, a provenance edge, an examination's
+findings), is stamped with the run's label (the
+`sensitivity_label` column), and so is its `agent_runs` row. So is what the
+run writes about itself: the usage row of each model call, an investigation
+it launches, a report or a finding it files, an audit it asks for. And so
+is what it writes to ask for work or to govern it: a request, a message to
+another node's Steward, a petition, a decision, a review, an entry in a
+claim's audit trail.
+
+Each step carries the label too, in the same column of `agent_steps`. It is
+the label the run was opened at, not the label in the air when the step is
+written: steps are written from a queue, after they are claimed, and a step
+belongs to its run whatever work is going on by then. The column is not
+part of the chain. A step's hash is taken over the hash before it, its
+sequence number, its kind and its content, as it always was, so adding the
+column changed no hash and `verify_run_log` reads what it read before.
+What ties a run's label to its log is the setup, below.
+
+A part of the setup is stored once, under the hash of its text, and shared
+by every run that used the same text. Its row in `setup_parts` carries the
+label of the run that stored it first, and keeps it.
+
+Recording the label in the setup puts it under the chain: the label a
 sealed run worked at cannot be changed afterwards without the log no longer
 reaching its seal. The public graph has one label, `public`, so every run
 there records `"label": "public"`; a run logged before labels existed has
@@ -57,7 +80,28 @@ waited in (a job, a ledger action, an order, a contribution, a paused
 session) was stamped with the label of the run or request that created it,
 and the worker that picks the row up opens the run at that label. So the
 label in a run's setup is the label of whatever asked for the run, through
-however many hand-overs, and never something the agent chose.
+however many hand-overs, and never something the agent chose. A run that
+starts from a claim itself, with no such row (the Tagger's, or a pass the
+scheduler's sweep opens for a pending claim), works at the claim's label,
+or, for a pending claim whose unread messages all carry one label, at that
+label. A run that is some row's own work is opened at that row's label,
+whichever sweep starts it: a mandate's review, planning and plan rows and
+its officers' sittings at the mandate's label, a lookout's and a
+correspondent's runs at theirs, the work on a request at the request's.
+Work that starts from a source the same way (the source backfill) is done
+at the source's label; it opens no run. Two kinds of row are not the run's
+at all: a document's segments and the notices against it are derived from
+the document, the same whoever asks, and carry the document's label even
+when a run's fetch produced them.
+
+`provider` is what served the run's model: `anthropic`, `openai`,
+`openrouter`, or `endpoint:<name>` for an endpoint the deployment runs
+itself, as the model id resolved (docs/architecture.md, "Providers"). A run
+is served only by a provider cleared for the label it works at
+(docs/architecture.md, "Providers cleared by label"), and the label and the
+provider together are what a later reader needs to check that this held for
+a given run. The field is always recorded; a setup with no `provider` is
+from before the field existed.
 
 `featuresOff` names the features the deployment had switched off when the
 run was set up (docs/architecture.md, "Features"): `["mathematics",
@@ -103,7 +147,8 @@ By default the log is best-effort: a step that cannot be written is logged
 to the console and the run carries on, closing unsealed. `RUN_LOG_MODE=record`
 turns the dependence round:
 
-- every traceable run is traced, whatever `TRACE_LEVEL` says;
+- every run is traced, whatever `TRACE_LEVEL` says;
+- no model is called outside a run (below);
 - nothing in a step is cut to a size cap;
 - the run does not return until its log is sealed, and a run whose log
   could not be written whole fails with `RunLogError`;
@@ -113,11 +158,93 @@ What a run wrote to the graph before its log failed stays written; a reader
 tells it by the run being unsealed. Making readers treat a judgment whose
 run is unsealed as unfinished is later work.
 
-Two things record mode does not change yet: the paths that are untraced on
-purpose because they handle a reader's own page or conversation (the
-browser extension, the MCP's on-demand analysis, #356), and work that
-returns without a promise, which has nothing to hold its result behind. A
-private graph switches the first off instead of exempting it.
+One thing record mode does not change yet: work that returns without a
+promise, which has nothing to hold its result behind. Every agent's entry
+point is async, so today this is no agent's work.
+
+A deployment's preflight (docs/deployment.md) holds it to this. It tests the
+log by writing a run, sealing it, checking its chain and removing it. Where
+the deployment holds private material, agent work does not start unless
+that test passes and the log is in record mode. The work below runs in the
+API rather than as agent work the gate holds, so the preflight also fails,
+without stopping anything, while that work would go unlogged: where private
+material is held and the log is best-effort.
 
 The public graph runs best-effort until record mode has run somewhere in
 earnest.
+
+## Work the best-effort log leaves out, and record mode does not
+
+While the log is best-effort, three kinds of model work are kept off it on
+purpose (#356). Each handles a reader's own content, which the public
+service's terms say is never stored:
+
+- the MCP tools `match_claim`, `extract_claims` and `assess_text`, which
+  analyze a passage the caller hands over;
+- the browser extension's page analysis, which reads whatever page the
+  reader has open;
+- the naming of an Assistant conversation from its first message. The
+  message itself is kept, in the conversation and in the log of the
+  Assistant's reply; what keeps the naming off the log is that deleting a
+  conversation deletes the runs its messages name, and no message names
+  this one.
+
+The code marks each with `untraced()` (`src/llm/usage-context.ts`), and
+the extension's own agent is never traced whoever calls it. Metering is
+unaffected: the calls are counted and charged like any others.
+
+That is an exemption of the best-effort log, and record mode has none. A
+deployment that keeps its log as a record holds material whose handling
+has to be on that log, and a member's passage or page there is such
+material. So in record mode each of these is a logged run like any other:
+the run row, the prompt step with its `setup`, a step for each turn, and
+the seal the run waits on. If a log cannot be written whole, the tool or
+the analysis fails with `RunLogError`, and the cap charged for an MCP tool
+call is refunded, as it is for any failure. One call makes one run for
+each agent it invokes: `match_claim` makes two (the domain prior, which
+runs as the `extractor` agent, and the Matcher), `extract_claims` one
+Extractor run, and `assess_text` one Extractor run and a Matcher run for
+each claim it judges. The runs of one MCP call share its `request_id`.
+Naming a conversation is one run of the `assistant` agent, whose role part
+is the prompt set's `assistant-title`; if its log cannot be written the
+name is dropped and the conversation keeps its opening words as its title.
+
+These runs start private, so their transcripts are served only with the
+service key, like any private run's: the naming run because every run of
+the `assistant` agent is private, the others with the reason
+`input:readers-own-content` in `private_reasons`. A report an agent raises
+from such work still leaves its body out, in either mode: a report travels
+further than the log does.
+
+None of these agents speaks to the reader. The extension's chat is the
+Assistant, whose conversations are kept in the user's account and whose
+runs are logged privately in either mode (docs/accounts.md).
+
+What a caller gets back and what they are charged are the same in both
+modes. The charge is the metered cost of the model calls, which logging
+does not change. What record mode adds is the log's own writes: for each
+run one `agent_runs` row, one `agent_steps` row for the prompt and one for
+each model turn and each batch of tool results, and one update when the
+run closes. The prompt step holds the whole system prompt and the tool
+descriptors, uncut.
+
+## No model call outside a run
+
+A run is logged because `withAgent` opened it. Code that reached a model
+without passing through `withAgent` would leave no run, no steps and no
+seal, in any mode. Two things keep that from happening.
+
+In record mode the door to a provider refuses: `getAdapter`
+(`src/llm/providers/index.ts`), which every function of the LLM client
+goes through, and the web search that is a completion of its own, throw
+`UnloggedModelCallError` when no run is open (`src/llm/logged-run.ts`). The
+call is not made. While the log is best-effort nothing is refused.
+
+`tests/unit/llm/logged-runs.test.ts` is the static half. It fails when a
+file calls the LLM client without opening a run in the same file, imports
+a provider adapter around the client, constructs a provider's SDK client,
+or calls `untraced()`, unless the file is on the test's list for that with
+its reason.
+
+Embedding calls are not agent work and are outside both: text goes in and
+a vector comes back, with no prompt, reasoning or output to log.

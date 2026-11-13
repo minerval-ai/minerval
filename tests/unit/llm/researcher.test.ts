@@ -41,7 +41,7 @@ const mocks = vi.hoisted(() => ({
   paused: false,
   meter: { billedMicroUsd: 0 },
   config: {
-    researcherMaxWallMinutes: 20,
+    researcherRequestMaxWallMinutes: 240,
     leanCheckerUrl: "",
     elicitApiKey: "",
   },
@@ -259,7 +259,7 @@ describe("toolset by model", () => {
     expect(task).toContain("view_image has no fee, but an image costs up to about 4,784 input tokens");
     expect(task).toContain("code_execution is billed at $0.05 per container-hour");
     expect(task).toContain("a guard of 200 turns stops a stuck loop");
-    expect(task).toContain("must report within 20 minutes of wall-clock time");
+    expect(task).toContain("minutes of wall-clock time ends a run that has stopped making progress");
     expect(task).toContain("launched by the Claim Steward of the claim below");
     expect(task).toContain("The code-execution sandbox is available");
   });
@@ -274,7 +274,8 @@ describe("toolset by model", () => {
     // The dollar ceiling is the only budget: a token countdown the task
     // message never explains ended runs at a fraction of it (#897).
     expect(opts.taskBudgetTokens).toBeUndefined();
-    expect(opts.maxWallMs).toBe(20 * 60_000);
+    // Nobody blocks on a research run: the wall clock is only a long backstop.
+    expect(opts.maxWallMs).toBe(240 * 60_000);
     const names = (opts.tools as Array<{ name: string }>).map((t) => t.name);
     expect(names).toContain("code_execution");
   });
@@ -440,24 +441,24 @@ describe("a run that works a request", () => {
     return i;
   };
 
-  it("gets a long backstop rather than the delegated cap, and is told nobody waits on it (#734)", async () => {
+  it("gets a long backstop, and is told nobody is blocked on it (#734)", async () => {
     (mocks.config as Record<string, unknown>).researcherRequestMaxWallMinutes = 240;
     try {
       await runResearcher(requestRun("request"));
       expect(mocks.longRunCalls.at(-1)!.maxWallMs).toBe(240 * 60_000);
       const task = (mocks.longRunCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
       expect(task).toContain("a backstop of 240 minutes of wall-clock time ends a run that has stopped making progress");
-      expect(task).toContain("Nobody is waiting on this run");
+      expect(task).toContain("Nobody is blocked waiting on this run");
       expect(task).not.toContain("is waiting on the report");
 
       await runResearcher(requestRun("request_scope"));
       expect(mocks.longRunCalls.at(-1)!.maxWallMs).toBe(240 * 60_000);
 
-      // A delegated run keeps the short cap and its reason.
+      // A run a Steward commissioned gets the same backstop: nobody blocks on it either.
       await runResearcher(input({ model: "claude-opus-5-5", model_tier: "strong" }));
-      expect(mocks.longRunCalls.at(-1)!.maxWallMs).toBe(20 * 60_000);
-      const delegated = (mocks.longRunCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
-      expect(delegated).toContain("because whoever launched it is waiting on the report");
+      expect(mocks.longRunCalls.at(-1)!.maxWallMs).toBe(240 * 60_000);
+      const commissioned = (mocks.longRunCalls.at(-1)!.initialMessages as Array<{ content: string }>)[0]!.content;
+      expect(commissioned).not.toContain("is waiting on the report");
     } finally {
       delete (mocks.config as Record<string, unknown>).researcherRequestMaxWallMinutes;
     }

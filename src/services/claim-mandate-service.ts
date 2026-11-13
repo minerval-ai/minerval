@@ -51,7 +51,9 @@ export function grantmakerShareNote(shareOwls: number, leftOwls: number, pass: "
     (pass === "planning" ? `; this planning pass may use up to half of the share. ` : `. `) +
     `No review runs once the share is spent, and when its plan's work is done the ` +
     `mandate completes and refunds the rest. Plan so the work you put in now carries ` +
-    `the mandate; the plan always opens with a fresh pass on the claim, added if you leave it out.`
+    `the mandate; the plan always opens with a fresh pass on the claim, added on the standard tier ` +
+    `if you leave it out. Put it first yourself, with the variant and budget you choose, if the ` +
+    `claim warrants the strong model and the escrow can hold that budget.`
   );
 }
 
@@ -147,10 +149,10 @@ export async function createClaimMandate(input: {
   };
   const [grant] = await rawQuery<{ id: string }>(
     `INSERT INTO grants
-       (funder_user_id, budget_job_id, name, scope_claim_id, policy, status, mandate)
-     VALUES ($1, $2, $3, $4, 'agent', 'planning', $5::jsonb)
+       (funder_user_id, budget_job_id, name, scope_claim_id, policy, status, mandate, sensitivity_label)
+     VALUES ($1, $2, $3, $4, 'agent', 'planning', $5::jsonb, $6)
      RETURNING id`,
-    [input.userId, job!.id, text.title, claim.id, JSON.stringify(mandate)]
+    [input.userId, job!.id, text.title, claim.id, JSON.stringify(mandate), currentLabel()]
   );
   return { ok: true, grantId: grant!.id, budgetJobId: job!.id };
 }

@@ -475,10 +475,10 @@ unspent money. Contributors propose requests, answers and
 estimates, and offer material for a request, through the Contribution
 Reviewer like any other contribution, and propose a question directly
 (`POST /claims/propose` with `kind: "question"`). Research a Grantmaker
-launches with `contribution_budget_usd` submits what it establishes as
+commissions with `contribution_budget_owls` submits what it establishes as
 contributions under the mandate: reviewed like anyone's, with the review
 metered to the mandate's budget job, shown as "a funded mandate", and
-earning no one reputation or owls. The budget is a dollar amount of the
+earning no one reputation or owls. The budget is an amount, in owls, of the
 mandate's budget that the Grantmaker delegates for those reviews
 (`research_runs.contribution_budget_micro_usd`). Each submission reserves
 an estimate of its review's cost (the average of recent reviews, or
@@ -489,7 +489,7 @@ replaces the estimate. The budget is visible to both agents: the
 Researcher sees what is committed, what is left and what a review is
 expected to cost in its task message, after every turn and in each
 submission's result, and the Grantmaker sees the same in the
-`delegate_research` and `get_research_run` results. A review that costs
+`get_research_run` results. A review that costs
 more than estimated can carry a run somewhat past its budget.
 
 ### Formal statements and machine-checked arguments
@@ -725,6 +725,74 @@ There a claim's own record is preferred to the source-wide one. The source
 page shows it as a notice, and the claim page marks the instance. There is
 no REST route that writes one.
 
+**A view stated to the graph directly** (constitution §4). An organization
+or a person may say what it holds about a claim, a quantity or a question,
+and nobody edits an assessment to match. The statement is not a new kind of
+object: it is a source (the statement itself, attributed to the account
+that made it, dated and hashed) and an instance of the node, with the
+speaker's declared stake recorded as that source's interest.
+
+- **Stating one.** `POST /claims/:claim_id/stated-views` (`state_view` on
+  MCP) takes the view in the speaker's words, how it stands toward the node
+  in its own terms (on a claim: `affirms`, `denies`, `qualifies`,
+  `gives_probability` or `open`, with an optional probability; on a
+  quantity: `states` with a figure, or `open`; on a question: `answers` or
+  `open`), optional reasons, and its stake in the answer or a declaration
+  that it has none. The account is the speaker. On the public graph an
+  account speaks for itself and an organization speaks through an account
+  that is its own; nobody checks who is behind an account unless an operator
+  has set `contributors.is_verified`, and every read says which. In a
+  members-only deployment stating the organization's view belongs to the
+  permission to direct, and the route's `preHandler` is where that guard
+  goes.
+- **Review before it shows.** A statement is outside material, so it is
+  filed as a contribution (`contribution_type` `state_view`) through the
+  same gate as any contribution on an existing node
+  (`src/server/contributor-gate.ts`) and reviewed by the Contribution
+  Reviewer on form and good faith, never on whether the view is right. Until
+  then nothing reaches the node: the source row is inert, and what was
+  submitted waits in `stated_views`. On an accept
+  (`src/services/contribution-acceptance.ts`, the same for an Arbitrator's
+  overturn) the instance is created with `created_by` `speaker`, the stake
+  goes to `source_interests` scoped to the node, and `stated_views.instance_id`
+  is set. An accepted stated view earns no owls.
+- **Reasons are a challenge** (§14). Where the statement gives reasons,
+  admission puts them in the node's inbox (`node_messages`, trigger
+  `contribution_accepted`, the contribution as sender), as any admitted
+  contribution reaches its Steward. The pass that reads the message answers
+  it, and the answer (changed, no change, or disagree, with a note) is what
+  the contribution's record shows became of the challenge. The Steward is
+  told what the speaker said, its stake, and whether the account is
+  verified; it is not told to agree.
+- **Nothing is edited.** A later statement by the same account on the same
+  node is a new source and a new instance. Both stay, dated, and the newer
+  is the one shown as current.
+- **Beside the assessment.** The node's page shows stated views in a section
+  of their own after the assessment, each with who stated it, when, how it
+  stands, its words, its declared stake, and what became of its reasons. The
+  section says that its place gives a statement no weight. Stated views are
+  left out of the page's list of instances so that they are not shown twice;
+  for the Steward they are instances like any other.
+- **Where views and assessments differ.** `GET /stated-views`
+  (`list_stated_views`), for one speaker (`speaker_id`), one node
+  (`claim_id`) or everything, sets the current statement of each speaker on
+  each node beside the judgment in force and reports one of four relations:
+  `differs`, with a direction; `agrees`; `not_assessed`, which is never read
+  as agreement; and `not_comparable`. The comparison
+  (`src/services/stated-view-compare.ts`) is arithmetic on what each side
+  recorded: a stated probability against the credence where both exist
+  (differing at 0.2 or more apart), otherwise the stance against the status;
+  a stated figure against the range of the estimate; whether each gives an
+  answer to a question. A view that qualifies a claim, two answers to one
+  question, and a figure against an estimate with no range are reported as
+  not comparable, with the reason, and never placed on a scale. The page is
+  `/stated-views`, and `/stated-views?speaker=<contributor id>` for one
+  account.
+
+The node and the stance of an admitted view are read from its instance, so
+a view follows its instance through a merge, and a stance the merge flips is
+shown as it now stands with what was originally stated beside it.
+
 A claim is a canonical proposition with no home source, so `get_claim`
 returns the canonical record and an `instance_count`, and the instances only
 when asked (`include: ["provenance"]`); the Steward's `get_claim_instances`
@@ -857,7 +925,10 @@ receiving Steward decides, since only the owner writes.
 Every such message is a row in the node's inbox (`node_messages`,
 services/inbox-service.ts), kept whole until a pass reads it; this replaced
 appending text to `claims.steward_context` (retired; the column is kept only
-for a historical migration's test). A pass reads every unread message,
+for a historical migration's test). Only an active node has an inbox: a
+message addressed to a merged, deprecated or archived node is not kept, and
+goes instead to the live successor that node's record names, if any (#962).
+A pass reads every unread message,
 answers each (`answer_messages`: changed, no change, or disagree, with a
 reason; a reply to another node's Steward lands in that node's inbox as
 `message_reply`), and marks what it was shown read when it finishes. A
@@ -998,7 +1069,7 @@ These act through tools over the life of a claim and the graph:
   any suspension that has stood unexamined too long — both idempotent through
   a DB dedupe key, so concurrent processes never double-run an audit. Each
   request opens an `audit` ledger action, funded by the platform's
-  Governance mandate (or, for a prize audit, the bounty's review reserve)
+  General mandate (or, for a prize audit, the bounty's review reserve)
   and never by the mandate the audit examines (docs/allocation.md,
   "Maintenance and audit").
   Findings are persisted rows (`audit_findings`, attached to their
@@ -1030,15 +1101,18 @@ These act through tools over the life of a claim and the graph:
 - **Grantmaker** designs and stewards funded mandates (docs/allocation.md):
   in conversation with a funder it surveys the territory, quotes honest
   costs, and drafts or refuses a mandate; once the mandate is live it writes
-  the operating policy its program officers carry out and takes autonomous
-  review passes that read back what its money did, revise the policy, grow
-  the plan, pace the spend, and move budget between peer mandates.
+  the operating policy its program officers carry out and works in one
+  long session on it, woken by what it subscribed to and its check-ins, in
+  which it reads back what its money did, decides what its officers
+  escalate, revises the policy, grows the plan, holds a reserve, and moves
+  budget between peer mandates.
 - **Program officer** works a mandate's inbox on the cheap tier
   (llm/agents/program-officer.ts): petitions from the runs the mandate pays
   for, what its lookouts raised, curations, audits, requests and
   consistency flags put in front of it. It decides under the operating
-  policy, up to the limit the policy states with its reason, and escalates
-  the rest to the Grantmaker, which decides in the same sitting. Every
+  policy, up to the limit the policy states with its reason, holds what is
+  better decided once related work reports, and escalates the rest into
+  the Grantmaker's session. Every
   decision is logged with its reason (`mandate_decisions`). Like the
   Grantmaker it serves the mandate; the agents whose runs it pays for are
   never told which mandate it is.
@@ -1050,7 +1124,7 @@ These act through tools over the life of a claim and the graph:
   record, and the open web and acts on what it finds: a claim to reassess
   or a source to ingest, commissioned from the mandate within the limit the
   Grantmaker delegated or raised to the mandate's program officers; a note
-  for the next review pass. It writes no assessment and sets no importance,
+  for the Grantmaker. It writes no assessment and sets no importance,
   and every flag is
   recorded with what became of it, so its precision is on the record and
   its Grantmaker can tighten or retire a watch that raises noise
@@ -1077,15 +1151,36 @@ These act through tools over the life of a claim and the graph:
 The agents that run on a budget of their own (the Stewards, the Curator,
 the Consistency Checker, the Audit Agent, the Correspondent) carry
 `commission`, which pays for another agent's run from that budget, and
-`petition_mandate`, which asks the mandate paying for the run for more and
-gets the answer in the run (docs/allocation.md, "Petitions"). Lookouts and
+`petition_mandate`, which asks the mandate paying for the run for more
+without blocking it; the answer comes back into the run's session
+(docs/allocation.md, "Petitions"). Lookouts and
 program officers spend the mandate's money directly, within their limits.
 These agents, the officers, lookouts and the Researcher also carry
 `query_sql`, one read-only SELECT over the `public_read` views
 (services/sql-service.ts).
 
-Every one of these agents, the Matcher and the Extension Agent's chat
-included, also carries the **issue tools**: `raise_issue`, one channel, in
+**A mistyped id is read, never written (#934).** Models copying a uuid
+from one call into the next sometimes add, drop or change a hex digit, or
+splice one id's first group onto another's tail, and an agent told only
+"not found" files the miss as a fault in the graph. Each run therefore
+keeps a record of every id it has been shown, from its prompt and from
+every tool result, with the node's wording where the result gave it
+(llm/seen-ids.ts); the tool loops fill it and run each tool inside it.
+When `get_claim`, `get_decomposition`, `get_dependents` or `get_argument`
+finds nothing under an id, the id is resolved against that record by one
+rule: a candidate is one character away (added, dropped or changed) or
+begins with the same first group, and the read is repaired only when there
+is exactly one candidate and it is of the kind the read takes. A repaired
+read leads with `id_corrected` (both ids, the rule, and a note); one that
+cannot be repaired says why and lists `nearest_seen_ids` with their
+wording. Writes are never repaired: a Steward's edge, link or instance, or
+a consistency flag, given an id that names nothing refuses and offers the
+nearest ids instead, since a guessed target puts the change on the wrong
+node (llm/tools/id-repair.ts). Every agent that carries the graph reads
+has the repair through `executeGraphReadTool`; MCP callers keep no run
+record and get the plain miss.
+
+Every one of these agents, the Matcher included, also carries the **issue tools**: `raise_issue`, one channel, in
 the agent's own words, for a system failure, a gap in its own tools, or a
 concrete improvement idea arrived at from having just done the work;
 `update_issue`, the reporter's own edit path (re-rate the severity, add
@@ -1116,7 +1211,8 @@ backfill worker (`REPORT_EMBEDDING_BACKFILL_PER_TICK` per tick) embeds
 such reports afterwards.
 Inside untraced work (the extension, the MCP's on-demand analysis) a report
 keeps its title, surface, and ids but its body is withheld, so the #356
-rule holds for this channel too. External agents on the MCP surface get
+rule holds for this channel too, including where the work itself is logged
+because the run log is kept as a record. External agents on the MCP surface get
 `raise_issue` only, attributed and rate-limited, matched against
 external-origin reports only, and their reports triage as testimony rather
 than findings.
@@ -1180,7 +1276,7 @@ and by meaning and filters on topic, the claim's status, importance, the
 role that noted it and how recently (`GET /findings`: `q`, `tag`,
 `claim_status`, `min_importance`, `agent`, `since`, with `total` and, on
 `facets=true`, the count each choice would leave). The
-extension chat, the MCP surface, the Extractor, the Matcher, the Lookout,
+Extension Agent, the MCP surface, the Extractor, the Matcher, the Lookout,
 and the solver do not carry the tool: an outside agent's discovery is a
 contribution, and a Lookout's is a flag for a Steward to judge.
 
@@ -1333,17 +1429,16 @@ mandate's plan and its result goes to the claim's Steward, which files a
 request when it needs one no plan funds; docs/mathematics.md 7.2, #768). An administrator (the
 Claim Steward on its claim, a Grantmaker on a funded mandate, the Curator
 on the graph's structure, the Audit Agent on a decision under review)
-launches it
-with `delegate_research`: a brief written for a capable assistant that
-knows nothing of the claim and cannot ask a question back, a model tier, a
-dollar ceiling, an effort level, and whether the constitution is prepended
-to its prompt, which it is by default. That run is synchronous: the
-launcher's tool call blocks until the researcher reports, and the report is
-the tool result. A Steward may instead commission research (`commission`,
-kind `research`): a `research` ledger row the engine executor runs on its
-own, whose report returns into the Steward's session when it has paused to
-wait for it, or into the node's inbox (docs/allocation.md, "Sessions that
-pause and resume"). It answers only to its launcher, owns nothing, and cannot
+commissions it (`commission`, kind `research`; the Grantmaker through its
+mandate's `commission`, with `research_tier`): a brief written for a
+capable assistant that knows nothing of the claim and cannot ask a question
+back, a model tier and a budget. The run is a `research` ledger row the
+engine executor runs on its own, paid whole from the launcher's budget;
+nobody blocks on it. Its report returns into the launcher's session, shown
+in its next tool result or resuming it if it has paused, or, with no
+session waiting, into the node's inbox (docs/allocation.md, "Sessions that
+pause and resume"). `delegate_research`, which ran the researcher inside
+the launcher's turn and blocked it, is retired. It answers only to its launcher, owns nothing, and cannot
 launch instruments of its own. The report opens with an outcome (answered,
 partly answered, not answered, ill posed) and gives each finding with its
 locator and the words or numbers it rests on, so the launcher can check the
@@ -1358,7 +1453,7 @@ the ordinary loop on the cheap tier, and is the right choice for reading and
 mapping a large literature economically. A tier carries the code-execution
 sandbox (Python, no network), an Anthropic server tool, when its configured
 model is Anthropic-served; by default that is strong and standard, and the
-`delegate_research` description names the tiers that have it in the
+`commission` description names the tiers that have it in the
 deployment.
 Every tier has `web_search` (the server tool on Claude, the client-side
 OpenRouter search elsewhere), `read_page`, and `read_arxiv_source`, which
@@ -1405,7 +1500,7 @@ reviewed by the Steward with `provenance_get_map`, and the map's reader-
 facing summary stays the Steward's to write. A run a Grantmaker launched
 writes only its notebook: a Grantmaker serves its mandate as well as the
 graph, and funding is kept apart from what the graph says (§19), so
-`delegate_research` from a mandate takes no `claim_id` and no
+research a mandate commissions has no node and no
 `examine_source_id`, and the researcher withholds the provenance and
 examination tools from any run whose launcher is not a Claim Steward or a
 request (`launcherWritesGraph`, `src/services/research-run-service.ts`).
@@ -1425,9 +1520,8 @@ notebook and report, so a programme carried out in stages begins each
 stage where the last stopped.
 
 **Document reviews (#865).** An examination of a document is claim-scoped
-when a Steward launches it on a document in its claim's map, inline
-(`delegate_research` with `examine_source_id`) or on its own (`commission`
-kind research with `examine_source_id`). A review of a document for its
+when a Steward commissions it on a document in its claim's map
+(`commission` kind research with `examine_source_id`). A review of a document for its
 own sake is a request that bears on that document and on no node
 (`documentUnderReview`, `src/services/request-service.ts`): anyone may file
 one, the Curator keeps it, and a mandate funds it or not like any request.
@@ -1446,9 +1540,9 @@ own reading or does not, and there is no source-level verdict.
 
 **Budgets and backstops.** Every run has a dollar ceiling the launcher set
 from its own budget, read from the usage meter before every turn on both
-loops, a wrap-up notice at 85 percent of it, a wall cap
-(`RESEARCHER_MAX_WALL_MINUTES` on a delegated run, a longer backstop on a
-request run) and a turn cap (`RESEARCHER_MAX_TURNS`); on
+loops, a wrap-up notice at 85 percent of it, a wall-clock backstop
+(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`) and a turn cap
+(`RESEARCHER_MAX_TURNS`); on
 the ordinary loop, a run past its ceiling or paused gets one last turn, in
 which every tool call is refused with the instruction to report, and is
 then stopped. What a run may be given is the launcher's own money, and
@@ -1461,27 +1555,21 @@ the cap a buyer was quoted for a paid order, and the remaining budget of
 the job funding a money trigger or a deep decomposition. (A mandate's plan
 items are commissions on ledger actions, so a pass they buy works to the
 allocation covering it.) What is left is that budget less the pass's metered
-spend, the research it already launched included; a pass with no budget is
-not offered `delegate_research`. A Grantmaker pays from its mandate's
-uncommitted budget (budget less committed money, `grantCommittedMicroUsd`),
-which covers a run's `budget_usd` and any `contribution_budget_usd`; there
-is no deployment cap on either, and no count of runs per pass; a delegated run's
-wall-clock time is capped (`RESEARCHER_MAX_WALL_MINUTES`) because its
-launcher waits on it, and the launcher is told so. A request run from the
-ledger has no launcher waiting; its budget bounds it, and a long backstop
-(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`, 240) only ends a run that has
-stopped making progress, which the run is told with that reason. A durable daily
-cap across processes (`RESEARCHER_DAILY_CAP_OWLS`) refuses launches past
-it for research no funder pays for (a pass with neither a user nor a job
-on its usage context), as the LLM budget tracker's limits apply only to
-unattributed calls; `RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
-the solver is, and while off no launcher is offered `delegate_research`;
+spend, the research it already commissioned included. A Grantmaker pays
+from its mandate's money within its pace and escrow, like any commission
+(docs/allocation.md, "Pace and reserve"), which covers a run's budget and
+any `contribution_budget_owls`; there is no deployment cap on either, and
+no count of runs. Since nobody waits on a research run, every one has its
+budget as its bound and the long backstop
+(`RESEARCHER_REQUEST_MAX_WALL_MINUTES`, 240), which only ends a run that
+has stopped making progress, and the run is told so with that reason.
+`RESEARCHER_ENABLED` turns the researcher on (it is off by default, as
+the solver is, and while it is off or paused a funded `research` row waits;
 production sets it in `infra/lib/api-stack.ts`),
 and a `researcher_paused` row in `platform_flags` halts a run in flight.
-The spend is metered under the launcher's usage context, so it lands on the
-claim and the job that funded the launching run, appears in `llm_usage`
-under agent `researcher`, and is added to the launcher's own cost meter, so
-the launching action is charged for it. The shared pieces of this harness,
+The spend is metered to the `research` row and settled like any
+commission, against the payer the money came from (it keeps its payer down
+the chain), and appears in `llm_usage` under agent `researcher`. The shared pieces of this harness,
 the stop reasons, the reminder fraction, and the container
 metering, live in `src/llm/instrument-harness.ts` and serve the solver too.
 
@@ -1648,11 +1736,47 @@ Which backend serves a call is decided by the **shape of the model id**
 |----------|----------|---------|
 | `claude-…` | Anthropic direct (`@anthropic-ai/sdk`) | `claude-opus-5-5` |
 | `gpt-…` or `o<digit>` | OpenAI direct (Responses API) | `gpt-5.6-luna`, `gpt-5-nano` |
+| `endpoint:<name>/…` | an endpoint the deployment runs itself (below) | `endpoint:local/meta-llama/Llama-3.3-70B-Instruct` |
 | contains `/` | OpenRouter (`vendor/model`) | `qwen/qwen3-235b-a22b` |
 | anything else | rejected, at config load AND at call time | `us.anthropic.claude-…` |
 
 Bedrock/Vertex-prefixed ids resolve to nothing and are rejected with a specific
 message — they 404 against the Anthropic API (issue #11).
+
+**An endpoint of the deployment's own.** A deployment can serve open-weight
+models from a server it runs, beside or instead of the hosted APIs: anything
+that serves an OpenAI-compatible Chat Completions API, as vLLM, llama.cpp's
+server, TGI and Ollama do. Each endpoint is declared once in `MODEL_ENDPOINTS`,
+a JSON list (`src/llm/providers/endpoint-config.ts`):
+
+```
+MODEL_ENDPOINTS=[{"name":"local","baseUrl":"http://vllm.internal:8000/v1","keyEnv":"LOCAL_LLM_KEY","inputUsdPerMtok":0.5,"outputUsdPerMtok":1.5}]
+STEWARD_MODEL=endpoint:local/meta-llama/Llama-3.3-70B-Instruct
+```
+
+`name` is what follows `endpoint:` in a model id, and everything after the
+first slash is the model as the endpoint knows it. The prefix is literal
+because open-weight model names contain slashes themselves and would
+otherwise read as OpenRouter ids. `keyEnv` names the environment variable
+that holds the endpoint's key, and is left out for an endpoint that takes
+none. The two prices are required and have no default: a run's budget and
+the owls charged for it are counted in metered cost, and only the deployment
+knows what its own hardware costs. A model field that names an endpoint
+nobody declared stops the process at start.
+
+The endpoint adapter (`providers/endpoint.ts`) reuses the Chat Completions
+translation OpenRouter uses. A call is priced from the tokens the endpoint
+reports at its declared rates and metered like any other, and a reply that
+carries no token counts is refused rather than estimated, since an estimate
+would put a guess in the ledger. Structured output is a `json_schema`
+response format, checked against the schema when it comes back. What such
+an endpoint does not offer is what is Anthropic-only below: no server-side
+web search (the agent gets the client-side `web_search`), no code-execution
+sandbox, no prompt-cache breakpoints, no `effort`, no long-run loop, and no
+images or PDF pages shown to the model, since the list of models that take
+them (`modelSeesImages` in `src/llm/models.ts`) names hosted families only.
+The context a local model takes is the server's to enforce, and a request
+over it comes back as the server's own error, with the endpoint's name.
 
 Each adapter in `src/llm/providers/` speaks its own platform's native dialect
 rather than a lowest-common-denominator abstraction. Structured output, for
@@ -1712,12 +1836,93 @@ breakpoints.
 **Metering** stays at one chokepoint regardless of provider. Anthropic and
 OpenAI calls are priced from the rate table in `src/llm/pricing.ts`; OpenRouter
 reports its own computed cost per call, which overrides the table (no rate table
-can cover its zoo). Unknown model ids fall back to the top-tier rate so nothing
-ever meters as free. Every usage row records which provider served it.
+can cover its zoo), and a declared endpoint's calls are priced from its declared
+rates and take the same path. Unknown model ids fall back to the top-tier rate
+so nothing ever meters as free. Every usage row records which provider served
+it.
 
 Missing credentials fail as a clear configuration error at call time, not as an
-opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings), and
-`OPENROUTER_API_KEY`.
+opaque 401: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (shared with embeddings),
+`OPENROUTER_API_KEY`, and the variable a declared endpoint's `keyEnv` names.
+
+### Providers cleared by label
+
+A row carries a label that says who may read it (`src/labels.ts`), and a run
+works at the label of the work that started it. Text at a label other than
+`public` reaches only the parties the deployment's owner chose: its members,
+and a model provider or an outside service by contract. So each provider is
+cleared for a set of labels, and a run is served only by one cleared for the
+label it works at (`src/provider-labels.ts`).
+
+A provider here is anything outside the deployment that is sent text a run
+composed or read:
+
+| Name | What it is | What it is sent |
+|------|------------|-----------------|
+| `anthropic`, `openai`, `openrouter` | the hosted model APIs | every prompt, and what Anthropic's server tools (web search, code execution) do inside a turn |
+| `endpoint:<name>` | an endpoint declared in `MODEL_ENDPOINTS` | every prompt of a model routed to it |
+| `embeddings` | OpenAI's embeddings API | the text of each claim, tag, finding, request and report, and each search query |
+| `web_search` | the `web_search` tool where the agent's own loop runs it: OpenRouter's web plugin, which searches through Exa | the query |
+| `web_pages` | fetching an address on the open web: `read_page` and the other reading tools, the reading of a submitted source, feeds, Crossref, arXiv, the Internet Archive | the address, which a run may have composed |
+| `elicit` | Elicit's search of papers and trials | the query |
+| `pangram` | Pangram's checks for AI-generated writing and matching text | the text checked |
+
+`PROVIDER_LABELS` is a JSON object from a provider's name to the labels it may
+receive text at:
+
+```
+PROVIDER_LABELS={"anthropic":["public","internal"],"endpoint:local":["public","internal","restricted"],"embeddings":["public","internal"]}
+```
+
+A provider the setting does not name is cleared for `public` and for nothing
+else. The public graph has only `public`, so it needs no setting and nothing
+about it changes. A deployment with another label serves nothing at that
+label until whoever runs it clears a provider for it: which outside party
+may read private text is a step of setting the deployment up, never a
+default. A provider the setting names is cleared for exactly the labels
+listed, so `[]` switches it off for every label.
+
+The test is one label, by name: the provider must be cleared for the label
+the run works at. A run at a label also sends what that label reads (the
+pairs in `label_reads`), and that needs no second check, because a run at a
+label is trusted with everything the label reads and so is whoever it may
+send its text to. Nothing follows in the other direction. A provider cleared
+for `restricted` is not thereby cleared for runs at `internal`, and labels
+have no order from which such a rule could be read.
+
+The check is made where the text leaves, before the request is built: in the
+LLM client for the model provider of every call (`src/llm/client.ts`), in the
+embedding service, in the one function that fetches a public address
+(`services/url-guard.ts`), in the loop-run web search, and in the Elicit and
+Pangram tools (`src/llm/provider-clearance.ts`). A call that is not cleared
+fails there with an error that names the label, the provider and the entry to
+write in `PROVIDER_LABELS`. Nothing is sent, nothing is retried on another
+provider, and the label is never read as `public`. A run whose model is not
+cleared fails on its first call, before it has spent anything.
+
+A name in `PROVIDER_LABELS` that is not a provider stops the process at
+start. Labels are named by name and are never created from the setting. A
+label it names that is not a row in `labels` can only be found by asking the
+database, so it is reported the first time the setting is used, and every
+call is refused until the label is defined or the name corrected.
+
+A run is not offered the tools of a service that is not cleared for its
+label, exactly as it is not offered the tools of a feature that is off, and
+it is told so in the same passage at the head of its first task message
+(`src/llm/uncleared-services-note.ts`): which services, and that this
+deployment has not cleared them to receive the material the run works with.
+Embeddings have no tool of their own. Where they are not cleared a row is
+written without a vector and a search falls back to keywords, as when the
+embeddings API is down, and the passage says that search by meaning is not
+available. The prompt step's setup records the provider that served the run
+beside its label (`setup.provider`, docs/run-log.md), so a later reader can
+check that the rule held.
+
+The Lean checker, the database and the queues are parts of the deployment,
+not outside parties, and are not on the list. Stripe is sent no text of a
+run. A problem report an agent files does leave the deployment where
+`GITHUB_ISSUES_REPO` is set, as a GitHub issue, and this check does not
+cover that path.
 ### The long-run loop
 
 The five functions above are the provider-neutral contract every agent
@@ -1763,14 +1968,62 @@ money cannot: the model provider's rate limit, the shared connection pool, the
 task's memory.
 
 Failures are classified before they are counted. Transient API errors (rate
-limits, server errors, network, exhausted budget, rejected credentials) requeue the claim untouched
-and do not count as attempts. The continuous runner answers them by slowing
+limits, server errors, network, exhausted budget, rejected credentials, a
+provider account out of credits) requeue the claim untouched
+and do not count as attempts. The continuous runner answers rate limits,
+overloads and network failures by slowing
 down, not stopping: a drain that ends on one halves the live concurrency
 (never below one) and pauses every slot for a backoff that doubles with each
 consecutive transient stop, from five seconds to five minutes, and each clean
 drain afterwards gives one slot back. The one-shot drain the harness uses keeps
 a circuit breaker that stops after a run of consecutive transient failures.
 Either way, healthy claims are never poisoned.
+
+A platform fault makes the ledger row wait, and the row says so (#971,
+`services/deployment-fault.ts`). The fault has one of three public classes:
+`credits_fault` (the provider refused the call because the deployment's
+account with it cannot pay: a 402, Anthropic's "credit balance is too low",
+OpenAI's `insufficient_quota`), `credentials_fault` (the provider rejected
+the deployment's key) and `provider_unavailable` (any other transient
+failure that outlasted the client's retries). The first two are deployment
+faults, the operator's to fix. A row whose run a platform fault stops goes
+back to open, uncounted and still funded, with the class, since when, and
+when it is tried next (`actions.fault_reason`, `fault_since`, `retry_after`;
+`waiting_on`, `waiting_since` and `next_attempt_at` in the public ledger
+view), and the funded rows of the same kind and tier wait with it, since the
+same model serves them. The wait is 30 seconds, doubling to 10 minutes; it
+ends when one of the rows runs. It is a wait and not a limit: the row is
+retried for as long as the fault lasts, and money cannot pace it, because a
+call refused for credits or credentials is answered before anything is
+billed. A deployment fault does not stop the drain or slow the runner: the
+lanes behind the failing row may run on a provider that is healthy. On
+2026-11-12 one provider's account ran out of credits, a 0.05-owl lookout run
+on it was the most-backed runnable engine row, and it was picked, refused
+and handed back every few minutes for thirteen hours; each refusal ended the
+drain and paused every slot, and the Steward lane, whose provider was
+healthy, ran nothing until deploys restarted the process.
+
+Work a deployment fault stops is never failed for good. An ingest is not
+cancelled: its row waits and the engine executor submits the source again
+(`url-extraction.ts`), and the failed job, recorded by the fault's class, is
+not an event for its mandate. A mandate reads of a fault in its
+Grantmaker's next sitting's briefing: the faults open now, those that came and went
+since its last pass, and its own rows waiting on one, with what is held.
+Held money stays held: a commission the platform cannot run yet keeps its
+budget, which counts against the mandate's pace from when it was placed,
+as any work not yet run does. A tool a fault stops
+tells its agent so by class and says what to do: `match_claim` returns
+`outcome: "unavailable"`, which is not a verdict, and the Steward's rule is
+to mint nothing on it or on an embedding search alone, and to keep the
+premise in prose.
+
+Maintainers are told once. Each deployment fault is one open row per class
+and provider (`deployment_faults`), opened with an error line in the log and
+one report on the agents' channel at severity blocking, and shown with the
+rows waiting on it in `GET /monitors` (queue health). It closes when the
+provider has served a call and refused none for ten minutes, and the rows
+that waited are tried at once. The provider's own text is kept for
+maintainers and is never on a public surface.
 Only genuine logic errors count toward the retry cap, after which the claim
 parks in an error state for inspection. The distinction exists because an
 earlier incident parked dozens of production claims over what turned out to be
@@ -1869,10 +2122,12 @@ one; there is no prize fund), `prize_claims`, `prize_payouts`,
 `commissioned_by`, a brief, a reason and the `parent_action_id` of the run
 that paid for it) and, per mandate: `mandate_inbox` (what waits for its
 program officers), `petitions` (agents asking it for more, with the chain
-of runs behind each), `mandate_decisions` (every decision its officers,
+of runs behind each, and any hold on them), `mandate_decisions` (every decision its officers,
 Grantmaker and lookouts made, with the reason), and
 `mandate_policy_versions` (every version of its operating policy and its
-terms). `node_messages` is each node's inbox. The `public_read` schema holds
+terms). `events` is the log of what happened that someone may be told of,
+and `subscriptions` who wants to be told of what (docs/allocation.md,
+"Events and subscriptions"). `node_messages` is each node's inbox. The `public_read` schema holds
 the views `query_sql` reads, behind their own login roles, and `sql_usage`
 holds each caller's daily database time and the one-query-at-a-time lock.
 ### Attachments
@@ -2045,14 +2300,20 @@ the page was analyzed before; otherwise it returns a content hash the extension
 polls until the pipeline finishes. The work is metered to the user's account,
 and the key lives in the extension's background worker, never in the page.
 
-Page text the extension sends is not persisted (#356). The page is whatever
+While the run log is best-effort, which is how the public graph runs, page
+text the extension sends is not persisted (#356). The page is whatever
 the reader has open, so the analysis pipeline runs untraced (no `agent_runs`
 or `agent_steps`, whatever `TRACE_LEVEL` says), writes no sources or
 instances, and keeps its result only in an in-memory cache. Chat is the
 exception since it became the Assistant: a conversation is kept in the
 user's account, with the page's address, title and marked passages (never
 its text), and its runs are logged privately like any Assistant run. The MCP's
-on-demand analysis tools follow the same rule. Only source submission, where
+on-demand analysis tools follow the same rule as the pipeline. A deployment that
+keeps its log as a record (`RUN_LOG_MODE=record`) logs the analysis
+pipeline's runs and the on-demand tools' like any others, private to the
+reader (docs/run-log.md, "Work the best-effort log leaves out, and record
+mode does not"); it still writes no sources and no instances from them.
+Only source submission, where
 the fetched document is public by construction, produces provenance and a
 transcript. The claim layer carries its own guard: the constitution (§2)
 holds that a claim is about the world, not a private person, and the
@@ -2145,7 +2406,8 @@ See docs/allocation.md, "Platform mandates".
 A feature is an optional part of the product that a deployment can switch
 off. Each feature is its own switch, every one is on by default, and a
 deployment switches off the ones it does not want by naming them in one
-environment variable, `FEATURES_OFF` (comma-separated). There are no named
+environment variable, `FEATURES_OFF` (comma-separated), or as `features.off`
+in its config file (docs/deployment.md). There are no named
 bundles: a deployment is described by the features it has off and by nothing
 else. A name in `FEATURES_OFF` that is not a feature stops the process at
 start with the list of names that are, so a typo cannot leave a feature on
@@ -2229,6 +2491,23 @@ site that has it.
 
 ---
 
+## Who a deployment serves
+
+One setting, `READS`, says who a deployment serves. At `open`, its starting
+value, a read needs no account and every act is guarded by the rules its
+route carries: this document describes that deployment. At `members` the
+deployment is private. One hook authenticates every request, nothing is
+served to anyone who is not signed in, and what a signed-in person may do
+follows from permissions the deployment's own administrators grant: to
+direct the graph, to release one party's material, to fund, to read at a
+label, to open raw sources at a label, and to administer. The setting, the
+permissions, how the first administrator is established, and sign-in
+through an organization's identity provider are in
+[accounts.md](accounts.md), "Members-only deployments". With the setting at
+its starting value none of that code runs.
+
+---
+
 ## Deployment
 
 The API runs as a container on ECS Fargate behind an application load balancer
@@ -2240,6 +2519,15 @@ so the whole pipeline runs on a laptop with no AWS dependencies. The Lean
 checker is a separate stack with a security group that reaches nothing, and
 the solver worker is a second ECS service; both are described in
 docs/infrastructure.md.
+
+A deployment on someone else's machines is the same code with its own
+settings. Those can be written in one config file, read as a layer under the
+environment, in which each setting is chosen for itself and there are no
+named profiles; secrets stay in the environment. A preflight (`npm run
+preflight`, and `GET /setup/preflight` for the operator) says whether the
+deployment is ready, and a deployment that holds private material starts no
+agent work until the checks that guard it pass. Both are described in
+docs/deployment.md.
 
 ---
 

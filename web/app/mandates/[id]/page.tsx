@@ -656,7 +656,7 @@ export default async function MandatePage({
                 )}
                 <span className="mandate-rationale"> {item.rationale}</span>
                 <span className="mandate-state sc"> {STATE_LABEL[item.state] ?? item.state}</span>
-                {(item.state === "blocked" || item.state === "waiting") && item.ledger?.reason && (
+                {(item.state === "blocked" || item.state === "waiting" || item.state === "cancelled") && item.ledger?.reason && (
                   <span className="mandate-rationale"> ({item.ledger.reason})</span>
                 )}
               </li>

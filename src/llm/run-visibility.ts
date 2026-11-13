@@ -14,7 +14,9 @@
  * Reasons are recorded on the run (agent_runs.private_reasons) as it goes,
  * mechanically: trace-service.ts at the start, the LLM client after each
  * tool turn. Agent code adds a reason when it hands a run private input that
- * the agent's default does not cover (markCurrentRunPrivate). The rule only
+ * the agent's default does not cover (markCurrentRunPrivate). A run over a
+ * reader's own content (untraced() in usage-context.ts), which exists only
+ * in record mode, starts private whatever its agent's default. The rule only
  * ever narrows: nothing here makes a run public.
  *
  * Private means: anything about an account that is not public (contact
@@ -45,12 +47,13 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
   correspondent: { reads: "private", why: "the manager's poke notes and the private workspace" },
   curator: { reads: "public", why: "curation requests over public claims" },
   dispute_arbitrator: { reads: "public", why: "a contribution, its appeal and the trigger; all public" },
-  extractor: { reads: "public", why: "a submitted source, public once submitted; on-demand analysis runs untraced" },
+  extension: { reads: "private", why: "the page a reader has open; logged only in record mode" },
+  extractor: { reads: "public", why: "a submitted source, public once submitted; on-demand analysis runs untraced, or private in record mode" },
   grantmaker: { reads: "private", why: "the funder's conversation and notes" },
   grantor: { reads: "private", why: "a mandate before approval, and its workspace" },
   lookout: { reads: "public", why: "a public brief and workspace; runs handed a poke note are marked private" },
   mandate_review: { reads: "private", why: "funder notes, bounty requests and the workspace" },
-  matcher: { reads: "public", why: "a source's assertion, public once submitted; on-demand matching runs untraced" },
+  matcher: { reads: "public", why: "a source's assertion, public once submitted; on-demand matching runs untraced, or private in record mode" },
   math_solver: { reads: "private", why: "an attempt and earlier attempts, unpublished until the platform publishes them" },
   program_officer: { reads: "private", why: "petitions and inbox items with fields the public views leave out" },
   researcher: { reads: "public", why: "a research task; runs a Grantmaker launched from a funder's brief are marked private" },
@@ -72,6 +75,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   adjust_contributor_reputation: { reads: "public", why: "confirms the run's own write; reputation and suspension state are public" },
   adjust_plan: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   allocation_report: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
+  amend_plan_items: { reads: "public", why: "confirms the run's own write; plan items and their standing are public on the mandate routes" },
   amend_objective: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   add_to_pass_budget: { reads: "public", why: "confirms the run's own write; the budget left is run spend, public on GET /changes" },
   answer_messages: { reads: "public", why: "node messages, public as summaries on GET /claims/:id and in full in public_read.messages" },
@@ -84,16 +88,16 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   complete_mandate: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   complete_quantity_definition: { reads: "public", why: "confirms the run's own write to public graph records" },
   confirm_bounty: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
-  continue_review: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
+  fresh_start: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   correspondent_report: { reads: "private", why: "the correspondent's workspace, which the public view leaves out" },
   cost_sheet: { reads: "private", why: "operator cost data and vendor prices no route serves" },
   create_claim: { reads: "public", why: "confirms the run's own write to public graph records" },
   decide_petitions: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   decide_prize_claim: { reads: "public", why: "the run's own decision, which goes on the public prize record" },
   decline: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
+  hold: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   decline_mandate: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   delegate: { reads: "private", why: "a copy's report on a user's private task" },
-  delegate_research: { reads: "private", why: "research reports, notebooks and Grantmaker briefs, which the claim page leaves out" },
   detach_claim_instance: { reads: "public", why: "confirms the run's own write to public graph records" },
   elicit_search_papers: { reads: "public", why: "third-party search over published papers and trials" },
   elicit_search_trials: { reads: "public", why: "third-party search over published papers and trials" },
@@ -245,7 +249,8 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   set_argument_shows: { reads: "public", why: "confirms the run's own write to public graph records" },
   set_claim_domains: { reads: "public", why: "confirms the run's own write to public graph records" },
   set_claim_importance: { reads: "public", why: "confirms the run's own write to public graph records" },
-  set_daily_rate: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
+  set_reserve: { reads: "public", why: "confirms the run's own write; the reserve and its reason are public on the mandate's page" },
+  amend_pace: { reads: "public", why: "confirms the run's own write; the pace is public on the mandate's page" },
   set_edge_relation: { reads: "public", why: "confirms the run's own write to public graph records" },
   set_feed_rule: { reads: "public", why: "lookout records, public on the mandate's lookout route" },
   set_instance_order: { reads: "public", why: "confirms the run's own write to public graph records" },
@@ -278,6 +283,9 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   update_question_assessment: { reads: "public", why: "confirms the run's own write to public graph records" },
   update_workspace: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   view_image: { reads: "public", why: "public web pages, search hits, feeds and registries" },
+  subscribe: { reads: "public", why: "confirms the run's own subscription; what it delivers arrives in tool results, each event withheld unless public or at the run's label" },
+  unsubscribe: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
+  list_subscriptions: { reads: "public", why: "the run's own subscriptions, which it made" },
   wait_for_answers: { reads: "public", why: "petition decisions and other Stewards' answers, public; a research report that arrives marks the run private where arrivals enter (session-tools.ts)" },
   web_search: { reads: "public", why: "public web pages, search hits, feeds and registries" },
   withdraw_bounty: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },

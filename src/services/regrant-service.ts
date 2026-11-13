@@ -47,7 +47,7 @@ export interface GrantEscrowBreakdown {
   /** The part of `spent` that no allocation share accounts for: metered
    * to the mandate's job outside the ledger (the Grantmaker's chat with
    * the funder, a run's overage on a row no mandate allocation covered).
-   * It draws on the escrow and is not held to the daily rate. */
+   * It draws on the escrow and is not held to the pace. */
   outsideLedger: number;
   /** Unspent remainders of allocations not yet released: money held by
    * commissioned work that is waiting or running. */
@@ -295,10 +295,12 @@ export async function createRegrant(input: {
       };
     }
     const [row] = await tx.query<{ id: string }>(
-      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note)
-       VALUES ($1, $2, $3, $4)
+      // The note is the regranting run's words, so the row carries that
+      // run's label (src/labels.ts).
+      `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
-      [source.id, input.toGrantId, amountMicro, input.note ?? null]
+      [source.id, input.toGrantId, amountMicro, input.note ?? null, currentLabel()]
     );
     return {
       ok: true as const,
@@ -366,10 +368,10 @@ export async function spawnFundedMandate(input: {
   };
   const [grant] = await rawQuery<{ id: string }>(
     `INSERT INTO grants
-       (funder_user_id, budget_job_id, name, policy, status, mandate)
-     VALUES ($1, $2, $3, 'agent', 'planning', $4::jsonb)
+       (funder_user_id, budget_job_id, name, policy, status, mandate, sensitivity_label)
+     VALUES ($1, $2, $3, 'agent', 'planning', $4::jsonb, $5)
      RETURNING id`,
-    [source.funder_user_id, job!.id, input.title, JSON.stringify(mandate)]
+    [source.funder_user_id, job!.id, input.title, JSON.stringify(mandate), currentLabel()]
   );
   const regranted = await createRegrant({
     fromGrantId: source.id,

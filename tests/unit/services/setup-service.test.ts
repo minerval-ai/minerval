@@ -63,11 +63,12 @@ describe("splitSetup", () => {
 
   it("records references and settings, not text, in the setup record", () => {
     const parts = split({ system: stewardSystem() });
-    const record = setupRecord(parts, { model: "claude-opus-5-5", effort: "high" }, "abc123", "public", []);
+    const record = setupRecord(parts, { model: "claude-opus-5-5", effort: "high" }, "abc123", "public", [], "anthropic");
     expect(record).toMatchObject({
       commit: "abc123",
       label: "public",
       featuresOff: [],
+      provider: "anthropic",
       model: "claude-opus-5-5",
       effort: "high",
       maxTokens: null,
@@ -79,11 +80,22 @@ describe("splitSetup", () => {
   it("records the features that were off for the run, and an empty list when none was", () => {
     const parts = split({ system: stewardSystem() });
     const settings = { model: "claude-opus-5-5" };
-    expect(setupRecord(parts, settings, null, "public", []).featuresOff).toEqual([]);
+    expect(setupRecord(parts, settings, null, "public", [], "anthropic").featuresOff).toEqual([]);
     const off = ["mathematics", "prizes"] as const;
-    const record = setupRecord(parts, settings, null, "public", off);
+    const record = setupRecord(parts, settings, null, "public", off, "anthropic");
     expect(record.featuresOff).toEqual(["mathematics", "prizes"]);
     // Its own list, not the caller's.
     expect(record.featuresOff).not.toBe(off);
+  });
+
+  it("records the provider that served the run, always, beside the label it ran at", () => {
+    const parts = split({ system: stewardSystem() });
+    const settings = { model: "endpoint:local/meta-llama/Llama-3.3-70B-Instruct" };
+    expect(setupRecord(parts, settings, null, "internal", [], "endpoint:local")).toMatchObject({
+      label: "internal",
+      provider: "endpoint:local",
+    });
+    // An id that resolved to nothing still leaves the field there.
+    expect(setupRecord(parts, settings, null, "public", [], null)).toHaveProperty("provider", null);
   });
 });

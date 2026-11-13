@@ -27,7 +27,7 @@ const { state, queries } = vi.hoisted(() => ({
     attemptGroups: { groups: 0, live: 0 },
     publishedFor: new Set<string>(),
     lastAttemptFinishedAt: null as Date | null,
-    dueLookouts: [] as Array<{ id: string; title: string }>,
+    dueLookouts: [] as Array<{ id: string; title: string; sensitivity_label: string }>,
     // The Steward standing of the claims a test names (#834): its queue
     // state and, when it parked, the failure recorded against it.
     stewardState: "done" as string,
@@ -36,6 +36,15 @@ const { state, queries } = vi.hoisted(() => ({
     // The action row `groupLedger` finds by id, for an item that already
     // carries an action_id.
     rowById: null as null | { id: string; status: string; exclusion_group: string },
+    // The pending claims the sweep finds without an open row, each with the
+    // label its row carries, and the label of any claim a test names (a
+    // claim with no entry reads as no row).
+    pending: [] as Array<{ id: string; sensitivity_label: string | null }>,
+    claimLabels: {} as Record<string, string>,
+    // The mandate's own label, and the labels of the unread messages
+    // waiting on a claim (a claim with no entry has none waiting).
+    grantLabel: "public" as string,
+    unread: {} as Record<string, string[]>,
   },
   queries: [] as Array<{ q: string; params: unknown[] }>,
 }));
@@ -43,7 +52,18 @@ const { state, queries } = vi.hoisted(() => ({
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string, params: unknown[] = []) => {
     queries.push({ q, params });
-    if (q.includes("FROM claims c") && q.includes("steward_state = 'pending'")) return [];
+    if (q.includes("FROM claims c") && q.includes("steward_state = 'pending'")) return state.pending;
+    // runAtMandateLabel's read of the mandate's label, and pendingPassLabel's
+    // read of the labels waiting on a claim (label-service.ts).
+    if (q.includes("SELECT sensitivity_label FROM grants WHERE id = $1")) return [{ sensitivity_label: state.grantLabel }];
+    if (q.includes("FROM node_messages") && q.includes("read_at IS NULL")) {
+      return (state.unread[params[0] as string] ?? []).map((sensitivity_label) => ({ sensitivity_label }));
+    }
+    // runAtClaimLabel's read of the claim's label (label-service.ts).
+    if (q.includes("SELECT sensitivity_label FROM claims WHERE id = $1")) {
+      const label = state.claimLabels[params[0] as string];
+      return label ? [{ sensitivity_label: label }] : [];
+    }
     // The materializer's per-item standing lookup: every claim the tests
     // name is active and assessed; published iff the test says so.
     if (q.includes("FROM claims c WHERE c.id = $1")) {
@@ -101,8 +121,7 @@ vi.mock("../../../src/services/queue-service.js", () => ({
 // A stewarding item's pass is a standing order the mandate commissions
 // (#849); the commission's own SQL runs in tests/db/standing-orders.test.ts.
 vi.mock("../../../src/services/standing-order-service.js", () => ({
-  HELD_BEHIND_EARLIER: "held behind an earlier item",
-  orderTier: (variant: unknown) => (variant === "standard" ? "standard" : "strong"),
+  orderTier: (variant: unknown) => (variant === "standard" || variant === "strong" ? variant : null),
   placeStandingOrder: vi.fn(async () => ({
     state: "placed",
     actionId: "act-1",
@@ -110,7 +129,7 @@ vi.mock("../../../src/services/standing-order-service.js", () => ({
     tier: "strong",
   })),
   releaseStandingOrder: vi.fn(async () => 0),
-  orderChildPasses: vi.fn(async () => ({ children: [], waiting: null, blocked: null })),
+  orderChildPasses: vi.fn(async () => ({ children: [], notOrdered: [], waiting: null, blocked: null, note: null })),
 }));
 vi.mock("../../../src/services/report-service.js", () => ({
   raiseIssue: vi.fn(async () => ({ acknowledged: true })),
@@ -132,11 +151,13 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
 }));
 
 import {
+  ASSESS_GROUP,
   ATTEMPT_GROUP,
   FORMALIZE_GROUP,
   LOOKOUT_GROUP,
   reconcileActions,
 } from "../../../src/services/action-service.js";
+import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 
 const inserts = (kind: string) =>
   queries.filter((x) => x.q.includes("INSERT INTO actions") && x.q.includes(`'${kind}'`));
@@ -153,11 +174,111 @@ beforeEach(() => {
   state.stewardErrorReason = null;
   state.stewardAttempts = 0;
   state.rowById = null;
+  state.pending = [];
+  state.claimLabels = {};
+  state.grantLabel = "public";
+  state.unread = {};
+});
+
+// The sweep starts from a claim, not from a piece of work, so the rows it
+// opens for a pending claim take the label of the messages waiting on it,
+// or the claim's own (src/labels.ts). A row that is a mandate's work, or a
+// lookout's, takes the mandate's or the lookout's.
+describe("rows opened by the sweep", () => {
+  const assessRows = () =>
+    queries.filter((x) => x.q.includes("INSERT INTO actions") && ["assess", "reassess"].includes(x.params[0] as string));
+
+  it("opens a pending claim's assess rows at the claim's label", async () => {
+    state.pending = [
+      { id: CLAIM_A, sensitivity_label: "internal" },
+      { id: CLAIM_B, sensitivity_label: "public" },
+    ];
+    await reconcileActions();
+    const rows = assessRows();
+    // A standard and a strong row for each claim; the label is the last parameter.
+    expect(rows.map((r) => [r.params[1], r.params[2], r.params[6]])).toEqual([
+      [ASSESS_GROUP(CLAIM_A), "standard", "internal"],
+      [ASSESS_GROUP(CLAIM_A), "strong", "internal"],
+      [ASSESS_GROUP(CLAIM_B), "standard", "public"],
+      [ASSESS_GROUP(CLAIM_B), "strong", "public"],
+    ]);
+  });
+
+  it("opens a pending claim's rows at the label of its unread messages when they agree on one", async () => {
+    state.pending = [
+      { id: CLAIM_A, sensitivity_label: "public" },
+      { id: CLAIM_B, sensitivity_label: "public" },
+    ];
+    // One label waiting on A; two on B, which cannot say which the pass is for.
+    state.unread = { [CLAIM_A]: ["internal"], [CLAIM_B]: ["internal", "embargoed"] };
+    await reconcileActions();
+    expect(assessRows().map((r) => [r.params[1], r.params[6]])).toEqual([
+      [ASSESS_GROUP(CLAIM_A), "internal"],
+      [ASSESS_GROUP(CLAIM_A), "internal"],
+      [ASSESS_GROUP(CLAIM_B), "public"],
+      [ASSESS_GROUP(CLAIM_B), "public"],
+    ]);
+  });
+
+  it("opens no row for a pending claim read without its label, and carries on with the rest", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      state.pending = [
+        { id: CLAIM_A, sensitivity_label: null },
+        { id: CLAIM_B, sensitivity_label: "internal" },
+      ];
+      await reconcileActions();
+      expect(assessRows().map((r) => [r.params[1], r.params[6]])).toEqual([
+        [ASSESS_GROUP(CLAIM_B), "internal"],
+        [ASSESS_GROUP(CLAIM_B), "internal"],
+      ]);
+      expect(logged.mock.calls.flat().join(" ")).toContain("carries no label");
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("opens a plan's formalize and attempt rows at the mandate's label, whatever the claims' are", async () => {
+    // A mandate decides for its work. The claims' own labels are not read.
+    state.grantLabel = "internal";
+    state.claimLabels = { [CLAIM_A]: "embargoed", [CLAIM_B]: "public" };
+    state.publishedFor.add(CLAIM_B);
+    state.grant.plan.items = [
+      { action: "formalize", claim_id: CLAIM_A, rationale: "a statement" },
+      { action: "attempt_proof", claim_id: CLAIM_B, variant: "max", rationale: "a proof" },
+    ];
+    await reconcileActions();
+    expect(inserts("formalize").map((r) => r.params)).toEqual([[FORMALIZE_GROUP(CLAIM_A), CLAIM_A, 3_000_000, "internal"]]);
+    const attempts = inserts("attempt_proof");
+    expect(attempts).toHaveLength(2);
+    expect(attempts.map((r) => r.params[6])).toEqual(["internal", "internal"]);
+    expect(queries.some((x) => x.q.includes("SELECT sensitivity_label FROM claims"))).toBe(false);
+  });
+
+  it("opens a mandate's review row, and its planning row, at the mandate's label", async () => {
+    state.grantLabel = "internal";
+    await reconcileActions();
+    expect(inserts("mandate_review").map((r) => [r.params[1], r.params[4]])).toEqual([["g-1", "internal"]]);
+    queries.length = 0;
+    state.grant.status = "planning";
+    await reconcileActions();
+    expect(inserts("grant_planning").map((r) => [r.params[1], r.params[4]])).toEqual([["g-1", "internal"]]);
+  });
+
+  it("leaves them at the run's label when a run, not the sweep, materializes the plan", async () => {
+    // A Grantmaker's run that writes a plan materializes it there and then:
+    // the rows are that run's work, as everything a run opens is.
+    state.grantLabel = "internal";
+    state.claimLabels = { [CLAIM_A]: "internal" };
+    state.grant.plan.items = [{ action: "formalize", claim_id: CLAIM_A, rationale: "a statement" }];
+    await runWithUsageContext({ label: "public" }, () => reconcileActions());
+    expect(inserts("formalize").map((r) => r.params[3])).toEqual(["public"]);
+  });
 });
 
 describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
   it("opens one standard row per due lookout in group lookout:<id>, reopening a closed row only when the lookout is due again", async () => {
-    state.dueLookouts = [{ id: "l-1", title: "Retraction watch" }];
+    state.dueLookouts = [{ id: "l-1", title: "Retraction watch", sensitivity_label: "internal" }];
     await reconcileActions();
     const due = queries.find((x) => x.q.includes("FROM lookouts l"))!;
     // Due = heartbeat passed, or an unconsumed event waits; active on both sides.
@@ -166,8 +287,9 @@ describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
     expect(due.q).toContain("g.status = 'active'");
     const rows = inserts("lookout_run");
     expect(rows).toHaveLength(1);
-    // The last parameter is the row's label: the sweep runs outside any run, so public.
-    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000, "public"]);
+    // The last parameter is the row's label: the lookout's own, read with the row.
+    expect(due.q).toContain("l.sensitivity_label");
+    expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000, "internal"]);
     expect(rows[0]!.q).toMatch(/WHERE actions.status IN \('done', 'superseded', 'cancelled'\)/);
     // A closed row opened again takes the label of the work that reopens it.
     expect(rows[0]!.q).toContain("sensitivity_label = EXCLUDED.sensitivity_label");
@@ -461,7 +583,7 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     // The retired row, reopened by the commission the order places.
     state.rowById = { ...ROW, status: "open" };
     state.grant.plan.items = [
-      { ...parkedItem()[0]!, ledger: { ...parkedItem()[0]!.ledger, status: "cancelled" }, budget_owls: 2 },
+      { ...parkedItem()[0]!, ledger: { ...parkedItem()[0]!.ledger, status: "cancelled" }, budget_owls: 2, variant: "strong" },
     ];
     const orders = await import("../../../src/services/standing-order-service.js");
     (orders.placeStandingOrder as unknown as { mockClear: () => void }).mockClear();
@@ -473,9 +595,9 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
         return { state: "placed", actionId: ROW.id, budgetMicroUsd: 2_000_000, tier: "strong" };
       });
     await reconcileActions();
-    // The mandate commissions the pass, at the item's budget and the
-    // strong tier a plan item buys when it names none; the brief says the
-    // kind of pass and nothing about who paid.
+    // The mandate commissions the pass, at the item's budget and on the
+    // tier the item names; the brief says the kind of pass and nothing
+    // about who paid.
     expect(orders.placeStandingOrder).toHaveBeenCalledWith(
       expect.objectContaining({ grantId: "g-1", claimId: CLAIM_A, tier: "strong", budgetMicroUsd: 2_000_000 })
     );
@@ -485,5 +607,65 @@ describe("a stewarding item whose row was retired while the claim was parked (#8
     const ledger = ledgerOf(0) as { status: string; order?: { budget_owls: number; tier: string } };
     expect(ledger.status).toBe("open");
     expect(ledger.order).toMatchObject({ budget_owls: 2, tier: "strong" });
+  });
+
+  it("asks for an item that names no variant with no tier, so nothing is placed on one nobody chose (#956)", async () => {
+    state.stewardState = "done";
+    state.grant.plan.items = [{ action: "reassess", claim_id: CLAIM_A, rationale: "written before items named a tier" }];
+    const orders = await import("../../../src/services/standing-order-service.js");
+    const place = orders.placeStandingOrder as unknown as {
+      mockClear: () => void;
+      mockImplementationOnce: (f: () => Promise<unknown>) => void;
+    };
+    place.mockClear();
+    place.mockImplementationOnce(async () => ({ state: "blocked", reason: "this item names no variant" }));
+    await reconcileActions();
+    expect(orders.placeStandingOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: CLAIM_A, tier: null })
+    );
+    expect(ledgerOf(0)).toMatchObject({ status: "blocked", reason: "this item names no variant" });
+  });
+
+  it("reads a withdrawn item cancelled, releases what it placed, and never asks for its order again (#956)", async () => {
+    state.stewardState = "pending";
+    state.rowById = { ...ROW, status: "open" };
+    state.grant.plan.items = [
+      {
+        action: "reassess",
+        claim_id: CLAIM_A,
+        rationale: "r",
+        variant: "strong",
+        withdrawn: { at: "2026-11-12T10:00:00.000Z", note: "a standard pass is enough here" },
+        ledger: {
+          status: "open",
+          action_id: ROW.id,
+          exclusion_group: ROW.exclusion_group,
+          checked_at: "2026-11-12T00:00:00.000Z",
+          order: { budget_owls: 5.8, tier: "strong", placed_at: "2026-11-12T00:00:00.000Z" },
+        },
+      },
+    ];
+    const orders = await import("../../../src/services/standing-order-service.js");
+    (orders.placeStandingOrder as unknown as { mockClear: () => void }).mockClear();
+    const release = orders.releaseStandingOrder as unknown as {
+      mockClear: () => void;
+      mockImplementationOnce: (f: () => Promise<number>) => void;
+    };
+    release.mockClear();
+    release.mockImplementationOnce(async () => 5_800_000);
+    await reconcileActions();
+    expect(orders.releaseStandingOrder).toHaveBeenCalledWith("g-1", CLAIM_A);
+    expect(orders.placeStandingOrder).not.toHaveBeenCalled();
+    const ledger = ledgerOf(0)!;
+    expect(ledger.status).toBe("cancelled");
+    expect(ledger.reason).toContain("withdrawn by the mandate's Grantmaker on 2026-11-12");
+    expect(ledger.reason).toContain("a standard pass is enough here");
+    expect(ledger.reason).toContain("5.8 owls it held are back");
+    // Settled: the next look leaves it exactly as it is.
+    state.grant.plan.items[0]!.ledger = ledger as never;
+    release.mockClear();
+    await reconcileActions();
+    expect(orders.releaseStandingOrder).not.toHaveBeenCalled();
+    expect(orders.placeStandingOrder).not.toHaveBeenCalled();
   });
 });

@@ -43,7 +43,9 @@ Merge only when the two are one claim by the standard of §2: the same
 considerations bear on both, so nothing could count as evidence or argument
 on one without bearing equally on the other. Read both claims in context
 first, and use match_claim to see what else is nearby (an outcome of
-"undecided" is no verdict: retry once, never act on it as "new"). When
+"undecided" is no verdict: retry once, never act on it as "new"; an outcome
+of "unavailable" means a platform fault kept the Matcher from running, so
+nothing was checked: mint nothing on it or on a search alone). When
 identity stays uncertain after real looking, take the recoverable path
 instead: a link, a suggestion, or nothing (Working Together).
 
@@ -125,6 +127,17 @@ leaves wrong.
   the choice is itself disputed, turn the dispute into claims about it.
 - A mistyped node or wrong domain tags: reclassify_claim.
 
+## What you were asked
+
+A run on a node reads every curation request waiting on it. Each names the
+defect its requester suspects (duplicate, conflation, wrong_kind,
+mislabeled_edge, missing_link, bad_merge, or another its concern says), who
+raised it, and the other node when there is one, with the concern in the
+requester's words. The defect is a suspicion to test, not a finding: a
+Steward's or a sweep's reading is a judgment, the Matcher's a near-miss it
+let through on balance, the similarity scan's only a score. Doing nothing is
+a fine answer to one that does not hold up.
+
 ## Requests you keep
 
 Part VIII gives you the requests that bear on several nodes or on none;
@@ -157,10 +170,10 @@ none.
 When an identity or structure call turns on what a literature does (whether
 two formulations are used interchangeably, whether a family of results
 treats one statement as a special case of another) and your own reading in
-this pass would not settle it, delegate_research, when it is in your
-toolset, puts the question to the researcher, paid from this pass's budget.
-Its report is evidence you weigh, not a decision; it writes nothing to the
-graph.
+this pass would not settle it, commission (kind research) puts the question
+to the researcher, paid from this pass's budget, and its report returns into
+your session. Its report is evidence you weigh, not a decision; it writes
+nothing to the graph.
 
 ## Undoing
 

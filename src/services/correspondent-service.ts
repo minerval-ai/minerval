@@ -23,9 +23,7 @@
  * reads and the change stream), so anyone can build one outside Minerval
  * from MCP alone; such a one is not registered here and needs nothing here.
  */
-import { allocationDayUseSql } from "./day-use.js";
 import { rawQuery } from "../db/client.js";
-import { grantCommittedMicroUsd } from "./regrant-service.js";
 import { resolveProvider, unresolvableModelIdMessage } from "../llm/providers/routing.js";
 import {
   decodeChangeCursor,
@@ -35,6 +33,7 @@ import {
   resolveTagSlugs,
   type GraphChange,
 } from "./graph-change-service.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 
 /** Inputs a correspondent can wake on, beyond its heartbeat. */
 export const CORRESPONDENT_TRIGGER_KINDS = [
@@ -238,8 +237,8 @@ export async function createCorrespondent(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO correspondents
        (grant_id, title, brief, audience, scope_claim_ids, scope_tag_ids,
-        heartbeat_hours, min_wake_hours, triggers, model, changes_cursor, created_by)
-     VALUES ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7, $8, $9::jsonb, $10, $11, $12)
+        heartbeat_hours, min_wake_hours, triggers, model, changes_cursor, created_by, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5::uuid[], $6::uuid[], $7, $8, $9::jsonb, $10, $11, $12, $13)
      RETURNING id`,
     [
       input.grantId,
@@ -254,6 +253,7 @@ export async function createCorrespondent(input: {
       model,
       cursorAt(new Date()),
       input.createdBy,
+      currentLabel(),
     ]
   );
   return {
@@ -414,14 +414,14 @@ export async function queueCorrespondentEvent(input: {
     // A change wake is queued once while one waits (the run reads the whole
     // stream from its cursor, so a second would add nothing); every task may
     // run the scan, and this keeps two of them from doubling a wake.
-    `INSERT INTO correspondent_events (correspondent_id, kind, payload)
-     SELECT $1, $2, $3::jsonb FROM correspondents
+    `INSERT INTO correspondent_events (correspondent_id, kind, payload, sensitivity_label)
+     SELECT $1, $2, $3::jsonb, $4::text FROM correspondents
       WHERE id = $1 AND status = 'active'
         AND ($2 <> 'graph_change' OR NOT EXISTS (
               SELECT 1 FROM correspondent_events e
                WHERE e.correspondent_id = $1 AND e.kind = 'graph_change' AND e.consumed_at IS NULL))
      RETURNING id`,
-    [input.correspondentId, input.kind, JSON.stringify(input.payload ?? {})]
+    [input.correspondentId, input.kind, JSON.stringify(input.payload ?? {}), currentLabel()]
   );
   return { queued: rows.length > 0 };
 }
@@ -466,8 +466,9 @@ export async function graphChangeScanTick(opts: { max?: number } = {}): Promise<
     scope_tag_ids: string[];
     changes_cursor: string | null;
     created_at: Date;
+    sensitivity_label: string;
   }>(
-    `SELECT c.id, c.scope_claim_ids, c.scope_tag_ids, c.changes_cursor, c.created_at
+    `SELECT c.id, c.scope_claim_ids, c.scope_tag_ids, c.changes_cursor, c.created_at, c.sensitivity_label
        FROM correspondents c JOIN grants g ON g.id = c.grant_id
       WHERE c.status = 'active' AND g.status = 'active'
         AND c.triggers ? 'graph_change'
@@ -487,11 +488,15 @@ export async function graphChangeScanTick(opts: { max?: number } = {}): Promise<
     });
     const first = page.changes[0];
     if (!first) continue;
-    const res = await queueCorrespondentEvent({
-      correspondentId: c.id,
-      kind: "graph_change",
-      payload: { first_change_id: first.change_id, first_change_at: first.at, claim_id: first.claim_id },
-    });
+    // The scan is a timer and the wake is the correspondent's, so it is
+    // queued at the correspondent's label (src/labels.ts).
+    const res = await runAtLabel(c.sensitivity_label, `correspondent ${c.id}`, () =>
+      queueCorrespondentEvent({
+        correspondentId: c.id,
+        kind: "graph_change",
+        payload: { first_change_id: first.change_id, first_change_at: first.at, claim_id: first.claim_id },
+      })
+    );
     if (res.queued) queued++;
   }
   return { checked: rows.length, queued };
@@ -690,8 +695,8 @@ export async function updateCorrespondentPlan(input: {
   const added: string[] = [];
   for (const text of adds) {
     const [row] = await rawQuery<{ id: string }>(
-      `INSERT INTO correspondent_plan_items (correspondent_id, text) VALUES ($1, $2) RETURNING id`,
-      [input.correspondentId, text]
+      `INSERT INTO correspondent_plan_items (correspondent_id, text, sensitivity_label) VALUES ($1, $2, $3) RETURNING id`,
+      [input.correspondentId, text, currentLabel()]
     );
     added.push(row!.id);
   }
@@ -786,8 +791,8 @@ export async function publishCorrespondentUpdate(input: {
 }): Promise<{ updateId: string }> {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO correspondent_updates
-       (correspondent_id, grant_id, title, body, items, not_covered, changes_from, changes_to)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)
+       (correspondent_id, grant_id, title, body, items, not_covered, changes_from, changes_to, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9)
      RETURNING id`,
     [
       input.correspondentId,
@@ -798,6 +803,7 @@ export async function publishCorrespondentUpdate(input: {
       JSON.stringify(input.notCovered),
       input.changesFrom,
       input.changesTo,
+      currentLabel(),
     ]
   );
   await rawQuery(`UPDATE correspondents SET updates = updates + 1, updated_at = now() WHERE id = $1`, [
@@ -908,29 +914,16 @@ export function correspondentAtom(
 }
 
 /**
- * What the mandate has left, as a run is shown it: the escrow's headroom
- * and the day's remaining room under its daily rate (null = unpaced). A
- * correspondent sees these so it knows why a run may come late, not to
- * spend against them: its own run's budget is its ceiling.
+ * Where the mandate's money stands, as a run is shown it (pace-service.ts):
+ * its pace, what is uncommitted, and the Grantmaker's reserve, which a
+ * Correspondent's runs cannot draw on. A correspondent sees this so it
+ * knows why a run may come late, not to spend against it: its own run's
+ * budget is its ceiling.
  */
-export async function mandateRoom(grantId: string): Promise<{ headroomMicroUsd: number; dayRoomMicroUsd: number | null } | null> {
-  const [g] = await rawQuery<{ budget_job_id: string; daily_budget_micro_usd: number; budget_micro_usd: number }>(
-    `SELECT g.budget_job_id, g.daily_budget_micro_usd, j.budget_micro_usd
-       FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id WHERE g.id = $1`,
-    [grantId]
-  );
-  if (!g) return null;
-  const committed = await grantCommittedMicroUsd({ id: grantId, budgetJobId: g.budget_job_id });
-  const [today] = await rawQuery<{ placed: number }>(
-    `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS placed FROM action_allocations
-      WHERE grant_id = $1 AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [grantId]
-  );
-  const rate = Number(g.daily_budget_micro_usd);
-  return {
-    headroomMicroUsd: Math.max(0, Number(g.budget_micro_usd) - committed),
-    dayRoomMicroUsd: rate > 0 ? Math.max(0, rate - Number(today?.placed ?? 0)) : null,
-  };
+export async function mandateRoom(grantId: string): Promise<{ sentence: string } | null> {
+  const { paceRoom } = await import("./pace-service.js");
+  const room = await paceRoom(grantId, "delegated");
+  return room ? { sentence: room.sentence } : null;
 }
 
 /** A correspondent as the public reads it: everything but its private-to-run fields. */

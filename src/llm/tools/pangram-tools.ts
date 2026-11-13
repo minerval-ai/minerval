@@ -29,6 +29,7 @@ import { loadConfig, type Config } from "../../config.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
 import { readPage } from "../../services/source-watch-service.js";
 import { budgetRefusal } from "../usage-context.js";
+import { assertProviderCleared, providerClearedHere } from "../provider-clearance.js";
 
 export const PANGRAM_TOOL_PREFIX = "pangram_";
 export const PANGRAM_CHECK_AI_TOOL_NAME = "pangram_check_ai";
@@ -146,6 +147,9 @@ async function pangramFetch(
   init: { method: "GET" | "POST"; body?: unknown; timeoutMs: number },
   config: Config
 ): Promise<Record<string, unknown>> {
+  // The one place a request to Pangram is made, so the one place it is held
+  // to the run's label, whatever built the toolset.
+  await assertProviderCleared("pangram", config);
   const res = await fetch(url, {
     method: init.method,
     headers: {
@@ -327,7 +331,10 @@ export function createPangramTools(opts: {
   wait?: (ms: number) => Promise<void>;
 }): PangramTools {
   const config = opts.config ?? loadConfig();
-  const enabled = (opts.enabled ?? true) && pangramConfigured(config);
+  // Not for a run at a label Pangram is not cleared for
+  // (src/provider-labels.ts): the text checked is the run's.
+  const enabled =
+    (opts.enabled ?? true) && pangramConfigured(config) && providerClearedHere("pangram", config);
   const wait = opts.wait ?? sleep;
   return {
     definitions: enabled ? getPangramToolDefinitions(config) : [],

@@ -13,8 +13,13 @@
  * message on any other provider rather than degrading silently.
  *
  * Being the one path, it is also where every call with a system prompt is
- * told today's date (run-date.ts, #771), and where an agent run in a
- * deployment with features switched off is told which (withRunBrief below).
+ * told today's date (run-date.ts, #771), where an agent run in a
+ * deployment with features switched off is told which (withRunBrief below),
+ * and where a call is refused before anything is sent when its model's
+ * provider is not cleared for the label the run works at (clearedAdapter
+ * below; src/provider-labels.ts). And every call here reaches its provider
+ * through getAdapter, which in record mode refuses a call that no agent run
+ * would log (logged-run.ts).
  *
  * This file does dispatch and provider-independent control flow only. The
  * request-building, wire format, and response parsing for each backend live in
@@ -40,15 +45,22 @@ import { getAdapter } from "./providers/index.js";
 import { malformedToolArguments } from "./providers/openai-dialect.js";
 import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
-import { withFeaturesOffNote } from "./features-off-note.js";
+import { featuresOffNote, withLeadingNote } from "./features-off-note.js";
+import { unclearedServicesNote, withoutUnclearedTools } from "./uncleared-services-note.js";
+import { assertProviderCleared } from "./provider-clearance.js";
+import { stampErrorProvider } from "./errors.js";
+import { deploymentFaultOf } from "../services/deployment-fault.js";
+import { noteDeploymentFault } from "../services/deployment-fault-service.js";
 import { offFeatures } from "../features.js";
 import { toolOutputForTrace, toolResultContent, type ToolExecution } from "./tool-output.js";
+import { observeRun, type SeenIds } from "./seen-ids.js";
 import { setupRecord, splitSetup, type SetupRecord } from "../services/setup-split.js";
 import { loadConfig } from "../config.js";
 import { CODE_EXECUTION_TOOL, meterCodeExecution, turnUsedCodeExecution } from "./instrument-harness.js";
 import type {
   CompletionResult,
   EffortLevel,
+  ProviderAdapter,
   SystemPrompt,
   TokenUsage,
   ToolCompletionResult,
@@ -71,21 +83,77 @@ const LONG_RUN_MAX_TOKENS = 128_000;
 /**
  * What the seam adds to the first task message of an agent run: the note
  * that says which features this deployment has switched off
- * (features-off-note.ts), and nothing when every feature is on, which is how
- * the public deployment runs. The role prompts cannot say it, because they
- * are the same text in every deployment, and an agent is told the limits it
- * works under, with the reason.
+ * (features-off-note.ts), and the note that says which outside services
+ * are not cleared for the label the run works at
+ * (uncleared-services-note.ts). Nothing when every feature is on and every
+ * service is cleared, which is how the public deployment runs. The role
+ * prompts cannot say either, because they are the same text in every
+ * deployment, and an agent is told the limits it works under, with the
+ * reason.
  *
  * An agent run is a call with an agent on the usage context, which withAgent
  * sets and every agent's entry point passes through; a run that is not
  * traced (untraced) is still one. A call outside any agent run is sent as
  * given. Every function here that sends messages applies this on entry, and
- * a conversation that already carries the note is left alone, so a loop's
+ * a conversation that already carries the passage is left alone, so a loop's
  * later turns and a resumed transcript are told once, in the first message.
+ *
+ * `model` is the run's: whether web search is a service of its own or the
+ * model provider's server tool depends on it.
  */
-function withRunBrief(messages: MessageParam[]): MessageParam[] {
+function withRunBrief(messages: MessageParam[], model: string): MessageParam[] {
   if (!getUsageContext().agent) return messages;
-  return withFeaturesOffNote(messages);
+  const brief = [featuresOffNote(), unclearedServicesNote(model)].filter((note) => note.length > 0);
+  return withLeadingNote(messages, brief.join("\n\n"));
+}
+
+/**
+ * The adapter that serves `model`, once its provider is known to be cleared
+ * for the label this run works at (provider-clearance.ts, which says why
+ * that label and no other). Every call below takes its adapter from here,
+ * before it builds a request, so a run that may not be served fails on its
+ * first call with nothing sent and nothing spent. There is no second
+ * provider to fall back to and no reading of the label as public.
+ */
+async function clearedAdapter(model: string): Promise<ProviderAdapter> {
+  const adapter = getAdapter(model);
+  const provider = resolveProvider(model) ?? adapter.name;
+  await assertProviderCleared(provider);
+  return namingProvider(adapter, provider);
+}
+
+/**
+ * The adapter, with every failure of a call stamped with the provider that
+ * answered it and, when it is a deployment fault (the account out of
+ * credits, the key rejected), put on record for the operator
+ * (deployment-fault-service.ts). The error is rethrown unchanged: what a
+ * lane does with it is the lane's business. Every call takes its adapter
+ * from clearedAdapter, so a fault is recorded whichever agent met it,
+ * including one whose failure a tool turns into a result (match_claim).
+ */
+function namingProvider(adapter: ProviderAdapter, provider: string): ProviderAdapter {
+  const watch = <A extends unknown[], R>(call: ((...args: A) => Promise<R>) | undefined) =>
+    call &&
+    (async (...args: A): Promise<R> => {
+      try {
+        return await call.apply(adapter, args);
+      } catch (err) {
+        stampErrorProvider(err, provider);
+        if (deploymentFaultOf(err)) {
+          void noteDeploymentFault(err, { surface: `the ${getUsageContext().agent ?? "unattributed"} agent` });
+        }
+        throw err;
+      }
+    });
+  return {
+    name: adapter.name,
+    complete: watch(adapter.complete),
+    completeWithTools: watch(adapter.completeWithTools),
+    completeStructured: watch(adapter.completeStructured),
+    ...(adapter.completeWithToolsStreaming
+      ? { completeWithToolsStreaming: watch(adapter.completeWithToolsStreaming) }
+      : {}),
+  } as ProviderAdapter;
 }
 
 export async function complete(options: {
@@ -99,16 +167,18 @@ export async function complete(options: {
   effort?: EffortLevel;
 }): Promise<CompletionResult> {
   checkBudget();
+  const model = options.model ?? DEFAULT_MODEL;
+  const adapter = await clearedAdapter(model);
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages),
+    messages: withRunBrief(options.messages, model),
+    ...(options.tools ? { tools: withoutUnclearedTools(options.tools) } : {}),
   };
-  const model = options.model ?? DEFAULT_MODEL;
   // Sonnet 5.5 runs adaptive thinking by default and thinking spend counts
   // against max_tokens, so the old 4096 default left too little room for the
   // actual answer — 8192 keeps headroom without changing agent call sites.
-  const result = await getAdapter(model).complete({
+  const result = await adapter.complete({
     ...options,
     model,
     maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -169,9 +239,10 @@ function recordPromptStep(step: {
   );
   // The setup as versioned parts (services/setup-service.ts): each part is
   // stored once, and the step records which ones it ran under, with the
-  // label the run writes at (src/labels.ts) and the features that were off
-  // for it (src/features.ts). Never fails the run: a setup that cannot be
-  // split or stored is left out.
+  // label the run writes at (src/labels.ts), the provider that served it
+  // (src/provider-labels.ts) and the features that were off for it
+  // (src/features.ts). Never fails the run: a setup that cannot be split or
+  // stored is left out.
   // The registry that names role parts imports every role's prompt module,
   // so storage loads lazily, off the step's path.
   let setup: SetupRecord | null = null;
@@ -181,10 +252,18 @@ function recordPromptStep(step: {
       tools: tools as Array<{ name: string } & Record<string, unknown>>,
     });
     const config = loadConfig();
-    setup = setupRecord(parts, step, config.gitSha ?? null, currentLabel(), offFeatures(config));
+    setup = setupRecord(
+      parts,
+      step,
+      config.gitSha ?? null,
+      currentLabel(),
+      offFeatures(config),
+      resolveProvider(step.model)
+    );
     const agent = context.agent ?? "unknown";
+    // A part is stored at the label of the run this step belongs to.
     void import("../services/setup-service.js")
-      .then((s) => s.storeSetupParts(s.classifyParts(parts, agent)))
+      .then((s) => s.storeSetupParts(s.classifyParts(parts, agent), trace.label))
       .catch((err) =>
         console.error("[trace] failed to store setup parts:", err instanceof Error ? err.message : err)
       );
@@ -279,12 +358,14 @@ export async function completeWithTools(options: {
 }): Promise<ToolCompletionResult> {
   checkBudget();
   const model = options.model ?? DEFAULT_MODEL;
+  const adapter = await clearedAdapter(model);
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages),
+    messages: withRunBrief(options.messages, model),
+    tools: withoutUnclearedTools(options.tools),
   };
-  return getAdapter(model).completeWithTools({
+  return adapter.completeWithTools({
     ...options,
     model,
     maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -312,13 +393,14 @@ export async function completeStructured<T>(options: {
   effort?: EffortLevel;
 }): Promise<T> {
   checkBudget();
+  const model = options.model ?? DEFAULT_MODEL;
+  const adapter = await clearedAdapter(model);
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages),
+    messages: withRunBrief(options.messages, model),
   };
-  const model = options.model ?? DEFAULT_MODEL;
-  const result = await getAdapter(model).completeStructured<T>({
+  const result = await adapter.completeStructured<T>({
     ...options,
     model,
     maxTokens: options.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -465,6 +547,15 @@ export async function toolUseLoop(options: {
   maxIterations?: number;
   /** The result as a string, or a ToolOutput when the tool shows the model an image or a document (tool-output.ts). */
   executeTool: (name: string, input: Record<string, unknown>) => Promise<ToolExecution>;
+  /**
+   * The run's record of the ids it has been shown (seen-ids.ts), when the
+   * caller keeps one across loops (the Matcher's retry is a fresh
+   * transcript of the same decision). Absent, the loop keeps its own.
+   * Either way the loop fills it from the opening messages and every tool
+   * result, and runs each tool in its scope, which is how a graph read
+   * repairs a mistyped id (#934).
+   */
+  seenIds?: SeenIds;
   /** Called when the model calls a "final" tool (e.g. submit_decomposition). Return result to stop loop. */
   onFinalTool?: (name: string, input: Record<string, unknown>) => unknown | null;
   /**
@@ -540,21 +631,28 @@ export async function toolUseLoop(options: {
    */
   onEnd?: (transcript: MessageParam[]) => void;
 }): Promise<ToolCompletionResult> {
+  // Refused here, before the prompt step is recorded and before the first
+  // turn, when the model's provider is not cleared for the run's label.
+  const streamModel = options.model ?? DEFAULT_MODEL;
+  const streamAdapter = await clearedAdapter(streamModel);
   // Dated once for the whole loop, so every turn sends the same prompt, and
   // briefed once: the first message carries the run's brief from here on, in
   // what is sent, in the prompt step and in the transcript handed to onEnd.
+  // The toolset is fixed here too, without the tools of an outside service
+  // that is not cleared for the run's label, so the prompt step records
+  // what the model was offered.
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: withRunBrief(options.initialMessages),
+    initialMessages: withRunBrief(options.initialMessages, streamModel),
+    tools: withoutUnclearedTools(options.tools),
   };
   const messages = [...options.initialMessages];
+  const observed = observeRun(options.initialMessages, options.seenIds);
   const finish = (r: ToolCompletionResult): ToolCompletionResult => {
     options.onEnd?.([...messages, { role: "assistant", content: r.rawContent } as MessageParam]);
     return r;
   };
-  const streamModel = options.model ?? DEFAULT_MODEL;
-  const streamAdapter = getAdapter(streamModel);
   const streaming =
     options.stream && streamAdapter.completeWithToolsStreaming
       ? streamAdapter.completeWithToolsStreaming.bind(streamAdapter)
@@ -751,7 +849,7 @@ export async function toolUseLoop(options: {
     for (const tu of result.toolUses) {
       const output =
         malformedToolArguments(tu.input) ??
-        (await options.executeTool(tu.name, tu.input));
+        (await observed.call(() => options.executeTool(tu.name, tu.input)));
       toolResults.push({
         type: "tool_result",
         tool_use_id: tu.id,
@@ -913,21 +1011,25 @@ export async function longRunToolLoop(options: {
   /** Wall-clock cap for the whole loop; checked before each turn. */
   maxWallMs?: number;
   executeTool: (name: string, input: Record<string, unknown>) => Promise<ToolExecution>;
+  /** As toolUseLoop's: the run's record of the ids it has been shown. */
+  seenIds?: SeenIds;
   /** Called when the model calls a "final" tool. Return non-null to stop the loop. */
   onFinalTool?: (name: string, input: Record<string, unknown>) => unknown | null;
   beforeTurn?: (state: LongRunLoopState) => Promise<{ stop?: string } | void>;
   afterTurn?: (state: LongRunLoopState, result: ToolCompletionResult) => Promise<void>;
   reminder?: (state: LongRunLoopState) => string | null;
 }): Promise<LongRunLoopResult> {
+  const model = options.model ?? DEFAULT_MODEL;
+  const adapter = await clearedAdapter(model);
   // Dated once for the whole run, so every turn sends the same prompt, and
-  // briefed once, in the first message.
+  // briefed once, in the first message. The toolset is fixed here, as in
+  // toolUseLoop.
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: withRunBrief(options.initialMessages),
+    initialMessages: withRunBrief(options.initialMessages, model),
+    tools: withoutUnclearedTools(options.tools),
   };
-  const model = options.model ?? DEFAULT_MODEL;
-  const adapter = getAdapter(model);
   const streaming = adapter.completeWithToolsStreaming;
   if (!streaming) {
     throw new Error(
@@ -939,6 +1041,7 @@ export async function longRunToolLoop(options: {
   const completeStreaming = streaming.bind(adapter);
 
   const messages = [...options.initialMessages];
+  const observed = observeRun(options.initialMessages, options.seenIds);
   const maxIter = options.maxIterations ?? DEFAULT_LONG_RUN_ITERATIONS;
   const maxWallMs = options.maxWallMs ?? Number.POSITIVE_INFINITY;
   const startedAt = Date.now();
@@ -1056,7 +1159,7 @@ export async function longRunToolLoop(options: {
     for (const tu of result.toolUses) {
       const output =
         malformedToolArguments(tu.input) ??
-        (await options.executeTool(tu.name, tu.input));
+        (await observed.call(() => options.executeTool(tu.name, tu.input)));
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: toolResultContent(output) });
       executedTools.push({ name: tu.name, input: tu.input, output: toolOutputForTrace(output) });
     }

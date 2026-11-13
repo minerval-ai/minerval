@@ -1,27 +1,17 @@
-import type Anthropic from "@anthropic-ai/sdk";
-type MessageParam = Anthropic.MessageParam;
-import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
-import { completeStructuredList, toolUseLoop } from "../client.js";
+import { completeStructuredList } from "../client.js";
 import {
   getAssessorSystemPrompt,
   getAssessmentPrompt,
-  getChatSystemPrompt,
-  getChatContextPrompt,
 } from "../prompts/extension-agent.js";
-import {
-  getGraphReadToolDefinitions,
-  executeGraphReadTool,
-} from "../tools/graph-read-tools.js";
 import { withAgent } from "../usage-context.js";
-import { createReportTools } from "../tools/report-tools.js";
 import type { MatchedInstanceStance } from "../../schemas/common.js";
 import type { NodeKind, QuantityEstimate, QuantityUnit, QuestionStanding } from "../../schemas/kinds.js";
 
 /**
  * The Extension Agent (issue #72) — lives with the browser extension, never
- * edits the graph. Two entry points: a batched page-claim assessor that
- * decides what markup (if any) each on-page claim gets, and a chat loop
- * grounded in the graph via read-only tools.
+ * edits the graph: a batched page-claim assessor that decides what markup
+ * (if any) each on-page claim gets. The extension's chat is the Assistant
+ * (agents/assistant.ts).
  */
 
 // "contested" here is a page verdict (the page states an unsettled claim as
@@ -153,84 +143,4 @@ async function assessPageClaimsImpl(input: {
       valid.has(v.index) &&
       EXTENSION_VERDICTS.includes(v.verdict as ExtensionVerdict)
   );
-}
-
-export interface ChatTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface ExtensionChatResult {
-  reply: string;
-}
-
-// Tag every LLM call in this agent for the per-token meter (#70).
-export function extensionChat(
-  input: Parameters<typeof extensionChatImpl>[0]
-): ReturnType<typeof extensionChatImpl> {
-  return withAgent("extension", () => extensionChatImpl(input));
-}
-
-async function extensionChatImpl(input: {
-  messages: ChatTurn[];
-  pageUrl: string | null;
-  pageTitle: string | null;
-  pageClaims: Array<{
-    verbatim_text: string;
-    verdict: string;
-    claim_id: string | null;
-    canonical_form: string | null;
-    status: string | null;
-  }>;
-  model?: string;
-  /** The reply's text as it is written, with the model turn it belongs to. */
-  onText?: (delta: string, turn: number) => void;
-}): Promise<ExtensionChatResult> {
-  const contextBlock = getChatContextPrompt({
-    pageUrl: input.pageUrl,
-    pageTitle: input.pageTitle,
-    pageClaims: input.pageClaims,
-  });
-
-  // Prepend the page context to the first user turn so the conversation
-  // history stays a clean alternation of roles.
-  const history = input.messages.slice();
-  const first = history.findIndex((m) => m.role === "user");
-  const initialMessages: MessageParam[] = history.map((m, i) => ({
-    role: m.role,
-    content:
-      i === first ? `${contextBlock}\n\n---\n\n${m.content}` : m.content,
-  }));
-
-  // Every agent carries the report channel (#366).
-  const reportTools = createReportTools({ model: input.model });
-
-  const result = await toolUseLoop({
-    initialMessages,
-    // The shared graph reads every agent gets (#679): get_claim returns a
-    // node's kind, its arguments, a quantity's estimate and a question's
-    // standing, which the chat needs to relay the graph faithfully.
-    tools: [...getGraphReadToolDefinitions(), ...reportTools.definitions],
-    system: getChatSystemPrompt(),
-    // No maxTokens: the client default leaves room for the model's thinking,
-    // which draws on the same allowance (4096 did not, on Sonnet 5.5).
-    // The chat's budget is the op's cap (withAgenticCharge); the turn cap
-    // only halts a loop that has stopped spending.
-    maxIterations: RUN_TURN_GUARD,
-    model: input.model,
-    // Streamed so a reader can watch the answer form (the route's
-    // event-stream form); a non-streaming caller gets the same result.
-    stream: true,
-    ...(input.onText ? { onText: input.onText } : {}),
-    executeTool: async (name, toolInput) => {
-      // The report channel first (#366): null means "not my tool".
-      const report = await reportTools.execute(name, toolInput);
-      if (report !== null) return report;
-      const graphRead = await executeGraphReadTool(name, toolInput);
-      if (graphRead !== null) return graphRead;
-      return JSON.stringify({ error: `Unknown tool: ${name}` });
-    },
-  });
-
-  return { reply: result.content };
 }

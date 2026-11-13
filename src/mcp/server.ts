@@ -79,14 +79,17 @@ import {
   contributionTypeEnum,
   reportKindEnum,
   reportSeverityEnum,
+  STATED_VIEW_CONTRIBUTION_TYPE,
 } from "../schemas/common.js";
+import { statedViewForContribution } from "../services/stated-view-service.js";
 import {
   checkReportRateLimit,
   raiseIssue,
   REPORT_BODY_MAX_CHARS,
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
-import { registerRouteTools } from "./route-tools.js";
+import { registerRouteTools, withheldRouteTools } from "./route-tools.js";
+import { permissionsNote } from "../llm/permissions-note.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
 import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
@@ -116,6 +119,7 @@ import {
 import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
 import { getCurrentEstimate } from "../services/quantity-service.js";
 import { getCurrentStanding } from "../services/question-service.js";
+import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment-fault.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -188,6 +192,13 @@ function formatAssessment(
  * transcript of the text is kept. Text meant to become provenance goes
  * through source submission, where the fetched document is public by
  * construction and its transcript is part of the record.
+ *
+ * That holds while the run log is best-effort, as on the public graph. In
+ * record mode untraced() suppresses nothing (llm/usage-context.ts): each
+ * Extractor, Matcher and domain-prior run the tool makes is logged and
+ * sealed like any run, private to its caller, and the tool fails if a log
+ * could not be written. The runs of one call share its request id. The
+ * charge is the metered cost either way.
  */
 async function agentic<T>(
   ctx: McpRequestContext,
@@ -204,16 +215,35 @@ async function agentic<T>(
   const decision = await checkAgenticQuota(ctx.auth, op);
   if (!decision.allowed) return { ok: false, denied: toDenied(decision) };
 
-  const run = await withAgenticCharge(ctx.auth, op, {}, () =>
-    runWithUsageContext(
-      {
-        userId: ctx.auth.userId,
-        apiKeyId: ctx.auth.apiKeyId,
-        requestId: ctx.requestId,
-      },
-      () => untraced(fn)
-    )
-  );
+  let run: Awaited<ReturnType<typeof withAgenticCharge<T>>>;
+  try {
+    run = await withAgenticCharge(ctx.auth, op, {}, () =>
+      runWithUsageContext(
+        {
+          userId: ctx.auth.userId,
+          apiKeyId: ctx.auth.apiKeyId,
+          requestId: ctx.requestId,
+        },
+        () => untraced(fn)
+      )
+    );
+  } catch (err) {
+    // A deployment fault is answered by its class (#967): the provider's
+    // own text ("402 ... your available credits") reads to a caller as
+    // their owls, and names things that are not theirs to see. The charge
+    // was refunded when the work threw.
+    const fault = deploymentFaultOf(err);
+    if (!fault) throw err;
+    return {
+      ok: false,
+      denied: errorResult(
+        "PLATFORM_FAULT",
+        `This could not run because of ${PLATFORM_FAULT_LABELS[fault]}. It is not your balance or your ` +
+          `request, and you were not charged. Try again later.`,
+        { platform_fault: fault }
+      ),
+    };
+  }
   if (!run.ok) return { ok: false, denied: toDenied(run.denied) };
   return { ok: true, value: run.value };
 }
@@ -366,6 +396,11 @@ async function matchAssertion(
 
 // ---- server -----------------------------------------------------------------
 
+function withPermissions(instructions: string, ctx: McpRequestContext): string {
+  const note = ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "";
+  return note ? `${instructions}\n\n${note}` : instructions;
+}
+
 export function buildMcpServer(ctx: McpRequestContext): McpServer {
   const server = new McpServer(
     {
@@ -373,7 +408,11 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       version: "0.1.0",
     },
     // The principles for callers, for clients that load no skills (#620).
-    { instructions: MCP_INSTRUCTIONS }
+    // In a members-only deployment a caller whose user lacks a permission
+    // is not offered the tools that need it (route-tools.ts), and is told
+    // so here, with the reason, as the Assistant is in its own brief
+    // (llm/permissions-note.ts). Everywhere else the note is empty.
+    { instructions: withPermissions(MCP_INSTRUCTIONS, ctx) }
   );
 
   // ---- free read tools ----
@@ -1107,7 +1146,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "Check the outcome of a submitted contribution: pending until " +
         "reviewed, then the decision (accept, reject, or escalate) with the " +
         "reviewer's reasoning and policy citations. An accepted proposal " +
-        "carries became_claim_id and page_url, the node it became. Lost the " +
+        "carries became_claim_id and page_url, the node it became. A " +
+        "state_view carries stated_view: the view as stated, the instance it " +
+        "became once admitted, and what the node's Steward answered to its " +
+        "reasons. Lost the " +
         "id? list_contributions with mine: true lists yours. Free.",
       inputSchema: { contribution_id: z.guid() },
       annotations: { readOnlyHint: true },
@@ -1118,9 +1160,14 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         return errorResult("NOT_FOUND", "Contribution not found");
       }
       const review = await getReviewForContribution(contribution_id);
+      const statedView =
+        contribution.contributionType === STATED_VIEW_CONTRIBUTION_TYPE
+          ? await statedViewForContribution(contribution_id)
+          : null;
       return jsonResult({
         // The same shape GET /contributions/:id serves (#723).
         contribution: formatContribution(contribution),
+        ...(statedView ? { stated_view: statedView } : {}),
         review: review
           ? {
               decision: review.decision,

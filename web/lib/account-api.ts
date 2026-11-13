@@ -2,6 +2,7 @@ import "server-only";
 import type {
   AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
 } from "./types";
+import { viewerExternalId } from "./viewer";
 
 // Server-only client for the account/keys/usage half of the API (#70).
 // Authenticates with the frontend's service key and acts on behalf of the
@@ -48,20 +49,34 @@ function pathSegment(id: string): string {
   return encodeURIComponent(id);
 }
 
+// Who a call acts for. A call that names its user acts for them. One that
+// names nobody is for anybody on the public graph; in a members-only
+// deployment the API serves no such call, so it is made for the signed-in
+// reader (lib/viewer.ts, which answers null everywhere else). `noViewer` is
+// for the one call that is made before there is a session to read: the
+// account's own provisioning at sign-in.
+async function actingFor(options: { actingUser?: string; noViewer?: true }): Promise<string | null> {
+  if (options.actingUser) return options.actingUser;
+  if (options.noViewer) return null;
+  return viewerExternalId();
+}
+
 async function accountFetch<T>(
   path: string,
   options: {
     method?: string;
     body?: unknown;
     actingUser?: string;
+    noViewer?: true;
   } = {}
 ): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  const acting = await actingFor(options);
   const res = await fetch(`${BASE}${path}`, {
     method: options.method ?? "GET",
     headers: {
       ...(KEY ? { "x-api-key": KEY } : {}),
-      ...(options.actingUser ? { "x-acting-user": options.actingUser } : {}),
+      ...(acting ? { "x-acting-user": acting } : {}),
       ...(options.body !== undefined
         ? { "content-type": "application/json" }
         : {}),
@@ -107,11 +122,12 @@ async function accountFetchForm<T>(
   options: { method?: string; actingUser?: string } = {}
 ): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  const acting = await actingFor(options);
   const res = await fetch(`${BASE}${path}`, {
     method: options.method ?? "POST",
     headers: {
       ...(KEY ? { "x-api-key": KEY } : {}),
-      ...(options.actingUser ? { "x-acting-user": options.actingUser } : {}),
+      ...(acting ? { "x-acting-user": acting } : {}),
     },
     body: form,
     cache: "no-store",
@@ -238,17 +254,37 @@ export async function provisionUser(input: {
   displayName: string;
   email?: string | null;
   avatarUrl?: string | null;
+  // The groups a single sign-on's claims carried: all of them, or absent
+  // for a sign-in that names no groups at all.
+  groups?: string[];
 }): Promise<AccountUser> {
   const r = await accountFetch<{ user: AccountUser }>("/users/provision", {
     method: "POST",
+    // Called from the sign-in itself, before the session exists.
+    noViewer: true,
     body: {
       external_id: input.externalId,
       display_name: input.displayName,
       ...(input.email ? { email: input.email } : {}),
       ...(input.avatarUrl ? { avatar_url: input.avatarUrl } : {}),
+      ...(input.groups ? { groups: input.groups } : {}),
     },
   });
   return r.user;
+}
+
+// What the signed-in account holds in a members-only deployment (the API's
+// GET /permissions/mine, a route only such a deployment has). `member` is
+// false for an account no administrator has granted anything, which the
+// gate tells the person (components/MembersGate.tsx).
+export interface MyPermissions {
+  account: { id: string; display_name: string | null; external_id: string | null };
+  member: boolean;
+  permissions: string[];
+}
+
+export async function fetchMyPermissions(externalId: string): Promise<MyPermissions> {
+  return accountFetch<MyPermissions>("/permissions/mine", { actingUser: externalId });
 }
 
 export async function fetchAccount(externalId: string): Promise<{
@@ -1378,6 +1414,8 @@ export interface PageSummaryView {
   saved_at: string;
   created_at: string;
   page_url: string;
+  /** The link anyone can read the page by, while it is shared. */
+  shared_url: string | null;
 }
 
 /** What the graph held for a node when its page was saved. */
@@ -1436,4 +1474,100 @@ export function savePage(
 
 export function deletePage(externalId: string, id: string): Promise<{ deleted: boolean }> {
   return accountFetch(`/pages/${pathSegment(id)}`, { method: "DELETE", actingUser: externalId });
+}
+
+// --- sharing a page by link, and watching a turn as it runs ------------------
+
+export async function sharePage(externalId: string, id: string): Promise<PageSummaryView> {
+  const r = await accountFetch<{ page: PageSummaryView }>(`/pages/${pathSegment(id)}/share`, {
+    method: "POST",
+    body: {},
+    actingUser: externalId,
+  });
+  return r.page;
+}
+
+export function unsharePage(externalId: string, id: string): Promise<{ shared: boolean }> {
+  return accountFetch(`/pages/${pathSegment(id)}/share`, {
+    method: "DELETE",
+    actingUser: externalId,
+  });
+}
+
+/** What a holder of a shared link reads. */
+export type SharedPageView = Pick<
+  PageView,
+  "title" | "saved_at" | "body" | "nodes" | "decompositions" | "unresolved"
+>;
+
+/** A page read by its shared link; null when nothing is shared there. */
+export async function getSharedPage(token: string): Promise<SharedPageView | null> {
+  try {
+    const r = await accountFetch<{ page: SharedPageView }>(`/shared-pages/${pathSegment(token)}`);
+    return r.page;
+  } catch (err) {
+    if (err instanceof AccountApiError && (err.status === 404 || err.status === 400)) return null;
+    throw err;
+  }
+}
+
+/**
+ * The API's event stream of a conversation's running turn, to be passed on
+ * to the browser as it arrives.
+ */
+export function assistantTurnStream(
+  externalId: string,
+  id: string,
+  signal: AbortSignal
+): Promise<Response> {
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  return fetch(`${BASE}/assistant/conversations/${pathSegment(id)}/stream`, {
+    headers: {
+      ...(KEY ? { "x-api-key": KEY } : {}),
+      "x-acting-user": externalId,
+      accept: "text/event-stream",
+    },
+    cache: "no-store",
+    signal,
+  });
+}
+
+// --- a view stated to the graph directly (constitution §4) -------------------
+
+export interface SubmittedStatedView {
+  stated_view: { id: string };
+  contribution: { id: string; review_status: string; record_url?: string };
+  message?: string;
+}
+
+/** State the signed-in account's own view on a node; reviewed before it shows. */
+export async function submitStatedView(
+  externalId: string,
+  claimId: string,
+  input: {
+    statement: string;
+    stance: string;
+    probability?: number;
+    figure?: Record<string, unknown>;
+    reasons?: string;
+    evidenceUrls?: string[];
+    stake?: string;
+    noStake?: boolean;
+    displayName?: string;
+  }
+): Promise<SubmittedStatedView> {
+  return accountFetch<SubmittedStatedView>(`/claims/${pathSegment(claimId)}/stated-views`, {
+    method: "POST",
+    actingUser: externalId,
+    body: {
+      statement: input.statement,
+      stance: input.stance,
+      ...(input.probability !== undefined ? { probability: input.probability } : {}),
+      ...(input.figure ? { figure: input.figure } : {}),
+      ...(input.reasons ? { reasons: input.reasons } : {}),
+      ...(input.evidenceUrls?.length ? { evidence_urls: input.evidenceUrls } : {}),
+      ...(input.noStake ? { no_stake: true } : { stake: input.stake }),
+      ...(input.displayName ? { contributor_display_name: input.displayName } : {}),
+    },
+  });
 }

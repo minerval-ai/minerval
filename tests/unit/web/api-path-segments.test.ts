@@ -93,6 +93,7 @@ const FETCHERS: Array<{
       `/claims/${s}/record`,
       `/findings?${new URLSearchParams({ limit: "10", claim_id: id })}`,
       `/claims/${s}/provenance`,
+      `/stated-views?claim_id=${s}&earlier=true`,
     ],
   },
   {

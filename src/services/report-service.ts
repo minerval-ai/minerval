@@ -40,6 +40,7 @@
 import { createHash } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 import {
   reportKindEnum,
   reportOriginEnum,
@@ -785,8 +786,8 @@ async function recordSighting(
   if (!row) return null;
   await rawQuery(
     `INSERT INTO agent_report_sightings
-       (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id)
-     VALUES ($1, 'sighting', $2, $3, $4, $5, $6, $7, $8)`,
+       (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id, sensitivity_label)
+     VALUES ($1, 'sighting', $2, $3, $4, $5, $6, $7, $8, $9)`,
     [
       row.id,
       input.body,
@@ -796,6 +797,8 @@ async function recordSighting(
       uuidOrNull(input.runId),
       uuidOrNull(input.jobId),
       uuidOrNull(input.claimId),
+      // This sighting is the run's that saw it; the report keeps its own label.
+      currentLabel(),
     ]
   );
   const reopened = row.previous_status === "actioned";
@@ -921,9 +924,9 @@ export async function raiseIssue(
       `INSERT INTO agent_reports
          (kind, severity, title, body, surface, origin, agent, model,
           reporter_contributor_id, context_refs, run_id, job_id, claim_id,
-          dedupe_key, embedding)
+          dedupe_key, embedding, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-               $15::vector)
+               $15::vector, $16)
        ON CONFLICT (dedupe_key) DO UPDATE SET
          occurrence_count = agent_reports.occurrence_count + 1,
          last_seen_at = now(),
@@ -951,6 +954,9 @@ export async function raiseIssue(
         uuidOrNull(input.claimId),
         dedupeKey,
         embedding ? toVectorLiteral(embedding) : null,
+        // The label of the run or request that files it (src/labels.ts). A
+        // repeat that lands on the row already there leaves its label alone.
+        currentLabel(),
       ]
     );
     const row = rows[0];
@@ -1073,8 +1079,8 @@ export async function updateReport(
     if (note) {
       await rawQuery(
         `INSERT INTO agent_report_sightings
-           (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id)
-         VALUES ($1, 'note', $2, $3, $4, $5, $6, $7, $8)`,
+           (report_id, kind, body, context_refs, agent, model, run_id, job_id, claim_id, sensitivity_label)
+         VALUES ($1, 'note', $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           row.id,
           note,
@@ -1084,6 +1090,7 @@ export async function updateReport(
           uuidOrNull(input.runId),
           uuidOrNull(input.jobId),
           uuidOrNull(input.claimId),
+          currentLabel(),
         ]
       );
     }
@@ -1238,9 +1245,22 @@ export async function countNewReportsSince(since: Date): Promise<number> {
 }
 
 /**
+ * How long a fresh report is left to its raise-time filing before the
+ * backlog takes it. raiseIssue() files the issue in the background, and
+ * the row carries no number until GitHub has answered; a sync tick that
+ * landed in that window filed the same report a second time (#952 and
+ * #953 are one report, filed twice in the same second). The raise-time
+ * filing makes at most a few requests of REQUEST_TIMEOUT_MS each, so this
+ * is well past any filing still in flight, and a filing that failed is
+ * picked up on a later tick.
+ */
+export const ISSUE_FILING_GRACE_SECONDS = 300;
+
+/**
  * Open reports with no GitHub issue yet, oldest first: the sync worker's
  * backlog. Withdrawn reports are never filed; closed statuses are, so the
- * tracker carries the record, but after the open ones.
+ * tracker carries the record, but after the open ones. A report raised in
+ * the last ISSUE_FILING_GRACE_SECONDS is still its raise-time filing's.
  */
 export async function listReportsAwaitingIssue(
   limit: number,
@@ -1251,9 +1271,10 @@ export async function listReportsAwaitingIssue(
       WHERE github_issue_number IS NULL
         AND status <> 'withdrawn'
         AND ($2::boolean OR origin = 'internal')
+        AND first_seen_at < now() - make_interval(secs => $3)
       ORDER BY (status IN ('new', 'triaged')) DESC, first_seen_at ASC
       LIMIT $1`,
-    [Math.max(1, limit), opts.includeExternal]
+    [Math.max(1, limit), opts.includeExternal, ISSUE_FILING_GRACE_SECONDS]
   );
 }
 

@@ -13,12 +13,15 @@ import { registerPartialResponse } from "./plugins/partial-response.js";
 import { registerPublicRead } from "./plugins/public-read.js";
 import { registerClaimAliasResolution } from "./plugins/claim-alias.js";
 import { registerAnonymousRateLimit } from "./plugins/anonymous-rate-limit.js";
+import { registerMembersOnly } from "./plugins/members-only.js";
+import { membersOnly } from "../permissions.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
 import { argumentRoutes } from "../routes/arguments.js";
 import { formalizationsRoutes } from "../routes/formalizations.js";
 import { attemptsRoutes } from "../routes/attempts.js";
 import { setupRoutes } from "../routes/setup.js";
+import { preflightRoutes } from "../routes/preflight.js";
 import { runRoutes } from "../routes/runs.js";
 import { prizesRoutes } from "../routes/prizes.js";
 import { sourceRoutes } from "../routes/sources.js";
@@ -44,13 +47,17 @@ import { consistencyRoutes } from "../routes/consistency.js";
 import { grantRoutes } from "../routes/grants.js";
 import { grantConversationRoutes } from "../routes/grant-conversations.js";
 import { assistantRoutes } from "../routes/assistant.js";
-import { pageRoutes } from "../routes/pages.js";
+import { pageRoutes, sharedPageRoutes } from "../routes/pages.js";
 import { mandateRoutes } from "../routes/mandates.js";
 import { platformMandateRoutes } from "../routes/platform-mandates.js";
 import { reportRoutes } from "../routes/reports.js";
 import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
+import { permissionRoutes } from "../routes/permissions.js";
+import { mirrorRoutes } from "../routes/mirror.js";
+import { mirrorRoles } from "../services/mirror-roles.js";
+import { statedViewRoutes } from "../routes/stated-views.js";
 
 export async function buildApp() {
   const config = loadConfig();
@@ -80,6 +87,11 @@ export async function buildApp() {
   await registerErrorHandler(app);
   // The per-address limit on requests with no recognised credential.
   await registerAnonymousRateLimit(app);
+  // A members-only deployment authenticates every request here, before its
+  // route runs, and resolves what it may do and read (src/permissions.ts).
+  // After the rate limit, so a made-up key is counted before it costs a
+  // lookup. On the public graph this registers nothing.
+  await registerMembersOnly(app);
   // `fields=` on GET routes. Before the catalog, so the catalog (and the MCP
   // tools built from it) records each GET route with `fields` in its schema.
   await registerPartialResponse(app);
@@ -124,6 +136,7 @@ export async function buildApp() {
   await app.register(assistantRoutes, { prefix: "/assistant" });
   // Pages (#646): what an agent saves for a user to keep.
   await app.register(pageRoutes, { prefix: "/pages" });
+  await app.register(sharedPageRoutes, { prefix: "/shared-pages" });
   await app.register(mandateRoutes, { prefix: "/mandates" });
   // Operator-key routes for platform mandates (#529): fund a pinned draft,
   // and mint the key that holds the platform's granting conversations.
@@ -133,10 +146,27 @@ export async function buildApp() {
   await app.register(tagRoutes, { prefix: "/tags" });
   // The versioned setups agent runs ran under (#552 groundwork).
   await app.register(setupRoutes, { prefix: "/setup" });
+  // Whether this deployment is ready to run, for its operator (src/preflight.ts).
+  await app.register(preflightRoutes, { prefix: "/setup" });
   // Agent runs (#553): public ones in full, the rest withheld with reasons.
   await app.register(runRoutes, { prefix: "/runs" });
   await app.register(requestRoutes, { prefix: "/requests" });
+  // The mirror feed (docs/mirror.md): mounted only on a deployment that is
+  // configured to publish one or to apply one, and then only that side.
+  // Registered before /mcp like every route that may be a tool.
+  const mirror = mirrorRoles(config);
+  if (mirror.publisher || mirror.applier) {
+    await app.register(mirrorRoutes, { prefix: "/mirror" });
+  }
+  // Spans /claims and /stated-views, so no prefix.
+  await app.register(statedViewRoutes);
   await app.register(mcpRoutes, { prefix: "/mcp" });
+  // Permissions, parties and labels exist only where a deployment is
+  // members-only (src/permissions.ts). The public graph mounts none of
+  // these routes, so it has none of their tools either.
+  if (membersOnly(config)) {
+    await app.register(permissionRoutes);
+  }
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool
   // either: the tools are built from the catalog of mounted routes.

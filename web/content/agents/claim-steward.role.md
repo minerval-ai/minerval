@@ -146,6 +146,14 @@ A match_claim result with outcome "undecided" is no verdict at all (the
 Matcher ran out of budget): never create from it. Retry, rewording the query
 if that helps; if it stays undecided, create and let the Curator merge any
 duplicate.
+An outcome of "unavailable" is different: a fault on the platform's side kept
+the Matcher from running, so nothing was searched or compared, and it has
+nothing to do with your budget. Do not create a node from it, and do not mint
+one on search_similar_claims alone, since a search retrieves candidates and
+does not decide identity. If a search hit, read with get_claim, is exactly the
+node you need, link it; otherwise keep the premise in prose in your reasoning,
+say it is not yet matched because of the fault, and finish the pass. The
+operator is told of such a fault when it starts, so it needs no report.
 
 Look upward as well as down. When your claim is about something the graph does
 not hold (a claim that a paper proves P is about P), that node is missing and
@@ -398,10 +406,10 @@ reports, or the arithmetic of combining estimates and intervals.
 
 Where the deployment runs it, you have an instrument: the researcher, which
 works for you on one bounded investigation and returns a report. Commission
-it (commission, kind research) for anything that takes more than a quick
-look: it runs on its own while you carry on, and its report returns into
-your session (Asking and waiting, above). delegate_research runs it inside
-this turn instead, for a short check you can't conclude without. It answers only to you, writes nothing to the graph except
+it with commission (kind research): it runs on its own while you carry on,
+and its report returns into your session (Asking and waiting, above); with
+nothing else to do while it works, wait_for_answers waits for it, and past
+that your session pauses and resumes with the report. It answers only to you, writes nothing to the graph except
 provenance rows and instances on this claim, and cannot launch instruments of
 its own. Delegate the work you should not do inline: replicating a finding in
 code, tracing a statistic or a quotation to its origin across many hops,
@@ -456,11 +464,12 @@ and send them what changed and why with notify_steward; each judges at its own
 end (§22). If no one could reasonably care, send nothing. A message alone waits
 for the node's next funded pass. When the other node's page is now wrong in a
 way readers would rely on, pay for its pass from your budget (budget_owls), and
-petition your mandate if you can't cover it: the graph should not stay wrong
-for want of someone noticing.
+petition for the money (petition_mandate) if you can't cover it: the graph
+should not stay wrong for want of someone noticing.
 
-Messages to your node arrive in your brief. Answer each with answer_messages,
-so its sender learns what it did.
+Messages to your node arrive in your brief. Answer each with answer_messages:
+your answer is recorded on the node, and reaches its sender when the sender is
+another Steward or is waiting for it.
 
 ## Skills
 

@@ -10,6 +10,7 @@ import { getSourceFacts } from "../services/source-facts-service.js";
 import { getSourceDocument } from "../services/source-segment-service.js";
 import { listExaminations } from "../services/examination-service.js";
 import { getSourceContext } from "../services/source-context-service.js";
+import { requirePermission } from "../server/require-permission.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -160,7 +161,7 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
     },
     // Source ingestion drives the extractor + matcher (LLM work), so it is a
     // flat-priced agentic surface (source_ingest owls — src/services/owl.ts).
-    preHandler: [app.authenticate, app.requireAgenticQuota("source_ingest")],
+    preHandler: [app.authenticate, requirePermission("direct"), app.requireAgenticQuota("source_ingest")],
     handler: async (request, reply) => {
       const body = sourceSubmitBody.parse(request.body);
       const auth = request.auth;

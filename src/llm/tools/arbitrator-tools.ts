@@ -32,6 +32,7 @@ import {
   applyAcceptanceEffects,
 } from "../../services/contribution-acceptance.js";
 import { getContributionById } from "../../services/contribution-service.js";
+import { currentLabel } from "../usage-context.js";
 
 export function getArbitratorToolDefinitions(): Tool[] {
   return [
@@ -274,7 +275,7 @@ export async function executeArbitratorTool(
         let materialization: IntakeMaterializationResult | null = null;
         let acceptanceNote = "";
         if (outcome === "overturn" && target && target.reviewStatus !== "accepted") {
-          const effects = await applyAcceptanceEffects(contributionId, input);
+          const effects = await applyAcceptanceEffects(contributionId, input, "dispute_arbitrator");
           if (!effects.ok) return JSON.stringify({ success: false, error: effects.error });
           materialization = effects.materialization;
           acceptanceNote = effects.note;
@@ -282,6 +283,7 @@ export async function executeArbitratorTool(
 
         await db.insert(arbitrationResults).values({
           contributionId,
+          sensitivityLabel: currentLabel(),
           appealId: appealId ?? null,
           outcome,
           decision,

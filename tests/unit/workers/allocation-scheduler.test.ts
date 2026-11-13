@@ -8,7 +8,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const { state } = vi.hoisted(() => ({
   state: {
-    dueClaims: [] as Array<{ id: string; days_old: number }>,
+    dueClaims: [] as Array<{ id: string; sensitivity_label: string; days_old: number }>,
+    // The label each staleness enqueue was made at (currentLabel inside it).
+    enqueuedAt: [] as string[],
     reconciles: 0,
     orderLooks: 0,
     tends: 0,
@@ -76,7 +78,8 @@ vi.mock("../../../src/services/allocation-policy-service.js", () => ({
   })),
 }));
 
-vi.mock("../../../src/services/curation-service.js", () => ({
+vi.mock("../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   scanReconcileCandidates: vi.fn(async (policy: { reconcile_candidates_max_per_sweep: number }) => {
     state.scans.push(policy.reconcile_candidates_max_per_sweep);
     return 0;
@@ -93,6 +96,8 @@ vi.mock("../../../src/services/allocation-service.js", () => ({
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueSteward: vi.fn(
     async (m: { claimId: string; trigger: string }) => {
+      const { currentLabel } = await import("../../../src/llm/usage-context.js");
+      state.enqueuedAt.push(currentLabel());
       state.enqueued.push({ claimId: m.claimId, trigger: m.trigger });
     }
   ),
@@ -117,6 +122,7 @@ beforeEach(() => {
   state.selfFunds = 0;
   state.followUpSweeps = 0;
   state.enqueued = [];
+  state.enqueuedAt = [];
   state.scans = [];
   state.config = {
     allocationSweepIntervalHours: 6,
@@ -127,8 +133,8 @@ beforeEach(() => {
 describe("allocationSchedulerTick", () => {
   it("reconciles, orders, self-funds, sweeps follow-ups, and re-enqueues due claims", async () => {
     state.dueClaims = [
-      { id: "c-1", days_old: 100 },
-      { id: "c-2", days_old: 70 },
+      { id: "c-1", sensitivity_label: "public", days_old: 100 },
+      { id: "c-2", sensitivity_label: "public", days_old: 70 },
     ];
     const result = await allocationSchedulerTick(1_000_000);
     expect(result).toEqual({
@@ -154,12 +160,24 @@ describe("allocationSchedulerTick", () => {
 
   it("re-enqueues every claim past its interval: the ledger decides which run", async () => {
     state.dueClaims = [
-      { id: "c-1", days_old: 100 },
-      { id: "c-2", days_old: 90 },
-      { id: "c-3", days_old: 80 },
+      { id: "c-1", sensitivity_label: "public", days_old: 100 },
+      { id: "c-2", sensitivity_label: "public", days_old: 90 },
+      { id: "c-3", sensitivity_label: "public", days_old: 80 },
     ];
     const result = await allocationSchedulerTick(1_000_000);
     expect(result.stalenessEnqueued).toBe(3);
+  });
+
+  // The check starts from the claim, outside any run, so the pass it asks
+  // for is opened at the claim's label (src/labels.ts).
+  it("asks for each stale claim's fresh look at that claim's label", async () => {
+    state.dueClaims = [
+      { id: "c-1", sensitivity_label: "internal", days_old: 100 },
+      { id: "c-2", sensitivity_label: "public", days_old: 90 },
+    ];
+    await allocationSchedulerTick(1_000_000);
+    expect(state.enqueued.map((e) => e.claimId)).toEqual(["c-1", "c-2"]);
+    expect(state.enqueuedAt).toEqual(["internal", "public"]);
   });
 
   it("runs at most once per interval", async () => {

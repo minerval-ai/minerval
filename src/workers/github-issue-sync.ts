@@ -14,7 +14,10 @@
  *
  * Idempotent through the row: fileIssueForReport records the issue number
  * only where none is recorded yet, so two API tasks ticking at once can at
- * worst file one duplicate for a report, never a run of them. Off unless
+ * worst file one duplicate for a report, never a run of them. A report
+ * raised within ISSUE_FILING_GRACE_SECONDS is left to the raise-time
+ * filing still in flight for it: a tick that took it filed it twice
+ * (#952, #953). Off unless
  * the sync is configured; a tick with nothing pending costs one indexed
  * read.
  */

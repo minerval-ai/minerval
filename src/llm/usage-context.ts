@@ -58,11 +58,13 @@ export interface UsageContext {
    */
   skills?: string[];
   /**
-   * Set by untraced(): the work in progress handles content that must stay
-   * transient — a reader's page text, a chat question, a passage handed to
-   * the MCP for on-demand analysis (#356). withAgent opens no run inside it
-   * and no step is recorded, whatever TRACE_LEVEL says. Metering is
-   * unaffected: llm_usage rows carry counts and cost, never content.
+   * Set by untraced(): the work in progress handles a reader's own content
+   * — a page's text, a chat question, a passage handed to the MCP for
+   * on-demand analysis (#356). While the log is best-effort, withAgent opens
+   * no run inside it and no step is recorded, whatever TRACE_LEVEL says. In
+   * record mode the work is logged like any other and its runs start
+   * private (trace-service.ts, READERS_OWN_REASON). Metering is unaffected:
+   * llm_usage rows carry counts and cost, never content.
    */
   untraced?: true;
   /**
@@ -103,6 +105,15 @@ export interface UsageContext {
    * any run, which is all the public graph has.
    */
   label?: string;
+  /**
+   * The labels the enclosing request may read (src/permissions.ts): set once
+   * per request in a members-only deployment, from the grants that reach
+   * the account (server/plugins/members-only.ts), and read with
+   * currentClearance below. Absent means `public` alone. It is a request's,
+   * never a run's: runAtLabel clears it, so work a request starts does not
+   * read with the clearance of whoever asked for it.
+   */
+  clearance?: readonly string[];
 }
 
 export interface PassBudget {
@@ -151,6 +162,19 @@ export function currentLabel(): string {
   return getUsageContext().label ?? PUBLIC_LABEL;
 }
 
+const PUBLIC_CLEARANCE: readonly string[] = Object.freeze([PUBLIC_LABEL]);
+
+/**
+ * The labels a read made now may see: the enclosing request's clearance,
+ * and `public` alone where none was set. So a read outside any request, a
+ * read in a run, and a read on a path that never resolved a standing all
+ * see what anyone may see and nothing more: a missing clearance fails
+ * closed. Nothing holds a read to this yet (src/permissions.ts).
+ */
+export function currentClearance(): readonly string[] {
+  return getUsageContext().clearance ?? PUBLIC_CLEARANCE;
+}
+
 /**
  * Run `fn` at the label of the work that started it. Every worker and
  * executor calls this with the label of the row it picked up (a job, a
@@ -164,7 +188,10 @@ export function currentLabel(): string {
  */
 export function runAtLabel<T>(label: string | null | undefined, work: string, fn: () => T): T {
   if (typeof label !== "string" || label.length === 0) throw new MissingLabelError(work);
-  return runWithUsageContext({ label }, fn);
+  // A run is not a request: where the in-process runner picks work up inside
+  // the request that enqueued it, the request's clearance must not carry on
+  // into the run. What a run may read follows from its own label.
+  return runWithUsageContext({ label, clearance: undefined }, fn);
 }
 
 export function runWithUsageContext<T>(
@@ -209,7 +236,10 @@ export function markCurrentRunPrivate(reason: string): void {
 
 export function withAgent<T>(agent: string, fn: () => T): T {
   const context = getUsageContext();
-  const trace = context.untraced ? null : startAgentRun(agent, context);
+  // A reader's own content is kept off a best-effort log (untraced below).
+  // Record mode has no such exemption: startAgentRun opens the run, private.
+  const exempt = context.untraced === true && !recordMode();
+  const trace = exempt ? null : startAgentRun(agent, context);
   if (!trace) return runWithUsageContext({ agent }, fn);
   return runWithUsageContext({ agent, runId: trace.runId, trace }, () => {
     let result: T;
@@ -283,7 +313,8 @@ export function noteSkillLoaded(skill: string): void {
 }
 
 /**
- * Run `fn` with tracing suppressed, whatever TRACE_LEVEL says. This is the
+ * Run `fn` as work over a reader's own content, with tracing suppressed
+ * while the log is best-effort, whatever TRACE_LEVEL says. This is the
  * privacy seam of the trace substrate (#356): the transcript of an agent
  * run is verbatim — the page it read, the question it was asked — so work
  * over content a user never published runs inside this wrapper, and nothing
@@ -291,8 +322,19 @@ export function noteSkillLoaded(skill: string): void {
  * handle from an enclosing run is dropped too, so a nested agent cannot
  * append its steps to an outer run. Independent of the metering context,
  * which keeps attributing tokens and cost as usual.
+ *
+ * In record mode nothing is suppressed. A deployment that keeps its log as a
+ * record does so because it holds material whose handling has to be on that
+ * log, and a reader's passage there is such material: every run inside is
+ * opened, waits on its seal and fails if its log could not be written, like
+ * any other. The mark stays on the context, so those runs start private and
+ * a report raised from them still leaves its body out (report-tools.ts).
+ *
+ * tests/unit/llm/logged-runs.test.ts lists the files that may call this,
+ * each with its reason.
  */
 export function untraced<T>(fn: () => T): T {
+  if (recordMode()) return runWithUsageContext({ untraced: true }, fn);
   return runWithUsageContext(
     { untraced: true, trace: undefined, runId: null },
     fn

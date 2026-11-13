@@ -44,7 +44,7 @@ beforeAll(async () => {
 
 async function mandate(): Promise<string> {
   const { grantId } = await seedGrantWithJob({ funderId: await seedUser("exam-funder"), budgetMicroUsd: 50 * OWL });
-  await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [grantId]);
+  await rawQuery(`UPDATE grants SET status = 'active', pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [grantId]);
   return grantId;
 }
 

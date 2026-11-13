@@ -11,8 +11,9 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { currentLabel } from "../llm/usage-context.js";
 
-export type InboxItemKind = "raised" | "outcome" | "funder_note" | "notice";
+export type InboxItemKind = "raised" | "outcome" | "funder_note" | "notice" | "subscription";
 
 export async function raiseToMandate(input: {
   grantId: string;
@@ -38,8 +39,8 @@ export async function raiseToMandate(input: {
     if (existing) return { id: existing.id, folded: true };
   }
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO mandate_inbox (grant_id, kind, target_node_id, target_ref, source, summary, detail)
-     SELECT $1, $2, $3, $4, $5, $6, $7::jsonb
+    `INSERT INTO mandate_inbox (grant_id, kind, target_node_id, target_ref, source, summary, detail, sensitivity_label)
+     SELECT $1, $2, $3, $4, $5, $6, $7::jsonb, $8::text
       WHERE EXISTS (SELECT 1 FROM grants WHERE id = $1)
      RETURNING id`,
     [
@@ -50,9 +51,22 @@ export async function raiseToMandate(input: {
       input.source,
       input.summary.slice(0, 4000),
       JSON.stringify(input.detail ?? {}),
+      currentLabel(),
     ]
   );
   if (!row) return null;
+  if (input.kind !== "subscription") {
+    // An item a subscription delivered is already an event's echo.
+    const { recordEvent } = await import("./event-service.js");
+    await recordEvent({
+      kind: "inbox_item",
+      grantId: input.grantId,
+      nodeId: input.targetNodeId ?? null,
+      actionId: actionId,
+      refs: { item: row.id, item_kind: input.kind ?? "raised" },
+      summary: `${input.source} raised: ${input.summary.slice(0, 300)}`,
+    });
+  }
   if (loadConfig().officerSittingsEnabled) void sitSoon(input.grantId);
   return { id: row.id, folded: false };
 }

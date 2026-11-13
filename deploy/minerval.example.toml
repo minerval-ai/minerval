@@ -1,0 +1,175 @@
+# Minerval: a deployment's settings (docs/deployment.md).
+#
+# This file is public Minerval's own settings, written out. A deployment
+# copies it, changes the settings it needs to, and names the copy in the
+# environment variable MINERVAL_CONFIG (or calls it minerval.toml in the
+# directory the server starts in).
+#
+# A setting left out keeps its default, and the values below are those
+# defaults wherever public Minerval does not set its own. An environment
+# variable of the same setting overrides the file. Secrets (keys, tokens,
+# passwords) are never written here: each has an environment variable, and
+# the file is refused if it holds one.
+#
+# Check a deployment against its file with: npm run preflight
+
+# The optional parts of the product this deployment switches off, by name:
+# "extension", "mathematics", "prizes". Everything not named is on.
+[features]
+off = []
+
+# Which model serves each role. An id starting "claude-" is served by
+# Anthropic, "gpt-" by OpenAI, and "vendor/model" by OpenRouter; the
+# provider's key must be in the environment. "endpoint:<name>/<model>" is
+# served by a model endpoint this deployment declares below.
+[models]
+steward = "claude-opus-5-5"
+steward_strong = "claude-fable-5-2"
+curator = "claude-opus-5-5"
+extractor = "claude-opus-5-5"
+extractor_fallback = "claude-sonnet-5-5"
+matcher = "openai/gpt-6-luna"
+tagger = "openai/gpt-6-luna"
+contribution_reviewer = "claude-sonnet-5-5"
+audit = "claude-opus-5-5"
+arbitration = "claude-fable-5-2"
+grantmaker = "claude-fable-5-2"
+program_officer = "openai/gpt-6-luna"
+lookout = "openai/gpt-6-luna"
+correspondent = "claude-sonnet-5-5"
+consistency = "openai/gpt-6-luna"
+consistency_strong = "claude-sonnet-5-5"
+assistant = "claude-fable-5-2"
+assistant_standard = "claude-opus-5-5"
+assistant_title = "claude-haiku-4-5-20251001"
+extension = "claude-sonnet-5-5"
+researcher_strong = "claude-fable-5-2"
+researcher_standard = "claude-sonnet-5-5"
+researcher_cheap = "openai/gpt-6-luna"
+solver = "claude-fable-5-2"
+judge = "claude-sonnet-5-5"
+
+# How the model providers are called. Their keys are secrets and stay in the
+# environment: ANTHROPIC_API_KEY, OPENAI_API_KEY (which also makes the
+# embeddings), OPENROUTER_API_KEY (which also serves open-web search for
+# models Anthropic does not search for).
+[model_providers]
+# How OpenRouter picks among a model's hosts: "price", "throughput" or
+# "latency". Left out, OpenRouter decides.
+# openrouter_provider_sort = "throughput"
+
+# A model server this deployment runs itself (vLLM, llama.cpp's server, TGI,
+# Ollama), one group for each. Public Minerval declares none. A role's model
+# "endpoint:local/<model>" is served by the endpoint named "local". key_env
+# is the name of the environment variable that holds its key, never the key;
+# leave it out for an endpoint that takes none. The two prices are what a
+# call costs in US dollars per million tokens, and are required: budgets and
+# owls are counted in them. Write 0 for an endpoint counted as free.
+# [[model_providers.endpoints]]
+# name = "local"
+# base_url = "http://vllm.internal:8000/v1"
+# key_env = "LOCAL_LLM_KEY"
+# input_usd_per_mtok = 0.5
+# output_usd_per_mtok = 1.5
+
+# Elicit, a paid scholarly search the Steward can use. `use` says whether
+# this deployment uses it at all; its key is ELICIT_API_KEY.
+[outside_services.elicit]
+use = true
+url = "https://elicit.com/api/mcp"
+usd_per_call = 2
+
+# Pangram, paid detection of machine-written text and of a text's original
+# source. Its key is PANGRAM_API_KEY.
+[outside_services.pangram]
+use = false
+url = "https://text.external-api.pangram.com"
+plagiarism_url = "https://plagiarism.api.pangram.com"
+model = "pangram-4"
+ai_usd_per_word = 0.0005
+plagiarism_usd_per_word = 0.0005
+max_words = 1500
+
+# Selling owls through Stripe. Its keys are STRIPE_SECRET_KEY and
+# STRIPE_WEBHOOK_SECRET.
+[outside_services.payments]
+use = true
+
+# Filing the agents' problem reports as GitHub issues. An empty repo files
+# nothing, which a deployment that holds private material must choose: the
+# reports quote what the agents were working on. The credential is
+# GITHUB_APP_PRIVATE_KEY (with the two ids below) or GITHUB_TOKEN.
+[outside_services.github_issues]
+repo = "minerval-ai/minerval"
+label = "agent-generated"
+include_external_reports = true
+api_base_url = "https://api.github.com"
+app_id = "4911585"
+app_installation_id = "160924398"
+
+# The labels each model provider and outside service may be sent text at,
+# one line for each. Public Minerval has none: a provider with no line is
+# cleared for "public" and nothing else, which is all the public graph has.
+# A deployment that defines another label sends nothing at it to anyone
+# until a line here says who may receive it. The names are anthropic,
+# openai, openrouter, "endpoint:<name>" for each endpoint above, and the
+# outside services embeddings, web_search, web_pages, elicit and pangram.
+# An empty list clears a provider for no label, "public" included.
+# [provider_labels]
+# anthropic = ["public", "internal"]
+# "endpoint:local" = ["public", "internal"]
+# embeddings = ["public", "internal"]
+
+# How much a run depends on its log (docs/run-log.md). "best_effort": a step
+# that cannot be written is noted and the run carries on. "record": the run
+# does not finish until its log is sealed, and nothing is deleted. A
+# deployment that holds private material uses "record".
+[run_log]
+mode = "best_effort"
+level = "full"
+# Days a run that wrote nothing to the graph is kept. 0 keeps everything.
+retention_days = 30
+
+# Where this deployment is reached, and how the API listens.
+[hosting]
+environment = "production"
+web_base_url = "https://minerval.ai"
+api_base_url = "https://api.claimgraph.io"
+# Where a claim's permanent citation address starts. "" uses web_base_url.
+citation_url_base = "https://w3id.org/minerval/claim"
+# Other sites whose pages may call the API from a browser.
+cors_origins = []
+host = "0.0.0.0"
+port = 3000
+log_level = "info"
+anonymous_rate_limit_per_minute = 300
+
+# Where the database is. Public Minerval's host, port and user come from its
+# infrastructure, so those three are shown as examples. The password is
+# DB_PASSWORD; a whole connection string carries a password too and goes in
+# DATABASE_URL.
+[database]
+name = "episteme"
+# host = "db.internal"
+# port = 5432
+# user = "minerval"
+
+# What an owl costs to buy and what it covers, in millionths of a dollar;
+# what is given away; and the most each paid operation can cost, in owls.
+[pricing]
+owl_price_micro_usd = 4000000
+owl_cost_micro_usd = 1000000
+# What is sold, as "owls:cents:name". An empty list sells nothing.
+owl_packs = [
+  "5:2000:Clutch",
+  "25:9000:Perch",
+  "100:30000:Wisdom",
+  "500:100000:Parliament",
+]
+signup_grant_owls = 5
+monthly_grant_owls = 1
+cap_claim_proposal_owls = 2
+cap_assessment_owls = 2
+cap_source_ingest_owls = 0.1
+cap_extension_analysis_owls = 1
+cap_text_analysis_owls = 0.1

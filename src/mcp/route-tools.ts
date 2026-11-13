@@ -17,7 +17,15 @@
  * a feature off (src/features.ts) does not mount that feature's routes, so
  * their generated tools are absent there: registerRouteTools walks the
  * catalog of mounted routes. The hand-written tools of a feature are gated
- * in server.ts.
+ * in server.ts. The routes for permissions, parties and labels are mounted
+ * only by a members-only deployment (src/permissions.ts), so their tools
+ * exist only there.
+ *
+ * In a members-only deployment a route may ask for a permission
+ * (server/require-permission.ts). A caller who does not hold it is not
+ * offered the route's tool: a tool that can only refuse is not an
+ * affordance. withheldRouteTools says which were left out and why, for the
+ * one caller that is told (the Assistant, llm/permissions-note.ts).
  *
  * A generated tool takes its input schema (the route's params, querystring,
  * and body, merged) and its description (the route's summary) from the
@@ -31,6 +39,13 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { RequestAuth } from "../server/plugins/auth.js";
 import { routeKey, type CatalogRoute } from "../server/plugins/route-catalog.js";
 import { dispatchToRoute } from "./dispatch.js";
+import {
+  holdsPermission,
+  membersOnly,
+  standingOf,
+  type PermissionName,
+} from "../permissions.js";
+import { loadConfig } from "../config.js";
 
 export interface RouteTool {
   name: string;
@@ -138,6 +153,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "POST /pages": { name: "save_page" },
   "GET /pages": { name: "list_pages" },
   "GET /pages/:id": { name: "get_page" },
+  "GET /shared-pages/:token": { name: "get_shared_page" },
 
   // ---- correspondents (#563) ----
   "GET /correspondents": { name: "list_correspondents" },
@@ -163,6 +179,35 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /sources/:source_id/examinations": { name: "get_source_examinations" },
   "GET /sources/:source_id/document": { name: "get_source_document" },
   "GET /jobs/:job_id": { name: "get_job" },
+
+  // ---- views stated to the graph directly (constitution §4) ----
+  "POST /claims/:claim_id/stated-views": {
+    name: "state_view",
+    // A getter, so the limits are read from the configuration when the tool
+    // is registered and not when this module loads.
+    get note() {
+      const config = loadConfig();
+      return (
+        "For your user's own view, or their organization's when the account is the organization's, and only " +
+        "when they ask: it is published under the account's name, in the words you pass, and is not edited " +
+        "or withdrawn afterwards. It does not change the assessment. Nobody edits one: the statement is " +
+        "recorded as a source and shown beside it, and placement there gives it no weight. The Contribution " +
+        "Reviewer admits it on form and good faith, never on whether the view is right; track it with " +
+        "get_contribution_status. Free, and so it counts toward the cap on contributions (" +
+        `${config.contributionRateLimitPerHour} per hour, ${config.newContributorRateLimitPerHour} for accounts ` +
+        "under a day old or below 50 reputation), because each one commands a review nobody pays for; past " +
+        "it you get CONTRIBUTION_RATE_LIMITED."
+      );
+    },
+  },
+  "GET /stated-views": {
+    name: "list_stated_views",
+    note:
+      "Free. With speaker_id, how one account's statements have held up against the graph's assessments; " +
+      "with claim_id, what has been stated on one node. A stated view is its speaker's and the judgment is " +
+      "the graph's: report each as whose it is. not_assessed means nobody has examined the node, which is " +
+      "not agreement.",
+  },
 
   // ---- contributions, appeals, contributors ----
   "GET /contributions": { name: "list_contributions" },
@@ -190,6 +235,18 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // What this deployment has switched on (src/features.ts): a route behind
   // a feature that is off is not mounted, so it is not a tool here either.
   "GET /setup/features": { name: "list_features" },
+
+  // ---- the mirror feed (docs/mirror.md) ----
+  // Mounted only on a deployment that publishes a feed or applies one
+  // (services/mirror-roles.ts), so these are tools only there.
+  "GET /mirror/feed/key": { name: "get_mirror_feed_key" },
+  "GET /mirror/feed": { name: "list_mirror_batches" },
+  "GET /mirror/status": {
+    name: "get_mirror_status",
+    note:
+      "Free. What you read of the public graph in this deployment is as of public_graph_as_of, " +
+      "not as of now.",
+  },
   "GET /runs/:run_id": {
     name: "get_run",
     note: "A run that read private data answers public: false with its reasons and nothing else.",
@@ -197,6 +254,16 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /runs/:run_id/verify": { name: "verify_run_log" },
   "GET /runs/:run_id/steps": { name: "list_run_steps" },
   "GET /runs/:run_id/steps/:seq": { name: "get_run_step" },
+
+  // ---- permissions, parties and labels: members-only deployments only ----
+  // The reads. The writes are excluded below: they take a signed-in session.
+  "GET /permissions": { name: "list_permissions" },
+  "GET /permissions/mine": { name: "get_my_permissions" },
+  "GET /permissions/log": { name: "get_permission_log" },
+  "GET /permissions/grants": { name: "list_permission_grants" },
+  "GET /permissions/accounts": { name: "list_accounts" },
+  "GET /parties": { name: "list_parties" },
+  "GET /labels": { name: "list_labels" },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
@@ -270,9 +337,36 @@ const ASSISTANT_GATE =
   "would let it press its own button; the route also requires a signed-in " +
   "dashboard session.";
 
+const PAGE_SHARING =
+  "Making a private page readable by anyone with the link, or withdrawing that, is the " +
+  "user's own act: it takes the signed-in dashboard session, so nothing an agent reads can " +
+  "publish what the user keeps.";
+
+const ADMINISTRATION_SESSION =
+  "Changes who may read, release or do what in a members-only deployment, so it takes a " +
+  "signed-in dashboard session as well as the permission to administer: a leaked key, an " +
+  "access token, or an agent following text it read can then never widen anyone's access. " +
+  "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
+  "POST /permissions/grants": ADMINISTRATION_SESSION,
+  "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
+  "POST /parties": ADMINISTRATION_SESSION,
+  "PUT /sources/:source_id/party": ADMINISTRATION_SESSION,
+  "POST /labels": ADMINISTRATION_SESSION,
+  "POST /labels/:label/reads": ADMINISTRATION_SESSION,
+  "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
+  "POST /operator/administrators":
+    "The way back in for a deployment whose administrators cannot sign in: requires the " +
+    "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",
+
   "GET /health": "A load-balancer liveness probe, not an affordance.",
+  "GET /mirror/feed/:sequence":
+    "A batch is megabytes of whole rows for a deployment's mirror to verify and apply, not " +
+    "something a model can read in a tool result. list_mirror_batches and get_mirror_feed_key " +
+    "are the MCP side of the feed; the rows themselves are read through the ordinary claim and " +
+    "source tools.",
   "PATCH /claims/:claim_id":
     "Direct service seeding only: writes an argument straight onto a " +
     "claim without review, and refuses every other caller. MCP's " +
@@ -297,6 +391,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /billing/checkout": SESSION_ONLY,
   "POST /billing/webhook": "Stripe's signature-verified callback, not a caller surface.",
 
+  "GET /setup/preflight":
+    "Reports this deployment's configuration to whoever runs it (which keys " +
+    "are missing, where reports are filed, the state of the database): " +
+    "requires the operator key, which is held outside every deployment " +
+    "surface, an MCP client included (docs/deployment.md).",
   "POST /operator/platform-mandates/fund": OPERATOR_ONLY,
   "POST /operator/platform-grantmaking-keys": OPERATOR_ONLY,
   "GET /operator/platform-grantmaking-keys": OPERATOR_ONLY,
@@ -330,6 +429,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
     "the server never learns which page a reader is on. An MCP caller is " +
     "authenticated and names its page anyway, so get_page_analysis takes " +
     "the URL directly.",
+  "GET /assistant/conversations/:id/stream":
+    "An event stream of a running turn, for a person watching the reply form. A tool call " +
+    "returns once; get_assistant_conversation holds the same text, and the finished reply.",
   "POST /assistant/conversations": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/messages": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/stop": ASSISTANT_CONVERSATION,
@@ -337,12 +439,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /assistant/conversations/:id": ASSISTANT_CONVERSATION,
   "POST /assistant/conversations/:id/held/:action_id": ASSISTANT_GATE,
   "PUT /assistant/allowance": ASSISTANT_GATE,
+  "POST /pages/:id/share": PAGE_SHARING,
+  "DELETE /pages/:id/share": PAGE_SHARING,
   "DELETE /pages/:id":
     "A page is its user's to throw away: deleting takes the signed-in dashboard session, so " +
     "nothing an agent reads can have it delete what the user keeps.",
-  "POST /extension/chat":
-    "The extension's chat over the page open in the browser; an MCP client " +
-    "is itself the conversation, with the graph tools in hand.",
 };
 
 /** Whole route families excluded by prefix, each with its reason. */
@@ -500,7 +601,39 @@ function toolResult(statusCode: number, contentType: string, raw: string): CallT
   };
 }
 
-/** Register a tool for every catalog route that ROUTE_TOOLS names. */
+/**
+ * The first permission a route asks for that `auth` does not hold, or null
+ * when the caller may use the route. Always null on the public graph, where
+ * no route's permission binds.
+ */
+function missingPermission(route: CatalogRoute, auth: RequestAuth): PermissionName | null {
+  if (!route.permissions || route.permissions.length === 0 || !membersOnly()) return null;
+  const standing = standingOf(auth);
+  return route.permissions.find((p) => !holdsPermission(standing, p)) ?? null;
+}
+
+/**
+ * The route tools `auth` is not offered because the account lacks the
+ * permission each needs, in the catalog's order. Empty on the public graph.
+ */
+export function withheldRouteTools(
+  app: FastifyInstance,
+  auth: RequestAuth
+): Array<{ tool: string; permission: PermissionName }> {
+  const withheld: Array<{ tool: string; permission: PermissionName }> = [];
+  for (const route of app.routeCatalog ?? []) {
+    const tool = ROUTE_TOOLS[routeKey(route.method, route.url)];
+    if (!tool) continue;
+    const permission = missingPermission(route, auth);
+    if (permission) withheld.push({ tool: tool.name, permission });
+  }
+  return withheld;
+}
+
+/**
+ * Register a tool for every catalog route that ROUTE_TOOLS names and the
+ * caller may use.
+ */
 export function registerRouteTools(
   server: McpServer,
   app: FastifyInstance,
@@ -509,6 +642,7 @@ export function registerRouteTools(
   for (const route of app.routeCatalog ?? []) {
     const tool = ROUTE_TOOLS[routeKey(route.method, route.url)];
     if (!tool) continue;
+    if (missingPermission(route, auth)) continue;
     const input = routeInput(route);
 
     server.registerTool(

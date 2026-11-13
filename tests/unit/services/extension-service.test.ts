@@ -3,7 +3,6 @@ import { describe, it, expect } from "vitest";
 import {
   AnalysisCache,
   buildAnnotations,
-  extractCitedClaimIds,
   pageCacheKey,
 } from "../../../src/services/extension-service.js";
 import type { ClaimVerdict } from "../../../src/llm/agents/extension-agent.js";
@@ -129,19 +128,5 @@ describe("buildAnnotations", () => {
     });
     expect(unmatched!.proposed_canonical_form).toBe("GDP fell in 2020");
     expect(hit!.proposed_canonical_form).toBeNull();
-  });
-});
-
-describe("extractCitedClaimIds", () => {
-  it("extracts, lowercases and dedupes [claim:<uuid>] markers", () => {
-    const id = "11111111-2222-3333-4444-555555555555";
-    const reply =
-      `Per the graph [claim:${id}], and again [claim:${id.toUpperCase()}], ` +
-      `but [claim:not-a-uuid] is ignored.`;
-    expect(extractCitedClaimIds(reply)).toEqual([id]);
-  });
-
-  it("returns empty for replies without citations", () => {
-    expect(extractCitedClaimIds("no markers here")).toEqual([]);
   });
 });

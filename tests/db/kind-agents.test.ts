@@ -316,7 +316,7 @@ describe("fund_request", () => {
     });
     const funder = await seedUser("funder");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 10_000_000 });
-    await rawQuery(`UPDATE grants SET status = 'active', daily_budget_micro_usd = 0 WHERE id = $1`, [grantId]);
+    await rawQuery(`UPDATE grants SET status = 'active', pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [grantId]);
     const tools = createResearchTools({ requestedBy: "grantmaker", grantId });
     expect(tools.definitions.map((t) => t.name)).toContain("fund_request");
     const out = JSON.parse((await tools.execute("fund_request", { request_id: requestId, budget_usd: 2 }))!);

@@ -17,7 +17,7 @@
  * Why this shape:
  *  - The executor is a dumb loop over covered rows, so "why did this run"
  *    is always answerable from the ledger alone — no hidden ordering.
- *  - Spend is bounded by each mandate's daily rate + the LLM budget
+ *  - Spend is bounded by each mandate's pace + the LLM budget
  *    tracker (token/call limits), not by a per-process run counter that
  *    would permanently wedge a long-lived worker. Deployments with no
  *    General mandate seeded (dev, tests) fall back to direct budgeted
@@ -36,6 +36,13 @@
  * a claim parks as 'error' only after MAX_STEWARD_ATTEMPTS of them. A run of
  * consecutive transient failures trips a circuit breaker that stops the drain,
  * so a credit outage can never again silently strand half the graph as 'error'.
+ *
+ * A covered pass a platform fault stops leaves its ledger row waiting, with
+ * the fault's class on it, and the funded rows of its kind and tier wait
+ * with it (#971; action-service.ts releaseAction, deployment-fault.ts). When
+ * the fault is the deployment's (a provider account out of credits, a
+ * rejected key) the drain goes on to whatever else is covered, since the
+ * other tier or the other lanes may run on a provider that is healthy.
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
@@ -45,6 +52,7 @@ import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { getGeneralMandate } from "../services/allocation-policy-service.js";
 import {
   actionBudgetMicroUsd,
+  actionWaitingOn,
   claimAction,
   completeAction,
   largestActionFunder,
@@ -53,11 +61,14 @@ import {
   type RunnableAction,
 } from "../services/action-service.js";
 import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
+import { pendingPassLabel } from "../services/label-service.js";
 import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
 type PassBudgetInput = { microUsd: number; source: string; funding?: RunFunding } | null;
 import { classifyStewardFailure } from "../services/steward-park-reason.js";
+import { isDeploymentFaultReason, type PlatformFaultReason } from "../services/deployment-fault.js";
+import { noteDeploymentFault } from "../services/deployment-fault-service.js";
 import {
   MAX_STEWARD_ATTEMPTS,
   STEWARD_LEASE_STALE_MINUTES,
@@ -73,6 +84,11 @@ interface StewardTaskRow {
   steward_trigger: string | null;
   steward_attempts: number | null;
   queue_priority: number;
+}
+
+/** A claim the fallback lane took, with the label its pass runs at. */
+interface FallbackTaskRow extends StewardTaskRow {
+  sensitivity_label: string;
 }
 
 // If this many claims in a row fail transiently, the API itself is down (e.g. a
@@ -93,6 +109,12 @@ export interface StewardProcessResult {
   trigger?: string;
   ok?: boolean;
   error?: string;
+  /**
+   * With 'transient': the class of the platform fault the pass's ledger row
+   * now waits on (action-service.ts, releaseAction). The row paces itself,
+   * so the drain may go on to other work; absent, the drain stops.
+   */
+  waitingOn?: PlatformFaultReason;
 }
 
 /**
@@ -119,7 +141,7 @@ async function unattributedSpentTodayMicroUsd(): Promise<number> {
  * (action-service.ts) — no selection logic of its own. When nothing is
  * covered, it invites the General mandate's allocator to place the day's
  * next allocations (marginal value per dollar, best first, within its
- * daily rate and escrow) and looks again. The run happens at the winning
+ * pace and escrow) and looks again. The run happens at the winning
  * variant's tier, its metered cost is consumed pro rata from the
  * covering allocations, and the run is attributed to the largest funder
  * (which is what stamps the funding disclosure).
@@ -155,9 +177,20 @@ export async function processNextStewardTask(
     // is the label of the work that opened the row (src/labels.ts). The
     // bookkeeping after the run is inside too, so a follow-up it commissions
     // carries the same label.
-    return runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () =>
+    const result = await runAtLabel(action.sensitivity_label, `ledger action ${action.id}`, () =>
       runCoveredAction(action, opts)
     );
+    if (result.status === "transient") {
+      // Unreadable is read as "not waiting": the drain then stops, as before.
+      let waitingOn: PlatformFaultReason | null = null;
+      try {
+        waitingOn = await actionWaitingOn(action.id);
+      } catch {
+        waitingOn = null;
+      }
+      if (waitingOn) return { ...result, waitingOn };
+    }
+    return result;
   }
 
   // Fallback mode (no ACTIVE General mandate): direct budgeted runs on the
@@ -174,9 +207,14 @@ export async function processNextStewardTask(
     return { status: pending > 0 ? "budget" : "empty" };
   }
   // This lane picks a claim, not a piece of work: no row here says what
-  // label the pending pass was asked for at, so its run opens with none and
-  // writes as public. A deployment with more than one label must not turn
-  // the lane on until the claim's pending slot carries a label.
+  // label the pending pass was asked for at. The messages waiting on the
+  // claim do, when they agree on one, and the pass runs at that label;
+  // otherwise it runs at the claim's own, so a restricted claim is never
+  // stewarded as public (pendingPassLabel in label-service.ts, below).
+  // With messages of two labels waiting, the pass runs at the claim's label
+  // and reads them all: the pending slot is one per claim, and one per
+  // label is later work. A deployment with more than one label should
+  // leave the lane off until then.
   // The fallback lane IS unattributed work, so the breaker applies: don't
   // even claim a task if it is already spent this window.
   try {
@@ -193,7 +231,7 @@ export async function processNextStewardTask(
     if (spent >= budgetMicro) return { status: "budget" };
     passBudget = { microUsd: budgetMicro - spent, source: "what is left of today's background budget" };
   }
-  const rows = await rawQuery<StewardTaskRow>(
+  const rows = await rawQuery<FallbackTaskRow>(
     `UPDATE claims
         SET steward_state = 'running', stewarded_at = now(),
             steward_requeued = false
@@ -209,13 +247,19 @@ export async function processNextStewardTask(
          FOR UPDATE SKIP LOCKED
       )
       RETURNING id, steward_trigger, steward_attempts,
-                queue_priority`
+                queue_priority, sensitivity_label`
   );
   if (rows.length === 0) return { status: "empty" };
-  return runStewardOnClaim(rows[0]!, {
-    model: opts.model ?? config.stewardModel,
-    passBudget,
-  });
+  const task = rows[0]!;
+  // The run and the bookkeeping after it are inside the pass's label, as a
+  // covered action's are inside its row's.
+  const label = await pendingPassLabel(task.id, task.sensitivity_label);
+  return runAtLabel(label, `claim ${task.id}`, () =>
+    runStewardOnClaim(task, {
+      model: opts.model ?? config.stewardModel,
+      passBudget,
+    })
+  );
 }
 
 /**
@@ -366,7 +410,7 @@ async function runStewardOnClaim(
     // Whatever the failure, the action returns to open: coverage is
     // unspent, and the next pass (or the recovery sweep) decides again.
     if (action) {
-      await releaseAction(action.id).catch(() => {});
+      await releaseAction(action.id, err).catch(() => {});
     }
 
     // Budget tracker (internal circuit breaker) or a transient API/infra failure
@@ -395,6 +439,9 @@ async function runStewardOnClaim(
       console.warn(
         `[steward] transient failure on claim ${task.id}; requeued (not counted): ${msg}`
       );
+      // A pass with no ledger row (the fallback lane) has no row to record
+      // the fault from; a no-op for any failure that is not a deployment fault.
+      if (!action) await noteDeploymentFault(err, { surface: "the Steward's fallback lane" });
       return { status: "transient", claimId: task.id, trigger, ok: false, error: msg };
     }
 
@@ -472,6 +519,11 @@ export async function drainStewardQueue(
     opts.onResult?.(r);
     if (r.status === "empty") return { processed, budgetHit: false };
     if (r.status === "budget") return { processed, budgetHit: true };
+    if (r.status === "transient" && isDeploymentFaultReason(r.waitingOn)) {
+      // The row waits on a deployment fault and paces itself, with the
+      // funded rows of its kind and tier: go on to whatever else is covered.
+      continue;
+    }
     if (r.status === "transient") {
       // The API itself is failing (e.g. a credit outage). After a short run of
       // consecutive transient failures, stop the drain rather than churn through

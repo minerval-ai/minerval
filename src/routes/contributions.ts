@@ -20,6 +20,8 @@ import {
 import { getClaimById } from "../services/claim-service.js";
 import { enqueueContribution } from "../services/queue-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
+import { STATED_VIEW_CONTRIBUTION_TYPE } from "../schemas/common.js";
+import { statedViewForContribution } from "../services/stated-view-service.js";
 
 export async function contributionRoutes(app: FastifyInstance): Promise<void> {
   // POST /contributions
@@ -338,6 +340,7 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
             // endpoint shipped the whole contribution as an empty object.
             contribution: { type: "object", additionalProperties: true },
             review: { type: "object", nullable: true, additionalProperties: true },
+            stated_view: { type: "object", additionalProperties: true },
           },
         },
         404: {
@@ -363,9 +366,16 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
       }
 
       const review = await getReviewForContribution(contribution.id);
+      // A view stated to the graph (§4) carries more than its text: how the
+      // speaker stands, its stake, and what became of its reasons.
+      const statedView =
+        contribution.contributionType === STATED_VIEW_CONTRIBUTION_TYPE
+          ? await statedViewForContribution(contribution.id)
+          : null;
 
       return reply.send({
         contribution: formatContribution(contribution),
+        ...(statedView ? { stated_view: statedView } : {}),
         review: review
           ? {
               id: review.id,

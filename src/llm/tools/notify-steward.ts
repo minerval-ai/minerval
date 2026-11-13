@@ -22,7 +22,7 @@ import {
   type StewardMessage,
 } from "../../services/queue-service.js";
 import type { MessageSender } from "../../services/inbox-service.js";
-import { commissionNodePass } from "../../services/commission-service.js";
+import { commissionNodePass, commissionNoteField } from "../../services/commission-service.js";
 import { registerAwait } from "../../services/session-service.js";
 import { loadConfig } from "../../config.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
@@ -275,7 +275,7 @@ export async function executeNotifySteward(
             kind: kindOf.get(id)!,
             trigger,
             paid_owls: microUsdToOwls(budgetMicro),
-            ...(res.parked ? { note: res.parked.note } : {}),
+            ...commissionNoteField(res),
           });
           continue;
         }
@@ -285,7 +285,7 @@ export async function executeNotifySteward(
             kind: kindOf.get(id)!,
             trigger,
             joined_paid_pass: true,
-            ...(res.parked ? { note: res.parked.note } : {}),
+            ...commissionNoteField(res),
           });
           continue;
         }
@@ -359,8 +359,8 @@ export async function executeNotifySteward(
     if (notes > 0) {
       parts.push(
         payer
-          ? `${notes} went as notes: your budget did not cover them. Petition your ` +
-              `mandate (petition_mandate) if they should run now.`
+          ? `${notes} went as notes: your budget did not cover them. Petition for the ` +
+              `money (petition_mandate) if they should run now.`
           : `${notes} went as notes: this run isn't paid in a way that can pay for ` +
               `other work.`
       );

@@ -17,6 +17,7 @@
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { owlsToMicroUsd } from "./owl.js";
 import type { AttemptOutcome, AttemptSummary } from "./claim-extras-types.js";
 import { getMandateAllocationPolicy, getEffectiveAllocationPolicy } from "./allocation-policy-service.js";
@@ -344,8 +345,8 @@ export async function openAttempt(input: {
   const [row] = await rawQuery<AttemptRow>(
     `INSERT INTO proof_attempts
        (claim_id, formalization_id, action_id, grant_id, job_id, model, variant,
-        effort, status, is_calibration, ceiling_micro_usd)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10)
+        effort, status, is_calibration, ceiling_micro_usd, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'running', $9, $10, $11)
      RETURNING ${ATTEMPT_COLUMNS}`,
     [
       input.claimId,
@@ -358,6 +359,9 @@ export async function openAttempt(input: {
       effortForVariant(variant),
       input.planItem?.is_calibration === true,
       ceiling,
+      // The executor opens the attempt inside the ledger row's label, so
+      // this is the label of the work that asked for it (src/labels.ts).
+      currentLabel(),
     ]
   );
   return { ok: true, attempt: coerceAttempt(row!), costEstMicroUsd: costEst };
@@ -520,9 +524,9 @@ export async function recordAttemptLeanCheck(
     `INSERT INTO lean_checks
        (formalization_id, mode, kind, submission_sha256, submission_source,
         submitted_by, attempt_id, run_id, verdict, checks, diagnostics, truncated,
-        resource, pin_id, image_digest, checker_version, cost_micro_usd, finished_at)
+        resource, pin_id, image_digest, checker_version, cost_micro_usd, finished_at, sensitivity_label)
      VALUES ($1, 'attempt', $2, $3, $4, 'math_solver', $5, $6, $7, $8::jsonb, $9::jsonb,
-             $10, $11::jsonb, $12, $13, $14, $15, $16)
+             $10, $11::jsonb, $12, $13, $14, $15, $16, $17)
      ON CONFLICT (formalization_id, submission_sha256, checker_version, mode)
        DO UPDATE SET attempt_id = EXCLUDED.attempt_id, run_id = EXCLUDED.run_id,
                      verdict = EXCLUDED.verdict, checks = EXCLUDED.checks,
@@ -548,6 +552,9 @@ export async function recordAttemptLeanCheck(
       input.checkerVersion,
       Math.max(0, Math.round(input.costMicroUsd)),
       input.finishedAt ? new Date(input.finishedAt) : new Date(),
+      // Only a check stored for the first time takes this label; a re-run
+      // that lands on the stored row leaves the row's label alone.
+      currentLabel(),
     ]
   );
   return { ...row!, cost_micro_usd: Number(row!.cost_micro_usd) };

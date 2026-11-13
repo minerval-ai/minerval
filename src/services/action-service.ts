@@ -21,8 +21,23 @@
  */
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
+import { pendingPassLabel, runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
+import {
+  FAULT_RETRY_BASE_SECONDS,
+  FAULT_RETRY_MAX_SECONDS,
+  faultWait,
+  faultWaitSentence,
+  isDeploymentFaultReason,
+  isPlatformFaultReason,
+  platformFaultOf,
+  type FaultWait,
+  type FaultWaitRow,
+  type PlatformFaultReason,
+} from "./deployment-fault.js";
+import { errorProvider } from "../llm/errors.js";
+import { noteDeploymentFault } from "./deployment-fault-service.js";
 import {
   estimateConsistencyNodeCostMicroUsd,
   estimateLedgerKindCostMicroUsd,
@@ -31,7 +46,7 @@ import {
 } from "./cost-estimate-service.js";
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { reviewPassBudget, type OperatingPolicy } from "./operating-policy-service.js";
-import { capMicroUsd, owlsToMicroUsd } from "./owl.js";
+import { capMicroUsd, microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import {
   duePartitions,
@@ -43,6 +58,7 @@ import {
 import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { retiredNodeRefusal } from "./claim-lifecycle-service.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
 export { allocationDayUseSql } from "./day-use.js";
 
@@ -119,8 +135,8 @@ export type ActionKind =
   | "curate"
   // One Audit Agent run (#363): group `audit:<audit_runs.id>`, target_ref the
   // run id. Opened by requestAudit behind its dedupe key; funded by a
-  // mandate that values it (the platform's Governance mandate) or, for a
-  // prize audit, from the bounty's prize-review reserve. A mandate never
+  // mandate that values it (the platform's General mandate, as upkeep) or,
+  // for a prize audit, from the bounty's prize-review reserve. A mandate never
   // values or funds an audit whose subject it is (audit_runs.subject_grant_id).
   | "audit"
   // Take up one request (Part VIII): a Researcher run on the request as
@@ -153,8 +169,6 @@ export const ATTEMPT_GROUP = (formalizationId: string, n: number) =>
 /** The two solver variants every attempt group carries as siblings (§7.2). */
 export const ATTEMPT_VARIANTS = ["standard", "max"] as const;
 
-/** How often a mandate's Grantmaker takes a review pass. */
-const REVIEW_CADENCE_HOURS = 24;
 
 /**
  * A formalize item whose claim still has no published statement is wanted
@@ -186,6 +200,15 @@ export const COVERAGE_SQL = `
              WHERE al.exclusion_group = a.exclusion_group
                AND al.released_at IS NULL
                AND (al.action_id IS NULL OR al.action_id = a.id)), 0)`;
+
+/**
+ * Whether actions row `a` may be picked now (SQL fragment): it is not inside
+ * the wait a platform fault put on it (releaseAction; the wait and its
+ * reason are in deployment-fault.ts). Every executor's selection carries
+ * this, so a row a dead provider keeps failing is passed over for the rows
+ * behind it instead of being picked first every time (#971).
+ */
+export const NOT_WAITING_ON_FAULT_SQL = `(a.retry_after IS NULL OR a.retry_after <= now())`;
 
 /**
  * What an upsert that can reopen a finished row does with the row's label
@@ -263,11 +286,15 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
  * mid-run). A done/superseded/cancelled row reopens: fresh concerns are
  * fresh work, and fresh work needs fresh funding. A running row is left
  * alone. Returns the row id, or null when the anchor is not an active
- * claim.
+ * claim or no live request on it says what is wrong (#955): a curate row is
+ * opened only for a defect someone named.
  */
 export async function ensureCurateAction(anchorClaimId: string): Promise<string | null> {
   const [claim] = await rawQuery<{ text: string }>(
-    `SELECT text FROM claims WHERE id = $1 AND state = 'active'`,
+    `SELECT text FROM claims c
+      WHERE c.id = $1 AND c.state = 'active'
+        AND EXISTS (SELECT 1 FROM curation_requests r
+                     WHERE r.anchor_claim_id = c.id AND r.consumed_at IS NULL)`,
     [anchorClaimId]
   );
   if (!claim) return null;
@@ -304,8 +331,8 @@ export async function ensureCurateAction(anchorClaimId: string): Promise<string 
  * passed to a Steward.
  */
 export async function ensureRequestCurateAction(requestId: string): Promise<string | null> {
-  const [req] = await rawQuery<{ ask: string }>(
-    `SELECT ask FROM requests
+  const [req] = await rawQuery<{ ask: string; sensitivity_label: string }>(
+    `SELECT ask, sensitivity_label FROM requests
       WHERE id = $1 AND keeper_kind = 'curator'
         AND state NOT IN ('met', 'declined', 'withdrawn', 'moot')`,
     [requestId]
@@ -328,7 +355,9 @@ export async function ensureRequestCurateAction(requestId: string): Promise<stri
       requestId,
       `Judge work returned on a request: ${req.ask.slice(0, 260)}`,
       Math.max(1, Math.round(cost)),
-      currentLabel(),
+      // The request's label: judging work on a request is the request's
+      // work, whoever brought the work back (src/labels.ts).
+      req.sensitivity_label,
     ]
   );
   return row?.id ?? null;
@@ -382,8 +411,8 @@ export async function ensureAuditAction(input: {
  * Returns the open row's id, or null when there is none.
  */
 export async function ensureRequestActions(requestId: string): Promise<string | null> {
-  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null }>(
-    `SELECT ask, state, budget_micro_usd FROM requests WHERE id = $1`,
+  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null; sensitivity_label: string }>(
+    `SELECT ask, state, budget_micro_usd, sensitivity_label FROM requests WHERE id = $1`,
     [requestId]
   );
   if (!req || (CLOSED_REQUEST_STATES as readonly string[]).includes(req.state)) {
@@ -407,7 +436,12 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
                          THEN actions.status ELSE 'open' END,
            updated_at = now()
      RETURNING id`,
-    [group, variant, requestId, label, Math.max(1, Math.round(cost)), currentLabel()]
+    // The request's own label, not the caller's: the row is the request's
+    // next piece of work, and it is reopened from a route that sets a
+    // budget, from a keeper's pass and from the sweep as well as from the
+    // request's own runs. The scoping, the research and the review of a
+    // document that the row pays for all run at it (src/labels.ts).
+    [group, variant, requestId, label, Math.max(1, Math.round(cost)), req.sensitivity_label]
   );
   // Once a budget exists the scoping pass has nothing left to answer.
   if (variant === "full") {
@@ -479,8 +513,8 @@ export async function reconcileActions(): Promise<{
   /** Mandates whose plan could not be materialized this sweep (logged). */
   plansFailed: number;
 }> {
-  const pending = await rawQuery<{ id: string }>(
-    `SELECT c.id FROM claims c
+  const pending = await rawQuery<{ id: string; sensitivity_label: string }>(
+    `SELECT c.id, c.sensitivity_label FROM claims c
       WHERE c.state = 'active' AND c.steward_state = 'pending'
         AND NOT EXISTS (SELECT 1 FROM actions a
                          WHERE a.exclusion_group = 'assess:' || c.id::text
@@ -491,7 +525,17 @@ export async function reconcileActions(): Promise<{
     // One claim's failure (a bad row, a transient DB error) must not take
     // the rest of the sweep with it: log and move on (#416).
     try {
-      await ensureAssessActions(row.id);
+      // The sweep starts from the claim, not from a piece of work. A claim
+      // is pending because of the messages waiting on it, so the rows are
+      // opened at the label those messages carry when they agree on one,
+      // and the pass they pay for runs at it (pendingPassLabel in
+      // label-service.ts). With no message waiting, or with messages of
+      // more than one label, the rows take the claim's own label: a floor,
+      // under which work on a restricted claim is never opened as public.
+      // The pending slot is one per claim and does not say which label a
+      // pass was asked for at; one slot per label is later work.
+      const label = await pendingPassLabel(row.id, row.sensitivity_label);
+      await runAtLabel(label, `claim ${row.id}`, () => ensureAssessActions(row.id));
     } catch (err) {
       console.error(
         `[reconcile] ensureAssessActions failed for claim ${row.id}: ${
@@ -508,78 +552,12 @@ export async function reconcileActions(): Promise<{
   );
   const ctx = newMaterializeContext();
   let plansFailed = 0;
+  // A mandate decides for its work: the planning row, the review row and
+  // every row its plan becomes are opened at the mandate's label
+  // (runAtMandateLabel in label-service.ts), not at the sweep's, which has
+  // none, and not at the label of whichever claim a plan item names.
   for (const g of grants) {
-    // A mandate whose Grantmaker passes have a share of the budget of their
-    // own (a decomposition: claim-mandate-service.ts) budgets each pass from
-    // what the share has left, and opens no review once it is spent.
-    const share = await grantmakerShareLeftMicroUsd(g);
-    if (g.status === "planning") {
-      await rawQuery(
-        `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
-         VALUES ('grant_planning', $1, 'standard', $2, $3, $4, $5)
-         ON CONFLICT (exclusion_group, variant) DO UPDATE
-           SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-               sensitivity_label = EXCLUDED.sensitivity_label,
-               updated_at = now()
-           -- A grant still in 'planning' with a closed planning action
-           -- wants a fresh run (a failed write, a pushed-back plan).
-           WHERE actions.status NOT IN ('open', 'running')`,
-        [
-          PLANNING_GROUP(g.id),
-          g.id,
-          `Planning run for the mandate "${g.name}"`,
-          await reviewPassBudgetMicroUsd(g, "planning", share),
-          currentLabel(),
-        ]
-      );
-    }
-
-    // The mandate's periodic review pass — its Grantmaker stewarding the
-    // mandate with discretion. Every active mandate gets one, the General
-    // mandate included: its valuations come from a formula rather than from
-    // per-action judgment, but the formula's knobs are exactly the kind of
-    // thing a steward should revise as evidence about allocation itself
-    // accumulates, and it has the same pacing, regranting and scope
-    // decisions to make as any other. Exempting it left the platform's own
-    // lane as the one mandate no agent was ever asked to think about.
-    if (g.status === "active" && share && share.leftMicroUsd <= 0) {
-      await rawQuery(
-        `UPDATE actions SET status = 'cancelled', updated_at = now()
-          WHERE exclusion_group = $1 AND status = 'open'`,
-        [REVIEW_GROUP(g.id)]
-      );
-    } else if (g.status === "active") {
-      await rawQuery(
-        `INSERT INTO actions
-           (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
-         VALUES ('mandate_review', $1, 'standard', $2, $3, $4, $5)
-         ON CONFLICT (exclusion_group, variant) DO UPDATE
-           SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-               sensitivity_label = EXCLUDED.sensitivity_label,
-               updated_at = now()
-           WHERE actions.status IN ('done', 'superseded', 'cancelled')
-             AND actions.updated_at < now() - make_interval(hours => ${REVIEW_CADENCE_HOURS})`,
-        [
-          REVIEW_GROUP(g.id),
-          g.id,
-          `Mandate review for "${g.name}"`,
-          await reviewPassBudgetMicroUsd(g, "review", share),
-          currentLabel(),
-        ]
-      );
-    }
-
-    // The plan itself: every item becomes a ledger row or carries a stated
-    // reason why it cannot (materializeGrantPlan). One mandate's failure is
-    // logged and reported, never allowed to abort the other mandates' plans
-    // (#416: a silent abort here left plan items "queued" for days).
-    try {
-      await materializeGrantPlan(g, ctx);
-    } catch (err) {
-      plansFailed++;
-      await reportPlanFailure(g, err);
-    }
+    if (!(await runAtMandateLabelOutsideAnyRun(g.id, () => reconcileMandate(g, ctx)))) plansFailed++;
   }
 
   // A formalize row is pointless once the claim carries a published
@@ -608,8 +586,8 @@ export async function reconcileActions(): Promise<{
   // queued for it. The funding side (fundGrantSelfActions) bounds runs
   // per day; this only says what is wanted.
   const lookoutCost = capMicroUsd("lookout_run");
-  const dueLookouts = await rawQuery<{ id: string; title: string }>(
-    `SELECT l.id, l.title
+  const dueLookouts = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+    `SELECT l.id, l.title, l.sensitivity_label
        FROM lookouts l
        JOIN grants g ON g.id = l.grant_id
       WHERE l.status = 'active' AND g.status = 'active'
@@ -628,7 +606,8 @@ export async function reconcileActions(): Promise<{
              sensitivity_label = EXCLUDED.sensitivity_label,
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost, currentLabel()]
+      // A lookout decides for its work: its run is opened at its label.
+      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost, l.sensitivity_label]
     );
   }
 
@@ -638,8 +617,8 @@ export async function reconcileActions(): Promise<{
   // (that spacing is its audience's, set for their attention; a heartbeat
   // and a poke are not held by it). What runs is the mandate's money.
   const correspondentCost = capMicroUsd("correspondent_run");
-  const dueCorrespondents = await rawQuery<{ id: string; title: string }>(
-    `SELECT c.id, c.title
+  const dueCorrespondents = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+    `SELECT c.id, c.title, c.sensitivity_label
        FROM correspondents c
        JOIN grants g ON g.id = c.grant_id
       WHERE c.status = 'active' AND g.status = 'active'
@@ -661,7 +640,8 @@ export async function reconcileActions(): Promise<{
              sensitivity_label = EXCLUDED.sensitivity_label,
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost, currentLabel()]
+      // And so does a correspondent: its run is opened at its label.
+      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost, c.sensitivity_label]
     );
   }
 
@@ -704,6 +684,11 @@ export async function reconcileActions(): Promise<{
         AND al.released_at IS NULL AND al.grant_id IS NOT NULL
         AND al.spent_micro_usd = 0`
   );
+  // The officers' waiting curation items follow their rows (#955): retired
+  // with the reason when the row closed, rewritten from its live requests.
+  await import("./maintenance-funding.js")
+    .then((m) => m.refreshCurationInboxItems())
+    .catch((err) => console.warn("[reconcile] refreshing curation items failed:", err instanceof Error ? err.message : err));
 
   // Close groups whose claim left the candidate set (assessed elsewhere,
   // archived, or mid-run on the express lane long enough to have finished).
@@ -748,6 +733,95 @@ export async function reconcileActions(): Promise<{
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
+}
+
+/**
+ * One live mandate's rows in the sweep: its planning row while it is being
+ * planned, its review row on the review cadence, and its plan. Called at
+ * the mandate's label. Returns false when the plan could not be
+ * materialized (logged and reported).
+ */
+async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promise<boolean> {
+  // A mandate whose Grantmaker passes have a share of the budget of their
+  // own (a decomposition: claim-mandate-service.ts) budgets each pass from
+  // what the share has left, and opens no review once it is spent.
+  const share = await grantmakerShareLeftMicroUsd(g);
+  if (g.status === "planning") {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('grant_planning', $1, 'standard', $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             sensitivity_label = EXCLUDED.sensitivity_label,
+             updated_at = now()
+         -- A grant still in 'planning' with a closed planning action
+         -- wants a fresh run (a failed write, a pushed-back plan).
+         WHERE actions.status NOT IN ('open', 'running')`,
+      [
+        PLANNING_GROUP(g.id),
+        g.id,
+        `Planning run for the mandate "${g.name}"`,
+        await reviewPassBudgetMicroUsd(g, "planning", share),
+        currentLabel(),
+      ]
+    );
+  }
+
+  // The mandate's review pass: its Grantmaker's session, opened fresh when
+  // none is live — its Grantmaker stewarding the mandate with discretion. Every active mandate gets one, the General
+  // mandate included: its valuations come from a formula rather than from
+  // per-action judgment, but the formula's knobs are exactly the kind of
+  // thing a steward should revise as evidence about allocation itself
+  // accumulates, and it has the same pacing, regranting and scope
+  // decisions to make as any other. Exempting it left the platform's own
+  // lane as the one mandate no agent was ever asked to think about.
+  if (g.status === "active" && share && share.leftMicroUsd <= 0) {
+    await rawQuery(
+      `UPDATE actions SET status = 'cancelled', updated_at = now()
+        WHERE exclusion_group = $1 AND status = 'open'`,
+      [REVIEW_GROUP(g.id)]
+    );
+  } else if (g.status === "active") {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('mandate_review', $1, 'standard', $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             sensitivity_label = EXCLUDED.sensitivity_label,
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')
+           -- A mandate's Grantmaker works in one long session that wakes
+           -- on what it subscribed to and on the check-ins it set
+           -- (mandate-review.ts). A fresh pass opens only when it has
+           -- none live: the first, after fresh_start, or after a session
+           -- expired or closed.
+           AND NOT EXISTS (
+             SELECT 1 FROM grants gg JOIN agent_sessions sx ON sx.id = gg.grantmaker_session_id
+              WHERE gg.id::text = EXCLUDED.target_ref
+                AND sx.status IN ('running', 'waiting', 'ready'))`,
+      [
+        REVIEW_GROUP(g.id),
+        g.id,
+        `Mandate review for "${g.name}"`,
+        await reviewPassBudgetMicroUsd(g, "review", share),
+        currentLabel(),
+      ]
+    );
+  }
+
+  // The plan itself: every item becomes a ledger row or carries a stated
+  // reason why it cannot (materializeGrantPlan). One mandate's failure is
+  // logged and reported, never allowed to abort the other mandates' plans
+  // (#416: a silent abort here left plan items "queued" for days).
+  try {
+    await materializeGrantPlan(g, ctx);
+  } catch (err) {
+    await reportPlanFailure(g, err);
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -1083,6 +1157,11 @@ export interface PlanItemLedger {
    */
   children?: string[];
   /**
+   * deepen only: the node's unassessed children the item has not been able
+   * to commission yet, by id, so its standing names them (#961).
+   */
+  children_waiting?: string[];
+  /**
    * deepen only, while the item still waits on its children: when the
    * node's own pass was seen finished.
    */
@@ -1109,6 +1188,12 @@ export interface MaterializablePlanItem {
   kind?: string;
   text?: string;
   contribution_id?: string;
+  /**
+   * assess/reassess/deepen: set when the Grantmaker withdrew the item
+   * (amend_plan_items). It orders nothing more, and what it had placed and
+   * not yet started is released (plan-amend-service.ts).
+   */
+  withdrawn?: { at: string; note?: string; returned_owls?: number };
   ledger?: PlanItemLedger;
   [key: string]: unknown;
 }
@@ -1241,11 +1326,18 @@ async function formalizeToolGap(claimId: string): Promise<string | null> {
 /** The ledger status one exclusion group (or one row) reads as. */
 async function groupLedger(
   where: { group: string } | { actionId: string }
-): Promise<{ status: "open" | "running" | "done" | "cancelled"; action_id: string; exclusion_group: string } | null> {
+): Promise<{
+  status: "open" | "running" | "done" | "cancelled";
+  action_id: string;
+  exclusion_group: string;
+  /** The row's wait on a platform fault, when it is open and has one. */
+  fault?: FaultWait;
+} | null> {
+  type Row = { id: string; status: string; exclusion_group: string } & FaultWaitRow;
   const rows =
     "group" in where
-      ? await rawQuery<{ id: string; status: string; exclusion_group: string }>(
-          `SELECT id, status, exclusion_group FROM actions
+      ? await rawQuery<Row>(
+          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after FROM actions
             WHERE exclusion_group = $1
             ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'open' THEN 1
                                  WHEN 'done' THEN 2 WHEN 'superseded' THEN 3
@@ -1253,8 +1345,9 @@ async function groupLedger(
             LIMIT 1`,
           [where.group]
         )
-      : await rawQuery<{ id: string; status: string; exclusion_group: string }>(
-          `SELECT id, status, exclusion_group FROM actions WHERE id = $1`,
+      : await rawQuery<Row>(
+          `SELECT id, status, exclusion_group, fault_reason, fault_since, fault_attempts, retry_after
+             FROM actions WHERE id = $1`,
           [where.actionId]
         );
   const row = rows[0];
@@ -1263,7 +1356,8 @@ async function groupLedger(
     row.status === "running" || row.status === "open" || row.status === "cancelled"
       ? row.status
       : "done";
-  return { status, action_id: row.id, exclusion_group: row.exclusion_group };
+  const fault = status === "open" ? faultWait(row) : null;
+  return { status, action_id: row.id, exclusion_group: row.exclusion_group, ...(fault ? { fault } : {}) };
 }
 
 interface ClaimStanding {
@@ -1312,15 +1406,20 @@ const nowIso = () => new Date().toISOString();
 const waiting = (reason: string): PlanItemLedger => ({ status: "waiting", reason, checked_at: nowIso() });
 const blocked = (reason: string): PlanItemLedger => ({ status: "blocked", reason, checked_at: nowIso() });
 const fromRow = (
-  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string },
+  row: { status: PlanItemLedgerStatus; action_id: string; exclusion_group: string; fault?: FaultWait },
   reason?: string
-): PlanItemLedger => ({
-  status: row.status,
-  action_id: row.action_id,
-  exclusion_group: row.exclusion_group,
-  ...(reason ? { reason } : {}),
-  checked_at: nowIso(),
-});
+): PlanItemLedger => {
+  // An open row a platform fault is holding says so (#971): the item reads
+  // open, with the reason a payer would otherwise have to guess.
+  const why = reason ?? (row.status === "open" && row.fault ? faultWaitSentence(row.fault) : undefined);
+  return {
+    status: row.status,
+    action_id: row.action_id,
+    exclusion_group: row.exclusion_group,
+    ...(why ? { reason: why } : {}),
+    checked_at: nowIso(),
+  };
+};
 
 /**
  * Materialize one mandate's whole plan: cursor bookkeeping and ingest rows
@@ -1402,6 +1501,8 @@ export async function materializeGrantPlan(
     };
     for (const [claimId, indices] of attemptItems) {
       try {
+        // Rows the mandate's plan asks for: at the mandate's label, as for
+        // a formalize row below.
         attemptResults.set(
           claimId,
           await ensureAttemptActions(claimId, indices.length, costs, {
@@ -1420,15 +1521,16 @@ export async function materializeGrantPlan(
   }
 
   const ensuredFormalize = new Set<string>();
-  // Standing orders are placed in plan order: once today's rate has turned
-  // one away, the later ones wait behind it (standing-order-service.ts).
-  const orderQueue = { rateHeld: false };
+  // Standing orders are asked for in plan order, and each is placed when
+  // the pace's room covers it: one the pace turns away waits without holding
+  // the ones after it (#956). The queue carries the room across the look.
+  const orderQueue: { rateRoomMicroUsd: number | null } = { rateRoomMicroUsd: null };
   let started = -1;
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
     let ledger: PlanItemLedger;
     try {
-      ledger = early.get(i) ?? await materializePlanItem(item, i, {
+      ledger = (await materializeWithdrawn(item, i, items, g.id)) ?? early.get(i) ?? await materializePlanItem(item, i, {
         grantId: g.id,
         orderQueue,
         ctx,
@@ -1468,12 +1570,14 @@ export async function materializeGrantPlan(
         [g.id, ["items", String(i), "ledger"], JSON.stringify(ledger), i]
       );
     }
-    // Work that has started: it ran, is running, was retired, or has the
-    // mandate's commission on it.
+    // Work that has started: it ran, is running, or was retired on the
+    // ledger. One meaning everywhere an agent meets the word (adjust_plan,
+    // amend_plan_items): an order that is placed and still waiting its turn
+    // has not started, so its Grantmaker can still change or withdraw it.
     if (
       ledger.status === "running" || ledger.status === "done" ||
       (ledger.status === "cancelled" && ledger.action_id) ||
-      (ledger.status === "open" && ledger.order)
+      ledger.ran_at
     ) {
       started = i;
     }
@@ -1499,8 +1603,77 @@ function sameLedger(a: PlanItemLedger | undefined, b: PlanItemLedger): boolean {
     (a.action_id ?? null) === (b.action_id ?? null) &&
     (a.exclusion_group ?? null) === (b.exclusion_group ?? null) &&
     JSON.stringify(a.order ?? null) === JSON.stringify(b.order ?? null) &&
-    JSON.stringify(a.children ?? null) === JSON.stringify(b.children ?? null)
+    JSON.stringify(a.children ?? null) === JSON.stringify(b.children ?? null) &&
+    JSON.stringify(a.children_waiting ?? null) === JSON.stringify(b.children_waiting ?? null)
   );
+}
+
+const STEWARDING_KINDS = new Set(["assess", "reassess", "deepen"]);
+
+/**
+ * The standing of a stewarding item its Grantmaker withdrew
+ * (amend_plan_items), or null for any other item. What the item had placed
+ * and not yet started is released, on every look until nothing is left, so
+ * a withdrawal that raced a placement still ends with the money back. A
+ * pass that was already running finishes: money that is being spent is not
+ * taken from under a run.
+ */
+async function materializeWithdrawn(
+  item: MaterializablePlanItem,
+  index: number,
+  items: readonly MaterializablePlanItem[],
+  grantId: string
+): Promise<PlanItemLedger | null> {
+  if (!item.withdrawn || !STEWARDING_KINDS.has(item.action)) return null;
+  const prior = item.ledger;
+  // Settled: the work ran before the withdrawal, or the withdrawal is recorded.
+  if (prior?.status === "done") return prior;
+  if (prior?.status === "cancelled" && !prior.action_id) return prior;
+  const orders = await import("./standing-order-service.js");
+  const said =
+    `withdrawn by the mandate's Grantmaker on ${String(item.withdrawn.at).slice(0, 10)}` +
+    (item.withdrawn.note ? ` (${item.withdrawn.note})` : "");
+  // What the withdrawal itself released (plan-amend-service.ts), plus
+  // anything placed since: a sweep can race the tool by one placement.
+  let back = Math.round(Number(item.withdrawn.returned_owls ?? 0) * loadConfig().owlCostMicroUsd);
+  if (item.claim_id) {
+    if (prior?.order) back += await orders.releaseStandingOrder(grantId, item.claim_id);
+    for (const child of prior?.children ?? []) {
+      // A child another item of this plan ordered in its own right keeps that order.
+      const theirs = items.some(
+        (other, j) => j !== index && other.claim_id === child && !other.withdrawn && other.ledger?.order
+      );
+      if (!theirs) back += await orders.releaseStandingOrder(grantId, child);
+    }
+  }
+  const row = prior?.action_id ? await groupLedger({ actionId: prior.action_id }) : null;
+  if (prior?.ran_at || (prior?.order && row?.status === "done")) {
+    return {
+      status: "done",
+      ...(prior.action_id ? { action_id: prior.action_id } : {}),
+      ...(prior.exclusion_group ? { exclusion_group: prior.exclusion_group } : {}),
+      ...(prior.order ? { order: prior.order } : {}),
+      ...(prior.children?.length ? { children: prior.children } : {}),
+      reason: `${said}, after its node's pass had run; nothing more is ordered for it`,
+      checked_at: nowIso(),
+    };
+  }
+  if (prior?.order && row?.status === "running") {
+    return {
+      ...fromRow(row, `${said}, after its pass had begun: that pass finishes and settles, and nothing more is ordered for it`),
+      order: prior.order,
+      ...(prior.children?.length ? { children: prior.children } : {}),
+    };
+  }
+  return {
+    status: "cancelled",
+    reason:
+      `${said} before its pass began. ` +
+      (back > 0
+        ? `The ${microUsdToOwls(back)} owls it held are back in the escrow and in the pace's room.`
+        : "It held no money."),
+    checked_at: nowIso(),
+  };
 }
 
 async function materializePlanItem(
@@ -1508,7 +1681,7 @@ async function materializePlanItem(
   index: number,
   o: {
     grantId: string;
-    orderQueue: { rateHeld: boolean };
+    orderQueue: { rateRoomMicroUsd: number | null };
     ctx: MaterializeContext;
     cursor: number;
     active: boolean;
@@ -1564,11 +1737,14 @@ async function materializePlanItem(
   const claim = await claimStanding(item.claim_id);
   if (!claim) return blocked(`claim ${item.claim_id} does not exist`);
   if (claim.state !== "active") {
-    // A merged node names its survivor (#884), so the plan can be rewritten for it.
+    // A merged node names its survivor (#884), and any other retired node
+    // its reason and successors (#962), so the plan can be rewritten for them.
     const merged = await mergedAliasRefusal(item.claim_id);
+    const retired = merged ? null : await retiredNodeRefusal(item.claim_id).catch(() => null);
+    const why = merged?.message ?? retired;
     return blocked(
       `claim ${item.claim_id} is ${claim.state}, not active; the ledger only carries work on active claims` +
-        (merged ? `. ${merged.message}` : "")
+        (why ? `. ${why}` : "")
     );
   }
 
@@ -1661,16 +1837,17 @@ async function materializePlanItem(
 
     // The item is a standing order (#849): the mandate commissions the pass
     // whole, at the item's budget or the row's estimate, on the item's
-    // tier. What the day's rate cannot cover yet waits and is asked for
+    // tier. What the pace cannot cover yet waits and is asked for
     // again; what could never fit is blocked, with the figures either way.
+    // An item that names no tier (one stored before items had to, #956)
+    // places nothing new: what it already placed is found, the rest reads
+    // blocked until its Grantmaker names one.
     const tier = orders.orderTier(item.variant);
     const budgetMicroUsd =
       Number(item.budget_owls) > 0 ? Math.round(Number(item.budget_owls) * loadConfig().owlCostMicroUsd) : null;
     let own: PlanItemLedger;
     if (ran) {
       own = ran;
-    } else if (o.orderQueue.rateHeld) {
-      own = waiting(orders.HELD_BEHIND_EARLIER);
     } else {
       const res = await orders.placeStandingOrder({
         grantId: o.grantId,
@@ -1683,11 +1860,11 @@ async function materializePlanItem(
         brief:
           `A funded mandate scheduled a ${kind} pass on this claim.` +
           (kind === "deepen" ? " Its deferred subclaims were released into the queue." : ""),
+        queue: o.orderQueue,
       });
       if (res.state === "blocked") {
         own = blocked(res.reason);
       } else if (res.state === "waiting") {
-        if (res.rate) o.orderQueue.rateHeld = true;
         own = waiting(res.reason);
       } else {
         const row = await groupLedger({ actionId: res.actionId });
@@ -1721,16 +1898,21 @@ async function materializePlanItem(
 
     // deepen's second half: the node's deferred children are released
     // (#98's brake, lifted for them by a funder's say-so), and each child
-    // waiting for a pass gets one from the mandate, like the node's own.
-    // One level; idempotent, so it runs on every sweep until every child
-    // is dealt with, which catches the children the node's pass mints.
-    await rawQuery(
-      `UPDATE claims SET steward_state = 'pending', updated_at = now()
-        WHERE state = 'active' AND steward_state = 'deferred'
-          AND id IN (SELECT child_claim_id FROM claim_relationships
-                      WHERE parent_claim_id = $1)`,
-      [claim.id]
-    );
+    // that carries no assessment and is queued for a pass gets one from the
+    // mandate, like the node's own. A child that has an assessment is left
+    // alone, however it came to be queued (#961). One level; idempotent, so
+    // it runs on every sweep until every child is dealt with, which catches
+    // the children the node's pass mints. An item that names no tier
+    // releases and orders nothing.
+    if (tier) {
+      await rawQuery(
+        `UPDATE claims SET steward_state = 'pending', updated_at = now()
+          WHERE state = 'active' AND steward_state = 'deferred'
+            AND id IN (SELECT child_claim_id FROM claim_relationships
+                        WHERE parent_claim_id = $1)`,
+        [claim.id]
+      );
+    }
     const kids = await orders.orderChildPasses({
       grantId: o.grantId,
       parentId: claim.id,
@@ -1739,25 +1921,43 @@ async function materializePlanItem(
       already: item.ledger?.children ?? [],
       queue: o.orderQueue,
     });
-    const withChildren = (l: PlanItemLedger, reason?: string): PlanItemLedger => ({
-      ...l,
-      ...(reason ? { reason } : {}),
-      ...(kids.children.length > 0 ? { children: kids.children } : {}),
-    });
-    const pending = kids.blocked ?? kids.waiting;
+    const withChildren = (l: PlanItemLedger, reason?: string): PlanItemLedger => {
+      const { reason: _own, children_waiting: _was, ...rest } = l;
+      return {
+        ...rest,
+        ...(reason ? { reason } : {}),
+        ...(kids.children.length > 0 ? { children: kids.children } : {}),
+        ...(kids.notOrdered.length > 0 ? { children_waiting: kids.notOrdered } : {}),
+      };
+    };
+    const say = (...parts: Array<string | null | undefined>) =>
+      parts.filter(Boolean).join(" Also: ") || undefined;
     if (own.status === "done") {
       // The node's pass ran; the item is done once its children are ordered.
       const ranAt = own.ran_at ?? nowIso();
-      if (kids.blocked) {
-        return withChildren({ ...own, status: "blocked", ran_at: ranAt }, `the pass on the node ran; ${kids.blocked}`);
-      }
       if (kids.waiting) {
-        return withChildren({ ...own, status: "waiting", ran_at: ranAt }, `the pass on the node ran; ${kids.waiting}`);
+        return withChildren(
+          { ...own, status: "waiting", ran_at: ranAt },
+          say(`the pass on the node ran; ${kids.waiting}`, kids.blocked, kids.note)
+        );
+      }
+      if (kids.blocked) {
+        return withChildren(
+          { ...own, status: "blocked", ran_at: ranAt },
+          say(`the pass on the node ran; ${kids.blocked}`, kids.note)
+        );
       }
       const { ran_at: _seen, ...finished } = own;
-      return withChildren(finished);
+      return withChildren(finished, say(own.reason, kids.note));
     }
-    return withChildren(own, pending ? [own.reason, pending].filter(Boolean).join(" Also: ") : own.reason);
+    if (!tier && own.status === "blocked" && kids.notOrdered.length > 0) {
+      // One reason for the node and its children: nothing is ordered until a tier is named.
+      return withChildren(
+        own,
+        say(`${own.reason}. The same holds for its ${kids.notOrdered.length} unassessed children`, kids.note)
+      );
+    }
+    return withChildren(own, say(own.reason, kids.waiting, kids.blocked, kids.note));
   }
 
   // A kind whose feature this deployment has switched off opens no work
@@ -1786,7 +1986,11 @@ async function materializePlanItem(
     // One statement per claim at a time (§5.4): a second formalize item on
     // the same claim reads the same row rather than upserting it again.
     if (!o.ensuredFormalize.has(claim.id)) {
-      await ensureFormalizeAction(claim.id, await o.ctx.formalizeCostMicroUsd());
+      // The row is the mandate's work and is opened at the mandate's label,
+      // which whoever materializes the plan has set (materializePlanItems,
+      // reconcileActions); from inside a Grantmaker's run it is that run's.
+      const cost = await o.ctx.formalizeCostMicroUsd();
+      await ensureFormalizeAction(claim.id, cost);
       o.ensuredFormalize.add(claim.id);
     }
     const row = await groupLedger({ group: FORMALIZE_GROUP(claim.id) });
@@ -2167,7 +2371,12 @@ export async function materializePlanItems(
     [grantId]
   );
   if (!g) return [];
-  const outcomes = await materializeGrantPlan(g);
+  // A mandate decides for its work. The scheduler materializes a plan
+  // outside any run, and the rows the plan becomes (standing orders, formal
+  // statements, attempts, ingests, sweeps, the note of a source in its
+  // pipeline) are opened at the mandate's label. From inside the
+  // Grantmaker's run they are that run's, which was opened at the same one.
+  const outcomes = await runAtMandateLabelOutsideAnyRun(g.id, () => materializeGrantPlan(g));
   if (!indices) return outcomes;
   const wanted = new Set(indices);
   return outcomes.filter((o) => wanted.has(o.index));
@@ -2295,9 +2504,9 @@ export function actionBudgetMicroUsd(action: {
 
 /**
  * The next action the mechanism says to run, for the given kinds: among
- * covered open actions, resolve each exclusion group to its winner (most
- * backing, tie → cheapest), then take the winner with the most backing
- * overall. Pure function of allocations; no valuations involved.
+ * open actions someone has commissioned, resolve each exclusion group to its
+ * winner (most backing, tie → cheapest), then take the winner with the most
+ * backing overall. Pure function of commissions; no valuations involved.
  */
 export async function nextRunnableAction(
   kinds: ActionKind[]
@@ -2310,7 +2519,10 @@ export async function nextRunnableAction(
        FROM actions a
       WHERE a.status = 'open' AND a.kind = ANY($1)
         AND ${COVERAGE_SQL} > 0
-        AND (${COVERAGE_SQL} >= a.cost_est_micro_usd OR ${COMMISSIONED_SQL})
+        -- Every run is commissioned: whole, from one payer, at a budget
+        -- someone set. Money placed without a commission funds nothing.
+        AND ${COMMISSIONED_SQL}
+        AND ${NOT_WAITING_ON_FAULT_SQL}
       ORDER BY coverage_micro_usd DESC, a.updated_at ASC
       LIMIT 20`,
     [kinds]
@@ -2361,12 +2573,135 @@ export async function claimAction(actionId: string, atLabel?: string): Promise<b
   return rows.length > 0;
 }
 
-/** Return a running action to open (transient failure; not its fault). */
-export async function releaseAction(actionId: string): Promise<void> {
-  await rawQuery(
-    `UPDATE actions SET status = 'open', updated_at = now()
-      WHERE id = $1 AND status = 'running'`,
+/**
+ * Return a running action to open: its run did not happen, through no fault
+ * of the work, and coverage is unspent.
+ *
+ * `cause` is the failure that ended the attempt, when there was one. If it
+ * is a platform fault (a provider out of credits, rejected credentials, a
+ * provider that stayed unavailable through the client's retries), the row
+ * waits before the executors pick it again and says so: the fault's public
+ * class, since when, and when it is tried next (deployment-fault.ts, which
+ * also says why this is a wait and why money cannot pace it). The funded
+ * rows of the same kind and tier wait with it. The wait doubles with each
+ * consecutive fault on that kind of work, from 30 seconds to 10 minutes,
+ * and ends as soon as one of the rows runs (completeAction). A deployment
+ * fault is also recorded for maintainers (deployment-fault-service.ts).
+ * Returns the fault's class, or null when the row is simply open again.
+ *
+ * With no cause, or a cause that is not a platform fault (a budget stop, a
+ * busy claim), the row is simply open again.
+ */
+export async function releaseAction(actionId: string, cause?: unknown): Promise<PlatformFaultReason | null> {
+  const reason = cause === undefined ? null : platformFaultOf(cause);
+  if (!reason) {
+    await rawQuery(
+      `UPDATE actions SET status = 'open', updated_at = now()
+        WHERE id = $1 AND status = 'running'`,
+      [actionId]
+    );
+    return null;
+  }
+  // The count is the kind's, not the row's: whichever row is tried next
+  // continues the same doubling.
+  const [released] = await rawQuery<{ id: string }>(
+    `UPDATE actions t
+        SET status = 'open', updated_at = now(),
+            fault_reason = $2,
+            fault_since = COALESCE(t.fault_since, now()),
+            fault_attempts = lane.attempts + 1,
+            retry_after = now() + make_interval(secs =>
+              LEAST($4::int, $3::int * power(2, LEAST(lane.attempts, 10)))::int)
+       FROM (SELECT COALESCE(MAX(o.fault_attempts), 0) AS attempts
+               FROM actions me JOIN actions o ON o.kind = me.kind AND o.variant = me.variant
+                                             AND o.status IN ('open', 'running')
+              WHERE me.id = $1) lane
+      WHERE t.id = $1 AND t.status = 'running'
+      RETURNING t.id`,
+    [actionId, reason, FAULT_RETRY_BASE_SECONDS, FAULT_RETRY_MAX_SECONDS]
+  );
+  if (released) {
+    // The funded rows of the same kind and tier wait with it (the same
+    // model serves them), and say so.
+    await rawQuery(
+      `UPDATE actions a
+          SET fault_reason = t.fault_reason,
+              fault_since = COALESCE(a.fault_since, t.fault_since),
+              fault_attempts = t.fault_attempts,
+              retry_after = t.retry_after
+         FROM actions t
+        WHERE t.id = $1 AND a.id <> t.id AND a.status = 'open'
+          AND a.kind = t.kind AND a.variant = t.variant
+          AND ${COVERAGE_SQL} > 0`,
+      [actionId]
+    );
+  }
+  // The client's seam has already recorded a fault it stamped with a provider.
+  if (isDeploymentFaultReason(reason) && !errorProvider(cause)) {
+    await noteDeploymentFault(cause, { surface: `ledger action ${actionId}` });
+  }
+  return reason;
+}
+
+/**
+ * The class of the platform fault `actionId` is waiting on right now, or
+ * null: the row is open, carries a fault, and its next attempt is still
+ * ahead. An executor reads it after a transient failure to tell a row that
+ * now paces itself (the drain may go on to other work) from one that could
+ * be picked again at once (the drain must stop, as it always has).
+ */
+export async function actionWaitingOn(actionId: string): Promise<PlatformFaultReason | null> {
+  const [row] = await rawQuery<{ fault_reason: string | null }>(
+    `SELECT fault_reason FROM actions
+      WHERE id = $1 AND status = 'open' AND fault_reason IS NOT NULL AND retry_after > now()`,
     [actionId]
+  );
+  return isPlatformFaultReason(row?.fault_reason) ? row.fault_reason : null;
+}
+
+/**
+ * A row that has just been paid for joins the wait its kind and tier are
+ * already in, if they are in one: the same model serves it, so trying it at
+ * once would be one more refused call, and its payer should read why it is
+ * not starting. Returns the wait it joined, or null when there is none.
+ */
+export async function joinFaultWait(actionId: string): Promise<FaultWait | null> {
+  const [row] = await rawQuery<FaultWaitRow>(
+    `UPDATE actions a
+        SET fault_reason = t.fault_reason, fault_since = COALESCE(a.fault_since, t.fault_since),
+            fault_attempts = t.fault_attempts, retry_after = t.retry_after
+       FROM (SELECT o.fault_reason, o.fault_since, o.fault_attempts, o.retry_after
+               FROM actions me JOIN actions o ON o.kind = me.kind AND o.variant = me.variant
+              WHERE me.id = $1 AND o.id <> me.id AND o.status = 'open'
+                AND o.fault_reason IS NOT NULL AND o.retry_after > now()
+              ORDER BY o.retry_after DESC LIMIT 1) t
+      WHERE a.id = $1 AND a.status = 'open'
+      RETURNING a.fault_reason, a.fault_since, a.fault_attempts, a.retry_after`,
+    [actionId]
+  );
+  return faultWait(row);
+}
+
+/**
+ * A row that waited on a platform fault has just run, so the fault is over
+ * for its kind of work: the rows of the same kind and tier stop waiting, and
+ * rows of other kinds waiting on the same class are tried now rather than at
+ * the end of their own wait (one whose provider is still down fails and
+ * waits again, having cost one refused call).
+ */
+async function endFaultWaits(actionId: string, reason: string): Promise<void> {
+  await rawQuery(
+    `UPDATE actions a
+        SET fault_reason = NULL, fault_since = NULL, fault_attempts = 0, retry_after = NULL
+       FROM actions t
+      WHERE t.id = $1 AND a.status = 'open' AND a.fault_reason IS NOT NULL
+        AND a.kind = t.kind AND a.variant = t.variant`,
+    [actionId]
+  );
+  await rawQuery(
+    `UPDATE actions SET retry_after = now()
+      WHERE status = 'open' AND fault_reason = $1 AND retry_after > now()`,
+    [reason]
   );
 }
 
@@ -2395,21 +2730,27 @@ export async function completeAction(
   meteredMicroUsd: number,
   opts: { meteredJobId?: string | null } = {}
 ): Promise<number> {
-  return withTransaction(async (tx) => {
+  // The platform fault this row had been waiting on, if any: a row that
+  // runs after such a wait ends the wait of the others (endFaultWaits).
+  let waitedOn: string | null = null;
+  const consumed = await withTransaction(async (tx) => {
     // Guarded transition: only a live (running, or reconcile-reopened)
     // action completes; a done/superseded/cancelled row is already closed
     // and its coverage already consumed — return 0 and touch nothing.
     const [action] = await tx.query<{
       id: string;
       exclusion_group: string;
+      waited_on: string | null;
     }>(
-      `UPDATE actions SET status = 'done', metered_cost_micro_usd = $2,
+      `UPDATE actions a SET status = 'done', metered_cost_micro_usd = $2,
               metered_job_id = $3, updated_at = now()
-        WHERE id = $1 AND status IN ('running', 'open')
-        RETURNING id, exclusion_group`,
+         FROM (SELECT id, fault_reason FROM actions WHERE id = $1 FOR UPDATE) prior
+        WHERE a.id = prior.id AND a.status IN ('running', 'open')
+        RETURNING a.id, a.exclusion_group, prior.fault_reason AS waited_on`,
       [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null]
     );
     if (!action) return 0;
+    waitedOn = action.waited_on;
 
     await tx.query(
       `UPDATE actions SET status = 'superseded', updated_at = now()
@@ -2549,8 +2890,12 @@ export async function completeAction(
           await tx.query(
             `INSERT INTO action_allocations
                (exclusion_group, action_id, claim_id, grant_id,
-                amount_micro_usd, spent_micro_usd, released_at)
-             VALUES ($1, $2, $3, $4, $5, $5, now())`,
+                amount_micro_usd, spent_micro_usd, released_at, sensitivity_label)
+             VALUES ($1, $2, $3, $4, $5, $5, now(), (SELECT sensitivity_label FROM actions WHERE id = $2))`,
+            // A share of a settled row's cost is worked out from the row,
+            // the same whoever settles it, so it carries the row's label
+            // and not the settler's (src/labels.ts). It holds no brief or
+            // reason.
             [action.exclusion_group, actionId, claimId, grantId, share]
           );
           assigned += share;
@@ -2571,8 +2916,38 @@ export async function completeAction(
       );
       await refundUser({ ...r, key: `settle:${r.id}` });
     }
+    // Recorded with the settlement, so a subscriber waiting on this run is
+    // told exactly when its money has come back (event-service.ts).
+    const [done] = await tx.query<{ kind: string; claim_id: string | null; target_ref: string | null; label: string; grants: string[] }>(
+      `SELECT a.kind, a.claim_id, a.target_ref, a.label,
+              ARRAY(SELECT DISTINCT al.grant_id::text FROM action_allocations al
+                     WHERE al.action_id = a.id AND al.grant_id IS NOT NULL) AS grants
+         FROM actions a WHERE a.id = $1`,
+      [actionId]
+    );
+    if (done) {
+      const { recordEvent } = await import("./event-service.js");
+      await recordEvent(
+        {
+          kind: "run_settled",
+          actionId,
+          nodeId: done.claim_id,
+          grantId: done.grants[0] ?? null,
+          refs: { work_kind: done.kind, target_ref: done.target_ref, grants: done.grants },
+          summary: `${done.label} finished, spending ${Math.round(meteredMicroUsd / 10_000) / 100} owls.`,
+          payload: { spent_micro_usd: Math.round(meteredMicroUsd) },
+        },
+        tx
+      );
+    }
     return consumed;
   });
+  if (waitedOn) {
+    await endFaultWaits(actionId, waitedOn).catch((err) =>
+      console.warn(`[actions] ending fault waits failed: ${err instanceof Error ? err.message : err}`)
+    );
+  }
+  return consumed;
 }
 
 /**
@@ -2607,12 +2982,12 @@ export async function recordGrantSource(
   jobId: string | null
 ): Promise<void> {
   await rawQuery(
-    `INSERT INTO grant_sources (grant_id, source_id, url, job_id)
-     SELECT $1, $2, $3, $4
+    `INSERT INTO grant_sources (grant_id, source_id, url, job_id, sensitivity_label)
+     SELECT $1, $2, $3, $4, $5
       WHERE NOT EXISTS (SELECT 1 FROM grant_sources
                          WHERE grant_id = $1 AND source_id = $2
                            AND job_id IS NOT DISTINCT FROM $4::uuid)`,
-    [grantId, sourceId, url, jobId]
+    [grantId, sourceId, url, jobId, currentLabel()]
   );
 }
 
@@ -2641,6 +3016,13 @@ async function attributeIngestedSource(grantId: string, url: string, focus: stri
       ORDER BY created_at DESC LIMIT 1`,
     [source.id, focus]
   );
+  // The row says the mandate has this source in its pipeline. It is the
+  // mandate's record, written while its plan is materialized, so it carries
+  // the mandate's label like the rest of the plan's rows. (Before mandates
+  // carried a label it took the source's.) The source is found by its URL
+  // whatever its label, as it always was: a mandate at one label that names
+  // the URL of a document held at another learns here that the graph holds
+  // it, which is for the reads to close, not for this row's label.
   await recordGrantSource(grantId, source.id, url, job?.id ?? null);
 }
 

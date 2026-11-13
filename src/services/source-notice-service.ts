@@ -24,6 +24,7 @@
 import { rawQuery } from "../db/client.js";
 import { getUsageContext } from "../llm/usage-context.js";
 import { enqueueSteward } from "./queue-service.js";
+import { runAtClaimLabel } from "./label-service.js";
 import { claimsRestingOnSources, type RestingClaim } from "./source-watch-service.js";
 
 /**
@@ -114,6 +115,17 @@ export async function tellStewardsOfSourceEvents(
     }
   }
 
+  const { recordEvent } = await import("./event-service.js");
+  for (const { source: m, notice } of fresh) {
+    await recordEvent({
+      kind: "source_event",
+      sourceId: m.source_id,
+      refs: { claims: m.claim_ids, notice_doi: notice.notice_doi ?? null },
+      summary: `A ${(notice.type ?? "retraction").toLowerCase()} notice was recorded against "${m.title || m.url}" (${m.url}).`,
+      payload: { notice },
+    });
+  }
+
   let told = 0;
   for (const { claimId, notice, paths } of letters.values()) {
     const kind = (notice.type ?? "retraction").toLowerCase().replace(/[_-]/g, " ");
@@ -131,7 +143,18 @@ export async function tellStewardsOfSourceEvents(
       `source your verdict does not rest on may not either; say which in your ` +
       `reasoning.`;
     try {
-      await enqueueSteward({ claimId, trigger: "source_event", context });
+      // Each letter is sent at its node's label (runAtClaimLabel), whoever
+      // found the notice: the Crossref poll, which runs outside any run, or
+      // a facts fetch, which may be inside the run of some other node's
+      // Steward. The letter is the same whichever of them recorded the
+      // notice, and it is sent once, so one sent at the label of the run
+      // that happened to fetch the document first would not reach a node
+      // that run's label does not cover (src/labels.ts). The letter names
+      // the source, whose event was recorded at the source's own label; a
+      // node and a source it rests on may carry different labels, and
+      // holding a letter to what its node may read of the source is the
+      // enforcement work's.
+      await runAtClaimLabel(claimId, () => enqueueSteward({ claimId, trigger: "source_event", context }));
       told++;
     } catch (err) {
       console.warn(

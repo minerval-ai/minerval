@@ -39,6 +39,7 @@ import { raiseToMandate } from "./mandate-inbox-service.js";
 import { getGeneralMandate } from "./allocation-policy-service.js";
 import { credenceGap, impliedProbability } from "./quantity-math.js";
 import type { QuantityEstimate } from "../schemas/kinds.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 /**
  * What kind of incoherence a flag names. A label for the record and the
@@ -384,8 +385,8 @@ export async function startSweep(
   variant: "standard" | "strong" | null = null
 ): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
-    `INSERT INTO consistency_sweeps (tag_id, partition, variant) VALUES ($1, $2, $3) RETURNING id`,
-    [p.tagId, p.partition, variant]
+    `INSERT INTO consistency_sweeps (tag_id, partition, variant, sensitivity_label) VALUES ($1, $2, $3, $4) RETURNING id`,
+    [p.tagId, p.partition, variant, currentLabel()]
   );
   return row!.id;
 }
@@ -993,8 +994,8 @@ export async function flagInconsistency(
   const [flag] = await rawQuery<{ id: string }>(
     `INSERT INTO consistency_flags
        (sweep_id, kind, primary_claim_id, claim_ids, action_id, rationale,
-        expected_gain, status_at_flag, credence_at_flag, assessment_id_at_flag)
-     VALUES ($1, $2, $3, $4::uuid[], $5, $6, $7, $8, $9, $10)
+        expected_gain, status_at_flag, credence_at_flag, assessment_id_at_flag, sensitivity_label)
+     VALUES ($1, $2, $3, $4::uuid[], $5, $6, $7, $8, $9, $10, $11)
      RETURNING id`,
     [
       input.sweepId,
@@ -1007,6 +1008,7 @@ export async function flagInconsistency(
       primary.status,
       primary.claim_credence,
       primary.assessment_id,
+      currentLabel(),
     ]
   );
   await revalue(input.primaryClaimId, { rationale: input.rationale, expectedGain: input.expectedGain });

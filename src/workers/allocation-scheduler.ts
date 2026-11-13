@@ -45,6 +45,7 @@ import { STANDING_ORDER_RETRY_MINUTES } from "../services/standing-order-service
 import { scanReconcileCandidates } from "../services/curation-service.js";
 import { refreshPendingQueuePriorities } from "../services/priority-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
+import { runAtLabel } from "../llm/usage-context.js";
 
 export interface AllocationTickResult {
   actionsReconciled: number;
@@ -76,7 +77,7 @@ async function tend(): Promise<void> {
  * A tick between full sweeps: the standing orders of mandates' plans are
  * asked for again and brought up to date, and the mandates are tended. This
  * is where the direct steward lane's every-tick work went when its passes
- * became commissions (#849): room that opens in a day's rate or an escrow
+ * became commissions (#849): room that opens in a pace's window or an escrow
  * is used at the scheduler's next tick (STANDING_ORDER_RETRY_MINUTES), not
  * at the next six-hour sweep.
  */
@@ -171,8 +172,8 @@ export async function allocationSchedulerTick(
   const policy = await getEffectiveAllocationPolicy();
   if (policy.staleness_base_days > 0) {
     // Most-overdue first, judged against each claim's own cadence.
-    const due = await rawQuery<{ id: string; days_old: number }>(
-      `SELECT c.id,
+    const due = await rawQuery<{ id: string; sensitivity_label: string; days_old: number }>(
+      `SELECT c.id, c.sensitivity_label,
               FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at)) / 86400)::int
                 AS days_old
          FROM claims c
@@ -185,15 +186,20 @@ export async function allocationSchedulerTick(
       [policy.staleness_base_days]
     );
     for (const claim of due) {
-      await enqueueSteward({
-        claimId: claim.id,
-        trigger: "staleness_check",
-        context:
-          `Cadence check: this claim's current assessment is ${claim.days_old} ` +
-          `days old, past its reassessment interval. Re-examine whether the ` +
-          `evidence landscape has moved; if nothing material changed, ` +
-          `re-affirm cheaply and record a low marginal_yield.`,
-      });
+      // The check starts from the claim, outside any run, so the pass it
+      // asks for is opened at the claim's label (runAtClaimLabel in
+      // label-service.ts says what that does and does not cover).
+      await runAtLabel(claim.sensitivity_label, `claim ${claim.id}`, () =>
+        enqueueSteward({
+          claimId: claim.id,
+          trigger: "staleness_check",
+          context:
+            `Cadence check: this claim's current assessment is ${claim.days_old} ` +
+            `days old, past its reassessment interval. Re-examine whether the ` +
+            `evidence landscape has moved; if nothing material changed, ` +
+            `re-affirm cheaply and record a low marginal_yield.`,
+        })
+      );
       result.stalenessEnqueued++;
     }
   }

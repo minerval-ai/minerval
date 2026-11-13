@@ -33,7 +33,8 @@ vi.mock("../../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => {}),
   enqueueSteward: vi.fn(async () => {}),
 }));
-vi.mock("../../../../src/services/curation-service.js", () => ({
+vi.mock("../../../../src/services/curation-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   requestCuration: mocks.requestCuration,
 }));
 
@@ -51,6 +52,7 @@ describe("escalate_to_curator", () => {
         executeStewardTool("escalate_to_curator", {
           claim_id: ANCHOR,
           other_claim_id: OTHER,
+          defect: "duplicate",
           concern: "likely duplicate",
         })
       )
@@ -60,6 +62,7 @@ describe("escalate_to_curator", () => {
       anchorClaimId: ANCHOR,
       otherClaimId: OTHER,
       source: "steward_escalation",
+      defect: "duplicate",
       concern: "likely duplicate",
       requestedByClaimId: STEWARDED,
       requestedByRunId: null,

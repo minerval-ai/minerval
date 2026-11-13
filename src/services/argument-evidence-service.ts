@@ -17,6 +17,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "./queue-service.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 
 const LEAN_CHECK_PATH = /\/lean-checks\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:\/|$|\?|#)/i;
 
@@ -53,8 +54,9 @@ export async function attachArgumentEvidence(
       continue;
     }
     await rawQuery(
-      `INSERT INTO argument_evidence_backlog (argument_id, url) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [argumentId, url]
+      `INSERT INTO argument_evidence_backlog (argument_id, url, sensitivity_label)
+       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+      [argumentId, url, currentLabel()]
     );
     queued.push(url);
   }
@@ -82,12 +84,19 @@ export function evidenceBacklogMessage(input: {
  * Send every unsent backlog row to its claim's Steward, one message per
  * argument, and mark the rows sent. With `argumentId`, only that argument's.
  * Rows on a retired or merged argument go too: retiring keeps the record.
+ *
+ * A backlog row is work waiting, so it carries the label of whoever attached
+ * the URL, and the pass its message asks for is opened at that label
+ * (src/labels.ts), whether a request or a script does the sending. URLs
+ * attached to one argument at two labels go in two messages, one at each.
  */
 export async function sendArgumentEvidenceBacklog(
   opts: { argumentId?: string; dryRun?: boolean } = {}
 ): Promise<Array<{ claimId: string; argumentId: string; urls: string[] }>> {
-  const groups = await rawQuery<{ claim_id: string; argument_id: string; name: string | null; urls: string[]; ids: string[] }>(
-    `SELECT a.claim_id, a.id AS argument_id, a.name,
+  const groups = await rawQuery<{
+    claim_id: string; argument_id: string; name: string | null; label: string; urls: string[]; ids: string[];
+  }>(
+    `SELECT a.claim_id, a.id AS argument_id, a.name, b.sensitivity_label AS label,
             array_agg(b.url ORDER BY b.created_at, b.url) AS urls,
             array_agg(b.id::text) AS ids
        FROM argument_evidence_backlog b
@@ -95,18 +104,20 @@ export async function sendArgumentEvidenceBacklog(
        JOIN claims c ON c.id = a.claim_id
       WHERE b.sent_at IS NULL AND c.state = 'active'
         AND ($1::uuid IS NULL OR a.id = $1::uuid)
-      GROUP BY a.claim_id, a.id, a.name
-      ORDER BY a.claim_id, a.id`,
+      GROUP BY a.claim_id, a.id, a.name, b.sensitivity_label
+      ORDER BY a.claim_id, a.id, b.sensitivity_label`,
     [opts.argumentId ?? null]
   );
   const sent: Array<{ claimId: string; argumentId: string; urls: string[] }> = [];
   for (const g of groups) {
     if (!opts.dryRun) {
-      await enqueueSteward({
-        claimId: g.claim_id,
-        trigger: "argument_evidence_backfill",
-        context: evidenceBacklogMessage({ argumentId: g.argument_id, argumentName: g.name, urls: g.urls }),
-      });
+      await runAtLabel(g.label, `evidence backlog of argument ${g.argument_id}`, () =>
+        enqueueSteward({
+          claimId: g.claim_id,
+          trigger: "argument_evidence_backfill",
+          context: evidenceBacklogMessage({ argumentId: g.argument_id, argumentName: g.name, urls: g.urls }),
+        })
+      );
       await rawQuery(`UPDATE argument_evidence_backlog SET sent_at = now() WHERE id = ANY($1::uuid[])`, [g.ids]);
     }
     sent.push({ claimId: g.claim_id, argumentId: g.argument_id, urls: g.urls });

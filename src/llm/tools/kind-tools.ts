@@ -76,7 +76,7 @@ import {
   type NodeKind,
   type QuantityDefinitionInput,
 } from "../../schemas/kinds.js";
-import { getUsageContext } from "../usage-context.js";
+import { currentLabel, getUsageContext } from "../usage-context.js";
 import { MARGINAL_YIELD_DESCRIPTION, QUESTION_CONFIDENCE_DESCRIPTION } from "./judgment-fields.js";
 import { ownershipRefusal } from "./steward-ownership.js";
 
@@ -788,12 +788,14 @@ async function mintNode(input: {
         ...(parent?.domains?.length ? { domains: parent.domains, domainsSource: "inherited" } : {}),
         pipelineEpoch,
         createdBy: input.createdBy,
+        // The node is the minting run's (src/labels.ts), not its parent's.
+        sensitivityLabel: currentLabel(),
       })
       .returning({ id: claims.id });
     if (definition) {
       await tx.query(
-        `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           created!.id,
           definition.measures,
@@ -801,6 +803,7 @@ async function mintNode(input: {
           definition.conditions ?? null,
           JSON.stringify(definition.unit),
           input.createdBy,
+          currentLabel(),
         ]
       );
     }
@@ -864,8 +867,9 @@ async function insertInstance(input: {
 }): Promise<string> {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO claim_instances
-       (claim_id, source_id, verbatim_text, stance, speaker, publication, source_date, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+       (claim_id, source_id, verbatim_text, stance, speaker, publication, source_date, created_by,
+        sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
     [
       input.claimId,
       input.sourceId,
@@ -875,6 +879,7 @@ async function insertInstance(input: {
       optStr(input.fields.publication) ?? null,
       optStr(input.fields.source_date) ?? null,
       input.createdBy,
+      currentLabel(),
     ]
   );
   return row!.id;
@@ -1114,12 +1119,13 @@ async function executeKindToolImpl(
       if (deleted.length === 0) return refuse("That node is not in the question's answer set.");
       const edge = deleted[0]!;
       await rawQuery(
-        `INSERT INTO audit_log (claim_id, action, reasoning, created_by) VALUES ($1, 'remove_answer', $2, $3)`,
+        `INSERT INTO audit_log (claim_id, action, reasoning, created_by, sensitivity_label) VALUES ($1, 'remove_answer', $2, $3, $4)`,
         [
           questionId,
           `Removed ${answerId} from the answer set (basis ${edge.answer_basis ?? "none"}; edge reasoning: ` +
             `"${edge.reasoning}"): ${reasoning}`,
           createdBy,
+          currentLabel(),
         ]
       );
       return ok(`Removed ${answerId} from the answer set.`);

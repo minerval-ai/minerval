@@ -51,6 +51,7 @@ import { loadConfig } from "../config.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { fetchAndStoreSource } from "../services/source-map-service.js";
+import { runAtSourceLabel } from "../services/label-service.js";
 
 /**
  * The pass's cursor. The key carries a version because the pass now fetches:
@@ -76,6 +77,15 @@ const CITED = `(
   OR EXISTS (SELECT 1 FROM quantity_readings qr WHERE qr.source_id = s.id)
   OR EXISTS (SELECT 1 FROM claim_provenance_edges e WHERE e.to_source_id = s.id)
 )`;
+
+/**
+ * Source `s` is this deployment's own. A mirrored source (docs/mirror.md)
+ * arrives with whatever facts, text and segments the public graph has for
+ * it and is the public graph's to fill: fetching its page here would redo
+ * that work, and the result could not be written to a mirrored row anyway.
+ * Every source is its own on a deployment that mirrors nothing.
+ */
+const OWN = `s.origin = 'local'`;
 
 /** Source `s` has a web address and no stored text. */
 const FETCHABLE = `((s.raw_content IS NULL OR s.raw_content = '') AND s.url ~* '^https?://')`;
@@ -121,6 +131,7 @@ export async function claimSourceBatch(limit: number): Promise<{ ids: string[]; 
     const rows = await tx.query<{ id: string }>(
       `SELECT s.id FROM sources s
         WHERE ($1::uuid IS NULL OR s.id > $1::uuid)
+          AND ${OWN}
           AND (s.facts_checked_at IS NULL
                OR (s.raw_content IS NOT NULL AND s.raw_content <> ''
                    AND NOT EXISTS (SELECT 1 FROM source_segments g WHERE g.source_id = s.id))
@@ -163,7 +174,7 @@ async function releaseSweepLease(): Promise<void> {
 async function uncheckedCitedSources(limit: number): Promise<string[]> {
   const rows = await rawQuery<{ id: string }>(
     `SELECT s.id FROM sources s
-      WHERE s.facts_checked_at IS NULL AND ${CITED}
+      WHERE s.facts_checked_at IS NULL AND ${OWN} AND ${CITED}
       ORDER BY s.id
       LIMIT $1`,
     [limit]
@@ -176,10 +187,33 @@ async function uncheckedCitedSources(limit: number): Promise<string[]> {
  * its facts and segments. Never throws, and always leaves the source marked
  * as checked, so neither stage takes it twice. Returns whether the page was
  * fetched.
+ *
+ * The queue is the source row, so the source's label is the label of the
+ * work (runAtSourceLabel in label-service.ts). What it writes today does
+ * not depend on that: the text and the facts go into the source's own row,
+ * whose label is left as it is, and the segments and the notices carry the
+ * source's label by their own rule, whoever cuts or records them. Opening
+ * the work at the source's label keeps anything else this worker comes to
+ * write about a restricted document from being public.
  */
 export async function fillSource(
   sourceId: string,
   deps: { fetch?: (url: string) => Promise<string> } = {}
+): Promise<boolean> {
+  try {
+    return await runAtSourceLabel(sourceId, () => fillAtLabel(sourceId, deps));
+  } catch (err) {
+    // Reading the label failed; nothing was fetched, and the pass moves on.
+    console.error(
+      `[source-backfill] fill failed for ${sourceId}: ${err instanceof Error ? err.message : err}`
+    );
+    return false;
+  }
+}
+
+async function fillAtLabel(
+  sourceId: string,
+  deps: { fetch?: (url: string) => Promise<string> }
 ): Promise<boolean> {
   let fetched = false;
   try {

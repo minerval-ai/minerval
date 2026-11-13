@@ -8,14 +8,16 @@
  * stubs in its scope. Both used to be finished, and the second kind run, by
  * the direct steward lane (workers/grant-pipeline.ts), which ran passes off
  * the ledger, metered to the mandate's job with no allocation and no regard
- * for its daily rate (#849). That lane is gone: every pass a mandate pays
+ * for its pace (#849). That lane is gone: every pass a mandate pays
  * for is a commission (standing-order-service.ts), and this module keeps
  * the three things the lane did besides running passes.
  *
  *  - A `deepen` mandate's standing order: a pass, commissioned from the
- *    mandate within its rate and escrow, on each node in its scope that is
- *    waiting for one, the queued before the deferred, the most important
- *    first.
+ *    mandate within its rate and escrow, on each node in its scope that
+ *    carries no judgment and is waiting for one (the stubs the policy
+ *    exists for; a judged node that something queued for a fresh look is
+ *    not bought one here, as a plan's deepen item does not, #961), the
+ *    queued before the deferred, the most important first.
  *  - Finishing: a `deepen` mandate with nothing left in scope, or a
  *    decomposition whose share is spent and whose plan has no item still in
  *    motion, completes once none of its work is live on the ledger, and its
@@ -112,6 +114,9 @@ async function orderDeepenScope(g: LifecycleGrant): Promise<boolean> {
     `${SCOPE_SQL}
      SELECT c.id FROM claims c JOIN scope ON scope.id = c.id
       WHERE c.steward_state IN ('pending', 'deferred')
+        AND NOT EXISTS (SELECT 1 FROM assessments_in_force x WHERE x.claim_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM quantity_estimates_in_force q WHERE q.claim_id = c.id)
+        AND NOT EXISTS (SELECT 1 FROM question_assessments_in_force qa WHERE qa.claim_id = c.id)
       ORDER BY (c.steward_state = 'pending') DESC, c.importance DESC NULLS LAST
       LIMIT 100`,
     [g.scope_claim_id, g.scope_query]
@@ -127,7 +132,9 @@ async function orderDeepenScope(g: LifecycleGrant): Promise<boolean> {
         "A funded mandate scheduled a pass on this claim. Steward it under the ordinary " +
         "standards; funding buys attention, never conclusions.",
     });
-    // Out of room for now (the rate, or the escrow): the rest wait their turn.
+    // Out of room for now (the rate, or the escrow). Every order here is
+    // the same tier at the same estimate, so none of the rest would fit
+    // either: nothing is held back that the room could have covered.
     if (res.state === "waiting" || res.state === "blocked") break;
   }
   return waiting.length > 0;

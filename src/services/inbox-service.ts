@@ -17,6 +17,7 @@
  * no work of its own: it is read on whatever pass the sender's node next gets.
  */
 import { rawQuery } from "../db/client.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export type MessageSenderKind =
   | "steward"
@@ -73,6 +74,13 @@ export function defaultSenderFor(trigger: string): MessageSender {
  */
 export const INBOX_FULL_TEXT_CHARS = 40_000;
 
+/**
+ * Keep a message in a node's inbox. Only an active node has one: no Steward
+ * works a merged, deprecated or archived node, so a message there would sit
+ * unread for good and read, to anyone looking, as work waiting (#962). Null
+ * when nothing was kept. enqueueSteward forwards what it is handed for a
+ * retired node to its successor, if it has one.
+ */
 export async function postMessage(input: {
   nodeId: string;
   trigger: string;
@@ -86,9 +94,9 @@ export async function postMessage(input: {
   if (body === "") return null;
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO node_messages
-       (node_id, trigger, sender_kind, sender_node_id, sender_ref, body, paid, reply_to)
-     SELECT $1, $2, $3, $4, $5, $6, $7, $8
-      WHERE EXISTS (SELECT 1 FROM claims WHERE id = $1)
+       (node_id, trigger, sender_kind, sender_node_id, sender_ref, body, paid, reply_to, sensitivity_label)
+     SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9::text
+      WHERE EXISTS (SELECT 1 FROM claims WHERE id = $1 AND state = 'active')
      RETURNING id`,
     [
       input.nodeId,
@@ -99,6 +107,7 @@ export async function postMessage(input: {
       body,
       input.paid ?? false,
       input.replyTo ?? null,
+      currentLabel(),
     ]
   );
   return rows[0]?.id ?? null;
@@ -339,6 +348,33 @@ export async function answerMessages(
       continue;
     }
     recorded.push(label);
+    {
+      // Every answer is on the log, so a sender that is not a Steward (the
+      // Curator, the Audit Agent, a Checker, a lookout) can be told too.
+      const { recordEvent } = await import("./event-service.js");
+      await recordEvent({
+        kind: "message_answered",
+        nodeId,
+        refs: { message: id, sender_kind: m.sender_kind, sender_node: m.sender_node_id },
+        summary: `The Steward of ${nodeId} answered a message from ${m.sender_kind} ("${quoteHead(m.body)}"): ${OUTCOME_WORDS[outcome]}.` + (note ? ` ${note}` : ""),
+        payload: { outcome },
+      });
+    }
+    if (m.sender_kind !== "steward" && m.reply_to_session) {
+      // A sender with no node (the Curator, the Audit Agent, a Checker)
+      // that waits for the answer in its session gets it there.
+      const { deliverReply } = await import("./session-service.js");
+      const routed = await deliverReply({
+        sessionId: m.reply_to_session,
+        kind: "reply",
+        ref: id,
+        text:
+          `The Steward of ${nodeId} answered your message ("${quoteHead(m.body)}"): ${OUTCOME_WORDS[outcome]}.` +
+          (note ? ` ${note}` : ""),
+        fallback: null,
+      });
+      if (routed !== "dropped") replies++;
+    }
     if (m.sender_kind === "steward" && m.sender_node_id && m.sender_node_id !== nodeId) {
       const date = new Date(m.created_at).toISOString().slice(0, 10);
       const body =

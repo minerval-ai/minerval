@@ -14,6 +14,7 @@
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
+import { currentLabel } from "../llm/usage-context.js";
 import { owlsToMicroUsd } from "./owl.js";
 
 export const RESEARCHER_AGENT = "researcher";
@@ -119,8 +120,9 @@ export async function openResearchRun(input: {
   const rows = await rawQuery<ResearchRunRow>(
     `INSERT INTO research_runs
        (claim_id, grant_id, requested_by, requester_run_id, job_id, task, model, model_tier,
-        effort, include_constitution, ceiling_micro_usd, request_id, contribution_budget_micro_usd, notebook)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::jsonb, '{}'::jsonb))
+        effort, include_constitution, ceiling_micro_usd, request_id, contribution_budget_micro_usd, notebook,
+        sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::jsonb, '{}'::jsonb), $15)
      RETURNING ${COLUMNS}`,
     [
       input.claimId,
@@ -137,6 +139,8 @@ export async function openResearchRun(input: {
       input.requestId ?? null,
       Math.max(0, Math.round(input.contributionBudgetMicroUsd ?? 0)),
       input.notebook && Object.keys(input.notebook).length > 0 ? JSON.stringify(input.notebook) : null,
+      // The label of the run that launches the investigation (src/labels.ts).
+      currentLabel(),
     ]
   );
   return normalize(rows[0]!);
@@ -312,7 +316,7 @@ export async function readResearcherPaused(): Promise<boolean> {
 
 /**
  * Who opens research runs, as `research_runs.requested_by`: the four
- * administrators that may launch the researcher with delegate_research, and
+ * administrators that may commission the researcher, and
  * the ledger's request runs.
  */
 export const RESEARCH_LAUNCHERS = [

@@ -26,7 +26,11 @@ skill bundles it in full, and the section numbers below point into it.
 
 - **One assertion in question**: `match_claim` with the assertion (and a
   little surrounding context). Returns the canonical claim it states or
-  denies, plus its current assessment. Metered.
+  denies, plus its current assessment. Metered. An error of
+  `PLATFORM_FAULT` means a fault on Minerval's side kept the check from
+  running: nothing was compared, nothing was charged, and it is not your
+  user's balance. Say the check could not be made, and try later; it is not
+  a finding that the graph lacks the claim.
 - **A passage or document**: `assess_text`. Extracts the checkable claims
   and judges each, in the background: it returns a `job_id` at once. Read the
   verdicts with `get_text_analysis` every 20 to 30 seconds until `status` is
@@ -66,6 +70,16 @@ skill bundles it in full, and the section numbers below point into it.
   refused and names the survivor; restate it for the survivor rather than
   resending it. An id that names nothing at all is an error, not a merge:
   copy ids exactly from a result, never retype them.
+- **An id that was retired**: a node whose `claim.state` is `archived` or
+  `deprecated` is out of the live graph. `get_claim` serves it as it was,
+  with `retired` beside it: when it was retired, by whom, why, and its
+  `successors`, the live nodes that carry on what it stated. Its verdict is
+  the one it had when it was retired and no Steward works it, so report it
+  as a retired node's last verdict, not the graph's current judgment, and
+  read a successor for that. Where `successors` is empty the graph holds no
+  live page for the proposition, which is not a finding about it. Work on a
+  retired node (an order, funding, a plan item) is refused; address a
+  successor instead.
 - **Less of any read**: the tools generated from the REST API's read routes
   (`list_claims`, `cite_claim`, `get_assessment_history`, the cards and the
   rest) take `fields`, a comma-separated list of dotted paths such as
@@ -300,6 +314,15 @@ support matters:
   - **A verdict you think is wrong**: `submit_contribution` with a
     `challenge` that engages the claim's recorded reasoning. Substance
     wins, not tone or volume; the reviewer answers either way (§13, §14).
+  - **Your user, or their organization, holds a view and wants it on
+    the record**: `state_view` states it on the node in their own words,
+    under their account's name, with how they stand, their stake, and
+    their reasons if they give any. It changes no assessment: nobody
+    edits one. The statement is recorded as a source and shown beside the
+    assessment, and its reasons are put to the node's Steward and answered
+    (§4, §14). It is public and cannot be edited or withdrawn, so pass
+    only words the user wrote or approved. `list_stated_views` shows where
+    stated views and assessments differ, for one account or for all.
   - **Unassessed and it matters now**: `order_assessment` funds a pass.
     It buys scheduling, never a verdict (§19).
   - **The tools failed you**: `raise_issue`.

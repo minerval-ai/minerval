@@ -22,6 +22,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestAuth } from "../../server/plugins/auth.js";
 import { buildMcpServer } from "../../mcp/server.js";
+import { withheldRouteTools } from "../../mcp/route-tools.js";
+import { membersOnly, type PermissionName } from "../../permissions.js";
+import { resolveStanding } from "../../services/permission-service.js";
 import { getCallerSkill, listCallerSkills } from "../../mcp/caller-skills.js";
 import { runAsAssistant } from "../assistant-acting.js";
 
@@ -47,6 +50,7 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   propose_claim: "propose",
   submit_source: "submit",
   submit_contribution: "submit",
+  state_view: "submit",
   submit_appeal: "submit",
   challenge_prize_claim: "submit",
   order_assessment: "assess",
@@ -70,6 +74,7 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   propose_claim: "Propose a node to the graph",
   submit_source: "Submit a source for the graph to read",
   submit_contribution: "Submit a contribution",
+  state_view: "State your view on a node, under your name",
   submit_appeal: "Appeal a decision",
   challenge_prize_claim: "Challenge a prize claim",
   order_assessment: "Order an assessment",
@@ -101,8 +106,8 @@ export const RUNS_WITHOUT_ASKING: Readonly<Record<string, string>> = {
     "Private to the user and free; it publishes nothing, and replacing a page keeps the earlier text.",
   raise_issue: "A report to Minerval's maintainers about the tools; free, and it touches no claim.",
   query_sql: "A read; priced by database time past a free daily allowance, which its description states.",
-  match_claim: "A private analysis, metered and charged as its description states; it writes nothing.",
-  extract_claims: "As match_claim: private, metered, and it writes nothing.",
+  match_claim: "A private analysis, metered and charged as its description states; it writes nothing to the graph.",
+  extract_claims: "As match_claim: private, metered, and it writes nothing to the graph.",
   assess_text: "As match_claim: private, metered, and it writes nothing to the graph.",
 };
 
@@ -188,6 +193,12 @@ export interface AccountTools {
   definitions: Tool[];
   /** Tools whose MCP annotation says they only read. */
   readOnly: Set<string>;
+  /**
+   * Tools left out because the user lacks the permission each needs, in a
+   * members-only deployment (mcp/route-tools.ts). The run is told of them
+   * (llm/permissions-note.ts). Absent or empty when nothing is withheld.
+   */
+  withheld?: Array<{ tool: string; permission: PermissionName }>;
   call(name: string, input: Record<string, unknown>): Promise<AccountToolResult>;
   close(): Promise<void>;
 }
@@ -215,6 +226,13 @@ export async function openAccountTools(
   auth: RequestAuth,
   requestId: string
 ): Promise<AccountTools> {
+  // In a members-only deployment the tools depend on what the user holds,
+  // so their standing is resolved here, once for the run, and carried by
+  // every call the run makes.
+  if (membersOnly() && auth.userId && !auth.standing) {
+    auth = { ...auth, standing: await resolveStanding(auth.userId) };
+  }
+  const withheld = withheldRouteTools(app, auth);
   const server = buildMcpServer({ auth, requestId, app });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -234,6 +252,7 @@ export async function openAccountTools(
   return {
     definitions,
     readOnly,
+    withheld,
     async call(name, input) {
       const result = await runAsAssistant(() => client.callTool({ name, arguments: input }));
       const content = (result.content ?? []) as Array<{ type: string; text?: string }>;

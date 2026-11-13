@@ -25,6 +25,7 @@ import { reviewCostEstimateMicroUsd } from "../../services/contribution-service.
 import { capMicroUsd } from "../../services/owl.js";
 import { modelForTier, RESEARCH_MODEL_TIERS } from "../../services/research-run-service.js";
 import { elicitConfigured } from "./elicit-tools.js";
+import { providerClearedHere } from "../provider-clearance.js";
 import type { SkillToolExecutor } from "./skill-tools.js";
 
 /** How far back the research figures look. */
@@ -221,8 +222,11 @@ const executeCostSheet: SkillToolExecutor = async () => {
   const review = await reviewCostEstimateMicroUsd().catch(() => null);
   const ledger = await ledgerLines();
   const paidTools: Record<string, string> = {};
-  if (elicitConfigured(config)) paidTools.elicit = `about $${config.elicitUsdPerCall} per call`;
-  if (config.pangramApiKey) {
+  // Only what a run at this label can be given (src/provider-labels.ts).
+  if (elicitConfigured(config) && providerClearedHere("elicit", config)) {
+    paidTools.elicit = `about $${config.elicitUsdPerCall} per call`;
+  }
+  if (config.pangramApiKey && providerClearedHere("pangram", config)) {
     paidTools.pangram =
       `about $${config.pangramAiUsdPerWord} per word for an AI-writing check, ` +
       `$${config.pangramPlagiarismUsdPerWord} per word for a similarity check`;

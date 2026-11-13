@@ -14,6 +14,7 @@ type Tool = Anthropic.Tool;
 import { matchClaim } from "../agents/matcher.js";
 import { rawQuery } from "../../db/client.js";
 import { NODE_KINDS, type NodeKind } from "../../schemas/kinds.js";
+import { faultToolNote, platformFaultOf, type PlatformFaultReason } from "../../services/deployment-fault.js";
 
 export function getMatcherToolDefinition(): Tool {
   return {
@@ -25,7 +26,10 @@ export function getMatcherToolDefinition(): Tool {
       "negation are the SAME node, while a contrary (both could be false) is a " +
       "rival claim, named in relationship_notes. Always call this before adding a " +
       "subclaim; if it returns a match, link that existing claim if it is the " +
-      "proposition you need, rather than minting a duplicate.",
+      "proposition you need, rather than minting a duplicate. An outcome of " +
+      '"unavailable" means a fault on the platform\'s side kept the Matcher ' +
+      "from running: nothing was checked, so do not create a node from it or " +
+      "on a search alone; the result says what to do instead.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -123,8 +127,43 @@ export async function executeMatcherTool(
       relationship_notes: decision.relationship_notes ?? null,
     });
   } catch (err) {
+    // A platform fault (the Matcher's provider out of credits, its key
+    // rejected, or down through its retries) is told by its class, with
+    // what to do; the provider's own text stays in the logs (#967).
+    const fault = platformFaultOf(err);
+    if (fault) return JSON.stringify(matcherUnavailable(fault));
     return JSON.stringify({
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * What match_claim returns when a platform fault kept the Matcher from
+ * running (#967, #969). On 2026-11-12 the tool returned the provider's raw
+ * "402 ... exceeds your available credits" text; a Steward with most of its
+ * budget left could not tell whose money was meant, fell back on embedding
+ * search, and minted two subclaims nothing had checked for identity.
+ *
+ * Nothing is refused here: the caller's tools all still work. The result
+ * says what happened and what the rule is, which is the Matcher's own
+ * (identity is its decision, and a search is retrieval, not a decision).
+ */
+export function matcherUnavailable(fault: PlatformFaultReason): Record<string, unknown> {
+  return {
+    outcome: "unavailable",
+    platform_fault: fault,
+    is_match: null,
+    matched_claim_id: null,
+    note:
+      faultToolNote(fault, "The Matcher") +
+      " Identity was NOT checked: this is not a finding that the proposition is new, and it is not " +
+      "your run's budget (your budget line is unchanged). Do not create a node from this result, and " +
+      "do not mint one on search_similar_claims alone: a search retrieves candidates, it does not " +
+      "decide identity, and a node minted unmatched may duplicate one the graph holds. If a search " +
+      "hit, read with get_claim, is exactly the node you need, you may link that existing node: " +
+      "linking mints nothing. Otherwise leave the premise in prose in your reasoning, named as not " +
+      "yet matched because of a platform fault, and finish the pass without it; a later pass can " +
+      "match it once the Matcher runs again.",
+  };
 }

@@ -22,8 +22,13 @@ vi.mock("../../../src/services/enqueue-events-service.js", () => ({
 vi.mock("../../../src/services/inbox-service.js", () => ({
   postMessage: vi.fn(async () => "m"),
 }));
+// Where a message for a retired node goes instead (#962): none by default.
+vi.mock("../../../src/services/claim-lifecycle-service.js", () => ({
+  activeSuccessors: vi.fn(async () => []),
+}));
 
 import { enqueueClaimPipeline, enqueueSteward, getLocalQueue } from "../../../src/services/queue-service.js";
+import { activeSuccessors } from "../../../src/services/claim-lifecycle-service.js";
 import { runWithUsageContext } from "../../../src/llm/usage-context.js";
 import { rawQuery } from "../../../src/db/client.js";
 import { postMessage } from "../../../src/services/inbox-service.js";
@@ -109,6 +114,48 @@ describe("enqueueSteward (#182 pending slot, inbox rows)", () => {
   it("still only enqueues active claims", async () => {
     const sql = await call();
     expect(sql).toContain("AND state = 'active'");
+  });
+});
+
+// A node that is no longer active gets no message (#962); its live
+// successor, where it has one, gets it instead, once and unpaid.
+describe("enqueueSteward and a retired node (#962)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const retired = "33333333-3333-3333-3333-333333333333";
+  const successor = "44444444-4444-4444-4444-444444444444";
+
+  it("keeps nothing for a retired node with no successor", async () => {
+    await enqueueSteward({ claimId: retired, trigger: "subclaim_change", context: "moved" });
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(activeSuccessors).toHaveBeenCalledWith(retired);
+  });
+
+  it("forwards to the successor, unpaid and marked, and does not forward again", async () => {
+    vi.mocked(activeSuccessors).mockResolvedValueOnce([successor]);
+    // The retired node matches nothing; the successor's enqueue does.
+    vi.mocked(rawQuery)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ prev_state: "done", prev_requeued: false, new_state: "pending" }]);
+    await enqueueSteward({ claimId: retired, trigger: "subclaim_change", context: "moved", paid: true });
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    const posted = vi.mocked(postMessage).mock.calls[0]![0];
+    expect(posted.nodeId).toBe(successor);
+    expect(posted.paid).toBeUndefined();
+    expect(posted.body).toContain(`Addressed to ${retired}`);
+    expect(posted.body).toContain("moved");
+    expect(vi.mocked(rawQuery).mock.calls[1]![1]).toEqual([successor, "subclaim_change", false]);
+  });
+
+  it("does not forward a first-pass request", async () => {
+    vi.mocked(activeSuccessors).mockResolvedValueOnce([successor]);
+    await enqueueSteward({ claimId: retired, trigger: "structure_and_assess", context: "onboard" });
+    expect(activeSuccessors).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
+    vi.mocked(activeSuccessors).mockReset();
+    vi.mocked(activeSuccessors).mockResolvedValue([]);
   });
 });
 

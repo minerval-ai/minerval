@@ -4,7 +4,7 @@
  * carrying a label no one defined. Nothing reads a label yet, so this is
  * about what is written, through the same functions the agents write with.
  */
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { describe, it, expect, vi, beforeAll, onTestFinished } from "vitest";
 import { randomUUID } from "node:crypto";
 
 // Tracing is off under vitest by default; the run row is part of what is checked.
@@ -27,6 +27,7 @@ vi.mock("../../src/llm/providers/index.js", async (orig) => ({
 }));
 
 import { rawQuery } from "../../src/db/client.js";
+import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { complete } from "../../src/llm/client.js";
 import { currentLabel, getUsageContext, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
@@ -146,7 +147,7 @@ describe("the labels table", () => {
     expect(pairs!.n).toBe("0");
   });
 
-  it("gives every labelled table a sensitivity_label that defaults to public and points here", async () => {
+  it("gives every labelled table a sensitivity_label that defaults to the connection's label and points here", async () => {
     // The column has its own name because `label` is already a display name
     // on two tables that carry one (actions, source_segments).
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
@@ -163,36 +164,49 @@ describe("the labels table", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    // Fourteen of these are stamped by the code that writes them: the
-    // judgments, sources and runs (this file), and the rows that stand for
-    // work waiting to be done, which hand their label to the run that
-    // takes it up (label-carried.test.ts). The other eighty-one got the
-    // column in the label_columns migration and hold its default until the
-    // code that stamps them lands (label-columns.test.ts, which also lists
-    // the tables that carry no label, each with its reason).
+    // Six groups: the judgments, sources and runs (this file); the rows
+    // that stand for work waiting to be done, which hand their label to the
+    // run that takes it up (label-carried.test.ts); the graph's own
+    // content, from nodes and edges to formal statements
+    // (label-graph.test.ts); what is read from a source or written about
+    // one, from instances and segments to examinations
+    // (label-sources.test.ts); what a run writes about itself, from the
+    // steps of its transcript to the reports it files (label-runs.test.ts);
+    // and the rows of work and governance, from requests and messages to
+    // mandates, their lookouts and the audit trail
+    // (label-governance.test.ts), with the placements and regrants that
+    // carry a brief, a reason or a note, and a stated view; and
+    // claim_state_changes, the record of a node's archive, restore or merge,
+    // stamped by claim-lifecycle-service.ts. The tables that
+    // carry no label are listed in label-columns.test.ts, each with its
+    // reason.
+    // The tables of connections (connections, connection_tools,
+    // connection_calls) and of file sets (file_sets, file_set_files,
+    // file_set_keeps, sandbox_calls) were created with the column, and are
+    // empty until the code that writes them lands.
     expect(rows).toEqual(
       [
-        "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings", "agent_reports",
-        "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals",
+        "action_allocations", "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings",
+        "agent_reports", "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals",
         "arbitration_results", "argument_evaluations", "argument_evidence_backlog", "argument_instances",
         "argument_subclaims", "arguments", "assessment_orders", "assessments", "assistant_conversations",
-        "assistant_held_actions", "assistant_pages", "attachments", "audit_findings", "audit_log",
-        "audit_notes", "audit_runs", "bounties", "budget_jobs", "claim_formalizations",
-        "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
-        "claim_predictions", "claim_provenance_edges", "claim_provenance_roots", "claim_relationships",
-        "claim_source_maps", "claims", "consistency_flags", "consistency_sweeps", "contribution_reviews",
+        "assistant_held_actions", "assistant_pages", "attachments", "audit_findings", "audit_log", "audit_notes",
+        "audit_runs", "bounties", "budget_jobs", "claim_formalizations", "claim_instance_reading_log",
+        "claim_instance_readings", "claim_instances", "claim_links", "claim_predictions", "claim_provenance_edges",
+        "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claim_state_changes", "claims", "connection_calls",
+        "connection_tools", "connections", "consistency_flags", "consistency_sweeps", "contribution_reviews",
         "contributions", "correspondent_events", "correspondent_plan_items", "correspondent_updates",
-        "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
-        "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants",
-        "ingest_focuses", "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events",
-        "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
-        "mandate_events", "mandate_inbox", "mandate_policy_versions", "node_messages", "petitions",
+        "correspondents", "curation_requests", "enqueue_events", "events", "examination_coverage", "examination_findings",
+        "examinations", "file_set_files", "file_set_keeps", "file_sets", "grant_conversations", "grant_sources",
+        "grants", "ingest_focuses", "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events",
+        "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events",
+        "mandate_inbox", "mandate_policy_versions", "mandate_valuations", "node_messages", "petitions",
         "prize_claims", "proof_attempts", "quantity_cuts", "quantity_definitions", "quantity_estimates",
-        "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events",
-        "reputation_events", "request_targets", "request_work", "requests", "research_runs",
+        "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events", "regrants",
+        "reputation_events", "request_targets", "request_work", "requests", "research_runs", "sandbox_calls",
         "setup_parts", "shared_page_analyses", "source_events", "source_extractions", "source_interests",
-        "source_relationships", "source_segments", "sources", "taggings", "tags",
-      ].map((table_name) => ({ table_name, column_default: "'public'::text", is_nullable: "NO", fk: true }))
+        "source_relationships", "source_segments", "sources", "stated_views", "subscriptions", "taggings", "tags",
+      ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
 
@@ -329,6 +343,16 @@ describe("the label in a run's log", () => {
   }
 
   it("is on the prompt step's setup and under the run's seal", async () => {
+    // A run at a label other than public is served only once its model's
+    // provider is cleared for that label (src/provider-labels.ts;
+    // tests/db/provider-labels.test.ts), so this deployment clears it.
+    const deployment = loadConfig() as unknown as { providerLabels: Record<string, string[]> };
+    const loaded = deployment.providerLabels;
+    onTestFinished(() => {
+      deployment.providerLabels = loaded;
+    });
+    deployment.providerLabels = { anthropic: [PUBLIC_LABEL, INTERNAL] };
+
     const runId = await runWithUsageContext({ label: INTERNAL }, runWithOneCall);
     const run = await sealed(runId);
     expect(run.sensitivity_label).toBe(INTERNAL);

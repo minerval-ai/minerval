@@ -33,8 +33,13 @@ import type {
   WithheldRun,
   RunStepSummary,
   RunStep,
+  StatedView,
+  StatedViewList,
+  StatedViewRelation,
 } from "./types";
 import { ALL_FEATURES_ON, featuresFromResponse, type Features } from "./features";
+import { membersOnly } from "./members";
+import { viewerExternalId } from "./viewer";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
 // environment and attached here, on the server — it is never shipped to the
@@ -49,9 +54,46 @@ export function apiConfigured(): boolean {
 }
 
 class ApiError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(
+    message: string,
+    readonly status: number,
+    // The API's own code for a refusal, where its answer carried one.
+    readonly code?: string,
+  ) {
     super(message);
   }
+}
+
+// The code in an error answer, in either shape the API uses: flat
+// { error, code }, or an { error: { code, message } } envelope.
+async function errorCode(res: Response): Promise<string | undefined> {
+  try {
+    const body = (await res.json()) as { code?: unknown; error?: { code?: unknown } | string };
+    const code = typeof body.error === "object" && body.error ? body.error.code ?? body.code : body.code;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// What a read sends and how long its answer may be kept.
+//
+// On the public graph a read is for anybody: the service key alone, and the
+// answer shared between readers for a short window, because the graph
+// changes as claims are reassessed.
+//
+// In a members-only deployment (lib/members.ts) the API answers by who is
+// reading, so the read names the signed-in reader and its answer is kept
+// for no one. A visitor who is not signed in is named as nobody, and the
+// API refuses the read.
+async function readOptions(): Promise<RequestInit & { next?: { revalidate: number } }> {
+  const key: Record<string, string> = KEY ? { "x-api-key": KEY } : {};
+  if (!membersOnly()) return { headers: key, next: { revalidate: 30 } };
+  const viewer = await viewerExternalId();
+  return {
+    headers: { ...key, ...(viewer ? { "x-acting-user": viewer } : {}) },
+    cache: "no-store",
+  };
 }
 
 // An id as exactly one segment of a backend path. Ids arrive from route
@@ -70,13 +112,13 @@ function pathSegment(id: string): string {
 
 async function apiGet<T>(path: string): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
-  const res = await fetch(`${BASE}${path}`, {
-    headers: KEY ? { "x-api-key": KEY } : {},
-    // The graph changes as claims are reassessed; revalidate on a short window.
-    next: { revalidate: 30 },
-  });
+  const res = await fetch(`${BASE}${path}`, await readOptions());
   if (!res.ok) {
-    throw new ApiError(`Minerval API ${res.status} ${res.statusText} for ${path}`, res.status);
+    throw new ApiError(
+      `Minerval API ${res.status} ${res.statusText} for ${path}`,
+      res.status,
+      await errorCode(res),
+    );
   }
   return (await res.json()) as T;
 }
@@ -152,7 +194,7 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
   // Detail (deep), trajectory, and the contribution record (#171) are separate
   // endpoints; fetch in parallel. Trajectory and record degrade to absent
   // rather than failing the page (e.g. an API deploy racing the frontend).
-  const [detail, trajectory, record, findings, provenanceStory] = await Promise.all([
+  const [detail, trajectory, record, findings, provenanceStory, statedViews] = await Promise.all([
     apiGet<RawDetail>(`/claims/${seg}?information_depth=deep`),
     apiGet<TrajectoryResponse>(`/claims/${seg}/assessments/trajectory`).catch(() => null),
     apiGet<{ record: ContributionExchange[] }>(`/claims/${seg}/record`).catch(() => null),
@@ -160,12 +202,18 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
     fetchFindings({ claimId: id, limit: 10 }).catch(() => [] as Finding[]),
     // The origins-first provenance map (#507); absent rather than failing the page.
     apiGet<ProvenanceStory>(`/claims/${seg}/provenance`).catch(() => null),
+    // Views stated to the graph directly on this node (§4), every statement
+    // with the earlier ones; absent rather than failing the page.
+    apiGet<{ stated_views: StatedView[] }>(
+      `/stated-views?claim_id=${seg}&earlier=true`,
+    ).catch(() => null),
   ]);
   return {
     ...withMathDefaults(detail),
     provenance_story: provenanceStory,
     ...(trajectory ? { trajectory } : {}),
     ...(record ? { record: record.record } : {}),
+    ...(statedViews ? { stated_views: statedViews.stated_views } : {}),
     findings,
   };
 }
@@ -535,6 +583,27 @@ export async function fetchSourceFacts(id: string): Promise<SourceFacts | null> 
   }
 }
 
+// Where stated views and the assessments in force differ (§4): the current
+// statement of each speaker on each node, for one speaker or for all. The
+// counts in `summary` cover the whole selection; the rows are one page.
+export async function fetchStatedViews(opts: {
+  speakerId?: string;
+  relation?: StatedViewRelation;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<StatedViewList | null> {
+  const qs = new URLSearchParams();
+  if (opts.speakerId) qs.set("speaker_id", opts.speakerId);
+  if (opts.relation) qs.set("relation", opts.relation);
+  qs.set("limit", String(opts.limit ?? 100));
+  if (opts.offset) qs.set("offset", String(opts.offset));
+  try {
+    return await apiGet<StatedViewList>(`/stated-views?${qs.toString()}`);
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchContribution(
   id: string,
 ): Promise<ContributionDetail | null> {
@@ -558,7 +627,8 @@ export async function fetchContributionStatus(id: string): Promise<{
   if (!BASE) return null;
   try {
     const res = await fetch(`${BASE}/contributions/${pathSegment(id)}`, {
-      headers: KEY ? { "x-api-key": KEY } : {},
+      // Read fresh in every deployment; in a members-only one, for the reader.
+      headers: (await readOptions()).headers,
       cache: "no-store",
     });
     if (!res.ok) return null;
@@ -644,10 +714,15 @@ export interface MandateAllocationView {
   budget: {
     escrow_owls: number;
     spent_owls: number;
-    /** The part of spent_owls metered outside the ledger: in no kind's row, not held to the daily rate. */
+    /** The part of spent_owls metered outside the ledger: in no kind's row, not held to the pace. */
     outside_ledger_owls: number;
-    daily_rate_owls: number;
-    used_today_owls: number;
+    /** How fast the money may be committed: as needed, or steady over a rolling window. */
+    pace: { kind: "as_needed"; reason?: string | null } | { kind: "steady"; owls: number; period_hours: number; reason?: string | null };
+    /** Steady only: committed within the window now. */
+    pace_window_used_owls: number | null;
+    reserve_owls: number;
+    reserve_reason: string | null;
+    pace_sentence: string | null;
     held_owls: number;
     regranted_owls: number;
     prizes_owls: number;

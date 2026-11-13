@@ -377,7 +377,6 @@ such as a page analysis served from cache. As of the effective date:
 | Order a claim assessment | 2 Owls |
 | Submit a source for extraction | 0.1 Owl |
 | Extension page analysis | 0.1 Owl |
-| Extension chat exchange | 0.1 Owl |
 | MCP text tools (match, extract, assess) | 0.1 Owl |
 
 Open-ended work, including deep decomposition and Mandates, is not capped

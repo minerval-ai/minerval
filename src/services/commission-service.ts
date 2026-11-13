@@ -15,7 +15,7 @@
  * of unspent budget, a person's balance guard) hold for commissions too.
  *
  * Three kinds of payer:
- *  - a mandate: its money, within its daily rate (counted as what is spent
+ *  - a mandate: its money, within its pace (counted as what is spent
  *    or still held by running work, allocationDayUseSql) and its escrow;
  *  - a person: their owls, debited behind the balance guard;
  *  - a running agent, paying from its own budget: the amount moves from the
@@ -23,15 +23,16 @@
  *    payer (a mandate's stays the mandate's, a person's the person's) and
  *    parent_action_id records the chain a petition is later routed along.
  */
+import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
-import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
-import { allocationDayUseSql } from "./day-use.js";
-import { grantCommittedMicroUsd } from "./regrant-service.js";
+import { ASSESS_GROUP, ensureAssessActions, joinFaultWait } from "./action-service.js";
+import { committerFor, paceRefusal, paceRoom, type PaceCommitter } from "./pace-service.js";
 import { enqueueSteward, type StewardMessage } from "./queue-service.js";
 import type { MessageSender } from "./inbox-service.js";
 import { microUsdToOwls } from "./owl.js";
 import { requestQuoteNote } from "./request-service.js";
 import { stewardPark, stewardParkNote, type StewardPark } from "./steward-park-reason.js";
+import { faultWaitSentence, type FaultWait } from "./deployment-fault.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
 
 export type CommissionPayer =
@@ -74,6 +75,30 @@ export interface CommissionInput {
  */
 export type CommissionedPark = StewardPark & { note: string };
 
+/**
+ * Set when the work commissioned cannot start yet because a platform fault
+ * is stopping its kind of work (#971, deployment-fault.ts): the commission
+ * is placed and waits with the rest, and `note` says so, with what happens
+ * to its budget meanwhile. Passed on to whoever paid, as a park's note is.
+ */
+export type CommissionedWait = FaultWait & { note: string };
+
+const waitNote = (w: FaultWait): CommissionedWait => ({
+  ...w,
+  note: `This work is placed but not starting yet: it is ${faultWaitSentence(w)}.`,
+});
+
+/** The notes a commission's payer must read (a park's, a wait's), as one string; "" when there are none. */
+export function commissionNoteText(res: { parked?: { note: string }; waiting?: { note: string } }): string {
+  return [res.parked?.note, res.waiting?.note].filter(Boolean).map((n) => ` ${n}`).join("");
+}
+
+/** The same notes as a `note` field for a structured result, or nothing. */
+export function commissionNoteField(res: { parked?: { note: string }; waiting?: { note: string } }): { note?: string } {
+  const text = commissionNoteText(res).trim();
+  return text ? { note: text } : {};
+}
+
 export type CommissionResult =
   | {
       ok: true;
@@ -83,6 +108,7 @@ export type CommissionResult =
       budgetMicroUsd: number;
       tier: CommissionTier;
       parked?: CommissionedPark;
+      waiting?: CommissionedWait;
     }
   | {
       ok: true;
@@ -97,26 +123,21 @@ export type CommissionResult =
       code:
         | "BAD_AMOUNT"
         | "NOT_FOUND"
-        | "OVER_DAILY_RATE"
+        | "OVER_PACE"
         | "OVER_ESCROW"
         | "INSUFFICIENT_OWLS"
         | "OVER_RUN_BUDGET"
         | "PAYER_INACTIVE";
       message: string;
+      /**
+       * OVER_PACE or OVER_ESCROW from a mandate: what the binding bound (the
+       * pace's window, the reserve or the escrow) had left when the
+       * commission was refused, so a caller placing several (a plan's
+       * standing orders) can tell which of the rest would fit.
+       */
+      roomMicroUsd?: number;
     };
 
-/** A mandate's day so far: what is spent or held by running work today. */
-export async function grantDayUseMicroUsd(grantId: string, tx?: TxQuery): Promise<number> {
-  const q = <T,>(text: string, params: unknown[]) => (tx ? tx.query<T>(text, params) : rawQuery<T>(text, params));
-  const [row] = await q<{ used: number }>(
-    `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS used
-       FROM action_allocations
-      WHERE grant_id = $1
-        AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-    [grantId]
-  );
-  return Number(row?.used ?? 0);
-}
 
 interface LiveRow {
   action_id: string;
@@ -265,6 +286,7 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     sender: message.sender,
     paid: true,
   });
+  const wait = await joinFaultWait(row.id).catch(() => null);
   return {
     ok: true,
     status: "commissioned",
@@ -273,6 +295,7 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     budgetMicroUsd: budget,
     tier: row.variant,
     ...parked,
+    ...(wait ? { waiting: waitNote(wait) } : {}),
   };
 }
 
@@ -306,6 +329,8 @@ export async function commissionAction(input: {
        * caller passes the note on in its own result.
        */
       quote?: { quoteMicroUsd: number; underQuote: boolean; note: string };
+      /** The work cannot start yet for a platform fault; see CommissionedWait. */
+      waiting?: CommissionedWait;
     }
   | { ok: true; status: "already_commissioned"; kind: string }
   | Extract<CommissionResult, { ok: false }>
@@ -347,7 +372,13 @@ export async function commissionAction(input: {
     });
     if (!res.ok) return res;
     return res.status === "commissioned"
-      ? { ok: true, status: "commissioned", allocationId: res.allocationId, kind: row.kind }
+      ? {
+          ok: true,
+          status: "commissioned",
+          allocationId: res.allocationId,
+          kind: row.kind,
+          ...(res.waiting ? { waiting: res.waiting } : {}),
+        }
       : { ok: true, status: "already_commissioned", kind: row.kind };
   }
   if (await groupLive(rawQuery, row.exclusion_group)) {
@@ -376,7 +407,15 @@ export async function commissionAction(input: {
     row.kind === "request" && row.variant === "full" && row.target_ref && quoteMicroUsd > 0
       ? { quoteMicroUsd, ...(await requestQuoteNote({ requestId: row.target_ref, budgetMicroUsd: budget, quoteMicroUsd })) }
       : undefined;
-  return { ok: true, status: "commissioned", allocationId: placed.allocationId, kind: row.kind, ...(quote ? { quote } : {}) };
+  const wait = await joinFaultWait(row.id).catch(() => null);
+  return {
+    ok: true,
+    status: "commissioned",
+    allocationId: placed.allocationId,
+    kind: row.kind,
+    ...(quote ? { quote } : {}),
+    ...(wait ? { waiting: waitNote(wait) } : {}),
+  };
 }
 
 type Placed = { ok: true; allocationId: string } | Extract<CommissionResult, { ok: false }>;
@@ -411,6 +450,12 @@ interface PlaceInput {
   commissionedBy: string;
   brief: string | null;
   reason: string | null;
+  /**
+   * Who the money counts as committed by, for the reserve (pace-service.ts).
+   * Defaults from commissionedBy. A granted petition passes "grantmaker":
+   * its decision was checked against the reserve when it was made.
+   */
+  committer?: PaceCommitter;
 }
 
 async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { ok: false; live: LiveRow }> {
@@ -431,9 +476,8 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       );
       const live = await liveInGroup(tx);
       if (live) return { ok: false, live } as const;
-      const [g] = await tx.query<{ budget_job_id: string; daily: number; escrow: number; status: string; job_status: string }>(
-        `SELECT g.budget_job_id, g.daily_budget_micro_usd AS daily, j.budget_micro_usd AS escrow,
-                g.status, j.status AS job_status
+      const [g] = await tx.query<{ status: string; job_status: string }>(
+        `SELECT g.status, j.status AS job_status
            FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
           WHERE g.id = $1`,
         [payer.grantId]
@@ -441,26 +485,16 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       if (!g || g.status !== "active" || g.job_status !== "running") {
         return { ok: false, code: "PAYER_INACTIVE", message: "The paying mandate is not active." } as const;
       }
-      const daily = Number(g.daily);
-      if (daily > 0) {
-        const used = await grantDayUseMicroUsd(payer.grantId, tx);
-        if (used + budget > daily) {
-          return {
-            ok: false,
-            code: "OVER_DAILY_RATE",
-            message:
-              `A budget of ${owls(budget)} owls is more than today's rate has left ` +
-              `(${owls(Math.max(0, daily - used))} of ${owls(daily)} owls). Running work frees ` +
-              `its unspent budget as it finishes.`,
-          } as const;
-        }
-      }
-      const committed = await grantCommittedMicroUsd({ id: payer.grantId, budgetJobId: g.budget_job_id }, tx);
-      if (committed + budget > Number(g.escrow)) {
+      // The pace, the reserve and the escrow, in one reading (pace-service.ts).
+      const room = await paceRoom(payer.grantId, input.committer ?? committerFor(input.commissionedBy), tx);
+      if (!room || budget > room.availableMicroUsd) {
         return {
           ok: false,
-          code: "OVER_ESCROW",
-          message: `A budget of ${owls(budget)} owls is more than the escrow holds uncommitted (${owls(Math.max(0, Number(g.escrow) - committed))} owls).`,
+          code: room && room.binding === "escrow" ? "OVER_ESCROW" : "OVER_PACE",
+          message: room ? paceRefusal(room, budget) : "The paying mandate is not active.",
+          // What the binding bound has left: a standing order turned away
+          // for it tells the plan's later orders what fits (standing-order-service.ts).
+          roomMicroUsd: Math.max(0, room?.availableMicroUsd ?? 0),
         } as const;
       }
       const [row] = await tx.query<{ id: string }>(
@@ -469,13 +503,16 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
         // petition's top-up, adds to that placement.
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd,
-            commissioned_by, brief, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            commissioned_by, brief, reason, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
-        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason]
+        // The brief and the reason are the commissioning run's words, so
+        // the row carries that run's label (src/labels.ts). More money on
+        // a placement already there leaves its label as it was.
+        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
       );
       return { ok: true, allocationId: row!.id } as const;
     });
@@ -497,9 +534,9 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, user_id, amount_micro_usd,
-            commissioned_by, brief, reason)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [input.group, input.actionId, input.claimId, payer.userId, budget, input.commissionedBy, input.brief, input.reason]
+            commissioned_by, brief, reason, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [input.group, input.actionId, input.claimId, payer.userId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
       );
       return row!.id;
     });
@@ -562,14 +599,14 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, user_id, amount_micro_usd,
-            commissioned_by, brief, reason, parent_action_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            commissioned_by, brief, reason, parent_action_id, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
         [input.group, input.actionId, input.claimId, src.grant_id, src.user_id, take,
-         input.commissionedBy, input.brief, input.reason, payer.actionId]
+         input.commissionedBy, input.brief, input.reason, payer.actionId, currentLabel()]
       );
       first ??= row!.id;
       left -= take;

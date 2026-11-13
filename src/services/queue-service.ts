@@ -5,6 +5,7 @@ import { refreshQueuePriority } from "./priority-service.js";
 import { ensureAssessActions, ensureAuditAction } from "./action-service.js";
 import { recordEnqueueEvent } from "./enqueue-events-service.js";
 import { postMessage, type MessageSender } from "./inbox-service.js";
+import { activeSuccessors } from "./claim-lifecycle-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 
 let _sqsClient: SQSClient | null = null;
@@ -168,6 +169,12 @@ export interface StewardMessage {
    * read by the pass someone later commissions. A paid message un-parks too.
    */
   unpark?: boolean;
+  /**
+   * Set by enqueueSteward when it forwards a message addressed to a retired
+   * node to that node's successor (#962). A forwarded message is not
+   * forwarded again.
+   */
+  forwardedFrom?: string;
 }
 
 /**
@@ -365,28 +372,32 @@ export async function enqueueSteward(
   const stillParked = rows[0]?.new_state === "error";
 
   // No row = the claim is missing or inactive; nothing was enqueued, so
-  // there is no event to record and no message to keep.
-  if (rows.length > 0) {
-    // The message itself goes to the node's inbox, whole (inbox-service.ts).
-    await postMessage({
-      nodeId: message.claimId,
+  // there is no event to record and no message to keep on it. A node that
+  // is no longer active gets no messages (nothing would ever read them,
+  // #962); where it has a successor, the message goes there instead.
+  if (rows.length === 0) {
+    if (!message.forwardedFrom) await forwardToSuccessors(message);
+    return;
+  }
+  // The message itself goes to the node's inbox, whole (inbox-service.ts).
+  await postMessage({
+    nodeId: message.claimId,
+    trigger: message.trigger,
+    body: message.context,
+    sender: message.sender,
+    paid: message.paid,
+  });
+  // An enqueue event is an arrival in the queue; a message that left the
+  // node parked is not one.
+  if (!stillParked) {
+    recordEnqueueEvent({
+      queue: "steward",
       trigger: message.trigger,
-      body: message.context,
-      sender: message.sender,
-      paid: message.paid,
+      claimId: message.claimId,
+      coalesced:
+        rows[0]!.prev_state === "pending" ||
+        (rows[0]!.prev_state === "running" && rows[0]!.prev_requeued),
     });
-    // An enqueue event is an arrival in the queue; a message that left the
-    // node parked is not one.
-    if (!stillParked) {
-      recordEnqueueEvent({
-        queue: "steward",
-        trigger: message.trigger,
-        claimId: message.claimId,
-        coalesced:
-          rows[0]!.prev_state === "pending" ||
-          (rows[0]!.prev_state === "running" && rows[0]!.prev_requeued),
-      });
-    }
   }
 
   if (stillParked) return;
@@ -419,6 +430,43 @@ export async function enqueueSteward(
 }
 
 /**
+ * A message addressed to a node that is no longer active goes to the active
+ * nodes that carry on what it stated (#962): a merged node's survivor, or the
+ * successors its retirement record names (claim-lifecycle-service.ts). Each
+ * gets it unpaid, prefixed with where it was addressed: a pass commissioned
+ * for one node is not bought for another, and the successor's Steward should
+ * know the message was written about a different node. A retired node with no
+ * active successor gets nothing, and nothing is queued. A first-pass request
+ * (`structure_and_assess`) is not forwarded: it asks for the retired node's
+ * own structuring, which its successor has had.
+ */
+async function forwardToSuccessors(message: StewardMessage): Promise<void> {
+  if (message.trigger === "structure_and_assess") return;
+  let successors: string[];
+  try {
+    successors = await activeSuccessors(message.claimId);
+  } catch (err) {
+    console.warn(
+      `[queue] successor lookup failed for ${message.claimId}:`,
+      err instanceof Error ? err.message : err
+    );
+    return;
+  }
+  for (const successorId of successors) {
+    await enqueueSteward({
+      claimId: successorId,
+      trigger: message.trigger,
+      context:
+        `[Addressed to ${message.claimId}, which is no longer active; this node carries on ` +
+        `what it stated, so the message is forwarded here. Weigh it for this node.] ` +
+        message.context,
+      sender: message.sender,
+      forwardedFrom: message.claimId,
+    });
+  }
+}
+
+/**
  * Request an Audit Agent run (#180): the single entry point every trigger
  * uses. Creates the audit_runs row FIRST — the run's identity, which findings
  * attach to — and then opens its `audit` ledger action (#363), which runs
@@ -429,10 +477,9 @@ export async function enqueueSteward(
  *
  * Who pays: a prize audit (bountyId) is funded at once from the bounty's
  * prize-review reserve, like the prize review itself; every other audit is
- * raised to the Governance mandates' program officers, who never fund an
- * audit whose subject is their own mandate (subjectGrantId); an audit of a
- * Governance mandate goes to the General mandate instead
- * (maintenance-funding.ts, fundAuditNow).
+ * raised to the General mandate's program officers, as upkeep, unless
+ * General is its subject (subjectGrantId): no mandate funds an audit of
+ * itself (maintenance-funding.ts, fundAuditNow).
  *
  * Returns the run id, or null when an earlier request already claimed the
  * dedupe key.
@@ -470,8 +517,8 @@ export async function requestAudit(input: {
 }): Promise<string | null> {
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO audit_runs
-       (audit_type, context, triggered_by, dedupe_key, subject_grant_id, bounty_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (audit_type, context, triggered_by, dedupe_key, subject_grant_id, bounty_id, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING
      RETURNING id`,
     [
@@ -481,6 +528,9 @@ export async function requestAudit(input: {
       input.dedupeKey ?? null,
       input.subjectGrantId ?? null,
       input.bountyId ?? null,
+      // The label the audit is asked for at, the same one its ledger row
+      // takes below (src/labels.ts).
+      currentLabel(),
     ]
   );
   const runId = rows[0]?.id;
@@ -504,7 +554,7 @@ export async function requestAudit(input: {
       )
     );
   } else {
-    // Put in front of the Governance mandates' officers now (lazily:
+    // Put in front of the General mandate's officers now (lazily:
     // maintenance-funding reaches this module through its imports).
     const { fundAuditNow } = await import("./maintenance-funding.js");
     await fundAuditNow(actionId);

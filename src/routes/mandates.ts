@@ -28,6 +28,7 @@ import { mandatePrizesBlock } from "../services/bounty-service.js";
 import { getLookout, listLookoutFlags, lookoutPrecision } from "../services/lookout-service.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
 import { optionalAuthHook } from "../server/optional-auth.js";
+import { requirePermission } from "../server/require-permission.js";
 
 export async function mandateRoutes(app: FastifyInstance): Promise<void> {
   // Authenticate only when the caller presented credentials; anonymous
@@ -106,7 +107,7 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
         "The mandate's operations: the operating policy its program officers " +
         "carry out, its escrow (spent, held by running work, regranted, " +
         "held for prizes, and the remainder, which add up to the escrow) " +
-        "and today's use of its daily rate, what it " +
+        "and where its pace stands (as needed or steady, and the Grantmaker's reserve), what it " +
         "commissioned in the last 30 days and how those runs used their " +
         "budgets (paged), its officers' and Grantmaker's recent decisions, " +
         "and the petitions it heard",
@@ -181,7 +182,7 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           },
         },
       },
-      preHandler: [app.authenticate, app.requireUser],
+      preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
         const result = await contributeToMandate({
           grantId: request.params.id,
