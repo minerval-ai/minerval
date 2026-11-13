@@ -21,7 +21,8 @@ import { getClaimById, getClaimInstances } from "./claim-service.js";
 import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import { judgmentsInForce, nodeVersions, severalInForceNote } from "./judgment-version-service.js";
-import { holdsMirror, mirroredFacts } from "./mirrored-node-service.js";
+import { lowerRowSql } from "./layer-service.js";
+import { mirroredFacts } from "./mirrored-node-service.js";
 import {
   getArgumentsForClaim,
   getEvaluationStateForClaim,
@@ -659,9 +660,11 @@ async function listDirectSubclaims(claimId: string) {
     child_kind: string;
     child_estimate: unknown | null;
     child_standing: string | null;
-    edge_origin: string;
+    lower_edge_id: string | null;
   } & StewardParkRow>(
-    `SELECT cr.id AS edge_id, cr.origin AS edge_origin, cr.child_claim_id AS child_id, c.text AS child_text,
+    `SELECT cr.id AS edge_id,
+            ${lowerRowSql("claim_relationships", "cr", ["parent_claim_id", "child_claim_id", "relation_type"])} AS lower_edge_id,
+            cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.reasoning, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
             a.claim_credence AS child_credence,
@@ -684,25 +687,24 @@ async function listDirectSubclaims(claimId: string) {
   const covered = await summarizeCoverage(rows.map((sc) => sc.child_id)).catch(() => null);
   // Where more than one judgment of a premise is in force for the asker, its row says how many.
   const several = await judgmentsInForce(rows.map((sc) => sc.child_id)).catch(() => new Map<string, number>());
-  // An edge this deployment recorded and the public graph's own edge for
-  // the same child and relation are the same thing recorded twice
-  // (db/schema.ts, the origin column), and are listed once: the public
-  // graph's row, with its grouping under arguments, and beside it what this
-  // deployment wrote for its own (`also_recorded_here`). The deployment's
-  // row is still listed where it is grouped under an argument, which is a
-  // fact of its own. Only a deployment that mirrors can hold such a pair.
-  const pair = (sc: { child_id: string; relation_type: string }) => `${sc.child_id}:${sc.relation_type}`;
-  const own = new Map<string, { edge_id: string; reasoning: string | null }>();
-  const mirrored = new Set<string>();
-  if (holdsMirror()) {
-    for (const sc of rows) {
-      if (sc.edge_origin === "mirror") mirrored.add(pair(sc));
-      else if (!own.has(pair(sc))) own.set(pair(sc), { edge_id: sc.edge_id, reasoning: sc.reasoning });
+  // An edge recorded at one layer and the same edge (the same child and
+  // relation) recorded at a layer below it are the same thing recorded
+  // twice (layer-service.ts): the public graph's edge and this
+  // deployment's own, or one label's and that of a label reading it. They
+  // are listed once: the lowest layer's row, with its grouping under
+  // arguments, and beside it what the higher layer wrote for its own
+  // (`also_recorded_here`). The higher row is still listed where it is
+  // grouped under an argument, which is a fact of its own. Two rows at
+  // labels that do not read each other are neither below the other, and a
+  // reader of both is given both. Only a graph with more than one layer
+  // can hold such a pair.
+  const above = new Map<string, { edge_id: string; reasoning: string | null }>();
+  for (const sc of rows) {
+    if (sc.lower_edge_id && !above.has(sc.lower_edge_id)) {
+      above.set(sc.lower_edge_id, { edge_id: sc.edge_id, reasoning: sc.reasoning });
     }
   }
-  const listedOnce = rows.filter(
-    (sc) => !(sc.edge_origin !== "mirror" && sc.argument_id === null && mirrored.has(pair(sc)))
-  );
+  const listedOnce = rows.filter((sc) => !(sc.lower_edge_id && sc.argument_id === null));
   return listedOnce.map((sc) => ({
     id: sc.child_id,
     edge_id: sc.edge_id,
@@ -711,7 +713,7 @@ async function listDirectSubclaims(claimId: string) {
     relation: sc.relation_type,
     // Why the edge holds, as its author wrote it.
     reasoning: sc.reasoning,
-    ...(sc.edge_origin === "mirror" && own.has(pair(sc)) ? { also_recorded_here: own.get(pair(sc)) } : {}),
+    ...(!sc.lower_edge_id && above.has(sc.edge_id) ? { also_recorded_here: above.get(sc.edge_id) } : {}),
     confidence: sc.confidence,
     assessment_status: sc.child_status,
     assessment_confidence: sc.child_confidence,

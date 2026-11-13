@@ -19,7 +19,7 @@
  *    metered cost is consumed pro rata from the winner's covering
  *    allocations.
  */
-import { oneSourceForAddressSql } from "./mirrored-node-service.js";
+import { oneSourceForAddressSql } from "./layer-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { currentLabel, labelInContext, runAtLabel } from "../llm/usage-context.js";

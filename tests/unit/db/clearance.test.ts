@@ -166,11 +166,11 @@ describe("a refusal by the wall", () => {
     expect(refusalForCaller(new ClearanceError("The write was refused: reasons."))).toBe("The write was refused: reasons.");
     const collision = Object.assign(new Error("this was not written: a row with the same identity already exists at a label this work does not read"), {
       code: "MVL03",
-      hint: "A table holds one row for each identity whatever the labels, and each label keeping its own is not built yet. Nothing was changed.",
+      hint: "This key is held once for the whole deployment, whatever the labels. Nothing was changed.",
     });
     expect(refusalForCaller(collision)).toBe(
       "This was not written: a row with the same identity already exists at a label this work does not read. " +
-        "A table holds one row for each identity whatever the labels, and each label keeping its own is not built yet. Nothing was changed."
+        "This key is held once for the whole deployment, whatever the labels. Nothing was changed."
     );
     expect(isUnseenCollision(collision)).toBe(true);
     expect(refusalForCaller(Object.assign(new Error("the judgment in force on this node was recorded at another label, and this work may not retire it"), { code: "MVL02" }))).toBe(

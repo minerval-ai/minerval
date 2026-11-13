@@ -1,5 +1,5 @@
 {
-  "id": "c01c01c0-894a-4cef-9091-795db3db5554",
+  "id": "9a550871-9222-4a88-84cd-dabb10aff5d7",
   "prevId": "8b9a956e-c19c-43c6-bb71-9596ca54ce9a",
   "version": "7",
   "dialect": "postgresql",
@@ -701,13 +701,7 @@
           "name": "public_request_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "from_request_id": {
-          "name": "from_request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "adopted_by": {
           "name": "adopted_by",
@@ -778,21 +772,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_adopted_requests_from": {
-          "name": "idx_adopted_requests_from",
-          "columns": [
-            {
-              "expression": "from_request_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -802,19 +781,6 @@
           "tableTo": "requests",
           "columnsFrom": [
             "request_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "adopted_requests_from_request_id_requests_id_fk": {
-          "name": "adopted_requests_from_request_id_requests_id_fk",
-          "tableFrom": "adopted_requests",
-          "tableTo": "requests",
-          "columnsFrom": [
-            "from_request_id"
           ],
           "columnsTo": [
             "id"
@@ -852,12 +818,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "ck_adopted_requests_from": {
-          "name": "ck_adopted_requests_from",
-          "value": "(\"adopted_requests\".\"public_request_id\" IS NULL) <> (\"adopted_requests\".\"from_request_id\" IS NULL)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.agent_finding_sightings": {
@@ -2335,6 +2296,12 @@
               "nulls": "last"
             },
             {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "origin",
               "isExpression": false,
               "asc": true,
@@ -3094,6 +3061,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -3497,11 +3470,12 @@
         }
       },
       "compositePrimaryKeys": {
-        "argument_subclaims_argument_id_relationship_id_origin_pk": {
-          "name": "argument_subclaims_argument_id_relationship_id_origin_pk",
+        "argument_subclaims_argument_id_relationship_id_sensitivity_label_origin_pk": {
+          "name": "argument_subclaims_argument_id_relationship_id_sensitivity_label_origin_pk",
           "columns": [
             "argument_id",
             "relationship_id",
+            "sensitivity_label",
             "origin"
           ]
         }
@@ -5718,6 +5692,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -6179,6 +6159,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -6251,7 +6237,8 @@
           "nullsNotDistinct": false,
           "columns": [
             "claim_id",
-            "version"
+            "version",
+            "sensitivity_label"
           ]
         }
       },
@@ -6478,6 +6465,12 @@
           "columns": [
             {
               "expression": "instance_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -6920,6 +6913,12 @@
               "nulls": "last"
             },
             {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "origin",
               "isExpression": false,
               "asc": true,
@@ -7281,6 +7280,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -7443,6 +7448,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -7599,6 +7610,12 @@
             },
             {
               "expression": "relation_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -7791,6 +7808,12 @@
           "columns": [
             {
               "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -10774,6 +10797,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -11522,6 +11551,12 @@
             },
             {
               "expression": "facet",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -14479,7 +14514,8 @@
             "formalization_id",
             "submission_sha256",
             "checker_version",
-            "mode"
+            "mode",
+            "sensitivity_label"
           ]
         }
       },
@@ -15011,6 +15047,12 @@
             },
             {
               "expression": "item_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -16807,6 +16849,112 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.mirror_node_changes": {
+      "name": "mirror_node_changes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cut_at": {
+          "name": "cut_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "change": {
+          "name": "change",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "applied_at": {
+          "name": "applied_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
+        }
+      },
+      "indexes": {
+        "idx_mirror_node_changes_claim": {
+          "name": "idx_mirror_node_changes_claim",
+          "columns": [
+            {
+              "expression": "claim_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "applied_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "mirror_node_changes_sensitivity_label_labels_name_fk": {
+          "name": "mirror_node_changes_sensitivity_label_labels_name_fk",
+          "tableFrom": "mirror_node_changes",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_mirror_node_changes_change": {
+          "name": "ck_mirror_node_changes_change",
+          "value": "\"mirror_node_changes\".\"change\" IN ('reworded', 'argument_added', 'argument_rewritten', 'argument_retired', 'argument_removed', 'merged', 'withdrawn')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.mirror_refusals": {
       "name": "mirror_refusals",
       "schema": "",
@@ -16911,203 +17059,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.node_changes": {
-      "name": "node_changes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "claim_id": {
-          "name": "claim_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sequence": {
-          "name": "sequence",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cut_at": {
-          "name": "cut_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "change": {
-          "name": "change",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "detail": {
-          "name": "detail",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        },
-        "applied_at": {
-          "name": "applied_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "indexes": {
-        "idx_node_changes_claim": {
-          "name": "idx_node_changes_claim",
-          "columns": [
-            {
-              "expression": "claim_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "applied_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "node_changes_sensitivity_label_labels_name_fk": {
-          "name": "node_changes_sensitivity_label_labels_name_fk",
-          "tableFrom": "node_changes",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_node_changes_change": {
-          "name": "ck_node_changes_change",
-          "value": "\"node_changes\".\"change\" IN ('reworded', 'argument_added', 'argument_rewritten', 'argument_retired', 'argument_removed', 'kind_corrected', 'merged', 'withdrawn')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.node_message_reads": {
-      "name": "node_message_reads",
-      "schema": "",
-      "columns": {
-        "message_id": {
-          "name": "message_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "outcome": {
-          "name": "outcome",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "outcome_note": {
-          "name": "outcome_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "answered_at": {
-          "name": "answered_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "node_message_reads_message_id_node_messages_id_fk": {
-          "name": "node_message_reads_message_id_node_messages_id_fk",
-          "tableFrom": "node_message_reads",
-          "tableTo": "node_messages",
-          "columnsFrom": [
-            "message_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "node_message_reads_sensitivity_label_labels_name_fk": {
-          "name": "node_message_reads_sensitivity_label_labels_name_fk",
-          "tableFrom": "node_message_reads",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "node_message_reads_message_id_sensitivity_label_pk": {
-          "name": "node_message_reads_message_id_sensitivity_label_pk",
-          "columns": [
-            "message_id",
-            "sensitivity_label"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_node_message_reads_outcome": {
-          "name": "ck_node_message_reads_outcome",
-          "value": "\"node_message_reads\".\"outcome\" IS NULL OR \"node_message_reads\".\"outcome\" IN ('changed', 'no_change', 'disagree')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.node_messages": {
@@ -20621,10 +20572,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "quantity_cuts_claim_id_origin_pk": {
-          "name": "quantity_cuts_claim_id_origin_pk",
+        "quantity_cuts_claim_id_sensitivity_label_origin_pk": {
+          "name": "quantity_cuts_claim_id_sensitivity_label_origin_pk",
           "columns": [
             "claim_id",
+            "sensitivity_label",
             "origin"
           ]
         }
@@ -20746,10 +20698,11 @@
         }
       },
       "compositePrimaryKeys": {
-        "quantity_definitions_claim_id_origin_pk": {
-          "name": "quantity_definitions_claim_id_origin_pk",
+        "quantity_definitions_claim_id_sensitivity_label_origin_pk": {
+          "name": "quantity_definitions_claim_id_sensitivity_label_origin_pk",
           "columns": [
             "claim_id",
+            "sensitivity_label",
             "origin"
           ]
         }
@@ -21423,6 +21376,12 @@
             },
             {
               "expression": "finding_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -23798,7 +23757,7 @@
         "url_hash": {
           "name": "url_hash",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
           "notNull": true
         },
         "url": {
@@ -23856,7 +23815,15 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "shared_page_analyses_url_hash_sensitivity_label_pk": {
+          "name": "shared_page_analyses_url_hash_sensitivity_label_pk",
+          "columns": [
+            "url_hash",
+            "sensitivity_label"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -25927,6 +25894,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -26320,6 +26293,12 @@
           "columns": [
             {
               "expression": "url",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -26999,6 +26978,12 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
@@ -27172,6 +27157,12 @@
           "columns": [
             {
               "expression": "slug",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

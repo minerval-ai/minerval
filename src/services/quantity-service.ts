@@ -23,14 +23,8 @@ import {
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { markSeveralInForce, recordMadeBeside } from "./judgment-version-service.js";
-import {
-  holdsMirror,
-  mirroredNode,
-  mirroredRowMessage,
-  oneCutForClaimSql,
-  publicGraphJudges,
-  publicJudgmentMessage,
-} from "./mirrored-node-service.js";
+import { oneCutForClaimSql, oneDefinitionForQuantitySql, refuseWhereHeldBelow } from "./layer-service.js";
+import { mirroredNode, mirroredRowMessage, publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, requireKind } from "./node-kind.js";
 
 /** Set a quantity's definition, making a fresh claim a quantity if it is not one yet. */
@@ -46,13 +40,17 @@ export async function defineQuantity(input: {
   if (await mirroredNode(input.claimId)) throw new KindError(mirroredRowMessage("the quantity's definition"));
   await withTransaction(async (tx) => {
     await convertKind(tx, input.claimId, "quantity");
+    // A definition a label this work reads already holds is the
+    // quantity's definition (layer-service.ts): not this work's to revise,
+    // and one of its own beside it would define the quantity twice.
+    await refuseWhereHeldBelow(tx.query.bind(tx), "quantity_definitions", { claim_id: input.claimId }, "this quantity's definition");
     // A first definition takes this run's label; a revision of one keeps
     // the label the definition has (src/labels.ts).
     writtenAtOwnLabel(
       await tx.query(
       `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (claim_id, origin) DO UPDATE
+       ON CONFLICT (claim_id, sensitivity_label, origin) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
              conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
        ${sameLabelOnly("quantity_definitions")}
@@ -220,18 +218,22 @@ export async function recordCut(input: {
   await withTransaction(async (tx) => {
     await requireKind(tx, input.claimId, "claim");
     await requireKind(tx, input.quantityId, "quantity");
-    // A cut the public graph already holds for the claim is the claim's
-    // cut: it is not this deployment's to revise, and one of its own
-    // beside it would say twice where the claim cuts
-    // (mirrored-node-service.ts). Nothing is asked where no mirror is held.
-    if (holdsMirror()) {
-      const held = await tx.query(`SELECT 1 FROM quantity_cuts WHERE claim_id = $1 AND origin = 'mirror'`, [input.claimId]);
-      if (held.length > 0) throw new KindError(mirroredRowMessage("this claim's cut of the quantity"));
-    }
+    // A cut a layer below already holds for the claim (the public graph,
+    // or a label this work reads) is the claim's cut: it is not this
+    // work's to revise, and one of its own beside it would say twice where
+    // the claim cuts (layer-service.ts). Nothing is asked on a graph with
+    // one layer.
+    await refuseWhereHeldBelow(
+      tx.query.bind(tx),
+      "quantity_cuts",
+      { claim_id: input.claimId },
+      "this claim's cut of the quantity",
+      (message) => new KindError(message)
+    );
     const written = await tx.query<{ claim_id: string }>(
       `INSERT INTO quantity_cuts (claim_id, quantity_id, direction, value, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (claim_id, origin) DO UPDATE
+       ON CONFLICT (claim_id, sensitivity_label, origin) DO UPDATE
          SET quantity_id = EXCLUDED.quantity_id, direction = EXCLUDED.direction, value = EXCLUDED.value
        ${sameLabelOnly("quantity_cuts")}
        RETURNING claim_id`,
@@ -310,7 +312,7 @@ export interface QuantityDetailView {
 
 export async function getQuantityDefinition(claimId: string): Promise<QuantityDefinitionView | null> {
   const [row] = await rawQuery<QuantityDefinitionView>(
-    `SELECT measures, population, conditions, unit FROM quantity_definitions WHERE claim_id = $1`,
+    `SELECT measures, population, conditions, unit FROM quantity_definitions qd WHERE claim_id = $1${oneDefinitionForQuantitySql("qd")}`,
     [claimId]
   );
   return row ?? null;

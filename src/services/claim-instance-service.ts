@@ -18,6 +18,7 @@
  * Insertion order never decides anything a reader sees: it would put
  * whichever source happened to be ingested first at the top.
  */
+import { oneReadingForInstanceSql } from "./layer-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import {
   getProvenanceStory,
@@ -239,7 +240,7 @@ export async function getClaimInstancePage(
         }>(
           `SELECT instance_id, support, deployment, note, quote_check, worth_reading,
                   worth_reading_reason, source_read, updated_at
-             FROM claim_instance_readings WHERE instance_id = ANY($1::uuid[])`,
+             FROM claim_instance_readings r WHERE instance_id = ANY($1::uuid[])${oneReadingForInstanceSql("r")}`,
           [ids]
         ),
         rawQuery<{

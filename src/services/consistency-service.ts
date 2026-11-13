@@ -32,7 +32,7 @@
  * valuation, and it moves no money.
  */
 import { oneLabelOnly } from "./judgment-version-service.js";
-import { oneCutForClaimSql } from "./mirrored-node-service.js";
+import { oneCutForClaimSql } from "./layer-service.js";
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { slotColumnSql } from "./steward-lease.js";

@@ -8,7 +8,7 @@ import { sourceContentHash } from "./source-content.js";
 import { enqueueUrlExtraction } from "./queue-service.js";
 import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 import { currentLabel } from "../llm/usage-context.js";
-import { holdsMirror } from "./mirrored-node-service.js";
+import { layered } from "./layer-service.js";
 import { addressForRun } from "./given-addresses.js";
 
 /**
@@ -31,17 +31,17 @@ export async function getOrCreateSource(input: {
   // the caller's as written.
   input = { ...input, url: await addressForRun(input.url) };
 
-  // One row for the address: where this deployment and the public graph
-  // each hold one, the one this label wrote, else the public graph's
-  // (mirrored-node-service.ts, oneSourceForAddressSql).
-  const [existing] = holdsMirror()
+  // One row for the address. Where more than one layer holds it, the one
+  // this label wrote, else the lowest layer's: the public graph's, then a
+  // label this work reads (layer-service.ts, oneSourceForAddressSql).
+  const [existing] = layered()
     ? await db
         .select()
         .from(sources)
         .where(eq(sources.url, input.url))
         .orderBy(
           sql`(${sources.origin} = 'local' AND ${sources.sensitivityLabel} = ${currentLabel()}) DESC`,
-          sql`(${sources.origin} = 'mirror') DESC`,
+          sql`minerval_layer_depth(${sources.sensitivityLabel}, ${sources.origin})`,
           sources.retrievedAt,
           sources.id
         )

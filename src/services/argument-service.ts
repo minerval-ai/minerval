@@ -1,4 +1,4 @@
-import { holdsMirror } from "./mirrored-node-service.js";
+import { layered } from "./layer-service.js";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { arguments_, argumentEvaluations, argumentEvaluationsInForce } from "../db/schema.js";
@@ -114,8 +114,8 @@ export async function getRetiredArgumentsForClaim(claimId: string) {
 export async function getArgumentSubclaims(
   argumentId: string
 ): Promise<{ id: string; text: string }[]> {
-  const rows = await rawQuery<{ id: string; text: string; edge_id: string }>(
-    `SELECT c.id, c.text, cr.id AS edge_id
+  const rows = await rawQuery<{ id: string; text: string; premise: string }>(
+    `SELECT c.id, c.text, cr.child_claim_id || ':' || cr.relation_type AS premise
        FROM argument_subclaims am
        JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claims c ON c.id = cr.child_claim_id
@@ -123,12 +123,13 @@ export async function getArgumentSubclaims(
       ORDER BY am.created_at, cr.id`,
     [argumentId]
   );
-  // A grouping this deployment recorded and the public graph's own of the
-  // same edge are two rows (db/schema.ts, the origin column) and one
-  // premise. Only a deployment that mirrors can hold such a pair.
+  // An edge's grouping recorded at two layers, or the same edge recorded
+  // at two layers and each grouped here, is two rows and one premise
+  // (layer-service.ts). Only a graph with more than one layer can hold
+  // such a pair.
   const seen = new Set<string>();
   return rows
-    .filter((r) => !holdsMirror() || (!seen.has(r.edge_id) && Boolean(seen.add(r.edge_id))))
+    .filter((r) => !layered() || (!seen.has(r.premise) && Boolean(seen.add(r.premise))))
     .map(({ id, text }) => ({ id, text }));
 }
 

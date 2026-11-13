@@ -33,8 +33,8 @@
  */
 import { rawQuery } from "../../db/client.js";
 import type { NodeKind } from "../../schemas/kinds.js";
-import { holdsMirror } from "../../services/mirrored-node-service.js";
-import { nodeVersions, oneLabelOnly } from "../../services/judgment-version-service.js";
+import { layered } from "../../services/layer-service.js";
+import { nodeVersions } from "../../services/judgment-version-service.js";
 import { currentLabel } from "../usage-context.js";
 
 /** How many items each list names, as in the note this one joins. */
@@ -160,12 +160,13 @@ function layerLines(heading: string, withdrawnBy: string, changes: readonly Chan
  * wrote (it carries a batch), and a row at a label other than this run's.
  * A change made at this run's own label on a node of its own is this
  * Steward's own work and is not told back to it. The database returns only
- * rows at labels this run reads, and the query says so itself as well, so
- * that the answer does not depend on who asks.
+ * rows at labels this run reads, and the query asks for the layers below
+ * itself as well (services/layer-service.ts), so that the answer does not
+ * depend on who asks.
  */
 export async function loadChangesBelowNote(claimId: string, kind: NodeKind): Promise<string> {
-  const layered = !oneLabelOnly();
-  if (!holdsMirror() && !layered) return "";
+  // One layer (one label and no mirror): there is nothing below to have changed.
+  if (!layered()) return "";
   try {
     const label = currentLabel();
     const node = await nodeVersions(claimId, kind);
@@ -181,9 +182,7 @@ export async function loadChangesBelowNote(claimId: string, kind: NodeKind): Pro
          FROM node_changes ch
          LEFT JOIN claims c ON c.id = ch.claim_id
         WHERE ch.applied_at > $2
-          AND (ch.sequence IS NOT NULL
-               OR (ch.sensitivity_label <> $3
-                   AND ch.sensitivity_label = ANY ((SELECT minerval_labels_readable_from(ARRAY[$3]::text[]))::text[])))
+          AND (ch.sequence IS NOT NULL OR minerval_layer_below(ch.sensitivity_label, 'local', $3, 'local'))
           AND (ch.claim_id = $1
                OR ch.claim_id IN (SELECT r.child_claim_id FROM claim_relationships r WHERE r.parent_claim_id = $1))
         ORDER BY ch.applied_at, ch.id`,

@@ -373,9 +373,22 @@ export const administrativeEvents = pgTable(
 // quantity), the unique index ends with `origin`. So a row this
 // deployment made and the public graph's row for the same thing are two
 // rows, the mirrored one always applies, and nothing this deployment holds
-// can stop its mirror. Among a deployment's own rows the key is what it
-// was, and on the public graph, where every row is 'local', the index
-// holds exactly what it held before.
+// can stop its mirror. On the public graph, where every row is 'local',
+// the index holds exactly what it held before.
+//
+// The layer. A graph at a label is that label's own rows over the graph of
+// the labels it reads, down to the public graph's rows, which a deployment
+// holds through its mirror. A row's layer is its label and its origin, and
+// identity is per layer: a key a labelled table has besides its id holds
+// `sensitivity_label` (before `origin` where the table is replicated). So
+// a row at one label and a row for the same thing at another are two rows,
+// work at a label is never stopped by, or told of, a row at a label it
+// does not read, and on a graph with one label each index holds exactly
+// what it held before. What a reader of both rows is given, and what a
+// write does where a layer below already holds the thing, is one rule for
+// every table (services/layer-service.ts). The keys left as they were are
+// listed, each with its reason, in tests/db/layer-identity-keys.test.ts,
+// which fails on a unique key of a labelled table that is neither.
 // ---------------------------------------------------------------------------
 export const ROW_ORIGINS = ["local", "mirror"] as const;
 export type RowOrigin = (typeof ROW_ORIGINS)[number];
@@ -619,7 +632,8 @@ export const tags = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("uq_tags_slug").on(table.slug),
+    // One tag for a slug at each label (the layer, above).
+    uniqueIndex("uq_tags_slug").on(table.slug, table.sensitivityLabel),
     index("idx_tags_status").on(table.status),
     check("ck_tags_status", sql`${table.status} IN ('active', 'merged')`),
   ]
@@ -667,7 +681,8 @@ export const taggings = pgTable(
     uniqueIndex("uq_taggings_tag_subject").on(
       table.tagId,
       table.subjectKind,
-      table.subjectId
+      table.subjectId,
+      table.sensitivityLabel
     ),
     index("idx_taggings_subject").on(table.subjectKind, table.subjectId),
     index("idx_taggings_tag").on(table.tagId, table.subjectKind),
@@ -714,12 +729,14 @@ export const claimRelationships = pgTable(
   },
   (table) => [
     originCheck("ck_claim_relationships_origin", table.origin),
-    // One edge for a parent, a child and a relation, in each graph (the
-    // origin column, above).
+    // One edge for a parent, a child and a relation, in each layer: at
+    // each label, and in each graph (the layer and the origin column,
+    // above).
     uniqueIndex("idx_cr_unique").on(
       table.parentClaimId,
       table.childClaimId,
       table.relationType,
+      table.sensitivityLabel,
       table.origin
     ),
     index("idx_cr_parent").on(table.parentClaimId),
@@ -773,6 +790,7 @@ export const claimLinks = pgTable(
       table.claimAId,
       table.claimBId,
       table.kind,
+      table.sensitivityLabel,
       table.origin
     ),
     index("idx_claim_links_b").on(table.claimBId),
@@ -981,7 +999,7 @@ export const argumentEvidenceBacklog = pgTable(
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("idx_argument_evidence_backlog_url").on(table.argumentId, table.url)]
+  (table) => [uniqueIndex("idx_argument_evidence_backlog_url").on(table.argumentId, table.url, table.sensitivityLabel)]
 );
 
 // ---------------------------------------------------------------------------
@@ -1100,9 +1118,10 @@ export const argumentSubclaims = pgTable(
   },
   (table) => [
     originCheck("ck_argument_subclaims_origin", table.origin),
-    // In each graph (the origin column, above): a grouping this deployment
-    // recorded and the public graph's own of the same edge are two rows.
-    primaryKey({ columns: [table.argumentId, table.relationshipId, table.origin] }),
+    // In each layer (the layer and the origin column, above): a grouping
+    // one label recorded and another's, or the public graph's own, of the
+    // same edge are two rows.
+    primaryKey({ columns: [table.argumentId, table.relationshipId, table.sensitivityLabel, table.origin] }),
     index("idx_argument_subclaims_relationship").on(table.relationshipId),
   ]
 );
@@ -1229,11 +1248,12 @@ export const sources = pgTable("sources", {
   partyId: uuid("party_id").references(() => parties.id),
 }, (table) => [
   originCheck("ck_sources_origin", table.origin),
-  // A document this deployment recorded and the public graph's row for the
-  // same address are two rows (the origin column, above). A read by
-  // address takes one of them (services/mirrored-node-service.ts,
+  // One row for an address in each layer: a document recorded at one
+  // label, the same address recorded at another, and the public graph's
+  // row for it are separate rows (the layer and the origin column, above).
+  // A read by address takes one of them (services/layer-service.ts,
   // oneSourceForAddressSql).
-  uniqueIndex("uq_sources_url_origin").on(table.url, table.origin),
+  uniqueIndex("uq_sources_url_origin").on(table.url, table.sensitivityLabel, table.origin),
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
@@ -1426,7 +1446,12 @@ export const examinationCoverage = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("idx_examination_coverage_unique").on(table.examinationId, table.segmentId, table.facet),
+    uniqueIndex("idx_examination_coverage_unique").on(
+      table.examinationId,
+      table.segmentId,
+      table.facet,
+      table.sensitivityLabel
+    ),
   ]
 );
 
@@ -1476,7 +1501,7 @@ export const readingCitations = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("idx_reading_citations_unique").on(table.readingId, table.findingId),
+    uniqueIndex("idx_reading_citations_unique").on(table.readingId, table.findingId, table.sensitivityLabel),
     index("idx_reading_citations_finding").on(table.findingId),
   ]
 );
@@ -1699,7 +1724,8 @@ export const claimProvenanceEdges = pgTable(
     uniqueIndex("idx_cpe_unique").on(
       table.fromInstanceId,
       table.toSourceId,
-      table.relationType
+      table.relationType,
+      table.sensitivityLabel
     ),
     index("idx_cpe_to_source").on(table.toSourceId),
   ]
@@ -1742,7 +1768,8 @@ export const sourceRelationships = pgTable(
     uniqueIndex("idx_sr_unique").on(
       table.parentSourceId,
       table.childSourceId,
-      table.relationType
+      table.relationType,
+      table.sensitivityLabel
     ),
     index("idx_sr_parent").on(table.parentSourceId),
     index("idx_sr_child").on(table.childSourceId),
@@ -1810,9 +1837,10 @@ export const claimInstanceReadings = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    // One current reading per instance; a re-map overwrites in place. The
-    // edges and the map summary carry the durable record.
-    uniqueIndex("idx_cir_instance").on(table.instanceId),
+    // One current reading per instance at each label (the layer, above); a
+    // re-map overwrites in place. The edges and the map summary carry the
+    // durable record.
+    uniqueIndex("idx_cir_instance").on(table.instanceId, table.sensitivityLabel),
   ]
 );
 
@@ -1884,7 +1912,7 @@ export const claimSourceMaps = pgTable(
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("idx_csm_claim").on(table.claimId)]
+  (table) => [uniqueIndex("idx_csm_claim").on(table.claimId, table.sensitivityLabel)]
 );
 
 // ---------------------------------------------------------------------------
@@ -1936,7 +1964,7 @@ export const claimProvenanceRoots = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("idx_cpr_claim_source").on(table.claimId, table.sourceId),
+    uniqueIndex("idx_cpr_claim_source").on(table.claimId, table.sourceId, table.sensitivityLabel),
     check("ck_cpr_status", sql`${table.status} IN ('origin', 'untraced')`),
   ]
 );
@@ -4130,7 +4158,7 @@ export const lookoutFeedItems = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("uq_lookout_feed_items_key").on(table.feedId, table.itemKey),
+    uniqueIndex("uq_lookout_feed_items_key").on(table.feedId, table.itemKey, table.sensitivityLabel),
     index("idx_lookout_feed_items_inbox")
       .on(table.lookoutId, table.firstSeenAt)
       .where(sql`status IN ('new', 'deferred')`),
@@ -5148,7 +5176,8 @@ export const curationRequests = pgTable(
       .on(
         table.anchorClaimId,
         sql`COALESCE(${table.otherClaimId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
-        table.source
+        table.source,
+        table.sensitivityLabel
       )
       .where(sql`consumed_at IS NULL`),
     index("idx_curation_requests_anchor_live")
@@ -5481,10 +5510,11 @@ export const claimFormalizations = pgTable(
   (table) => [
     unique("uq_claim_formalizations_claim_version").on(
       table.claimId,
-      table.version
+      table.version,
+      table.sensitivityLabel
     ),
     uniqueIndex("uq_formalization_published")
-      .on(table.claimId)
+      .on(table.claimId, table.sensitivityLabel)
       .where(sql`status = 'published'`),
     index("idx_claim_formalizations_claim").on(table.claimId),
   ]
@@ -5548,7 +5578,8 @@ export const leanChecks = pgTable(
       table.formalizationId,
       table.submissionSha256,
       table.checkerVersion,
-      table.mode
+      table.mode,
+      table.sensitivityLabel
     ),
     index("idx_lean_checks_formalization").on(table.formalizationId),
     index("idx_lean_checks_submission_sha256").on(table.submissionSha256),
@@ -5805,7 +5836,7 @@ export const bounties = pgTable(
     index("idx_bounties_formalization").on(table.formalizationId),
     check("ck_bounties_amount", sql`amount_micro_usd > 0`),
     uniqueIndex("uq_bounty_live_per_claim")
-      .on(table.claimId)
+      .on(table.claimId, table.sensitivityLabel)
       .where(
         sql`status IN ('requested', 'confirm_pending', 'open', 'claim_pending', 'house_result_pending', 'rebinding')`
       ),
@@ -6302,7 +6333,7 @@ export const agentFindingSightings = pgTable(
 export const sharedPageAnalyses = pgTable(
   "shared_page_analyses",
   {
-    urlHash: text("url_hash").primaryKey(),
+    urlHash: text("url_hash").notNull(),
     url: text("url").notNull(),
     // [{ verbatim_text, stance, verdict, why, confidence, claim_id,
     //    proposed_canonical_form }] — see StoredAnnotation.
@@ -6316,9 +6347,11 @@ export const sharedPageAnalyses = pgTable(
     // analysis first entered the page. A later analysis replaces the entry
     // in place and leaves this as it was.
     sensitivityLabel: sensitivityLabelColumn(),
-  }
-  // Lookups ask for every hash sharing a short prefix: a range scan on the
-  // primary key (url_hash >= 'abcd' AND url_hash < 'abcdg'), no index of its own.
+  },
+  // One entry for a page at each label (the layer, above). Lookups ask for
+  // every hash sharing a short prefix: a range scan on the primary key
+  // (url_hash >= 'abcd' AND url_hash < 'abcdg'), no index of its own.
+  (table) => [primaryKey({ columns: [table.urlHash, table.sensitivityLabel] })]
 );
 
 // Type exports
@@ -6434,10 +6467,11 @@ export const quantityDefinitions = pgTable("quantity_definitions", {
   origin: originColumn(),
 }, (table) => [
   originCheck("ck_quantity_definitions_origin", table.origin),
-  // One definition for a quantity in each graph (the origin column, above),
-  // as every other key a replicated table has besides an id: the public
-  // graph's row always applies, whatever this deployment holds.
-  primaryKey({ columns: [table.claimId, table.origin] }),
+  // One definition for a quantity in each layer (the layer and the origin
+  // column, above), as every other key a replicated table has besides an
+  // id: the public graph's row always applies, whatever this deployment
+  // holds.
+  primaryKey({ columns: [table.claimId, table.sensitivityLabel, table.origin] }),
 ]);
 
 export const quantityEstimates = pgTable(
@@ -6543,11 +6577,11 @@ export const quantityCuts = pgTable(
   },
   (table) => [
     originCheck("ck_quantity_cuts_origin", table.origin),
-    // One cut for a claim in each graph (the origin column, above): a cut
-    // this deployment recorded and the public graph's own for the same
-    // claim are two rows, and a read takes one (oneCutForClaimSql in
-    // services/mirrored-node-service.ts).
-    primaryKey({ columns: [table.claimId, table.origin] }),
+    // One cut for a claim in each layer (the layer and the origin column,
+    // above): a cut recorded at one label, one recorded at another and the
+    // public graph's own for the same claim are separate rows, and a read
+    // takes one (oneCutForClaimSql in services/layer-service.ts).
+    primaryKey({ columns: [table.claimId, table.sensitivityLabel, table.origin] }),
     index("idx_quantity_cuts_quantity").on(table.quantityId),
     check("ck_quantity_cuts_direction", sql`${table.direction} IN ('above', 'below')`),
     check("ck_quantity_cuts_self", sql`${table.claimId} != ${table.quantityId}`),
@@ -6646,7 +6680,13 @@ export const answerRelations = pgTable(
   },
   (table) => [
     originCheck("ck_answer_relations_origin", table.origin),
-    uniqueIndex("idx_answer_relations_pair").on(table.questionId, table.claimAId, table.claimBId, table.origin),
+    uniqueIndex("idx_answer_relations_pair").on(
+      table.questionId,
+      table.claimAId,
+      table.claimBId,
+      table.sensitivityLabel,
+      table.origin
+    ),
     check("ck_answer_relations_ordered", sql`${table.claimAId} < ${table.claimBId}`),
     check("ck_answer_relations_relation", sql`${table.relation} IN ('excludes', 'compatible')`),
   ]
@@ -7453,7 +7493,7 @@ export const mirrorRefusals = pgTable(
 // the mirror's applier writes the row as each batch is applied, with the
 // batch's sequence and when the public graph cut it
 // (services/mirror-apply-service.ts). For a node of the deployment's own,
-// the database writes it (minerval_note_node_change, migration 0158), and
+// the database writes it (minerval_note_node_change, migration 0159), and
 // only where the deployment has a label besides `public`: with one label
 // there is no layer above to tell. Either way the row is a fact about the
 // node, the same whoever looks, so it carries the node's label (the

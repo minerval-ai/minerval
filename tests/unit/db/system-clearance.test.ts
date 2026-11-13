@@ -181,8 +181,9 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Ledger rows, each opened inside runAtLabel at the label of the claim, mandate, lookout or correspondent it is for, from that row alone. " +
         "A mandate's plan is materialized at the mandate's label and reads the nodes it names there. Money is placed at the label of the row it pays for. " +
         "A follow-up is commissioned at its petition's label and an expired session's answer goes to its node at the session's label, each from its own row. " +
-        "The reconcile-candidate scan finds a pair with every label in sight, but raises the request at the anchor's label through requestCuration, " +
-        "which reads both claims there and raises nothing when it cannot read the other. Queue priorities are numbers.",
+        "The reconcile-candidate scan finds a pair with every label in sight, and raises the request through requestCuration at the label that reads both nodes, " +
+        "anchored on that label's own node: the scan started from that node, or from the other and that node's label reads it. requestCuration reads both claims there, " +
+        "and a pair at two labels that do not read each other raises nothing. Nothing is written at the lower node's label. Queue priorities are numbers.",
     ],
   ],
   "src/services/steward-lease.ts": [

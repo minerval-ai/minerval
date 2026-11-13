@@ -151,16 +151,17 @@ interface MessageRow {
 /**
  * Which messages wait for a pass at the label `$n`: those sent at it that
  * no pass has read, and those sent at a label it reads that no pass at it
- * has read. That the other label is one this label reads is said here and
- * not left to the connection's clearance: a sweep that sees every label
- * asks the same question, and a message sent above is never one a pass
- * below is given. A reply sent at another label answers that label's
+ * has read. "A label it reads" is the one notion of the layer below
+ * (services/layer-service.ts, minerval_layer_below), asked of the database
+ * and not left to the connection's clearance: a sweep that sees every
+ * label asks the same question, and a message sent above is never one a
+ * pass below is given. A reply sent at another label answers that label's
  * Steward and is not for this one.
  */
 export const waitsForPassAt = (m: string, param: string) =>
   `((${m}.sensitivity_label = ${param} AND ${m}.read_at IS NULL)
-    OR (${m}.sensitivity_label <> ${param} AND ${m}.trigger <> 'message_reply'
-        AND ${m}.sensitivity_label = ANY ((SELECT minerval_labels_readable_from(ARRAY[${param}]::text[]))::text[])
+    OR (${m}.trigger <> 'message_reply'
+        AND minerval_layer_below(${m}.sensitivity_label, 'local', ${param}, 'local')
         AND NOT EXISTS (SELECT 1 FROM node_message_reads mr
                          WHERE mr.message_id = ${m}.id AND mr.sensitivity_label = ${param})))`;
 

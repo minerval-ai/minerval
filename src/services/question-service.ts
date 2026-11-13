@@ -22,7 +22,8 @@ import {
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { markSeveralInForce, recordMadeBeside } from "./judgment-version-service.js";
-import { holdsMirror, mirroredRowMessage, publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
+import { oneDefinitionForQuantitySql, refuseWhereHeldBelow } from "./layer-service.js";
+import { publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
 
@@ -71,11 +72,10 @@ export async function addAnswer(
     await requireQuestion(tx, input.questionId);
     const kind = await lockNodeKind(tx, input.answerId);
     if (kind === "question") throw new KindError("A question answers no question; add it as a subquestion");
-    await refuseWhereThePublicGraphHoldsIt(
+    await refuseWhereALayerBelowHoldsIt(
       tx,
-      `SELECT 1 FROM claim_relationships
-        WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'answers' AND origin = 'mirror'`,
-      [input.questionId, input.answerId],
+      "claim_relationships",
+      { parent_claim_id: input.questionId, child_claim_id: input.answerId, relation_type: "answers" },
       "the edge between this question and this answer"
     );
     // A new edge takes this run's label; one already there is revised and
@@ -85,7 +85,7 @@ export async function addAnswer(
       `INSERT INTO claim_relationships
          (parent_claim_id, child_claim_id, relation_type, answer_basis, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, 'answers', $3, $4, $5, $6)
-       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, origin) DO UPDATE
+       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, sensitivity_label, origin) DO UPDATE
          SET answer_basis = EXCLUDED.answer_basis, reasoning = EXCLUDED.reasoning
        ${sameLabelOnly("claim_relationships")}
        RETURNING id`,
@@ -98,22 +98,14 @@ export async function addAnswer(
 }
 
 /**
- * These writes revise a row that is already there. Where the public graph
- * holds that row it is not this deployment's to revise, and recording a
- * second one beside it would say the same thing twice: refused, with what
- * the run can do instead (mirrored-node-service.ts). Nothing is asked on a
- * deployment that does not mirror.
+ * These writes revise a row that is already there. Where a layer below
+ * holds that row (the public graph, or a label this work reads) it is not
+ * this work's to revise, and recording a second one beside it would say
+ * the same thing twice: refused, with the reason (layer-service.ts).
+ * Nothing is asked on a graph with one layer.
  */
-async function refuseWhereThePublicGraphHoldsIt(
-  tx: TxQuery,
-  mirroredSql: string,
-  params: unknown[],
-  what: string
-): Promise<void> {
-  if (!holdsMirror()) return;
-  const held = await tx.query(mirroredSql, params);
-  if (held.length > 0) throw new KindError(mirroredRowMessage(what));
-}
+const refuseWhereALayerBelowHoldsIt = (tx: TxQuery, table: string, key: Record<string, unknown>, what: string) =>
+  refuseWhereHeldBelow(tx.query.bind(tx), table, key, what, (message) => new KindError(message));
 
 /** Add a subquestion: a question whose answer is part of this one's. `outer` as for addAnswer. */
 export async function addSubquestion(
@@ -128,11 +120,10 @@ export async function addSubquestion(
   return inTransaction(outer, async (tx) => {
     await requireQuestion(tx, input.questionId);
     await requireQuestion(tx, input.subquestionId);
-    await refuseWhereThePublicGraphHoldsIt(
+    await refuseWhereALayerBelowHoldsIt(
       tx,
-      `SELECT 1 FROM claim_relationships
-        WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = 'part_of' AND origin = 'mirror'`,
-      [input.questionId, input.subquestionId],
+      "claim_relationships",
+      { parent_claim_id: input.questionId, child_claim_id: input.subquestionId, relation_type: "part_of" },
       "the edge between this question and its subquestion"
     );
     const [row] = writtenAtOwnLabel(
@@ -140,7 +131,7 @@ export async function addSubquestion(
       `INSERT INTO claim_relationships
          (parent_claim_id, child_claim_id, relation_type, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, 'part_of', $3, $4, $5)
-       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, origin) DO UPDATE
+       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, sensitivity_label, origin) DO UPDATE
          SET reasoning = EXCLUDED.reasoning
        ${sameLabelOnly("claim_relationships")}
        RETURNING id`,
@@ -172,18 +163,17 @@ export async function setAnswerRelation(input: {
     for (const id of [a, b]) {
       if (!answers.has(id)) throw new KindError(`Node ${id} is not an answer to ${input.questionId}`);
     }
-    await refuseWhereThePublicGraphHoldsIt(
+    await refuseWhereALayerBelowHoldsIt(
       tx,
-      `SELECT 1 FROM answer_relations
-        WHERE question_id = $1 AND claim_a_id = $2 AND claim_b_id = $3 AND origin = 'mirror'`,
-      [input.questionId, a, b],
+      "answer_relations",
+      { question_id: input.questionId, claim_a_id: a, claim_b_id: b },
       "the relation between these two answers"
     );
     const [row] = writtenAtOwnLabel(
       await tx.query<{ id: string }>(
       `INSERT INTO answer_relations (question_id, claim_a_id, claim_b_id, relation, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (question_id, claim_a_id, claim_b_id, origin) DO UPDATE
+       ON CONFLICT (question_id, claim_a_id, claim_b_id, sensitivity_label, origin) DO UPDATE
          SET relation = EXCLUDED.relation, reasoning = EXCLUDED.reasoning
        ${sameLabelOnly("answer_relations")}
        RETURNING id`,
@@ -403,7 +393,7 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
          JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
          ${NODE_REF_JOINS}
          LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
-         LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+         LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
         WHERE r.parent_claim_id = $1
           AND r.relation_type IN ('answers', 'part_of', 'assumes', 'requires')
         ORDER BY r.created_at, r.id`,

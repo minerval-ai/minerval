@@ -104,12 +104,15 @@ export async function getArgumentView(
           decisive: boolean;
           content: string;
           is_current: boolean;
+          in_force: boolean;
           stale: boolean;
           assessment_id: string | null;
           estimate_id: string | null;
           created_at: Date;
         }>(
           `SELECT ae.verdict, ae.decisive, ae.content, ae.is_current,
+                  ae.id = (SELECT f.id FROM argument_evaluations_in_force f
+                            WHERE f.argument_id = ae.argument_id) AS in_force,
                   ${EVALUATION_STALE_SQL} AS stale,
                   ae.assessment_id, ae.estimate_id, ae.created_at
              FROM argument_evaluations ae
@@ -130,12 +133,15 @@ export async function getArgumentView(
           estimate_id: r.estimate_id,
           created_at: iso(r.created_at),
         });
-        const current = rows.find((r) => r.is_current);
+        // The evaluation a reader goes by is the one in force for them
+        // (db/schema.ts, argument_evaluations_in_force): where a label that
+        // reads another's has its own, that one, whichever was made last.
+        const current = rows.find((r) => r.in_force);
         payload.evaluation = current ? shape(current) : null;
         payload.evaluation_history = rows.filter((r) => !r.is_current).map(shape);
         // An argument can carry a current evaluation at each label. Where
         // more than one is in force for the asker, say how many and give
-        // each: the one above is only the most recently made.
+        // each: the one above is the most recently made of them.
         const inForce = (await evaluationsInForce([argumentId]).catch(() => new Map<string, number>())).get(argumentId.toLowerCase());
         if (inForce) {
           payload.evaluations_in_force = inForce;

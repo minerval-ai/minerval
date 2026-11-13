@@ -20,7 +20,7 @@
  * model's call into a service call and a refusal into a message the agent
  * can act on. `executeKindTool` returns null for a name it does not own.
  */
-import { oneSourceForAddressSql } from "../../services/mirrored-node-service.js";
+import { oneSourceForAddressSql } from "../../services/layer-service.js";
 import { refusalForCaller } from "../../db/clearance.js";
 import { mirroredNode, mirroredRefusalForAgent, mirroredRowMessage } from "../../services/mirrored-node-service.js";
 import type Anthropic from "@anthropic-ai/sdk";

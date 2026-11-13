@@ -225,31 +225,37 @@ describe("C. work at one label does not write its words into a row at another", 
   });
 
   it("an upsert that carries its writer's words lands only on a row at the writer's own label, and says so otherwise", async () => {
-    // The statement the question service uses for an edge, on an edge that exists at public.
-    const edge = (reasoning: string, label: string) =>
-      rawQuery<{ id: string }>(
-        `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning, created_by, sensitivity_label)
-         VALUES ($1, $2, 'part_of', $3, 'review', $4)
-         ON CONFLICT (parent_claim_id, child_claim_id, relation_type, origin) DO UPDATE
-           SET reasoning = EXCLUDED.reasoning
-         ${sameLabelOnly("claim_relationships")}
-         RETURNING id`,
-        [claimIds.public, claimIds[A], reasoning, label]
+    // A key that holds the label gives each label its own row, and work at
+    // a label is refused before it writes beside a lower one
+    // (tests/db/layer-identity.test.ts). This is the statement an upsert
+    // uses on a key that is still one for the whole deployment: a focus
+    // for an ingest, on a row that exists at public.
+    const group = `ingest:https://review2.example/${randomUUID()}`;
+    const focus = (words: string, label: string) =>
+      rawQuery<{ exclusion_group: string }>(
+        `INSERT INTO ingest_focuses (exclusion_group, url, focus, sensitivity_label)
+         VALUES ($1, 'https://review2.example/', $2, $3)
+         ON CONFLICT (exclusion_group) DO UPDATE
+           SET focus = EXCLUDED.focus
+         ${sameLabelOnly("ingest_focuses")}
+         RETURNING exclusion_group`,
+        [group, words, label]
       );
-    const [made] = await system(() => edge("The public reasoning.", "public"));
-    const reasoningNow = async () =>
-      (await system(() => rawQuery<{ reasoning: string }>(`SELECT reasoning FROM claim_relationships WHERE id = $1`, [made!.id])))[0]!.reasoning;
-    // Work at rv2-a reads the public edge and may not put its reasoning into it.
-    const rows = await at(A, () => edge("A-ONLY reasoning about partner A.", A));
+    await system(() => focus("The public focus.", "public"));
+    const focusNow = async () =>
+      (await system(() => rawQuery<{ focus: string }>(`SELECT focus FROM ingest_focuses WHERE exclusion_group = $1`, [group])))[0]!.focus;
+    // Work at rv2-a reads the public row and may not put its words into it.
+    const rows = await at(A, () => focus("A-ONLY focus about partner A.", A));
     expect(rows).toEqual([]);
-    expect(() => writtenAtOwnLabel(rows, "the edge between this question and its subquestion")).toThrow(ClearanceError);
-    expect(() => writtenAtOwnLabel(rows, "the edge between this question and its subquestion")).toThrow(
+    expect(() => writtenAtOwnLabel(rows, "the focus of this ingest")).toThrow(ClearanceError);
+    expect(() => writtenAtOwnLabel(rows, "the focus of this ingest")).toThrow(
       /already exists at another label than this work's/
     );
-    expect(await reasoningNow()).toBe("The public reasoning.");
-    // Work at public revises its own edge as before.
-    expect(writtenAtOwnLabel(await at("public", () => edge("The public reasoning, revised.", "public")), "the edge")).toHaveLength(1);
-    expect(await reasoningNow()).toBe("The public reasoning, revised.");
+    expect(await focusNow()).toBe("The public focus.");
+    // Work at public revises its own row as before.
+    expect(writtenAtOwnLabel(await at("public", () => focus("The public focus, revised.", "public")), "the focus")).toHaveLength(1);
+    expect(await focusNow()).toBe("The public focus, revised.");
+    await system(() => rawQuery(`DELETE FROM ingest_focuses WHERE exclusion_group = $1`, [group]));
   });
 
   it("a note for a mandate is not folded into an item that waits at another label", async () => {

@@ -89,14 +89,11 @@ export async function takeUpFromBelow(
     );
     if (!row) throw new RequestError(`Request ${id} not found`);
     if (row.label === label) return null;
-    // Up, never down or across: the label that takes the request up reads
-    // the label it was filed at. The database holds a run to that already;
+    // Up, never down or across: the request's layer lies below the one that
+    // takes it up (services/layer-service.ts). The database holds a run to that already;
     // work that sees every label is held to it here, in the same words as
     // for a request that does not exist.
-    const [reads] = await rawQuery<{ ok: boolean }>(
-      `SELECT $1 = ANY (minerval_labels_readable_from(ARRAY[$2]::text[])) AS ok`,
-      [row.label, label]
-    );
+    const [reads] = await rawQuery<{ ok: boolean }>(`SELECT minerval_layer_below($1, 'local', $2, 'local') AS ok`, [row.label, label]);
     if (!reads?.ok) throw new RequestError(`Request ${id} not found`);
     words = row;
     const targets = await rawQuery<{ claim_id: string | null; source_id: string | null }>(

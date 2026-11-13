@@ -57,9 +57,13 @@
  * its operator. SQL written by a caller or an agent never runs on these
  * connections: it runs as a separate login role over the public_read views
  * (services/sql-service.ts), whose clearance is signed and cannot be set.
- * The policies bind rows, not columns, and they do not hide that a row
- * exists from a unique index: an insert that collides with a row the
- * connection cannot read is refused, and the refusal says so.
+ * The policies bind rows, not columns. A unique key that holds the label
+ * cannot collide across labels, and nearly every key of a labelled table
+ * does (db/schema.ts, "The layer"). The few that are one for the whole
+ * deployment are listed with their reasons
+ * (tests/db/layer-identity-keys.test.ts): under one of those an insert
+ * that collides with a row the connection cannot read is refused, and the
+ * refusal says so.
  *
  * This module holds no connection and imports nothing that queries, so the
  * client and the run context can both depend on it.
@@ -94,11 +98,10 @@ export class ClearanceError extends Error {
 /**
  * Whether an insert was refused because a row with the same identity
  * already exists at a label the work does not read (the database's
- * unseen_collision_guard, SQLSTATE MVL03). A table holds one row for each
- * identity whatever the labels, so until each label keeps its own, such an
- * insert is refused and says why. A caller for whom "already there" is all
- * it needed to know (a feed item another label's poll recorded first, say)
- * asks this and carries on; everyone else lets the refusal stand.
+ * unseen_collision_guard, SQLSTATE MVL03). That can happen only under a
+ * key that is one for the whole deployment: a key that holds the label
+ * gives each label its own row (db/schema.ts, "The layer"), and the guard
+ * asks nothing about it.
  */
 export function isUnseenCollision(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === "MVL03";
@@ -146,20 +149,24 @@ function refusalIn(err: unknown): { code?: string; message: string; hint?: strin
 /**
  * An upsert writes only into a row at its writer's own label.
  *
- * A table holds one row for each identity whatever the labels, so an upsert
- * by work at one label can land on a row another label wrote. The policy
- * allows the update where the writer reads that row, and the update then
- * puts the writer's words (a reasoning, a note, a summary) into a row its
- * own readers were never the only readers of: a private run's reasoning
- * into a public edge, where everyone reads it. So an upsert that carries
- * text from its writer says, in its DO UPDATE, that it applies only where
- * the row's label is the incoming row's (`sameLabelOnly`), and treats no
- * row coming back as what it is: the row is there at another label, and
- * nothing was written (`writtenAtOwnLabel`). The writer is told, with the
- * reason. Each label keeping its own row is later work.
+ * An upsert by work at one label must not land on a row another label
+ * wrote. The policy would allow the update where the writer reads that
+ * row, and the update would put the writer's words (a reasoning, a note, a
+ * summary) into a row its own readers were never the only readers of: a
+ * private run's reasoning into a public edge, where everyone reads it.
  *
- * A row at a label the writer does not read never gets this far: the
- * database refuses that insert first (the unseen collision guard, MVL03).
+ * Two things keep it from happening. A key that holds the label gives each
+ * label its own row (db/schema.ts, "The layer"), so the row an upsert
+ * conflicts with is always at the writer's own label; and the writer asks
+ * first whether a label it reads already holds the thing, and is refused
+ * with the reason where one does (services/layer-service.ts,
+ * refuseWhereHeldBelow). Second, an upsert that carries text from its
+ * writer still says, in its DO UPDATE, that it applies only where the
+ * row's label is the incoming row's (`sameLabelOnly`), and treats no row
+ * coming back as what it is (`writtenAtOwnLabel`). Under a key that holds
+ * the label that condition is always true; it is what holds an upsert
+ * under a key that does not, and tests/unit/db/upsert-labels.test.ts
+ * fails on an upsert that has neither it nor a written reason.
  */
 export const sameLabelOnly = (table: string): string =>
   `WHERE ${table}.sensitivity_label = EXCLUDED.sensitivity_label`;
@@ -169,8 +176,7 @@ export function writtenAtOwnLabel<T>(rows: T[], what: string): T[] {
   if (rows.length > 0) return rows;
   throw new ClearanceError(
     `This was not written: ${what} already exists at another label than this work's. Work at one label does not ` +
-      `write its words into a row at another, where that label's readers would read them, and each label ` +
-      `keeping its own is not built yet. Nothing was changed.`
+      `write its words into a row at another, where that label's readers would read them. Nothing was changed.`
   );
 }
 
