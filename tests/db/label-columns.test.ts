@@ -214,6 +214,10 @@ describe("the label column, in the catalog", () => {
       "queue_depth_snapshots",
       // Database time used by query_sql, per account and day.
       "sql_usage",
+      // The usage reports a deployment prepares and the ones a public graph is sent: a day, counts and
+      // totals across every label, naming none, and no text (docs/usage-report.md).
+      "usage_reports",
+      "usage_reports_received",
     ]);
   });
 });
