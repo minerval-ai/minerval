@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ClaimDetail, Instance } from "@/lib/types";
-import { splitInstances, stanceTag } from "@/lib/instances";
+import { instanceByline, splitInstances, stanceTag } from "@/lib/instances";
 import {
   statusMeta, isStatus, claimTypeMeta, decompositionNote,
   DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
@@ -39,14 +39,20 @@ import { PageHead } from "@/components/PageHead";
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
   const tag = stanceTag(inst.stance);
+  // Whose words, where and when. The title leads to the source's own page,
+  // which holds the rest of its record (examinations, lineage, history);
+  // the document itself is one link further along the byline.
+  const byline = instanceByline(inst);
+  const original = inst.link || inst.source_url;
   return (
     <div className="instance">
       <blockquote>{inst.verbatim_text}</blockquote>
       <div className="instance-cite">
-        {inst.source_url ? (
-          <a href={inst.source_url}>{inst.source_title}</a>
-        ) : (
-          <span>{inst.source_title}</span>
+        <Link href={`/sources/${inst.source_id}`}>{inst.source_title}</Link>
+        {!byline && original && (
+          <a href={original} rel="noopener noreferrer" className="instance-original">
+            original <span aria-hidden>↗</span>
+          </a>
         )}
         {tag && (
           <span className="tag" title={tag.title}>{tag.word}</span>
@@ -67,14 +73,29 @@ function InstanceCard({ inst }: { inst: Instance }) {
         )}
         {/* This score is the Extractor's, not the Matcher's: it says
             "this passage states a genuine, well-formed claim", not how
-            well the passage matches the canonical form (#160). */}
-        <span
-          className="conf-num"
-          title="The Extractor's confidence that this passage states a genuine, well-formed claim."
-        >
-          extraction {inst.confidence.toFixed(2)}
-        </span>
+            well the passage matches the canonical form (#160). Shown only
+            when it is short of full: "extraction 1.00" on every card said
+            nothing, and a doubtful extraction stood out less among them. */}
+        {inst.confidence < 0.995 && (
+          <span
+            className="conf-num"
+            title="The Extractor's confidence that this passage states a genuine, well-formed claim."
+          >
+            extraction {inst.confidence.toFixed(2)}
+          </span>
+        )}
       </div>
+      {byline && (
+        <p className="instance-byline">
+          {byline}
+          {original && " · "}
+          {original && (
+            <a href={original} rel="noopener noreferrer">
+              original <span aria-hidden>↗</span>
+            </a>
+          )}
+        </p>
+      )}
       {inst.context && (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".78rem", color: "var(--muted)", margin: ".35rem 0 0" }}>
           {inst.context}
@@ -414,7 +435,7 @@ export function ClaimView({
           graph it holds, in its own words, beside the assessment and never
           inside it. The section says that its place gives it no weight. A
           design fixture has no API to state a view to. */}
-      {!fixture && (
+      {!fixture && statedViews.length > 0 && (
         <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={statedViews} />
       )}
 
@@ -583,10 +604,12 @@ export function ClaimView({
       {/* cite this claim (#290) — the reading column's exit: a conventional
           citation pinned to the current assessment version, plus the evidence
           record for carrying the page's provenance out of the graph. */}
-      <CiteClaim claimId={claim.id} />
-      {/* its neighbour on the way out: the claim shown on another site,
-          with the judgment whole */}
-      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      <div className="page-exits">
+        <CiteClaim claimId={claim.id} />
+        {/* its neighbour on the way out: the claim shown on another site,
+            with the judgment whole */}
+        <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      </div>
       {/* the Assistant, opened from this node (#646): it is told which page
           the question came from */}
       <section className="ask-about">
@@ -604,6 +627,10 @@ export function ClaimView({
           starts. Kept at the end of the reading column so the page itself
           stays unmarked by the exchanges behind it. */}
       <Contribute claimId={claim.id} />
+      {/* with none stated, only the invitation, at the foot */}
+      {!fixture && statedViews.length === 0 && (
+        <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={[]} />
+      )}
 
       <hr className="thin" />
       {/* Funding disclosure (§19), placed here at the bottom deliberately:

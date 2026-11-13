@@ -16,11 +16,28 @@
  * the Steward (#97): budget and transient API failures return the row to
  * the queue uncounted; a genuine error counts an attempt, and the row parks
  * out of the drain at MAX_TAGGING_ATTEMPTS so a poison claim stops spinning.
+ *
+ * A tick does not lease while the lane is waiting (services/tagging-lane.ts,
+ * which says why each is a wait and why money cannot pace it): on the
+ * platform's spend breaker, checked before every lease so a spent breaker
+ * opens no run, and on a platform fault, which ends the tick and holds the
+ * lane for the engine's wait, 30 seconds doubling to 10 minutes. The wait is
+ * in `taggingQueueHealth`, for `/queue` and `/monitors`.
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { tagClaim, type TaggingDecision } from "../llm/agents/tagger.js";
+import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
+import { platformFaultOf, type PlatformFaultReason } from "../services/deployment-fault.js";
+import {
+  clearTaggingLaneWait,
+  holdTaggingLaneOnBreaker,
+  holdTaggingLaneOnFault,
+  readTaggingLaneWait,
+  taggingLaneWaiting,
+  type TaggingLaneWait,
+} from "../services/tagging-lane.js";
 import { getUsageContext, runAtLabel, runWithUsageContext } from "../llm/usage-context.js";
 import {
   getTagsForSubject,
@@ -49,8 +66,8 @@ export interface TaggingTaskRow {
 export type TaggingTaskResult =
   | { status: "empty" }
   | { status: "processed"; claimId: string; attached: string[]; ok: true }
-  | { status: "budget"; claimId: string }
-  | { status: "transient"; claimId: string; error: string }
+  | { status: "budget"; claimId: string; limitType: string }
+  | { status: "transient"; claimId: string; error: string; fault: PlatformFaultReason }
   | { status: "failed"; claimId: string; error: string; parked: boolean };
 
 /**
@@ -183,12 +200,12 @@ async function tagAtLabel(
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof LlmBudgetExceededError) {
       await rawQuery(`UPDATE claims SET tagging_leased_at = NULL WHERE id = $1`, [task.id]);
-      return { status: "budget", claimId: task.id };
+      return { status: "budget", claimId: task.id, limitType: err.limitType };
     }
     if (isTransientApiError(err)) {
       await rawQuery(`UPDATE claims SET tagging_leased_at = NULL WHERE id = $1`, [task.id]);
       console.warn(`[tagger] transient failure on claim ${task.id}; requeued (not counted): ${msg}`);
-      return { status: "transient", claimId: task.id, error: msg };
+      return { status: "transient", claimId: task.id, error: msg, fault: platformFaultOf(err) ?? "provider_unavailable" };
     }
     const nextAttempts = (task.tagging_attempts ?? 0) + 1;
     await rawQuery(
@@ -220,12 +237,25 @@ export interface TaggingTickResult {
   budget: boolean;
   /** The queue ran dry before the batch cap. */
   drained: boolean;
+  /**
+   * The lane is waiting and the tick stopped for it, or never began: on the
+   * spend breaker, or on a platform fault (services/tagging-lane.ts).
+   */
+  waiting?: TaggingLaneWait;
 }
 
 /**
  * One scheduler pass: up to `batch` claims (config.taggingBatchSize by
- * default). Stops at the first budget error so a credit outage does not burn
- * attempts, and at the end of the queue.
+ * default). It ends at the end of the queue, and when the lane is waiting:
+ *
+ *  - on a platform fault another tick met, until its next attempt is due;
+ *  - on the spend breaker, checked before each lease. The tagger's calls
+ *    are unattributed, so the breaker is theirs to meet, and met inside a
+ *    run it was an agent's error on the run log every 30 seconds;
+ *  - on a platform fault this tick meets. The claim is back in the queue
+ *    uncounted, and the next one would meet the same provider.
+ *
+ * services/tagging-lane.ts holds the wait and the reason it is one.
  */
 export async function taggingTick(
   opts: { batch?: number; model?: string } = {}
@@ -239,19 +269,56 @@ export async function taggingTick(
     budget: false,
     drained: false,
   };
+  // Reading the wait must not stop the lane: without it the tick runs as
+  // if there were none.
+  let prior = await readTaggingLaneWait().catch(() => null);
+  if (taggingLaneWaiting(prior) && prior.reason !== "spend_breaker") {
+    result.waiting = prior;
+    return result;
+  }
+  const hold = async (place: () => Promise<TaggingLaneWait>) => {
+    result.waiting = await place().catch((err) => {
+      console.warn(`[tagger] could not record the lane's wait: ${err instanceof Error ? err.message : err}`);
+      return undefined;
+    });
+  };
+  const clear = async () => {
+    if (!prior) return;
+    prior = null;
+    await clearTaggingLaneWait().catch(() => undefined);
+  };
   for (let i = 0; i < batch; i++) {
+    try {
+      checkBudget();
+    } catch (err) {
+      if (!(err instanceof LlmBudgetExceededError)) throw err;
+      result.budget = true;
+      const limitType = err.limitType;
+      await hold(() => holdTaggingLaneOnBreaker(limitType, prior));
+      break;
+    }
     const r = await processNextTaggingTask({ model: opts.model });
     if (r.status === "empty") {
       result.drained = true;
+      // Nothing is waiting to be tagged, so the lane waits on nothing.
+      await clear();
       break;
     }
     if (r.status === "budget") {
       result.budget = true;
+      await hold(() => holdTaggingLaneOnBreaker(r.limitType, prior));
+      break;
+    }
+    if (r.status === "transient") {
+      await hold(() => holdTaggingLaneOnFault(r.fault, prior));
       break;
     }
     result.processed++;
-    if (r.status === "processed") result.attached += r.attached.length;
-    else result.failed++;
+    if (r.status === "processed") {
+      result.attached += r.attached.length;
+      // The provider served the lane.
+      await clear();
+    } else result.failed++;
   }
   return result;
 }
@@ -273,19 +340,29 @@ export function startTaggingScheduler(options: {
   }
   const interval = options.intervalMs ?? seconds * 1000;
   let busy = false;
+  let lastWaitLogged: string | null = null;
 
   const tick = async () => {
     if (busy) return;
     busy = true;
     try {
       const result = await taggingTick();
-      if (result.processed > 0 || result.budget) {
+      // A lane that stays waiting says so when the wait begins or moves,
+      // not on every tick.
+      const waitKey = result.waiting ? `${result.waiting.reason}@${result.waiting.next_attempt_at}` : null;
+      if (result.processed > 0 || (waitKey !== null && waitKey !== lastWaitLogged)) {
         options.logger.info(
           `Tagging: ${result.processed} claim(s) tagged (${result.attached} tags, ` +
-            `${result.failed} failed)${result.budget ? "; stopped on budget" : ""}` +
+            `${result.failed} failed)` +
+            (result.waiting
+              ? `; lane waiting on ${result.waiting.reason} until ${result.waiting.next_attempt_at}`
+              : result.budget
+                ? "; stopped on budget"
+                : "") +
             `${result.drained ? "; queue drained" : ""}`
         );
       }
+      lastWaitLogged = waitKey;
     } catch (err) {
       options.logger.error("Tagging scheduler error", err instanceof Error ? err.message : err);
     } finally {

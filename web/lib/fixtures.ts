@@ -270,6 +270,9 @@ const FLAGSHIP: ClaimDetail = {
       source_title: "Consumer Price Index — December 2022 (BLS)",
       source_url: "https://www.bls.gov/news.release/archives/cpi_01122023.htm",
       source_type: "dataset",
+      source_authors: [],
+      source_publisher: "U.S. Bureau of Labor Statistics",
+      source_published_date: "2023-01-12",
     },
     {
       id: "inst-2",

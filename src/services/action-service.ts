@@ -181,6 +181,16 @@ const FORMALIZE_RETRY_HOURS = 24;
 const ATTEMPT_REOPEN_HOURS = 3;
 
 /**
+ * An extraction job still unfinished after this many days has lost its queue
+ * message: the extraction queue keeps a message four days (SQS's default;
+ * infra/lib/queue-stack.ts sets none). The running ingest row behind it is
+ * then reopened like any row whose worker died. Until then an unfinished job
+ * means the extraction is queued or being read, and the row is left running
+ * (reconcileActions).
+ */
+const INGEST_JOB_LOST_DAYS = 4;
+
+/**
  * Whether a live commission pays for actions row `a` (SQL fragment). A
  * commissioned row runs as soon as it has one, at its payer's budget; the
  * row's own cost estimate only gates the allocator's increments.
@@ -724,12 +734,30 @@ export async function reconcileActions(): Promise<{
   // extraction charged to the same funders. A solver attempt stamps
   // updated_at every turn (§7.9), so three untouched hours means a dead
   // worker, not a long proof.
+  //
+  // An ingest whose extraction is still queued or being read is not dead,
+  // however long it has waited: the extractions are read one after another,
+  // so a mandate that plans twenty-five sources at once has rows that read
+  // `running` for hours with nothing wrong, and on 2026-11-13 a stopped
+  // drain left ten of them waiting twenty hours. Nothing stamps such a row
+  // while it queues, so the 24 hours alone would reopen it, the executor
+  // would submit the source a second time, and both extractions would be
+  // read and metered to the same funders. It is left running while its
+  // extraction job is unfinished (INGEST_JOB_LOST_DAYS says for how long).
   await rawQuery(
-    `UPDATE actions SET status = 'open', updated_at = now()
-      WHERE status = 'running'
-        AND ((kind NOT IN ('ingest', 'attempt_proof') AND updated_at < now() - interval '60 minutes')
-             OR (kind = 'ingest' AND updated_at < now() - interval '24 hours')
-             OR (kind = 'attempt_proof' AND updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
+    `UPDATE actions a SET status = 'open', updated_at = now()
+      WHERE a.status = 'running'
+        AND ((a.kind NOT IN ('ingest', 'attempt_proof') AND a.updated_at < now() - interval '60 minutes')
+             OR (a.kind = 'ingest' AND a.updated_at < now() - interval '24 hours'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM jobs j
+                    WHERE j.type = 'url_extraction' AND j.status IN ('pending', 'processing')
+                      AND j.input->>'url' = a.target_ref
+                      -- Submitted for this run of the row: the executor
+                      -- claims the row, then creates the job.
+                      AND j.created_at >= a.updated_at - interval '1 minute'
+                      AND j.created_at > now() - make_interval(days => ${INGEST_JOB_LOST_DAYS})))
+             OR (a.kind = 'attempt_proof' AND a.updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
@@ -2585,9 +2613,11 @@ export async function claimAction(actionId: string, atLabel?: string): Promise<b
  * waits before the executors pick it again and says so: the fault's public
  * class, since when, and when it is tried next (deployment-fault.ts, which
  * also says why this is a wait and why money cannot pace it). The funded
- * rows of the same kind and tier wait with it. The wait doubles with each
+ * rows of the same kind and tier wait with it: those an executor would
+ * pick, which is those with a live commission. The wait doubles with each
  * consecutive fault on that kind of work, from 30 seconds to 10 minutes,
- * and ends as soon as one of the rows runs (completeAction). A deployment
+ * and ends as soon as a row of that kind and tier runs, whether or not that
+ * row had been waiting (completeAction). A deployment
  * fault is also recorded for maintainers (deployment-fault-service.ts).
  * Returns the fault's class, or null when the row is simply open again.
  *
@@ -2623,8 +2653,12 @@ export async function releaseAction(actionId: string, cause?: unknown): Promise<
     [actionId, reason, FAULT_RETRY_BASE_SECONDS, FAULT_RETRY_MAX_SECONDS]
   );
   if (released) {
-    // The funded rows of the same kind and tier wait with it (the same
-    // model serves them), and say so.
+    // The rows of the same kind and tier that an executor would pick wait
+    // with it (the same model serves them), and say so. The test is the
+    // executors' own (nextRunnableAction): money on the row and a live
+    // commission. A row with money and no commission is one no executor
+    // picks, so marking it would say it waits on the fault when it waits on
+    // a payer, and nothing would ever try it and clear the mark.
     await rawQuery(
       `UPDATE actions a
           SET fault_reason = t.fault_reason,
@@ -2634,7 +2668,8 @@ export async function releaseAction(actionId: string, cause?: unknown): Promise<
          FROM actions t
         WHERE t.id = $1 AND a.id <> t.id AND a.status = 'open'
           AND a.kind = t.kind AND a.variant = t.variant
-          AND ${COVERAGE_SQL} > 0`,
+          AND ${COVERAGE_SQL} > 0
+          AND ${COMMISSIONED_SQL}`,
       [actionId]
     );
   }
@@ -2685,25 +2720,41 @@ export async function joinFaultWait(actionId: string): Promise<FaultWait | null>
 }
 
 /**
- * A row that waited on a platform fault has just run, so the fault is over
- * for its kind of work: the rows of the same kind and tier stop waiting, and
- * rows of other kinds waiting on the same class are tried now rather than at
- * the end of their own wait (one whose provider is still down fails and
- * waits again, having cost one refused call).
+ * A row has just run, so whatever platform fault its kind of work was
+ * waiting on is over for that kind: the rows of the same kind and tier stop
+ * waiting, and rows of other kinds waiting on the same class are tried now
+ * rather than at the end of their own wait (one whose provider is still down
+ * fails and waits again, having cost one refused call).
+ *
+ * `waitedOn` is the class the row that ran had itself been waiting on, if
+ * any. The rows of its kind and tier are cleared whether or not it carried
+ * one (completeAction calls this for any run that metered spend): the row an executor picks when a wait ends is the one with the most
+ * backing, which is often a row commissioned after the fault and never
+ * marked, and when only a marked row's own run cleared the others, nine
+ * sweeps finished on 2026-11-13 and thirteen rows went on reading as waiting.
  */
-async function endFaultWaits(actionId: string, reason: string): Promise<void> {
-  await rawQuery(
-    `UPDATE actions a
+async function endFaultWaits(actionId: string, waitedOn: string | null): Promise<void> {
+  const cleared = await rawQuery<{ fault_reason: string }>(
+    `WITH waiting AS (
+       SELECT a.id, a.fault_reason
+         FROM actions t JOIN actions a ON a.kind = t.kind AND a.variant = t.variant
+        WHERE t.id = $1 AND a.id <> t.id AND a.status = 'open' AND a.fault_reason IS NOT NULL
+        FOR UPDATE OF a
+     )
+     UPDATE actions a
         SET fault_reason = NULL, fault_since = NULL, fault_attempts = 0, retry_after = NULL
-       FROM actions t
-      WHERE t.id = $1 AND a.status = 'open' AND a.fault_reason IS NOT NULL
-        AND a.kind = t.kind AND a.variant = t.variant`,
+       FROM waiting w
+      WHERE a.id = w.id
+      RETURNING w.fault_reason`,
     [actionId]
   );
+  const classes = new Set(cleared.map((r) => r.fault_reason));
+  if (waitedOn) classes.add(waitedOn);
+  if (classes.size === 0) return;
   await rawQuery(
     `UPDATE actions SET retry_after = now()
-      WHERE status = 'open' AND fault_reason = $1 AND retry_after > now()`,
-    [reason]
+      WHERE status = 'open' AND fault_reason = ANY($1::text[]) AND retry_after > now()`,
+    [[...classes]]
   );
 }
 
@@ -2732,9 +2783,11 @@ export async function completeAction(
   meteredMicroUsd: number,
   opts: { meteredJobId?: string | null } = {}
 ): Promise<number> {
-  // The platform fault this row had been waiting on, if any: a row that
-  // runs after such a wait ends the wait of the others (endFaultWaits).
+  // A row that runs ends the wait its kind and tier were in (endFaultWaits),
+  // whether or not it had been waiting itself; `waitedOn` is the platform
+  // fault it had been waiting on, if any.
   let waitedOn: string | null = null;
+  let closed = false;
   const consumed = await withTransaction(async (tx) => {
     // Guarded transition: only a live (running, or reconcile-reopened)
     // action completes; a done/superseded/cancelled row is already closed
@@ -2752,6 +2805,7 @@ export async function completeAction(
       [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null]
     );
     if (!action) return 0;
+    closed = true;
     waitedOn = action.waited_on;
 
     await tx.query(
@@ -2944,7 +2998,12 @@ export async function completeAction(
     }
     return consumed;
   });
-  if (waitedOn) {
+  // A run that metered spend was served by its provider. One that closed
+  // having spent nothing (work that turned out to have nothing to do) says
+  // nothing about the provider, and ending the wait on it would restart the
+  // doubling at 30 seconds through a long fault; such a row ends the wait
+  // only if it had been waiting itself, as it always has.
+  if (closed && (waitedOn || meteredMicroUsd > 0)) {
     await endFaultWaits(actionId, waitedOn).catch((err) =>
       console.warn(`[actions] ending fault waits failed: ${err instanceof Error ? err.message : err}`)
     );

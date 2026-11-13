@@ -438,9 +438,12 @@ describe("cancellation and the reopen rule", () => {
       (x) => x.q.includes("SET status = 'open'") && x.q.includes("status = 'running'")
     );
     expect(reopen).toBeDefined();
-    expect(reopen!.q).toContain("kind NOT IN ('ingest', 'attempt_proof') AND updated_at < now() - interval '60 minutes'");
-    expect(reopen!.q).toContain("kind = 'ingest' AND updated_at < now() - interval '24 hours'");
-    expect(reopen!.q).toContain("kind = 'attempt_proof' AND updated_at < now() - make_interval(hours => 3)");
+    expect(reopen!.q).toContain("a.kind NOT IN ('ingest', 'attempt_proof') AND a.updated_at < now() - interval '60 minutes'");
+    expect(reopen!.q).toContain("a.kind = 'ingest' AND a.updated_at < now() - interval '24 hours'");
+    expect(reopen!.q).toContain("a.kind = 'attempt_proof' AND a.updated_at < now() - make_interval(hours => 3)");
+    // An ingest whose extraction is still queued or being read is not a dead
+    // worker's (tests/db/commission-backfill.test.ts runs it).
+    expect(reopen!.q).toMatch(/a\.kind = 'ingest'[\s\S]*NOT EXISTS \(\s*SELECT 1 FROM jobs j[\s\S]*j\.status IN \('pending', 'processing'\)/);
   });
 });
 

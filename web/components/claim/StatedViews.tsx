@@ -107,13 +107,27 @@ export function StatedViews({
   const current = views.filter((v) => v.current);
   const earlier = views.filter((v) => !v.current);
   const node = kindWord(kind);
+  // Most pages have none. Then there is no section to read, only an
+  // invitation, so it is drawn as one: a quiet line at the foot of the
+  // reading column (the callers place it there), not a heading in the middle
+  // of the page announcing that it is empty.
+  if (views.length === 0) {
+    return (
+      <div id="stated-views" className="stated-views-empty">
+        <p>
+          <span className="sc">Stated views</span> None yet. A view stated to the graph is shown on
+          this page in its speaker&rsquo;s words, as a source like any other, and carries no weight
+          in the assessment.
+        </p>
+        <StateView claimId={claimId} kind={kind} />
+      </div>
+    );
+  }
   return (
     <section id="stated-views" className="stated-views">
       <h2>Stated views</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "36rem" }}>
-        {views.length > 0
-          ? `What people and organisations have told the graph they hold about this ${node}, in their own words. `
-          : `Nobody has yet told the graph what they hold about this ${node}. `}
+        {`What people and organisations have told the graph they hold about this ${node}, in their own words. `}
         A stated view is a source like any other. It is shown here because it was stated to the graph
         directly, and its place on the page gives it no weight in the assessment. Nobody edits an
         assessment: reasons a statement gives are put to the Steward and answered.
