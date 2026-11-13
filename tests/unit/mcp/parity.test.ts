@@ -65,7 +65,7 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|showings|release|redaction-policies|outbound|outside|connections|file-sets|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$|^\/setup\/checklist$|^\/requests\/:request_id\/adopt$/;
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|showings|gates?|redaction-policies|outbound|outside|connections|file-sets|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$|^\/setup\/checklist$|^\/requests\/:request_id\/adopt$/;
 /** Mounted only by a members-only deployment that creates its own owls. */
 const CREATED_OWLS_ROUTE = /^\/owls\/created$/;
 /** Not mounted where owls are created: the routes that sell them. */
@@ -527,7 +527,7 @@ describe("in a members-only deployment", () => {
     expect(needing("administer").length).toBeGreaterThan(3);
 
     const reader = toolsOf([]);
-    expect(needing("release").sort()).toEqual(["get_release_queue", "list_release_rules", "send_report_to_maintainers"]);
+    expect(needing("release").sort()).toEqual(["decide_at_gate", "get_gate_queue", "send_report_to_maintainers"]);
     // A route that any one of several permissions opens (the reads of the
     // file sets, for a person who directs or an administrator) is left out
     // for a caller who holds none of them, and offered to one who holds any.

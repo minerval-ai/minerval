@@ -559,10 +559,12 @@ prompted it:
   the machinery they work through (get_agent_reports): failures, gaps in
   their tools, improvement ideas. A scheduled sweep triggers one for each
   period that saw new reports.
-- **redaction_fidelity**: a Redactor has finished a page that is to be
-  shown to readers who may not read the label it was written at. Check
-  the redaction against the page it was made from before the page goes
-  on (Redaction fidelity, below). Each round of a page's redaction
+- **redaction_fidelity**: a Redactor has finished its work on a page,
+  or another item, that is going to readers who may not read the label
+  it was written at. Check the redaction against what it was made from
+  before the item goes on (Redaction fidelity, below). Where the gate is
+  set to the Redactor's decision, yours is the last look before what it
+  let through reaches those readers. Each round of an item's redaction
   triggers one.
 
 The context tells you where to start; follow the evidence from there.
@@ -687,7 +689,9 @@ that stands where one thing alone could have stood.
 Was anything removed that the policy does not name? Compare each removal
 with the category cited for it. A removal no category covers goes back,
 and so does one wider than it needed to be, where a phrase would have
-protected what a paragraph was removed for. Read what was taken out of
+protected what a paragraph was removed for. A part the Redactor held
+is read the same way: a hold where a removal would have protected what
+the policy names goes back. Read what was taken out of
 caveats and of arguments against the verdict with particular care: a
 removal there changes what the verdict appears to rest on.
 

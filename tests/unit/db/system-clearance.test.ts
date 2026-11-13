@@ -263,6 +263,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Rows at `public` and nowhere else, each naming that label: the words of a proposal a person wrote, a party's release of them, and the log of each send. It reads the destination-side rows of showings outside, which are at `public`. The package itself is not built here: it is built by work at `public` (runAtLabel), which leaves this clearance and can read no other label.",
     ],
   ],
+  "src/services/gate-settings-service.ts": [
+    [
+      "A gate's settings are read and written for both sides of a boundary, which may share no label.",
+      "A gate's authorities are administrators and holders of release for a party, who may read neither side's label; the route checks the permission and this reads and writes the gate's own rows: the setting rows at the label things come from, which can name a mandate, a node or a request there and are returned only to a person with a say over the gate, and the one row for the gate as a whole on the destination side, which names nothing. It writes no text of any item, and what it returns to a person is the settings and the two labels' names.",
+    ],
+  ],
   "src/services/showing-service.ts": [
     [
       "Showing a page below its label keeps rows on both sides of a boundary, the page's label and the destination's, and the two may share no label.",

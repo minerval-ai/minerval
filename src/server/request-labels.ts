@@ -316,7 +316,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /labels/:label/reads": { rule: "none", why: ADMINISTRATION },
   "DELETE /labels/:label/reads/:reads": { rule: "none", why: ADMINISTRATION },
 
-  // ---- showing a page below its label: members-only deployments only ----
+  // ---- the gate: members-only deployments only ----
   "POST /showings": { rule: "none", why: SHOWING },
   "POST /showings/:showing_id/end": { rule: "none", why: SHOWING },
   "POST /showings/:showing_id/pages/:page_id/hold": { rule: "none", why: SHOWING },
@@ -325,9 +325,11 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     "page_id",
     "The money is for the redaction of this page or the check of it, which run at the page's label."
   ),
-  "POST /release/decisions": { rule: "none", why: SHOWING },
-  "POST /release/rules": { rule: "none", why: SHOWING },
-  "DELETE /release/rules/:rule_id": { rule: "none", why: SHOWING },
+  "POST /gate/decisions": { rule: "none", why: SHOWING },
+  "POST /gate/offers": { rule: "none", why: SHOWING },
+  "PUT /gates/:gate_id": { rule: "none", why: SHOWING },
+  "PUT /gates/:gate_id/settings": { rule: "none", why: SHOWING },
+  "DELETE /gates/settings/:setting_id": { rule: "none", why: SHOWING },
   "PUT /redaction-policies": { rule: "none", why: SHOWING },
 
   // ---- connections to an organization's systems: members-only deployments only ----

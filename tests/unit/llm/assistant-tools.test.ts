@@ -63,6 +63,15 @@ describe("the Assistant's tools", () => {
     // this app's tools, and is classified all the same.
     const membersOnly = new Set([
       "fund_showing_work",
+      "set_gate",
+      "set_gate_mode",
+      "end_gate_setting",
+      "decide_at_gate",
+      "offer_to_gate",
+      "set_page_flow",
+      "end_page_flow",
+      "hold_gate_item",
+      "save_redaction_policy",
       "send_pages_outside",
       "take_up_public_request",
       "decline_public_request",
