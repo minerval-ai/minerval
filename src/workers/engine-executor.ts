@@ -1725,6 +1725,7 @@ async function runIngestAction(
       {
         focus,
         ingestGroup: action.exclusion_group,
+        actionId: action.id,
         ...(owner ? { grantId: owner.id } : {}),
       }
     );

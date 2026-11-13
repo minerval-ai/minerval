@@ -2382,12 +2382,31 @@ export const jobs = pgTable(
     // that picks the job up runs at it, so what it extracts and enqueues
     // keeps the label the request or run had.
     sensitivityLabel: sensitivityLabelColumn(),
+    // The ledger row this job executes (an ingest: the engine executor
+    // claims the row, then submits the source), so the row can say whether
+    // its extraction is queued or being read, and the recovery sweep can
+    // find the row of an extraction that stopped (docs/infrastructure.md,
+    // "The extraction lane"). Null for a job no ledger row is behind.
+    actionId: uuid("action_id").references(() => actions.id, {
+      onDelete: "set null",
+    }),
+    // When a worker last took the job up (null while it waits in its
+    // queue), how many times one has, and when the work last made progress
+    // (a model call finished, a claim was matched). A run checks it still
+    // holds the job by its attempt number, so a run the lane gave up on
+    // stops at its next step rather than finishing beside its successor.
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
-  (table) => [index("idx_jobs_status").on(table.status)]
+  (table) => [
+    index("idx_jobs_status").on(table.status),
+    index("idx_jobs_action").on(table.actionId),
+  ]
 );
 
 // ---------------------------------------------------------------------------

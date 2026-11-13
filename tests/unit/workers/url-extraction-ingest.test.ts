@@ -17,6 +17,10 @@ const h = vi.hoisted(() => ({
   inserts: [] as Array<{ table: unknown; values: Record<string, unknown> }>,
   rawCalls: [] as Array<{ sql: string; params: unknown[] }>,
   extractInput: null as null | Record<string, unknown>,
+  // The job's hold (job-service.startJobAttempt / stillHoldsJob).
+  attempt: 1 as number | null,
+  // How many more checks the run passes before it loses the hold.
+  holdsFor: Infinity,
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -62,6 +66,8 @@ vi.mock("../../../src/services/embedding-service.js", () => ({ generateEmbedding
 vi.mock("../../../src/services/job-service.js", () => ({
   updateJob: vi.fn(async () => undefined),
   getJobById: async () => ({ userId: null, apiKeyId: null, sensitivityLabel: "public" }),
+  startJobAttempt: vi.fn(async () => (h.attempt == null ? null : { attempt: h.attempt })),
+  stillHoldsJob: vi.fn(async () => h.holdsFor-- > 0),
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({
   enqueueClaimPipeline: vi.fn(async () => undefined),
@@ -135,6 +141,40 @@ beforeEach(() => {
   h.inserts = [];
   h.rawCalls = [];
   h.extractInput = null;
+  h.attempt = 1;
+  h.holdsFor = Infinity;
+});
+
+describe("the run's hold on its job (docs/infrastructure.md, \"The extraction lane\")", () => {
+  it("does not run a job that is finished or was given up on", async () => {
+    h.attempt = null;
+    h.extracted = [proposal("A")];
+    await handleUrlExtraction(MESSAGE);
+    expect(h.extractInput).toBeNull();
+    expect(vi.mocked(updateJob)).not.toHaveBeenCalled();
+  });
+
+  it("stops before the next Matcher run once a later attempt holds the job, and writes nothing", async () => {
+    h.extracted = [proposal("A"), proposal("B")];
+    h.decisions = [decision({}), decision({})];
+    // Held after the Extractor and before A; lost before B.
+    h.holdsFor = 2;
+    await expect(handleUrlExtraction(MESSAGE)).resolves.toBeUndefined();
+    expect(vi.mocked(matchClaim)).toHaveBeenCalledTimes(1);
+    // Neither completed nor failed, and its ledger row is not cancelled.
+    expect(vi.mocked(updateJob)).not.toHaveBeenCalled();
+    expect(h.rawCalls.some((c) => /status = 'cancelled'/.test(c.sql))).toBe(false);
+  });
+
+  it("stops at its next step when its poller gives up on it", async () => {
+    h.extracted = [proposal("A")];
+    h.decisions = [decision({})];
+    const controller = new AbortController();
+    controller.abort();
+    await handleUrlExtraction(MESSAGE, { signal: controller.signal });
+    expect(vi.mocked(matchClaim)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateJob)).not.toHaveBeenCalled();
+  });
 });
 
 describe("ingestion", () => {

@@ -232,7 +232,13 @@ conversation.
    plan awaiting approval, `approve_grant_plan` starts it, again only with
    your user's agreement.
 5. Follow it with `get_grant` (spend, plan progress, the assessments it
-   funded). You can keep talking to the Grantmaker in the same
+   funded). For a mandate that ingests, `get_mandate`'s `pipeline` says
+   where each source is: `extraction_stage` is `queued` (waiting its turn,
+   with `extraction_queued_ahead` about how many are ahead of it),
+   `extracting` (being read since `extraction_started_at`), `done` or
+   `failed`. Sources are read a few at a time, and one takes minutes, so
+   tell your user what the pipeline says rather than guessing a time: a
+   queued source is not being read yet. You can keep talking to the Grantmaker in the same
    conversation to adjust the part of the plan whose work has not
    started: it can replace that remainder, or change the model tier or
    budget of a single planned pass, or withdraw it, until that pass is

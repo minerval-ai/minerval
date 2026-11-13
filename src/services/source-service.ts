@@ -150,8 +150,12 @@ export async function submitSource(
     content?: string;
   },
   attribution?: JobAttribution & { meterJobId?: string },
-  /** A scoped ingest's focus and ledger group, and the mandate behind it. */
-  scope?: { focus?: string | null; ingestGroup?: string; grantId?: string }
+  /**
+   * A scoped ingest's focus and ledger group, the mandate behind it, and
+   * the ledger row the extraction executes (stamped on the job, so the row
+   * can say whether its extraction is queued or being read).
+   */
+  scope?: { focus?: string | null; ingestGroup?: string; grantId?: string; actionId?: string }
 ) {
   const source = await getOrCreateSource(input);
 
@@ -162,7 +166,8 @@ export async function submitSource(
       url: input.url,
       ...(scope?.focus ? { focus: scope.focus } : {}),
     },
-    attribution
+    attribution,
+    scope?.actionId ?? null
   );
 
   await enqueueUrlExtraction({

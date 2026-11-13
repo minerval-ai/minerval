@@ -56,7 +56,14 @@ unknown.
   failed and is not cancelled: it stays funded, no attempt is charged, and
   the platform retries it on its own, so commissioning it again buys
   nothing. Its budget stays held meanwhile and counts against the
-  mandate's pace from when it was placed, as any held budget does
+  mandate's pace from when it was placed, as any held budget does.
+  extraction (null unless the row is a running ingest: queued, its source
+  is waiting its turn to be read; extracting, a worker is reading it),
+  extraction_started_at (when the current reading began; null while
+  queued), queued_ahead (for a queued ingest, about how many extractions
+  submitted before it are still waiting; the queue does not promise its
+  order). A running ingest is not necessarily being read: say queued when
+  it is
 - `commissions`: the money on each piece of work. commission_id, action_id,
   exclusion_group, payer_kind (mandate, person), payer_mandate_id,
   budget_owls, spent_owls, returned_owls, commissioned_by, brief, reason,

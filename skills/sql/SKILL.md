@@ -6,9 +6,10 @@ description: >-
   readers and agents most often ask.
 metadata:
   minerval:
-    version: 11
+    version: 12
     since_epoch: 2026-11-responsive-funding
     changelog:
+      12: "ledger carries extraction, extraction_started_at and queued_ahead: a running ingest says whether its source is queued or being read, and about how many extractions wait ahead of a queued one"
       11: "ledger: waiting_on, waiting_since and next_attempt_at are set only while the platform's next attempt is still ahead; a row whose wait has ended is due and reads as a plain open row, where it used to go on reading as waiting"
       10: "mandates carries pace and the Grantmaker's reserve in place of the daily rate"
       9: "ledger carries waiting_on, waiting_since and next_attempt_at (#971): an open row a platform fault is holding says so, with the class of the fault; such a row is retried by the platform and commissioning it again buys nothing"
@@ -72,7 +73,14 @@ unknown.
   failed and is not cancelled: it stays funded, no attempt is charged, and
   the platform retries it on its own, so commissioning it again buys
   nothing. Its budget stays held meanwhile and counts against the
-  mandate's pace from when it was placed, as any held budget does
+  mandate's pace from when it was placed, as any held budget does.
+  extraction (null unless the row is a running ingest: queued, its source
+  is waiting its turn to be read; extracting, a worker is reading it),
+  extraction_started_at (when the current reading began; null while
+  queued), queued_ahead (for a queued ingest, about how many extractions
+  submitted before it are still waiting; the queue does not promise its
+  order). A running ingest is not necessarily being read: say queued when
+  it is
 - `commissions`: the money on each piece of work. commission_id, action_id,
   exclusion_group, payer_kind (mandate, person), payer_mandate_id,
   budget_owls, spent_owls, returned_owls, commissioned_by, brief, reason,
