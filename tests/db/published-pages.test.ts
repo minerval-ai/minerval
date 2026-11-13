@@ -626,6 +626,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(messages).toHaveLength(2);
     expect(messages[1]!.trigger).toBe("page_shown");
     expect(messages[1]!.body).toContain("A later version exists and is not shown.");
+
     // The earlier package is still served.
     const earlier = (await pubApi("GET", `/published-pages/${publishedPageId}?package=2`, undefined, null)).json;
     expect(earlier.state).toBe("released_in_part");
@@ -667,6 +668,8 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(read.page.verdict.status).toBe("verified");
     expect(read.versions.map((v: any) => v.state)).toEqual(["released_whole", "released_in_part"]);
     expect(read.packages).toHaveLength(5);
+    // One waiting message for the publication at a time: a later package's takes the place of an earlier one nobody has read.
+    expect(await pubRows(`SELECT 1 FROM node_messages WHERE node_id = $1 AND trigger = 'page_shown'`, [id.p])).toHaveLength(1);
   });
 
   it("can be carried as a file where the network does not reach, and the handing over is recorded", async () => {

@@ -2257,3 +2257,48 @@ select.ask-model:hover:not(:disabled) { color: var(--ink); background-color: var
   .ask-side-fold nav { padding: 0.4rem 0.8rem 1rem; display: flex; flex-direction: column; gap: 1rem; max-height: 60dvh; overflow-y: auto; }
   .ask-transcript, .ask-dock, .ask-bar { padding-left: 1rem; padding-right: 1rem; }
 }
+
+/* ----- a published page on a claim's page (docs/published-pages.md) ----- */
+/* The tab strip above the reading column: the public assessment first. */
+.claim-tabs {
+  display: flex; gap: 1.2rem; flex-wrap: wrap; margin: 0 0 1.1rem;
+  border-bottom: 1px solid var(--rule); font-family: var(--sans); font-size: 0.8rem;
+}
+.claim-tabs a { color: var(--muted); text-decoration: none; padding: 0.35rem 0; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.claim-tabs a:hover { color: var(--ink); }
+.claim-tabs a.on { color: var(--ink); border-bottom-color: var(--ink); }
+.published-intro { margin: -0.4rem 0 1rem; }
+.published-wording { margin-top: 0.7rem; border-left: 2px solid var(--rule); padding-left: 0.9rem; }
+.published-wording p { margin: 0.2rem 0 0; overflow-wrap: anywhere; }
+.published-sources, .record-rows dd, .check-page { overflow-wrap: anywhere; }
+/* A removal's mark, inline where the passage stood. Ink, never a status colour. */
+.redaction {
+  font-family: var(--mono, ui-monospace, monospace); font-size: 0.82em;
+  background: var(--paper-sunk); border: 1px solid var(--rule-strong, var(--rule)); padding: 0 0.3em; color: var(--ink-soft);
+}
+/* A held part, standing where the part stood. */
+.held-part {
+  display: flex; gap: 0.6rem; align-items: baseline; margin: 0.9rem 0 1.1rem;
+  padding: 0.55rem 0.8rem; border: 1px dashed var(--rule-heavy, var(--rule)); background: var(--paper-sunk);
+  font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft);
+}
+.held-mark { display: inline-block; width: 0.55rem; height: 0.55rem; background: var(--ink); flex: none; margin-right: 0.15rem; }
+.held-reason { color: var(--muted); font-size: 0.74rem; }
+.published-sources { list-style: none; padding: 0; margin: 0 0 1.2rem; font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft); }
+.published-sources li { margin: 0 0 0.6rem; }
+.published-supplier p { margin: 0.2rem 0 0; color: var(--muted); }
+.publication-record { margin-top: 1.6rem; }
+.record-rows { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.5rem 1rem; margin: 0.8rem 0; font-family: var(--sans); font-size: 0.8rem; }
+.record-rows dt { color: var(--muted); }
+.record-rows dd { margin: 0; color: var(--ink-soft); min-width: 0; }
+.record-list { list-style: none; padding: 0; margin: 0 0 0.3rem; }
+.record-list li { margin: 0 0 0.2rem; }
+.record-policy pre { white-space: pre-wrap; font-size: 0.72rem; max-height: 22rem; overflow: auto; background: var(--paper-sunk); padding: 0.6rem; }
+.record-policy summary { cursor: pointer; color: var(--muted); }
+.check-page ul { margin: 0.1rem 0 0.6rem; padding-left: 1.1rem; }
+.check-page p { margin: 0 0 0.3rem; }
+.check-page .linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--link); cursor: pointer; text-decoration: underline; }
+@media (max-width: 640px) {
+  .record-rows { grid-template-columns: 1fr; gap: 0.1rem 0; }
+  .record-rows dd { margin-bottom: 0.6rem; }
+}

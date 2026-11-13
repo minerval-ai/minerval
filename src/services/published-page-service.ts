@@ -621,6 +621,16 @@ export async function takeIn(publishedPageId: string, opts: { first: boolean }):
       return true;
     });
   }
+  // One waiting message for a publication, saying where it stands now. A
+  // later package's message takes the place of an earlier one of this
+  // publication that no pass has read yet: the earlier one described a
+  // state that is no longer the latest, and every package is kept.
+  if (!opts.first) {
+    await rawQuery(
+      `DELETE FROM node_messages WHERE node_id = $1 AND read_at IS NULL AND sender_kind = 'system' AND sender_ref LIKE $2`,
+      [publication.node_id, `published:${publication.id}:%`]
+    );
+  }
   await enqueueSteward({
     claimId: publication.node_id,
     trigger: opts.first ? "contribution_accepted" : "page_shown",

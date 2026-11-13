@@ -11,10 +11,9 @@ marked in its place, and in a form those readers can check.
 It is one act at every boundary. Showing what was concluded at one label to
 the readers of another, and showing it outside the deployment, are the same
 steps with a different destination. This document describes those steps as
-built. Carrying a shown page out of the deployment (the signed package, the
-organization's account on the public graph, the public graph's side) is not
-built yet: a showing outside goes through every step below and its released
-record then waits inside the deployment.
+built. A showing outside goes through every step below, and what it
+releases is then carried out of the deployment in a signed package and read
+on the public graph: [published-pages.md](published-pages.md).
 
 The public graph has one label, which everyone reads. Nothing below exists
 there: the routes are not mounted, the tables are empty, and no run is told
@@ -103,7 +102,10 @@ organization itself or an outside party supplied it, and whether an interest
 in the node is recorded for it; the gaps the page records (that each request
 exists and where it stands, and whether the assessment says what remains
 open); how the page was made (the prompt set, the policy version, the model
-that assessed and the model that redacted); and the count of removals by
+that assessed and the model that redacted, the seal of the assessing run's
+log with whether its chain checked out when the page was recorded, and
+whether a mandate or a person's order paid for the assessment and whether
+its funder declared a stake, in fixed words); and the count of removals by
 category. Holding it holds the page.
 
 Coverage is said to the reader it is served to. Where a deployment has more
@@ -221,8 +223,9 @@ returns the result of that check with everything needed to redo it.
 Released text is exactly what was written. Nothing normalizes it: spacing,
 markup and line ends are part of what is hashed.
 
-`verifyShownPage` is a pure function, and is the start of the standalone
-verifier that will ship with pages shown outside.
+`verifyShownPage` is a pure function. The standalone verifier of a page
+shown outside rebuilds the same tree from a signed package
+([published-pages.md](published-pages.md), "The check").
 
 ## The check
 
@@ -383,8 +386,6 @@ a key that leaked or an agent following text it read cannot do any of them
 
 ## Not built here
 
-- Carrying a shown page outside: the signed package, the standalone
-  verifier, the organization's account on the public graph.
 - Web pages. The queue needs a view that shows each removal as a marked
   difference and takes bulk decisions; a node's page needs the shown page
   beside its own assessment for readers at the destination label; the

@@ -155,12 +155,12 @@ code decides who should hold which.
 
 | permission | held | lets its holder | never lets anyone |
 |---|---|---|---|
-| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)) | edit an assessment or a run's log |
-| `release` | for one party | release or hold, part by part, what a page shown to readers who do not read its label carries of that party's material, and set standing rules for it ([showing-a-page.md](showing-a-page.md)) | edit what the agents wrote, or release another party's material |
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)) | edit an assessment or a run's log |
+| `release` | for one party | release or hold, part by part, what a page shown to readers who do not read its label carries of that party's material, set standing rules for it ([showing-a-page.md](showing-a-page.md)), and release the words a node is proposed to the public graph in | edit what the agents wrote, or release another party's material |
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
-| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph | act under a permission they have not also been granted, or change who may do what without a log entry |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest

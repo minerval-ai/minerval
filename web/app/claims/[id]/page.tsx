@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { loadClaim, loadFeatures, loadMergedFrom } from "@/lib/data";
+import { loadClaim, loadFeatures, loadMergedFrom, loadPublishedPage, loadPublishedPages } from "@/lib/data";
 import { mergedFromParam, mergedRedirectPath } from "@/lib/merged";
 import { claimPreview, describePreview, truncateText } from "@/lib/preview";
 import { ClaimMargins } from "@/components/claim/ClaimMargins";
@@ -40,7 +40,7 @@ export default async function ClaimPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ merged_from?: string | string[] }>;
+  searchParams: Promise<{ merged_from?: string | string[]; published?: string | string[]; package?: string | string[] }>;
 }) {
   const { id } = await params;
   const { detail, source } = await loadClaim(id);
@@ -78,10 +78,17 @@ export default async function ClaimPage({
     detail.claim.id,
     mergedFromParam((await searchParams).merged_from),
   );
+  // Pages other graphs publish of this node (docs/published-pages.md). One
+  // that is on the node's page is a second tab, read at ?published=<id>.
+  const publishedPages = source === "live" ? await loadPublishedPages(detail.claim.id) : [];
+  const query = await searchParams;
+  const wanted = typeof query.published === "string" ? query.published : null;
+  const onPage = wanted ? publishedPages.find((p) => p.published_page_id === wanted && p.on_the_node.on_the_nodes_page) : undefined;
+  const published = onPage ? await loadPublishedPage(onPage.published_page_id, Number(query.package) || undefined) : null;
   return (
     <>
       {mergedFrom && <MergedFromNote from={mergedFrom} />}
-      <ClaimMargins detail={detail} source={source} features={await loadFeatures()} />
+      <ClaimMargins detail={detail} source={source} features={await loadFeatures()} publishedPages={publishedPages} published={published} />
     </>
   );
 }

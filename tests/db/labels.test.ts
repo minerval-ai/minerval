@@ -194,7 +194,7 @@ describe("the labels table", () => {
         "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants", "ingest_focuses",
         "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events", "lookout_feed_items",
         "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events", "mandate_inbox",
-        "mandate_policy_versions", "mandate_valuations", "mirror_node_changes", "node_messages", "petitions", "prize_claims", "proof_attempts", "quantity_cuts",
+        "mandate_policy_versions", "mandate_valuations", "mirror_node_changes", "node_messages", "outbound_packages", "outbound_proposals", "outbound_sends", "petitions", "prize_claims", "proof_attempts", "published_page_packages", "published_pages", "publishers", "quantity_cuts",
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
         "reading_citations", "reconciliation_events", "redaction_policies", "regrants", "release_rules", "reputation_events", "request_targets", "request_work",
         "requests", "research_runs", "setup_parts", "shared_page_analyses", "showing_acts", "showing_pages", "showing_parts", "showing_removals", "showings", "shown_nodes", "shown_pages", "shown_parts", "shown_showings", "source_events", "source_extractions",

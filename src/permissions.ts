@@ -77,7 +77,8 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     covers:
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
       "Correspondent for an update, add sources, ask for a node's page to be shown to readers " +
-      "who do not read its label, end a standing showing, and hold a page that has not been shown.",
+      "who do not read its label, end a standing showing, hold a page that has not been shown, send what a " +
+      "showing outside has released to the public graph, and write the words a node is proposed there in.",
     never: "Edit an assessment or a run's log.",
   },
   release: {
@@ -85,7 +86,8 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "release one party's material",
     covers:
       "Release or hold, part by part, what a page shown to readers who do not read its label " +
-      "carries of one party's material, and set standing rules for it. It is granted for that party alone.",
+      "carries of one party's material, set standing rules for it, and release the words a node is proposed " +
+      "to the public graph in. It is granted for that party alone.",
     never: "Edit what the agents wrote, or release another party's material.",
   },
   fund: {
@@ -114,7 +116,8 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "administer the deployment",
     covers:
       "Grant and remove permissions, define labels and which label reads which, add parties, " +
-      "say whose material a source is, and save the redaction policy of a boundary.",
+      "say whose material a source is, save the redaction policy of a boundary, and sign the statement that " +
+      "registers the deployment's key to an account on the public graph.",
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",

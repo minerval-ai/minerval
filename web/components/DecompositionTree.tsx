@@ -219,11 +219,22 @@ function CheckRecord({ check }: { check: LeanCheckSummary }) {
 // gone (#204). An argument-less basis, or a legacy argument with no written
 // form, instead shows its subclaims as a quiet list, since it has no prose.
 // data-arg-anchor is the scroll target for the left rail's jump-list (#204).
-function ArgumentBlock({
-  group, texts, check,
-}: { group: ArgumentGroup; texts: Map<string, string>; check: LeanCheckSummary | null }) {
+export function ArgumentBlock({
+  group, texts, check, published,
+}: {
+  group: ArgumentGroup;
+  texts?: Map<string, string>;
+  check: LeanCheckSummary | null;
+  /**
+   * On a published page (docs/published-pages.md): the argument's written
+   * form is shown as its author wrote it whether or not it links its
+   * premises, with removals marked in these categories.
+   */
+  published?: { categories: string[] };
+}) {
   const isBasis = !group.name;
-  const written = group.content && hasClaimLinks(group.content) ? group.content : null;
+  const written = group.content && (published || hasClaimLinks(group.content)) ? group.content : null;
+  const categories = published?.categories;
   return (
     <section className="argblock" data-arg-anchor={argKey(group)}>
       {isBasis ? (
@@ -255,12 +266,12 @@ function ArgumentBlock({
       {written ? (
         <>
           <p className="argform">
-            <ArgumentText content={written} texts={texts} />
+            <ArgumentText content={written} texts={texts} categories={categories} />
           </p>
           <ArgumentCheck group={group} />
           {group.evaluation && (
             <p className="argeval">
-              <ArgumentText content={group.evaluation} texts={texts} />
+              <ArgumentText content={group.evaluation} texts={texts} categories={categories} />
             </p>
           )}
           {check && <CheckRecord check={check} />}
