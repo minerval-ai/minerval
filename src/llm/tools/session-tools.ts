@@ -9,7 +9,6 @@
  * since most petitions are decided in seconds; past that, the run ends its
  * turn and its session pauses until the answers arrive.
  */
-import { REPORT_NOT_GIVEN, mayBeGivenReportOfResearch } from "../../services/separate-reader.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
@@ -60,13 +59,6 @@ export async function takeArrivals(sessionId: string): Promise<string | null> {
   // run it reaches is private (llm/run-visibility.ts). This is the one place
   // arrivals enter a run, by wait_for_answers or in the next tool result.
   if (replies.some((r) => r.kind === "research")) markCurrentRunPrivate(RESEARCH_REPORT_REASON);
-  // A report is in a Researcher's own words: the run it reaches takes on
-  // the marks of the run that wrote it, or, where it writes a shown page
-  // and that run had sources the page's readers cannot read, is given a
-  // fixed sentence in the report's place (services/separate-reader.ts).
-  for (const reply of replies) {
-    if (reply.kind === "research" && !(await mayBeGivenReportOfResearch(reply.ref))) reply.text = REPORT_NOT_GIVEN;
-  }
   const credit = replies.reduce((sum, r) => sum + Number(r.credit_micro_usd ?? 0), 0);
   if (credit > 0) creditRunBudget(credit);
   return renderResearchSessionArrivals(replies);

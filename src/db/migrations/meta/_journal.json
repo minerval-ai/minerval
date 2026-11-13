@@ -1030,6 +1030,13 @@
       "when": 1794580444627,
       "tag": "0146_judgments_in_sql",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1794587522512,
+      "tag": "0147_drop_reader_answers",
+      "breakpoints": true
     }
   ]
 }

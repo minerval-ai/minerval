@@ -103,11 +103,10 @@ in the node is recorded for it; the gaps the page records (that each request
 exists and where it stands, and whether the assessment says what remains
 open); how the page was made (the prompt set, the policy version, the model
 that assessed and the model that redacted, the seal of the assessing run's
-log with whether its chain checked out when the page was recorded, whether
-the run that wrote the assessment was given the text of sources the page's
-readers cannot read ("A separate reader", below), and whether a mandate or
-a person's order paid for the assessment and whether its funder declared a
-stake, in fixed words); and the count of removals by category. Holding it holds the page.
+log with whether its chain checked out when the page was recorded, and
+whether a mandate or a person's order paid for the assessment and whether
+its funder declared a stake, in fixed words); and the count of removals by
+category. Holding it holds the page.
 
 Coverage is said to the reader it is served to. Where a deployment has more
 than one label, a judgment's coverage lists `evidence_this_reader_can_read`
@@ -187,7 +186,9 @@ tools:
   because something that is always shown could not be shown without giving
   away what a category protects. The destination then sees the page as held.
 - `finish_redaction`: end the pass, naming the decisions it was least sure
-  of in either direction.
+  of in either direction. It also names there a part whose wording looks
+  arranged to carry something other than its sense ("What this does not
+  protect against", below).
 
 No tool writes a word onto the page. The Redactor's notes, its account of
 what it was least sure of, and its reason for `cannot_cross` stay at the
@@ -364,167 +365,24 @@ in front of the version it was shown from.
 This is the one way text reaches a label that does not read the label it
 was written at.
 
-## A separate reader
-
-A page is released word for word. That is what lets a reader check it
-against its fingerprint, and it is also what would let a writer hide
-information in how a page is worded, where the Redactor, Audit and the
-people at the gate would not see it. An agent following its instructions
-does not write such a page. The way it could happen is text a run read, on
-the web or in a document, telling it to. Rewording pages on the way out
-would close this and would end the check, so it is not done. What limits it
-is how little the writer holds (`src/services/separate-reader.ts`).
-
-**The rule.** On a node whose page is under a standing showing, a run is
-given the text of the sources the showing's readers cannot read, or a free
-hand in what it writes, and not both.
-
-- A Steward's pass on the node, and research it launches or commissions in
-  the ordinary way, write freely: the page, instances, a report. They are
-  not given the text.
-- A **reader** is given the text. It records nothing on the node, and what
-  comes back from it is one answer for each question its Steward asked, in
-  the form the Steward set.
-
-**The reader is the Researcher.** It is not a new role or a new kind of
-run. A Steward launches it as it launches any research, with
-`delegate_research`, adding `questions`. It works at the Steward's label,
-is paid from the Steward's pass like any instrument, keeps what it reads as
-sources (`keep_reading`, `keep_analysis`, `keep_file`), and reports. What
-differs at this boundary is what comes back: its answers reach the Steward,
-and its report and notebook stay with its run, for people who hold the
-permission to open raw sources at that label.
-
-**What an answer is** (`src/services/reader-answers.ts`). The Steward
-writes each question and chooses its form.
-
-| Form | What comes back |
-| --- | --- |
-| `yes_no` | yes, no or unclear |
-| `number` | a number, in the unit the question named |
-| `date` | a year, a month or a day |
-| `choice` | one of the options the Steward wrote |
-| `passage` | words of a source, at most 600 characters, with where they sit in it |
-
-With each, where it rests on one, the address of a source the graph
-records, which the Steward cites. A question not answered carries one of
-four fixed reasons. No answer holds words the reader composed: a passage is
-cut from the source's stored text at the place the reader's words match it
-(comparing with each run of spaces and line breaks taken as one), so every
-character of it is the source's. A paraphrase is refused.
-
-A passage is the hard case, since it is the source's own text. It is
-allowed because a Steward that cannot see what a source says in its own
-words cannot judge how the source stands toward a claim (constitution §4),
-and because a quoted passage is already what a page's reading shows and
-what each party's holders of `release` decide on. It is bounded at 600
-characters for one reason: a longer passage costs a reader nothing more, so
-money does not bound it, and the bound is what keeps one answer from
-carrying a page of the material, or a long instruction planted in it, to
-the run that writes the page. An instruction planted in the material can
-reach the Steward as a passage, marked as a source's text and no longer
-than that, and in no other way.
-
-How much comes back is set by the questions, which the Steward wrote, and
-not by the reader. There is no count of questions; a reader's run is paid
-for. The questions and answers are stored whole on the run's row
-(`research_runs.questions`, `answers`), so what a page's writer was told of
-the sources is on the record.
-
-**When it applies.** To a run at the label of a standing showing that has
-not ended, on the node shown or, under the wider scope, on a node that sits
-under it. It applies to no other run: an organization that shows no page
-pays for one run where one would do, and on the public graph and where
-`public` is the only label nothing here exists. The sources withheld are
-those stored at a label the run reads and some destination of the showing
-does not: for a page shown outside, every label but `public`; for a page
-shown at another label inside, the labels that label does not read. A
-connection or a set of files at a label the destination reads stays with
-the Steward.
-
-The alternatives were to apply it to every run on a deployment with more
-than one label, which charges two runs for every assessment of sealed
-material whether or not anything is ever shown, and to let an
-administrator choose it label by label or connection by connection, which
-adds a setting whose right value follows from a fact already recorded:
-whether the page is shown.
-
-**A page written before the rule applied.** A node can be shown once, or
-come under a standing showing, with a version written by a run that had
-the text. Nothing rewrites it. The record of every shown page states which
-it was, in one of three fixed sentences (`given_source_text` in what is
-always shown):
-
-- The run that wrote this assessment was given the text of no source that
-  this page's readers cannot read, and no report by a run that was.
-- The run that wrote this assessment was given the text of sources that
-  this page's readers cannot read, or a report by a run that was.
-- Whether the run that wrote this assessment was given the text of sources
-  that this page's readers cannot read is not recorded.
-
-It is read from the run's own record. Each tool that hands a run a source's
-text at a label other than `public` marks the run with that label
-(`source-text@<label>` among the run's recorded reasons), a paused session
-carries its marks to the run that resumes it, and a run given a
-Researcher's report in the Researcher's own words takes on the marks of the
-run that wrote it. A person who wants a page shown once to carry the first
-sentence asks for a standing showing, has the node assessed again, and ends
-the showing.
-
-**What each run is told.** The Steward's task message carries one passage,
-only where the rule applies: that its page is under a standing showing,
-why the text is not given to it, which connections and file sets that
-leaves out, how to launch a reader, the five forms, and what the
-arrangement costs it. A reader is told what it is for, its questions, that
-its answers are all that reaches the Steward, and who reads its report.
-Research on such a node that was not launched as a reader is told which
-sources it is not given and why.
-
-**What it leaves open.**
-
-- The writer still reads what is recorded at its label: instances with the
-  passages they quote, other nodes' pages, its own earlier reasoning. Some
-  of that was written by runs that had the text, before the showing was
-  asked for or on nodes under no showing. The fixed sentences speak of the
-  run and what it was given, and of nothing wider.
-- An Extractor reads the document it is given and records instances from
-  it, which become readings on a page. It reads nothing else, so what its
-  words could carry is the document it was handed.
-- A reader chooses its numbers and which passage to give. One that had been
-  turned could answer falsely, or pick a passage for what else it says. The
-  Steward weighs an answer as it weighs any instrument's, and can ask for
-  the passage a number rests on.
-- The store does not record whether a source's text was fetched from the
-  open web or added privately, so a web page stored at the page's label on
-  an earlier pass is not opened from the store for the Steward. It reads
-  the page again at its address with `read_page`. A marker on sources
-  would remove this.
-- `read_page` fetches an address. A private document reachable at an
-  address the deployment's fetcher can open would be read that way; the
-  fetcher's own guard against internal addresses is what stands there.
-- A reader keeps the channel every agent has for reporting a tool that
-  failed (`raise_issue`), in its own words, and a Steward can search those
-  reports. A run that takes up a request opens with the notebook of the
-  request's earlier run, whatever that run was given. Neither is held to a
-  form.
-- Research the Steward commissions to run on its own (`commission`, kind
-  research) is not launched as a reader. A reader runs inside the Steward's
-  turn, under the wall-clock cap a delegated run has.
-- The release queue does not yet show a reader's questions and answers
-  beside the page they informed. They are on the run's row.
-
 ## What this does not protect against
 
 - **A page is released word for word, and words can carry more than they
   say.** A run that had been turned, for instance by text it read on the
   web, could encode what it knows in the wording of a page that is later
-  released. The Redactor, Audit and the people at the gate would not see
-  it. Nothing here closes that. Rewording pages on the way out would close
-  it and would end the check against the fingerprint, so it is not done.
-  What limits the damage is how little the writer holds: under a standing
-  showing the writer is not given the text of sources the page's readers
-  cannot read ("A separate reader", above), and the record of every shown
-  page says whether its writer was.
+  released. Nothing here closes that. Rewording pages on the way out would
+  close it and would end the check against the fingerprint, so it is not
+  done. Keeping the text of sealed sources from the page's writer would
+  limit it, and is not done either: a Steward reads the evidence it judges,
+  on every node, because a page is worth showing only when its writer
+  examined the evidence. What there is: the Redactor's prompt says that
+  the wording itself goes out and that it is the reader placed to notice
+  wording that looks arranged to carry something other than its sense.
+  Where a part looks that way, it names the part in `finish_redaction`'s
+  `least_sure` with what it saw, which Audit is given and which the people
+  at the gate who read the page's label see first on that part. The
+  Redactor may not see it, and nothing holds a page on this ground except
+  a person's decision at the gate.
 - **The check against the fingerprint shows that what was released is what
   was written. It does not show that the logged run was the only run**, or
   that the nodes shown were chosen without sight of their verdicts. The

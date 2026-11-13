@@ -233,13 +233,6 @@ Nothing withholds the tool from such a run: a run at a label that reads the
 connection's is the run that most needs what the system holds, and what its
 arguments say is its own judgment, made knowing where they go.
 
-One case does withhold it. Where a node's page is under a standing showing,
-the run that writes the page is not offered a connection the showing's
-readers cannot read, nor a reading made through one, and is told which and
-why. A reader, which is the Researcher launched with questions, has the
-connection and returns answers in set forms
-([showing-a-page.md](showing-a-page.md), "A separate reader").
-
 **What a connection's row says of a run's failure.** That a server
 answered, could not be reached or changed a tool is the same whoever finds
 it out, so a run writes it on the connection's row at the connection's

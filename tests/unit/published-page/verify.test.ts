@@ -137,6 +137,20 @@ describe("the check of a published page", () => {
     }
   });
 
+  it("checks a package whose record carries a field this check does not read, and says nothing of it", async () => {
+    // For a short time a record could carry `made.given_source_text`. The
+    // field is gone and the format's name did not change, so a package
+    // built with it is checked as any other: what it says there is signed
+    // with the rest and is otherwise not read.
+    const { hash: _h, signature: _s, ...body } = await example();
+    const made = { ...body.record.made!, given_source_text: "none" };
+    const pkg = await sign({ ...body, record: { ...body.record, made } });
+    const check = await verifyPublishedPage(pkg, { publisherKey: key.publicKey });
+    expect(check.failed).toEqual([]);
+    expect(check.ok).toBe(true);
+    expect([...check.confirmed, ...check.cannot_show].join("\n")).not.toMatch(/given the text|wording/);
+  });
+
   it("uses the same hash and key id as the code that signs", async () => {
     const pkg = await example();
     const { hash: _h, signature: _s, ...body } = pkg;

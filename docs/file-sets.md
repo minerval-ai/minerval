@@ -537,13 +537,10 @@ The same list is in `sandbox/README.md`.
   sandbox's container is not given the privilege to do. The manifest hash
   fixes every file of each set, and the command and script say which they
   read.
-- **A separate reader** (#556). Where a node's page is under a standing
-  showing, its Steward is not offered the sets the showing's readers
-  cannot read, nor an output made from them, and is told which and why. A
-  reader, which is the Researcher launched with questions, has the sets
-  and `run_command`, keeps what its answers rest on, and returns answers
-  in set forms ([showing-a-page.md](showing-a-page.md), "A separate
-  reader"). Nothing here changes for any other run.
+- **A separate reader of raw sealed evidence** (#556) is not built and is
+  not planned. A Steward at a label reads the sets its label reads and
+  judges what it read (docs/showing-a-page.md, "What this does not protect
+  against").
 
 Not built here: the Docker Compose packaging (the sandbox's Dockerfile,
 settings, network requirement and probe are ready for it); file sets

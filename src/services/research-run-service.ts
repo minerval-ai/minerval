@@ -11,7 +11,6 @@
  * operator pause flag polled each turn, both copied from the solver's
  * breaker (docs/mathematics.md 7.3).
  */
-import type { ReaderAnswer, ReaderQuestion } from "./reader-answers.js";
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
@@ -76,9 +75,6 @@ export interface ResearchRunRow {
   served_models: string[] | null;
   report: Record<string, unknown> | null;
   notebook: Record<string, string>;
-  /** On a run launched as a reader (services/separate-reader.ts): what was asked, and the answers as stored. */
-  questions: ReaderQuestion[] | null;
-  answers: ReaderAnswer[] | null;
   started_at: Date;
   finished_at: Date | null;
   error: string | null;
@@ -88,7 +84,7 @@ const COLUMNS = `id, claim_id, grant_id, request_id, examination_id, requested_b
   model, model_tier, effort, include_constitution, status, tools,
   ceiling_micro_usd::bigint AS ceiling_micro_usd, spent_micro_usd::bigint AS spent_micro_usd,
   contribution_budget_micro_usd::bigint AS contribution_budget_micro_usd,
-  turns, served_models, report, notebook, questions, answers, started_at, finished_at, error`;
+  turns, served_models, report, notebook, started_at, finished_at, error`;
 
 function normalize(row: ResearchRunRow): ResearchRunRow {
   return {
@@ -120,15 +116,13 @@ export async function openResearchRun(input: {
   contributionBudgetMicroUsd?: number;
   /** The notebook the run opens with: a request's earlier run's, for the next stage (#730). */
   notebook?: Record<string, string> | null;
-  /** For a run launched as a reader: the questions it answers. */
-  questions?: ReaderQuestion[] | null;
 }): Promise<ResearchRunRow> {
   const rows = await rawQuery<ResearchRunRow>(
     `INSERT INTO research_runs
        (claim_id, grant_id, requested_by, requester_run_id, job_id, task, model, model_tier,
         effort, include_constitution, ceiling_micro_usd, request_id, contribution_budget_micro_usd, notebook,
-        sensitivity_label, questions)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::jsonb, '{}'::jsonb), $15, $16::jsonb)
+        sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::jsonb, '{}'::jsonb), $15)
      RETURNING ${COLUMNS}`,
     [
       input.claimId,
@@ -147,7 +141,6 @@ export async function openResearchRun(input: {
       input.notebook && Object.keys(input.notebook).length > 0 ? JSON.stringify(input.notebook) : null,
       // The label of the run that launches the investigation (src/labels.ts).
       currentLabel(),
-      input.questions && input.questions.length > 0 ? JSON.stringify(input.questions) : null,
     ]
   );
   return normalize(rows[0]!);
@@ -217,15 +210,13 @@ export async function closeResearchRun(
     turns?: number;
     servedModels?: string[];
     error: string | null;
-    /** A reader's answers, in the order its questions were asked. */
-    answers?: ReaderAnswer[] | null;
   }
 ): Promise<ResearchRunRow | null> {
   const rows = await rawQuery<ResearchRunRow>(
     `UPDATE research_runs
         SET status = $2, report = $3::jsonb, spent_micro_usd = $4,
             turns = COALESCE($5, turns), served_models = COALESCE($6::jsonb, served_models),
-            error = $7, finished_at = now(), answers = COALESCE($8::jsonb, answers)
+            error = $7, finished_at = now()
       WHERE id = $1
       RETURNING ${COLUMNS}`,
     [
@@ -236,15 +227,9 @@ export async function closeResearchRun(
       input.turns ?? null,
       input.servedModels ? JSON.stringify(input.servedModels) : null,
       input.error,
-      input.answers ? JSON.stringify(input.answers) : null,
     ]
   );
   return rows[0] ? normalize(rows[0]) : null;
-}
-
-/** A reader's answers so far, stored as each is given so that a run that ends badly keeps what it answered. */
-export async function writeReaderAnswers(id: string, answers: ReaderAnswer[]): Promise<void> {
-  await rawQuery(`UPDATE research_runs SET answers = $2::jsonb WHERE id = $1`, [id, JSON.stringify(answers)]);
 }
 
 export async function getResearchRun(id: string): Promise<ResearchRunRow | null> {

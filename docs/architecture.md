@@ -2600,18 +2600,6 @@ node is opened there. No other path moves text to a label that does not
 read the label it was written at. [showing-a-page.md](showing-a-page.md)
 describes it.
 
-A page is shown word for word, so on a node under a standing showing the
-run that writes the page is not given the text of sources the showing's
-readers cannot read (`src/services/separate-reader.ts`). A reader, which is
-the Researcher launched with `delegate_research` and `questions`, has them
-open and returns one answer for each question in a set form: a yes or no, a
-number, a date, a choice among the Steward's options, or a passage of at
-most 600 characters cut from the source's stored text
-(`src/services/reader-answers.ts`). The record of every shown page says, in
-one of three fixed sentences, whether the run that wrote it was given such
-text. No other run is affected, and [showing-a-page.md](showing-a-page.md),
-"A separate reader", gives the reasons and what is left open.
-
 **A merge under more than one label.** A merge made here moves what was
 recorded on the merged node onto the node it ends in. The run that makes it
 moves the rows it reads; the rows at a label it does not read move the same

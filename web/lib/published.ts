@@ -75,7 +75,6 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
       role_additions: unknown[];
       run_log: null | { sealed: boolean; seal: string | null; steps: number | null; chain_verifies: boolean | null };
       paid_for: null | { by: string; stake: string };
-      given_source_text?: "none" | "some" | "not_recorded";
     };
     prompt_set_is_this_graphs: boolean | null;
     sent: string;
