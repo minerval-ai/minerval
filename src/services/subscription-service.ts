@@ -35,13 +35,25 @@ export interface SubscriptionFilter {
 }
 
 /** A threshold the router evaluates on its tick. */
-export type SubscriptionCondition = {
-  kind: "committed_owls";
-  grant_id: string;
-  /** Wake once this much has been committed since `since`. */
-  at_least_micro_usd: number;
-  since: string;
-};
+export type SubscriptionCondition =
+  | {
+      kind: "committed_owls";
+      grant_id: string;
+      /** Wake once this much has been committed since `since`. */
+      at_least_micro_usd: number;
+      since: string;
+    }
+  | {
+      /**
+       * Wake once none of the work the mandate set going is waiting to run
+       * or running (mandateWorkInFlight in action-service.ts): one delivery
+       * when a wave of passes and ingests has all landed, rather than one
+       * per run.
+       */
+      kind: "work_settled";
+      grant_id: string;
+      since: string;
+    };
 
 export interface SubscriptionRow {
   id: string;
@@ -181,6 +193,9 @@ export function describeSubscription(s: Pick<SubscriptionRow, "id" | "filter" | 
   if (s.due_at) parts.push(`at ${s.due_at.slice(0, 16).replace("T", " ")} UTC`);
   if (s.condition?.kind === "committed_owls") {
     parts.push(`when ${s.condition.at_least_micro_usd / 1_000_000} owls more are committed`);
+  }
+  if (s.condition?.kind === "work_settled") {
+    parts.push(`when none of your mandate's commissioned work is waiting to run or running`);
   }
   const f = s.filter ?? {};
   if (f.kinds?.length) parts.push(`events ${f.kinds.join(", ")}`);

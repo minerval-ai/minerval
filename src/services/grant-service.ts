@@ -33,6 +33,22 @@ import type { FeaturesConfig } from "../features.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 
+/**
+ * The longest a stewarding plan item waits for the ingests it names in
+ * `after`, in hours, counted from when the item could first have been
+ * placed. Not a spending limit: a bound on a dependency. An extraction can
+ * queue for hours behind others (on 2026-11-13 a stopped drain left ingests
+ * waiting twenty hours), and a pass that waits for sources that never land
+ * is worse than one that reads without them, which a later pass can
+ * correct. Money cannot serve here: nothing is being spent while the item
+ * waits. Stated in the plan tools (PLAN_KIND_RULES, PLAN_ITEM_SCHEMA) and in
+ * the waiting item's reason.
+ */
+export const AFTER_INGESTS_MAX_WAIT_HOURS = 12;
+
+/** The most ingest URLs one item may wait for. */
+const AFTER_MAX_URLS = 20;
+
 /** The longest wording a proposal carries, at every door (contribution-service.ts). */
 export const PROPOSAL_TEXT_MAX_CHARS = 2000;
 
@@ -136,6 +152,14 @@ export interface PlanItem {
    * in owls. Absent = the row's estimate for the tier.
    */
   budget_owls?: number;
+  /**
+   * assess/reassess/deepen: the URLs of ingest items in the same plan that
+   * this pass should read. The item waits, unplaced, until each named
+   * ingest has been read (its rows done or cancelled), or for at most
+   * AFTER_INGESTS_MAX_WAIT_HOURS, so its pass weighs the sources the plan
+   * bought for it rather than running before they land.
+   */
+  after?: string[];
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
   /**
@@ -231,6 +255,19 @@ export const PLAN_KIND_RULES =
   "So price a deepen item as the node's pass plus one per unassessed " +
   "child. It goes one level. If the Steward parks a node after repeated " +
   "failures, the item reads cancelled and its budget is back in your escrow. " +
+  "Order of work: ingests take far longer than passes (an extraction can " +
+  "take hours, more when others queue ahead of it), so a pass placed at " +
+  "once runs before the plan's sources are in the graph and judges without " +
+  "them. Give an assess, reassess or deepen item after: the urls of the " +
+  "plan's ingest items its node should be judged with. The item then waits, " +
+  "placing nothing and holding no money, until every ingest it names has " +
+  "been read, and is placed at the next look after (within minutes); its " +
+  "standing says which ingests it is waiting for and until when. It waits " +
+  `at most ${AFTER_INGESTS_MAX_WAIT_HOURS} hours from when it could first ` +
+  "have been placed, so a stuck extraction cannot hold it forever: past " +
+  "that its pass is placed without them, and a reassess item later is the " +
+  "way to weigh them. Leave after off a pass whose node the sources do not " +
+  "bear on, or that should run now regardless. " +
   "ingest: an http(s) url; executes in plan order from your escrow. An " +
   "optional focus scopes it: the extractor reads the whole document but " +
   "proposes only the claims bearing on the focus (premises those claims " +
@@ -329,6 +366,16 @@ export const PLAN_ITEM_SCHEMA = {
         "model, standard or strong; an item that names none is stored and " +
         "commissioned as standard.",
     },
+    after: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "assess, reassess, deepen, optional: the urls of ingest items in " +
+        "this plan (this call's items or the plan's existing ones) that " +
+        "this pass should read. The item waits until each has been read, " +
+        `or for at most ${AFTER_INGESTS_MAX_WAIT_HOURS} hours, before its ` +
+        "pass is placed.",
+    },
     budget_owls: {
       type: "number",
       description:
@@ -388,9 +435,17 @@ const PARTITION_RE = /^[a-z0-9][a-z0-9-]*$/;
 export function validatePlanItems(
   items: readonly PlanItem[],
   knownRefs: readonly string[] = [],
-  config?: FeaturesConfig
+  config?: FeaturesConfig,
+  /** The ingest urls of the plan these items join, which `after` may name. */
+  knownIngestUrls: readonly string[] = []
 ): string | null {
   const refs = new Set(knownRefs);
+  const ingestUrls = new Set(knownIngestUrls);
+  for (const item of items) {
+    if (item && typeof item === "object" && item.action === "ingest" && typeof item.url === "string") {
+      ingestUrls.add(item.url);
+    }
+  }
   for (const item of items) {
     if (!item || typeof item !== "object" || item.action !== "propose" || item.ref == null) continue;
     if (typeof item.ref !== "string" || !REF_RE.test(item.ref)) {
@@ -453,6 +508,21 @@ export function validatePlanItems(
       ) {
         return `${item.action === "assess" ? "an" : "a"} ${item.action} item's budget_owls is a number of owls above zero (got: ${String(item.budget_owls)}); omit it for the pass's estimate`;
       }
+      if (item.after !== undefined && item.after !== null) {
+        if (!Array.isArray(item.after) || item.after.length > AFTER_MAX_URLS) {
+          return `an item's after is a list of at most ${AFTER_MAX_URLS} urls of ingest items in the plan`;
+        }
+        for (const url of item.after) {
+          if (typeof url !== "string" || !ingestUrls.has(url.trim())) {
+            return (
+              `${item.action === "assess" ? "an" : "a"} ${item.action} item's after names ${String(url)}, which is ` +
+              `not the url of an ingest item in this plan: after waits for the plan's own ingests, by their exact url`
+            );
+          }
+        }
+      }
+    } else if (item.after !== undefined && item.after !== null) {
+      return `after is for assess, reassess and deepen items: a ${item.action} item does not wait for ingests`;
     }
     if (item.action === "propose" || item.action === "ingest" || item.action === "sweep") {
       // Checked above.
@@ -508,6 +578,9 @@ export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
           : {}),
       ...(["assess", "reassess", "deepen"].includes(it.action) && Number(it.budget_owls) > 0
         ? { budget_owls: Number(it.budget_owls) }
+        : {}),
+      ...(["assess", "reassess", "deepen"].includes(it.action) && Array.isArray(it.after) && it.after.length > 0
+        ? { after: [...new Set(it.after.map((u) => String(u).trim()).filter(Boolean))] }
         : {}),
       ...(it.is_calibration !== undefined ? { is_calibration: !!it.is_calibration } : {}),
       ...(it.lifetime_cap_owls !== undefined ? { lifetime_cap_owls: Number(it.lifetime_cap_owls) } : {}),
@@ -616,6 +689,10 @@ export async function createGrant(input: {
       status: input.policy === "agent" ? "planning" : "active",
     })
     .returning();
+  // Its first sitting (the planning pass, or an active mandate's first
+  // review) opens now, not at the next sweep (never throws).
+  const { openMandateFirstSitting } = await import("./action-service.js");
+  await openMandateFirstSitting(grant!.id);
   return { ok: true, grant: grant! };
 }
 
@@ -650,8 +727,10 @@ export async function approveGrantPlan(input: {
     .returning();
   // The plan is live: its proposals are filed and its standing orders placed
   // now, not a sweep later (never throws; the sweep retries).
-  const { materializeLivePlan } = await import("./action-service.js");
+  const { materializeLivePlan, openMandateFirstSitting } = await import("./action-service.js");
   await materializeLivePlan(grant.id);
+  // And its Grantmaker's first sitting opens now, not at the next sweep.
+  await openMandateFirstSitting(grant.id);
   return { ok: true, grant: updated! };
 }
 

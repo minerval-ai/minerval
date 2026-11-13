@@ -9,6 +9,7 @@
  * mandate's escrow through the ledger (fundGrantSelfActions), out of the
  * mandate's day, with no count of runs.
  */
+import { STANDING_ORDER_RETRY_MINUTES } from "../../services/standing-order-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import {
@@ -189,15 +190,23 @@ export async function executeCorrespondentManagementTool(
       createdBy: opts.createdBy,
     });
     if (!res.ok) return JSON.stringify({ success: false, code: res.code, problem: res.message });
+    // Due now with a heartbeat: its row opens at once rather than at the
+    // scheduler's next tick.
+    const { openDueAgentRuns } = await import("../../services/action-service.js");
+    await openDueAgentRuns().catch((err: unknown) =>
+      console.warn(`[correspondents] opening the first run failed: ${err instanceof Error ? err.message : String(err)}`)
+    );
     return JSON.stringify({
       success: true,
       correspondent_id: res.correspondentId,
       feed: `/correspondents/${res.correspondentId}/feed`,
       ...(res.unknownTags ? { unknown_tags: res.unknownTags } : {}),
       note:
-        "Posted. With a heartbeat its first run is due now (the ledger funds it from " +
-        "your escrow on the next sweep); its updates are public at its feed, and its " +
-        "runs and notes show on the mandate page.",
+        "Posted. With a heartbeat its first run is open now and is funded from " +
+        "your escrow at the executor's next tick; after that it runs at its " +
+        `heartbeat, within about ${STANDING_ORDER_RETRY_MINUTES} minutes of each ` +
+        "falling due. Its updates are public at its feed, and its runs and notes " +
+        "show on the mandate page.",
     });
   }
   const id = String(toolInput.correspondent_id ?? "");

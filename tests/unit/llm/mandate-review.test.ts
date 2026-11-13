@@ -78,6 +78,7 @@ vi.mock("../../../src/services/pace-service.js", () => ({
 vi.mock("../../../src/services/subscription-service.js", () => ({
   createSubscription: async () => ({ id: "s" }),
   nextDueAt: async () => null,
+  listSubscriptions: async () => [],
 }));
 vi.mock("../../../src/services/session-service.js", () => ({
   ensureSessionRow: async () => "gm-session",
@@ -124,6 +125,7 @@ vi.mock("../../../src/services/action-service.js", () => ({
   materializePlanItems: async () => [],
   materializeLivePlan: async () => {},
   grantmakerShareLeftMicroUsd: async () => null,
+  mandateWorkInFlight: async () => 0,
 }));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: {

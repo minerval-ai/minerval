@@ -239,7 +239,13 @@ conversation.
    running, and a budget the pass held comes back to the escrow. Each
    plan item in `get_grant` says its tier and, when it is waiting,
    blocked or cancelled, why. It holds the same refusal duties then as at
-   design time.
+   design time. The Grantmaker's first sitting opens as soon as the
+   mandate is funded, and its lookouts run at the heartbeats it sets. A
+   planned pass can wait for the plan's ingests, so first verdicts weigh
+   the sources the plan bought; its standing then says which ingests it
+   waits for and until when. If the story your user cares about is moving
+   fast, say so in the conversation: the Grantmaker sets how often it
+   looks again to the story's pace.
 
 **Something made from the graph.** If your user wants something produced
 from the graph on a schedule or as it changes,

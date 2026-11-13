@@ -36,6 +36,7 @@ import {
   type FeedRuleInput,
 } from "../../services/feed-service.js";
 import { executeReadListing, getReadListingToolDefinition } from "./feed-tools.js";
+import { STANDING_ORDER_RETRY_MINUTES } from "../../services/standing-order-service.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -99,7 +100,17 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "brief as you would for a careful person paid to keep watch: the " +
         "territory in your words, what kinds of happening warrant work, and " +
         "what to leave alone. A lookout that reads only what changed since its " +
-        "last run costs a small fraction of an assessment.",
+        "last run costs a small fraction of an assessment. It runs at its " +
+        "heartbeat: its first run is opened at once and later ones within " +
+        `about ${STANDING_ORDER_RETRY_MINUTES} minutes of falling due, each ` +
+        "funded from your escrow within the mandate's pace. Its limits are " +
+        "the fields you set here, not figures in the brief: " +
+        "commission_limit_owls is the most it may commission alone for ONE " +
+        "item, it has no daily allowance of its own (what it commissions " +
+        "comes out of your mandate's pace like the rest of your work), and " +
+        "every run is told these figures as the ones it is held to. Leave " +
+        "numbers out of the brief, or repeat these exactly; a different " +
+        "figure in the brief misleads only you.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -142,9 +153,11 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
           commission_limit_owls: {
             type: "number",
             description:
-              "The most it may commission on its own for one item, from your " +
-              "money. Above that, or at 0 (the default), it raises the item to " +
-              "your program officers.",
+              "The most it may commission on its own for one item (one pass, " +
+              "one ingest), from your money: a per-item limit, not a daily " +
+              "one. Above that, or at 0 (the default), it raises the item to " +
+              "your program officers. This stored figure is the one the " +
+              "lookout is told and held to: an item above it goes to your officers.",
           },
           model: {
             type: "string",
@@ -277,7 +290,10 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
               tags: { type: "array", items: { type: "string" } },
             },
           },
-          commission_limit_owls: { type: "number" },
+          commission_limit_owls: {
+            type: "number",
+            description: "The most it may commission alone for one item, in owls; its runs are told and held to this figure.",
+          },
           model: { type: "string" },
         },
         required: ["lookout_id"],
@@ -343,14 +359,32 @@ export async function executeLookoutManagementTool(
           : { url, success: false, code: f.code, problem: f.problem }
       );
     }
+    // Its first run is due now: its row opens at once, and the executor's
+    // next tick funds it, rather than waiting for the scheduler.
+    const { openDueAgentRuns } = await import("../../services/action-service.js");
+    await openDueAgentRuns().catch((err: unknown) =>
+      console.warn(`[lookouts] opening the first run failed: ${err instanceof Error ? err.message : String(err)}`)
+    );
+    const posted = await getLookout(res.lookoutId);
     return JSON.stringify({
       success: true,
       lookout_id: res.lookoutId,
+      // The limits it is held to, as stored: what its every run is told.
+      ...(posted
+        ? {
+            heartbeat_hours: posted.heartbeat_hours,
+            commission_limit_owls_per_item: Number(posted.commission_limit_micro_usd ?? 0) / 1_000_000,
+          }
+        : {}),
       ...(feeds.length > 0 ? { feeds } : {}),
       note:
-        "Posted. Its first run is due now (the ledger funds it from your " +
-        "escrow on the next sweep); it will leave a note on the mandate " +
-        "page each run and its flags reach you in your session's briefing." +
+        "Posted. Its first run is open now and is funded from your escrow at " +
+        "the executor's next tick; after that it runs at its heartbeat, within " +
+        `about ${STANDING_ORDER_RETRY_MINUTES} minutes of each falling due, and ` +
+        "when a trigger fires. It leaves a note on the mandate page each run, " +
+        "and its flags reach you in your session's briefing. Its runs are told " +
+        "the heartbeat and per-item commission limit above as the figures they " +
+        "are held to, whatever the brief says." +
         (feeds.length > 0
           ? " Each feed's current items are recorded as already seen; new ones wake it by the feed's rule."
           : ""),
