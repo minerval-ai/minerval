@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ClaimDetail, Instance } from "@/lib/types";
-import { splitInstances, stanceTag } from "@/lib/instances";
+import { instanceByline, splitInstances, stanceTag } from "@/lib/instances";
 import {
   statusMeta, isStatus, claimTypeMeta, decompositionNote,
   DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
@@ -39,14 +39,20 @@ import { PageHead } from "@/components/PageHead";
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
   const tag = stanceTag(inst.stance);
+  // Whose words, where and when. The title leads to the source's own page,
+  // which holds the rest of its record (examinations, lineage, history);
+  // the document itself is one link further along the byline.
+  const byline = instanceByline(inst);
+  const original = inst.link || inst.source_url;
   return (
     <div className="instance">
       <blockquote>{inst.verbatim_text}</blockquote>
       <div className="instance-cite">
-        {inst.source_url ? (
-          <a href={inst.source_url}>{inst.source_title}</a>
-        ) : (
-          <span>{inst.source_title}</span>
+        <Link href={`/sources/${inst.source_id}`}>{inst.source_title}</Link>
+        {!byline && original && (
+          <a href={original} rel="noopener noreferrer" className="instance-original">
+            original <span aria-hidden>↗</span>
+          </a>
         )}
         {tag && (
           <span className="tag" title={tag.title}>{tag.word}</span>
@@ -79,6 +85,17 @@ function InstanceCard({ inst }: { inst: Instance }) {
           </span>
         )}
       </div>
+      {byline && (
+        <p className="instance-byline">
+          {byline}
+          {original && " · "}
+          {original && (
+            <a href={original} rel="noopener noreferrer">
+              original <span aria-hidden>↗</span>
+            </a>
+          )}
+        </p>
+      )}
       {inst.context && (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".78rem", color: "var(--muted)", margin: ".35rem 0 0" }}>
           {inst.context}

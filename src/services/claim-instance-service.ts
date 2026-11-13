@@ -113,6 +113,9 @@ interface InstanceRow extends OrderableInstance {
   source_url: string | null;
   source_type: string;
   source_published_date: string | null;
+  source_authors: string[] | null;
+  source_publisher: string | null;
+  source_doi: string | null;
 }
 
 async function loadInstanceRows(claimId: string, includeDetached: boolean): Promise<InstanceRow[]> {
@@ -121,7 +124,8 @@ async function loadInstanceRows(claimId: string, includeDetached: boolean): Prom
             ci.speaker, ci.publication, ci.source_date, ci.link, ci.created_by, ci.created_at,
             ci.display_rank, ci.detached_at, ci.detached_reason, ci.detached_by,
             s.title AS source_title, s.url AS source_url, s.source_type,
-            s.published_date AS source_published_date
+            s.published_date AS source_published_date,
+            s.authors AS source_authors, s.publisher AS source_publisher, s.doi AS source_doi
        FROM claim_instances ci
        JOIN sources s ON s.id = ci.source_id
       WHERE ci.claim_id = $1${includeDetached ? "" : ` AND ${activeInstanceSql()}`}`,
@@ -160,6 +164,13 @@ export async function listOrderedClaimInstances(claimId: string): Promise<
     source_title: string;
     source_url: string | null;
     source_type: string;
+    /** The document's own record, so a reader can tell whose words these are
+     * without leaving the claim's page: its authors, publisher, publication
+     * date and DOI, each null where the source page has none. */
+    source_authors: string[];
+    source_publisher: string | null;
+    source_published_date: string | null;
+    source_doi: string | null;
     display_rank: number | null;
     source_interest: SourceInterestView | null;
   }>
@@ -183,6 +194,10 @@ export async function listOrderedClaimInstances(claimId: string): Promise<
     source_title: r.source_title,
     source_url: r.source_url,
     source_type: r.source_type,
+    source_authors: r.source_authors ?? [],
+    source_publisher: r.source_publisher,
+    source_published_date: r.source_published_date,
+    source_doi: r.source_doi,
     display_rank: r.display_rank,
     source_interest: interests.get(r.source_id) ?? null,
   }));
@@ -296,6 +311,9 @@ export async function getClaimInstancePage(
         source_type: r.source_type,
         source_url: r.source_url,
         source_published_date: r.source_published_date,
+        source_authors: r.source_authors ?? [],
+        source_publisher: r.source_publisher,
+        source_doi: r.source_doi,
         // The stake recorded for this source on this claim (§9), or null: a
         // fact about the source, never a finding against it.
         source_interest: interests.get(r.source_id) ?? null,

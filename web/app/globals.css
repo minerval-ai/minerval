@@ -1041,6 +1041,12 @@ a.fnd-card:hover, a.fnd-card:target {
   font-family: var(--sans); font-size: 0.76rem; color: var(--muted);
   display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
 }
+.instance-byline {
+  font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
+  margin: 0.2rem 0 0;
+}
+.instance-byline a, .instance-cite a.instance-original { color: var(--muted); }
+.instance-byline a:hover, .instance-cite a.instance-original:hover { color: var(--link); }
 
 /* ----- contribution record (#171) ----- */
 /* A closed disclosure on the claim page: one quiet line until opened. */
