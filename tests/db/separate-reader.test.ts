@@ -197,7 +197,7 @@ describe("the run that writes a shown page", () => {
     expect(refused.success).toBe(false);
     expect(refused.withheld).toBe("source_text");
     expect(refused.message).toContain("its text is not given to this run");
-    expect(refused.message).toContain("delegate_research with questions");
+    expect(refused.message).toContain("commission with kind research and questions");
     expect(JSON.stringify(refused)).not.toContain("4471");
     expect(JSON.stringify(refused)).not.toContain("IGNORE");
   });

@@ -576,8 +576,14 @@ describe("the columns", () => {
       // A per-account allowance: a number.
       "assistant_allowances",
       "contributors",
+      // What is wrong with the deployment itself, one row for each kind of fault and provider (the credit ran out, a
+      // key was refused): the same whoever asks. Its last_error is the provider's own message for a failure of
+      // that kind, and is shown on no surface (deployment-fault-service.ts).
+      "deployment_faults",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
+      // Where the subscription router has read the event log to: a number.
+      "event_router_state",
       // The labels themselves.
       "label_reads",
       "labels",

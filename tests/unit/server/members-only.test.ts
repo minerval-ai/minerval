@@ -51,6 +51,9 @@ vi.mock("../../../src/services/contributor-service.js", async (orig) => ({
 vi.mock("../../../src/db/client.js", async (orig) => ({
   ...(await orig<typeof import("../../../src/db/client.js")>()),
   rawQuery: vi.fn(async () => []),
+  // Asked of the database itself, on the owner's connection, where a
+  // credential works at one label: this deployment holds one label.
+  deploymentHoldsLabels: vi.fn(async () => false),
 }));
 
 const savedEnv = { ...process.env };

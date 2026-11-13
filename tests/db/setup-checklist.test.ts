@@ -213,7 +213,6 @@ describe("what the checklist says", () => {
     const before = await checklist(admin);
     expect(before.standing_mandates.map((m) => [m.name, m.mandate])).toEqual([
       ["general", null],
-      ["governance", null],
     ]);
     expect(before.owls.created_here).toBe(true);
     expect(before.usage_report).toMatchObject({ price: "metered", reporting: true, destination: "none", destination_ready: false });
@@ -238,7 +237,7 @@ describe("what the checklist says", () => {
       budget_owls: 0,
       daily_owls: 4,
     });
-    expect(after.standing_mandates.find((m) => m.name === "governance")!.mandate).toBeNull();
+    expect(after.standing_mandates.map((m) => m.name)).toEqual(["general"]);
     expect(after.owls.created_total_owls).toBe(before.owls.created_total_owls! + 25);
   });
 

@@ -22,8 +22,8 @@ beforeAll(async () => {
         [account, label]
       );
       const [grant] = await rawQuery<{ id: string }>(
-        `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, daily_budget_micro_usd, sensitivity_label)
-         VALUES ($1, $2, $3, 'custom', 'active', 100000, $4) RETURNING id`,
+        `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, pace, sensitivity_label)
+         VALUES ($1, $2, $3, 'custom', 'active', '{"kind":"steady","owls":0.1,"period_hours":24}'::jsonb, $4) RETURNING id`,
         [account, job!.id, `Review three mandate ${name} ${tag}`, label]
       );
       grants[name] = grant!.id;

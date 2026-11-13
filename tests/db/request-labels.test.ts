@@ -1105,8 +1105,8 @@ async function mandateAt(label: string, funder: Person): Promise<{ grantId: stri
     job!.id,
   ]);
   const [g] = await rawQuery<{ id: string }>(
-    `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, daily_budget_micro_usd, sensitivity_label)
-     VALUES ($1, $2, $3, 'agent', 'active', 0, $4) RETURNING id`,
+    `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, pace, sensitivity_label)
+     VALUES ($1, $2, $3, 'agent', 'active', '{"kind":"as_needed"}'::jsonb, $4) RETURNING id`,
     [funder.id, job!.id, `A request-labels mandate ${randomUUID().slice(0, 8)}`, label]
   );
   return { grantId: g!.id, jobId: job!.id };
@@ -1559,6 +1559,24 @@ describe("every route that writes, driven against a private target", () => {
       const id = await pageAt(A);
       return () => as(both, { method: "DELETE", url: `/pages/${id}` });
     },
+    // A page at rl-a is not shared by link (only a public page is), and the refusal writes nothing.
+    "POST /pages/:id/share": async () => {
+      const id = await pageAt(A);
+      return () => post(both, `/pages/${id}/share`, {});
+    },
+    "DELETE /pages/:id/share": async () => {
+      const id = await pageAt(A);
+      return () => as(both, { method: "DELETE", url: `/pages/${id}/share` });
+    },
+    "POST /claims/:claim_id/stated-views": async () => {
+      const id = await seedClaimAt(A);
+      return () =>
+        post(both, `/claims/${id}/stated-views`, {
+          statement: "We hold that this is so, on our own measurements.",
+          stance: "affirms",
+          no_stake: true,
+        });
+    },
     "PATCH /reports/:id": async () => {
       const [r] = await rawQuery<{ id: string }>(
         `INSERT INTO agent_reports (dedupe_key, title, body, agent, severity, kind, sensitivity_label)
@@ -1609,7 +1627,7 @@ describe("every route that writes, driven against a private target", () => {
   /** One request for each route that starts something new, with rl-a named. */
   const NEW_AT_A: Record<string, () => Promise<Drive>> = {
     // A standing mandate at rl-a: its grant, its budget job and its lookouts are rows at rl-a.
-    "POST /standing-mandates/:name": async () => () => post(admin, "/standing-mandates/governance", { label: A }),
+    "POST /standing-mandates/:name": async () => () => post(admin, "/standing-mandates/general", { label: A }),
     "POST /file-sets": async () => {
       const party = await ownParty();
       return () =>
@@ -1674,8 +1692,6 @@ describe("every route that writes, driven against a private target", () => {
     "POST /published-pages": async () => () => post(both, "/published-pages", { package: { format: "not-a-package" }, label: A }),
     "POST /extension/analyze": async () => () =>
       post(both, "/extension/analyze", { url: `https://example.org/${randomUUID()}`, title: "A page", text: "Some page text to analyze. ".repeat(20), label: A }),
-    "POST /extension/chat": async () => () =>
-      post(both, "/extension/chat", { question: "What is this?", page: { url: null, title: null, text: "Some page text." }, label: A }),
   };
 
   /**

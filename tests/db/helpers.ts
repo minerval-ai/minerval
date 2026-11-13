@@ -262,10 +262,17 @@ export async function readViewsAs(
   const { runReadOnlyQuery } = await import("../../src/services/sql-service.js");
   const { runWithUsageContext } = await import("../../src/llm/usage-context.js");
   const { TEST_DATABASE_URL } = await import("./urls.js");
-  await rawQuery(`DO $$ BEGIN
+  // Made as the tables' owner: a test that has put its own out-of-context
+  // work on a cleared connection (setNoContextSessionForTests(null)) may not
+  // create a role, and on a cluster that has never run the suite the role
+  // is not there yet.
+  const { withSystemClearance } = await import("../../src/db/clearance.js");
+  await withSystemClearance("A test fixture: the login role the read-only SQL tests connect as.", () =>
+    rawQuery(`DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${SQL_TEST_ROLE}') THEN
       CREATE ROLE ${SQL_TEST_ROLE} LOGIN PASSWORD '${SQL_TEST_PASSWORD}' CONNECTION LIMIT 3 IN ROLE minerval_sql;
-    END IF; END $$`);
+    END IF; END $$`)
+  );
   const config = loadConfig();
   if (!config.sqlAgentDatabaseUrl) {
     const url = new URL(TEST_DATABASE_URL);

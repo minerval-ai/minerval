@@ -67,7 +67,8 @@ starts with public Minerval's own settings and you change the ones you need.
    that are not commented out have no starting value and must be filled in:
    the site's address, three passwords and keys of the deployment's own
    (`openssl rand -hex 32` makes one), your identity provider's three
-   values, and the model for each of seven roles. Leave the rest commented
+   values, and the model for each of six roles (and the solver's, unless
+   you switch mathematics off with `FEATURES_OFF`). Leave the rest commented
    out unless you want to change them.
 
    `.env` is the one place this deployment's secrets live. It is ignored by
@@ -111,8 +112,10 @@ starts with public Minerval's own settings and you change the ones you need.
    reads to a clearance when you define your first label (step 7).
 
    If `docker compose` stops with `Set X in .env`, that setting is empty.
-   If the API's log ends in an error that names `SOLVER_MODEL`, the solver's
-   model is not one the API accepts (`env.example` says which it does).
+   If the API's log ends in an error that names `SOLVER_MODEL`, mathematics
+   is on and the solver's model is missing or is not one the API accepts
+   (`env.example` says which it does). With mathematics in `FEATURES_OFF`
+   the setting is not read.
 
 5. **Sign in and become the first administrator.** Open the site. You are
    asked to sign in, and sent to your identity provider. If you did not set
@@ -219,10 +222,6 @@ sandbox, and an administrator registers directories under it as file sets.
   them up yourself.
 - **No model server.** The package runs no model. An endpoint of your own is
   yours to run and to name in `MODEL_ENDPOINTS`.
-- **It cannot be set up with no Anthropic model named.** The solver's model
-  has to be an Anthropic one for the API to start, even on a deployment
-  that runs everything else on its own endpoint and has mathematics
-  switched off. No key is needed for it to start.
 - **No mirror of the public graph unless you set it up.** With
   `MIRROR_FEED_URL` unset the deployment holds no copy of the public graph.
 - **The Lean checker is not in the package.** Mathematics' machine checks

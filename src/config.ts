@@ -5,6 +5,7 @@ import {
   unresolvableModelIdMessage,
 } from "./llm/providers/routing.js";
 import {
+  featureOnGiven,
   parseFeaturesOff,
   unknownFeatureNames,
   unknownFeaturesMessage,
@@ -944,6 +945,16 @@ const configSchema = z.object({
   // the long-run betas, so a deployment pointing it elsewhere fails at config
   // load rather than deep into an attempt (§7.8). Joins the production
   // model-env guard below.
+  //
+  // Both hold where the mathematics feature is on, and neither where it is
+  // off (FEATURES_OFF names it): a deployment that will never run the solver
+  // is not asked to name a model for it, so one that runs everything on its
+  // own endpoint needs no Anthropic model to start. loadConfig then leaves
+  // SOLVER_MODEL unread and the setting empty, and the two places that would
+  // start an attempt refuse (solverModelOrRefusal, below) rather than run on
+  // a default nobody chose. SOLVER_ENABLED=false with mathematics on is not
+  // that case: the feature's other work still runs and an attempt can be
+  // funded the day the switch is turned, so the model is still named.
   solverModel: z
     .string()
     .superRefine((id, ctx) => {
@@ -1530,6 +1541,11 @@ export function settingsThatDisagree(
   return null;
 }
 
+/** What a caller is told where an attempt is asked for and the mathematics feature is off. */
+export const SOLVER_OFF_WITH_MATHEMATICS =
+  "The mathematics feature is switched off in this deployment (FEATURES_OFF), so the solver has no model and no proof attempt runs. " +
+  "Take mathematics out of FEATURES_OFF and set SOLVER_MODEL to run one.";
+
 let _config: Config | null = null;
 
 /**
@@ -1563,6 +1579,13 @@ export function loadConfig(): Config {
 
   const rawDatabaseUrl = process.env.DATABASE_URL ?? DEFAULT_DB_URL;
 
+  // Whether the mathematics feature is off, read from the setting as it is
+  // written: the solver's model is asked for only where it is on.
+  const mathematicsOff = !featureOnGiven(
+    "mathematics",
+    // Split here and not parsed: a name that is not a feature is the schema's to refuse, below.
+    (process.env.FEATURES_OFF ?? "").split(",").map((name) => name.trim())
+  );
   _config = configSchema.parse({
     env: process.env.ENVIRONMENT,
     port: process.env.PORT,
@@ -1698,7 +1721,8 @@ export function loadConfig(): Config {
     leanCheckOverheadMicroUsd: process.env.LEAN_CHECK_OVERHEAD_MICRO_USD,
     formalizationReviewPeriodDays: process.env.FORMALIZATION_REVIEW_PERIOD_DAYS,
     formalizationReviewAwardOwls: process.env.FORMALIZATION_REVIEW_AWARD_OWLS,
-    solverModel: process.env.SOLVER_MODEL,
+    // Unread where mathematics is off (see the schema's comment on solverModel).
+    solverModel: mathematicsOff ? undefined : process.env.SOLVER_MODEL,
     solverEnabled: process.env.SOLVER_ENABLED,
     solverDailyCapOwls: process.env.SOLVER_DAILY_CAP_OWLS,
     solverCalibrationDailyCapOwls: process.env.SOLVER_CALIBRATION_DAILY_CAP_OWLS,
@@ -1920,6 +1944,10 @@ export function loadConfig(): Config {
     _config = { ..._config, stripeSecretKey: "", stripeWebhookSecret: "" };
   }
 
+  // Where mathematics is off the solver has no model: the setting is empty,
+  // not the default, so nothing can run an attempt on a model nobody chose.
+  if (mathematicsOff) _config = { ..._config, solverModel: "" };
+
   // The constitution's "strongest model for non-saturating assessment" mandate
   // (#77) lives entirely in deploy-time env — the code defaults keep tests and
   // local dev cheap on Sonnet, so out of the box the defaults invert the
@@ -1940,8 +1968,10 @@ export function loadConfig(): Config {
     "EXTRACTOR_MODEL",
     // The solver (docs/mathematics.md §7.8): a multi-hour attempt on a
     // model nobody chose is a different product than the mandate funded,
-    // so production names it even while SOLVER_ENABLED is false.
-    "SOLVER_MODEL",
+    // so production names it wherever the mathematics feature is on, even
+    // while SOLVER_ENABLED is false. Where mathematics is off no attempt
+    // can run, so there is nothing to choose and it is not asked for.
+    ...(mathematicsOff ? [] : ["SOLVER_MODEL"]),
     // The Steward's six money triggers (formalize, formalization_review,
     // prize_claim, prize_claim_voided, prize_window_closed,
     // attempt_completed) run on this tier and nowhere else (§6.4); the

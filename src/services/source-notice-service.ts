@@ -22,7 +22,7 @@
  * notice means for its node; a correction may change nothing.
  */
 import { rawQuery } from "../db/client.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 import { enqueueSteward } from "./queue-service.js";
 import { runAtClaimLabel } from "./label-service.js";
 import { claimsRestingOnSources, sourcesWithClaims, type RestingClaim } from "./source-watch-service.js";
@@ -113,15 +113,28 @@ export async function tellStewardsOfSourceEvents(
     for (const r of resting.filter((x) => x.source_id === m.source_id)) add(r.claim_id, notice, m.source_id);
   }
 
+  // The event names the document, so it is recorded at the document's own
+  // label, whoever found the notice (the poll sees every label), and names
+  // the nodes that label reads the document on. A subscriber is told of it
+  // only where its label reads that label (subscription-router.ts).
   const { recordEvent } = await import("./event-service.js");
   for (const { source: m, notice } of fresh) {
-    await recordEvent({
-      kind: "source_event",
-      sourceId: m.source_id,
-      refs: { claims: m.claim_ids, notice_doi: notice.notice_doi ?? null },
-      summary: `A ${(notice.type ?? "retraction").toLowerCase()} notice was recorded against "${m.title || m.url}" (${m.url}).`,
-      payload: { notice },
-    });
+    const [at] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM sources WHERE id = $1`, [m.source_id]);
+    if (!at) continue;
+    await runAtLabel(at.label, `source ${m.source_id}`, async () => {
+      const readable = await rawQuery<{ id: string }>(
+        `SELECT DISTINCT i.claim_id AS id FROM claim_instances i
+          WHERE i.source_id = $2 AND i.claim_id = ANY($1::uuid[])`,
+        [m.claim_ids, m.source_id]
+      );
+      await recordEvent({
+        kind: "source_event",
+        sourceId: m.source_id,
+        refs: { claims: readable.map((r) => r.id), notice_doi: notice.notice_doi ?? null },
+        summary: `A ${(notice.type ?? "retraction").toLowerCase()} notice was recorded against "${m.title || m.url}" (${m.url}).`,
+        payload: { notice },
+      });
+    }).catch((err) => console.error(`[source-notice] recording the event for ${m.source_id} failed:`, err instanceof Error ? err.message : err));
   }
 
   let told = 0;

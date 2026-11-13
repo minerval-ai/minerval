@@ -270,7 +270,7 @@ export async function releaseHolds(): Promise<string[]> {
                      JOIN actions a ON a.id::text = r WHERE a.status IN ('open', 'running'))`;
   // A hold comes back to whoever placed it: the Grantmaker's to its session
   // (as an escalation, which wakes it), an officer's to the officers.
-  const petitions = await rawQuery<{ id: string; grant_id: string; status: string; requester_node_id: string | null; hold_reason: string | null }>(
+  const petitions = await rawQuery<{ id: string; grant_id: string; status: string; requester_node_id: string | null; hold_reason: string | null; sensitivity_label: string }>(
     `UPDATE petitions
         SET status = CASE WHEN decided_by = 'grantmaker' THEN 'escalated' ELSE 'pending' END,
             decided_by = NULL,
@@ -278,17 +278,22 @@ export async function releaseHolds(): Promise<string[]> {
                      COALESCE(hold_reason, '') || '. It is back for a decision.'
       WHERE status = 'held'
         AND (held_until <= now() OR (jsonb_array_length(hold_refs) > 0 AND ${settled}))
-      RETURNING id, grant_id, status, requester_node_id, hold_reason`
+      RETURNING id, grant_id, status, requester_node_id, hold_reason, sensitivity_label`
   );
   const { recordEvent } = await import("./event-service.js");
   for (const p of petitions.filter((x) => x.status === "escalated")) {
-    await recordEvent({
-      kind: "escalated",
-      grantId: p.grant_id,
-      nodeId: p.requester_node_id,
-      refs: { petition: p.id },
-      summary: `A petition you held is back for a decision: ${p.hold_reason ?? ""}`,
-    });
+    // The event carries the hold's reason, which is the petition's own
+    // text: recorded at the petition's label, whoever's tick released it
+    // (the engine's sees every label).
+    await runAtLabel(p.sensitivity_label, `petition ${p.id}`, () =>
+      recordEvent({
+        kind: "escalated",
+        grantId: p.grant_id,
+        nodeId: p.requester_node_id,
+        refs: { petition: p.id },
+        summary: `A petition you held is back for a decision: ${p.hold_reason ?? ""}`,
+      })
+    );
   }
   const items = await rawQuery<{ grant_id: string }>(
     `UPDATE mandate_inbox

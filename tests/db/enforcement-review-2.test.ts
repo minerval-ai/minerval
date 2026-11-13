@@ -84,8 +84,8 @@ beforeAll(async () => {
       [account]
     );
     const [grant] = await rawQuery<{ id: string }>(
-      `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, daily_budget_micro_usd, sensitivity_label)
-       VALUES ($1, $2, $3, 'custom', 'active', 100000, 'public') RETURNING id`,
+      `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, pace, sensitivity_label)
+       VALUES ($1, $2, $3, 'custom', 'active', '{"kind":"steady","owls":0.1,"period_hours":24}'::jsonb, 'public') RETURNING id`,
       [account, job!.id, `Review two mandate ${tag}`]
     );
     grantId = grant!.id;
@@ -193,7 +193,9 @@ describe("C. work at one label does not write its words into a row at another", 
     // A reader of public alone reads no sighting of it.
     expect(await rawQuery(`SELECT 1 FROM agent_report_sightings WHERE report_id = $1`, [first.reportId])).toEqual([]);
 
-    // The tracker comes back up and the sync files the backlog, as its timer runs it.
+    // The tracker comes back up and the sync files the backlog, as its timer runs it. The sync leaves a
+    // report to its raise-time filing for its first minutes, so this one is made older than that.
+    await system(() => rawQuery(`UPDATE agent_reports SET first_seen_at = now() - interval '1 hour' WHERE id = $1`, [first.reportId]));
     const from = sent.length;
     trackerUp = true;
     const tick = await githubIssueSyncTick();

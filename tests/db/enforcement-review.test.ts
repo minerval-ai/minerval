@@ -262,15 +262,17 @@ describe("5. only public reports are ever chosen for the issue tracker", () => {
     const title = `A-ONLY REPORT ${tag}: tool failed on partner A document /internal/q3-forecast`;
     await at(A, () =>
       rawQuery(
-        `INSERT INTO agent_reports (dedupe_key, title, body, agent, severity, kind)
-         VALUES ($1, $2, 'details of a''s material', 'claim_steward', 'medium', 'tool_gap')`,
+        // Both reports are older than the wait a fresh report is given for its raise-time filing, so
+        // that the label is the one thing that keeps this one out.
+        `INSERT INTO agent_reports (dedupe_key, title, body, agent, severity, kind, first_seen_at)
+         VALUES ($1, $2, 'details of a''s material', 'claim_steward', 'medium', 'tool_gap', now() - interval '1 hour')`,
         [`review-${tag}`, title]
       )
     );
     const open = `Public report ${tag}`;
     await rawQuery(
-      `INSERT INTO agent_reports (dedupe_key, title, body, agent, severity, kind, sensitivity_label)
-       VALUES ($1, $2, 'public details', 'claim_steward', 'medium', 'tool_gap', 'public')`,
+      `INSERT INTO agent_reports (dedupe_key, title, body, agent, severity, kind, sensitivity_label, first_seen_at)
+       VALUES ($1, $2, 'public details', 'claim_steward', 'medium', 'tool_gap', 'public', now() - interval '1 hour')`,
       [`review-public-${tag}`, open]
     );
     const titles = async (read: <T>(fn: () => Promise<T>) => Promise<T>) =>

@@ -241,6 +241,8 @@ describe("a deployment that holds private material", () => {
           "run_log",
           "provider_labels",
           "reports_stay_inside",
+          "model_prices",
+          "sandbox_confinement",
         ]);
         // Nobody has cleared a provider for the new label, which fails without closing the gate.
         expect(check(report, "model_clearance")).toMatchObject({ status: "fail", blocking: false });

@@ -31,7 +31,6 @@ import { rawQuery } from "../../src/db/client.js";
 import { checkAgenticQuota } from "../../src/server/plugins/quota.js";
 import {
   getGeneralMandate,
-  getGovernanceMandateIds,
   resetAllocationPolicyCache,
 } from "../../src/services/allocation-policy-service.js";
 import { createApiKey } from "../../src/services/api-key-service.js";
@@ -431,18 +430,18 @@ describe("a person who holds fund", () => {
 });
 
 describe("the standing mandates", () => {
-  it("are listed for any member before either exists", async () => {
+  it("is listed for any member before it exists: General, and no other since Governance was folded into it", async () => {
     const res = await as(member, { url: "/standing-mandates" });
     expect(res.statusCode, res.body).toBe(200);
     const list = res.json().standing_mandates;
-    expect(list.map((m: { name: string }) => m.name)).toEqual(["general", "governance"]);
-    expect(list.map((m: { mandate: unknown }) => m.mandate)).toEqual([null, null]);
+    expect(list.map((m: { name: string }) => m.name)).toEqual(["general"]);
+    expect(list.map((m: { mandate: unknown }) => m.mandate)).toEqual([null]);
     expect(list[0].title).toBe("General maintenance");
     // The words say whose mandate it is: the deployment's, never Minerval's.
     expect(list[0].objective).toContain(
       "This is the deployment's own standing mandate: its budget is what the organization that runs it puts into the graph's upkeep"
     );
-    expect(list[1].objective).toContain("keep this graph's governance honest");
+    expect(list[0].objective).toContain("consistency sweeps, curation, audits");
     expect(JSON.stringify(list)).not.toMatch(/Minerval|platform/);
   });
 
@@ -534,33 +533,27 @@ describe("the standing mandates", () => {
     expect((await rawQuery(`SELECT id FROM grants WHERE is_platform = true AND status = 'active'`)).length).toBe(before.length);
   });
 
-  it("Governance is created at the daily rate the administrator gives", async () => {
+  it("has no Governance to set up: audits are General's to pay for", async () => {
     const res = await as(admin, {
       method: "POST",
       url: "/standing-mandates/governance",
       payload: { label: "public", budget_owls: 60, daily_owls: 8 },
     });
-    expect(res.statusCode, res.body).toBe(201);
-    expect(res.json().standing_mandate.mandate).toMatchObject({ budget_owls: 60, daily_owls: 8, running: true });
+    expect(res.statusCode, res.body).toBe(400);
     const list = (await as(member, { url: "/standing-mandates" })).json().standing_mandates;
-    expect(list.map((m: { mandate: { status: string } | null }) => m.mandate?.status)).toEqual(["active", "active"]);
+    expect(list.map((m: { mandate: { status: string } | null }) => m.mandate?.status)).toEqual(["active"]);
   });
 
-  it("are the mandates the allocation engine finds, and each can commission a run", async () => {
+  it("is the mandate the allocation engine finds, and it can commission a run", async () => {
     const list = (await as(member, { url: "/standing-mandates" })).json().standing_mandates as Array<{
       name: string;
       mandate: { id: string };
     }>;
     const general = list.find((m) => m.name === "general")!.mandate.id;
-    const governance = list.find((m) => m.name === "governance")!.mandate.id;
     resetAllocationPolicyCache();
     expect((await getGeneralMandate())?.grantId).toBe(general);
-    expect(await getGovernanceMandateIds()).toEqual([governance]);
 
-    for (const [grantId, label] of [
-      [general, "upkeep"],
-      [governance, "audit"],
-    ] as const) {
+    for (const [grantId, label] of [[general, "upkeep"]] as const) {
       const claim = await seedClaim(`standing ${label}`);
       const commissioned = await commissionNodePass({
         payer: { kind: "grant", grantId },
@@ -596,8 +589,8 @@ describe("the standing mandates", () => {
   });
 
   it("can be set up again once the first has been closed, with a budget of its own", async () => {
-    await rawQuery(`UPDATE grants SET status = 'completed' WHERE policy = 'governance' AND is_platform = true`);
-    const res = await as(admin, { method: "POST", url: "/standing-mandates/governance", payload: { label: "public", budget_owls: 25 } });
+    await rawQuery(`UPDATE grants SET status = 'completed' WHERE policy = 'general' AND is_platform = true AND sensitivity_label = 'public'`);
+    const res = await as(admin, { method: "POST", url: "/standing-mandates/general", payload: { label: "public", budget_owls: 25 } });
     expect(res.statusCode, res.body).toBe(201);
     const id = res.json().standing_mandate.mandate.id as string;
     const [held] = await rawQuery<{ held: string }>(

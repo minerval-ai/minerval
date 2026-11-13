@@ -92,7 +92,11 @@ class RulesetAttr(ctypes.Structure):
 
 
 class PathBeneathAttr(ctypes.Structure):
+    # The kernel's struct is packed: twelve bytes, with no padding after the
+    # descriptor. _layout_ says which packing rule _pack_ means; Python 3.14
+    # warns where it is left out, and earlier versions do not read it.
     _pack_ = 1
+    _layout_ = "ms"
     _fields_ = [("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32)]
 
 
@@ -200,9 +204,19 @@ def main(argv):
         pass
 
     confine(spec)
+    # What this helper says for itself (a refusal above, or a warning from
+    # the interpreter that runs it) goes to the error stream it was started
+    # with, which the service keeps apart from the command's output: a kept
+    # output is a source, and nothing in it should be this program's words.
+    # The command's own error stream joins its output from here on, as a
+    # person running it in a terminal would see it.
+    own_stderr = os.dup(2)
+    os.set_inheritable(own_stderr, False)
+    os.dup2(1, 2)
     try:
         os.execvp(command[0], command)
     except OSError as err:
+        os.dup2(own_stderr, 2)
         fail("could not start %s: %s" % (command[0], err.strerror))
 
 
