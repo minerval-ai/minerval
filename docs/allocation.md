@@ -155,7 +155,11 @@ mission would need:
 
 Every pass is metered to a budget; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
-on the mandate's public page. Known gap, deliberately next: a bulk
+on the mandate's public page. The mandate keeps its latest hundred notes
+(`grants.mandate.updates`, with the newest also at `last_review`; `GET
+/mandates/:id/updates`, MCP `list_mandate_updates`), so a reader can go
+back through how it got where it is; older ones are in the run log.
+Known gap, deliberately next: a bulk
 ingestion primitive ("ingest what this listing/feed points to") so a
 discovered index becomes a program of work in one plan item instead of an
 enumeration.
@@ -1641,12 +1645,25 @@ carries these tools ("The Grantmaker's session", above).
 
 Grants are created by talking to the **Grantmaker agent** — the best
 available model, running with the full constitution — in
-`/account/grants/new` (API: `/grant-conversations`). It behaves like a
+the Ask section (`/ask/mandates/new`; API: `/grant-conversations`). It behaves like a
 well-informed colleague in plan mode: surveys the scope, asks what it needs
 to, pushes back, quotes expected costs in owls from the live estimates, and
 drafts a concrete mandate. Nothing runs and nothing is charged until the
 funder funds the draft, which escrows the budget and starts the grant with
 the mandate as its plan.
+
+A grant and the mandate it funds are one row and, on the site, one thing
+with one name: a mandate. It has one page (`/mandates/:id`, where its
+manager also sees what waits on them) and one conversation, which sits in
+the Ask section beside the Assistant's and is listed there under
+Mandates: `/ask/mandates/new` to start one, and `/ask/mandates/:id` for
+the manager of a funded one, with the mandate at a glance beside it and
+the controls to approve the plan, top up and withdraw. The Assistant
+works for the user and a Grantmaker works for the graph, so the two are
+kept as two conversations and each says which it is. The older addresses
+(`/account/grants`, `/account/grants/new`, `/account/grants/:id`)
+redirect. The API and MCP names keep "grant" (`list_grants`,
+`top_up_grant`): they are what callers already use.
 
 Design principles, in force in the implementation:
 
@@ -1940,16 +1957,43 @@ A mandate is managed by one person but is a public thing (`/mandates`,
 API `GET /mandates`): anyone can read its dashboard and put their own owls
 behind it (`POST /mandates/:id/contribute`), with every contribution
 escrowed per user and unspent budget refunded to contributors pro rata.
-The discovery page gives pride of place to the largest mandates and above
-all to the platform's own standing mandates (Mathematics and AI Economics
-to start — `scripts/seed-platform-mandates.ts`).
+The list (`/mandates`) is in three tabs, each of which can hold hundreds:
+the reader's own (every mandate they fund, from its first draft, with what
+needs them first), the platform's own standing mandates (Mathematics and
+AI Economics to start, `scripts/seed-platform-mandates.ts`), and
+everyone's, largest budgets first. A tab is searched by title and
+objective, narrowed by state (active, paused on a spent budget, finished)
+and read a page at a time. `GET /mandates` (MCP `list_mandates`) serves
+the same: `scope`, `state`, `q`, `order`, `offset` and `limit`, with the
+count in each state and scope; with no parameters it lists the mandates
+open to backing, as it always has. A public scope holds only mandates that
+have started.
 
-The public dashboard scales with the mandate's action mix. Every mandate
-shows budget, metered spend, contributors, plan progress, and the
-assessments it funded; mandates that ingest also show their pipeline: each
-source brought in, extraction status, where its claims went, and
+The mandate's page (`/mandates/:id`) sets the mandate itself (title,
+objective, strategy) as a document, and reports on it under it: what is
+happening now, its actions (the items of its plan), its agents, its
+spending, its completed work and its history. Text an agent wrote is on a sheet with a byline; everything else
+is the page's own. A mandate that has not started (still being drafted,
+or its plan awaiting approval) is readable by its funder alone, who sees
+on the same page what waits on them and the controls to approve the
+plan, top up and withdraw.
+
+Completed work is counted whole and listed a page at a time, by kind
+(`GET /mandates/:id/work`, MCP `get_mandate_work`;
+`mandate-work-service.ts`): assessments, which are the judgments of
+claims, questions and quantities alike, one row a node with the passes
+paid for on it; sources read, with where their claims went and
 importance and contestation statistics per source (`grant_sources` +
-`claim_instances`). The manager can keep talking to the Grantmaker on the
+`claim_instances`); requests worked on; research; nodes proposed; and
+the mandates it funded. The findings its agents noted stand beside them.
+"Now" shows its Grantmaker's current direction (the dated first section
+of the operating policy) and latest update, whether its Grantmaker is at
+work or waiting and what will wake it (counts and times only: a
+subscription's reason is its run's own words), its latest sittings as
+links to the run log (`/runs/:id` reads itself again every few seconds
+while a run is under way, so a sitting can be watched as it works; whether
+a transcript is public is the run log's rule), the work that is open,
+and any platform fault that is holding work up. The manager can keep talking to the Grantmaker on the
 same page at any time: after funding, the conversation runs in management
 mode, where the agent has analytics tools over exactly the data the
 dashboard shows (overview, funded assessments, ingestion report,

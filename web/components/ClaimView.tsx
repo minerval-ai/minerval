@@ -525,8 +525,8 @@ export function ClaimView({
             deeper than the background pipeline's economics ever would. */}
         <FundDecomposition claimId={claim.id} />
         <p className="order-line">
-          <Link href={`/account/grants/new?claim_id=${claim.id}`}>
-            or create a grant for this whole area →
+          <Link href={`/ask/mandates/new?claim_id=${claim.id}`}>
+            or start a mandate for this whole area →
           </Link>
         </p>
       </section>

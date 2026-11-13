@@ -437,7 +437,7 @@ This budget entity is the substrate grants build on.
 ## Grants — the granting conversation
 
 People create grants by talking to the **Grantmaker agent**
-(`/grant-conversations`, UI at `/account/grants/new`): the best available
+(`/grant-conversations`, UI at `/ask/mandates/new`): the best available
 model, running with the full constitution, surveys the scope, quotes
 expected costs in owls, pushes back where judgment differs, and drafts a
 mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows

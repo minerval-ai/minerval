@@ -25,6 +25,7 @@
  * against the escrow, and a pace bounds the spend. The refusal duties
  * that govern mandate design govern this pass equally.
  */
+import { recordMandateUpdate } from "../../services/mandate-work-service.js";
 import { openSession, executeSessionTool, getSessionToolDefinitions, type SessionResume } from "../tools/session-tools.js";
 import { executeSubscriptionTool, getSubscriptionToolDefinitions } from "../tools/subscription-tools.js";
 import { escalationDigest } from "./program-officer.js";
@@ -1037,16 +1038,9 @@ async function runMandateReviewImpl(input: {
   // Stated in the briefing; past it the note is cut, since it is a
   // summary line on the mandate's public page, not a report.
   const note = (result.content ?? "").trim().slice(0, REVIEW_NOTE_MAX_CHARS);
-  // The review note is part of the mandate's public record.
-  await rawQuery(
-    `UPDATE grants
-        SET mandate = jsonb_set(
-              COALESCE(mandate, '{}'::jsonb), '{last_review}',
-              jsonb_build_object('at', to_jsonb(now()), 'note', $2::text)),
-            updated_at = now()
-      WHERE id = $1`,
-    [grant.id, note || "(review completed without a note)"]
-  );
+  // The review note is part of the mandate's public record: the latest, and
+  // one of the updates the mandate keeps (mandate-work-service.ts).
+  await recordMandateUpdate(grant.id, note || "(review completed without a note)");
   if (!resume) await consumeMandateEvents(grant.id, inbox.events.map((e) => e.id)).catch(() => {});
   return { note, planItemsAdded, freshStart };
 }

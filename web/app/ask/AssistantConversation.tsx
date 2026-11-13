@@ -246,7 +246,7 @@ function GrantThread({ id }: { id: string }) {
       )}
       {thread?.status === "funded" && thread.grant_id && (
         <p className="order-line">
-          Funded. <Link href={`/account/grants/${thread.grant_id}`}>See the grant</Link>.
+          Funded. <Link href={`/mandates/${thread.grant_id}`}>See the mandate</Link>.
         </p>
       )}
     </aside>

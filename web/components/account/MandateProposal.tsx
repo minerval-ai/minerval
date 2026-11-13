@@ -76,7 +76,7 @@ export function MandateProposal({
       if (!res.ok) {
         setError(data.error ?? "Funding failed; nothing was escrowed.");
       } else {
-        router.push(`/account/grants/${data.grant_id}`);
+        router.push(`/mandates/${data.grant_id}`);
       }
     } catch {
       setError("Funding failed; nothing was escrowed. Please try again.");
