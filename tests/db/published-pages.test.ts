@@ -794,16 +794,23 @@ describe("a gate to outside set to send what is released", () => {
     await seedPrivateWork(id.q!);
     await expect(sendOutbound({ showingId: id.showing!, sender: { standing: true } })).rejects.toThrow(/set for a person to send each package/);
     await sendAsReleasedAt(id.gate!, true);
+    // The gate to outside is the same gate, with the same settings. Set to the Redactor's decision, a page is
+    // redacted, checked, released, packaged and sent with no person's act, and its package verifies.
+    await personDecidesAt(A, null, "redactor");
     const asked = await askShowing({ nodeId: id.q!, pageLabel: A, toLabel: null, form: "standing", scope: "node", actor: actor.director! });
     id.standingChoice = asked.showing_id;
     const page = await latestPageOf(id.standingChoice!, id.q!);
     await redactAndCheck(page);
-    await releaseAllBut(page);
+    expect(await system(() => rawQuery(`SELECT 1 FROM showing_acts WHERE page_id = $1 AND by = 'person'`, [page]))).toEqual([]);
     const followed = await followOutbound();
     // This showing's package, and those of the earlier showings across the same gate that were waiting for a person.
     expect(followed.sent).toBeGreaterThanOrEqual(1);
     const [pkg] = await packagesOf(id.standingChoice!, id.q!);
     expect(pkg!.package.showing.send).toBe("as_released");
+    expect((await verifyPublishedPage(pkg!.package)).ok).toBe(true);
+    // The package says who let each part through: the gate's setting, and no person.
+    const acts = JSON.stringify(pkg!.package);
+    expect(acts).toContain("the gate's setting");
     const overview = (await everyone(() => outboundOverview({ showingId: id.standingChoice }))) as { nodes: any[] };
     expect(overview.nodes[0].packages[0].sends[0]).toMatchObject({ result: "admitted", by: "the gate's setting to send what is released", holding: [] });
     const read = (await pubApi("GET", `/published-pages?node_id=${id.q}`, undefined, null)).json.published_pages[0];

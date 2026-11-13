@@ -475,7 +475,11 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 }
 .queue-ticks { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); flex-basis: 100%; }
 .queue-reason { display: grid; gap: 0.15rem; font-family: var(--sans); font-size: 0.7rem; color: var(--ink-soft); }
-.queue-reason select { font: inherit; font-size: 0.78rem; padding: 0.25rem 0.3rem; }
+.queue-reason select { font: inherit; font-size: 0.78rem; padding: 0.25rem 0.3rem; max-width: 100%; min-width: 0; }
+/* The gate's other fields: the time a delay runs until, and the passage and category of a removal. */
+.queue-reason input { font: inherit; font-size: 0.78rem; padding: 0.25rem 0.3rem; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.queue-foot > * { max-width: 100%; min-width: 0; }
+.queue-foot .order-button { white-space: normal; }
 .uploader { display: grid; gap: 0.6rem; max-width: 40rem; margin-top: 0.6rem; }
 .uploader label { display: grid; gap: 0.25rem; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
 .uploader label small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }

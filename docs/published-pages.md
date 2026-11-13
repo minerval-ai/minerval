@@ -144,24 +144,26 @@ The deployment is a client of the public graph's ordinary API, with the key
 of the organization's own account there (`PUBLIC_GRAPH_API_URL`,
 `PUBLIC_GRAPH_API_KEY`). It holds no other standing.
 
-- **A person sends** (`POST /outbound/send`, the tool
-  `send_pages_outside`): someone who holds `direct`, from a signed-in
-  session or by pressing the card the Assistant shows for an outward act.
-  A key or a token alone is refused.
-- **Or a standing choice sends.** The person who asks for a standing
-  showing outside may choose then (`send: "as_released"` on
-  `POST /showings`) that each package goes as soon as it is built. The
-  choice is a column on the showing, under the asker's name, and is stated
-  in every package. What the person is told it shows outside is in
-  `SEND_CHOICES` (`outbound-service.ts`) and is returned to them when they
-  ask.
+- **The gate's setting sends.** The gate to outside is the same gate as
+  any other ([the-gate.md](the-gate.md)), and whether what it releases is
+  sent as each package is built is one of its settings
+  (`send_as_released` on `PUT /gates/:gate_id`, an administrator's). It
+  starts on: what is released outside is sent with nobody sending each
+  package. It is stated in every package. What it shows outside is in
+  `SEND_CHOICES` (`outbound-service.ts`).
+- **Or a person sends**, where the gate is set for that
+  (`POST /outbound/send`, the tool `send_pages_outside`): someone who
+  holds `direct`, from a signed-in session or by pressing the card the
+  Assistant shows for an outward act. A key or a token alone is refused
+  for this one route: it speaks in the organization's name on the public
+  graph, and the setting above is how sending is automated.
 - **Or a person carries a file**
   (`POST /outbound/packages/:package_id/file`, or
   `scripts/published-page.ts export <dir>`), where the network does not
   join the two. The public graph checks it the same way however it arrives.
 
 Every send and every handing over is a row with who did it, what the
-public graph answered, and whether it went under a standing choice
+public graph answered, and whether it went under the gate's setting
 (`outbound_sends`).
 
 ### Limits

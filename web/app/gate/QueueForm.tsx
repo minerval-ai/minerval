@@ -84,7 +84,7 @@ export function QueueForm({
         </button>
         <label className="queue-reason">
           Delay until
-          <input type="datetime-local" name="until" />
+          <input type="datetime-local" name="until" style={{ maxWidth: "100%", minWidth: 0 }} />
         </label>
         <button className="order-button queue-secondary" type="submit" name="decision" value="delay" disabled={pending}>
           Delay the ticked items
@@ -98,11 +98,11 @@ export function QueueForm({
           <summary>remove a passage from the ticked part</summary>
           <label className="queue-reason">
             The passage, exactly as it appears
-            <input type="text" name="passage" />
+            <input type="text" name="passage" style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }} />
           </label>
           <label className="queue-reason">
             The policy&rsquo;s category that covers it
-            <input type="text" name="category" />
+            <input type="text" name="category" style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }} />
           </label>
           <button className="order-button queue-secondary" type="submit" name="decision" value="remove" disabled={pending}>
             Remove it and leave the category&rsquo;s mark
