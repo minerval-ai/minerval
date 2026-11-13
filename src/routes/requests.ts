@@ -100,6 +100,29 @@ export const REQUEST_SCHEMA = {
         },
       },
     },
+    // Where a deployment has more than one label, or mirrors the public
+    // graph: the request this one was taken up from, and the requests at
+    // labels the reader reads that took this one up
+    // (services/request-adoption-service.ts). Absent otherwise.
+    taken_up_from: {
+      type: "object",
+      properties: {
+        request_id: { type: "string", format: "uuid" },
+        label: { type: "string" },
+        public_request_id: { type: "string", format: "uuid" },
+      },
+    },
+    taken_up_at: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          request_id: { type: "string", format: "uuid" },
+          state: { type: "string" },
+        },
+      },
+    },
     // Accounts that have said they are taking the request up, and what followed.
     taken_up: {
       type: "array",
