@@ -84,6 +84,12 @@ A private deployment, one that serves only its signed-in members, has these page
 | `/admin/owls` | For every member: what an owl is in the deployment, how many its administrators created, and what its runs spent. For administrators also creating owls and setting up the General and Governance mandates |
 | `/admin/usage-report` | For administrators: what the deployment reports to the public graph of its owl spend, with each report exactly as sent |
 | `/sources/new` | For holders of the permission to direct: add a document or an address as a source |
+| `/showings`, `/showings/:id`, `/showings/:id/pages/:page_id` | For every member, as far as their labels reach: the pages shown to readers who do not read the label they were written at, or outside the deployment; one showing with each node's state, every version and every act; one version as shown, part by part, with its removals marked, its held parts named and the check against its fingerprint. A node's own page has the same shown page as a tab, beside a tab for the node's assessment at each label the reader reads |
+| `/showings/new` | For holders of the permission to direct: ask for a node's page to be shown, reached from the node's page. It says what each choice shows and to whom |
+| `/release` | For holders of the permission to release a party's material: the parts of redacted pages waiting on them, oldest first, to release or hold, and that party's standing rules |
+| `/redaction-policies`, `/redaction-policies/:id` | For every member: the redaction policy of each boundary they can read, in full. For an administrator who reads the label the pages are written at, saving the next version |
+| `/outbound` | For every member: each signed package built for a page shown outside, whether it was sent and what the public graph answered. For holders of the permission to direct, sending, taking a package as a file, and the words a node that exists only in the deployment is proposed in |
+| `/file-sets`, `/file-sets/:id` | For holders of the permission to direct or to administer: the sets of files added for agents to explore in the deployment's sandbox; one set's files with their hashes, the commands agents ran, uploading into it and switching it off |
 
 ## Owls in the interface
 

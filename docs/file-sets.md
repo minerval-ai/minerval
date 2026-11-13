@@ -554,6 +554,7 @@ For whoever packages the sandbox. The same list is in `sandbox/README.md`.
   run's sets.
 
 Not built here: the Docker Compose packaging (the sandbox's Dockerfile,
-settings, network requirement and probe are ready for it); pages for
-adding and reading sets (the routes return what a page needs); file sets
-on the public graph.
+settings, network requirement and probe are ready for it); file sets
+on the public graph. The pages for adding and reading sets are
+`/file-sets` and `/file-sets/:id` ([accounts.md](accounts.md), "The web
+app").

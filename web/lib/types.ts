@@ -521,10 +521,48 @@ export interface CoverageRow {
   on?: string[];
 }
 
+/**
+ * One current version of a node's judgment, where a deployment holds
+ * material at more than one label (docs/architecture.md, "A judgment at
+ * each label"): the label it was made at, the judgment itself in the fields
+ * its kind has, whether it is in force for this reader, and what it was
+ * made beside. The public graph serves none.
+ */
+export interface NodeVersion {
+  id: string;
+  label: string;
+  in_force: boolean;
+  assessed_at: string;
+  made_beside: Array<{ label: string; replaced: boolean }>;
+  versions_since: string[];
+  made_against_earlier: boolean;
+  model?: string | null;
+  run_id?: string | null;
+  // A claim's assessment.
+  status?: AssessmentStatus;
+  confidence?: number | null;
+  claim_credence?: number | null;
+  summary?: string | null;
+  reasoning_trace?: string | null;
+  // A quantity's estimate.
+  estimate?: unknown;
+  work?: string | null;
+  // A question's assessment.
+  standing?: string;
+  favored_answer_ids?: string[];
+  incomplete?: string | null;
+}
+
 export interface ClaimDetail {
   // Present when the id asked for was merged into this claim (#884).
   resolved_from?: ResolvedFrom | null;
   claim: ClaimCore;
+  // Only where the deployment holds material at more than one label: the
+  // versions of the node's judgment this reader may read, those in force
+  // first. Absent on the public graph.
+  versions?: NodeVersion[];
+  // Only where the node is the public graph's, read through a mirror.
+  mirrored?: { public_graph_as_of: string | null; public_page_url: string | null } | null;
   assessment: Assessment | null;
   // Beside the judgment and present where there is none; absent when the API
   // predates the field.

@@ -466,8 +466,11 @@ the site is named this way.
 
 **The pages a members-only build adds.** A line above each page, placed by
 the gate for a member (`web/components/MembersBand.tsx`), links the ones a
-person's permissions open: "Add a source" for holders of `direct`, "Administration" for holders
-of `administer`. The administration pages link to one another down the left
+person's permissions open: "Showings" for a member who reads at a label
+besides `public` or who directs or releases, "Release queue" for holders of
+`release`, "File sets" for holders of `direct` or `administer`, "Add a
+source" for holders of `direct`, "Administration" for holders of
+`administer`. The administration pages link to one another down the left
 side of the page, and in a line above it at a phone's width
 (`AdminNav` in `web/components/admin/access.tsx`). A person who lacks a
 permission is not shown a control that needs it, and a page reached directly
@@ -488,13 +491,48 @@ says so where an administrator's list leaves rows out.
 | `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup, one for each label the reader reads where there is more than one |
 | `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
 | `/sources/new` | `direct` | Add a document or an address (`POST /sources`), at a label the person chooses where there is more than one |
+| `/claims/:id` | every member | The ordinary page of a node. Where the node carries a judgment at more than one label the reader reads (`versions` on `GET /claims/:id`), a tab for each, opening on the one in force; a reader for whom two are in force, at labels that do not read each other, is shown both in full and neither is chosen. Under the tabs: what the assessment was made on, what it was made beside, and whether that has since been replaced. A page of the node shown to a label the reader reads, or outside, is a further tab drawn by the components of the public site's second tab (`web/lib/inside-node.ts`, `web/components/claim/InsideVersions.tsx`) |
+| `/showings`, `/showings/:id`, `/showings/:id/pages/:page_id` | every member, as far as their labels reach; controls by permission | docs/showing-a-page.md: the showings a reader may see from either side; one showing with each node's state, every version, every act, and for a reader of the page's label paying for the redaction or its check (`fund`), holding a page and ending a standing showing (`direct`); one version as shown, part by part, with who released or held each, the fingerprint, and a check that runs in the reader's browser |
+| `/showings/new` | `direct` | Ask for a node's page to be shown (`POST /showings`), from the node's page. Nothing is preselected, and each choice says what it shows and to whom |
+| `/release` | `release` | The release queue (`GET /release/queue`): each waiting part as it would be shown, with the Redactor's removals struck through in front of their marks, release and hold part by part or in bulk, what cannot be done there and why, and the party's standing rules |
+| `/redaction-policies`, `/redaction-policies/:id` | every member; saving for `administer` | Each boundary's policy in full; an administrator who reads the label the pages are written at saves the next version (`PUT /redaction-policies`), with a refusal shown beside the form |
+| `/outbound` | every member; controls for `direct` and `release` | docs/published-pages.md, "Inside the deployment": what a send shows outside, each package with its sends and the public graph's answers, sending, taking a package as a file, and the words a node that exists only here is proposed in |
+| `/file-sets`, `/file-sets/:id` | `direct` or `administer` | docs/file-sets.md: the sets at labels the reader reads, adding one by upload (`direct`) or from a directory (`administer`), uploading with each file's progress and hash, a set's files and the commands run against it, switching it off |
 
-Not among them yet, and needed by what the deployment now does: a page for
-sets of files (docs/file-sets.md), the release queue, the list of showings
-and what each would cost to move on, a node's page with its judgment at
-each label and a shown page beside it, the editor of a boundary's redaction
-policy, and sending outside (docs/showing-a-page.md and
-docs/published-pages.md, "Not built here").
+These pages link to one another down the left side, as the administration
+pages do (`WorkNav` in `web/components/inside/nav.tsx`), each link shown to
+whoever can use the page. Their words that are not the API's own are in the
+pages; the two fixed lists of reasons are copied in
+`web/lib/inside-words.ts`, since the API serves neither.
+
+What the pages could not be given, because the API does not serve it:
+
+- **The parts of a page before it is shown.** `GET /showings/:id/pages/:page_id`
+  serves parts once the page is shown. Until then only the release queue
+  lists them, to holders of `release`, so a person who directs sees that a
+  page waits on named parties and not which part waits on whom.
+- **A queue item's node.** An item names its page and showing and not the
+  node, and a holder of `release` who does not read the label the page is
+  shown to cannot open the showing either.
+- **A hold's reason on a queue item**, and the lists of hold and end
+  reasons themselves.
+- **Earlier versions of a policy.** `GET /redaction-policies` serves the
+  newest version of each boundary; an earlier one is read by its id, which
+  a showing's record gives.
+- **The parties, to a person who directs.** `GET /parties` is an
+  administrator's read, and adding a file set names a party. The page
+  offers a person who does not administer the parties their own grants
+  name.
+- **Labels a person does not read.** A showing, a rule or a policy can
+  name a label its author does not read, and the API takes it; no read
+  names such a label, so the pages offer the labels the person reads.
+- **A receipt for a package carried by hand.** Taking a file is logged;
+  nothing records what the public graph then answered.
+- **One judgment where there are two.** Outside a node's own read, every
+  read that gives a node one judgment (a list, a card, a tree's rows, an
+  argument's evaluation, coverage, what has changed since) gives a reader
+  who holds two labels that do not read each other the more recent of the
+  two and does not say there is another.
 
 The account page shows no way to buy owls where `entitlement.owls_created_here`
 is true, gives what an owl is there in the API's words

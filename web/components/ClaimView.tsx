@@ -7,7 +7,7 @@ import {
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { sinceAssessedLine } from "@/lib/since-assessed";
-import { evidenceNotShownLine, isExamined, notExaminedLine } from "@/lib/coverage";
+import { evidenceNotShownLine, isExamined, notExaminedLine, readerEvidenceLine } from "@/lib/coverage";
 import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import { modelDisplayName } from "@/lib/model-names";
 import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
@@ -40,6 +40,7 @@ import {
   PublishedNotes, PublishedProvenance, TakenOut,
 } from "./claim/PublishedPage";
 import { sourceHref } from "@/lib/source-address";
+import { ShownIntro, ShownRecord } from "./claim/InsideVersions";
 
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
@@ -99,8 +100,17 @@ function fmtDate(iso: string) {
 }
 
 export function ClaimView({
-  detail, fixture = false, features = ALL_FEATURES_ON, publishedPages = [], published = null,
+  detail, fixture = false, features = ALL_FEATURES_ON, publishedPages = [], published = null, judgedAbove = false, versionsAbove,
 }: {
+  /**
+   * Only inside a private deployment, for a reader who holds two labels
+   * that do not read each other: both assessments stand above this column
+   * (components/claim/InsideVersions.tsx), so it carries no verdict of its
+   * own and does not say the node is unassessed.
+   */
+  judgedAbove?: boolean;
+  /** Those assessments, drawn where this column's own verdict would stand. */
+  versionsAbove?: React.ReactNode;
   detail: ClaimDetail;
   fixture?: boolean;
   features?: Features;
@@ -165,6 +175,11 @@ export function ClaimView({
   const notShown = anyAssessment
     ? evidenceNotShownLine(detail.coverage, isQuantity ? "estimate" : "assessment")
     : null;
+  // In a deployment with more than one label, whether the judgment rests on
+  // evidence this reader cannot read. The public graph's API never says so.
+  const readerEvidence = anyAssessment
+    ? readerEvidenceLine(detail.coverage, isQuantity ? "estimate" : "assessment")
+    : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
   // Canonical text for [[claim:<id>]] references in assessment prose (#203):
@@ -215,7 +230,7 @@ export function ClaimView({
         title={claim.text}
       />
 
-      {published && <PublishedIntro view={published} />}
+      {published && (published.inside ? <ShownIntro view={published} /> : <PublishedIntro view={published} />)}
       {published && <OtherVerdict view={published} />}
 
       {/* A quantity's definition and the graph's estimate lead its page, where
@@ -232,7 +247,9 @@ export function ClaimView({
 
       {isQuantity && !qAssessment && <OrderAssessment claimId={claim.id} variant="unassessed" />}
 
-      {!published && !isQuantity && !assessment && (
+      {versionsAbove}
+
+      {!published && !judgedAbove && !isQuantity && !assessment && (
         <>
           {/* The place a verdict would stand. An empty place is easy to
               read as nothing being wrong, so it says in words that there is
@@ -370,6 +387,12 @@ export function ClaimView({
         </p>
       )}
 
+      {readerEvidence && (
+        <p className="assess-reader-evidence" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
+          {readerEvidence}
+        </p>
+      )}
+
       {/* What other graphs publish of this node, and whether the verdict
           above has weighed it; on the second tab, what was taken out. */}
       {!published && <PublishedNotes claimId={claim.id} published={publishedPages} />}
@@ -472,7 +495,9 @@ export function ClaimView({
         <section>
           <h2>Decomposition</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            The arguments and subclaims the publishing graph&apos;s Steward recorded for this claim, each as written.
+            {published.inside
+              ? "The arguments and subclaims the Steward recorded for this node at the label the page was written at, each as written."
+              : "The arguments and subclaims the publishing graph's Steward recorded for this claim, each as written."}
           </p>
           <PublishedDecomposition view={published} />
         </section>
@@ -481,8 +506,8 @@ export function ClaimView({
         <section>
           <h2>Provenance</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            The sources read in the publishing graph. Each is listed by kind and by who supplied it; what it says is not shown beyond the passages
-            its readings quote.
+            {published.inside ? "The sources read at the label the page was written at." : "The sources read in the publishing graph."} Each is
+            listed by kind and by who supplied it; what it says is not shown beyond the passages its readings quote.
           </p>
           <PublishedProvenance view={published} />
         </section>
@@ -636,7 +661,7 @@ export function ClaimView({
         </section>
       )}
       {/* How the published page was made, closed to one line like Full reasoning. */}
-      {published && <PublicationRecord view={published} />}
+      {published && (published.inside ? <ShownRecord view={published} /> : <PublicationRecord view={published} />)}
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content, behind a closed disclosure so no
@@ -690,7 +715,9 @@ export function ClaimView({
       )}
       {published ? (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
-          Contributing to this claim, ordering an assessment of it and citing it are on the public assessment&apos;s tab.
+          {published.inside
+            ? "Contributing to this node, ordering an assessment of it and citing it are on the tabs of its own assessments."
+            : "Contributing to this claim, ordering an assessment of it and citing it are on the public assessment's tab."}
         </p>
       ) : (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>

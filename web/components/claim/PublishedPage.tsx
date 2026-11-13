@@ -158,7 +158,7 @@ export function TakenOut({ view }: { view: PublishedPageView }) {
         {shape.held_parts === 0
           ? `all ${shape.parts} parts released.`
           : `${shape.held_parts} of ${shape.parts} parts held: ${shape.held_kinds}.`}{" "}
-        {view.audit && <>Audit&rsquo;s check there: {view.audit}</>}
+        {view.audit && <>Audit&rsquo;s check {view.inside ? "of the redaction" : "there"}: {view.audit}</>}
       </p>
       {view.state === "held" && (
         <p className="published-later" style={quiet}>
@@ -301,7 +301,8 @@ export function PublishedProvenance({ view }: { view: PublishedPageView }) {
         <ul className="published-sources">
           {shape.sources.map((s) => (
             <li key={s.source}>
-              Source {s.source}: {s.kind === "unknown" ? "a document of a kind not recorded" : s.kind.replace(/_/g, " ")}, {SUPPLIED[s.supplied_by] ?? SUPPLIED.not_recorded};{" "}
+              Source {s.source}: {s.kind === "unknown" ? "a document of a kind not recorded" : s.kind.replace(/_/g, " ")},{" "}
+              {view.inside && s.supplied_by === "the_organization_itself" ? "supplied by the organisation itself" : (SUPPLIED[s.supplied_by] ?? SUPPLIED.not_recorded)};{" "}
               {s.interest_recorded ? "an interest in this claim is recorded for it" : "no interest in this claim is recorded for it"}. Content not shown.
               {s.fingerprint && <span className="mono"> fingerprint {s.fingerprint.slice(0, 16)}</span>}
               {s.supplier && (s.supplier.held ? <HeldPart held={s.supplier.held} /> : <div className="published-supplier"><Blocks blocks={[s.supplier]} categories={categories} /></div>)}
@@ -320,7 +321,7 @@ export function PublishedProvenance({ view }: { view: PublishedPageView }) {
               <Blocks blocks={[{ part: r.part, text: r.text ?? "", marks: [] }]} categories={categories} />
             )}
             <div className="instance-cite">
-              <span>a source read in the publishing graph</span>
+              <span>{view.inside ? "a source read at the label the page was written at" : "a source read in the publishing graph"}</span>
               {r.stance && <span className="tag">{r.stance}</span>}
             </div>
             {r.context && (
@@ -348,7 +349,11 @@ export function PublishedGaps({ view }: { view: PublishedPageView }) {
   return (
     <section>
       <h2>What the page records as missing</h2>
-      <p style={{ ...quiet, marginTop: "-.3rem", marginBottom: ".6rem" }}>Requests the publishing graph keeps on this node, and what its assessment says remains open.</p>
+      <p style={{ ...quiet, marginTop: "-.3rem", marginBottom: ".6rem" }}>
+        {view.inside
+          ? "Requests kept on this node at the label the page was written at, and what the assessment says remains open."
+          : "Requests the publishing graph keeps on this node, and what its assessment says remains open."}
+      </p>
       <Blocks blocks={shape.gaps} categories={Object.keys(shape.removals)} />
     </section>
   );

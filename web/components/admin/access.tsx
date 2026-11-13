@@ -52,6 +52,10 @@ const PAGES: Array<{ href: string; name: string }> = [
   { href: "/admin/connections", name: "Connections" },
   { href: "/admin/owls", name: "Owls" },
   { href: "/admin/usage-report", name: "Usage report" },
+  // Read by every member; an administrator who reads the label the pages are written at saves a version.
+  { href: "/redaction-policies", name: "Redaction policies" },
+  { href: "/file-sets", name: "File sets" },
+  { href: "/showings", name: "Showings" },
 ];
 
 /** The administration pages, as a line of links with the current one marked. For administrators. */

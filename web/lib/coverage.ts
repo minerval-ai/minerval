@@ -59,3 +59,36 @@ export function evidenceNotShownLine(
     "at least one of its sources reports a result from data it has not published."
   );
 }
+
+/**
+ * In a deployment that holds material at more than one label, what a
+ * judgment was made on is said to the person reading it: evidence they can
+ * read, evidence they cannot, or both. A reader's own judgment rests on
+ * evidence they cannot read when its Steward weighed a page shown from a
+ * label the reader does not read (docs/showing-a-page.md). One line under the verdict, or null
+ * where the API does not say (the public graph, where everything is read by
+ * everyone).
+ */
+export function readerEvidenceLine(
+  coverage: Coverage | null | undefined,
+  judgment: "assessment" | "estimate" = "assessment",
+): string | null {
+  if (!coverage || !coverage.examined) return null;
+  const can = coverage.on.includes("evidence_this_reader_can_read");
+  const cannot = coverage.on.includes("evidence_this_reader_cannot_read");
+  if (can && cannot) {
+    return (
+      `This ${judgment} was made partly on evidence you can read and partly on evidence you cannot: ` +
+      "among what it rests on is a page shown from a label you do not read, with what was removed or held marked."
+    );
+  }
+  if (cannot) {
+    return (
+      `This ${judgment} was made on evidence you cannot read: what it rests on is a page shown ` +
+      "from a label you do not read, with what was removed or held marked."
+    );
+  }
+  // Made on evidence this reader can read and nothing else recorded: the
+  // ordinary case, which needs no line.
+  return null;
+}

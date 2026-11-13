@@ -407,6 +407,80 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   .admin-state { padding: 0 0 0.35rem; }
 }
 
+/* ---- inside a private deployment that holds material at more than one label:
+   a node's assessments by label (components/claim/InsideVersions.tsx), and
+   the pages for showings, the release queue, a boundary's policy, sending
+   outside and file sets (app/showings, app/release, app/redaction-policies,
+   app/outbound, app/file-sets). They take the administration pages' sections,
+   tables and forms; what is here is theirs alone. Ink only: a state is said
+   in words and never in a status colour, so it cannot be read as a verdict. */
+.version-note { margin: -0.5rem 0 1rem; max-width: 40rem; }
+.versions-several { margin: 0 0 1.4rem; }
+.versions-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.6rem 2rem; align-items: start; }
+.version-column { border-top: 2px solid var(--ink); padding-top: 0.6rem; min-width: 0; }
+.version-column h2.version-head { margin: 0 0 0.5rem; font-family: var(--sans); font-size: 0.82rem; font-weight: 600; letter-spacing: 0; }
+.version-column .claim-assess { margin-top: 0; }
+.inside-choices { gap: 0.7rem; margin-top: 0.4rem; }
+.inside-choices legend { font-weight: 600; color: var(--ink); font-size: 0.8rem; }
+.inside-choices label.admin-check { align-items: flex-start; font-size: 0.84rem; color: var(--ink); }
+.inside-choices label.admin-check input { margin-top: 0.25rem; flex: none; }
+.admin-form .inside-choices input[type="radio"] { width: auto; padding: 0; border: 0; background: none; }
+.inside-choices label.admin-check > span { min-width: 0; flex: 1; }
+.queue-item-head > span { min-width: 0; }
+.queue-item-head .tag { white-space: normal; }
+.inside-choices label.admin-check small { display: block; margin-top: 0.15rem; font-size: 0.72rem; }
+.inside-note { display: block; font-family: var(--sans); font-size: 0.7rem; color: var(--muted); line-height: 1.45; }
+.inside-next p { margin: 0 0 0.6rem; font-size: 0.86rem; }
+.inside-list { margin: 0.6rem 0 0; padding-left: 1.2rem; }
+.inside-list li { margin-bottom: 0.55rem; font-size: 0.9rem; color: var(--ink-soft); }
+.inside-list li strong { color: var(--ink); }
+.inside-line { display: block; margin-bottom: 0.25rem; }
+.inside-hash, .inside-hash-whole { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.inside-hash-whole { overflow-wrap: anywhere; }
+.inside-policy { max-width: 46rem; font-size: 0.78rem; }
+.inside-category { padding: 0.7rem 0 0.2rem; border-top: 1px solid var(--rule-soft); gap: 0.5rem; }
+.inside-node { margin-top: 1.2rem; }
+.inside-node h3 { font-size: 0.95rem; }
+.inside-proposal blockquote { margin: 0.4rem 0 0.6rem; padding-left: 0.9rem; border-left: 2px solid var(--rule); max-width: 40rem; }
+.admin-page .acct-table td .admin-form { margin-top: 0.5rem; max-width: 22rem; }
+.admin-page .acct-table td .acct-detail { display: block; margin: 0.2rem 0 0; }
+.inside-parts { list-style: none; margin: 0.9rem 0 0; padding: 0; max-width: 46rem; }
+.inside-part { padding: 0.75rem 0 0.7rem; border-top: 1px solid var(--rule-soft); }
+.inside-part-head { font-family: var(--sans); font-size: 0.78rem; color: var(--ink); }
+.inside-part-head .sc { margin-right: 0.4rem; color: var(--muted); }
+.inside-part-text p { margin: 0.4rem 0 0; font-size: 0.92rem; overflow-wrap: anywhere; }
+.inside-part-held-words { margin: 0.4rem 0 0; font-family: var(--sans); font-size: 0.82rem; color: var(--ink); }
+.inside-part > .acct-detail { display: block; margin: 0.3rem 0 0; }
+.queue-form { margin-top: 0.6rem; }
+.queue-page { border-top: 2px solid var(--ink); padding: 0.7rem 0 0.4rem; margin-bottom: 1.2rem; max-width: 46rem; }
+.queue-page-head { margin: 0 0 0.4rem; font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
+.queue-page-head strong { color: var(--ink); }
+.queue-item { padding: 0.7rem 0; border-top: 1px solid var(--rule-soft); }
+.queue-item-head { display: flex; align-items: baseline; gap: 0.55rem; font-family: var(--sans); font-size: 0.82rem; color: var(--ink); }
+.queue-item-head .sc { margin-right: 0.35rem; color: var(--muted); }
+.queue-item-head .tag { margin-left: 0.45rem; }
+.queue-text { margin: 0.45rem 0 0 1.55rem; font-size: 0.92rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.queue-removed { text-decoration: line-through; color: var(--muted); background: var(--paper-sunk); }
+.queue-text ins { text-decoration: none; margin-left: 0.25em; }
+.queue-fact { margin: 0.35rem 0 0 1.55rem; font-family: var(--sans); font-size: 0.72rem; color: var(--muted); line-height: 1.45; }
+.queue-unread { color: var(--ink); }
+.queue-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem;
+  padding: 0.7rem 0; background: var(--paper); border-top: 1px solid var(--rule); max-width: 46rem;
+}
+.queue-ticks { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); flex-basis: 100%; }
+.queue-reason { display: grid; gap: 0.15rem; font-family: var(--sans); font-size: 0.7rem; color: var(--ink-soft); }
+.queue-reason select { font: inherit; font-size: 0.78rem; padding: 0.25rem 0.3rem; }
+.uploader { display: grid; gap: 0.6rem; max-width: 40rem; margin-top: 0.6rem; }
+.uploader label { display: grid; gap: 0.25rem; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.uploader label small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+.uploader .order-button { justify-self: start; }
+.uploader-rows { list-style: none; margin: 0; padding: 0; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.uploader-rows li { padding: 0.3rem 0; border-top: 1px solid var(--rule-soft); overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .queue-text, .queue-fact { margin-left: 0; }
+}
+
 /* text column sits left within the frame; the right gap holds sidenotes */
 .col { max-width: var(--measure); }
 .col-wide { max-width: 46rem; }
