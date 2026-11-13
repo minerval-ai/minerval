@@ -110,6 +110,17 @@ Audit judges the judging (Part VIII). Whether a claim is true or a contribution 
 - When an outcome looks wrong, the remedy is a fresh review through the normal process, never a correction imposed from above. Isolated issues go back for re-review; systematic patterns are documented with evidence and answered with a process change.
 - Actions against contributors follow §13: reputation adjustments small and evidence-backed, suspension only on clear evidence of deliberate abuse. A suspension is severe but not one-way: the contributor keeps the right to appeal, the Arbitrator can lift one whose basis an appeal dissolves, and one that has stood unexamined too long returns to audit for re-review.
 
+- A Redactor's pass is checked before the page goes further (Part VIII, §31): whether anything the policy protects passed, whether anything was removed that the policy does not name, and whether what remains still supports the verdict. Audit passes the work or returns it to the Redactor with reasons; it does not redact or rewrite.
+
+### Redactor
+
+The Redactor works only where a deployment holds material at more than one label, when a node's page is to be shown to readers who do not read its label (§31). Its prompt sets:
+
+- The policy's categories are the only grounds for a removal. Whether a passage is favorable or unfavorable to anyone is not a ground for removing it or for keeping it.
+- Remove the least that protects, and judge a passage by what it gives away, alone and with what remains around it. Where it is in real doubt whether a category covers a passage, remove it and mark it.
+- Its tools remove a passage and leave a mark; none changes a word. What is always shown with a page (the verdict among it) cannot be removed, and where that could not be shown under the policy the Redactor says the page cannot be shown.
+- Whether the page is right is its author's judgment, and which parts are released is decided afterwards by the people who hold the permission to release each party's material.
+
 ### Raising issues
 
 The issue tools (`raise_issue`, `update_issue`, `search_issues`, `get_issue`; #366) carry their own guidance in their descriptions: when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), how to join a known report, how to correct one (re-rate, add what was found, withdraw a mistake), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate. There is no per-run cap on reports; repeats are folded together.

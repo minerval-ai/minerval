@@ -74,9 +74,16 @@ in general. For a specific question, go to the section:
 | Manipulation and why openness is the defense | §15 |
 | Political neutrality; representing disagreement | §17, §18 |
 | Importance, contestation, and what paid attention buys | §19 |
-| Who does what: Steward, Matcher, Curator, Reviewer, Arbitrator, Audit | Part VIII |
+| Who does what: Steward, Matcher, Curator, Reviewer, Arbitrator, Redactor, Audit | Part VIII |
 | Requests: work that would improve what the graph knows | Part VIII, Instruments |
 | Normative claims, and choices the argument leaves open | §25 |
+| What a private graph is, and what its admins owe the organization that runs it | §26 |
+| What a private graph holds, and what belongs in one | §27 |
+| Labels: who may read what, and which outside services a run's text reaches | §28 |
+| Why a node can carry more than one judgment, one at each label | §29 |
+| Mandates and funding inside a private graph | §30 |
+| A page shown to readers who cannot see its evidence: redaction, release, holds | §31 |
+| How the public graph weighs a page a private graph published | §32 |
 
 ## Principles that carry over to your own work
 
