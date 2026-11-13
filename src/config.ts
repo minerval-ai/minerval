@@ -951,7 +951,7 @@ const configSchema = z.object({
   // is not asked to name a model for it, so one that runs everything on its
   // own endpoint needs no Anthropic model to start. loadConfig then leaves
   // SOLVER_MODEL unread and the setting empty, and the two places that would
-  // start an attempt refuse (solverModelOrRefusal, below) rather than run on
+  // start an attempt refuse (SOLVER_OFF_WITH_MATHEMATICS, below) rather than run on
   // a default nobody chose. SOLVER_ENABLED=false with mathematics on is not
   // that case: the feature's other work still runs and an attempt can be
   // funded the day the switch is turned, so the model is still named.
