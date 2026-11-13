@@ -33,6 +33,8 @@ vi.mock("../../../../src/services/cost-estimate-service.js", () => ({
     standardMicroUsd: 500_000,
     strongMicroUsd: 2_000_000,
   })),
+  // An ingest is priced at what ingests cost, not at the submitter's cap.
+  estimateLedgerKindCostMicroUsd: vi.fn(async () => 500_000),
 }));
 vi.mock("../../../../src/services/owl.js", () => ({
   microUsdToOwls: (micro: number) => micro / 1_000_000,

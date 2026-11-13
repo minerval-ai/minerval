@@ -253,7 +253,7 @@ const configSchema = z.object({
   // paidAssessmentBudgetOwls below, and the platform absorbs the gap.
   capClaimProposalOwls: z.coerce.number().default(2),
   capAssessmentOwls: z.coerce.number().default(2),
-  capSourceIngestOwls: z.coerce.number().default(0.1),
+  capSourceIngestOwls: z.coerce.number().default(10),
   // A page analysis's cap is also its run budget: the Extractor and every
   // Matcher on the page spend from it (withAgenticCharge's pass budget), and
   // the Extractor is told it in its task message with the cost of a match.

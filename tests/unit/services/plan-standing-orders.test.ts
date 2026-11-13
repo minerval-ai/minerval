@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("../../../src/db/client.js", () => ({ rawQuery: vi.fn(async () => []), withTransaction: vi.fn() }));
 vi.mock("../../../src/services/cost-estimate-service.js", () => ({
   stewardTierCostEstimates: vi.fn(async () => ({ standardMicroUsd: 400_000, strongMicroUsd: 2_000_000 })),
+  estimateLedgerKindCostMicroUsd: vi.fn(async () => 100_000),
 }));
 
 import { normalizePlanItems, validatePlanItems, type PlanItem } from "../../../src/services/grant-service.js";

@@ -1282,7 +1282,8 @@ export interface PlanItemOutcome {
 
 /** Per-sweep memo of the cost estimates the rows carry. */
 interface MaterializeContext {
-  ingestCostMicroUsd: number;
+  /** What an ingest row is priced at: the ledger's own figure for ingests (estimateLedgerKindCostMicroUsd). */
+  ingestCostMicroUsd: () => Promise<number>;
   formalizeCostMicroUsd: () => Promise<number>;
   /** The graph's sweep partitions, read once per sweep when a plan names one. */
   partitions: () => Promise<PartitionStatus[]>;
@@ -1293,10 +1294,11 @@ function newMaterializeContext(): MaterializeContext {
   // computed once per sweep and only when some plan asks for one.
   let strongPassMicroUsd: number | null = null;
   let partitions: Promise<PartitionStatus[]> | null = null;
+  let ingestMicroUsd: Promise<number> | null = null;
   return {
     partitions: () =>
       (partitions ??= listPartitions(loadConfig().consistencyMinTagClaims)),
-    ingestCostMicroUsd: capMicroUsd("source_ingest"),
+    ingestCostMicroUsd: () => (ingestMicroUsd ??= estimateLedgerKindCostMicroUsd("ingest")),
     formalizeCostMicroUsd: async () => {
       if (strongPassMicroUsd === null) {
         strongPassMicroUsd = (await stewardTierCostEstimates()).strongMicroUsd;
@@ -1723,7 +1725,7 @@ async function materializePlanItem(
         group,
         item.url,
         focus ? `Ingest ${item.url} (focus: ${focus.slice(0, 120)})` : `Ingest ${item.url}`,
-        o.ctx.ingestCostMicroUsd,
+        await o.ctx.ingestCostMicroUsd(),
         currentLabel(),
       ]
     );

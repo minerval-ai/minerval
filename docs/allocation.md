@@ -1674,6 +1674,15 @@ Design principles, in force in the implementation:
   a proposal that has not been filed; one that has is a contribution on
   the public record like any other, and the node it became is the
   graph's.
+- **An ingest costs what ingests cost.** An ingest row is priced at the
+  live p80 of finished ingests' metered cost (an extraction and the
+  Matcher runs it makes), else the governing policy's prior,
+  `est_ingest_cost_owls` (1 owl), as curation and audit rows are. It is
+  not priced at `CAP_SOURCE_INGEST_OWLS`, which is the most a person
+  submitting a source is charged: a mandate holding that ceiling on every
+  ingest could fund few of them, and the old cap (0.1 owl) was a tenth of
+  a typical ingest, so mandates' plans and costing read ingests as nearly
+  free and the overrun was placed after the fact.
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and
