@@ -8334,3 +8334,33 @@ export const reportSendings = pgTable(
     check("ck_report_sendings_state", sql`${table.state} IN ('to_redact', 'redacted', 'sent', 'not_sent')`),
   ]
 );
+
+// The addresses this deployment has been given from outside, at each label:
+// what a search returned, what the text of a fetched page, a listing or a
+// feed carries, what a fixed resolver answers for an identifier, what a
+// person wrote to their Assistant (services/given-addresses.ts). Where a
+// run reads material that is not public, a tool that takes an address takes
+// one only if it is here or is a recorded source's, and uses it as it is
+// written here, so that no address a model composed is fetched. One row for
+// a page at a label (`page_url_hash`, services/page-url.ts); `url` is the
+// address as it was given. Rows are added and never changed. Empty on the
+// public graph, where nothing writes it.
+export const givenAddresses = pgTable(
+  "given_addresses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    url: text("url").notNull(),
+    pageUrlHash: text("page_url_hash").notNull(),
+    // 'search' | 'page' | 'listing' | 'feed' | 'identifier' | 'person'.
+    givenBy: text("given_by").notNull(),
+    givenAt: timestamp("given_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_given_addresses_page_label").on(table.pageUrlHash, table.sensitivityLabel),
+    check(
+      "ck_given_addresses_given_by",
+      sql`${table.givenBy} IN ('search', 'page', 'listing', 'feed', 'identifier', 'person')`
+    ),
+  ]
+);

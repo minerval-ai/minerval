@@ -42,7 +42,8 @@ const stage = vi.hoisted(() => {
       await withAgent(agent, async () => {
         const trace = getUsageContext().trace!;
         await trace.ready;
-        const source = await getOrCreateSource({ url: `https://dbtest.example/carried/${uuid()}` });
+        const { asGiven } = await import("./helpers.js");
+        const source = await getOrCreateSource({ url: await asGiven(`https://dbtest.example/carried/${uuid()}`) });
         const seen: Seen = { agent, label: currentLabel(), runId: trace.runId, sourceId: source.id, input };
         stage.seen.push(seen);
         const during = stage.during;
@@ -124,7 +125,7 @@ import { processNextOrderTask } from "../../src/workers/order-pipeline.js";
 import { sweepStalledReviewWork } from "../../src/workers/recovery-sweep.js";
 import { processNextStewardTask } from "../../src/workers/steward-pipeline.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
-import { OWL, creditOwls, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, asGiven, creditOwls, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -281,7 +282,7 @@ describe("a ledger action", () => {
       // onboarded, writes to another node's Steward, submits a document.
       await enqueueClaimPipeline({ claimId: child, jobId: "steward" });
       await enqueueSteward({ claimId: neighbor, trigger: "steward_note", context: "A note from the pass." });
-      jobId = (await submitSource({ url: `https://dbtest.example/carried/${randomUUID()}`, content: "A page." })).jobId;
+      jobId = (await submitSource({ url: await asGiven(`https://dbtest.example/carried/${randomUUID()}`), content: "A page." })).jobId;
     };
     expect(await runFundedPass(claim, INTERNAL)).toMatchObject({ status: "processed", claimId: claim, ok: true });
 
@@ -511,6 +512,7 @@ describe("a job", () => {
   /** Submit a document, then run the extraction the way the worker gets it: the queued message, no context. */
   async function submitAndExtract(label: string | null) {
     const url = `https://dbtest.example/carried/${randomUUID()}`;
+    if (label) await asGiven(url, label);
     const submit = () => submitSource({ url, content: "<p>An essay about the grid.</p>" });
     const { jobId, sourceId } = label ? await inRunAt(label, submit) : await submit();
     const queue = getLocalQueue("urlExtraction");

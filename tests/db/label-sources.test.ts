@@ -150,7 +150,7 @@ import {
   sourceBackfillTick,
 } from "../../src/workers/source-backfill.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
-import { OWL, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, asGiven, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -287,7 +287,7 @@ async function writeOneOfEach() {
   const tag = randomUUID().slice(0, 8);
   const claim = await settledClaim("sources claim");
   const steward = { role: "claim-steward" as const, claimId: claim, run: { model: "dbtest-model" } };
-  const url = pageUrl();
+  const url = await asGiven(pageUrl());
   const source = await getOrCreateSource({ url, title: "Night work and diabetes", content: PAGE });
 
   // A passage, recorded as the Steward records one it met while assessing.
@@ -300,7 +300,7 @@ async function writeOneOfEach() {
   const figure = ok(
     await executeKindTool(
       "record_estimate",
-      { quantity_id: quantity, url: pageUrl("figure"), stated: { form: "point", central: 5 } },
+      { quantity_id: quantity, url: await asGiven(pageUrl("figure")), stated: { form: "point", central: 5 } },
       { role: "claim_steward", claimId: quantity, model: "dbtest-model" }
     )
   );
@@ -323,7 +323,7 @@ async function writeOneOfEach() {
   const edge = ok(
     await executeRecordEdge(
       {
-        from_instance_id: recorded.instance_id, to_source_url: pageUrl("upstream"), relation_type: "derives_from",
+        from_instance_id: recorded.instance_id, to_source_url: await asGiven(pageUrl("upstream")), relation_type: "derives_from",
         evidence: "As the registry reports.", reasoning: "It restates the registry's figure.",
       },
       steward
@@ -805,6 +805,7 @@ describe("what is derived mechanically from a document", () => {
 describe("a document a worker extracts", () => {
   async function ingested(label: string | null, known?: { url: string }) {
     const url = known?.url ?? pageUrl("submitted");
+    if (label) await asGiven(url, label);
     const submit = () => submitSource({ url, content: PAGE });
     const { jobId, sourceId } = label ? await inRunAt(label, submit) : await submit();
     const queue = getLocalQueue("urlExtraction");
@@ -859,7 +860,7 @@ describe("a fetch into a source's own row", () => {
   });
 
   it("made for a document found again by its URL leaves the label it was first recorded at", async () => {
-    const url = pageUrl("cited");
+    const url = await asGiven(pageUrl("cited"), INTERNAL);
     const first = await inRunAt(INTERNAL, () => getOrCreateSource({ url }));
     expect((await sourceRow(first.id)).sensitivity_label).toBe(INTERNAL);
     // A submission outside any run carries the text. The row is found by its
@@ -1194,7 +1195,7 @@ describe("what a reader is shown", () => {
       await executeWriteMap({ summary: "It rests on one release.", material: true }, steward),
       await executeRecordSourceInterest({ scope: "claim", source_id: ids.source, party: "A party", stake: "A stake." }, steward),
       await executeStewardTool("record_claim_instance", {
-        claim_id: ids.claim, url: pageUrl("another"), verbatim_text: "Another passage.", stance: "mentions",
+        claim_id: ids.claim, url: await asGiven(pageUrl("another")), verbatim_text: "Another passage.", stance: "mentions",
       }),
     ]);
     for (const reply of replies) {

@@ -36,6 +36,7 @@ import {
   type AssistantHeldAction,
 } from "../db/schema.js";
 import { loadConfig } from "../config.js";
+import { notePersonsAddresses } from "./given-addresses.js";
 import { currentLabel, runAtLabel, runWithUsageContext, untraced, withAgent } from "../llm/usage-context.js";
 import { complete } from "../llm/client.js";
 import { runAssistantTurn, type AssistantToolUse } from "../llm/agents/assistant.js";
@@ -729,9 +730,17 @@ async function beginTurn(
   // read with it would be kept in a conversation labeled for fewer readers.
   // The tools the turn calls act as its user (openAccountTools), so they
   // are held to the user's clearance as well as to the turn's label.
-  const running = runAtLabel(claim.claimed.sensitivityLabel, `conversation ${claim.claimed.id}`, () =>
-    runTurn(app, user, claim.claimed, claim.startedAt)
-  ).finally(() => pendingTurns.delete(running));
+  const running = runAtLabel(claim.claimed.sensitivityLabel, `conversation ${claim.claimed.id}`, async () => {
+    // Where the turn reads material that is not public, its tools take an
+    // address only as it came from outside (given-addresses.ts). An address
+    // the person wrote in this message is theirs, so it is recorded as
+    // given before the turn starts. If that fails the turn still runs, and
+    // a call with the address is refused and says why.
+    await notePersonsAddresses(message).catch((err) =>
+      console.warn(`[assistant] could not record the addresses in a message: ${err instanceof Error ? err.message : err}`)
+    );
+    return runTurn(app, user, claim.claimed, claim.startedAt);
+  }).finally(() => pendingTurns.delete(running));
   pendingTurns.add(running);
   return { ok: true, conversation: claim.claimed };
 }

@@ -58,6 +58,8 @@ import {
 import { holdsMirror, publicGraphAsOf as readPublicGraphAsOf } from "../services/mirrored-node-service.js";
 import { currentReadClearance } from "../db/client.js";
 import { enforcementLastKnown } from "../db/clearance.js";
+import { toldOfAddressRule, underAddressRule } from "./address-rule.js";
+import { fetchRuleNote, FETCH_RULE_NOTE_HEADING } from "./fetch-rule-note.js";
 import { offFeatures } from "../features.js";
 import { toolOutputForTrace, toolResultContent, type ToolExecution } from "./tool-output.js";
 import { setupRecord, splitSetup, type SetupRecord } from "../services/setup-split.js";
@@ -111,10 +113,20 @@ const LONG_RUN_MAX_TOKENS = 128_000;
  * `model` is the run's: whether web search is a service of its own or the
  * model provider's server tool depends on it.
  */
-async function withRunBrief(messages: MessageParam[], model: string): Promise<MessageParam[]> {
+async function withRunBrief(
+  messages: MessageParam[],
+  model: string,
+  tools?: readonly object[]
+): Promise<MessageParam[]> {
   if (!getUsageContext().agent) return messages;
   const brief = [featuresOffNote(), unclearedServicesNote(model)].filter((note) => note.length > 0);
-  return withLeadingNote(await withRunLabel(messages), brief.join("\n\n"));
+  // A run that reads material that is not public and has a tool that takes
+  // an address is told which addresses its tools take (fetch-rule-note.ts).
+  // It is added before the label note, which then stands ahead of it.
+  const addressed = (await toldOfAddressRule(tools))
+    ? withLabelNote(messages, fetchRuleNote(), FETCH_RULE_NOTE_HEADING)
+    : messages;
+  return withLeadingNote(await withRunLabel(addressed), brief.join("\n\n"));
 }
 
 /**
@@ -392,7 +404,9 @@ export async function completeWithTools(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: await withRunBrief(options.messages, model),
+    // The loop that calls this turn by turn passes the toolset it was
+    // briefed with, so the first message is found already briefed.
+    messages: await withRunBrief(options.messages, model, options.tools),
     tools: withoutUnclearedTools(options.tools),
   };
   return adapter.completeWithTools({
@@ -662,11 +676,17 @@ export async function toolUseLoop(options: {
   // The toolset is fixed here too, without the tools of an outside service
   // that is not cleared for the run's label, so the prompt step records
   // what the model was offered.
+  // Where the run reads material that is not public, every tool call is
+  // held to addresses the deployment was given, and resolve_identifier is
+  // offered beside the tools that take one (address-rule.ts). The same
+  // toolset and executor come back everywhere else.
+  const addressRule = await underAddressRule(withoutUnclearedTools(options.tools), options.executeTool);
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: await withRunBrief(options.initialMessages, streamModel),
-    tools: withoutUnclearedTools(options.tools),
+    initialMessages: await withRunBrief(options.initialMessages, streamModel, addressRule.tools),
+    tools: addressRule.tools,
+    executeTool: addressRule.executeTool,
   };
   const messages = [...options.initialMessages];
   const finish = (r: ToolCompletionResult): ToolCompletionResult => {
@@ -755,6 +775,7 @@ export async function toolUseLoop(options: {
 
     lastResult = result;
     if (result.container) containerId = result.container;
+    await addressRule.afterTurn(result.rawContent);
     if (offersSandbox && turnUsedCodeExecution(result)) {
       await meterCodeExecution((Date.now() - turnStartedAt) / 1000);
     }
@@ -853,9 +874,16 @@ export async function toolUseLoop(options: {
       return finish(result);
     }
 
+    // Where the run is held to addresses it was given, each call's
+    // addresses are put as they were given, and a call with one that was
+    // not given is neither taken as final nor run: its result is the
+    // refusal (address-rule.ts). Empty everywhere else.
+    const heldCalls = await addressRule.hold(result.toolUses, result.rawContent);
+
     // Check for final tool
     if (options.onFinalTool) {
       for (const tu of result.toolUses) {
+        if (heldCalls.has(tu.id)) continue;
         const finalResult = options.onFinalTool(tu.name, tu.input);
         if (finalResult !== null && finalResult !== undefined) {
           return finish(result);
@@ -868,6 +896,7 @@ export async function toolUseLoop(options: {
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
       const output =
+        heldCalls.get(tu.id) ??
         malformedToolArguments(tu.input) ??
         (await options.executeTool(tu.name, tu.input));
       toolResults.push({
@@ -1042,11 +1071,15 @@ export async function longRunToolLoop(options: {
   // Dated once for the whole run, so every turn sends the same prompt, and
   // briefed once, in the first message. The toolset is fixed here, as in
   // toolUseLoop.
+  // Held to given addresses where the run reads material that is not
+  // public, as in toolUseLoop (address-rule.ts).
+  const addressRule = await underAddressRule(withoutUnclearedTools(options.tools), options.executeTool);
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: await withRunBrief(options.initialMessages, model),
-    tools: withoutUnclearedTools(options.tools),
+    initialMessages: await withRunBrief(options.initialMessages, model, addressRule.tools),
+    tools: addressRule.tools,
+    executeTool: addressRule.executeTool,
   };
   const streaming = adapter.completeWithToolsStreaming;
   if (!streaming) {
@@ -1134,6 +1167,7 @@ export async function longRunToolLoop(options: {
     usage.cacheReadTokens += result.usage.cacheReadTokens ?? 0;
     usage.cacheCreationTokens += result.usage.cacheCreationTokens ?? 0;
     if (result.container) containerId = result.container;
+    await addressRule.afterTurn(result.rawContent);
 
     if (trace) {
       recordAgentStep(trace, "assistant", {
@@ -1159,8 +1193,12 @@ export async function longRunToolLoop(options: {
       return finish("end_turn");
     }
 
+    // Held to given addresses before anything is done with the calls, as in toolUseLoop.
+    const heldCalls = await addressRule.hold(result.toolUses, result.rawContent);
+
     if (options.onFinalTool) {
       for (const tu of result.toolUses) {
+        if (heldCalls.has(tu.id)) continue;
         const finalResult = options.onFinalTool(tu.name, tu.input);
         if (finalResult !== null && finalResult !== undefined) {
           await after(result);
@@ -1175,6 +1213,7 @@ export async function longRunToolLoop(options: {
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
       const output =
+        heldCalls.get(tu.id) ??
         malformedToolArguments(tu.input) ??
         (await options.executeTool(tu.name, tu.input));
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: toolResultContent(output) });

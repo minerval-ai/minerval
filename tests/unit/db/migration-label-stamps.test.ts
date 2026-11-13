@@ -60,7 +60,7 @@ describe("a migration that inserts into a labelled table", () => {
   const changed = journal.entries.findIndex((e) => e.tag.endsWith("_label_enforcement"));
 
   it("finds the labelled tables and the migration that changed the default", () => {
-    expect(tables.size).toBe(135);
+    expect(tables.size).toBe(136);
     expect(changed).toBeGreaterThan(100);
   });
 

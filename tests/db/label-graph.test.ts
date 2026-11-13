@@ -154,7 +154,7 @@ import { setSubjectTags } from "../../src/services/tag-service.js";
 import { processNextStewardTask } from "../../src/workers/steward-pipeline.js";
 import { processNextTaggingTask } from "../../src/workers/tagging-pipeline.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
-import { OWL, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, asGiven, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -228,7 +228,7 @@ const fake = new FakeLeanCheckerClient();
  */
 async function writeOneOfEach(): Promise<Record<string, { where: string; params: unknown[] }>> {
   const tag = randomUUID().slice(0, 8);
-  const source = await getOrCreateSource({ url: `https://dbtest.example/graph/${randomUUID()}`, title: "A document" });
+  const source = await getOrCreateSource({ url: await asGiven(`https://dbtest.example/graph/${randomUUID()}`), title: "A document" });
 
   // A node, proposed the way the service route proposes one.
   const { claim } = await proposeClaim({ claim: `The grid is fragile (${tag}).`, createdBy: "service" });
@@ -632,6 +632,7 @@ describe("a row of the graph's content", () => {
 describe("a node minted by a worker", () => {
   async function ingested(label: string | null): Promise<string> {
     const url = `https://dbtest.example/graph/${randomUUID()}`;
+    if (label) await asGiven(url, label);
     const submit = () => submitSource({ url, content: "<p>An essay about the grid.</p>" });
     const { jobId, sourceId } = label ? await inRunAt(label, submit) : await submit();
     const queue = getLocalQueue("urlExtraction");

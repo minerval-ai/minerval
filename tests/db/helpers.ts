@@ -267,3 +267,34 @@ export async function readViewsAs(
   );
   return result.rows.map((row) => Object.fromEntries(result.columns.map((c, i) => [c, row[i]])));
 }
+
+/**
+ * Record `url` as an address the deployment was given from outside, as a
+ * search would have, and return it. Where a run reads material that is not
+ * public, it records a source only at such an address
+ * (src/services/given-addresses.ts), so a test whose stand-in for an agent
+ * writes a source at an address the test made up gives the address first.
+ * With `label` the row is written at that label, from outside any run;
+ * without it, at the label of the work in progress. On a database with one
+ * label the row is written and read by nothing.
+ */
+export async function asGiven(url: string, label?: string): Promise<string> {
+  const { normalizePageUrl, pageUrlHash } = await import("../../src/services/page-url.js");
+  const hash = pageUrlHash(normalizePageUrl(url) ?? url);
+  if (label === undefined) {
+    await rawQuery(
+      `INSERT INTO given_addresses (page_url_hash, url, given_by) VALUES ($1, $2, 'search') ON CONFLICT DO NOTHING`,
+      [hash, url]
+    );
+    return url;
+  }
+  const { withSystemClearance } = await import("../../src/db/clearance.js");
+  await withSystemClearance("A test gives a run an address, as a search would have.", () =>
+    rawQuery(
+      `INSERT INTO given_addresses (page_url_hash, url, given_by, sensitivity_label) VALUES ($1, $2, 'search', $3)
+       ON CONFLICT DO NOTHING`,
+      [hash, url, label]
+    )
+  );
+  return url;
+}

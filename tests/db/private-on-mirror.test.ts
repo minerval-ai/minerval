@@ -26,6 +26,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID, generateKeyPairSync } from "node:crypto";
 import pg from "pg";
 import { rawQuery } from "../../src/db/client.js";
+import { asGiven } from "./helpers.js";
 import { setNoContextSessionForTests, withSystemClearance } from "../../src/db/clearance.js";
 import { ensureEnforcement } from "../../src/db/enforcement.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
@@ -742,7 +743,8 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
       expectRefused("set_instance_order", await tool("set_instance_order", { claim_id: id.parent, instance_ids: [id.instance], reasoning: "The page should lead with it." }));
 
       // What adds a row of the run's own.
-      const recorded = await tool("record_claim_instance", { claim_id: id.parent, url: `https://intranet.example/${tag}/field-notes`, verbatim_text: "Our cores show it.", stance: "affirms" });
+      // The run was given the address it records a source at (given-addresses.ts).
+      const recorded = await tool("record_claim_instance", { claim_id: id.parent, url: await asGiven(`https://intranet.example/${tag}/field-notes`), verbatim_text: "Our cores show it.", stance: "affirms" });
       expectWritten("record_claim_instance", recorded);
       expectWritten("add_argument", await tool("add_argument", { claim_id: id.parent, name: "From our own cores", stance: "for", description: "Our cores show continued accumulation." }));
       expectWritten("add_relationship_edge", await tool("add_relationship_edge", { parent_id: id.parent, child_id: id.survivor, relation: "supports", reasoning: "Marsh soils are one case." }));

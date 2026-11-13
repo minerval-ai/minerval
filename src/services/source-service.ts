@@ -9,6 +9,7 @@ import { enqueueUrlExtraction } from "./queue-service.js";
 import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { holdsMirror } from "./mirrored-node-service.js";
+import { addressForRun } from "./given-addresses.js";
 
 /**
  * Find or create the source row for a URL, without enqueueing extraction.
@@ -22,6 +23,13 @@ export async function getOrCreateSource(input: {
   content?: string;
 }) {
   const db = getDb();
+  // A run that reads material that is not public records a source only at
+  // an address it was given, written as it was given: the row's address is
+  // fetched later by workers that no run watches (given-addresses.ts). The
+  // tool loop has already held the call to this; here it holds any path
+  // that reached this function another way. Everywhere else the address is
+  // the caller's as written.
+  input = { ...input, url: await addressForRun(input.url) };
 
   // One row for the address: where this deployment and the public graph
   // each hold one, the one this label wrote, else the public graph's
@@ -184,7 +192,8 @@ export async function submitSource(
     "url_extraction",
     {
       sourceId: source.id,
-      url: input.url,
+      // The row's address: the caller's own, or as it was given (getOrCreateSource).
+      url: source.url ?? input.url,
       ...(scope?.focus ? { focus: scope.focus } : {}),
     },
     attribution
@@ -193,7 +202,7 @@ export async function submitSource(
   await enqueueUrlExtraction({
     sourceId: source.id,
     jobId: job.id,
-    url: input.url,
+    url: source.url ?? input.url,
     ...(attribution?.meterJobId ? { meterJobId: attribution.meterJobId } : {}),
     ...(scope?.focus ? { focus: scope.focus } : {}),
     ...(scope?.ingestGroup ? { ingestGroup: scope.ingestGroup } : {}),

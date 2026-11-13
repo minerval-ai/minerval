@@ -180,7 +180,9 @@ export function kindFromUrl(url: string | null | undefined): SourceKind | null {
 /** The Internet Archive's closest snapshot of a URL, or null. */
 export async function findArchivedCopy(
   url: string,
-  fetch: (url: string) => Promise<string> = (u) => fetchPublicUrl(u)
+  // The Internet Archive's lookup, asked about a recorded source's address.
+  fetch: (url: string) => Promise<string> = (u) =>
+    fetchPublicUrl(u, { notFromTheRun: "the Internet Archive's lookup, for a recorded source's address" })
 ): Promise<string | null> {
   try {
     const body = await fetch(`https://archive.org/wayback/available?url=${encodeURIComponent(url)}`);
@@ -300,7 +302,10 @@ export async function refreshSourceFacts(
   // wherever it says something. A failed fetch leaves the facts as they are.
   const elsewhere = factsPageUrl(row.url);
   if (elsewhere && (page.authors.length === 0 || !page.published_date || !page.publisher)) {
-    const other = await (deps.fetch ?? ((u: string) => fetchPublicUrl(u)))(elsewhere)
+    const other = await (
+      deps.fetch ??
+      ((u: string) => fetchPublicUrl(u, { notFromTheRun: "the page that states a recorded source's facts" }))
+    )(elsewhere)
       .then(parsePageFacts)
       .catch(() => null);
     if (other) {

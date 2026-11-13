@@ -33,6 +33,7 @@ import { rawQuery } from "../db/client.js";
 import { isUnseenCollision } from "../db/clearance.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
+import { noteGiven } from "./given-addresses.js";
 import { decodeEntities, htmlToText, looksLikeHtml } from "./source-map-service.js";
 import { segmentText } from "./source-segment-service.js";
 import { flagIngest, queueLookoutEvent } from "./lookout-service.js";
@@ -497,8 +498,13 @@ export function parseSitemap(text: string): { index: boolean; urls: string[] } |
 // Discovery and listings — network
 // ---------------------------------------------------------------------------
 
-async function fetchText(url: string): Promise<string> {
-  return fetchPublicUrl(url, { userAgent: USER_AGENT });
+/**
+ * `notFromTheRun` says why the address is not the words of the run in
+ * progress (url-guard.ts). Without it, a run that reads material that is
+ * not public may fetch `url` only if it was given it.
+ */
+async function fetchText(url: string, notFromTheRun?: string): Promise<string> {
+  return fetchPublicUrl(url, { userAgent: USER_AGENT, ...(notFromTheRun ? { notFromTheRun } : {}) });
 }
 
 export type ResolveFeedResult =
@@ -519,7 +525,9 @@ export async function resolveFeed(rawUrl: string): Promise<ResolveFeedResult> {
     if (tried.includes(candidate)) return null;
     tried.push(candidate);
     try {
-      return parseFeed(await fetchText(candidate), candidate);
+      // A feed the fetched page advertises, or a common feed location on
+      // the site of the address that was fetched.
+      return parseFeed(await fetchText(candidate, "a feed location on the site already fetched"), candidate);
     } catch {
       return null;
     }
@@ -597,8 +605,11 @@ export async function readListing(
   });
 
   const feed = parseFeed(body, url);
+  // Where the run is held to addresses it was given (given-addresses.ts),
+  // every link the listing carries is given now, not only this page of them.
   if (feed) {
     const p = page(feed.items.filter((i) => i.url));
+    await noteGiven(feed.items.flatMap((i) => (i.url ? [i.url] : [])), "listing");
     return {
       ok: true, url, kind: "feed", total: p.total, offset: p.offset, next_offset: p.next_offset,
       rows: p.slice.map((i) => ({ url: i.url!, text: i.title, published: i.published?.toISOString() ?? null })),
@@ -607,6 +618,7 @@ export async function readListing(
   const sitemap = parseSitemap(body);
   if (sitemap) {
     const p = page(sitemap.urls);
+    await noteGiven(sitemap.urls, "listing");
     return {
       ok: true, url, kind: sitemap.index ? "sitemap_index" : "sitemap",
       total: p.total, offset: p.offset, next_offset: p.next_offset,
@@ -615,10 +627,12 @@ export async function readListing(
   }
   const links = extractLinks(body, url, 5000);
   const p = page(links);
+  const feeds = looksLikeHtml(body) ? discoverFeedLinks(body, url) : [];
+  await noteGiven([...links.map((l) => l.url), ...feeds], "listing");
   return {
     ok: true, url, kind: "page", total: p.total, offset: p.offset, next_offset: p.next_offset,
     rows: p.slice,
-    feeds: looksLikeHtml(body) ? discoverFeedLinks(body, url) : [],
+    feeds,
   };
 }
 
@@ -982,7 +996,7 @@ async function pollFeedAtLabel(
   let parsed = opts.parsed ?? null;
   if (!parsed) {
     try {
-      parsed = parseFeed(await fetchText(feed.url), feed.url);
+      parsed = parseFeed(await fetchText(feed.url, "a followed feed's recorded address"), feed.url);
       if (!parsed) throw new Error("The URL no longer answers with an RSS or Atom feed");
     } catch (err) {
       const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
@@ -1307,7 +1321,7 @@ export async function readItem(input: {
     from = "page";
     if (!html && item.url) {
       try {
-        html = (await fetchText(item.url)).slice(0, FEED_BOUNDS.bodyChars);
+        html = (await fetchText(item.url, "a feed item's link, as the feed gave it")).slice(0, FEED_BOUNDS.bodyChars);
         await rawQuery(`UPDATE lookout_feed_items SET body = $2, fetched_at = now() WHERE id = $1`, [
           item.id, html,
         ]);

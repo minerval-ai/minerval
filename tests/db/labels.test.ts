@@ -37,7 +37,7 @@ import { defineQuantity, recordEstimate } from "../../src/services/quantity-serv
 import { markQuestion, recordQuestionAssessment } from "../../src/services/question-service.js";
 import { verifyRunLog, type RunLogCheck } from "../../src/services/run-view-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
-import { seedClaim } from "./helpers.js";
+import { asGiven, seedClaim } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -104,7 +104,7 @@ async function writeOneOfEach() {
   await markQuestion(question);
   const standing = await recordQuestionAssessment({ claimId: question, standing: "open", reasoningTrace: "dbtest" });
 
-  const source = await getOrCreateSource({ url: `https://dbtest.example/labels/${randomUUID()}`, title: "A document" });
+  const source = await getOrCreateSource({ url: await asGiven(`https://dbtest.example/labels/${randomUUID()}`), title: "A document" });
 
   return {
     claim,
@@ -193,7 +193,7 @@ describe("the labels table", () => {
         "consistency_sweeps", "contribution_reviews", "contributions", "correspondent_events", "correspondent_plan_items",
         "correspondent_updates", "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
         "examination_findings", "examinations", "feed_contributions", "feed_request_targets", "feed_requests",
-        "file_set_files", "file_set_keeps", "file_sets", "grant_conversations", "grant_sources",
+        "file_set_files", "file_set_keeps", "file_sets", "given_addresses", "grant_conversations", "grant_sources",
         "grants", "inbound_contributions", "ingest_focuses", "jobs", "judgment_inputs",
         "keep_current_exceptions", "keep_current_queue", "lean_checks", "llm_usage", "lookout_events",
         "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
