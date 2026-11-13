@@ -315,11 +315,11 @@ describe("the gate", () => {
     // A person is shown a link for what they can do: showings for whoever reads at a label besides `public` or acts
     // on showings, the release queue for whoever releases, file sets for whoever directs or administers, and the
     // pages about the public graph for whoever directs or releases, since sending an agent's report on takes release.
-    expect(links(["read"], ["public", "finance"])).toBe("Showings");
-    expect(links(["release"])).toBe("ShowingsRelease queueThe public graph");
-    expect(links(["read", "direct"])).toBe("ShowingsFile setsAdd a sourceThe public graph");
-    expect(links(["administer"])).toBe("File setsAdministration");
-    expect(links(["direct", "fund", "administer"])).toBe("ShowingsFile setsAdd a sourceThe public graphAdministration");
+    expect(links(["read"], ["public", "finance"])).toBe("ShowingsGates");
+    expect(links(["release"])).toBe("ShowingsGatesAt the gateThe public graph");
+    expect(links(["read", "direct"])).toBe("ShowingsGatesFile setsAdd a sourceThe public graph");
+    expect(links(["administer"])).toBe("GatesFile setsAdministration");
+    expect(links(["direct", "fund", "administer"])).toBe("ShowingsGatesFile setsAdd a sourceThe public graphAdministration");
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

@@ -26,6 +26,8 @@ export function MembersBand({ mine }: { mine: MyPermissions }) {
   return (
     <nav className="members-band" aria-label="This deployment">
       {showings && <Link href="/showings">Showings</Link>}
+      {/* How much waits at each gate is for every member it concerns; its settings are an administrator's and a release holder's. */}
+      {(showings || administer) && <Link href="/gates">Gates</Link>}
       {release && <Link href="/gate">At the gate</Link>}
       {(direct || administer) && <Link href="/file-sets">File sets</Link>}
       {direct && <Link href="/sources/new">Add a source</Link>}
