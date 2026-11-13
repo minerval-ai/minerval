@@ -71,14 +71,22 @@ const ownerQuery: OwnerQuery = async <T>(text: string, params: unknown[] = []) =
 // The database allows about a hundred connections in all, so what these
 // pools may hold together is bounded the way the one pool always was: at
 // most SESSION_CONNECTIONS are in use across all of them at once (a query
-// past that waits, as it waited for the one pool), and a connection idle
-// for ten seconds is closed, so a label nothing is running at holds none.
-// When more than MAX_SESSION_POOLS sessions are open, the one unused
-// longest is closed, once it has been quiet for ten seconds. A process
-// therefore uses at most 20 connections here besides the owner pool's 20,
-// plus what is idling out; a deployment has a handful of labels, each one
-// session for its runs, and as many again for the distinct clearances of
-// the people reading.
+// past that waits, as it waited for the one pool), and at most that many
+// are open across all of them, idle ones included. The second bound is
+// kept by makeRoom: before a pool with no idle connection opens another,
+// idle connections of the other pools are closed, longest unused first,
+// until there is room. Without it each session kept its own idle
+// connections for ten seconds, and work that moved through several
+// sessions in that time (a pass at each of three labels, a few readers
+// with different clearances) held some sixty connections while using a
+// handful. A connection idle for ten seconds is closed anyway, so a label
+// nothing is running at holds none. When more than MAX_SESSION_POOLS
+// sessions are open, the one unused longest is closed, once it has been
+// quiet for ten seconds. A process therefore uses at most 20 connections
+// here besides the owner pool's 20, and for a moment one or two more while
+// a closed one is on its way out; a deployment has a handful of labels,
+// each one session for its runs, and as many again for the distinct
+// clearances of the people reading.
 
 const SESSION_CONNECTIONS = 20;
 const SESSION_POOL_IDLE_MS = 10_000;
@@ -118,6 +126,45 @@ function returnSessionConnection(): void {
 }
 
 const sessionPools = new Map<string, { pool: pg.Pool; usedAt: number }>();
+
+/** The connections the session pools hold open between them, idle ones included. */
+export function openSessionConnections(): number {
+  let open = 0;
+  for (const kept of sessionPools.values()) open += kept.pool.totalCount;
+  return open;
+}
+
+/**
+ * Before `target` is asked for a connection it would have to open: close
+ * idle connections of the other session pools, the pool unused longest
+ * first, until the pools together hold fewer than SESSION_CONNECTIONS. A
+ * pool hands an idle connection to whoever asks next before it opens one,
+ * so asking for one and releasing it as broken closes it. If other work
+ * took the idle connection first, the pool opens one for this request and
+ * it is closed at once, which costs a connection's setup and leaves the
+ * count where it was. Nothing in use is touched: when every open
+ * connection is in use there are at most SESSION_CONNECTIONS of them.
+ */
+async function makeRoom(target: pg.Pool): Promise<void> {
+  if (target.idleCount > 0) return;
+  let open = openSessionConnections();
+  if (open < SESSION_CONNECTIONS) return;
+  const others = [...sessionPools.values()].filter((kept) => kept.pool !== target).sort((a, b) => a.usedAt - b.usedAt);
+  const closing: Array<Promise<void>> = [];
+  for (const kept of others) {
+    const spare = kept.pool.idleCount - kept.pool.waitingCount;
+    for (let taken = 0; taken < spare && open >= SESSION_CONNECTIONS; taken++, open--) {
+      closing.push(
+        kept.pool.connect().then(
+          (client) => client.release(true),
+          () => undefined
+        )
+      );
+    }
+    if (open < SESSION_CONNECTIONS) break;
+  }
+  await Promise.all(closing);
+}
 
 /** The connection string of a session: the owner's, with the session's role and settings. */
 function sessionConnectionString(session: Session): string {
@@ -356,6 +403,7 @@ async function onSessionPool<R>(work: (pool: pg.Pool, session: Session) => Promi
   if (counted) await takeSessionConnection();
   let held = false;
   try {
+    if (counted) await makeRoom(pool);
     let result: R;
     try {
       result = await work(pool, session);

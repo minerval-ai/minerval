@@ -835,7 +835,22 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(shown.verification).toEqual({ ok: true, problems: [], checked: 5, held: 0 });
       expect(shown.parts[0]).toMatchObject({ kind: "wording" });
       expect(shown.parts[3].text).toBe("The log also gives [redacted: security detail].");
-      expect(JSON.stringify(shown)).not.toContain("9931");
+      // Nothing of the removed passage is served, in any field. The page
+      // also carries a salt and a fingerprint for each part, which are
+      // random hex and now and then contain "9931" by chance, so the code
+      // is looked for in the words served and not in those: every string
+      // that is not hex alone or an id.
+      const words: string[] = [];
+      const collect = (node: unknown): void => {
+        if (typeof node === "string") {
+          if (!/^[0-9a-f]{16,}$/i.test(node) && !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(node)) words.push(node);
+        } else if (Array.isArray(node)) node.forEach(collect);
+        else if (node && typeof node === "object") Object.values(node).forEach(collect);
+      };
+      collect(shown);
+      expect(words.length).toBeGreaterThan(5);
+      expect(words.filter((w) => w.includes("9931"))).toEqual([]);
+      expect(JSON.stringify(shown)).not.toContain("vault code");
       const after = (await as(reader, { url: `/showings/${showingId}` })).json();
       expect(after.acts.filter((a: { what: string }) => a.what === "released").every((a: { by: string; holding: string[] }) => a.by === "releases-for-the-organization" && a.holding.length === 1)).toBe(true);
 
