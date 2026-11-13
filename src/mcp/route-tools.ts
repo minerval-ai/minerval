@@ -139,6 +139,8 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /mandates": { name: "list_mandates" },
   "GET /mandates/:id": { name: "get_mandate" },
   "GET /mandates/:id/allocation": { name: "get_mandate_allocation" },
+  "GET /mandates/:id/work": { name: "get_mandate_work" },
+  "GET /mandates/:id/updates": { name: "list_mandate_updates" },
   "POST /mandates/:id/contribute": { name: "fund_mandate", note: ESCROWS_OWLS },
   "POST /mandates/:id/withdraw": {
     name: "withdraw_from_mandate",

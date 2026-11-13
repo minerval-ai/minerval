@@ -302,9 +302,53 @@ export interface MandateDetail extends MandateSummary {
   correspondents: CorrespondentPublic[];
   /** The domain skills the mandate's Grantmaker carries (skill names). */
   skills: string[];
+  /**
+   * Every kind of work the mandate has paid for, counted whole
+   * (mandate-work-service.ts); null when the count could not be read.
+   * `funded_assessments` above is the older list, of claims only and cut at
+   * a hundred; GET /mandates/:id/work lists each kind a page at a time.
+   */
+  work_counts: import("./mandate-work-service.js").MandateWorkCounts | null;
+  /** The findings its agents noted, most important first, at most five. */
+  findings: Array<{ id: string; headline: string; importance: number; first_noted_at: string | null }>;
+  /** Whether its Grantmaker is at work or waiting, and on what. */
+  grantmaker: import("./mandate-work-service.js").GrantmakerStanding | null;
+  /** How many of its Grantmaker's updates are kept (GET /mandates/:id/updates). */
+  updates_total: number;
+  /** Set only for the manager: what its Grantmaker has asked of them, newest first. */
+  funder_notes?: Array<{ at: string; note: string }>;
   /** Set only for the manager: the conversation to keep talking in. */
   conversation_id?: string;
   is_manager?: boolean;
+}
+
+/**
+ * A mandate a viewer may read, as the reads beside its page need it: its id
+ * and the budget job its work is stamped with. The rule is getPublicMandate's:
+ * public once live, and its funder's in every state before that. Null when
+ * there is no such mandate for this viewer.
+ */
+export async function readableMandateRef(
+  grantId: string,
+  viewerUserId?: string | null
+): Promise<{ id: string; budgetJobId: string } | null> {
+  const [row] = await rawQuery<{
+    id: string;
+    budget_job_id: string;
+    status: string;
+    funder_user_id: string;
+    origin: string | null;
+  }>(
+    `SELECT id, budget_job_id, status, funder_user_id, mandate->>'origin' AS origin
+       FROM grants WHERE id = $1`,
+    [grantId]
+  );
+  if (!row) return null;
+  const live =
+    ["active", "completed", "cancelled"].includes(row.status) ||
+    (row.status === "planning" && row.origin === "deep_decomposition");
+  const isManager = !!viewerUserId && viewerUserId === row.funder_user_id;
+  return live || isManager ? { id: row.id, budgetJobId: row.budget_job_id } : null;
 }
 
 export async function getPublicMandate(
@@ -321,7 +365,11 @@ export async function getPublicMandate(
   // while its plan is drafted too.
   const live = ["active", "completed", "cancelled"].includes(row.status) ||
     (row.status === "planning" && row.mandate?.origin === "deep_decomposition");
-  if (!live) return null;
+  // Its funder reads it in every state: a mandate being planned, or one whose
+  // plan waits for their approval, is theirs to see, and its page is where
+  // they approve it. To everyone else it does not exist yet.
+  const isManager = !!viewerUserId && viewerUserId === row.funder_user_id;
+  if (!live && !isManager) return null;
 
   const summary = await summarize(row);
   const contributions = await getJobContributions(row.budget_job_id);
@@ -355,7 +403,6 @@ export async function getPublicMandate(
   const lookouts = await summarizeLookouts(row.id).catch(() => []);
   const correspondents = (await listCorrespondents(row.id).catch(() => [])).map(correspondentPublic);
 
-  const isManager = !!viewerUserId && viewerUserId === row.funder_user_id;
   let conversationId: string | undefined;
   if (isManager) {
     const [convo] = await rawQuery<{ id: string }>(
@@ -365,6 +412,21 @@ export async function getPublicMandate(
     );
     conversationId = convo?.id;
   }
+
+  // What it has done, kind by kind, counted whole; the findings its agents
+  // noted; where its Grantmaker stands; how many of its updates are kept.
+  // None of these may hide the page.
+  const work = await import("./mandate-work-service.js");
+  const ref = { id: row.id, budgetJobId: row.budget_job_id };
+  const [workCounts, findings, grantmaker, updates] = await Promise.all([
+    work.mandateWorkCounts(ref).catch(() => null),
+    work.mandateFindings(ref).catch(() => []),
+    work.grantmakerStanding(row.id).catch(() => null),
+    work.listMandateUpdates(row.id, { limit: 1 }).catch(() => ({ total: 0, updates: [] })),
+  ]);
+  const funderNotes = isManager
+    ? ((row.mandate as { funder_notes?: Array<{ at: string; note: string }> } | null)?.funder_notes ?? [])
+    : [];
 
   const { regrantEdges } = await import("./regrant-service.js");
   const edges = await regrantEdges(row.id);
@@ -408,6 +470,11 @@ export async function getPublicMandate(
     lookouts,
     correspondents,
     skills: Array.isArray(row.skills) ? row.skills : [],
+    work_counts: workCounts,
+    findings,
+    grantmaker,
+    updates_total: updates.total,
+    ...(isManager ? { funder_notes: funderNotes.slice(-5).reverse() } : {}),
     ...(isManager
       ? { is_manager: true, ...(conversationId ? { conversation_id: conversationId } : {}) }
       : {}),

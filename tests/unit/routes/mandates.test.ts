@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   getPublicMandate: vi.fn(),
   listMandateAttempts: vi.fn(),
   mandatePrizesBlock: vi.fn(),
+  readableMandateRef: vi.fn(),
+  listMandateWork: vi.fn(),
+  listMandateUpdates: vi.fn(),
 }));
 
 vi.mock("../../../src/services/mandate-service.js", () => ({
@@ -18,6 +21,13 @@ vi.mock("../../../src/services/mandate-service.js", () => ({
   getMandateAllocationView: vi.fn(),
   contributeToMandate: vi.fn(),
   listMandateAttempts: mocks.listMandateAttempts,
+  readableMandateRef: mocks.readableMandateRef,
+}));
+vi.mock("../../../src/services/mandate-work-service.js", () => ({
+  MANDATE_WORK_KINDS: ["assessments", "sources", "requests", "research", "proposals"],
+  JUDGED_NODE_KINDS: ["claim", "question", "quantity"],
+  listMandateWork: mocks.listMandateWork,
+  listMandateUpdates: mocks.listMandateUpdates,
 }));
 vi.mock("../../../src/services/bounty-service.js", () => ({
   mandatePrizesBlock: mocks.mandatePrizesBlock,
@@ -58,6 +68,9 @@ beforeEach(() => {
   mocks.getPublicMandate.mockReset();
   mocks.listMandateAttempts.mockReset();
   mocks.mandatePrizesBlock.mockReset();
+  mocks.readableMandateRef.mockReset();
+  mocks.listMandateWork.mockReset();
+  mocks.listMandateUpdates.mockReset();
 });
 
 describe("GET /mandates/:id", () => {
@@ -92,5 +105,65 @@ describe("GET /mandates/:id", () => {
     expect(res.statusCode).toBe(404);
     expect(mocks.listMandateAttempts).not.toHaveBeenCalled();
     expect(mocks.mandatePrizesBlock).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /mandates/:id/work", () => {
+  const ref = { id: MANDATE_ID, budgetJobId: "job-1" };
+
+  it("serves one page of one kind, with what the query asked for", async () => {
+    mocks.readableMandateRef.mockResolvedValueOnce(ref);
+    mocks.listMandateWork.mockResolvedValueOnce({ kind: "assessments", total: 240, items: [{ claim_id: "c-1" }] });
+    const app = await buildApp();
+    const res = await app.inject({
+      method: "GET",
+      url: `/mandates/${MANDATE_ID}/work?kind=assessments&node=question&order=importance&offset=100&limit=100`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ kind: "assessments", total: 240 });
+    expect(mocks.listMandateWork).toHaveBeenCalledWith(ref, {
+      kind: "assessments",
+      node: "question",
+      order: "importance",
+      offset: 100,
+      limit: 100,
+    });
+  });
+
+  it("refuses a kind it does not list and a page over a hundred", async () => {
+    const app = await buildApp();
+    expect((await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}/work?kind=everything` })).statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}/work` })).statusCode).toBe(400);
+    expect(
+      (await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}/work?kind=sources&limit=500` })).statusCode
+    ).toBe(400);
+    expect(mocks.listMandateWork).not.toHaveBeenCalled();
+  });
+
+  it("404s a mandate the viewer may not read, without listing anything", async () => {
+    mocks.readableMandateRef.mockResolvedValueOnce(null);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}/work?kind=sources` });
+    expect(res.statusCode).toBe(404);
+    expect(mocks.listMandateWork).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /mandates/:id/updates", () => {
+  it("serves the kept notes a page at a time", async () => {
+    mocks.readableMandateRef.mockResolvedValueOnce({ id: MANDATE_ID, budgetJobId: "job-1" });
+    mocks.listMandateUpdates.mockResolvedValueOnce({ total: 12, updates: [{ at: "2026-11-01T00:00:00.000Z", note: "n" }] });
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}/updates?offset=10` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().total).toBe(12);
+    expect(mocks.listMandateUpdates).toHaveBeenCalledWith(MANDATE_ID, { offset: 10, limit: 10 });
+  });
+
+  it("404s a mandate the viewer may not read", async () => {
+    mocks.readableMandateRef.mockResolvedValueOnce(null);
+    const app = await buildApp();
+    expect((await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}/updates` })).statusCode).toBe(404);
+    expect(mocks.listMandateUpdates).not.toHaveBeenCalled();
   });
 });

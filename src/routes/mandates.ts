@@ -7,6 +7,11 @@
  *     sections scale with the mandate's action mix (ingestion pipelines
  *     included). A signed-in manager also receives the conversation id for
  *     talking to the Grantmaker.
+ *   GET  /mandates/:id/work       — one kind of its completed work, a page
+ *     at a time: assessments (of claims, questions and quantities),
+ *     sources, requests, research, proposals.
+ *   GET  /mandates/:id/updates    — its Grantmaker's kept updates, newest
+ *     first.
  *   GET  /mandates/:id/lookouts/:lookoutId — one standing watch's record:
  *     its brief, its workspace, its flags and what became of each.
  *   POST /mandates/:id/contribute — put your owls behind someone's mandate.
@@ -20,10 +25,19 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
   listPublicMandates,
   getPublicMandate,
+  readableMandateRef,
   getMandateAllocationView,
   contributeToMandate,
   listMandateAttempts,
 } from "../services/mandate-service.js";
+import {
+  JUDGED_NODE_KINDS,
+  MANDATE_WORK_KINDS,
+  listMandateUpdates,
+  listMandateWork,
+  type JudgedNodeKind,
+  type MandateWorkKind,
+} from "../services/mandate-work-service.js";
 import { mandatePrizesBlock } from "../services/bounty-service.js";
 import { getLookout, listLookoutFlags, lookoutPrecision } from "../services/lookout-service.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
@@ -96,6 +110,104 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({ mandate: { ...mandate, prizes, attempts } });
     },
   });
+
+  app.get<{
+    Params: { id: string };
+    Querystring: { kind: MandateWorkKind; node?: JudgedNodeKind; order?: "recent" | "importance"; offset?: number; limit?: number };
+  }>("/:id/work", {
+    schema: {
+      tags: ["mandates"],
+      summary: "One kind of the work a mandate has completed, a page at a time",
+      description:
+        "`kind` is assessments, sources, requests, research or proposals; " +
+        "`total` is how many there are of it in all. An assessment row is a " +
+        "node the mandate has had judged (a claim, a question or a " +
+        "quantity), with its latest judgment under this mandate and how " +
+        "many passes the mandate paid for on it; `node` narrows to one kind " +
+        "of node and `order` is recent (the default) or importance (the " +
+        "node's). The counts of every kind are on get_mandate, as " +
+        "`work_counts`.",
+      params: {
+        type: "object",
+        properties: { id: { type: "string", format: "uuid" } },
+      },
+      querystring: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: [...MANDATE_WORK_KINDS] },
+          node: {
+            type: "string",
+            enum: [...JUDGED_NODE_KINDS],
+            description: "For assessments: only nodes of this kind.",
+          },
+          order: {
+            type: "string",
+            enum: ["recent", "importance"],
+            default: "recent",
+            description: "For assessments: newest judgment first, or the node's importance.",
+          },
+          offset: { type: "integer", minimum: 0, default: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 100, default: 25 },
+        },
+        required: ["kind"],
+      },
+    },
+    preHandler: [optionalAuth],
+    handler: async (request, reply) => {
+      // The same visibility as the mandate itself: public once live, and its
+      // funder's before that.
+      const mandate = await readableMandateRef(request.params.id, request.auth?.userId ?? null);
+      if (!mandate) {
+        return reply.code(404).send({ error: "Mandate not found", code: "NOT_FOUND" });
+      }
+      const page = await listMandateWork(mandate, {
+        kind: request.query.kind,
+        node: request.query.node,
+        order: request.query.order,
+        offset: request.query.offset,
+        limit: request.query.limit,
+      });
+      return reply.send(page);
+    },
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { offset?: number; limit?: number } }>(
+    "/:id/updates",
+    {
+      schema: {
+        tags: ["mandates"],
+        summary: "A mandate's Grantmaker's updates, newest first",
+        description:
+          "The notes its Grantmaker leaves on the mandate's public record at " +
+          "the end of each sitting. The mandate keeps its latest hundred; a " +
+          "mandate whose notes predate the kept list has its latest alone.",
+        params: {
+          type: "object",
+          properties: { id: { type: "string", format: "uuid" } },
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            offset: { type: "integer", minimum: 0, default: 0 },
+            limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+          },
+        },
+      },
+      preHandler: [optionalAuth],
+      handler: async (request, reply) => {
+        const mandate = await readableMandateRef(request.params.id, request.auth?.userId ?? null);
+        if (!mandate) {
+          return reply.code(404).send({ error: "Mandate not found", code: "NOT_FOUND" });
+        }
+        return reply.send(
+          await listMandateUpdates(mandate.id, {
+            offset: request.query.offset,
+            limit: request.query.limit,
+          })
+        );
+      },
+    }
+  );
 
   app.get<{
     Params: { id: string };
