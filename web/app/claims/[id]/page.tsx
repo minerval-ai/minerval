@@ -1,3 +1,4 @@
+import { OnThePublicGraph } from "@/components/outside/OnThePublicGraph";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -89,6 +90,8 @@ export default async function ClaimPage({
     <>
       {mergedFrom && <MergedFromNote from={mergedFrom} />}
       <ClaimMargins detail={detail} source={source} features={await loadFeatures()} publishedPages={publishedPages} published={published} />
+      {/* In a private deployment, for a node the mirror holds: paying for its public assessment (docs/outward-acts.md). */}
+      {source === "live" && !published && <OnThePublicGraph nodeId={detail.claim.id} />}
     </>
   );
 }

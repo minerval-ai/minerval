@@ -87,6 +87,9 @@ export interface PublicRequest {
 }
 
 export interface PublicRequests {
+  /** With a node named: whether it is the public graph's own, and what funding it there shows. */
+  node_is_on_the_public_graph?: boolean;
+  what_funding_it_there_shows?: string;
   requests: PublicRequest[];
   as_of: string;
   adopting: string;

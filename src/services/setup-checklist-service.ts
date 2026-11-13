@@ -119,6 +119,19 @@ export interface SetupChecklist {
     /** Why the latest attempt to send failed, when the oldest unsent report has one. */
     last_error: string | null;
   };
+  /**
+   * Keeping the public versions of nodes current (outward-acts-service.ts):
+   * the setting, whether anything is behind it, and what the public graph
+   * said when it last did not take a request. The setting starts on and
+   * sends nothing until a person has named a public mandate, which is said
+   * here so that an administrator sees it.
+   */
+  public_graph: {
+    /** Whether the deployment has an address and a key for the public graph. */
+    account_set: boolean;
+    keep_public_current: { setting: "on" | "off"; sends: boolean; in_words: string };
+    last_not_taken: string | null;
+  };
   connections: {
     total: number;
     /** Switched on. */
@@ -350,6 +363,7 @@ export async function setupChecklist(): Promise<SetupChecklist> {
       // oldest unsent report is the one that carries why.
       last_error: unsent.length > 0 ? unsent[unsent.length - 1]!.last_error : null,
     },
+    public_graph: await publicGraphState(config),
     connections: {
       total: connections.length,
       on: on.length,
@@ -364,5 +378,21 @@ export async function setupChecklist(): Promise<SetupChecklist> {
       not_shown: await connectionsNotShown(connections.length),
     },
     material: await materialCounts(parties),
+  };
+}
+
+/** Where keeping public versions current stands, for the checklist. */
+async function publicGraphState(config: { publicGraphApiUrl?: string; publicGraphApiKey?: string }): Promise<SetupChecklist["public_graph"]> {
+  const { keepCurrentState } = await import("./outward-acts-service.js");
+  const state = await keepCurrentState();
+  const [last] = await rawQuery<{ said: string | null }>(
+    `SELECT a.public_graph_said AS said FROM outward_acts a
+      WHERE a.kind = 'keep_current'
+        AND a.at = (SELECT max(at) FROM outward_acts WHERE kind = 'keep_current') AND a.result <> 'done'`
+  );
+  return {
+    account_set: Boolean(config.publicGraphApiUrl && config.publicGraphApiKey),
+    keep_public_current: { setting: state.setting, sends: state.sends, in_words: state.in_words },
+    last_not_taken: last ? (last.said ?? "The public graph could not be reached.") : null,
   };
 }

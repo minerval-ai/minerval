@@ -405,7 +405,10 @@ export async function publicRequests(opts: { nodeId?: string; limit?: number } =
        FROM adopted_requests a JOIN requests r ON r.id = a.request_id WHERE a.public_request_id = ANY($1::uuid[])`,
     [ids]
   );
+  const [node] = opts.nodeId ? await rawQuery<{ origin: string }>(`SELECT origin FROM claims WHERE id = $1`, [opts.nodeId]) : [];
   return {
+    // With node_id: whether the node is the public graph's own, which is what can be funded there.
+    ...(opts.nodeId ? { node_is_on_the_public_graph: node?.origin === "mirror", what_funding_it_there_shows: FUND_NODE_TOLD } : {}),
     requests: rows.map((r) => {
       const mine = adopted.filter((a) => a.public_request_id === r.id);
       return {

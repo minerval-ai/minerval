@@ -52,6 +52,15 @@ function dayOne(): SetupChecklist {
       unsent: 0,
       last_error: null,
     },
+    public_graph: {
+      account_set: false,
+      keep_public_current: {
+        setting: "on",
+        sends: false,
+        in_words: "On, and nothing is sent: this deployment has no account on the public graph to act as (PUBLIC_GRAPH_API_URL, PUBLIC_GRAPH_API_KEY).",
+      },
+      last_not_taken: null,
+    },
     connections: { total: 0, on: 0, offering_tools: 0, failing: [], tools_withdrawn: [], credential_missing: [], not_shown: 0 },
     material: { sources: 0, sources_with_no_party: 0, sources_by_party: [], sources_waiting_for_review: 0, nodes: 0 },
   };
@@ -87,6 +96,11 @@ function setUp(): SetupChecklist {
     })),
     owls: { created_here: true, created_total_owls: 560, spent_total_owls: 16.45, unpriced_models: [] },
     usage_report: { ...c.usage_report, destination: "file", destination_ready: true, prepared: 3, unsent: 0 },
+    public_graph: {
+      account_set: true,
+      keep_public_current: { setting: "on", sends: true, in_words: "On. When a version of a public node changes here, the public mandate named is asked for a fresh public assessment of the node." },
+      last_not_taken: null,
+    },
     connections: { total: 1, on: 1, offering_tools: 1, failing: [], tools_withdrawn: [], credential_missing: [], not_shown: 0 },
     material: {
       sources: 2,
@@ -111,6 +125,7 @@ describe("the setup checklist", () => {
       "standing_mandates",
       "owls",
       "usage_report",
+      "public_graph",
       "connections",
       "material",
     ]);
@@ -122,6 +137,8 @@ describe("the setup checklist", () => {
       standing_mandates: "to_do",
       owls: "to_do",
       usage_report: "to_do",
+      // On from the start, with nothing behind it: nothing is sent and nothing has to be, and the checklist says so.
+      public_graph: "optional",
       // Nothing is connected, and nothing has to be.
       connections: "optional",
       material: "to_do",

@@ -312,9 +312,12 @@ describe("the gate", () => {
     };
     // A member who can neither direct nor administer is shown no line at all.
     expect(links(["read"])).toBeNull();
-    expect(links(["read", "direct"])).toBe("Add a source");
+    // The pages about the public graph are linked for those who can act there: whoever directs, and whoever
+    // releases, since sending an agent's report on takes release.
+    expect(links(["read", "direct"])).toBe("Add a sourceThe public graph");
+    expect(links(["read", "release"])).toBe("The public graph");
     expect(links(["administer"])).toBe("Administration");
-    expect(links(["direct", "fund", "administer"])).toBe("Add a sourceAdministration");
+    expect(links(["direct", "fund", "administer"])).toBe("Add a sourceThe public graphAdministration");
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

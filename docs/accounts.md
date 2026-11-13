@@ -155,8 +155,8 @@ code decides who should hold which.
 
 | permission | held | lets its holder | never lets anyone |
 |---|---|---|---|
-| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, among them sets of files they upload, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)) | edit an assessment or a run's log |
-| `release` | for one party | release or hold, part by part, what a page shown to readers who do not read its label carries of that party's material, set standing rules for it ([showing-a-page.md](showing-a-page.md)), and release the words a node is proposed to the public graph in | edit what the agents wrote, or release another party's material |
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, among them sets of files they upload, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)), adopt a public request, and, unless the deployment names another permission for it (`PUBLIC_ACTS_BY`), act on the public graph in the organization's name ([outward-acts.md](outward-acts.md)) | edit an assessment or a run's log |
+| `release` | for one party | release or hold, part by part, what a page shown to readers who do not read its label carries of that party's material, set standing rules for it ([showing-a-page.md](showing-a-page.md)), release the words a node is proposed to the public graph in, and, for the organization's own material, send an agent's report as redacted to Minerval's maintainers ([outward-acts.md](outward-acts.md)) | edit what the agents wrote, or release another party's material |
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
@@ -487,6 +487,7 @@ says so where an administrator's list leaves rows out.
 | `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection at a label the administrator reads, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls the administrator reads with which were kept. A connection's label is shown and not offered for change |
 | `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup, one for each label the reader reads where there is more than one |
 | `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
+| `/admin/outside` and the four pages under it | every member; controls by permission | docs/outward-acts.md: the organization's account on the public graph with its public owls and public mandates, and the log of every act there; public requests adopted and taken up; the setting that keeps public versions current, with what it shows outside; what readers said back about published pages; and the agents' reports, with sending one on to Minerval's maintainers |
 | `/sources/new` | `direct` | Add a document or an address (`POST /sources`), at a label the person chooses where there is more than one |
 
 Not among them yet, and needed by what the deployment now does: a page for
@@ -880,7 +881,9 @@ card; `POST /assistant/conversations/:id/held/:action_id` with
 `decision: "run"` performs the same call as the user, and `"decline"`
 records the refusal. The Assistant is told the outcome in its next reply.
 The user may allow kinds of action (`propose`, `submit`, `assess`, `fund`,
-`cancel`) to run without a card, for one conversation or for the account
+`cancel`, and in a private deployment `send_outside`, which covers every
+act on the public graph in the organization's name: docs/outward-acts.md)
+to run without a card, for one conversation or for the account
 (`PUT /assistant/allowance`); an allowed call runs at once and leaves the
 same row as a receipt. Releasing an action and changing the allowance need
 the signed-in session and are not MCP tools, so nothing the Assistant holds

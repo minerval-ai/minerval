@@ -453,6 +453,33 @@ function owlsItem(c: SetupChecklist): ChecklistItem {
   return { ...base, state: "done", facts };
 }
 
+function publicGraphItem(c: SetupChecklist): ChecklistItem | null {
+  const p = c.public_graph;
+  if (!p) return null;
+  const base = { key: "public_graph", title: "Keeping public versions current", href: "/admin/outside/keep-current", link: "Keeping public versions current" };
+  const facts = [p.keep_public_current.in_words.replace(/\borganization/g, "organisation")];
+  if (p.last_not_taken) {
+    return {
+      ...base,
+      state: "attention",
+      facts: [...facts, `The public graph did not take the last request, and said: ${p.last_not_taken}`],
+      next: "A person who directs the graph checks the public mandate named there: that the organisation still has money in it and that it is still open.",
+    };
+  }
+  if (p.keep_public_current.setting === "on" && !p.keep_public_current.sends) {
+    return {
+      ...base,
+      // Nothing is sent, and nothing has to be: it is said so that it is seen.
+      state: "optional",
+      facts,
+      next: p.account_set
+        ? "A person who directs the graph can open a public mandate for the purpose and name it there, or turn the setting off."
+        : `${CONFIG_OWNER} can give the deployment the organisation's account on the public graph (PUBLIC_GRAPH_API_URL, PUBLIC_GRAPH_API_KEY), or a person who directs the graph can turn the setting off.`,
+    };
+  }
+  return { ...base, state: "done", facts };
+}
+
 function usageItem(c: SetupChecklist): ChecklistItem {
   const u = c.usage_report;
   const base = { key: "usage_report", title: "The usage report", href: "/admin/usage-report", link: "The usage report" };
@@ -591,6 +618,7 @@ export function checklistItems(c: SetupChecklist): ChecklistItem[] {
     mandatesItem(c),
     owlsItem(c),
     usageItem(c),
+    ...[publicGraphItem(c)].filter((i): i is ChecklistItem => i !== null),
     connectionsItem(c),
     materialItem(c),
   ];
