@@ -199,7 +199,9 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
 
       {/* stated views (§4): what a person or an organisation has told the
           graph it holds, beside the assessment and never inside it. */}
-      {!fixture && <StatedViews claimId={claim.id} kind="question" views={detail.stated_views ?? []} />}
+      {!fixture && (detail.stated_views ?? []).length > 0 && (
+        <StatedViews claimId={claim.id} kind="question" views={detail.stated_views ?? []} />
+      )}
 
       {q.answers.length > 0 && <Answers q={q} />}
 
@@ -257,9 +259,15 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
         </section>
       )}
 
-      <CiteClaim claimId={claim.id} />
-      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      <div className="page-exits">
+        <CiteClaim claimId={claim.id} />
+        <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      </div>
       <Contribute claimId={claim.id} />
+      {/* with none stated, only the invitation, at the foot */}
+      {!fixture && (detail.stated_views ?? []).length === 0 && (
+        <StatedViews claimId={claim.id} kind="question" views={[]} />
+      )}
 
       <hr className="thin" />
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
@@ -284,6 +292,11 @@ export function QuestionRail({ detail }: { detail: ClaimDetail }) {
     ["instances", "sources", q.instances.length],
   ];
   const standing = isStanding(q.standing) ? QUESTION_STANDING[q.standing] : null;
+  const listed = items.filter(([, , n]) => n > 0);
+  // An unassessed question with nothing under it has nothing to jump to, and
+  // its standing already heads the reading column: the rail would only say
+  // "unassessed" a third time.
+  if (!standing && listed.length === 0) return null;
   return (
     <aside className={styles.rail} aria-label="Question">
       <span className="sc">Question</span>
@@ -291,7 +304,7 @@ export function QuestionRail({ detail }: { detail: ClaimDetail }) {
         {standing ? <><span aria-hidden>{standing.glyph}</span> {standing.label.toLowerCase()}</> : "unassessed"}
       </p>
       <ul className={styles.railList}>
-        {items.filter(([, , n]) => n > 0).map(([id, label, n]) => (
+        {listed.map(([id, label, n]) => (
           <li key={id}>
             <a href={`#${id}`}><span className={styles.railN}>{n}</span> {label}</a>
           </li>

@@ -22,7 +22,6 @@ import {
 import { CONSISTENCY_SWEEP_MIN_NODES, consistencySweepPrice } from "../../services/action-service.js";
 import { getEffectiveAllocationPolicy } from "../../services/allocation-policy-service.js";
 import { reviewCostEstimateMicroUsd } from "../../services/contribution-service.js";
-import { capMicroUsd } from "../../services/owl.js";
 import { modelForTier, RESEARCH_MODEL_TIERS } from "../../services/research-run-service.js";
 import { elicitConfigured } from "./elicit-tools.js";
 import { providerClearedHere } from "../provider-clearance.js";
@@ -69,7 +68,7 @@ async function ledgerPriorMicroUsd(kind: string, variant: string): Promise<numbe
       return variant === "strong" ? tiers.strongMicroUsd : tiers.standardMicroUsd;
     }
     case "ingest":
-      return capMicroUsd("source_ingest");
+      return estimateLedgerKindCostMicroUsd("ingest");
     case "formalize":
       return Math.round(policy.est_formalize_cost_owls * owl);
     case "attempt_proof":

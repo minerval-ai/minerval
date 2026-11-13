@@ -253,7 +253,7 @@ const configSchema = z.object({
   // paidAssessmentBudgetOwls below, and the platform absorbs the gap.
   capClaimProposalOwls: z.coerce.number().default(2),
   capAssessmentOwls: z.coerce.number().default(2),
-  capSourceIngestOwls: z.coerce.number().default(0.1),
+  capSourceIngestOwls: z.coerce.number().default(10),
   // A page analysis's cap is also its run budget: the Extractor and every
   // Matcher on the page spend from it (withAgenticCharge's pass budget), and
   // the Extractor is told it in its task message with the cost of a match.
@@ -377,7 +377,7 @@ const configSchema = z.object({
   // get it assessed" hook — 5 owls covers two capped assessments, and the
   // unused part of each cap settles back after the run) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
-  signupGrantOwls: z.coerce.number().default(5),
+  signupGrantOwls: z.coerce.number().default(10),
   monthlyGrantOwls: z.coerce.number().default(1),
   // Owls earned per kudos point of an accepted contribution (the old 1–5
   // scale from claim importance, paid in the spendable currency). OFF at

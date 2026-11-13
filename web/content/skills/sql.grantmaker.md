@@ -1,4 +1,4 @@
-# Method skill: Sql (version 10)
+# Method skill: Sql (version 11)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -41,11 +41,14 @@ unknown.
 - `ledger`: every piece of graph work. action_id, kind, variant,
   target_node_id, target_ref, label, status (open, running, finished,
   cancelled), spent_owls, opened_at, updated_at, waiting_on (null unless
-  the row is open and a platform fault stopped its last attempt: one of
+  the row is open, a platform fault stopped its last attempt and the
+  platform's next attempt is still ahead: one of
   credits_fault, the platform's account with a model provider is out of
   credits; credentials_fault, a provider rejected the platform's key;
   provider_unavailable, a provider or network failure that outlasted its
-  retries), waiting_since, next_attempt_at. A row with waiting_on has not
+  retries), waiting_since, next_attempt_at (always in the future: once it
+  has come all three are null and the row is due, a plain open row the
+  platform picks when its turn comes). A row with waiting_on has not
   failed and is not cancelled: it stays funded, no attempt is charged, and
   the platform retries it on its own, so commissioning it again buys
   nothing. Its budget stays held meanwhile and counts against the

@@ -1,4 +1,5 @@
 import type { Instance } from "./types";
+import { partialDate } from "./format";
 
 /**
  * A claim's instances as the page shows them: the voices, the sources that
@@ -38,4 +39,26 @@ export function stanceTag(stance: Instance["stance"]): { word: string; title: st
     default:
       return null;
   }
+}
+
+/**
+ * Whose words these are, where and when, as one line under the quotation:
+ * "Shakked Noy, Whitney Zhang · Science · Jul 14, 2023". The instance's own
+ * attribution comes first (who said it, where, when, as recorded with the
+ * passage); the source's record fills what it leaves out. A source with
+ * four or more authors is cited by the first and "et al.". Empty when
+ * nothing is recorded.
+ */
+export function instanceByline(
+  i: Pick<
+    Instance,
+    "speaker" | "publication" | "source_date" | "source_authors" | "source_publisher" | "source_published_date"
+  >,
+): string {
+  const authors = (i.source_authors ?? []).filter((a) => a.trim());
+  const byAuthors = authors.length > 3 ? `${authors[0]} et al.` : authors.join(", ");
+  const who = i.speaker?.trim() || byAuthors;
+  const where = i.publication?.trim() || i.source_publisher?.trim() || "";
+  const when = partialDate(i.source_date?.trim() || i.source_published_date?.trim() || null) ?? "";
+  return [who, where, when].filter(Boolean).join(" · ");
 }

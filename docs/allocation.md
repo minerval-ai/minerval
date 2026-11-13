@@ -1282,6 +1282,32 @@ they start short (above); other upkeep waits for room. The estimates are
 live p80s of metered runs once enough exist (cost-estimate-service.ts),
 else policy priors.
 
+Before #991 the same pass placed this money with no commissioner, and a
+row needed only to be covered to run. Migration 0143 records those
+placements as the commissions they were: every allocation not yet
+released that a mandate pinned to a row of one of those six kinds, with
+no commissioner and no valuation of the row by that mandate, takes
+`commissioned_by` `mandate` and the pass's reason for the kind. Amounts,
+spend and release are not touched. Without it such a row could never run:
+the placement still counts as the row's coverage, so the pass places
+nothing new, and no executor picks a row without a commission (twelve
+funded consistency sweeps stood open that way on 2026-11-13). What the
+migration leaves without a commissioner is the allocator's old money
+(#855 removed it), placed on a group as a whole or on a row its mandate
+had valued, and a run's overspend, which is written already spent and
+released.
+
+An ingest row reads `running` from the moment the executor submits its
+source until the extraction is read, and extractions are read one after
+another, so a plan that names many sources at once has rows that read
+`running` for hours. The reconcile sweep returns a `running` row to open
+when its worker has died (60 minutes untouched; 24 hours for an ingest;
+3 for a solver attempt). It leaves an ingest row alone while the
+extraction job submitted for it is still pending or being read, however
+long that is, up to the four days the queue keeps a message: reopened
+earlier, the row would be submitted again and both extractions metered to
+the same funders.
+
 **Cadence** (#283) only makes candidates. An assessed claim is due a fresh
 look after `stalenessBaseDays / clamp(queue_priority, 0.25, 2)` days, where
 `queue_priority` is now the claim's importance; every claim past its
@@ -1691,6 +1717,15 @@ Design principles, in force in the implementation:
   a proposal that has not been filed; one that has is a contribution on
   the public record like any other, and the node it became is the
   graph's.
+- **An ingest costs what ingests cost.** An ingest row is priced at the
+  live p80 of finished ingests' metered cost (an extraction and the
+  Matcher runs it makes), else the governing policy's prior,
+  `est_ingest_cost_owls` (1 owl), as curation and audit rows are. It is
+  not priced at `CAP_SOURCE_INGEST_OWLS`, which is the most a person
+  submitting a source is charged: a mandate holding that ceiling on every
+  ingest could fund few of them, and the old cap (0.1 owl) was a tenth of
+  a typical ingest, so mandates' plans and costing read ingests as nearly
+  free and the overrun was placed after the fact.
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and

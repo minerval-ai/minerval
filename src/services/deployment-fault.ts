@@ -136,9 +136,29 @@ export interface FaultWaitRow {
   retry_after?: Date | string | null;
 }
 
-/** The wait a row's columns describe, or null when it is not waiting on a fault. */
-export function faultWait(row: FaultWaitRow | null | undefined): FaultWait | null {
+/**
+ * Whether ledger row `alias` is waiting on a platform fault right now (SQL
+ * fragment): it carries a fault and its next attempt is still ahead.
+ *
+ * A row whose next attempt has come is due, not waiting. It keeps the fault
+ * on it so that a second refusal continues the same doubling, and it loses
+ * the fault when a row of its kind runs or it closes. Until then it is a row
+ * the executors may pick, and one they do not pick is waiting on something
+ * else (its payer, a busy lane), so a surface that counted every row with a
+ * fault on it showed a fault that had ended as one still holding work up
+ * (thirteen such rows on 2026-11-13). Every surface that says "waiting"
+ * uses this test, the public ledger view included (migration 0144).
+ */
+export const waitingOnFaultSql = (alias: string): string =>
+  `(${alias}.fault_reason IS NOT NULL AND ${alias}.retry_after > now())`;
+
+/**
+ * The wait a row's columns describe, or null when it is not waiting on a
+ * fault: it carries none, or its next attempt has come (waitingOnFaultSql).
+ */
+export function faultWait(row: FaultWaitRow | null | undefined, now: number = Date.now()): FaultWait | null {
   if (!row || !isPlatformFaultReason(row.fault_reason)) return null;
+  if (!row.retry_after || !(new Date(row.retry_after).getTime() > now)) return null;
   return {
     reason: row.fault_reason,
     reason_label: PLATFORM_FAULT_LABELS[row.fault_reason],
@@ -182,7 +202,8 @@ export const FAULT_WAIT_DESCRIPTION =
   "An open row that carries `waiting_on` is not merely queued: the platform tried it and a platform " +
   "fault stopped the attempt (`waiting_on` is one of credits_fault, credentials_fault, " +
   "provider_unavailable; `waiting_since` and `next_attempt_at` say since when and when it is tried " +
-  "next). Nothing about the work failed and no attempt is charged. The platform retries it on its own " +
+  "next; all three are empty again once that time has come and the row is due). Nothing about the " +
+  "work failed and no attempt is charged. The platform retries it on its own " +
   "until it runs; its budget stays held for it meanwhile, counted against the mandate's pace from when " +
   "it was placed, as any held budget is. Commissioning it again does not help.";
 

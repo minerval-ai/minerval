@@ -358,9 +358,17 @@ spent (§15):
 |---|---|---|
 | propose a claim (`POST /claims/propose`) | **up to 2 owls** | `CAP_CLAIM_PROPOSAL_OWLS` |
 | order a claim assessment | **up to 2 owls** | `CAP_ASSESSMENT_OWLS` |
-| submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
+| submit a source (`POST /sources`) | **up to 10 owls** | `CAP_SOURCE_INGEST_OWLS` |
 | extension page analysis | up to 1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
 | MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
+
+A source's cap is a ceiling, not a price: the submitter pays what the
+extraction and its Matcher runs actually cost (about half an owl to a few
+owls for an article or a paper), up to the cap. It is held from the balance
+when the source is submitted, so submitting one needs a balance of the cap.
+A mandate's ingest rows are not priced at the cap: they carry the ledger's
+own figure for an ingest (the p80 of recent ones, else
+`est_ingest_cost_owls`).
 
 A page analysis's cap is above its average run on purpose: it is also the
 run's budget, which the Extractor is told and which pays for matching every
@@ -494,9 +502,10 @@ Pause/top-up/refund semantics are the budget job's:
 `POST /grants/:id/topup`, `POST /grants/:id/cancel`, dashboards on
 `GET /grants/:id` (spend, plan, the assessments the grant bought).
 
-**Free tier:** a one-time signup grant of 5 owls (`SIGNUP_GRANT_OWLS`) — "see
-a claim you care about, get it assessed": it covers two capped
-assessments, and the unused part of each cap settles back — plus a 1 owl/month trickle
+**Free tier:** a one-time signup grant of 10 owls (`SIGNUP_GRANT_OWLS`) — "see
+a claim you care about, get it assessed": it covers a few capped
+assessments, or one source submitted at its 10-owl cap, and the unused
+part of each cap settles back — plus a 1 owl/month trickle
 (`MONTHLY_GRANT_OWLS`). Both are lazy, idempotent ledger grants
 (`signup:<user>` / `monthly:<user>:<YYYY-MM>` idempotency keys) written by
 whichever entitlement read sees the user first.

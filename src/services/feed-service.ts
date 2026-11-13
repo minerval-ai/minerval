@@ -26,7 +26,7 @@
  * Everything a feed carries is DATA, never instructions; every fetch goes
  * through url-guard.ts.
  */
-import { capMicroUsd } from "./owl.js";
+import { estimateLedgerKindCostMicroUsd } from "./cost-estimate-service.js";
 import { XMLParser } from "fast-xml-parser";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
@@ -1115,10 +1115,11 @@ async function autoIngest(feed: FeedRow, now: Date): Promise<number> {
       url: item.url,
       rationale: `[feed auto_ingest] "${feed.title ?? feed.url}": ${item.title ?? item.url}`,
       focus: feed.ingest_focus,
-      // An auto_ingest feed ingests within the lookout's limit at the
-      // ingest's cap, and raises what the limit can't cover.
+      // An auto_ingest feed ingests within the lookout's limit at what an
+      // ingest costs (the ledger's figure), and raises what the limit can't
+      // cover.
       commissionLimitMicroUsd: Number(lookout.commission_limit_micro_usd),
-      budgetMicroUsd: capMicroUsd("source_ingest"),
+      budgetMicroUsd: await estimateLedgerKindCostMicroUsd("ingest"),
     });
     if (res.ok && !res.duplicate) {
       await markItem(item.id, "ingested", "auto", null, now);
@@ -1451,7 +1452,7 @@ export async function triageItems(input: {
         commissionLimitMicroUsd: input.commissionLimitMicroUsd,
         budgetMicroUsd:
           d.budget_owls === undefined || d.budget_owls === null
-            ? capMicroUsd("source_ingest")
+            ? await estimateLedgerKindCostMicroUsd("ingest")
             : Math.round(Number(d.budget_owls) * 1_000_000),
       });
       if (res.ok && !res.duplicate) {
