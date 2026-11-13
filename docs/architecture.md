@@ -184,7 +184,21 @@ embedded claim means "awaiting the tagger", so a new claim, the backfill
 of the existing graph, and a claim whose canonical form changed are all the
 same mechanism, drained a few claims per tick most-important-first
 (`TAGGING_INTERVAL_SECONDS`, `TAGGING_BATCH_SIZE`; the drain leases rows
-with a lease column so several tasks may run it). The vocabulary can be
+with a lease column so several tasks may run it). The lane has no ledger
+rows and nobody pays for a pass, so it keeps its own wait
+(`services/tagging-lane.ts`, one row of `platform_flags`). A platform fault
+(a provider that refuses or cannot serve the tagger's call once the
+client's retries are spent) ends the tick and holds the lane for the
+engine's wait, 30 seconds doubling to 10 minutes; one claim is tried when
+it ends, and the claim that met the fault is back in the queue uncounted.
+The process-wide spend breaker, which bounds the tagger's unattributed
+calls, is checked before each lease, so a spent breaker opens no run. Either
+way `GET /queue` (`tagging.waiting`) and `/monitors` (`queue_health`,
+`taggingLane`) say what the lane waits on, since when and until when, and
+nothing once the next attempt is due. Before this a tick that met a fault
+leased the next claim at once, five to a tick every 30 seconds, and a spent
+breaker was met inside a run: 97 of the tagger's 168 runs on 2026-11-13
+were recorded as its errors. The vocabulary can be
 seeded before the first drain from clusters in the embedding space
 (`scripts/seed-tags-from-clusters.ts`: spherical k-means over every
 claim's embedding, each cluster named by the same model from its
@@ -1992,9 +2006,15 @@ faults, the operator's to fix. A row whose run a platform fault stops goes
 back to open, uncounted and still funded, with the class, since when, and
 when it is tried next (`actions.fault_reason`, `fault_since`, `retry_after`;
 `waiting_on`, `waiting_since` and `next_attempt_at` in the public ledger
-view), and the funded rows of the same kind and tier wait with it, since the
-same model serves them. The wait is 30 seconds, doubling to 10 minutes; it
-ends when one of the rows runs. It is a wait and not a limit: the row is
+view), and the rows of the same kind and tier that an executor would pick
+(funded, with a live commission) wait with it, since the same model serves
+them. The wait is 30 seconds, doubling to 10 minutes; it ends when a row of
+that kind and tier runs and meters spend, whether or not that row had been
+waiting. A row whose next attempt has come is due, not waiting: it keeps the
+fault on it until then, so a second refusal continues the doubling, and
+every surface (the ledger view, `/monitors`, a plan item's reason, the
+briefing) says waiting only while the next attempt is ahead
+(`waitingOnFaultSql`). It is a wait and not a limit: the row is
 retried for as long as the fault lasts, and money cannot pace it, because a
 call refused for credits or credentials is answered before anything is
 billed. A deployment fault does not stop the drain or slow the runner: the

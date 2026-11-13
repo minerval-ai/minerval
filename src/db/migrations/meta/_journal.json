@@ -1002,6 +1002,20 @@
       "when": 1794526821280,
       "tag": "0142_label_default_new_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1794606467692,
+      "tag": "0143_commission_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1794606823782,
+      "tag": "0144_fault_wait_due",
+      "breakpoints": true
     }
   ]
 }

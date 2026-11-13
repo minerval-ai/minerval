@@ -34,6 +34,7 @@ import { errorProvider } from "../llm/errors.js";
 import {
   PLATFORM_FAULT_LABELS,
   deploymentFaultOf,
+  waitingOnFaultSql,
   type DeploymentFaultReason,
   type PlatformFaultReason,
 } from "./deployment-fault.js";
@@ -223,7 +224,7 @@ export interface DeploymentFaultView {
   since: string;
   lastSeen: string;
   failedCalls: number;
-  /** Open ledger rows whose last attempt this class of fault stopped. */
+  /** Open ledger rows this class of fault stopped that are waiting for their next attempt. */
   waitingRows: number;
 }
 
@@ -239,7 +240,8 @@ export async function openDeploymentFaults(): Promise<DeploymentFaultView[]> {
   }>(
     `SELECT f.reason, f.provider, f.first_seen_at, f.last_seen_at, f.occurrences,
             (SELECT COUNT(*)::int FROM actions a
-              WHERE a.status = 'open' AND a.fault_reason = f.reason) AS waiting_rows
+              WHERE a.status = 'open' AND a.fault_reason = f.reason
+                AND ${waitingOnFaultSql("a")}) AS waiting_rows
        FROM deployment_faults f
       WHERE f.cleared_at IS NULL
       ORDER BY f.first_seen_at`
@@ -292,7 +294,7 @@ export async function platformFaultBriefing(grantId: string, since: string | nul
          JOIN action_allocations al ON al.exclusion_group = a.exclusion_group
                                    AND al.grant_id = $1 AND al.released_at IS NULL
                                    AND (al.action_id IS NULL OR al.action_id = a.id)
-        WHERE a.status = 'open' AND a.fault_reason IS NOT NULL
+        WHERE a.status = 'open' AND ${waitingOnFaultSql("a")}
         GROUP BY a.fault_reason, a.kind
         ORDER BY MIN(a.fault_since)`,
       [grantId]
