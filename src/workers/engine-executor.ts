@@ -56,6 +56,8 @@ import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
+import { ASKED_FROM_BELOW } from "../services/ask-above-service.js";
+import { offerMandateBelow } from "../services/gate-handoff.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { routeEvents } from "../services/subscription-router.js";
 import { microUsdToOwls } from "../services/owl.js";
@@ -1739,13 +1741,19 @@ async function runGrantAgentAction(
             // with a fresh pass on the claim it is about.
             const decomposition = grant.mandate?.origin === "deep_decomposition";
             if (decomposition) plan = withOpeningPass(plan, grant.scope_claim_id);
+            // A mandate asked for from a label below (ask-above-service.ts)
+            // was approved the same way: its asker paid for its terms, and
+            // does not read this label, so the plan is not sent down to be
+            // approved. It is this Grantmaker's, and runs as drafted.
+            const askedFromBelow = grant.mandate?.origin === ASKED_FROM_BELOW;
             await rawQuery(
               `UPDATE grants
                   SET plan = $2::jsonb, status = $3,
                       plan_cursor = 0, updated_at = now()
                 WHERE id = $1 AND status = 'planning'`,
-              [grant.id, JSON.stringify(plan), decomposition ? "active" : "pending_approval"]
+              [grant.id, JSON.stringify(plan), decomposition || askedFromBelow ? "active" : "pending_approval"]
             );
+            if (askedFromBelow) await offerMandateBelow(grant.id);
           } else {
             const review = await runMandateReview({
               grantId: grant.id,

@@ -170,7 +170,7 @@ describe("a General mandate at each label", () => {
     ];
     const out = run("standing_mandates", facts({ config: members(), tables: { labels } }));
     expect(out.status).toBe("fail");
-    expect(out.message).toContain('Material is held at "internal" and no General mandate is set up there');
+    expect(out.message).toContain('Nodes or judgments are held at "internal" and no General mandate is set up there');
     expect(out.message).not.toContain("restricted");
     labels[1]!.general = true;
     expect(run("standing_mandates", facts({ config: members(), tables: { labels } })).message).toContain('A General mandate is set up at "public", "internal"');

@@ -25,6 +25,7 @@
  * request-building, wire format, and response parsing for each backend live in
  * src/llm/providers/ — see providers/routing.ts for how a model id picks one.
  */
+import { postureNote } from "../label-posture.js";
 import type Anthropic from "@anthropic-ai/sdk";
 
 type MessageParam = Anthropic.MessageParam;
@@ -159,10 +160,17 @@ async function withRunLabel(messages: MessageParam[]): Promise<MessageParam[]> {
   // On a deployment that mirrors the public graph, what a run is told of
   // mirrored nodes is part of the same note (label-note.ts).
   const mirror = await mirrorBrief();
+  // What this label sets for its own runs, and what can be asked of labels
+  // above it: each is said only where there is something to say. Like the
+  // mirror's time, the list of what can be asked is as it stood when the
+  // run started, so the run is told once.
+  const posture = postureNote(currentLabel());
+  const { askableFaces, askableNote } = await import("../services/ask-above-service.js");
+  const askable = askableNote(await askableFaces().catch(() => []));
   return withLabelNote(
     messages,
-    labelNote(currentLabel(), reads, { writesJudgments, mirror }),
-    mirror ? LABEL_NOTE_HEADING : undefined
+    labelNote(currentLabel(), reads, { writesJudgments, mirror, posture, askable }),
+    mirror || askable ? LABEL_NOTE_HEADING : undefined
   );
 }
 

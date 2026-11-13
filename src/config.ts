@@ -13,6 +13,7 @@ import {
 import { applyConfigFile } from "./config-file.js";
 import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
 import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
+import { parseLabelPosture } from "./label-posture.js";
 import { parseModelPrices } from "./llm/model-prices.js";
 
 /**
@@ -307,6 +308,18 @@ const configSchema = z.object({
       }
     })
     .transform((raw) => parseProviderLabels(raw).labels)
+    .prefault(""),
+  // Each label's own posture (src/label-posture.ts): a JSON object from a
+  // label's name to the settings it changes for its own runs. Empty by
+  // default: every label works under the deployment's settings.
+  labelPosture: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseLabelPosture(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseLabelPosture(raw).posture)
     .prefault(""),
   awsRegion: z.string().default("us-east-1"),
 
@@ -1607,6 +1620,7 @@ export function loadConfig(): Config {
     featuresOff: process.env.FEATURES_OFF,
     modelEndpoints: process.env.MODEL_ENDPOINTS,
     providerLabels: process.env.PROVIDER_LABELS,
+    labelPosture: process.env.LABEL_POSTURE,
     databaseUrl: rawDatabaseUrl,
     dbHost: process.env.DB_HOST,
     dbPort: process.env.DB_PORT,

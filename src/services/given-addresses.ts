@@ -66,9 +66,9 @@
  * the public graph, where `public` is the only label, nothing here reads
  * or writes anything.
  */
-import { loadConfig } from "../config.js";
 import { rawQuery, currentReadClearance } from "../db/client.js";
-import { enforcementLastKnown } from "../db/clearance.js";
+import { enforcementLastKnown, labelOfWorkInProgress } from "../db/clearance.js";
+import { postureAt } from "../label-posture.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { normalizePageUrl, pageUrlHash } from "./page-url.js";
@@ -108,7 +108,9 @@ export class AddressNotGivenError extends Error {
 async function readsMoreThanPublic(): Promise<boolean> {
   // The deployment's choice comes first: unless it holds private runs to
   // given addresses, nothing below is asked and nothing here applies.
-  if (loadConfig().privateRunFetches !== "given") return false;
+  // The choice is each label's (src/label-posture.ts), starting from the
+  // deployment's.
+  if (postureAt(labelOfWorkInProgress()).fetches !== "given") return false;
   // A process that knows `public` is the only label asks nothing. One that
   // has not yet asked the database asks now, and a failure there (no
   // database at all, as when a service is driven alone) is read as the

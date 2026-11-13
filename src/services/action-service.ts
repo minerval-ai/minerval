@@ -460,14 +460,19 @@ export async function ensureAuditAction(input: {
  * Returns the open row's id, or null when there is none.
  */
 export async function ensureRequestActions(requestId: string): Promise<string | null> {
-  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null; sensitivity_label: string }>(
-    `SELECT ask, state, budget_micro_usd, sensitivity_label FROM requests WHERE id = $1`,
+  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null; sensitivity_label: string; asked_above: boolean }>(
+    `SELECT ask, state, budget_micro_usd, sensitivity_label, (asked_of_face_id IS NOT NULL) AS asked_above FROM requests WHERE id = $1`,
     [requestId]
   );
   if (!req || (CLOSED_REQUEST_STATES as readonly string[]).includes(req.state)) {
     await closeRequestActions(requestId);
     return null;
   }
+  // A request that asked for work at a label above, and paid for it there
+  // (ask-above-service.ts), has no row at this label: the work is done by
+  // an agent that reads what the asker could not, and a row here would buy
+  // the same question from one that cannot.
+  if (req.asked_above) return null;
   const group = REQUEST_GROUP(requestId);
   const budget = req.budget_micro_usd == null ? null : Number(req.budget_micro_usd);
   const variant = budget != null ? "full" : "scope";

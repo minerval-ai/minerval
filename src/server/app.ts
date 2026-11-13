@@ -59,6 +59,7 @@ import { permissionRoutes } from "../routes/permissions.js";
 import { showingRoutes } from "../routes/showings.js";
 import { outboundRoutes } from "../routes/outbound.js";
 import { outwardRoutes } from "../routes/outward.js";
+import { askRoutes } from "../routes/asks.js";
 import { publishedPageRoutes } from "../routes/published-pages.js";
 import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
@@ -188,6 +189,9 @@ export async function buildApp() {
     // A page shown outside leaves from here (docs/published-pages.md).
     await app.register(outboundRoutes);
     await app.register(outwardRoutes);
+    // Asking for work at a label above needs a second label and the
+    // permission to fund (services/ask-above-service.ts).
+    await app.register(askRoutes);
     // Connections to an organization's own systems are an administrator's
     // to add (src/connections.ts), so they exist where administrators do.
     await app.register(connectionRoutes);

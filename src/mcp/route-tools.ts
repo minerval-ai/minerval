@@ -264,6 +264,8 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /permissions/accounts": { name: "list_accounts" },
   "GET /parties": { name: "list_parties" },
   "GET /labels": { name: "list_labels" },
+  "GET /labels/faces": { name: "list_label_faces" },
+  "GET /asks/askable": { name: "list_askable" },
   "GET /labels/mine": {
     name: "get_my_labels",
     note:
@@ -548,6 +550,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PUT /outside/choices/:key": OUTWARD_SESSION,
   "POST /outside/requests/:public_request_id/adopt": OUTWARD_SESSION,
   "POST /requests/:request_id/adopt": OUTWARD_SESSION,
+  "POST /asks": OUTWARD_SESSION,
   "POST /outside/keep-current/leave-out": OUTWARD_SESSION,
   "DELETE /outside/keep-current/leave-out/:id": OUTWARD_SESSION,
   "POST /outbound/proposals": OUTBOUND_SESSION,
@@ -577,6 +580,8 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PUT /sources/:source_id/party": ADMINISTRATION_SESSION,
   "POST /labels": ADMINISTRATION_SESSION,
   "POST /labels/:label/reads": ADMINISTRATION_SESSION,
+  "PUT /labels/:label/face": ADMINISTRATION_SESSION,
+  "DELETE /labels/:label/face/:at": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
   "POST /operator/administrators":
     "The way back in for a deployment whose administrators cannot sign in: requires the " +

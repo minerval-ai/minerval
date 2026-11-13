@@ -85,6 +85,13 @@ export async function fileRequest(input: {
    */
   budgetUsd?: number | null;
   filer: RequestFiler;
+  /**
+   * Set by askAbove (ask-above-service.ts) and by nothing else: the request
+   * is addressed to the face of a label above and its asker has paid for
+   * work there. The work is that label's, so no ledger row is opened for
+   * it at this one.
+   */
+  askedOf?: { faceId: string; as: "work" | "mandate"; budgetMicroUsd: number } | null;
 }): Promise<{ id: string }> {
   for (const [field, v] of [["ask", input.ask], ["why", input.why], ["satisfied_by", input.satisfiedBy]] as const) {
     if (!v.trim()) throw new RequestError(`A request states its ${field}`);
@@ -113,8 +120,9 @@ export async function fileRequest(input: {
       `INSERT INTO requests
          (ask, why, satisfied_by, who_could, addressed_to, bears_on_text,
           filer_kind, filer_agent, filer_contributor_id, filer_grant_id, filer_run_id,
-          keeper_kind, keeper_claim_id, state, embedding, budget_micro_usd, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector, $16, $17) RETURNING id`,
+          keeper_kind, keeper_claim_id, state, embedding, budget_micro_usd, sensitivity_label,
+          asked_of_face_id, asked_as, asked_budget_micro_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector, $16, $17, $18, $19, $20) RETURNING id`,
       [
         input.ask.trim(),
         input.why.trim(),
@@ -133,6 +141,9 @@ export async function fileRequest(input: {
         embedding,
         budgetMicroUsd,
         currentLabel(),
+        input.askedOf?.faceId ?? null,
+        input.askedOf?.as ?? null,
+        input.askedOf?.budgetMicroUsd ?? null,
       ]
     );
     const id = row!.id;
@@ -145,8 +156,9 @@ export async function fileRequest(input: {
     return { id };
   });
   // A filed request is work anyone may fund: its row goes on the ledger,
-  // priced and offered to the platform lane at once.
-  await openRequestWork(filed.id);
+  // priced and offered to the platform lane at once. One asked of a label
+  // above is that label's work and has no row here.
+  if (!input.askedOf) await openRequestWork(filed.id);
   return filed;
 }
 
@@ -539,6 +551,19 @@ export interface RequestView {
    * request's own label alone is shown nothing.
    */
   taken_up_at?: { label: string; request_id: string; state: RequestState }[];
+  /**
+   * On a request that asked for work at a label above (ask-above-service.ts):
+   * the face it was addressed to, whether it asked for one piece of work or
+   * a mandate, and the budget its asker paid. This is the asker's record of
+   * what was asked. What became of it there is not part of this request
+   * until that label's gate lets it through.
+   */
+  asked_of?: { face_id: string; name: string; as: "work" | "mandate"; budget_usd: number };
+  /**
+   * On a request taken up from one that paid for work here from a label
+   * below: that label. The run that does the work is told (requestBrief).
+   */
+  paid_from_below?: { label: string };
 }
 
 interface RequestRowJoined {
@@ -558,6 +583,10 @@ interface RequestRowJoined {
   state_note: string | null;
   created_at: Date;
   budget_micro_usd: string | null;
+  asked_of_face_id: string | null;
+  asked_as: "work" | "mandate" | null;
+  asked_budget_micro_usd: string | null;
+  asked_face_name: string | null;
 }
 
 const AGENT_LABELS: Record<string, string> = {
@@ -590,8 +619,9 @@ const REQUEST_SELECT = `
   SELECT r.id, r.ask, r.why, r.satisfied_by, r.who_could, r.addressed_to, r.bears_on_text,
          r.filer_kind, r.filer_agent, fc.display_name AS contributor_name,
          r.keeper_kind, kc.kind AS keeper_node_kind, r.state, r.state_note, r.created_at,
-         r.budget_micro_usd
+         r.budget_micro_usd, r.asked_of_face_id, r.asked_as, r.asked_budget_micro_usd, lf.name AS asked_face_name
     FROM requests r
+    LEFT JOIN label_faces lf ON lf.id = r.asked_of_face_id
     LEFT JOIN contributors fc ON fc.id = r.filer_contributor_id
     LEFT JOIN claims kc ON kc.id = r.keeper_claim_id`;
 
@@ -650,10 +680,10 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
   // reader does not read is not returned by the database.
   const adoptions = await rawQuery<{
     request_id: string; public_request_id: string | null; from_request_id: string | null;
-    from_label: string | null; label: string; state: RequestState;
+    from_label: string | null; label: string; state: RequestState; from_paid: boolean;
   }>(
     `SELECT a.request_id, a.public_request_id, a.from_request_id, f.sensitivity_label AS from_label,
-            a.sensitivity_label AS label, r.state
+            a.sensitivity_label AS label, r.state, (f.asked_of_face_id IS NOT NULL) AS from_paid
        FROM adopted_requests a JOIN requests r ON r.id = a.request_id
        LEFT JOIN requests f ON f.id = a.from_request_id
       WHERE a.request_id = ANY($1::uuid[]) OR a.from_request_id = ANY($1::uuid[])
@@ -728,6 +758,17 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
         ...(above.length > 0
           ? { taken_up_at: above.map((a) => ({ label: a.label, request_id: a.request_id, state: a.state })) }
           : {}),
+        ...(r.asked_of_face_id && r.asked_as
+          ? {
+              asked_of: {
+                face_id: r.asked_of_face_id,
+                name: r.asked_face_name ?? r.addressed_to ?? "",
+                as: r.asked_as,
+                budget_usd: usd(r.asked_budget_micro_usd ?? 0),
+              },
+            }
+          : {}),
+        ...(from?.from_paid && from.from_label ? { paid_from_below: { label: from.from_label } } : {}),
       };
     })(),
   }));
@@ -803,6 +844,22 @@ export async function requestQuoteNote(input: {
 }
 
 /**
+ * What a run is told when the request it works was asked for and paid for
+ * from a label below its own. It is a limit on the run, so it is stated in
+ * its task with the reason: the payer does not read this label, so a
+ * petition to it is information going down and waits at the gate.
+ */
+export function paidFromBelowNote(label: string): string {
+  return (
+    `This request was asked for and paid for from \`${label}\`, which this run's label reads. Its asker ` +
+    `does not read this label: what you report reaches them only through this label's gate, where it may ` +
+    `be redacted or held, so write the report as you would any other. A petition for more money ` +
+    `(petition_mandate) goes to its payer the same way and may not be answered while this run lasts, so ` +
+    `plan to finish within the budget you have.`
+  );
+}
+
+/**
  * The brief a run that takes up (or scopes) a request works from: the
  * request as filed, verbatim, and the work already done on it. Whoever
  * funded it adds nothing to it.
@@ -825,6 +882,7 @@ export function requestBrief(request: RequestView): string {
     request.work.length
       ? `Work already done on it: ${request.work.map((w) => `${workLabel(w)}: ${w.summary}`).join(" | ")}`
       : null,
+    request.paid_from_below ? paidFromBelowNote(request.paid_from_below.label) : null,
   ]
     .filter(Boolean)
     .join("\n");

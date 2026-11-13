@@ -149,6 +149,39 @@ const sensitivityLabelColumn = () =>
     .default(sql`minerval_default_label()`)
     .references(() => labels.name);
 
+// A label's public face (src/labels.ts, "Work asked for from below"). A
+// label cannot be read, or named, from the labels it reads. That it can be
+// asked for work is something its administrators choose to show: a name
+// and a line saying what can be asked of it. The face is a row at the
+// label it is shown at, so it is read by the ordinary rule (that label and
+// every label that reads it), and work is addressed to the face, never to
+// the label. A label with no face at a label cannot be asked from there.
+// One face for each label at each label it is shown at.
+export const labelFaces = pgTable(
+  "label_faces",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The label whose work is asked for. It reads the row's own label.
+    forLabel: text("for_label")
+      .notNull()
+      .references(() => labels.name, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    canBeAsked: text("can_be_asked").notNull(),
+    writtenBy: uuid("written_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // Withdrawn faces stay as rows: a request addressed to one keeps saying
+    // what it was addressed to. Nothing new can be asked of a withdrawn face.
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    // The label the face is shown at.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_label_faces_for_at").on(table.forLabel, table.sensitivityLabel),
+    check("ck_label_faces_not_own", sql`${table.forLabel} <> ${table.sensitivityLabel}`),
+  ]
+);
+
 // The one label a credential works at (src/server/request-labels.ts): an API
 // key's, and an access token's. It is `work_label` and not sensitivity_label
 // because it does not say who may read the row. A key and a token are the
@@ -6757,11 +6790,22 @@ export const requests = pgTable(
         || setweight(to_tsvector('english', ${requests.satisfiedBy}), 'C')
         || setweight(to_tsvector('english', coalesce(${requests.bearsOnText}, '')), 'C')`
     ),
+    // Work asked for from below (services/ask-above-service.ts): the face
+    // of a label above that this request was addressed to, whether it asked
+    // for one piece of work or for a mandate, and the budget its asker paid
+    // with it. Set when it is filed and never after: this is the asker's
+    // own record of what was asked. The work is done at that label, so no
+    // ledger row is opened for it at this one, and nothing of what happens
+    // there is written here.
+    askedOfFaceId: uuid("asked_of_face_id").references((): AnyPgColumn => labelFaces.id),
+    askedAs: text("asked_as"),
+    askedBudgetMicroUsd: bigint("asked_budget_micro_usd", { mode: "number" }),
     // The label of the run or request that filed it (src/labels.ts). The
     // ledger rows for its work are opened at it.
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
+    check("ck_requests_asked_as", sql`${table.askedAs} IS NULL OR ${table.askedAs} IN ('work', 'mandate')`),
     index("idx_requests_state").on(table.state, table.createdAt),
     index("idx_requests_text_search").using("gin", table.textSearch),
     index("idx_requests_keeper").on(table.keeperClaimId),
@@ -8547,10 +8591,14 @@ export const adoptedRequests = pgTable(
     takenUpAt: timestamp("taken_up_at", { withTimezone: true }),
     declinedAt: timestamp("declined_at", { withTimezone: true }),
     declineReason: text("decline_reason"),
+    // Where the request below asked for a mandate and paid for one: the
+    // mandate created for it at this label (services/ask-above-service.ts).
+    grantId: uuid("grant_id").references((): AnyPgColumn => grants.id, { onDelete: "set null" }),
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     uniqueIndex("uq_adopted_requests_request").on(table.requestId),
+    index("idx_adopted_requests_grant").on(table.grantId),
     index("idx_adopted_requests_public").on(table.publicRequestId),
     index("idx_adopted_requests_from").on(table.fromRequestId),
     check(

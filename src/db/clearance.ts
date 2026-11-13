@@ -255,6 +255,11 @@ export function setSessionContextReader(reader: () => ContextSession): void {
   contextReader = reader;
 }
 
+/** The label of the work in progress, or undefined outside any run or labelled request. */
+export function labelOfWorkInProgress(): string | undefined {
+  return contextReader().label;
+}
+
 // ---- sessions ---------------------------------------------------------------
 
 export type Session =

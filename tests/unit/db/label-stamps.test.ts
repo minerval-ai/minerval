@@ -52,7 +52,7 @@ describe("an insert into a labelled table", () => {
 
   it("finds the labelled tables in the schema", () => {
     // One hundred and forty of the schema's tables carry a label; tests/db/labels.test.ts lists them.
-    expect(tables.sql.size).toBe(140);
+    expect(tables.sql.size).toBe(141);
     // Among them the tables that hold a commission's brief, a regrant's note and a stated view.
     for (const t of ["action_allocations", "regrants", "stated_views"]) expect(tables.sql.has(t)).toBe(true);
     expect(tables.sql.has("agent_steps")).toBe(true);

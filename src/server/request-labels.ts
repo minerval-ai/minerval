@@ -314,6 +314,13 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   },
   "POST /labels": { rule: "none", why: ADMINISTRATION },
   "POST /labels/:label/reads": { rule: "none", why: ADMINISTRATION },
+  "PUT /labels/:label/face": {
+    rule: "none",
+    why:
+      "A label's face is a row at the label it is shown at, which the administrator names. The route checks the administrator and the " +
+      "service writes the row on the database owner's connection, naming its label (services/label-admin-service.ts).",
+  },
+  "DELETE /labels/:label/face/:at": { rule: "none", why: "Withdraws a face, as the route that shows one writes it (services/label-admin-service.ts)." },
   "DELETE /labels/:label/reads/:reads": { rule: "none", why: ADMINISTRATION },
 
   // ---- showing a page below its label: members-only deployments only ----
@@ -407,6 +414,13 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     why:
       "The request taken up is at one label and the request it becomes is at another, which the person names. The service checks that the " +
       "person reads the label named and writes there as work at that label (services/outward-acts-service.ts, adoptRequestFromBelow).",
+  },
+  "POST /asks": {
+    rule: "none",
+    why:
+      "The ask is recorded at the label its address is shown at and the work it pays for at the label asked, which the person does not " +
+      "read. The route reads the address as the person, and the service writes each side as work at that side's label " +
+      "(services/ask-above-service.ts).",
   },
   "POST /outside/requests/adopted/:adoption_id/take-up": { rule: "none", why: OUTWARD },
   "POST /outside/requests/adopted/:adoption_id/decline": { rule: "none", why: OUTWARD },

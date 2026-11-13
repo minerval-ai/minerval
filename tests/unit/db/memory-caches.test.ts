@@ -94,6 +94,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/server/plugins/quota.ts:windows": "Times of recent requests for each caller, for the rate limit. No content.",
   "src/server/require-permission.ts:permissionOfGuard": "Which permission each route guard checks. Functions, no rows.",
   "src/server/require-permission.ts:anyOfGuard": "Which permissions a route guard takes any one of. Functions, no rows.",
+  "src/services/gate-handoff.ts:gate": "The gate's one function, once the gate's module has registered it. A function, no rows.",
   "src/services/file-set-service.ts:walking": "The ids of the file sets whose directories this process is hashing now. Ids, no content, and a set's id is shown only by reads its own label holds.",
   "src/services/api-key-service.ts:lastTouched": "When each API key's last-used time was last written, by key id. No content.",
   "src/services/grant-conversation-service.ts:turnWindows": "Times of recent turns for each account, for the rate limit. No content.",

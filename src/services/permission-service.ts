@@ -583,6 +583,8 @@ export type AdministrativeAction =
   | "label_defined"
   | "label_read_added"
   | "label_read_removed"
+  | "label_face_shown"
+  | "label_face_withdrawn"
   | "party_added"
   // The organization's own party, made at setup under a placeholder name, was given its name.
   | "own_organization_named"

@@ -64,7 +64,7 @@ export interface DeploymentTables {
   publicActsHolders: number;
   /** The role the tables' owner connects as, and whether it is a superuser. */
   owner: { role: string; superuser: boolean };
-  /** For each label: whether it holds material of the deployment's own, and whether a General mandate is set up there. */
+  /** For each label: whether it holds nodes or judgments of the deployment's own (what upkeep is paid for), and whether a General mandate is set up there. */
   labels: Array<{ label: string; material: boolean; general: boolean }>;
   /** For each label with a connection that is on: how many, and how many name a credential variable that is not set. */
   connections: Array<{ label: string; on: number; credentialUnset: number }>;
@@ -283,13 +283,13 @@ function checkStandingMandates(facts: DeploymentCheckFacts): DeploymentOutcome {
   const withOne = tables.labels.filter((l) => l.general).map((l) => l.label);
   if (without.length > 0) {
     return fail(
-      `Material is held at ${quoted(without)} and no General mandate is set up there, so nobody pays for its upkeep or its audits: a mandate's work runs at its label. An administrator who reads the label sets one up (the owls page).`
+      `Nodes or judgments are held at ${quoted(without)} and no General mandate is set up there, so nobody pays for their upkeep or their audits: a mandate's work runs at its label. An administrator who reads the label sets one up (the owls page). A label that holds only work asked for from below needs none: that work is paid for by whoever asked.`
     );
   }
   if (withOne.length === 0) {
     return fail("No General mandate is set up, so upkeep and audits have no mandate to pay for them. An administrator sets one up (the owls page).");
   }
-  return pass(`A General mandate is set up at ${quoted(withOne)}${holding.length > 0 ? ", which is every label that holds material of this deployment's own" : ""}.`);
+  return pass(`A General mandate is set up at ${quoted(withOne)}${holding.length > 0 ? ", which is every label that holds nodes or judgments of this deployment's own" : ""}.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -428,23 +428,33 @@ function checkDatabaseOwner(facts: DeploymentCheckFacts): DeploymentOutcome {
   );
 }
 
+/** The labels that set their own fetches (LABEL_POSTURE), as a sentence for the check; "" when none does. */
+function fetchesByLabel(config: DeploymentCheckFacts["config"]): string {
+  const own = Object.entries(config.labelPosture ?? {}).filter(([, p]) => p.fetches && p.fetches !== config.privateRunFetches);
+  if (own.length === 0) return "";
+  return ` Set for a label of its own (label_posture): ${own.map(([label, p]) => `"${label}" is "${p.fetches}"`).join(", ")}.`;
+}
+
 function checkPrivateRunFetches(facts: DeploymentCheckFacts): DeploymentOutcome {
   if (facts.holdsPrivate === false) {
     return notApplicable("Public is the only label, so no run reads private material and this setting is not used.");
   }
+  const byLabel = fetchesByLabel(facts.config);
   if (facts.config.privateRunFetches === "given") {
     return pass(
       'private_runs.fetches is "given": a run that reads a private label can fetch only an address the deployment was given from outside ' +
         "(a search result, an address in a page it read, a recorded source, a resolved identifier). That guards against text a run read " +
         "telling it to fetch an address with private material written into it. It narrows that way out and does not close it: a search " +
         "query is still text sent out. It costs research: a run cannot write the address for something it knows of, or reach the next " +
-        "page of results by editing one. Each such run is told this in its brief."
+        "page of results by editing one. Each such run is told this in its brief." +
+        byLabel
     );
   }
   return pass(
     'private_runs.fetches is "any", the starting value: a run that reads a private label fetches any address, as a run on the public ' +
       'graph does. Text such a run reads could tell it to fetch an address with private material written into it; setting it to "given" ' +
-      "(PRIVATE_RUN_FETCHES=given) holds those runs to addresses the deployment was given, at a cost to their research."
+      "(PRIVATE_RUN_FETCHES=given) holds those runs to addresses the deployment was given, at a cost to their research." +
+      byLabel
   );
 }
 
@@ -523,9 +533,17 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
     [config.publicActsBy]
   );
   const labels = await rawQuery<{ label: string; material: boolean; general: boolean }>(
+    // What a General mandate pays for is upkeep: curation, audits and
+    // fresh passes on nodes and judgments. So the question is whether the
+    // label holds nodes or judgments of its own. A label that holds only
+    // work asked for from below, and the documents that work kept, has
+    // none: each piece of it was paid for by whoever asked.
     `SELECT l.name AS label,
             (EXISTS (SELECT 1 FROM claims c WHERE c.sensitivity_label = l.name AND c.origin = 'local')
-             OR EXISTS (SELECT 1 FROM sources s WHERE s.sensitivity_label = l.name AND s.origin = 'local')) AS material,
+             OR EXISTS (SELECT 1 FROM assessments v WHERE v.sensitivity_label = l.name)
+             OR EXISTS (SELECT 1 FROM quantity_estimates v WHERE v.sensitivity_label = l.name)
+             OR EXISTS (SELECT 1 FROM question_assessments v WHERE v.sensitivity_label = l.name)
+             OR (l.name = 'public' AND EXISTS (SELECT 1 FROM sources s WHERE s.sensitivity_label = l.name AND s.origin = 'local'))) AS material,
             EXISTS (SELECT 1 FROM grants g
                      WHERE g.is_platform AND g.status = 'active' AND g.mandate->>'seed_key' = $1
                        AND g.sensitivity_label = l.name) AS general
