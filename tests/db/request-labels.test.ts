@@ -21,6 +21,23 @@ import { randomUUID } from "node:crypto";
 const SERVICE_KEY = "request-labels-web-tier-key";
 const FIRST_ADMINISTRATOR = "oidc:dbtest-request-labels-administrator";
 
+const fileSetDirs = vi.hoisted(() => {
+  // A store for uploaded sets and a root to register directories from, so
+  // that the file-set routes get as far as writing.
+  const fs = require("node:fs") as typeof import("node:fs");
+  const os = require("node:os") as typeof import("node:os");
+  const path = require("node:path") as typeof import("node:path");
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "request-labels-file-sets-"));
+  const store = path.join(base, "store");
+  const root = path.join(base, "root");
+  fs.mkdirSync(store);
+  fs.mkdirSync(path.join(root, "registered"), { recursive: true });
+  fs.writeFileSync(path.join(root, "registered", "a.txt"), "a\n");
+  process.env.FILE_SET_STORE_DIR = store;
+  process.env.FILE_SET_DIRECTORY_ROOT = root;
+  return { base, store, root };
+});
+
 vi.hoisted(() => {
   process.env.READS = "members";
   process.env.API_KEYS = "request-labels-web-tier-key";
@@ -1246,6 +1263,41 @@ describe("every route that writes, driven against a private target", () => {
   /** An address nothing answers at: a connection is added and changed all the same, and shows as failing. */
   const NO_SERVER = "http://127.0.0.1:9/mcp";
 
+  /** A set of files at `label`: an uploaded one, open or closed, or a registered directory whose walk failed. */
+  async function fileSetAt(label: string, kind: "open" | "closed" | "failed_directory"): Promise<string> {
+    const tag = randomUUID().slice(0, 8);
+    const slug = `sweep-${tag}`;
+    const directory = kind === "failed_directory";
+    const [row] = await rawQuery<{ id: string }>(
+      `INSERT INTO file_sets (name, slug, origin, storage_key, party_id, stake, sensitivity_label, state, problem)
+       VALUES ($1, $2, $3, $4, $5, 'The organization holds these files.', $6, $7, $8) RETURNING id`,
+      [
+        `Sweep set ${tag}`,
+        slug,
+        directory ? "directory" : "upload",
+        directory ? "registered" : slug,
+        await ownParty(),
+        label,
+        directory ? "failed" : "open",
+        directory ? "The directory could not be hashed." : null,
+      ]
+    );
+    if (!directory) {
+      const { mkdirSync, writeFileSync } = await import("node:fs");
+      const { join } = await import("node:path");
+      mkdirSync(join(fileSetDirs.store, slug), { recursive: true });
+      if (kind === "closed") {
+        writeFileSync(join(fileSetDirs.store, slug, "a.txt"), "a\n");
+        await rawQuery(
+          `INSERT INTO file_set_files (file_set_id, path, bytes, sha256, sensitivity_label) VALUES ($1, 'a.txt', 2, $2, $3)`,
+          [row!.id, "87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7", label]
+        );
+        await rawQuery(`UPDATE file_sets SET state = 'closed', file_count = 1, total_bytes = 2, manifest_hash = 'm', closed_at = now() WHERE id = $1`, [row!.id]);
+      }
+    }
+    return row!.id;
+  }
+
   /** A connection at `label`, as an administrator who reads it added it. The administrator's acts on it work at its label. */
   async function connectionAt(label: string): Promise<string> {
     const tag = randomUUID().slice(0, 8);
@@ -1263,6 +1315,42 @@ describe("every route that writes, driven against a private target", () => {
    * the route needs first (not counted) and returns the request to count.
    */
   const FROM_A_ROW: Record<string, () => Promise<Drive>> = {
+    // Sets of files: a director's upload, and an administrator's walk of a registered directory.
+    "PUT /file-sets/:file_set_id/files/*": async () => {
+      const id = await fileSetAt(A, "open");
+      return () =>
+        app.inject({
+          method: "PUT",
+          url: `/file-sets/${id}/files/notes/one.txt`,
+          headers: { "x-api-key": SERVICE_KEY, "x-acting-user": both.externalId, "content-type": "application/octet-stream" },
+          payload: Buffer.from("one\n"),
+        });
+    },
+    "POST /file-sets/:file_set_id/close": async () => {
+      const id = await fileSetAt(A, "open");
+      await rawQuery(
+        `INSERT INTO file_set_files (file_set_id, path, bytes, sha256, sensitivity_label) VALUES ($1, 'a.txt', 2, $2, $3)`,
+        [id, "87428fc522803d31065e7bce3cf03fe475096631e5e07bbd7a0fde60c4cf25c7", A]
+      );
+      return () => post(both, `/file-sets/${id}/close`);
+    },
+    "PATCH /file-sets/:file_set_id": async () => {
+      const id = await fileSetAt(A, "closed");
+      return () => as(both, { method: "PATCH", url: `/file-sets/${id}`, payload: { enabled: false } });
+    },
+    "POST /file-sets/:file_set_id/rehash": async () => {
+      const id = await fileSetAt(A, "failed_directory");
+      return async () => {
+        const res = await post(admin, `/file-sets/${id}/rehash`);
+        // The walk goes on after the answer: wait for it to close the set, so that what it wrote is counted.
+        for (let i = 0; i < 100; i++) {
+          const [set] = await rawQuery<{ state: string }>(`SELECT state FROM file_sets WHERE id = $1`, [id]);
+          if (set?.state === "closed" || set?.state === "failed") break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return res;
+      };
+    },
     "PATCH /connections/:connection_id": async () => {
       const id = await connectionAt(A);
       return () => as(admin, { method: "PATCH", url: `/connections/${id}`, payload: { calls_per_minute: 30 } });
@@ -1475,6 +1563,35 @@ describe("every route that writes, driven against a private target", () => {
 
   /** One request for each route that starts something new, with rl-a named. */
   const NEW_AT_A: Record<string, () => Promise<Drive>> = {
+    "POST /file-sets": async () => {
+      const party = await ownParty();
+      return () =>
+        post(both, "/file-sets", {
+          name: `A new set ${randomUUID().slice(0, 8)}`,
+          party_id: party,
+          stake: "The organization holds these files.",
+          label: A,
+        });
+    },
+    "POST /file-sets/register": async () => {
+      const party = await ownParty();
+      return async () => {
+        const res = await post(admin, "/file-sets/register", {
+          name: `A registered set ${randomUUID().slice(0, 8)}`,
+          directory: "registered",
+          party_id: party,
+          stake: "The organization holds these files.",
+          label: A,
+        });
+        const id = res.json()?.file_set?.id as string | undefined;
+        for (let i = 0; id && i < 100; i++) {
+          const [set] = await rawQuery<{ state: string }>(`SELECT state FROM file_sets WHERE id = $1`, [id]);
+          if (set?.state === "closed" || set?.state === "failed") break;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return res;
+      };
+    },
     // An administrator's, from a signed-in session: the first administrator reads rl-a.
     "POST /connections": async () => {
       const party = await ownParty();
@@ -1523,6 +1640,10 @@ describe("every route that writes, driven against a private target", () => {
    */
   const ADDS_ROWS = [
     "POST /connections",
+    "POST /file-sets",
+    "POST /file-sets/register",
+    "PUT /file-sets/:file_set_id/files/*",
+    "POST /file-sets/:file_set_id/rehash",
     "POST /claims/:claim_id/order",
     "POST /claims/:claim_id/contribute",
     "POST /claims/:claim_id/decompose",
@@ -1557,6 +1678,8 @@ describe("every route that writes, driven against a private target", () => {
     "PATCH /connections/:connection_id",
     "POST /connections/:connection_id/look",
     "PUT /connections/:connection_id/tools",
+    "POST /file-sets/:file_set_id/close",
+    "PATCH /file-sets/:file_set_id",
   ];
 
   it("has a request here for every rule that takes its label from a row or from the person", () => {
