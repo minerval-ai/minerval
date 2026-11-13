@@ -834,7 +834,7 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
     record: {
       made,
       prompt_set_is_this_graphs: made?.prompt_set ? made.prompt_set === getPromptSet().hash : null,
-      sent: pkg.showing.send === "as_released" ? "as each package was built, by a choice made when the showing was asked for" : "by a person each time",
+      sent: pkg.showing.send === "as_released" ? "as each package was built, by the publisher's standing setting" : "by a person each time",
       acts: pkg.record.acts,
     },
     versions: pkg.record.versions,

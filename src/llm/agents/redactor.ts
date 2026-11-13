@@ -26,7 +26,7 @@ export function redactorTaskMessage(input: { round: number }): string {
         `under returned_by_audit, and your earlier removals are still in place.\n\n`
       : "") +
     `Read the policy (get_redaction_policy) and the item (get_page_to_redact), remove what a category covers ` +
-    `(redact), hold or delay what a removal cannot protect (hold, delay), and end with finish_redaction. ` +
+    `(redact), hold or delay what a removal cannot protect (hold_part, delay_part), and end with finish_redaction. ` +
     `A run that ends without finish_redaction leaves the item waiting to be redacted again.\n\n` +
     turnBudgetLine(RUN_TURN_GUARD)
   );

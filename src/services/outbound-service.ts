@@ -68,9 +68,10 @@ const atPublic = <T>(what: string, fn: () => Promise<T>) => runAtLabel(PUBLIC_LA
 // ---- what the person who asks for a standing showing is told ---------------------
 
 /**
- * How the packages of a showing outside are sent, as the person choosing is
- * told it. The choice is made when the showing is asked for, by the person
- * asking, and is recorded with the showing under their name.
+ * How what is released outside is sent, as the person choosing is told it.
+ * It is the setting of the gate to outside (`send_as_released`,
+ * gate-settings-service.ts), which an administrator sets and every showing
+ * across that gate carries. A gate starts with it on.
  */
 export const SEND_CHOICES = {
   by_a_person_each_time:
@@ -81,8 +82,8 @@ export const SEND_CHOICES = {
     "Each package is sent to the public graph as soon as it is built, with nobody sending it: when a page is " +
     "released, when more of one is, and when a later version is held, in which case the public graph is told that " +
     "it is held, by whom and since when, and none of its text. Outside, this shows when your graph assessed the " +
-    "node again and how long each version waited to be released. The choice is recorded with the showing under " +
-    "your name, and ending the showing ends it.",
+    "node again and how long each version waited to be released. It is the setting of the gate to outside, " +
+    "recorded under the administrator who set it.",
 } as const;
 export type SendChoice = keyof typeof SEND_CHOICES;
 
@@ -491,7 +492,7 @@ export async function sendOutbound(input: { showingId: string; sender: Sender })
     const [showing] = await rawQuery<{ id: string; send_as_released: boolean }>(`SELECT id, send_as_released FROM shown_showings WHERE id = $1 AND to_outside`, [input.showingId]);
     if (!showing) throw new OutboundError("SHOWING_NOT_FOUND", "No showing outside has that id.");
     if ("standing" in input.sender && !showing.send_as_released) {
-      throw new OutboundError("NO_STANDING_CHOICE", "Nobody chose for this showing's packages to be sent as they are released, so a person sends each.");
+      throw new OutboundError("NO_STANDING_CHOICE", "The gate to outside is set for a person to send each package, so nothing goes without one. An administrator changes that with the gate's send_as_released.");
     }
     await advanceProposals(graph, showing.id, input.sender);
     const built = await buildOutboundPackages({ showingId: showing.id });
@@ -633,7 +634,7 @@ export async function outboundOverview(opts: { showingId?: string } = {}): Promi
             how: s.how === "file" ? "handed to a person as a file" : "sent to the public graph",
             result: s.result,
             ...(s.detail ? { the_public_graph_said: s.detail } : {}),
-            by: s.under_standing_choice ? "the standing choice made when the showing was asked for" : s.by,
+            by: s.under_standing_choice ? "the gate's setting to send what is released" : s.by,
             holding: s.holding,
           })),
       })),

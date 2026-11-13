@@ -16,7 +16,7 @@ import { askShowing } from "../../src/services/showing-service.js";
 import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
 import { runAtLabel, withAgent } from "../../src/llm/usage-context.js";
 import { summarizeCoverage } from "../../src/services/coverage-service.js";
-import { A, C, asPerson, seedNode, seedUser, system, unwall, version, wall } from "./review-3-common.js";
+import { A, C, asPerson, seedNode, seedUser, system, unwall, version, wall, personDecidesAt } from "./review-3-common.js";
 
 const id: Record<string, string> = {};
 let director: GateActor;
@@ -142,6 +142,7 @@ afterAll(async () => {
 
 describe("a page whose run kept a reading", () => {
   it("rests on the party whose system the reading came from, and says the source exists", async () => {
+    await personDecidesAt(C, A);
     const asked = await askShowing({ nodeId: id.rested!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
     const page = await pageOf(asked.showing_id);
     // The version read nothing else, so the party of the reading is the one asked.
@@ -166,6 +167,7 @@ describe("a page whose run kept a reading", () => {
   });
 
   it("an analysis kept in work on the node rests on the party of every set its command had mounted", async () => {
+    await personDecidesAt(C, A);
     const asked = await askShowing({ nodeId: id.compared!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
     const page = await pageOf(asked.showing_id);
     // The source itself carries no one party, and is not taken for the organization's own.
@@ -176,6 +178,7 @@ describe("a page whose run kept a reading", () => {
   });
 
   it("a call that was made and not kept is not a source: the page rests on the organization alone", async () => {
+    await personDecidesAt(C, A);
     const asked = await askShowing({ nodeId: id.looked!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
     const page = await pageOf(asked.showing_id);
     expect(page.rests_on).toEqual([id.org]);
@@ -233,6 +236,7 @@ describe("what a Redactor can open", () => {
       return source!.id;
     });
     try {
+      await personDecidesAt(C, A);
       const asked = await askShowing({ nodeId: node, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
       const parts = await system(() =>
         rawQuery<{ kind: string; rests_on: string[] }>(

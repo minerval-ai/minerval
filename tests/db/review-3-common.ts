@@ -127,3 +127,23 @@ export async function unwall(extraNodes: string[] = []): Promise<void> {
     await rawQuery(`DELETE FROM labels WHERE name = ANY($1::text[])`, [LABELS]);
   }).catch((err: unknown) => console.warn("[review-3] cleanup:", err instanceof Error ? err.message : err));
 }
+
+/**
+ * Set the gate between two labels (or to outside, with `to` null) to a
+ * person's decision, as an administrator would. A gate starts from the
+ * Redactor's decision; the tests of what a person at the gate does set
+ * this first. Returns the gate's id.
+ */
+export async function personDecidesAt(from: string, to: string | null, mode: "person" | "redactor" | "open" = "person"): Promise<string> {
+  const { ensureBoundaryPolicy } = await import("../../src/services/redaction-policy.js");
+  const { setGateMode } = await import("../../src/services/gate-settings-service.js");
+  const policy = await ensureBoundaryPolicy({ from, to });
+  await setGateMode({ boundaryId: policy.boundary_id, mode, actor: { id: await seedUser(), holding: ["administer"], administer: true, releaseParties: [] } });
+  return policy.boundary_id;
+}
+
+/** Set, as an administrator would, whether what the gate to outside releases is sent as it is released. */
+export async function sendAsReleasedAt(gateId: string, on: boolean): Promise<void> {
+  const { setGate } = await import("../../src/services/gate-settings-service.js");
+  await setGate({ boundaryId: gateId, sendAsReleased: on, actor: { id: await seedUser(), holding: ["administer"], administer: true, releaseParties: [] } });
+}

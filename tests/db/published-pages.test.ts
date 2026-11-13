@@ -45,9 +45,9 @@ import {
   signedRegistration,
   writeProposal,
 } from "../../src/services/outbound-service.js";
-import { decideAtGate, releaseQueue, shownShowing, type GateActor } from "../../src/services/release-gate-service.js";
+import { decideAtGate, gateQueue, shownShowing, type GateActor } from "../../src/services/release-gate-service.js";
 import { askShowing, endShowing, followShowings } from "../../src/services/showing-service.js";
-import { A, B, C, asPerson, attachSource, seedNode, seedUser, system, tag, unwall, wall } from "./review-3-common.js";
+import { A, B, C, asPerson, attachSource, seedNode, seedUser, system, tag, unwall, wall, personDecidesAt, sendAsReleasedAt } from "./review-3-common.js";
 import { mirrorDatabaseUrl } from "./urls.js";
 
 const SECRET = "4711 units";
@@ -190,7 +190,7 @@ async function redactAndCheck(pageId: string): Promise<void> {
 /** Release everything on a page for every party, except the parts of the kinds named, which are held. */
 async function releaseAllBut(pageId: string, holdKinds: string[] = []): Promise<void> {
   for (const [who, party] of [[actor.acme!, id.acme!], [actor.org!, id.org!]] as const) {
-    const queue = (await releaseQueue(who, { limit: 200 })) as { items: any[] };
+    const queue = (await gateQueue(who, { limit: 200 })) as { items: any[] };
     const mine = queue.items.filter((i) => i.page_id === pageId);
     const hold = mine.filter((i) => holdKinds.includes(i.kind));
     const release = mine.filter((i) => !holdKinds.includes(i.kind));
@@ -305,6 +305,9 @@ describe("a mirrored node's page, shown outside and standing", () => {
   let publishedPageId = "";
 
   it("is built into one signed package once it settles at the gate, and the package checks out with no database", async () => {
+    // The gate to outside, set to a person's decision at the gate and to a person sending each package.
+    id.gate = await personDecidesAt(A, null);
+    await sendAsReleasedAt(id.gate, false);
     const asked = await askShowing({ nodeId: id.p!, pageLabel: A, toLabel: null, form: "standing", scope: "node", actor: actor.director! });
     id.showing = asked.showing_id;
     // Before anything is released: the outside is told the page is held, and none of its text.
@@ -312,7 +315,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     const [waiting] = await packagesOf(id.showing!, id.p!);
     expect(waiting!.package.state).toBe("held");
     expect(waiting!.package.page!.parts).toEqual([]);
-    expect(waiting!.package.page!.held!.because).toBe("waiting for its redaction, which runs when it is paid for");
+    expect(waiting!.package.page!.held!.because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
     expect((await verifyPublishedPage(waiting!.package)).ok).toBe(true);
 
     pageId = await latestPageOf(id.showing!, id.p!);
@@ -622,7 +625,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(JSON.stringify(third!.package).includes("night logs agree")).toBe(false);
     const read = (await pubApi("GET", `/published-pages/${publishedPageId}`, undefined, null)).json;
     expect(read.state).toBe("held");
-    expect(read.held.because).toBe("waiting for its redaction, which runs when it is paid for");
+    expect(read.held.because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
     expect(read.shown_state).toBe("released_in_part");
     expect(read.page.verdict.status).toBe("supported");
     expect(read.versions.map((v: any) => v.state)).toEqual(["held", "released_in_part"]);
@@ -638,7 +641,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
   });
 
   it("publishes a part when its hold is lifted, and the later version when it is released", async () => {
-    const queue = (await releaseQueue(actor.org!, { limit: 200 })) as { items: any[] };
+    const queue = (await gateQueue(actor.org!, { limit: 200 })) as { items: any[] };
     const held = queue.items.find((i) => i.page_id === pageId && i.kind === "an argument against");
     await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: pageId, part: held.part }], decision: "lift" });
     await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: pageId, part: held.part }], decision: "release" });
@@ -708,6 +711,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
 describe("a node that exists only in the deployment", () => {
   it("has nowhere to appear until it is proposed, in words a person who directs writes and the parties release, and its page follows once the public graph holds it", async () => {
     id.n = await seedNode(A, "The plant's third line ran at full speed in March");
+    await personDecidesAt(A, null);
     const asked = await askShowing({ nodeId: id.n!, pageLabel: A, toLabel: null, form: "standing", scope: "node", actor: actor.director! });
     id.privateShowing = asked.showing_id;
     expect(await buildOutboundPackages({ showingId: id.privateShowing })).toBe(0);
@@ -785,24 +789,26 @@ describe("a node that exists only in the deployment", () => {
   });
 });
 
-describe("a standing showing whose asker chose that it is sent as it is released", () => {
-  it("goes out with nobody sending it, recorded as that choice, and a showing without the choice does not", async () => {
+describe("a gate to outside set to send what is released", () => {
+  it("goes out with nobody sending it, recorded as the gate's setting, and nothing goes that way while the setting is off", async () => {
     await seedPrivateWork(id.q!);
-    const asked = await askShowing({ nodeId: id.q!, pageLabel: A, toLabel: null, form: "standing", scope: "node", actor: actor.director!, sendAsReleased: true });
+    await expect(sendOutbound({ showingId: id.showing!, sender: { standing: true } })).rejects.toThrow(/set for a person to send each package/);
+    await sendAsReleasedAt(id.gate!, true);
+    const asked = await askShowing({ nodeId: id.q!, pageLabel: A, toLabel: null, form: "standing", scope: "node", actor: actor.director! });
     id.standingChoice = asked.showing_id;
-    await expect(sendOutbound({ showingId: id.showing!, sender: { standing: true } })).rejects.toThrow(/Nobody chose/);
     const page = await latestPageOf(id.standingChoice!, id.q!);
     await redactAndCheck(page);
     await releaseAllBut(page);
     const followed = await followOutbound();
-    expect(followed.sent).toBe(1);
+    // This showing's package, and those of the earlier showings across the same gate that were waiting for a person.
+    expect(followed.sent).toBeGreaterThanOrEqual(1);
     const [pkg] = await packagesOf(id.standingChoice!, id.q!);
     expect(pkg!.package.showing.send).toBe("as_released");
     const overview = (await everyone(() => outboundOverview({ showingId: id.standingChoice }))) as { nodes: any[] };
-    expect(overview.nodes[0].packages[0].sends[0]).toMatchObject({ result: "admitted", by: "the standing choice made when the showing was asked for", holding: [] });
+    expect(overview.nodes[0].packages[0].sends[0]).toMatchObject({ result: "admitted", by: "the gate's setting to send what is released", holding: [] });
     const read = (await pubApi("GET", `/published-pages?node_id=${id.q}`, undefined, null)).json.published_pages[0];
     expect(read.state).toBe("released_whole");
     const one = (await pubApi("GET", `/published-pages/${read.published_page_id}`, undefined, null)).json;
-    expect(one.record.sent).toBe("as each package was built, by a choice made when the showing was asked for");
+    expect(one.record.sent).toBe("as each package was built, by the publisher's standing setting");
   });
 });

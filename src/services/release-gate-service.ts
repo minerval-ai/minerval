@@ -468,8 +468,7 @@ async function arrive(pageId: string, showing: ShowingRow): Promise<void> {
   const parts = await shownPartsOf(pageId);
   const acts = await actsOfPage(pageId);
   const names = await partyNames(parts.flatMap((p) => p.needs));
-  const holders = (part: ShownPartRow) =>
-    part.needs.filter((party) => standingOf(acts, part.id, party) !== "released").map((party) => names.get(party) ?? "a party");
+  const holders = (part: ShownPartRow) => holdersOf(acts, part, names);
   const [policy] = await rawQuery<{ version: number; hash: string }>(
     `SELECT p.version, p.hash FROM showing_pages sp JOIN redaction_policies p ON p.id = sp.policy_id WHERE sp.id = $1`,
     [pageId]
@@ -579,8 +578,12 @@ const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1
 
 /** The parties still holding or not yet deciding a part, by name; "the Redactor" where its hold stands. */
 function holdersOf(acts: readonly ActRow[], part: { id: string; needs: string[] }, names: Map<string, string>): string[] {
-  const out = part.needs.filter((party) => standingOf(acts, part.id, party) !== "released").map((party) => names.get(party) ?? "a party");
-  return gateHold(acts, part.id) ? ["the Redactor", ...out] : out;
+  // Under the Redactor's hold a party that has not yet been asked is not holding anything: only one that holds is named with it.
+  const redactor = gateHold(acts, part.id);
+  const out = part.needs
+    .filter((party) => (redactor ? standingOf(acts, part.id, party) === "held" : standingOf(acts, part.id, party) !== "released"))
+    .map((party) => names.get(party) ?? "a party");
+  return redactor ? ["the Redactor", ...out] : out;
 }
 
 /**
@@ -741,6 +744,9 @@ export async function decideAtGate(input: {
   if (input.partyId && !input.actor.releaseParties.includes(input.partyId)) {
     throw new ShowingError("NOT_YOUR_PARTY", "This decision is for a party whose material you do not hold the permission to release.");
   }
+  if (input.decision === "hold" && !(input.reason && input.reason in HOLD_REASONS) && input.items.every((i) => !i.reason && !i.decision)) {
+    throw new ShowingError("BAD_REASON", `A hold gives a reason from this list: ${Object.keys(HOLD_REASONS).join(", ")}.`);
+  }
   return bothSides(async () => {
     const refused: Array<{ item: GateItem; why: string }> = [];
     const touched = new Set<string>();
@@ -764,7 +770,11 @@ export async function decideAtGate(input: {
       const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
       const destination = destinationOf(showing!);
       if (showing!.ended_at && (decision === "release" || decision === "approve")) {
-        refuse("This item's flow has ended, so nothing more is released from it. What was shown stays shown.");
+        refuse(
+          showing!.kind === "page"
+            ? "This page's showing has ended, so nothing more is released from it. What was shown stays shown."
+            : "This item's flow has ended, so nothing more is released from it. What was shown stays shown."
+        );
         continue;
       }
       const parts = await gatePartsOf(page.id);
@@ -786,7 +796,9 @@ export async function decideAtGate(input: {
         refuse(
           wanted && !input.actor.releaseParties.includes(wanted)
             ? "That is a party whose material you do not hold the permission to release."
-            : "This item does not rest on the material of a party you release for, so it is not yours to act on."
+            : wanted
+              ? "This item does not rest on that party's material, so it is not that party's to release or hold."
+              : "This item does not rest on the material of a party you release for, so it is not yours to act on."
         );
         continue;
       }
@@ -817,7 +829,7 @@ export async function decideAtGate(input: {
         }
         const releasedBy = mine.filter((party) => standingOf(acts, partId, party) === "released");
         if (releasedBy.length === mine.length) {
-          refuse("It has been released, and a release is not taken back.");
+          refuse("This party has released it, and a release is not taken back.");
           continue;
         }
         for (const party of mine) {
@@ -1276,8 +1288,8 @@ const STAGE_WORDS: Record<PageStage, string> = {
 
 /** The same stages where the budget that pays for the work could not pay. */
 const STAGE_WORDS_UNPAID: Partial<Record<PageStage, string>> = {
-  to_redact: "waiting for funds: the budget that pays for its redaction is spent",
-  to_check: "waiting for funds: the budget that pays for the check of its redaction is spent",
+  to_redact: "waiting for funds: none of the budgets that pay for its redaction could pay for it",
+  to_check: "waiting for funds: none of the budgets that pay for the check of its redaction could pay for it",
 };
 
 const ACT_WORDS: Record<string, string> = {
@@ -1300,13 +1312,24 @@ function age(since: Date): string {
   return hours < 48 ? `${hours} hour${hours === 1 ? "" : "s"}` : `${Math.floor(hours / 24)} days`;
 }
 
+/** Why an item that has not been shown is held, in fixed words: a person's hold, the Redactor's, a delay, who it waits on, or the stage it is at. */
+function heldBecause(page: ShownPageRow, acts: readonly ActRow[], waitingOn: readonly string[]): string {
+  const directHold = pageHeldByDirect(acts);
+  if (directHold) return `held by a person who directs the graph (${HOLD_REASONS[(directHold.reason ?? "no_reason_given") as HoldReason]})`;
+  if (page.stage !== "at_gate") return (page.waiting_for_funds ? STAGE_WORDS_UNPAID[page.stage] : undefined) ?? STAGE_WORDS[page.stage];
+  const redactor = gateHold(acts, null);
+  if (redactor) return `held by the Redactor (${HOLD_REASONS[(redactor.reason ?? "no_reason_given") as HoldReason]})`;
+  const delay = delayOn(acts, null);
+  if (delay) return `delayed until ${delay.until!.toISOString()}`;
+  return `waiting on ${waitingOn.join(" and ") || "the people who decide what is released"}`;
+}
+
 /** One version of a node's page as the destination side may describe it without any of its text. */
 async function describeShownPage(page: ShownPageRow): Promise<Record<string, unknown>> {
   const parts = await shownPartsOf(page.id);
   const acts = await actsOfPage(page.id);
   const names = await partyNames([...page.needs, ...parts.flatMap((p) => p.needs)]);
   const held = parts.filter((p) => p.released_at === null);
-  const directHold = pageHeldByDirect(acts);
   const waitingOn = page.needs.filter((party) => standingOf(acts, null, party) !== "released").map((party) => names.get(party) ?? "a party");
   const state: NodeState = !page.shown_at ? "held" : held.length === 0 ? "released_whole" : "released_in_part";
   return {
@@ -1315,17 +1338,7 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
     state,
     ...(state === "held"
       ? {
-          held_because: directHold
-            ? `held by a person who directs the graph (${HOLD_REASONS[(directHold.reason ?? "no_reason_given") as HoldReason]})`
-            : page.stage === "at_gate"
-              ? gateHold(acts, null)
-                ? `held by the Redactor (${HOLD_REASONS[(gateHold(acts, null)!.reason ?? "no_reason_given") as HoldReason]})`
-                : delayOn(acts, null)
-                  ? `delayed until ${delayOn(acts, null)!.until!.toISOString()}`
-                  : `waiting on ${waitingOn.join(" and ") || "the people who decide what is released"}`
-              : page.waiting_for_funds
-                ? `${STAGE_WORDS_UNPAID[page.stage] ?? STAGE_WORDS[page.stage]}`
-                : STAGE_WORDS[page.stage],
+          held_because: heldBecause(page, acts, waitingOn),
           held_for: age(page.opened_at),
         }
       : {
@@ -1477,10 +1490,7 @@ export async function shownPage(pageId: string): Promise<(Record<string, unknown
             part: p.position,
             kind: p.kind,
             descriptor: p.descriptor,
-            held: heldWords(
-              p.descriptor,
-              p.needs.filter((party) => standingOf(acts, p.id, party) !== "released").map((party) => names.get(party) ?? "a party")
-            ),
+            held: heldWords(p.descriptor, holdersOf(acts, p, names)),
             hash: p.commitment,
           }
     ),
@@ -1607,7 +1617,7 @@ export async function outsideRecord(showingId: string, nodeId: string): Promise<
     [showingId, nodeId]
   );
   const allActs = await rawQuery<ActRow & { party: string | null; position: number | null }>(
-    `SELECT a.id, a.showing_id, a.page_id, a.part_id, a.act, a.party_id, a.actor_id, a.holding, a.rule_id, a.reason, a.at, a.by,
+    `SELECT a.id, a.showing_id, a.page_id, a.part_id, a.act, a.party_id, a.actor_id, a.holding, a.rule_id, a.reason, a.at, a.by, a.run_id, a.until,
             p.name AS party, sp.position
        FROM showing_acts a LEFT JOIN parties p ON p.id = a.party_id LEFT JOIN shown_parts sp ON sp.id = a.part_id
       WHERE a.showing_id = $1 ORDER BY a.at, a.id`,
@@ -1633,11 +1643,7 @@ export async function outsideRecord(showingId: string, nodeId: string): Promise<
     const header = page.shown_at && page.header ? (JSON.parse(page.header) as Record<string, unknown>) : null;
     const state: NodeState | "not_redacted" =
       page.stage === "overtaken" ? "not_redacted" : !page.shown_at ? "held" : heldParts.length === 0 ? "released_whole" : "released_in_part";
-    const because = directHold
-      ? `held by a person who directs the graph (${HOLD_REASONS[(directHold.reason ?? "no_reason_given") as HoldReason]})`
-      : page.stage === "at_gate"
-        ? `waiting on ${waitingOn.join(" and ") || "the people who decide what is released"}`
-        : STAGE_WORDS[page.stage];
+    const because = heldBecause(page, acts, waitingOn);
     const since = (directHold?.at ?? page.opened_at).toISOString();
     versions.push({
       page_id: page.id,

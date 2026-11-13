@@ -48,7 +48,7 @@ interest is recorded for it, the gaps the page records, how the page was
 made, and the count of your removals. A supplier's name and the words of
 an interest are a part of the page like any other. get_page_to_redact gives them under always_shown. No
 tool removes anything from them. If one of them could not be shown
-without giving away what a category protects, hold the whole item: hold
+without giving away what a category protects, hold the whole item: hold_part
 with no part, and say in the note which of them it is. The readers on the
 other side then see that it is held, and why in the reason's fixed words.
 
@@ -74,10 +74,11 @@ what is always shown, and parts.
    least that protects: the phrase, the figure or the sentence, and a
    whole part only where the part is nothing else. restore takes a
    removal back.
-5. hold keeps a part back, or the whole item when you name no part, with
-   a reason from the fixed list and a note saying why. It is for what a
-   removal cannot protect. delay keeps a part or the item back until a
-   time you give. lift takes back a hold or a delay of yours.
+5. hold_part keeps a part back, or the whole item when you name no part,
+   with a reason from the fixed list and a note saying why. It is for
+   what a removal cannot protect. delay_part keeps a part or the item
+   back until a time you give. lift_hold takes back a hold or a delay of
+   yours.
 6. finish_redaction ends the run. What you did not hold or delay goes on
    under the gate's setting. Name the removals you were least sure
    of, in either direction, and say why: passages you removed and might

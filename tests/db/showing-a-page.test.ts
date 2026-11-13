@@ -22,8 +22,7 @@ import {
   askedShowings,
   decideAtGate,
   holdPage,
-  releaseQueue,
-  setReleaseRule,
+  gateQueue,
   shownPage,
   shownShowing,
   shownShowings,
@@ -33,7 +32,7 @@ import { ShowingError, askShowing, endShowing, followShowings } from "../../src/
 import { withTransaction } from "../../src/db/client.js";
 import { noteMirrorApplied, resetMirrorHeldForTests } from "../../src/services/mirrored-node-service.js";
 import { openReassessmentsForVersionsMadeBesideEarlier } from "../../src/services/version-upkeep.js";
-import { A, B, C, asPerson, attachSource, caught, seedNode, seedUser, system, unwall, wall } from "./review-3-common.js";
+import { A, B, C, asPerson, attachSource, caught, seedNode, seedUser, system, unwall, wall, personDecidesAt } from "./review-3-common.js";
 
 const SECRET = "4711 units";
 const id: Record<string, string> = {};
@@ -163,6 +162,7 @@ describe("asking", () => {
   });
 
   it("opens the page, the boundary's policy on both sides and the redaction on the ledger, and shows nothing", async () => {
+    await personDecidesAt(C, A);
     const asked = await askShowing({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
     id.showing = asked.showing_id;
     expect(asked.pages_opened).toBe(1);
@@ -174,7 +174,7 @@ describe("asking", () => {
     const [node] = record.nodes as any[];
     expect(node.state).toBe("held");
     expect(node.showing_began).toBe("after the node was first assessed");
-    expect(node.versions[0].held_because).toBe("waiting for its redaction, which runs when it is paid for");
+    expect(node.versions[0].held_because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
     id.page = node.versions[0].page_id;
 
     // The redaction is a row on the ledger at the page's label, waiting to be paid for.
@@ -274,7 +274,7 @@ describe("Audit's check", () => {
     const returned = await audit("record_fidelity_outcome", { page_id: id.page, outcome: "return", reasons: `The target of 4500 in part 3 lets a reader bound the figure ${SECRET}.` });
     expect(returned.success).toBe(true);
     const record = (await atA(() => shownShowing(id.showing!)))!;
-    expect((record.nodes as any[])[0].versions[0].held_because).toBe("waiting for its redaction, which runs when it is paid for");
+    expect((record.nodes as any[])[0].versions[0].held_because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
     expect((record.acts as any[]).map((a) => a.what)).toEqual(["asked for the showing", "the check returned the redaction to be done again"]);
     expect(JSON.stringify(record)).not.toContain("target of");
     const [action] = await system(() => rawQuery<{ status: string }>(`SELECT status FROM actions WHERE exclusion_group = $1`, [`redact:${id.page}`]));
@@ -306,7 +306,7 @@ describe("Audit's check", () => {
 
 describe("the gate", () => {
   it("shows each holder of release the items that rest on their party, least sure first, as they would be shown, and the page as written only where they read its label", async () => {
-    const forAcme = (await releaseQueue(actor.acme!)) as { items: any[] };
+    const forAcme = (await gateQueue(actor.acme!)) as { items: any[] };
     // The verdict, the paragraphs of the summary and the reasoning, and Acme's own reading. Not Borealis's reading, and not the organization's parts.
     expect(forAcme.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 8, 10]);
     expect(forAcme.items[1].redactor_least_sure).toBe(true);
@@ -323,7 +323,7 @@ describe("the gate", () => {
     expect(forAcme.items.every((i) => i.shown_as_released === undefined)).toBe(true);
 
     // Borealis's reviewer holds release for Borealis and reads `public` alone. They are shown what their decision would release.
-    const forBorealis = (await releaseQueue(actor.borealis!)) as { items: any[] };
+    const forBorealis = (await gateQueue(actor.borealis!)) as { items: any[] };
     expect(forBorealis.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 9, 11]);
     const recorded = await system(() =>
       rawQuery<{ position: number; original: string; redacted: string | null }>(`SELECT position, original, redacted FROM showing_parts WHERE page_id = $1 ORDER BY position`, [id.page])
@@ -352,7 +352,7 @@ describe("the gate", () => {
   });
 
   it("shows a holder who does not read the page's label nothing but what their decision would release", async () => {
-    const forBorealis = (await releaseQueue(actor.borealis!)) as { items: any[] };
+    const forBorealis = (await gateQueue(actor.borealis!)) as { items: any[] };
     const said = JSON.stringify(forBorealis);
     // No removed passage: the figure, and the target that bounds it. Each is in a part that rests on Acme's material too.
     expect(said).not.toContain(SECRET);
@@ -374,6 +374,7 @@ describe("the gate", () => {
     }
     // No page as written, no passage, no note and no reason on any item: only the keys below.
     const allowed = new Set([
+      "item_id", "kind_of_thing", "kind_of_thing_in_words", "the_redactor_proposes",
       "page_id", "showing_id", "node_id", "node", "always_shown", "audit", "waiting_since", "shown_as_released",
       "part", "kind", "decide_for", "rests_on", "held", "removals_by_category", "redactor_least_sure", "as_it_would_be_shown",
     ]);
@@ -385,7 +386,7 @@ describe("the gate", () => {
     // that party's own, and is shown: the passage and its category, without the Redactor's note. Here, a holder of
     // release for Acme who reads `public` alone.
     const acmeOutside: GateActor = { ...actor.acme!, clearance: ["public"] };
-    const forAcmeOutside = (await releaseQueue(acmeOutside)) as { items: any[] };
+    const forAcmeOutside = (await gateQueue(acmeOutside)) as { items: any[] };
     const reading = forAcmeOutside.items.find((i) => i.part === 8);
     expect(reading.rests_on.map((r: any) => r.party.id)).toEqual([id.acme]);
     expect(reading.removals).toEqual([{ passage: SECRET, category: "commercial figures" }]);
@@ -620,6 +621,7 @@ describe("arrival at the destination label", () => {
 describe("two people deciding at once", () => {
   it("settle the page one after the other, and it arrives once", async () => {
     for (let round = 0; round < 3; round++) {
+      await personDecidesAt(C, A);
       const asked = await askShowing({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
       const record = (await atA(() => shownShowing(asked.showing_id)))!;
       const pageId = (record.nodes as any[])[0].versions[0].page_id as string;
@@ -647,6 +649,7 @@ describe("a standing showing of a node with what sits under it", () => {
   it("covers a node before it is assessed, and follows a first version, a new subclaim, a removed edge and a later version", async () => {
     // A node at c, which a reader at a cannot read at all.
     id.root = await seedNode(C, "The line can run at full speed");
+    await personDecidesAt(C, A);
     const asked = await askShowing({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "standing", scope: "under", actor: actor.director! });
     id.standing = asked.showing_id;
     expect(asked.pages_opened).toBe(0);
@@ -654,9 +657,16 @@ describe("a standing showing of a node with what sits under it", () => {
     let record = (await atA(() => shownShowing(id.standing!)))!;
     expect((record.nodes as any[]).map((n) => [n.state, n.text, n.showing_began])).toEqual([["not_yet_assessed", null, "before the node was first assessed"]]);
 
-    // A rule: the organization's untouched parts are released without a person deciding each.
-    const rule = await setReleaseRule({ actor: actor.org!, partyId: id.org!, pageLabel: C, toLabel: A, condition: "nothing_removed_and_only_ours", coversVerdict: true });
-    id.rule = rule.rule_id;
+    // The organization's holders of release set the gate, for its own material, to the Redactor's decision:
+    // what the Redactor lets through goes without a person deciding each part.
+    const { setGateMode } = await import("../../src/services/gate-settings-service.js");
+    const authority = { id: actor.org!.id, holding: actor.org!.holding, administer: false, releaseParties: actor.org!.releaseParties };
+    await expect(setGateMode({ boundaryId: asked.boundary_id, mode: "open", actor: authority })).rejects.toThrow(/gate as a whole is an administrator's/);
+    const setting = await setGateMode({ boundaryId: asked.boundary_id, partyId: id.org!, mode: "redactor", actor: authority });
+    expect(setting.changed).toBe(true);
+    // Setting what already stands changes nothing.
+    expect(await setGateMode({ boundaryId: asked.boundary_id, partyId: id.org!, mode: "redactor", actor: authority })).toMatchObject({ setting_id: setting.setting_id, changed: false });
+    id.rule = setting.setting_id;
 
     const version = (words: string) =>
       system(async () => {
@@ -689,7 +699,7 @@ describe("a standing showing of a node with what sits under it", () => {
     record = (await atA(() => shownShowing(id.standing!)))!;
     const versions = (record.nodes as any[])[0].versions;
     expect(versions.map((v: any) => v.held_because)).toEqual([
-      "waiting for its redaction, which runs when it is paid for",
+      "waiting for funds: none of the budgets that pay for its redaction could pay for it",
       "a later version was recorded before this one was redacted, so this one was not",
     ]);
     expect(versions[1].page_id).toBe(firstPage);
@@ -712,20 +722,30 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(typeof left.left_at).toBe("string");
   });
 
-  it("releases what a standing rule covers when the page reaches the gate, and shows the node's wording as a part of its page", async () => {
-    // The figure stands in the summary and in the reasoning, and is removed from both.
+  it("lets through what the Redactor let through where the gate is set to its decision, keeps what it held, and shows the node's wording as a part of its page", async () => {
+    // The figure stands in the summary and in the reasoning, and is removed from both. The Redactor also holds the
+    // paragraph of reasoning, with a reason from the fixed list and a note that stays at the page's label.
+    const told = await tool(id.rootPage!, "get_page_to_redact");
+    expect(told.gate).toBe("The Redactor decides: what you let through goes to its readers once Audit has checked your work, and nobody decides after you.");
     expect((await tool(id.rootPage!, "redact", { part: 2, passage: SECRET, category: "commercial figures", note: "A serial number." })).success).toBe(true);
+    expect((await tool(id.rootPage!, "hold_part", { part: 3, reason: "because", note: "x" })).code).toBe("BAD_REASON");
+    expect((await tool(id.rootPage!, "hold_part", { part: 3, reason: "security", note: `The paragraph describes the test rig (${SECRET}).` })).success).toBe(true);
     await throughTheCheck(id.rootPage!, { redact: { part: 3, passage: SECRET }, answer: "supports" });
     const page = (await atA(() => shownPage(id.rootPage!)))!;
-    // The wording was untouched and is the organization's alone: the rule released it, and the page.
+    // Nobody waited on a person: the page, its wording and the summary with its mark went when the check passed.
     expect(page.state).toBe("released_in_part");
     const parts = page.parts as any[];
     expect(parts[0].kind).toBe("wording");
     expect(parts[0].text).toMatch(/^The line can run at full speed/);
-    expect(parts[1].held).toMatch(/^\[A paragraph of the summary, held by The organization/);
-    expect(parts[2].held).toMatch(/^\[A paragraph of reasoning, held by The organization/);
-    const acts = ((await atA(() => shownShowing(id.standing!)))!.acts as any[]).filter((a) => a.what === "released");
-    expect(acts.every((a) => a.by === "a standing rule" && a.rule_id === id.rule)).toBe(true);
+    expect(parts[1].text).toContain("[redacted: commercial figures]");
+    expect(parts[2].held).toBe("[A paragraph of reasoning, held by the Redactor]");
+    const all = (await atA(() => shownShowing(id.standing!)))!.acts as any[];
+    const acts = all.filter((a) => a.what === "released");
+    expect(acts.length).toBeGreaterThan(0);
+    expect(acts.every((a) => a.by === "the gate's setting" && a.rule_id === id.rule)).toBe(true);
+    // The Redactor's hold is on the record with its run's kind of actor and the reason in fixed words, and nothing of its note.
+    expect(all.find((a) => a.what === "held")).toMatchObject({ by: "the Redactor", reason: "a safety or security reason", on: "part 3" });
+    expect(JSON.stringify(all)).not.toContain("test rig");
 
     // The destination cannot read the node, so the page arrives as a source attached to nothing, and no reassessment is opened.
     const [arrived] = await atA(() => rawQuery<{ source_id: string }>(`SELECT source_id FROM shown_pages WHERE id = $1`, [id.rootPage]));
@@ -733,8 +753,10 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(await system(() => rawQuery(`SELECT 1 FROM claim_instances WHERE source_id = $1`, [arrived!.source_id]))).toEqual([]);
     expect(await system(() => rawQuery(`SELECT 1 FROM node_messages WHERE node_id = $1`, [id.root]))).toEqual([]);
 
-    // The person releases the parts the rule left, and the page is released whole by its gate.
-    await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: id.rootPage!, part: 2 }, { page_id: id.rootPage!, part: 3 }], decision: "release" });
+    // A person at the gate lifts the Redactor's hold, and the page is released whole. Sending the same decision again changes nothing.
+    const lifted = await decideAtGate({ actor: actor.org!, items: [{ item_id: id.rootPage!, part: 3 }], decision: "lift" });
+    expect(lifted).toMatchObject({ decided: 1, unchanged: 0, refused: [] });
+    expect(await decideAtGate({ actor: actor.org!, items: [{ item_id: id.rootPage!, part: 3 }], decision: "lift" })).toMatchObject({ decided: 0, unchanged: 1 });
     const whole = (await atA(() => shownPage(id.rootPage!)))!;
     expect(whole.state).toBe("released_whole");
     expect(whole.removals_under_the_policy).toEqual({ "commercial figures": 2 });
@@ -751,17 +773,21 @@ describe("a standing showing of a node with what sits under it", () => {
     await followShowings();
     const record = (await atA(() => shownShowing(id.standing!)))!;
     const pageId = (record.nodes as any[])[0].versions[0].page_id;
-    const said = await tool(pageId, "cannot_cross", { category: "test content", note: `The verdict itself gives away the answer to a test still in use (${SECRET}).` });
+    // The Redactor holds the whole item, as a person could, and finishes; Audit passes its work.
+    const said = await tool(pageId, "hold_part", { reason: "policy", note: `The verdict itself gives away the answer to a test still in use (${SECRET}).` });
     expect(said.success).toBe(true);
+    await throughTheCheck(pageId, { answer: "supports" });
     const after = (await atA(() => shownShowing(id.standing!)))!;
     const version = (after.nodes as any[])[0].versions[0];
     expect(version.state).toBe("held");
-    expect(version.held_because).toBe("it cannot be shown under this boundary's policy: something that is always shown with a page could not be shown here");
-    expect(JSON.stringify(after)).not.toContain("test content");
+    expect(version.held_because).toBe("held by the Redactor (what the policy protects could not be removed from it)");
+    expect(JSON.stringify(after)).not.toContain("test still in use");
     expect(JSON.stringify(after)).not.toContain(SECRET);
     expect((after.nodes as any[])[0].state).toBe("held");
-    const asked = (await atC(() => askedShowings())).find((s) => s.showing_id === id.standing)!;
-    expect((asked.pages as any[])[0].cannot_cross.category).toBe("test content");
+    // Its note stays at the page's label, with what it was least sure of.
+    const [kept] = await atC(() => rawQuery<{ least_sure: Array<{ held?: boolean; why: string }> }>(`SELECT least_sure FROM showing_pages WHERE id = $1`, [pageId]));
+    expect(kept!.least_sure.find((l) => l.held)!.why).toContain("test still in use");
+    expect((await atC(() => askedShowings())).some((s) => s.showing_id === id.standing)).toBe(true);
   });
 
   it("ends with a dated event and its reason, after which later versions do not follow", async () => {
@@ -799,6 +825,7 @@ describe("the policy of a boundary", () => {
 
 describe("two labels that do not read each other", () => {
   it("a page at a is shown to b across a boundary of its own", async () => {
+    await personDecidesAt(A, B);
     const asked = await askShowing({ nodeId: id.node!, pageLabel: A, toLabel: B, form: "once", scope: "node", actor: { ...actor.director!, clearance: [A, "public"] } });
     expect(asked.pages_opened).toBe(1);
     const forB = (await atB(() => shownShowing(asked.showing_id)))!;
@@ -813,6 +840,7 @@ describe("two labels that do not read each other", () => {
 describe("a page shown outside the deployment", () => {
   it("goes through the same steps, rests on the parties a shown page it drew on rested on, and waits inside for the next piece", async () => {
     // The page at a, whose version took in the page shown from c.
+    await personDecidesAt(A, null);
     const asked = await askShowing({ nodeId: id.node!, pageLabel: A, toLabel: null, form: "once", scope: "node", actor: { ...actor.director!, clearance: [A, "public"] } });
     id.outside = asked.showing_id;
     // Its record is kept where every member reads it, and names no label.
@@ -827,7 +855,7 @@ describe("a page shown outside the deployment", () => {
     const [needs] = await system(() => rawQuery<{ rests_on: string[] }>(`SELECT rests_on FROM showing_pages WHERE id = $1`, [pageId]));
     expect([...needs!.rests_on].sort()).toEqual([id.org, id.acme, id.borealis].sort());
     for (const [who, party] of [[actor.org!, id.org!], [actor.acme!, id.acme!], [actor.borealis!, id.borealis!]] as const) {
-      const queue = (await releaseQueue(who)) as { items: any[] };
+      const queue = (await gateQueue(who)) as { items: any[] };
       const mine = queue.items.filter((i) => i.page_id === pageId);
       await decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
     }
@@ -842,7 +870,7 @@ describe("a page shown outside the deployment", () => {
 
 /** Release everything on a page that waits on one party. */
 async function releaseAllFor(who: GateActor, party: string, pageId: string, except: number[] = []) {
-  const queue = (await releaseQueue(who, { limit: 200 })) as { items: any[] };
+  const queue = (await gateQueue(who, { limit: 200 })) as { items: any[] };
   const mine = queue.items.filter((i) => i.page_id === pageId && !except.includes(i.part));
   return decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
 }
@@ -860,6 +888,7 @@ describe("a quantity's page and a question's page", () => {
         [quantity, JSON.stringify({ central: 13200, low: 12800, high: 13600, unit: "units" }), "Three monthly meter totals were added.\n\nThe September total was corrected for a stoppage.", C]
       );
     });
+    await personDecidesAt(C, A);
     const asked = await askShowing({ nodeId: quantity, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
     const pageId = ((await atA(() => shownShowing(asked.showing_id)))!.nodes as any[])[0].versions[0].page_id as string;
     const page = await tool(pageId, "get_page_to_redact");
@@ -870,7 +899,7 @@ describe("a quantity's page and a question's page", () => {
     await throughTheCheck(pageId, { answer: "supports" });
 
     // A holder of release who reads neither the page's label nor the node is shown the node's wording as the page would show it.
-    const outside = (await releaseQueue({ ...actor.acme!, clearance: ["public"] })) as { items: any[] };
+    const outside = (await gateQueue({ ...actor.acme!, clearance: ["public"] })) as { items: any[] };
     const ofPage = outside.items.filter((i) => i.page_id === pageId);
     expect(ofPage.length).toBeGreaterThan(0);
     expect(ofPage.every((i) => i.node === undefined && i.wording_as_it_would_be_shown === page.parts[0].text)).toBe(true);
@@ -906,6 +935,7 @@ describe("a quantity's page and a question's page", () => {
         [question, C]
       );
     });
+    await personDecidesAt(C, A);
     const asked = await askShowing({ nodeId: question, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
     const pageId = ((await atA(() => shownShowing(asked.showing_id)))!.nodes as any[])[0].versions[0].page_id as string;
     const page = await tool(pageId, "get_page_to_redact");
@@ -958,6 +988,7 @@ describe("a mirrored node's page shown to the public label", () => {
           [mirrored, C]
         )
       );
+      await personDecidesAt(C, "public");
       const asked = await askShowing({ nodeId: mirrored, pageLabel: C, toLabel: "public", form: "once", scope: "node", actor: actor.director! });
       id.toPublic = asked.showing_id;
       const forEveryone = (await asPerson(["public"], () => shownShowing(asked.showing_id)))!;

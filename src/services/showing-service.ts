@@ -1430,30 +1430,6 @@ async function setStageOnBothSides(page: PageRow, stage: PageStage, extra: { act
 }
 
 /**
- * The Redactor's finding that the page cannot be shown under this policy:
- * something that is always shown could not be shown without giving away
- * what a category protects. The destination sees the page as held, in
- * fixed words. The category and the note stay at the page's label.
- */
-export async function pageCannotCross(input: { pageId: string; category: string; note: string }): Promise<void> {
-  const page = await pageAtOwnLabel(input.pageId);
-  mustBeRedacting(page);
-  const policy = await policyById(page.policy_id);
-  if (!policy?.categories.some((c) => c.name === input.category.trim())) {
-    throw new ShowingError(
-      "NO_SUCH_CATEGORY",
-      `"${input.category}" is not a category of this boundary's policy. Its categories are: ${(policy?.categories ?? []).map((c) => `"${c.name}"`).join(", ")}.`
-    );
-  }
-  if (!input.note?.trim()) throw new ShowingError("NOTE_NEEDED", "Say in the note which of the things that are always shown the category covers here, and why.");
-  await rawQuery(
-    `UPDATE showing_pages SET stage = 'cannot_cross', cannot_cross_category = $2, cannot_cross_note = $3, redacted_at = now() WHERE id = $1`,
-    [page.id, input.category.trim(), input.note.trim()]
-  );
-  await setStageOnBothSides(page, "cannot_cross", { act: "cannot_cross" });
-}
-
-/**
  * The Redactor is done. Each part as it left it is hashed with its salt,
  * the root is computed, and the root with the shape of the page (each
  * part's place, kind and hash) is recorded on the destination side at

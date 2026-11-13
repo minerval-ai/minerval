@@ -25,9 +25,9 @@ export const REDACTOR_TOOL_NAMES = [
   "get_page_to_redact",
   "redact",
   "restore",
-  "hold",
-  "delay",
-  "lift",
+  "hold_part",
+  "delay_part",
+  "lift_hold",
   "finish_redaction",
 ] as const;
 
@@ -82,7 +82,7 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
       },
     },
     {
-      name: "hold",
+      name: "hold_part",
       description:
         "Hold one part, or the whole item when you give no part, so that it does not go to the readers on the other side. A person at the gate may lift it. Those readers see that it is held by the Redactor, with the reason in its fixed words, and nothing else. Hold what a removal cannot protect: a part that gives away what a category covers however it is cut, or one of the things that are always shown.",
       input_schema: {
@@ -96,7 +96,7 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
       },
     },
     {
-      name: "delay",
+      name: "delay_part",
       description:
         "Keep one part, or the whole item when you give no part, back until a time. It goes on by itself when the time comes, unless someone holds it. Parts delayed to the same time go together.",
       input_schema: {
@@ -109,7 +109,7 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
       },
     },
     {
-      name: "lift",
+      name: "lift_hold",
       description: "Take back a hold or a delay of yours on one part, or on the whole item when you give no part.",
       input_schema: {
         type: "object",
@@ -184,14 +184,15 @@ export async function executeRedactorTool(
       }
       case "restore":
         return answer({ success: true, ...(await restorePassage({ pageId: ctx.pageId, removalId: String(input.removal_id ?? "") })) });
-      case "hold":
-      case "delay":
-      case "lift": {
+      case "hold_part":
+      case "delay_part":
+      case "lift_hold": {
+        const act = name === "hold_part" ? "hold" : name === "delay_part" ? "delay" : "lift";
         const { getUsageContext } = await import("../usage-context.js");
         const part = input.part === undefined || input.part === null ? null : Number(input.part);
         const result = await redactorActs({
           pageId: ctx.pageId,
-          act: name,
+          act,
           part,
           reason: typeof input.reason === "string" ? input.reason : undefined,
           until: typeof input.until === "string" ? input.until : undefined,
@@ -204,9 +205,9 @@ export async function executeRedactorTool(
           ...result,
           message: !result.recorded
             ? "Nothing changed: that already stands."
-            : name === "hold"
+            : act === "hold"
               ? `${what} is held. The readers on the other side will see that it is held by the Redactor, with the reason. Go on with the rest and end with finish_redaction.`
-              : name === "delay"
+              : act === "delay"
                 ? `${what} is kept back until then.`
                 : `${what} is no longer held or delayed by you.`,
         });

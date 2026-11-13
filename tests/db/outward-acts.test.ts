@@ -57,11 +57,11 @@ import { replicatedTables } from "../../src/services/mirror-manifest.js";
 import { FUNDER_RAISE_SUMMARY } from "../../src/services/mandate-service.js";
 import { buildOutboundPackages, sendOutbound, signedRegistration } from "../../src/services/outbound-service.js";
 import { STANDING_CHOICES, followKeepCurrent, sendKeepCurrent } from "../../src/services/outward-acts-service.js";
-import { decideAtGate, releaseQueue, shownShowing, type GateActor } from "../../src/services/release-gate-service.js";
+import { decideAtGate, gateQueue, shownShowing, type GateActor } from "../../src/services/release-gate-service.js";
 import { askAfterSentReports, followReports, minervalToolNames } from "../../src/services/report-sending-service.js";
 import { raiseIssue } from "../../src/services/report-service.js";
 import { askShowing, followShowings } from "../../src/services/showing-service.js";
-import { A, asPerson, attachSource, seedNode, system, tag, unwall, wall } from "./review-3-common.js";
+import { A, asPerson, attachSource, seedNode, system, tag, unwall, wall, personDecidesAt } from "./review-3-common.js";
 import { mirrorDatabaseUrl } from "./urls.js";
 
 const SECRET = "4711 units";
@@ -231,7 +231,7 @@ async function redactCheckRelease(showingId: string, node: string): Promise<void
     await at(A, "audit", () => executeAuditTool("record_fidelity_outcome", { page_id: pageId, outcome: "pass", answer: "supports_in_part", reasons: "Each removal is covered." }, {}))
   ) as Record<string, any>;
   expect(checked.success).toBe(true);
-  const queue = (await releaseQueue(actor.org!, { limit: 200 })) as { items: any[] };
+  const queue = (await gateQueue(actor.org!, { limit: 200 })) as { items: any[] };
   const mine = queue.items.filter((i) => i.page_id === pageId);
   if (mine.length > 0) await decideAtGate({ actor: actor.org!, partyId: id.org!, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
 }
@@ -377,6 +377,7 @@ afterAll(async () => {
 
 describe("a page shown outside, to begin from", () => {
   it("is published on the public graph, and its package says how the deployment's setting for keeping public versions current stands", async () => {
+    await personDecidesAt(A, null);
     const asked = await askShowing({ nodeId: id.p!, pageLabel: A, toLabel: null, form: "standing", scope: "node", actor: actor.director! });
     id.showing = asked.showing_id;
     await redactCheckRelease(id.showing!, id.p!);
@@ -644,7 +645,7 @@ describe("what the public says back about a published page", () => {
     let pkg = await latestPackage(id.showing!, id.p!);
     expect(pkg.record.said_back![0]).toMatchObject({ reassessment: "made" });
     expect((await saidBack())[0]).toMatchObject({ state: "held_since" });
-    expect((await saidBack())[0]!.in_words).toMatch(/A version made since, of \d{4}-\d\d-\d\d, is held: waiting for its redaction/);
+    expect((await saidBack())[0]!.in_words).toMatch(/A version made since, of \d{4}-\d\d-\d\d, is held: waiting for funds/);
     await redactCheckRelease(id.showing!, id.p!);
     await buildAndSend(id.showing!);
     pkg = await latestPackage(id.showing!, id.p!);
@@ -996,6 +997,7 @@ describe("an agent's report, sent to Minerval's maintainers", () => {
 describe("a publisher's record on the public graph", () => {
   it("is the facts the public record holds, as counts and dates, on the publisher's page", async () => {
     // A second page, shown once, so that the first is read beside it.
+    await personDecidesAt(A, null);
     const asked = await askShowing({ nodeId: id.q!, pageLabel: A, toLabel: null, form: "once", scope: "node", actor: actor.director! });
     id.showingQ = asked.showing_id;
     await redactCheckRelease(id.showingQ!, id.q!);
