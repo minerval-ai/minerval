@@ -390,10 +390,11 @@ describe("work on one node at a and at public", () => {
     expect(
       await system(() => rawQuery<{ status: string }>(`SELECT DISTINCT status FROM actions WHERE exclusion_group = $1`, [ASSESS_GROUP(node, A)]))
     ).toEqual([{ status: "open" }]);
-    // Each pass reads its own label's messages.
+    // The pass at `public` reads its own label's messages. The pass at a reads its own and, marked
+    // with its label, what was said at `public`, which a reads (tests/db/word-from-below.test.ts).
     expect((await runAt(PUBLIC_LABEL, () => openInbox(node))).brief).not.toContain("partner A");
     expect((await runAt(A, () => openInbox(node))).brief).toContain("partner A's schedule");
-    expect((await runAt(A, () => openInbox(node))).brief).not.toContain("A public note.");
+    expect((await runAt(A, () => openInbox(node))).brief).toContain("said at `public`\nA public note.");
   });
 
   it("shows the work at a to no reader who does not read a: not in the tables, not in the ledger view, not in a read of the node", async () => {

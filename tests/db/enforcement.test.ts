@@ -315,6 +315,8 @@ describe("every labelled table", () => {
     action_allocations: { grant_id: "gen_random_uuid()" },
     // About a node or about a source, one of the two.
     request_targets: { claim_id: "gen_random_uuid()" },
+    // Taken up from the public graph's request or from one at a label read, one of the two.
+    adopted_requests: { from_request_id: "gen_random_uuid()" },
     argument_instances: { argument_id: "gen_random_uuid()" },
     // Kept by a Steward exactly when it names the node.
     requests: { keeper_kind: "'steward'", keeper_claim_id: "gen_random_uuid()" },

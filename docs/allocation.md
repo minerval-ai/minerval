@@ -1447,7 +1447,11 @@ characters, and `read_message` reads any in full); it answers them with
 `answer_messages` (changed, no change, or disagree, with a reason), and the
 messages it was shown are marked read when it finishes. An answer to
 another node's Steward reaches that node's inbox as a `message_reply`,
-information that opens no work of its own. The claim page lists the
+information that opens no work of its own. Where a deployment has more
+than one label, a pass is also given the messages sent at the labels its
+own label reads, each marked with the label it was said at, and what it
+does with them is recorded at its own label
+([architecture.md](architecture.md), "Word from the layer below"). The claim page lists the
 messages waiting on a node (`waiting_messages`).
 
 A message costs its sender nothing and waits for the node's next pass: a

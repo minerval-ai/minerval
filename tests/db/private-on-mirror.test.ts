@@ -31,7 +31,7 @@ import { setNoContextSessionForTests, withSystemClearance } from "../../src/db/c
 import { ensureEnforcement } from "../../src/db/enforcement.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { runClaimSteward } from "../../src/llm/agents/claim-steward.js";
-import { loadMirrorChangesNote } from "../../src/llm/agents/mirror-changes-note.js";
+import { loadChangesBelowNote } from "../../src/llm/agents/changes-below-note.js";
 import { labelNote, mirrorNote } from "../../src/llm/label-note.js";
 import { executeCuratorTool } from "../../src/llm/tools/curator-tools.js";
 import { executeKindTool } from "../../src/llm/tools/kind-tools.js";
@@ -311,7 +311,7 @@ async function forgetTheMirror(): Promise<void> {
       for (const table of [...replicatedTables()].reverse()) {
         await tx.query(`DELETE FROM "${table.name}" WHERE origin = 'mirror'`);
       }
-      await tx.query(`TRUNCATE mirror_applied_batches, mirror_snapshot_rows, mirror_refusals, mirror_node_changes`);
+      await tx.query(`TRUNCATE mirror_applied_batches, mirror_snapshot_rows, mirror_refusals, node_changes`);
     });
   });
 }
@@ -1046,7 +1046,7 @@ describe("what the public graph changes on a node a version at a rests on", () =
     await ins(pub, "arguments", { id: id.argumentLater, claim_id: id.parent, name: "From burial rates", stance: "for", content: "Burial outpaces decay.", created_by: "claim_steward" });
     await pub.query(`UPDATE arguments SET content = 'Because the soil keeps accumulating, the stock keeps growing.' WHERE id = $1`, [id.argument]);
     await publishAndApply();
-    const note = await runAt(A, () => loadMirrorChangesNote(id.parent, "claim"));
+    const note = await runAt(A, () => loadChangesBelowNote(id.parent, "claim"));
     expect(note).toContain(`What the public graph has changed, as the mirror brought it, since the version at \`${A}\` was recorded on`);
     expect(note).toContain("This node was reworded (1):");
     expect(note).toContain(`It read: "${text("Coastal wetlands store more carbon per hectare than upland forest")}" It now reads: "${text("Coastal wetlands hold more carbon per hectare than upland forest")}"`);
@@ -1056,10 +1056,11 @@ describe("what the public graph changes on a node a version at a rests on", () =
     expect(note).toContain("Nodes under it reworded (1):");
     expect(note).toContain(`It read: "${text("Wetland soils accumulate carbon for centuries without saturating")}"`);
     // It is for the label that judged the node: a run with no version of its own is told nothing of the kind.
-    expect(await runAt(B, () => loadMirrorChangesNote(id.parent, "claim"))).toBe("");
-    // The rows it reads are the public graph's own words and carry the public label.
+    expect(await runAt(B, () => loadChangesBelowNote(id.parent, "claim"))).toBe("");
+    // The rows the applier wrote are the public graph's own words and carry the public label. (A change this
+    // deployment's own work makes on a node of its own is written at that node's label, with no batch.)
     expect(
-      await system(() => rawQuery<{ l: string }>(`SELECT DISTINCT sensitivity_label AS l FROM mirror_node_changes`))
+      await system(() => rawQuery<{ l: string }>(`SELECT DISTINCT sensitivity_label AS l FROM node_changes WHERE sequence IS NOT NULL`))
     ).toEqual([{ l: PUBLIC_LABEL }]);
   });
 });

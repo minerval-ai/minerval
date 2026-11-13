@@ -119,7 +119,13 @@ describe("one label: nothing here changes what a graph with `public` alone does"
     const node = await seedClaim("one label");
     await rawQuery(`UPDATE claims SET text = text || ' reworded', kind = 'question' WHERE id = $1`, [node]);
     await rawQuery(`INSERT INTO arguments (claim_id, name, stance, content, created_by) VALUES ($1, 'An argument', 'supports', 'Because.', 'test')`, [node]);
-    expect(await rawQuery(`SELECT 1 FROM node_changes WHERE claim_id = $1`, [node])).toEqual([]);
+    // The rule is the database's: change rows are written only while a label besides `public` exists. Run
+    // alone, this file starts on a database with `public` alone. In the whole suite earlier files have left
+    // labels behind, and the same rule then writes the three rows.
+    const [{ others }] = (await rawQuery<{ others: number }>(`SELECT count(*)::int AS others FROM labels WHERE name <> 'public'`)) as [{ others: number }];
+    const written = await rawQuery<{ change: string }>(`SELECT change FROM node_changes WHERE claim_id = $1 ORDER BY change`, [node]);
+    expect(written.map((w) => w.change)).toEqual(others === 0 ? [] : ["argument_added", "kind_corrected", "reworded"]);
+    // Either way a run at `public` is told nothing: there is no layer below it.
     expect(await loadChangesBelowNote(node, "question")).toBe("");
 
     await postMessage({ nodeId: node, trigger: "steward_note", body: "one label, one inbox" });
@@ -132,7 +138,7 @@ describe("one label: nothing here changes what a graph with `public` alone does"
     await markMessagesRead(inbox.ids);
     const [m] = await rawQuery<{ read: boolean; outcome: string }>(`SELECT read_at IS NOT NULL AS read, outcome FROM node_messages WHERE node_id = $1`, [node]);
     expect(m).toEqual({ read: true, outcome: "no_change" });
-    expect(await rawQuery(`SELECT 1 FROM node_message_reads`)).toEqual([]);
+    expect(await rawQuery(`SELECT 1 FROM node_message_reads r JOIN node_messages m ON m.id = r.message_id WHERE m.node_id = $1`, [node])).toEqual([]);
   });
 });
 
@@ -221,6 +227,10 @@ describe.each([
     // Its own is not marked, and the pass is told once what the mark means.
     expect(inbox.brief).toMatch(new RegExp(`\\[m\\d\\] steward_note · [^\\n]*the system\\nSAID-AT-${top}`));
     expect(inbox.brief.split(saidBelowNote(top))).toHaveLength(2);
+
+    // Which way a message travels is in the question asked, not only in who asks: work that sees every
+    // label, asking for a pass at the bottom label, is given the bottom label's message alone.
+    expect((await system(() => openInbox(node, NOW))).ids).toEqual([said[PUBLIC]]);
 
     // Nothing was opened above when the message arrived below: no slot, no ledger row.
     const slots = await system(() => rawQuery<{ l: string }>(`SELECT sensitivity_label AS l FROM steward_slots WHERE claim_id = $1 AND steward_state = 'pending'`, [node]));
@@ -381,6 +391,9 @@ describe.each([
     expect(
       sqlStateOrCode(await caught(() => runWithUsageContext({ clearance: actor.clearance }, () => adoptRequestFromBelow({ requestId: above, label: below[0]!, actor }))))
     ).toBe("REQUEST_NOT_FOUND");
+    // The same for work that sees every label: a request is taken up above the label it was filed at, never below.
+    expect(String(await caught(() => system(() => takeUpFromBelow({ requestId: above }, { filer: { kind: "admin", agent: "curator" } }))))).toContain("not found");
+    expect(await system(() => rawQuery(`SELECT 1 FROM adopted_requests WHERE from_request_id = $1`, [above]))).toEqual([]);
   });
 
   // ---- 3. changes -----------------------------------------------------------------------

@@ -455,6 +455,7 @@ describe("the functions that run with their owner's rights", () => {
         "minerval_enforcement_sync",
         "minerval_judgment_label_guard",
         "minerval_labels_changed",
+        "minerval_note_node_change",
         "minerval_sql_clearance",
         "minerval_unseen_collision_guard",
         "minerval_version_standing",

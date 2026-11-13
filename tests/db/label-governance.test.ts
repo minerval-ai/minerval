@@ -1000,7 +1000,7 @@ describe("a message waiting on a node", () => {
     await rawQuery(`UPDATE steward_slots SET steward_state = 'done' WHERE claim_id = $1`, [claim]);
   });
 
-  it("is read by a pass at its own label and by no other, where messages at two labels wait", async () => {
+  it("is read by a pass at its own label and by a pass at a label that reads it, and by no pass below, where messages at two labels wait", async () => {
     const claim = await settledClaim("governance two labels");
     await note(claim, SECOND);
     await note(claim, PUBLIC_LABEL);
@@ -1008,15 +1008,18 @@ describe("a message waiting on a node", () => {
     expect(await own(claim)).toBe("pending");
     expect(await slots(claim)).toEqual([{ sensitivity_label: SECOND, steward_state: "pending" }]);
     expect(new Set(await assessLabels(claim))).toEqual(new Set([PUBLIC_LABEL, SECOND]));
-    // Each pass is shown its own label's message.
+    // The pass at `public` is shown its own label's message and nothing from above.
     const atPublic = await openInbox(claim);
     expect(atPublic.ids).toHaveLength(1);
     expect(atPublic.brief).toContain(`A note at ${PUBLIC_LABEL}.`);
     expect(atPublic.brief).not.toContain(`A note at ${SECOND}.`);
+    expect(atPublic.brief).not.toContain("said at");
+    // The pass at the label that reads `public` is shown both, the one from below marked with its label
+    // (tests/db/word-from-below.test.ts has the rest).
     const atSecond = await inRunAt(SECOND, () => openInbox(claim));
-    expect(atSecond.ids).toHaveLength(1);
+    expect(atSecond.ids).toHaveLength(2);
     expect(atSecond.brief).toContain(`A note at ${SECOND}.`);
-    expect(atSecond.brief).not.toContain(`A note at ${PUBLIC_LABEL}.`);
+    expect(atSecond.brief).toMatch(new RegExp(`said at \`${PUBLIC_LABEL}\`\nA note at ${PUBLIC_LABEL}\\.`));
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
     await rawQuery(`UPDATE steward_slots SET steward_state = 'done' WHERE claim_id = $1`, [claim]);
   });

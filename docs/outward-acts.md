@@ -123,7 +123,11 @@ Adopting one (`POST /outside/requests/:public_request_id/adopt`) files an
 ordinary request here, at a label the person reads, with the public
 request's own words and the nodes it bears on, linked to the public one
 (`adopted_requests`). It says nothing outside. The work is an ordinary
-request and action: it runs when it is funded.
+request and action: it runs when it is funded. Taking up a request filed
+at a label of the deployment's own, at a label that reads it, is the same
+act one layer up and uses the same table and the same code
+([architecture.md](architecture.md), "Word from the layer below";
+`POST /requests/:request_id/adopt`).
 
 **Taking up in public.** A person who may act there says, in the
 organization's name, that the graph is taking it up. The public graph

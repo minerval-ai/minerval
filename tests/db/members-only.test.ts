@@ -477,6 +477,7 @@ describe("what a permission guards", () => {
       "POST /claims/:claim_id/order": ["fund"],
       "POST /claims/:claim_id/contribute": ["fund"],
       "POST /claims/:claim_id/decompose": ["fund"],
+      "POST /requests/:request_id/adopt": ["direct"],
       "POST /requests/:request_id/contribute": ["fund"],
       "POST /budget-jobs/:id/topup": ["fund"],
       "GET /permissions/grants": ["administer"],

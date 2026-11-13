@@ -160,7 +160,8 @@ function layerLines(heading: string, withdrawnBy: string, changes: readonly Chan
  * wrote (it carries a batch), and a row at a label other than this run's.
  * A change made at this run's own label on a node of its own is this
  * Steward's own work and is not told back to it. The database returns only
- * rows at labels this run reads.
+ * rows at labels this run reads, and the query says so itself as well, so
+ * that the answer does not depend on who asks.
  */
 export async function loadChangesBelowNote(claimId: string, kind: NodeKind): Promise<string> {
   const layered = !oneLabelOnly();
@@ -180,7 +181,9 @@ export async function loadChangesBelowNote(claimId: string, kind: NodeKind): Pro
          FROM node_changes ch
          LEFT JOIN claims c ON c.id = ch.claim_id
         WHERE ch.applied_at > $2
-          AND (ch.sequence IS NOT NULL OR ch.sensitivity_label <> $3)
+          AND (ch.sequence IS NOT NULL
+               OR (ch.sensitivity_label <> $3
+                   AND ch.sensitivity_label = ANY ((SELECT minerval_labels_readable_from(ARRAY[$3]::text[]))::text[])))
           AND (ch.claim_id = $1
                OR ch.claim_id IN (SELECT r.child_claim_id FROM claim_relationships r WHERE r.parent_claim_id = $1))
         ORDER BY ch.applied_at, ch.id`,

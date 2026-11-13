@@ -346,9 +346,15 @@ describe("partitions and sweeps (#330)", () => {
       [grantId]
     );
     // One variant bought per partition: at the default estimates and
-    // expected gain, the standard one for partitions this small.
-    expect(funded[0]!.n).toBe(open.length / 2);
-    expect(funded[0]!.groups).toBe(open.length / 2);
+    // expected gain, the standard one for partitions this small. The
+    // General mandate here is at `public` and pays for the sweeps at
+    // `public`: where an earlier file left a second label with rows of its
+    // own, those are its own General mandate's to pay for, and it has none
+    // (tests/db/word-from-below.test.ts).
+    const atPublic = priced.filter((r) => r.label === "public").length;
+    expect(atPublic).toBeGreaterThan(0);
+    expect(funded[0]!.n).toBe(atPublic / 2);
+    expect(funded[0]!.groups).toBe(atPublic / 2);
     expect(funded[0]!.variants).toEqual(["standard"]);
   });
 
@@ -370,8 +376,9 @@ describe("partitions and sweeps (#330)", () => {
     resetAllocationPolicyCache();
 
     await reconcileActions();
+    // The partitions at `public`, which this General mandate pays for.
     const groups = await rawQuery<{ exclusion_group: string }>(
-      `SELECT DISTINCT exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
+      `SELECT DISTINCT exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open' AND sensitivity_label = 'public'`
     );
     expect(groups.length).toBeGreaterThan(0);
     // An open row whose stored price is stale takes the partition's price again.

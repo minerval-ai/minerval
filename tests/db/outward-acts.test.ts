@@ -152,7 +152,7 @@ async function forgetTheMirror(): Promise<void> {
     withTransaction(async (tx) => {
       await tx.query(`SELECT set_config('minerval.mirror_applier', 'on', true)`);
       for (const table of [...replicatedTables()].reverse()) await tx.query(`DELETE FROM "${table.name}" WHERE origin = 'mirror'`);
-      await tx.query(`TRUNCATE mirror_applied_batches, mirror_snapshot_rows, mirror_refusals, mirror_node_changes`);
+      await tx.query(`TRUNCATE mirror_applied_batches, mirror_snapshot_rows, mirror_refusals, node_changes`);
     })
   );
 }

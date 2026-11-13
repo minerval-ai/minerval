@@ -728,7 +728,12 @@ upkeep and audits are to be paid for has its own General mandate. Setting one up
 is refused only where that label already has one. `GET /standing-mandates`
 then carries `by_label`: for each label the caller reads, the mandate set
 up there or none. A label with no General mandate has nobody paying for
-its upkeep, which the list shows as that.
+its upkeep, which the list shows as that. The lookup is by label
+(`getGeneralMandate` in `src/services/allocation-policy-service.ts`):
+upkeep wanted at a label is raised to the General mandate at that label,
+whose officers work what is raised at it, and a sweep at a label is paid
+by that label's General mandate. It is never put in front of the General
+mandate of a label it reads.
 
 ### What a deployment reports
 

@@ -2772,7 +2772,68 @@ ledger row is only ever reopened by work at its own label. Its Steward's
 slot is a row in `steward_slots`, one for each node and label; the node's
 own row stays the slot for work at the node's own label
 (`src/services/steward-lease.ts`). An order is one for each person, node and
-label. A message waits for a pass at the label it was sent at.
+label. A message opens work only at the label it was sent at.
+
+**Word from the layer below.** The graph at a label is what that label
+holds, laid over the graph at the labels it reads, down to the public
+graph, which a deployment holds through its mirror. Reading goes up
+freely, and so does everything that makes work respond: what is said,
+asked and changed below reaches the work above. Nothing is written below
+to make that happen, and nothing the work above does about it is shown
+below, where readers may not read what it rests on. What goes down goes
+through a showing (below). Four things, each the same between two labels as
+between a private label and the public graph:
+
+- *Messages.* A message is one row at its sender's label
+  (`node_messages`). A pass on a node is given every message that waits for
+  a pass at its label: those sent at its own label that no pass has read,
+  and those sent at the labels it reads that no pass at its label has read.
+  One sent at another label is marked with it ("said at `company`"), with
+  what the pass at that label answered if it has. A contribution admitted,
+  a ruling and a challenge reach a node's Steward as messages, so they
+  arrive the same way. That the pass read it, and its answer, is a row at
+  the pass's own label (`node_message_reads`, one for each message and
+  label), so the message stays unread and unanswered for the pass at its
+  own label, and an answer from above is not sent to the sender
+  (`src/services/inbox-service.ts`). A message opens no work above. The
+  sender pays, if it pays, for a pass at its own label; the layer above
+  reads the message on its next pass, and a mandate's review counts the
+  messages waiting for a pass at the mandate's label on the nodes it pays
+  for, which is its reason to buy one. If the pass below changes its
+  judgment, the reassessment above opens as for any replaced version.
+- *Requests.* A request filed below is the lower label's row, and its work
+  runs at its own label. Work above takes it up as a request of its own:
+  an ordinary request at the label that takes it up, with the words and
+  targets of the one below, linked to it (`adopted_requests`:
+  `from_request_id` for a request at a label read, `public_request_id` for
+  the public graph's, which is the same act; [outward-acts.md](outward-acts.md)).
+  A mandate at that label funds it, the Researcher does it with what that
+  label reads, its keeper there judges whether it is met, and all of it is
+  recorded there (`src/services/request-adoption-service.ts`). A
+  Grantmaker's `fund_request`, and a keeper's `revise_request` and
+  `close_request`, called at a label on a request filed below it, act on
+  that label's take-up of the request and make it if there is none; a
+  person who directs the graph does the same with
+  `POST /requests/:request_id/adopt`. A reader of the label above sees the
+  link on both requests (`taken_up_from`, `taken_up_at`). The request below
+  shows nothing new. `answerableBelow` in that file is where a later
+  answer downward starts.
+- *Changes.* What a judgment's record of its inputs cannot show, because
+  the row is overwritten in place, is written as it happens to
+  `node_changes`: a node reworded, its kind corrected, merged away or
+  withdrawn, an argument added, rewritten, retired or removed. The mirror's
+  applier writes the row for a node the public graph holds; a trigger
+  writes it for a node of the deployment's own, at the node's label, and
+  only while the deployment has a second label. A Steward's opening note
+  lists the changes made at the labels it reads since its label judged the
+  node or left the judgment standing, for the node and the nodes under it,
+  a section for each layer (`src/llm/agents/changes-below-note.ts`). No
+  work is opened by such a change.
+- *Upkeep.* A label's upkeep is paid by the General mandate at that label
+  and by no other (`getGeneralMandate`, and the sweep funder in
+  `fundGrantSelfActions`). A label without one has nobody paying for its
+  curation, audits and sweeps, which the preflight check
+  `standing_mandates` and the setup checklist say.
 
 **Showing a page to readers who do not read its label.** What a run at
 one label concluded reaches readers who do not read that label in one way:

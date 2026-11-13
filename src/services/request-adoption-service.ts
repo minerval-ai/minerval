@@ -89,6 +89,15 @@ export async function takeUpFromBelow(
     );
     if (!row) throw new RequestError(`Request ${id} not found`);
     if (row.label === label) return null;
+    // Up, never down or across: the label that takes the request up reads
+    // the label it was filed at. The database holds a run to that already;
+    // work that sees every label is held to it here, in the same words as
+    // for a request that does not exist.
+    const [reads] = await rawQuery<{ ok: boolean }>(
+      `SELECT $1 = ANY (minerval_labels_readable_from(ARRAY[$2]::text[])) AS ok`,
+      [row.label, label]
+    );
+    if (!reads?.ok) throw new RequestError(`Request ${id} not found`);
     words = row;
     const targets = await rawQuery<{ claim_id: string | null; source_id: string | null }>(
       `SELECT t.claim_id, t.source_id FROM request_targets t
@@ -153,7 +162,12 @@ export async function requestToActOn(
   const label = currentLabel();
   const [req] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM requests WHERE id = $1`, [requestId]);
   if (!req || req.label === label) return { id: requestId, note: null };
-  const taken = await takeUpFromBelow({ requestId }, { filer });
+  // A request at a label this one does not read is not taken up, and the
+  // caller goes on with the id it was given, as before there was a take-up.
+  const taken = await takeUpFromBelow({ requestId }, { filer }).catch((err: unknown) => {
+    if (err instanceof RequestError) return null;
+    throw err;
+  });
   if (!taken) return { id: requestId, note: null };
   return { id: taken.request_id, note: takenUpAboveNote({ id: requestId, label: req.label }, { id: taken.request_id, label }) };
 }

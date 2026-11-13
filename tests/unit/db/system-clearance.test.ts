@@ -194,7 +194,7 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   "src/services/mirror-apply-service.ts": [
     [
       "The mirror's applier writes the public graph's rows, which belong to no run, and must see a row at any label that points to one it removes.",
-      "Mirrored rows, each named as `public` and as the mirror's, copied from a batch whose signature was checked; its own bookkeeping; and, in mirror_node_changes at `public`, what the batch replaced on a mirrored node (a wording, an argument's name), which is the public graph's own text. " +
+      "Mirrored rows, each named as `public` and as the mirror's, copied from a batch whose signature was checked; its own bookkeeping; and, in node_changes at `public`, what the batch replaced on a mirrored node (a wording, an argument's name), which is the public graph's own text. " +
         "Of this deployment's own rows it changes one thing: a judgment recorded at a mirrored node's own label, which is `public`, is retired. The batch's notes count local rows by table and name no text from them. Nothing read at a private label is written anywhere.",
     ],
   ],
