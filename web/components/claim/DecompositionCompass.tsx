@@ -109,22 +109,10 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
   })).filter((x) => x.n > 0);
   const unassessedN = scored.filter((s) => !s.node.assessment_status).length;
 
-  // Atomic claim: nothing to summarise. Show a quiet resting note, no bar.
-  if (total === 0) {
-    return (
-      <aside className={styles.rail} aria-label="Decomposition">
-        <div className={styles.railHead} style={{ cursor: "default" }}>
-          <span className="sc">Decomposition</span>
-          <span className={styles.railCount}>
-            0<span className={styles.railCountUnit}>subclaims</span>
-          </span>
-        </div>
-        <p className={styles.emptyNote}>
-          No subclaims are recorded beneath this claim.
-        </p>
-      </aside>
-    );
-  }
+  // Atomic claim: nothing to summarise, and the reading column's
+  // Decomposition section already says the claim is atomic. A rail reading
+  // "0 subclaims" beside it only said so again.
+  if (total === 0) return null;
 
   return (
     <aside className={styles.rail} aria-label="Decomposition compass">

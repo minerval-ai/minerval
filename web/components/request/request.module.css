@@ -23,7 +23,6 @@
 .railAsk { display: block; font-size: 0.8rem; line-height: 1.4; color: var(--ink); }
 .railMeta { display: block; margin-top: 0.25rem; font-size: 0.7rem; color: var(--muted); }
 .railFoot { margin: 0.4rem 0 0; font-size: 0.74rem; color: var(--muted); }
-.empty { font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0; }
 
 .addressed { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
 .stateNote { font-family: var(--sans); font-size: 0.84rem; color: var(--ink-soft); margin: 0 0 1rem; }

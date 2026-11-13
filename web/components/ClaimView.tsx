@@ -67,13 +67,17 @@ function InstanceCard({ inst }: { inst: Instance }) {
         )}
         {/* This score is the Extractor's, not the Matcher's: it says
             "this passage states a genuine, well-formed claim", not how
-            well the passage matches the canonical form (#160). */}
-        <span
-          className="conf-num"
-          title="The Extractor's confidence that this passage states a genuine, well-formed claim."
-        >
-          extraction {inst.confidence.toFixed(2)}
-        </span>
+            well the passage matches the canonical form (#160). Shown only
+            when it is short of full: "extraction 1.00" on every card said
+            nothing, and a doubtful extraction stood out less among them. */}
+        {inst.confidence < 0.995 && (
+          <span
+            className="conf-num"
+            title="The Extractor's confidence that this passage states a genuine, well-formed claim."
+          >
+            extraction {inst.confidence.toFixed(2)}
+          </span>
+        )}
       </div>
       {inst.context && (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".78rem", color: "var(--muted)", margin: ".35rem 0 0" }}>
