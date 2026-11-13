@@ -329,7 +329,12 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(first.previous_hash).toBe(packages[0]!.package.hash);
     expect(first.node.public_id).toBe(id.p);
     expect(first.state).toBe("released_in_part");
-    expect(first.deployment).toEqual({ hosting: "own_machines", attested_by: "nothing" });
+    // Keeping public versions current is on where nobody has turned it off, and nothing pays for it here, which the package says.
+    expect(first.deployment).toEqual({
+      hosting: "own_machines",
+      attested_by: "nothing",
+      keeps_public_versions_current: { setting: "on", a_public_mandate_pays_for_it: false },
+    });
     expect(first.showing).toMatchObject({ form: "standing", scope: "node", send: "by_a_person_each_time", ended: null });
     expect(first.node.showing_began).toBe("after the node was first assessed");
     expect(first.policy!.text).toContain("## Categories");

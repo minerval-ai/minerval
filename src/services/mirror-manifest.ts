@@ -51,6 +51,9 @@ import {
   claimLinks,
   claimRelationships,
   claims,
+  feedContributions,
+  feedRequestTargets,
+  feedRequests,
   judgmentInputs,
   quantityCuts,
   quantityDefinitions,
@@ -236,6 +239,17 @@ const ENTRIES: readonly TableEntry[] = [
       },
     },
   },
+  // The public record that is not rows of the graph: contributions on
+  // nodes, and requests with the nodes they bear on. The publisher fills
+  // these from its own `contributions` and `requests` before each cut
+  // (mirror-feed-service.ts, refreshFeedRecords), with their public
+  // columns and no account, and they travel like any table here. A
+  // deployment that shows pages outside finds in them what the public said
+  // back (inbound-service.ts), and any deployment finds the requests it
+  // may take up (request-adoption-service.ts).
+  { table: feedContributions },
+  { table: feedRequests },
+  { table: feedRequestTargets, removeBeforeWrite: true },
 ];
 
 /**
@@ -253,7 +267,7 @@ export const NOT_MIRRORED: Record<string, string> = {
   "jobs, enqueue_events, queue_depth_snapshots, agent_sessions, node_messages":
     "Working state of the publisher's own queues and inboxes.",
   "contributions, contribution_reviews, appeals, arbitration_results, reputation_events":
-    "The public graph's contribution record, which names accounts.",
+    "The public graph's contribution record names accounts and is its own working state. What a contribution on a node said, of what type, about which published page and where its review stands travels in feed_contributions, without the account. The review's reasoning does not travel yet.",
   "tags, taggings":
     "The topical vocabulary is not in the feed yet. A mirrored claim arrives marked as tagged, so it is not sent to this deployment's tagger, and carries no tags.",
   "source_events":
@@ -261,7 +275,7 @@ export const NOT_MIRRORED: Record<string, string> = {
   "claim_provenance_edges, claim_provenance_roots, claim_source_maps, claim_instance_readings, claim_instance_reading_log, source_relationships, examinations, examination_*, reading_citations, audit_notes":
     "The provenance story and examinations of sources: left for a later feed version.",
   "requests, request_targets, request_work":
-    "Public requests are meant to enter with the mirror (design plan, inbound membrane); they are left for a later feed version.",
+    "The public graph's own working state. A request's words, where it stands and the nodes it bears on travel in feed_requests and feed_request_targets. The work done on a request, and a request's bearing on a source, do not travel yet.",
   "claim_formalizations, lean_checks, proof_attempts, attachments":
     "The mathematics feature's tables.",
   "agent_findings, agent_reports, audit_*, consistency_*, curation_requests, reconciliation_events":

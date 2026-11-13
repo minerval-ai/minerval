@@ -14,7 +14,7 @@ A mirrored row is the public graph's. Nothing in the deployment edits it. A loca
 
 ## What travels
 
-The one list is `src/services/mirror-manifest.ts`. Nineteen tables, parents first:
+The one list is `src/services/mirror-manifest.ts`. Twenty-two tables, parents first:
 
 | Table | What it is |
 | --- | --- |
@@ -26,6 +26,7 @@ The one list is `src/services/mirror-manifest.ts`. Nineteen tables, parents firs
 | `assessments`, `quantity_estimates`, `question_assessments`, `argument_evaluations` | Judgments, current and past |
 | `source_interests` | A source's recorded stake |
 | `judgment_inputs` | What each judgment was made against |
+| `feed_contributions`, `feed_requests`, `feed_request_targets` | The public record that is not rows of the graph: what each contribution on a node said, of what type, about which published page and where its review stands; and each request with the nodes it bears on. Filled on the publisher before each cut from its `contributions` and `requests`, with no account ([outward-acts.md](outward-acts.md)) |
 
 Every column of these tables travels unless the manifest names it with a reason:
 
@@ -35,7 +36,7 @@ Every column of these tables travels unless the manifest names it with a reason:
 - `origin` and `sensitivity_label` are handled for every table at once. Only rows at the `public` label are published, and the applier writes `public` on every mirrored row.
 - `judgment_inputs.input_label` points to `labels`, which is not mirrored. It is set only on a row that says which version at another label a judgment was made beside, and a graph that publishes has one label and no such row.
 
-Not mirrored at all: run transcripts, accounts and keys, the ledger and mandates, queues and inboxes, the contribution record, tags, source events, the provenance tables, requests, and the mathematics tables. The manifest's `NOT_MIRRORED` gives the reason for each.
+Not mirrored at all: run transcripts, accounts and keys, the ledger and mandates, queues and inboxes, the contribution record's reviews and its accounts, the work done on requests, tags, source events, the provenance tables, and the mathematics tables. The manifest's `NOT_MIRRORED` gives the reason for each.
 
 **A mirrored judgment's run.** `run_id` on a mirrored assessment is the id of a run on the public graph. It has no foreign key and resolves to nothing locally. The transcript is read on the public graph; each batch states the public graph's web address (`publisher.web_base_url`), and `GET /mirror/status` passes it on.
 
@@ -219,7 +220,7 @@ A read of a node says that it is mirrored and as of when (`mirrored.public_graph
 - A link or an answer relation the deployment recorded and the public graph then recorded too is listed twice where links and answer relations are listed. The Steward at that label can remove its own.
 - `mirror_node_changes` is not pruned.
 - A deployment that stops mirroring by unsetting its feed keeps its mirrored rows and the database's guard on them, but the application then asks nothing about them: it no longer says what is mirrored.
-- Requests are not in the feed, so a request about a mirrored node goes no further than the deployment until someone raises it on the public graph.
+- A request the deployment's own agents record about a mirrored node goes no further than the deployment until someone raises it on the public graph. The public graph's own requests do come in with the feed, and can be adopted ([outward-acts.md](outward-acts.md)).
 
 ## Configuration
 
@@ -253,4 +254,4 @@ npx tsx scripts/mirror.ts status               # how current the mirror is
 
 - A price for the feed.
 - Recomputing mirrored vectors for a deployment with its own embedding model.
-- Tags, requests, provenance and mathematics in the feed.
+- Tags, provenance, mathematics, the reasoning of contribution reviews and the work done on requests in the feed.

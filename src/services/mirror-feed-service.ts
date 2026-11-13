@@ -237,6 +237,62 @@ async function count(tx: MirrorQuery, text: string, params: unknown[] = []): Pro
 }
 
 /**
+ * Bring the feed's record tables up to the public record: contributions on
+ * nodes, and requests with the nodes they bear on (db/schema.ts,
+ * feed_contributions). They are a copy of the public columns of
+ * `contributions`, `requests` and `request_targets`, with no account, made
+ * here so that the cut reads them like any replicated table. A row is
+ * written only when it differs, so an unchanged record is not sent again.
+ * It runs before the cut's own transaction, and a record that changes in
+ * between is carried by the next cut.
+ */
+export async function refreshFeedRecords(db: MirrorDb): Promise<void> {
+  const [other] = await db.query<{ name: string }>(`SELECT name FROM labels WHERE name <> $1 LIMIT 1`, [PUBLIC_LABEL]);
+  // A deployment with another label does not publish; the cut says so.
+  if (other) return;
+  await db.query(
+    `INSERT INTO feed_contributions (id, claim_id, contribution_type, content, evidence_urls, about_published_page_id, submitted_at, review_status, sensitivity_label)
+     SELECT c.id, c.claim_id, c.contribution_type, c.content, c.evidence_urls, c.about_published_page_id, c.submitted_at, c.review_status, '${PUBLIC_LABEL}'
+       FROM contributions c WHERE c.claim_id IS NOT NULL
+     ON CONFLICT (id) DO UPDATE
+       SET claim_id = EXCLUDED.claim_id, contribution_type = EXCLUDED.contribution_type, content = EXCLUDED.content,
+           evidence_urls = EXCLUDED.evidence_urls, about_published_page_id = EXCLUDED.about_published_page_id,
+           submitted_at = EXCLUDED.submitted_at, review_status = EXCLUDED.review_status
+     WHERE (feed_contributions.claim_id, feed_contributions.contribution_type, feed_contributions.content, feed_contributions.evidence_urls,
+            feed_contributions.about_published_page_id, feed_contributions.submitted_at, feed_contributions.review_status)
+           IS DISTINCT FROM
+           (EXCLUDED.claim_id, EXCLUDED.contribution_type, EXCLUDED.content, EXCLUDED.evidence_urls,
+            EXCLUDED.about_published_page_id, EXCLUDED.submitted_at, EXCLUDED.review_status)`
+  );
+  await db.query(
+    `DELETE FROM feed_contributions f WHERE f.origin = 'local' AND NOT EXISTS (SELECT 1 FROM contributions c WHERE c.id = f.id AND c.claim_id IS NOT NULL)`
+  );
+  await db.query(
+    `INSERT INTO feed_requests (id, ask, why, satisfied_by, who_could, addressed_to, bears_on_text, state, state_note, filed_at, closed_at, sensitivity_label)
+     SELECT r.id, r.ask, r.why, r.satisfied_by, r.who_could, r.addressed_to, r.bears_on_text, r.state, r.state_note, r.created_at, r.closed_at, '${PUBLIC_LABEL}'
+       FROM requests r
+     ON CONFLICT (id) DO UPDATE
+       SET ask = EXCLUDED.ask, why = EXCLUDED.why, satisfied_by = EXCLUDED.satisfied_by, who_could = EXCLUDED.who_could,
+           addressed_to = EXCLUDED.addressed_to, bears_on_text = EXCLUDED.bears_on_text, state = EXCLUDED.state,
+           state_note = EXCLUDED.state_note, filed_at = EXCLUDED.filed_at, closed_at = EXCLUDED.closed_at
+     WHERE (feed_requests.ask, feed_requests.why, feed_requests.satisfied_by, feed_requests.who_could, feed_requests.addressed_to,
+            feed_requests.bears_on_text, feed_requests.state, feed_requests.state_note, feed_requests.filed_at, feed_requests.closed_at)
+           IS DISTINCT FROM
+           (EXCLUDED.ask, EXCLUDED.why, EXCLUDED.satisfied_by, EXCLUDED.who_could, EXCLUDED.addressed_to,
+            EXCLUDED.bears_on_text, EXCLUDED.state, EXCLUDED.state_note, EXCLUDED.filed_at, EXCLUDED.closed_at)`
+  );
+  await db.query(`DELETE FROM feed_requests f WHERE f.origin = 'local' AND NOT EXISTS (SELECT 1 FROM requests r WHERE r.id = f.id)`);
+  await db.query(
+    `INSERT INTO feed_request_targets (id, request_id, claim_id, sensitivity_label)
+     SELECT t.id, t.request_id, t.claim_id, '${PUBLIC_LABEL}' FROM request_targets t WHERE t.claim_id IS NOT NULL
+     ON CONFLICT (id) DO NOTHING`
+  );
+  await db.query(
+    `DELETE FROM feed_request_targets f WHERE f.origin = 'local' AND NOT EXISTS (SELECT 1 FROM request_targets t WHERE t.id = f.id AND t.claim_id IS NOT NULL)`
+  );
+}
+
+/**
  * Cut the feed: publish what changed since the last batch, as one batch or,
  * when it is large, as several in a row. The first cut of a feed is a
  * snapshot of every public row, and so is the first cut after the mirrored
@@ -255,6 +311,8 @@ export async function cutBatches(options: CutOptions = {}): Promise<CutResult> {
   const shape = replicatedShape();
   const maxBytes = Math.max(1, options.maxBatchBytes ?? config.mirrorBatchMaxBytes);
   const tables = replicatedTables();
+
+  await refreshFeedRecords(db);
 
   return db.transaction(async (tx) => {
     await tx.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");

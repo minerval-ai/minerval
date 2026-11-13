@@ -32,6 +32,22 @@ export function PublisherRecordSection({ record }: { record: PublisherRecord }) 
           </ul>
         </dd>
       </dl>
+      {record.record && (
+        <>
+          <h3 style={{ fontFamily: "var(--sans)", fontSize: ".9rem", marginBottom: ".2rem" }}>Its record on this graph</h3>
+          <ul className="record-list" style={{ fontFamily: "var(--sans)", fontSize: ".84rem" }}>
+            {record.record.in_words.map((line) => (
+              <li key={line} style={{ marginBottom: ".3rem" }}>
+                {line}
+              </li>
+            ))}
+          </ul>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem" }}>
+            These are counts and dates read from this graph&rsquo;s record when this page is opened. They are not a score, and they say nothing about
+            how far a page is to be believed: that is weighed for each page by the Steward of the claim it is on.
+          </p>
+        </>
+      )}
       {record.published_pages.length > 0 && (
         <ul className="record-list" style={{ fontFamily: "var(--sans)", fontSize: ".84rem" }}>
           {record.published_pages.map((p) => (

@@ -33,6 +33,9 @@ const ON_THE_TABLE: Record<string, string[]> = {
   "src/services/graph-change-service.ts": [
     "FROM action_allocations: the change feed's commission events, shown to the readers of the label each was placed at.",
   ],
+  "src/services/inbound-service.ts": [
+    "FROM action_allocations: whether any money is behind a node's next pass at the label a published page came from, read under system clearance and reduced to one of three fixed words for the outside. No amount and no reason is read.",
+  ],
   "src/services/mandate-service.ts": [
     "FROM action_allocations: a mandate's commissions as a reader is shown them, each with its reason. A listing with text, so it shows the rows the reader's clearance reads.",
   ],

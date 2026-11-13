@@ -45,6 +45,9 @@ const TABLES = [
   "claim_links",
   "claim_relationships",
   "claims",
+  "feed_contributions",
+  "feed_request_targets",
+  "feed_requests",
   "judgment_inputs",
   "quantity_cuts",
   "quantity_definitions",
@@ -117,7 +120,7 @@ afterAll(async () => {
 });
 
 describe("the origin column, in the catalog", () => {
-  it("is on the nineteen replicated tables, 'local' by default, and holds one of two values", async () => {
+  it("is on the twenty-two replicated tables, 'local' by default, and holds one of two values", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c

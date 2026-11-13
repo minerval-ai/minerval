@@ -563,6 +563,15 @@ process, and what changes on the page stays the owning admins' judgment.
   weigh. Where the page is held or the node is not yet assessed there,
   there is nothing to read yet, and what is admitted is the publication's
   record: that it stands, and each version as it follows.
+- **Made through a published page** (the contribution's
+  about_published_page_id). The contribution is about another graph's
+  page of this node: a challenge to what the page says or to how it was
+  made, or a proposal about what the node rests on in that graph. It is
+  judged by the criteria of its type. The evidence behind such a page is
+  not public, so the contributor may have nothing to cite beyond the page
+  and its record. The graph that published the page reads the
+  contribution from this graph's public record, and answering it is that
+  graph's work.
 - **propose_argument**: a coherent line of reasoning bearing on the
   claim's truth (§7), with relevant, connected subclaims, not duplicating
   an existing argument without new structure.

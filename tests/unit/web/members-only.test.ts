@@ -313,12 +313,13 @@ describe("the gate", () => {
     // A member who reads only what everyone reads, and can neither direct, release nor administer, is shown no line at all.
     expect(links(["read"])).toBeNull();
     // A person is shown a link for what they can do: showings for whoever reads at a label besides `public` or acts
-    // on showings, the release queue for whoever releases, file sets for whoever directs or administers.
+    // on showings, the release queue for whoever releases, file sets for whoever directs or administers, and the
+    // pages about the public graph for whoever directs or releases, since sending an agent's report on takes release.
     expect(links(["read"], ["public", "finance"])).toBe("Showings");
-    expect(links(["release"])).toBe("ShowingsRelease queue");
-    expect(links(["read", "direct"])).toBe("ShowingsFile setsAdd a source");
+    expect(links(["release"])).toBe("ShowingsRelease queueThe public graph");
+    expect(links(["read", "direct"])).toBe("ShowingsFile setsAdd a sourceThe public graph");
     expect(links(["administer"])).toBe("File setsAdministration");
-    expect(links(["direct", "fund", "administer"])).toBe("ShowingsFile setsAdd a sourceAdministration");
+    expect(links(["direct", "fund", "administer"])).toBe("ShowingsFile setsAdd a sourceThe public graphAdministration");
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

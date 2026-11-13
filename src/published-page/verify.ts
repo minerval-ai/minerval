@@ -97,10 +97,31 @@ export interface PackageAct {
   reason?: string;
 }
 
+export interface PackageSaidBack {
+  contribution: string;
+  received_at: string;
+  read: string;
+  repeats?: string;
+  set_aside_because?: string;
+  reassessment?: "not paid for" | "paid for, and not yet made" | "made";
+  reassessment_as_of?: string;
+}
+
 export interface PublishedPagePackage {
   format: string;
   publisher: { key_id: string; public_key: string };
-  deployment: { hosting: Hosting; attested_by: Attestation };
+  deployment: {
+    hosting: Hosting;
+    attested_by: Attestation;
+    /**
+     * Whether the deployment asks the public graph for a fresh public
+     * assessment of a public node when its own version of the node changes
+     * (docs/outward-acts.md), and whether a public mandate of its own pays
+     * for that. Stamped by the system. Absent from a package built before
+     * the setting existed.
+     */
+    keeps_public_versions_current?: { setting: "on" | "off"; a_public_mandate_pays_for_it: boolean };
+  };
   showing: {
     id: string;
     form: "once" | "standing";
@@ -155,6 +176,14 @@ export interface PublishedPagePackage {
     };
     acts: PackageAct[];
     versions: PackageVersion[];
+    /**
+     * The contributions made on the public graph through this page that the
+     * deployment has received, by their ids there, each with whether it has
+     * been read and where the reassessment it opened stands, in fixed
+     * words. No word of a contribution is here. Absent where none was
+     * received.
+     */
+    said_back?: PackageSaidBack[];
   };
   built_at: string;
   hash: string;

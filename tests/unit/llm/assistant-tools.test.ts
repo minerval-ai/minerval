@@ -61,7 +61,19 @@ describe("the Assistant's tools", () => {
     const names = new Set(account.definitions.map((d) => d.name));
     // A tool whose route only a members-only deployment mounts is not among
     // this app's tools, and is classified all the same.
-    const membersOnly = new Set(["fund_showing_work", "send_pages_outside"]);
+    const membersOnly = new Set([
+      "fund_showing_work",
+      "send_pages_outside",
+      "take_up_public_request",
+      "decline_public_request",
+      "fund_public_mandate",
+      "back_public_mandate",
+      "fund_public_node",
+      "ask_public_mandate_for_assessment",
+      "send_report_to_maintainers",
+      "send_failure_facts_to_maintainers",
+      "fund_outward_work",
+    ]);
     for (const name of membersOnly) expect(Object.values(ROUTE_TOOLS).map((t) => t.name)).toContain(name);
     const stale = [...Object.keys(HELD_TOOLS), ...Object.keys(RUNS_WITHOUT_ASKING)].filter(
       (name) => !names.has(name) && !membersOnly.has(name)

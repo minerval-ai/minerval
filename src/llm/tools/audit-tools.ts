@@ -13,6 +13,8 @@
  * decision back to whichever process made it (re-review for a contribution,
  * a fresh Steward pass for an assessment, a curation request for structure).
  */
+import { membersOnly } from "../../permissions.js";
+import { REPORT_ABOUT } from "../../services/report-about.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq } from "drizzle-orm";
@@ -128,6 +130,23 @@ export function getAuditToolDefinitions(): Tool[] {
             type: "string",
             description: "For status duplicate: the report this one repeats",
           },
+          // Only where reports are kept inside the deployment
+          // (services/report-sending-service.ts). The public graph's
+          // reports already go to the maintainers, so its tool is unchanged.
+          ...(membersOnly()
+            ? {
+                about: {
+                  type: "string",
+                  enum: Object.keys(REPORT_ABOUT),
+                  description:
+                    "What the report is about: " +
+                    Object.entries(REPORT_ABOUT).map(([k, v]) => `${k} (${v})`).join("; ") +
+                    ". Reports here stay inside this deployment, so Minerval's maintainers hear of a fault in the machinery only if the " +
+                    "organization sends the report on. A report about Minerval's machinery is offered to the organization for that, after " +
+                    "a Redactor's pass over its words; one about this deployment is not. Leave it out where you cannot tell.",
+                },
+              }
+            : {}),
         },
         required: ["report_id", "status", "note"],
       },
@@ -706,9 +725,22 @@ export async function executeAuditTool(
             message: `Report ${reportId} not found.`,
           });
         }
+        let offered: Record<string, unknown> = {};
+        if (membersOnly() && typeof input.about === "string" && input.about !== "") {
+          if (!(input.about in REPORT_ABOUT)) {
+            offered = { about_not_recorded: `about is one of: ${Object.keys(REPORT_ABOUT).join(", ")}. The status and note were recorded.` };
+          } else {
+            const { setReportAbout } = await import("../../services/report-sending-service.js");
+            const said = await setReportAbout(reportId, input.about);
+            offered = said
+              ? { about: said.about, offered_for_sending: said.offered }
+              : { about_not_recorded: "This report was filed at another label than this run's, so what it is about is for a run at that label to say. The status and note were recorded." };
+          }
+        }
         return JSON.stringify({
           success: true,
           report: formatAgentReport(updated),
+          ...offered,
         });
       }
 

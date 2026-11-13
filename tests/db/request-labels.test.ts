@@ -1322,6 +1322,20 @@ describe("every route that writes, driven against a private target", () => {
    * at rl-a, made by the person who also reads rl-b. Each entry builds what
    * the route needs first (not counted) and returns the request to count.
    */
+  /** A request at rl-a, for the routes that write on a request's record. */
+  const requestAtA = async () => {
+    const { fileRequest } = await import("../../src/services/request-service.js");
+    return runAtLabel(A, "a test", () =>
+      fileRequest({
+        ask: `Find the first partner's own count (${randomUUID()}).`,
+        why: "The node turns on it.",
+        satisfiedBy: "The count, with its date.",
+        claimIds: [claimAt[A]!],
+        filer: { kind: "admin", agent: "claim_steward" },
+      })
+    );
+  };
+
   const FROM_A_ROW: Record<string, () => Promise<Drive>> = {
     // Mounted only where the deployment creates its own owls (OWLS=created), which this one does not, so the
     // request is answered as not found here. tests/db/created-owls.test.ts creates owls into a mandate at a
@@ -1439,6 +1453,22 @@ describe("every route that writes, driven against a private target", () => {
         })
       );
       return () => post(both, `/requests/${request.id}/contribute`, { owls: 2 });
+    },
+    "POST /requests/:request_id/take-up": async () => {
+      const request = await requestAtA();
+      return () => post(both, `/requests/${request.id}/take-up`, {});
+    },
+    "POST /requests/:request_id/take-up/decline": async () => {
+      const request = await requestAtA();
+      const taken = await post(both, `/requests/${request.id}/take-up`, {});
+      expect(taken.statusCode, taken.body).toBe(201);
+      return () => post(both, `/requests/${request.id}/take-up/decline`, { reason: "moot" });
+    },
+    "POST /mandates/:id/raise": async () => {
+      const { grantId } = await mandateAt(A, onlyA);
+      const backed = await post(both, `/mandates/${grantId}/contribute`, { owls: 2 });
+      expect(backed.statusCode, backed.body).toBe(200);
+      return () => post(both, `/mandates/${grantId}/raise`, { node_id: claimAt[A]! });
     },
     "POST /showings/:showing_id/pages/:page_id/commission": async () => {
       // A page at rl-a, asked to be shown at rl-b: its redaction waits on the ledger at rl-a.
@@ -1639,6 +1669,8 @@ describe("every route that writes, driven against a private target", () => {
     // Neither gets as far as writing: the registration is signed by no key, and the package is not one.
     "POST /publishers": async () => () =>
       post(both, "/publishers", { public_key: "A".repeat(43) + "=", hosting: "own_machines", signature: "A".repeat(86) + "==", label: A }),
+    "POST /reports": async () => () =>
+      post(both, "/reports", { kind: "tool_gap", severity: "annoyance", title: `A tool is missing (${randomUUID()})`, body: "It would help.", label: A }),
     "POST /published-pages": async () => () => post(both, "/published-pages", { package: { format: "not-a-package" }, label: A }),
     "POST /extension/analyze": async () => () =>
       post(both, "/extension/analyze", { url: `https://example.org/${randomUUID()}`, title: "A page", text: "Some page text to analyze. ".repeat(20), label: A }),
@@ -1669,6 +1701,9 @@ describe("every route that writes, driven against a private target", () => {
     "POST /contributions",
     "POST /appeals",
     "POST /requests/:request_id/contribute",
+    "POST /requests/:request_id/take-up",
+    "POST /mandates/:id/raise",
+    "POST /reports",
     "POST /showings/:showing_id/pages/:page_id/commission",
     "POST /grant-conversations/:id/fund",
     "POST /correspondents/:id/poke",

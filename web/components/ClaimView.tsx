@@ -36,7 +36,7 @@ import {
 import { PageHead } from "@/components/PageHead";
 import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
 import {
-  OtherVerdict, PublicationRecord, PublishedAssessment, PublishedDecomposition, PublishedGaps, PublishedIntro,
+  OtherVerdict, PublicationRecord, PublishedSaidBack, PublishedAssessment, PublishedDecomposition, PublishedGaps, PublishedIntro,
   PublishedNotes, PublishedProvenance, TakenOut,
 } from "./claim/PublishedPage";
 import { sourceHref } from "@/lib/source-address";
@@ -661,6 +661,7 @@ export function ClaimView({
         </section>
       )}
       {/* How the published page was made, closed to one line like Full reasoning. */}
+      {published && !published.inside && <PublishedSaidBack view={published} claimId={detail.claim.id} />}
       {published && (published.inside ? <ShownRecord view={published} /> : <PublicationRecord view={published} />)}
 
       {/* contribution record (#171) — the public exchanges, rendered as

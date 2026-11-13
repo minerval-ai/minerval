@@ -78,7 +78,11 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
       "Correspondent for an update, add sources, among them sets of files they upload, ask for a node's page to be shown to readers " +
       "who do not read its label, end a standing showing, hold a page that has not been shown, send what a " +
-      "showing outside has released to the public graph, and write the words a node is proposed there in.",
+      "showing outside has released to the public graph, and write the words a node is proposed there in. " +
+      "Adopt a request from the public graph, and leave a mandate or a node out of keeping public versions current. " +
+      "Unless the deployment names another permission for it: act on the public graph in the organization's name, which is to " +
+      "say there that the graph is taking a request up, open and fund public mandates with public owls, pay for a public node's " +
+      "assessment, and set whether public versions are kept current.",
     never: "Edit an assessment or a run's log.",
   },
   release: {
@@ -87,7 +91,8 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     covers:
       "Release or hold, part by part, what a page shown to readers who do not read its label " +
       "carries of one party's material, set standing rules for it, and release the words a node is proposed " +
-      "to the public graph in. It is granted for that party alone.",
+      "to the public graph in. For the organization's own material: send an agent's report, as redacted, to Minerval's " +
+      "maintainers. It is granted for that party alone.",
     never: "Edit what the agents wrote, or release another party's material.",
   },
   fund: {

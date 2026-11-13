@@ -10,6 +10,7 @@
  * on a request is recorded with its outcome, and every outcome (a negative
  * result, a finding that it cannot be met, a refusal) is a complete one.
  */
+import { takenUpOn, type TakenUp } from "./request-take-up-service.js";
 import { rawQuery, requestTextMatch, withTransaction } from "../db/client.js";
 import {
   CLOSED_REQUEST_STATES,
@@ -518,6 +519,13 @@ export interface RequestView {
     quote_usd: number | null;
     funding: string | null;
   }[];
+  /**
+   * The accounts that have said they are taking the request up
+   * (request-take-up-service.ts), each with what followed as the record
+   * shows it. Such a statement is not work: it is listed here and not
+   * above.
+   */
+  taken_up: TakenUp[];
 }
 
 interface RequestRowJoined {
@@ -605,7 +613,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       `SELECT w.request_id, w.by_label, w.outcome, w.summary, w.created_at, w.funded_by_job_id,
               w.research_run_id, rr.run_id, w.budget_micro_usd, w.quote_micro_usd
          FROM request_work w LEFT JOIN research_runs rr ON rr.id = w.research_run_id
-        WHERE w.request_id = ANY($1::uuid[]) ORDER BY w.created_at, w.id`,
+        WHERE w.request_id = ANY($1::uuid[]) AND NOT w.taken_up ORDER BY w.created_at, w.id`,
       [ids]
     ),
     rawQuery<{
@@ -624,6 +632,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       [ids]
     ),
   ]);
+  const takenUp = await takenUpOn(ids);
   const jobIds = [...new Set(work.map((w) => w.funded_by_job_id).filter((j): j is string => !!j))];
   const fundingLabels = new Map<string, string | null>(
     await Promise.all(
@@ -677,6 +686,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
         w.quote_micro_usd == null ? null : Number(w.quote_micro_usd)
       ),
     })),
+    taken_up: takenUp.get(r.id) ?? [],
   }));
 }
 

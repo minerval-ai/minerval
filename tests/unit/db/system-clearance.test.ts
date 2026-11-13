@@ -222,6 +222,28 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing: it reads whether the boundary has a policy yet. The starting text is then saved by the call above.",
     ],
   ],
+  "src/services/outward-acts-service.ts": [
+    [
+      "The log of acts on the public graph and the deployment's standing choices are kept at `public`, where every member reads them, and are written once the route has checked the person.",
+      "Rows at `public` and nowhere else, each naming that label: one row for each act on the public graph, holding exactly what was sent there (ids the public graph already holds, amounts, a reason from a fixed list, or words a person wrote for the outside from a signed-in session), and the standing choices with the text the person was shown. It reads the standing choices, which are at `public`.",
+    ],
+    [
+      "Keeping public versions current looks, at every label, for versions of mirrored nodes that have been replaced, and records each at its own version's label.",
+      "Rows in keep_current_queue, each written at the label of the version it records and naming it: a mirrored node's id, the time of the version, the mandate that paid, and a state with a reason from a fixed list. Nothing a run wrote. What it sends to the public graph is the node's id, which the public graph already holds, and nothing else.",
+    ],
+  ],
+  "src/services/inbound-service.ts": [
+    [
+      "A summary of what the public said about a published page is written at `public` and delivered to the node's Steward at the label the page came from, which `public` does not read; and where that label's reassessment stands is copied back in fixed words for the outside.",
+      "Upward: a message in the node's inbox at the page's label, whose words are a summary written at `public` (which that label reads) inside fixed sentences. Downward, onto the `public` row of the contribution: one of three fixed words for where the reassessment at the page's label stands (not paid for, paid for, made) and a date. That a reassessment was paid for or made is what the published page's record says outside by design; no text written at the page's label is read or copied.",
+    ],
+  ],
+  "src/services/report-sending-service.ts": [
+    [
+      "The standing choices about agents' reports are followed for reports at every label: each sending is read and marked at its own label, and what goes was fixed by the Redactor's pass and the fixed vocabulary of the facts.",
+      "It marks each sending as sent, at the sending's own label, and stores what the maintainers' record said of it there. What leaves is built by reportPayload and sendFacts and by nothing else: the report's words as the Redactor left them, sent only where a person chose that redacted reports go without asking, and facts in fixed vocabulary. Each send is logged at `public` with exactly what went.",
+    ],
+  ],
   "src/services/outbound-service.ts": [
     [
       "A person's act on what leaves the deployment is recorded at `public`, where the released record of a showing outside is kept, once the route has checked the person.",

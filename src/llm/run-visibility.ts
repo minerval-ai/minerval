@@ -100,6 +100,12 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
 
 /** Every tool an agent can call, by what its output can carry. */
 export const TOOL_READS: Readonly<Record<string, Classification>> = {
+  finish_report_redaction: { reads: "private", why: "confirms the redaction of a report written at a label only some readers read" },
+  get_public_contributions: { reads: "public", why: "contributions on the public graph's own record, and summaries kept at `public`" },
+  get_report_to_redact: { reads: "private", why: "an agent's report as written at a label only some readers read" },
+  record_public_contribution: { reads: "public", why: "an acknowledgement and a count of what is waiting" },
+  redact_report: { reads: "private", why: "the report's text as it reads after a removal" },
+  restore_report: { reads: "private", why: "the report's text as it reads after a removal is taken back" },
   cannot_cross: { reads: "private", why: "confirms a finding about a page held at a label only some readers read" },
   finish_redaction: { reads: "private", why: "the fingerprint and removal counts of a page not yet released" },
   get_page_to_redact: { reads: "private", why: "a page as written at a label only some readers read, and its sources' text" },

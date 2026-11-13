@@ -17,7 +17,10 @@ import type { Viewer } from "../admin/access";
 export const WORK_PAGES: Array<{ href: string; name: string; needs?: string[] }> = [
   { href: "/showings", name: "Showings" },
   { href: "/release", name: "Release queue", needs: ["release"] },
-  { href: "/outbound", name: "Sending outside", needs: ["direct"] },
+  // Pages leave in signed packages, listed here. Everything else that passes between this deployment and the
+  // public graph (its account there, mandates, requests, reports) is on the page after it (docs/outward-acts.md).
+  { href: "/outbound", name: "Pages sent outside", needs: ["direct"] },
+  { href: "/admin/outside", name: "The public graph", needs: ["direct", "release"] },
   { href: "/redaction-policies", name: "Redaction policies" },
   { href: "/file-sets", name: "File sets", needs: ["direct", "administer"] },
   { href: "/sources/new", name: "Add a source", needs: ["direct"] },

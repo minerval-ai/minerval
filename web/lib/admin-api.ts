@@ -97,6 +97,12 @@ export interface SetupChecklist {
     unsent: number;
     last_error: string | null;
   };
+  /** Keeping public versions current: the setting, whether anything is behind it, and the last request the public graph did not take. Absent from an older API. */
+  public_graph?: {
+    account_set: boolean;
+    keep_public_current: { setting: "on" | "off"; sends: boolean; in_words: string };
+    last_not_taken: string | null;
+  };
   connections: {
     total: number;
     on: number;

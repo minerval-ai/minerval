@@ -22,6 +22,7 @@ import {
   getPublicMandate,
   getMandateAllocationView,
   contributeToMandate,
+  raiseNodeToMandate,
   listMandateAttempts,
 } from "../services/mandate-service.js";
 import { mandatePrizesBlock } from "../services/bounty-service.js";
@@ -204,6 +205,32 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
       },
     }
   );
+
+  // POST /mandates/:id/raise: a funder puts a node in front of the
+  // mandate's officers (mandate-inbox-service.ts), in fixed words. It asks
+  // and does not command: whether the mandate pays is its officers' call
+  // under its operating policy, as with everything else in its inbox.
+  app.post<{ Params: { id: string }; Body: { node_id: string } }>("/:id/raise", {
+    schema: {
+      tags: ["mandates"],
+      summary: "As one of a mandate's funders, ask it to pay for a fresh assessment of a node",
+      description:
+        "Puts the node in front of the mandate's program officers, who decide under its operating policy whether its money pays for a fresh " +
+        "assessment. It asks and does not command, and it carries no words of yours: the officers are told that a funder of the mandate asks for a " +
+        "fresh assessment of this node, and nothing else. Only an account with money in the mandate may ask. The request and the officers' " +
+        "decision are on the mandate's public page. A repeat about a node still waiting is folded into the earlier one.",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } },
+      body: { type: "object", required: ["node_id"], properties: { node_id: { type: "string", format: "uuid" } } },
+    },
+    preHandler: [app.authenticate, app.requireUser],
+    handler: async (request, reply) => {
+      const result = await raiseNodeToMandate({ grantId: request.params.id, userId: request.auth!.userId!, nodeId: request.body.node_id });
+      if (!result.ok) {
+        return reply.code(result.code === "NOT_FOUND" || result.code === "NODE_NOT_FOUND" ? 404 : result.code === "NOT_A_FUNDER" ? 403 : 409).send({ error: result.message, code: result.code });
+      }
+      return reply.code(result.folded ? 200 : 201).send({ raised: true, folded: result.folded, in_words: result.in_words });
+    },
+  });
 
   // POST /mandates/:id/withdraw — a funder takes back their share of the
   // mandate's uncommitted money (mandate-terms-service.ts): the uncommitted

@@ -117,7 +117,7 @@ describe("with public the only label", () => {
       await publicOnly(tx);
       return catalog(tx);
     });
-    expect(now.labelled.length).toBe(125);
+    expect(now.labelled.length).toBe(135);
     expect(now.secured).toEqual([]);
     expect(now.policies).toEqual({});
     expect(now.judgmentGuards).toEqual([]);
@@ -214,13 +214,13 @@ describe("defining a second label", () => {
       return { during, after: await catalog(tx) };
     });
     expect(during.secured).toEqual(during.labelled);
-    expect(during.policies).toEqual({ label_clearance: 125, label_own_insert: 125, label_sql_read: 125 });
+    expect(during.policies).toEqual({ label_clearance: 135, label_own_insert: 135, label_sql_read: 135 });
     expect(during.judgmentGuards).toEqual(["argument_evaluations", "assessments", "quantity_estimates", "question_assessments"]);
     expect(during.collisionGuards).toBeGreaterThan(30);
     // Every labelled table keeps a row's label as it was written.
-    expect(during.labelFixedGuards).toBe(125);
+    expect(during.labelFixedGuards).toBe(135);
     // And lets a cleared connection change or delete one only at its own label.
-    expect(during.ownLabelGuards).toBe(125);
+    expect(during.ownLabelGuards).toBe(135);
     expect(after.secured).toEqual([]);
     expect(after.policies).toEqual({});
     expect(after.judgmentGuards).toEqual([]);

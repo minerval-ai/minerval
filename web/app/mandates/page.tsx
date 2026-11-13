@@ -1,3 +1,4 @@
+import { PublicMandates } from "@/components/outside/PublicMandates";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
@@ -116,6 +117,8 @@ export default async function MandatesPage() {
         <Link href="/account/grants/new">start your own mandate →</Link>
       </p>
       <AskBox placeholder="Ask the Assistant what a mandate could do for a question you care about…" />
+      {/* In a private deployment: the organisation's public mandates, listed with its own and marked as public. */}
+      <PublicMandates />
 
       {platform.length > 0 && (
         <section>

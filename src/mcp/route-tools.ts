@@ -341,6 +341,64 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   },
   "GET /prize-claims/:id": { name: "get_prize_claim" },
   "POST /prize-claims/:id/challenge": { name: "challenge_prize_claim" },
+
+  // ---- requests taken up, a funder's ask of a mandate, an account's own report (docs/outward-acts.md) ----
+  "POST /requests/:request_id/take-up": {
+    name: "take_up_request",
+    note: "Public at once under your account's name, and it stays on the request's record. Free. Ask your user first.",
+  },
+  "POST /requests/:request_id/take-up/decline": {
+    name: "decline_taken_up_request",
+    note: "Public at once under your account's name. Free. Ask your user first.",
+  },
+  "POST /mandates/:id/raise": {
+    name: "ask_mandate_for_assessment",
+    note: "Free, and only for an account with money in the mandate. It asks; the mandate's officers decide.",
+  },
+  "GET /reports/mine/:id": { name: "get_my_report", note: "Free." },
+
+  // ---- from inside a private deployment: the public graph (members-only deployments only) ----
+  "GET /outside/account": { name: "get_public_graph_account", note: "Free." },
+  "GET /outside/log": { name: "list_acts_on_public_graph", note: "Free." },
+  "GET /outside/choices": { name: "list_standing_choices", note: "Free." },
+  "GET /outside/requests": { name: "list_public_requests", note: "Free. Read from the mirror, so it tells the public graph nothing." },
+  "GET /outside/said-back": { name: "list_public_contributions_received", note: "Free." },
+  "GET /outside/keep-current": { name: "get_keeping_public_versions_current", note: "Free." },
+  "GET /outside/reports": { name: "list_reports_for_sending", note: "Free." },
+  "GET /outside/mandates/conversations/:conversation_id": { name: "get_public_mandate_conversation", note: "Free." },
+  "POST /outside/requests/adopted/:adoption_id/take-up": {
+    name: "take_up_public_request",
+    note: "An act on the public graph in the organization's name: it shows outside what this graph is working on. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/requests/adopted/:adoption_id/decline": {
+    name: "decline_public_request",
+    note: "An act on the public graph in the organization's name. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/mandates/conversations/:conversation_id/fund": {
+    name: "fund_public_mandate",
+    note: "Spends the organization's public owls and makes a mandate public under its name. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/mandates/:mandate_id/back": {
+    name: "back_public_mandate",
+    note: "Spends the organization's public owls, publicly. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/nodes/:node_id/fund": {
+    name: "fund_public_node",
+    note: "Spends the organization's public owls, and shows outside that the organization wanted this node assessed. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/nodes/:node_id/raise": {
+    name: "ask_public_mandate_for_assessment",
+    note: "Shows on a public mandate's page that the organization asked about this node. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/reports/:sending_id/send": {
+    name: "send_report_to_maintainers",
+    note: "Releases the report's redacted words to Minerval's maintainers. It takes a person who holds release for the organization's own material, so your user is shown a card.",
+  },
+  "POST /outside/reports/:sending_id/send-facts": {
+    name: "send_failure_facts_to_maintainers",
+    note: "Sends fixed facts and none of the agent's words. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/work/:action_id/commission": { name: "fund_outward_work", note: ESCROWS_OWLS },
 };
 
 /** Routes a hand-written tool in server.ts already covers. */
@@ -356,6 +414,8 @@ export const NATIVE_TOOL_ROUTES: Record<string, string[]> = {
   // The change stream (#562), defined once with the Correspondents' read.
   "GET /changes": ["list_graph_changes"],
   "POST /contributions": ["submit_contribution"],
+  // The same report, for a caller that speaks REST (routes/reports.ts).
+  "POST /reports": ["raise_issue"],
   "GET /contributions/:id": ["get_contribution_status"],
   // The URL hash is the only thing in the way: the native tool takes the
   // page's URL and hashes it on the server (#752).
@@ -436,8 +496,23 @@ const BUDGET_SESSION =
   "text it read can never create a budget for itself. The matching reads (get_created_owls, " +
   "list_standing_mandates) are tools.";
 
+const OUTWARD_WORDS =
+  "Words a person writes for the outside: the scope of a public mandate, or a message to the public Grantmaker. It takes a signed-in " +
+  "session and is not a tool, because words an agent drafted would be an agent's words leaving the deployment without redaction or " +
+  "release. Paying for the mandate once it is drafted (fund_public_mandate) is a tool, and waits for the user.";
+const OUTWARD_SESSION =
+  "Decides what leaves the deployment from then on with nobody acting, or which label work is recorded at. It takes a signed-in session " +
+  "as well as the permission, so that a leaked key, an access token, or an agent following text it read can do neither. The matching " +
+  "reads are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
+  "POST /outside/mandates": OUTWARD_WORDS,
+  "POST /outside/mandates/conversations/:conversation_id/messages": OUTWARD_WORDS,
+  "PUT /outside/choices/:key": OUTWARD_SESSION,
+  "POST /outside/requests/:public_request_id/adopt": OUTWARD_SESSION,
+  "POST /outside/keep-current/leave-out": OUTWARD_SESSION,
+  "DELETE /outside/keep-current/leave-out/:id": OUTWARD_SESSION,
   "POST /outbound/proposals": OUTBOUND_SESSION,
   "POST /outbound/proposals/:proposal_id/release": OUTBOUND_SESSION,
   "POST /outbound/packages/:package_id/file": OUTBOUND_SESSION,

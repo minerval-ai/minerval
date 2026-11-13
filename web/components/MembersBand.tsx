@@ -29,6 +29,8 @@ export function MembersBand({ mine }: { mine: MyPermissions }) {
       {release && <Link href="/release">Release queue</Link>}
       {(direct || administer) && <Link href="/file-sets">File sets</Link>}
       {direct && <Link href="/sources/new">Add a source</Link>}
+      {/* The pages about the public graph are read by every member; the link is shown to those who can act there. */}
+      {(direct || release) && <Link href="/admin/outside">The public graph</Link>}
       {administer && <Link href="/admin">Administration</Link>}
     </nav>
   );

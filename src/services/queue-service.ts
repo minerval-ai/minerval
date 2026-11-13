@@ -111,6 +111,11 @@ export interface StewardMessage {
     // been shown at this label and is now among the node's sources
     // (release-gate-service.ts). The context is counts and fixed words.
     | "page_shown"
+    // A reader of a page this graph published of the node made a
+    // contribution on the public graph through it (inbound-service.ts). The
+    // context is the summary this deployment's Contribution Reviewer wrote
+    // at `public`, and never the contribution's own text.
+    | "public_contribution"
     // The public graph merged or withdrew a node that work at this label
     // rests on, and the batch of the mirror that says so is in
     // (mirror-upkeep.ts). The context says what happened and what of this

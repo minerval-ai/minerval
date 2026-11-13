@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
     content?: string;
     evidence_urls?: unknown;
     merge_target_claim_id?: string;
+    about_published_page_id?: string;
     proposed_canonical_form?: string;
   };
   try {
@@ -139,6 +140,8 @@ export async function POST(request: NextRequest) {
       ...(body.proposed_canonical_form?.trim()
         ? { proposedCanonicalForm: body.proposed_canonical_form.trim().slice(0, 2000) }
         : {}),
+      // Made through a published page on the node (the second tab's "challenge this page").
+      ...(/^[0-9a-f-]{36}$/i.test(body.about_published_page_id ?? "") ? { aboutPublishedPageId: body.about_published_page_id } : {}),
       displayName: session.user?.name ?? undefined,
     });
     return NextResponse.json({ contribution }, { status: 201 });

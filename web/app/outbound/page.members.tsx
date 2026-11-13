@@ -7,7 +7,7 @@ import { WorkNav, day } from "@/components/inside/nav";
 import { fetchOutbound, type OutboundNode, type OutboundPackage } from "@/lib/inside-api";
 import { releaseProposalAction, sendOutsideAction, writeProposalAction } from "../showings/actions";
 
-export const metadata: Metadata = { title: "Sending outside · Minerval" };
+export const metadata: Metadata = { title: "Pages sent outside · Minerval" };
 export const dynamic = "force-dynamic";
 
 // Where each node shown outside this deployment stands on its way out
@@ -99,7 +99,7 @@ export default async function OutboundPage() {
   return (
     <div className="admin-page">
       <PageHead
-        title="Sending outside"
+        title="Pages sent outside"
         lede="What a showing outside has released leaves this deployment in signed packages, each one node's page as the outside is to read it. A package is submitted to the public graph under the organisation's own account, where it is reviewed like any contribution and then weighed as a source by the node's Steward there."
       />
       <WorkNav who={who} current="/outbound" />
@@ -134,6 +134,11 @@ export default async function OutboundPage() {
           a receipt for one: that is read on the public graph.
         </p>
       </section>
+
+      <p className="acct-prose acct-measure">
+        This page is for pages. What else passes between this deployment and the public graph (the organisation&rsquo;s account there,
+        public mandates, requests taken up, agents&rsquo; reports sent on) is on <Link href="/admin/outside">The public graph</Link>.
+      </p>
 
       {overview.nodes.length === 0 && (
         <p className="account-empty">No page has been asked to be shown outside this deployment.</p>

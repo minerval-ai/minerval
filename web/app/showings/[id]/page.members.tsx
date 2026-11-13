@@ -287,7 +287,7 @@ export default async function ShowingPage({ params }: { params: Promise<{ id: st
                 {outbound.nodes[0]!.sent === "as_released"
                   ? "The person who asked for this showing chose for each package to be sent as soon as it is built."
                   : "A person who directs the graph sends each package."}{" "}
-                <Link href={`/outbound#showing-${id}`}>Sending outside</Link> has each package, whether it was sent and what the public graph
+                <Link href={`/outbound#showing-${id}`}>Pages sent outside</Link> has each package, whether it was sent and what the public graph
                 answered.
               </p>
               <ul className="inside-list">

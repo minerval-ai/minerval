@@ -35,9 +35,21 @@ export interface PublishedPageSummary {
   packages_received: number;
   first_received_at: string;
   on_the_node: PublishedOnNode;
+  /** Contributions made on this graph through the page and admitted, and how many stand with no answer from the publishing graph. */
+  said_back?: { admitted: number; unanswered: number };
 }
 
-export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher"> {
+/** A contribution made on this graph through a published page, with what the publishing graph has said became of it (docs/outward-acts.md). */
+export interface SaidBackEntry {
+  contribution_id: string;
+  type: string;
+  submitted_at: string;
+  review: "admitted" | "not admitted" | "waiting for review";
+  state: string;
+  in_words: string;
+}
+
+export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher" | "said_back"> {
   package: number;
   received_at: string;
   publisher: {
@@ -69,6 +81,9 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
     acts: PackageAct[];
   };
   versions: PackageVersion[];
+  said_back?: SaidBackEntry[];
+  /** What the publishing deployment's package says of keeping public versions current; null on a package made before the setting existed. */
+  keeps_public_versions_current?: { setting: "on" | "off"; a_public_mandate_pays_for_it: boolean } | null;
   check: PackageCheck;
   packages: Array<{ package: number; state: string; received_at: string; hash: string }>;
   /**

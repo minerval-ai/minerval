@@ -271,21 +271,11 @@ the signed package and runs the check in the reader's browser.
 
 ## What this does not do
 
-- **Requests.** Saying in public that a request has been taken up is not
-  built, so a request's page does not show a deployment's answer to it. It
-  would be a field of the package naming the public request, and an entry
-  on that request's record at admission.
-- **Challenges.** A challenge to a published page is an ordinary
-  contribution on the public node. Routing it back into the deployment is
-  not built: it would arrive with the mirror, or as a read of the
-  contribution record by the deployment's key.
-- **Public mandates and funding from inside.** The deployment's key can
-  already call the public graph's funding routes; no route inside does it.
-- **A publisher's track record.** `GET /publishers/:account_id` lists what
-  a publisher has published and each state. Nothing is computed over it.
-- **Keeping the public version current.** Admission opens the reassessment.
-  The setting that funds it from inside is not built: it would act in
-  `sendOutbound`, after a package is admitted.
+- **What else passes between the two graphs** is in
+  [outward-acts.md](outward-acts.md): what the public says back about a
+  published page, requests taken up in public, public mandates and funding
+  from inside, keeping the public version current, and a publisher's
+  record.
 - **A subclaim that is a public node** is shown with how it bears and
   without saying which node it is: the part's text leaves the wording out
   because the destination already reads it, and the node's id is not

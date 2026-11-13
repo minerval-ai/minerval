@@ -330,6 +330,10 @@ export async function buildOutboundPackages(opts: { showingId?: string } = {}): 
   if (oneLabelOnly()) return 0;
   const s = signer();
   const where = hosting();
+  // Stamped on every package: whether this deployment keeps public versions current, and whether anything pays for it.
+  const { keepCurrentStamp } = await import("./outward-acts-service.js");
+  const { saidBackFor } = await import("./inbound-service.js");
+  const keepsCurrent = await keepCurrentStamp();
   return atPublic("building the packages of pages shown outside", async () => {
     const nodes = await rawQuery<{ showing_id: string; node_id: string }>(
       `SELECT DISTINCT n.showing_id, n.node_id FROM shown_nodes n JOIN shown_showings s ON s.id = n.showing_id
@@ -342,16 +346,17 @@ export async function buildOutboundPackages(opts: { showingId?: string } = {}): 
       if (!publicNodeId) continue;
       const record = await outsideRecord(n.showing_id, n.node_id);
       if (!record) continue;
+      const saidBack = await saidBackFor(n.showing_id, n.node_id);
       const content = {
         format: PUBLISHED_PAGE_FORMAT,
         publisher: { key_id: s.keyId, public_key: s.publicKey },
-        deployment: { hosting: where, attested_by: "nothing" as const },
+        deployment: { hosting: where, attested_by: "nothing" as const, keeps_public_versions_current: keepsCurrent },
         showing: record.showing,
         node: { public_id: publicNodeId, ...record.node },
         state: record.state,
         page: record.page,
         policy: record.policy,
-        record: { made: record.made, acts: record.acts, versions: record.versions },
+        record: { made: record.made, acts: record.acts, versions: record.versions, ...(saidBack.length > 0 ? { said_back: saidBack } : {}) },
       };
       const contentHash = sha256(canonicalContent(JSON.parse(JSON.stringify(content))));
       const [last] = await rawQuery<{ sequence: number; hash: string; content_hash: string }>(
@@ -383,12 +388,12 @@ export async function buildOutboundPackages(opts: { showingId?: string } = {}): 
 /** Who is sending: a person, or the standing choice a person made when they asked for the showing. */
 export type Sender = { actor: GateActor } | { standing: true };
 
-interface PublicGraph {
+export interface PublicGraph {
   url: string;
   key: string;
 }
 
-function publicGraph(): PublicGraph {
+export function publicGraph(): PublicGraph {
   const { publicGraphApiUrl, publicGraphApiKey } = loadConfig();
   if (!publicGraphApiUrl || !publicGraphApiKey) {
     throw new OutboundError(
@@ -401,7 +406,7 @@ function publicGraph(): PublicGraph {
   return { url: publicGraphApiUrl.replace(/\/+$/, ""), key: publicGraphApiKey };
 }
 
-async function call(graph: PublicGraph, method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; json: Record<string, any> }> {
+export async function call(graph: PublicGraph, method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; json: Record<string, any> }> {
   const res = await fetch(`${graph.url}${path}`, {
     method,
     headers: { "x-api-key": graph.key, ...(body === undefined ? {} : { "content-type": "application/json" }) },
@@ -418,18 +423,18 @@ async function call(graph: PublicGraph, method: "GET" | "POST", path: string, bo
 }
 
 /** What the public graph said, in one line. Its answers are public words about a public record; nothing of the deployment's is in them. */
-function answerOf(json: Record<string, any>): string {
+export function answerOf(json: Record<string, any>): string {
   const error = json.error;
   const said = typeof error === "string" ? error : (error?.message ?? json.message ?? json.status ?? "");
   return String(said).slice(0, 1000);
 }
 
-async function logSend(row: { packageId?: string; proposalId?: string; sender: Sender; how: "https" | "file"; result: string; detail: string | null }): Promise<void> {
+async function logSend(row: { packageId?: string; proposalId?: string; sender: Sender; how: "https" | "file"; result: string; detail: string | null; publicPageId?: string | null }): Promise<void> {
   const actor = "actor" in row.sender ? row.sender.actor : null;
   await rawQuery(
-    `INSERT INTO outbound_sends (package_id, proposal_id, sent_by, holding, under_standing_choice, how, result, detail, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [row.packageId ?? null, row.proposalId ?? null, actor?.id ?? null, actor?.holding ?? [], actor === null, row.how, row.result, row.detail, PUBLIC_LABEL]
+    `INSERT INTO outbound_sends (package_id, proposal_id, sent_by, holding, under_standing_choice, how, result, detail, public_page_id, sensitivity_label)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [row.packageId ?? null, row.proposalId ?? null, actor?.id ?? null, actor?.holding ?? [], actor === null, row.how, row.result, row.detail, row.publicPageId ?? null, PUBLIC_LABEL]
   );
 }
 
@@ -503,14 +508,17 @@ export async function sendOutbound(input: { showingId: string; sender: Sender })
       if (stopped.has(p.node_id)) continue;
       let result = "failed";
       let detail: string | null = null;
+      let publicPageId: string | null = null;
       try {
         const res = await call(graph, "POST", "/published-pages", { package: p.package });
         result = res.status === 200 || res.status === 201 ? "admitted" : "refused";
         detail = result === "admitted" ? String(res.json.in_words ?? "") : `${res.status}: ${answerOf(res.json)}`;
+        const said = res.json.published_page_id;
+        if (result === "admitted" && typeof said === "string" && /^[0-9a-f-]{36}$/i.test(said)) publicPageId = said;
       } catch (err) {
         detail = err instanceof Error ? err.message.slice(0, 500) : "The public graph could not be reached.";
       }
-      await logSend({ packageId: p.id, sender: input.sender, how: "https", result, detail });
+      await logSend({ packageId: p.id, sender: input.sender, how: "https", result, detail, publicPageId });
       sent.push({ package_id: p.id, node_id: p.node_id, sequence: p.sequence, result, detail });
       if (result !== "admitted") stopped.add(p.node_id);
     }
