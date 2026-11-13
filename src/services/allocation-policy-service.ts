@@ -101,6 +101,9 @@ export interface AllocationPolicy {
   /** Cost prior for one scoping pass on a request with no budget, in owls,
    *  until the ledger holds enough completed scoping passes for the p80. */
   est_request_scope_cost_owls: number;
+  /** Cost prior for one ingest (the extraction and its Matcher runs), in
+   *  owls, until the ledger holds enough finished ingests for the p80. */
+  est_ingest_cost_owls: number;
 }
 
 /** The range each key is held to: a stored value outside it is clamped on
@@ -125,6 +128,7 @@ export const POLICY_BOUNDS: Record<
   reconcile_candidates_max_per_sweep: { min: 0, max: 200 },
   reconcile_candidate_min_similarity: { min: 0.5, max: 1 },
   est_request_scope_cost_owls: { min: 0.01, max: 20 },
+  est_ingest_cost_owls: { min: 0.01, max: 20 },
 };
 
 export interface GeneralMandate {
@@ -229,6 +233,9 @@ function defaultsFromConfig(): AllocationPolicy {
     reconcile_candidate_min_similarity: 0.92,
     // Requests (Part VIII). The design's prior for a scoping pass.
     est_request_scope_cost_owls: 2,
+    // Ingests: what one extraction and its Matcher runs have cost (about
+    // half an owl to a few owls for a news article or paper, in Nov 2026).
+    est_ingest_cost_owls: 1,
   };
 }
 
