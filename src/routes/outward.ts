@@ -289,8 +289,8 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
       summary: "Take up, at a label you read, a request filed at a label it reads (people who direct the graph, from a signed-in session)",
       description:
         "The request at your label carries the words of the one below and what it bears on, and is linked to it. The work is funded, done and " +
-        "judged at your label, by agents that read what your label reads. Nothing is added to the request below: its readers are not shown that " +
-        "it was taken up or what was found, since that comes from a label they may not read. A label takes a request up once.",
+        "judged at your label, by agents that read what your label reads. That it was taken up, and what the work finds, go to the readers of " +
+        "the request below through the gate between the two labels, which may remove from an answer or hold it. A label takes a request up once.",
       params: { type: "object", required: ["request_id"], properties: { request_id: UUID } },
       body: { type: "object", required: ["label"], properties: { label: { type: "string", minLength: 1, maxLength: 100 } } },
     },

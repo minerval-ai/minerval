@@ -132,6 +132,8 @@ export async function takeUpFromBelow(
     `INSERT INTO adopted_requests (request_id, ${column}, adopted_by, sensitivity_label) VALUES ($1, $2, $3, $4) RETURNING id`,
     [filed.id, id, by.contributorId ?? null, label]
   );
+  // That it was taken up is told to the label that asked, through the gate between the two (gate-service.ts).
+  if (!isPublic) await offerDown("taken_up", filed.id);
   return { adoption_id: row!.id, request_id: filed.id, already: false };
 }
 
@@ -139,8 +141,8 @@ export async function takeUpFromBelow(
 export function takenUpAboveNote(below: { id: string; label: string }, here: { id: string; label: string }): string {
   return (
     `Request ${below.id} was filed at \`${below.label}\`, which this run reads and does not change. It is taken up ` +
-    `at \`${here.label}\` as request ${here.id}, linked to it, and that is the request this acted on. Readers at ` +
-    `\`${below.label}\` are not shown that it was taken up or what was found.`
+    `at \`${here.label}\` as request ${here.id}, linked to it, and that is the request this acted on. What the ` +
+    `work finds goes to readers at \`${below.label}\` through the gate between the two labels, which may remove from it or hold it.`
   );
 }
 
@@ -205,4 +207,19 @@ export async function answerableBelow(requestIdAbove: string): Promise<Answerabl
       : { public_request_id: row.public_request_id! },
     answered_by: { request_id: row.request_id, label: row.label, state: row.state },
   };
+}
+
+/**
+ * Offer to the gate what a request taken up here has to say to the label
+ * that asked: that it was taken up, or what work on it found. A failure
+ * here must not undo the work it reports, so it is logged and the next
+ * offer (the next work recorded, or the request's closing) sends it.
+ */
+export async function offerDown(kind: "taken_up" | "answer", requestIdAbove: string): Promise<void> {
+  try {
+    const gate = await import("./gate-service.js");
+    await (kind === "taken_up" ? gate.offerTakenUpBelow(requestIdAbove) : gate.offerAnswerBelow(requestIdAbove));
+  } catch (err) {
+    console.error(`[gate] could not offer ${kind} for request ${requestIdAbove}: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }

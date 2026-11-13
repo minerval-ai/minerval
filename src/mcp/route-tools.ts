@@ -58,6 +58,11 @@ const SPENDS_OWLS =
 const ESCROWS_OWLS =
   "Escrows owls from your balance now; unspent owls refund on completion or cancellation.";
 
+/** What every act at a gate says of itself. */
+const GATE_ACT =
+  "An act at a gate: it decides what goes to readers who do not read a label, and what has gone is not taken back. " +
+  "It takes the account's own permission and is recorded under the account. The Assistant shows its user a card.";
+
 export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- claims ----
   "GET /claims": { name: "list_claims" },
@@ -272,8 +277,12 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "carries it.",
   },
 
-  // ---- showing a page below its label: members-only deployments only ----
-  // The reads, and paying for the work. The acts are excluded below.
+  // ---- the gate: members-only deployments only (docs/the-gate.md) ----
+  // Every route is a tool. An act at a gate takes the account's permission
+  // (release for a party, direct, administer), from a session or through a
+  // key or token of the account: the person a gate's authorities put there
+  // may act through their own agent or a script. The Assistant holds each
+  // act for its user (llm/tools/assistant-tools.ts).
   "GET /showings": { name: "list_showings" },
   "GET /showings/:showing_id": {
     name: "get_showing",
@@ -284,8 +293,22 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /showings/:showing_id/pages/:page_id": { name: "get_shown_page" },
   "GET /redaction-policies": { name: "list_redaction_policies" },
   "GET /redaction-policies/:policy_id": { name: "get_redaction_policy" },
-  "GET /release/queue": { name: "get_release_queue" },
-  "GET /release/rules": { name: "list_release_rules" },
+  "GET /gates": { name: "list_gates" },
+  "GET /gate/backlog": {
+    name: "get_gate_backlog",
+    note: "Free. Counts and fixed words only: it says how much waits and on whom, and nothing about what any item contains.",
+  },
+  "GET /gate/queue": { name: "get_gate_queue" },
+  "GET /gate/items": { name: "list_gate_items" },
+  "PUT /gates/:gate_id": { name: "set_gate", note: GATE_ACT },
+  "PUT /gates/:gate_id/settings": { name: "set_gate_mode", note: GATE_ACT },
+  "DELETE /gates/settings/:setting_id": { name: "end_gate_setting", note: GATE_ACT },
+  "POST /gate/decisions": { name: "decide_at_gate", note: GATE_ACT },
+  "POST /gate/offers": { name: "offer_to_gate", note: GATE_ACT },
+  "POST /showings": { name: "set_page_flow", note: GATE_ACT },
+  "POST /showings/:showing_id/end": { name: "end_page_flow", note: GATE_ACT },
+  "POST /showings/:showing_id/pages/:page_id/hold": { name: "hold_gate_item", note: GATE_ACT },
+  "PUT /redaction-policies": { name: "save_redaction_policy", note: GATE_ACT },
   "POST /showings/:showing_id/pages/:page_id/commission": { name: "fund_showing_work", note: ESCROWS_OWLS },
   // A shown page leaves the deployment (docs/published-pages.md). Reading
   // where it stands, and sending, which takes a person: the Assistant
@@ -490,14 +513,6 @@ const ADMINISTRATION_SESSION =
   "access token, or an agent following text it read can then never widen anyone's access. " +
   "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
 
-const SHOWING_SESSION =
-  "Decides what leaves a label: asking for a page to be shown, ending a showing, holding, releasing, setting a " +
-  "standing rule, or saving a boundary's policy. Each is recorded with the person who did it and the permissions " +
-  "they held, so it takes a signed-in dashboard session as well as the permission: a leaked key, an access token, " +
-  "or an agent following text it read can then never ask for a page to be shown or open the gate. The matching " +
-  "reads (list_showings, get_showing, get_shown_page, get_release_queue, list_release_rules, " +
-  "list_redaction_policies) are tools, and so is paying for the work (fund_showing_work).";
-
 const OUTBOUND_SESSION =
   "Decides what leaves the deployment or who speaks for it outside: the words a node is proposed to the public " +
   "graph in, a party's release of those words, a package handed to a person as a file, and the signed statement " +
@@ -554,13 +569,6 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /outbound/proposals/:proposal_id/release": OUTBOUND_SESSION,
   "POST /outbound/packages/:package_id/file": OUTBOUND_SESSION,
   "POST /outbound/registration": OUTBOUND_SESSION,
-  "POST /showings": SHOWING_SESSION,
-  "POST /showings/:showing_id/end": SHOWING_SESSION,
-  "POST /showings/:showing_id/pages/:page_id/hold": SHOWING_SESSION,
-  "POST /release/decisions": SHOWING_SESSION,
-  "POST /release/rules": SHOWING_SESSION,
-  "DELETE /release/rules/:rule_id": SHOWING_SESSION,
-  "PUT /redaction-policies": SHOWING_SESSION,
   "POST /file-sets/register": FILE_SET_REGISTER_SESSION,
   "POST /file-sets/:file_set_id/rehash": FILE_SET_REGISTER_SESSION,
   "POST /file-sets": FILE_SET_SESSION,

@@ -48,7 +48,16 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { slotColumnSql } from "../services/steward-lease.js";
-import { followShowings } from "../services/showing-service.js";
+import { followShowings, retryGatePayments } from "../services/showing-service.js";
+import { settleWaiting } from "../services/release-gate-service.js";
+import { offerMandatesWhereEverythingFlows } from "../services/gate-service.js";
+
+async function gateUpkeep(): Promise<void> {
+  if (oneLabelOnly()) return;
+  await offerMandatesWhereEverythingFlows();
+  await retryGatePayments();
+  await settleWaiting();
+}
 import { followOutbound } from "../services/outbound-service.js";
 import { followOutwardActs } from "../services/outward-follow.js";
 import {
@@ -174,6 +183,13 @@ export async function allocationSchedulerTick(
   // a redaction runs nothing; it runs when it is paid for.
   await followShowings().catch((err: unknown) =>
     console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // 1d''. The rest of the gate's own upkeep (docs/the-gate.md): pay again
+  // for work whose budget could not pay, let through what a delay or a
+  // changed setting was keeping, and offer mandates where everything flows.
+  await gateUpkeep().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] the gate's upkeep failed: ${err instanceof Error ? err.message : String(err)}`)
   );
 
   // 1d'. What passes between this deployment and the public graph besides

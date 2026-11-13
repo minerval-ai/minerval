@@ -7,11 +7,12 @@
  */
 import type { ToolUnion } from "@anthropic-ai/sdk/resources/messages.js";
 import { refusalForCaller } from "../../db/clearance.js";
+import { HOLD_REASONS } from "../../services/gate-kinds.js";
+import { redactorActs } from "../../services/release-gate-service.js";
 import { policyById } from "../../services/redaction-policy.js";
 import {
   ShowingError,
   finishRedaction,
-  pageCannotCross,
   pageToRedact,
   redactPassage,
   restorePassage,
@@ -24,7 +25,9 @@ export const REDACTOR_TOOL_NAMES = [
   "get_page_to_redact",
   "redact",
   "restore",
-  "cannot_cross",
+  "hold",
+  "delay",
+  "lift",
   "finish_redaction",
 ] as const;
 
@@ -39,7 +42,7 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
     {
       name: "get_page_to_redact",
       description:
-        "The page as written: what is always shown with it (always_shown), each part with its number, its kind and its text, the removals made so far, and the sources the page rests on with their labels. These are the sources the release gate counts for the page, so a reading or an analysis a judgment rests on, and a source cited through an argument or a subclaim, are among them. With source_id, returns that source's stored text instead, 20,000 characters at a time from offset, so that you can tell what a passage gives away.",
+        "The item as written, and how this gate is set for it (gate): what is always shown with it (always_shown), each part with its number, its kind and its text, the removals made so far, and the sources the page rests on with their labels. These are the sources the release gate counts for the page, so a reading or an analysis a judgment rests on, and a source cited through an argument or a subclaim, are among them. With source_id, returns that source's stored text instead, 20,000 characters at a time from offset, so that you can tell what a passage gives away.",
       input_schema: {
         type: "object",
         properties: {
@@ -79,22 +82,45 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
       },
     },
     {
-      name: "cannot_cross",
+      name: "hold",
       description:
-        "Say that this page cannot be shown under this policy: one of the things that are always shown with a page could not be shown without giving away what a category protects. The readers on the other side see that the page is held, and nothing else. This ends your work on the page.",
+        "Hold one part, or the whole item when you give no part, so that it does not go to the readers on the other side. A person at the gate may lift it. Those readers see that it is held by the Redactor, with the reason in its fixed words, and nothing else. Hold what a removal cannot protect: a part that gives away what a category covers however it is cut, or one of the things that are always shown.",
       input_schema: {
         type: "object",
         properties: {
-          category: { type: "string", description: "The policy category that covers it." },
-          note: { type: "string", description: "Which of the things that are always shown the category covers here, and why. It stays at the label the page was written at." },
+          part: { type: "integer", description: "The part's number. Leave out to hold the whole item." },
+          reason: { type: "string", enum: Object.keys(HOLD_REASONS), description: "One of the fixed reasons: " + Object.entries(HOLD_REASONS).map(([k, v]) => `${k} (${v})`).join("; ") + "." },
+          note: { type: "string", description: "Why you are holding it. Audit and the people at the gate who read this label read it. It stays at this label." },
         },
-        required: ["category", "note"],
+        required: ["reason", "note"],
+      },
+    },
+    {
+      name: "delay",
+      description:
+        "Keep one part, or the whole item when you give no part, back until a time. It goes on by itself when the time comes, unless someone holds it. Parts delayed to the same time go together.",
+      input_schema: {
+        type: "object",
+        properties: {
+          part: { type: "integer", description: "The part's number. Leave out to delay the whole item." },
+          until: { type: "string", description: "The date and time it is kept back until, as ISO 8601 (2026-12-01T09:00:00Z)." },
+        },
+        required: ["until"],
+      },
+    },
+    {
+      name: "lift",
+      description: "Take back a hold or a delay of yours on one part, or on the whole item when you give no part.",
+      input_schema: {
+        type: "object",
+        properties: { part: { type: "integer", description: "The part's number. Leave out for the whole item." } },
+        required: [],
       },
     },
     {
       name: "finish_redaction",
       description:
-        "End the redaction. Each part as you left it is hashed, the hashes are recorded where the readers on the other side can read them, and Audit's check is asked for. After this the parts do not change.",
+        "End the redaction. Each part as you left it is hashed, the hashes are recorded where the readers on the other side can read them, and Audit's check is asked for. After this the parts do not change. What you did not hold or delay then goes on under the gate's setting.",
       input_schema: {
         type: "object",
         properties: {
@@ -158,10 +184,32 @@ export async function executeRedactorTool(
       }
       case "restore":
         return answer({ success: true, ...(await restorePassage({ pageId: ctx.pageId, removalId: String(input.removal_id ?? "") })) });
-      case "cannot_cross": {
-        await pageCannotCross({ pageId: ctx.pageId, category: String(input.category ?? ""), note: String(input.note ?? "") });
-        ctx.onFinished?.();
-        return answer({ success: true, message: "Recorded. The readers on the other side see that this page is held. Your work on it is done." });
+      case "hold":
+      case "delay":
+      case "lift": {
+        const { getUsageContext } = await import("../usage-context.js");
+        const part = input.part === undefined || input.part === null ? null : Number(input.part);
+        const result = await redactorActs({
+          pageId: ctx.pageId,
+          act: name,
+          part,
+          reason: typeof input.reason === "string" ? input.reason : undefined,
+          until: typeof input.until === "string" ? input.until : undefined,
+          note: typeof input.note === "string" ? input.note : undefined,
+          runId: (getUsageContext() as { runId?: string }).runId ?? null,
+        });
+        const what = part === null ? "The whole item" : `Part ${part}`;
+        return answer({
+          success: true,
+          ...result,
+          message: !result.recorded
+            ? "Nothing changed: that already stands."
+            : name === "hold"
+              ? `${what} is held. The readers on the other side will see that it is held by the Redactor, with the reason. Go on with the rest and end with finish_redaction.`
+              : name === "delay"
+                ? `${what} is kept back until then.`
+                : `${what} is no longer held or delayed by you.`,
+        });
       }
       case "finish_redaction": {
         const leastSure = Array.isArray(input.least_sure) ? (input.least_sure as Array<{ removal_id?: string; part?: number; why: string }>) : [];

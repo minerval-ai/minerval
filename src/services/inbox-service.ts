@@ -336,7 +336,8 @@ export function saidBelowNote(label: string): string {
   return (
     `A message marked "said at" another label was sent at that label, which this run reads. The ` +
     `Steward at that label reads and answers it there. An answer you give to it is recorded at ` +
-    `\`${label}\` and is not sent to its sender, who may not read \`${label}\`.`
+    `\`${label}\`. Its sender may not read \`${label}\`, so the answer goes to them through the gate between the two labels, ` +
+    `which may remove from it or hold it.`
   );
 }
 
@@ -488,6 +489,11 @@ export async function answerMessages(
           `("${quoteHead(kept.body)}"): ${OUTCOME_WORDS[outcome]}.` + (note ? ` ${note}` : ""),
         payload: { outcome },
       });
+      // The answer is information going down: it is offered to the gate between this label and the sender's,
+      // and reaches the sender when it is through (gate-service.ts).
+      await import("./gate-service.js")
+        .then((gate) => gate.offerToGate({ kind: "message", fromLabel: here, toLabel: below.get(id)!, subject: { messageId: id }, replyTo: { messageId: id } }))
+        .catch((err: unknown) => console.error(`[gate] could not offer the answer to message ${id}: ${err instanceof Error ? err.message : String(err)}`));
       continue;
     }
     const [m] = await rawQuery<{ sender_kind: string; sender_node_id: string | null; body: string; created_at: string; reply_to_session: string | null }>(
@@ -565,7 +571,7 @@ export async function answerMessages(
       recorded.length > 0
         ? `Recorded ${recorded.length} answer(s); ${replies} reached their senders as replies.` +
           (keptHere > 0
-            ? ` ${keptHere} answered a message sent at another label: recorded at \`${here}\` and not sent to the sender.`
+            ? ` ${keptHere} answered a message sent at another label: recorded at \`${here}\`, and sent to the sender through the gate between the two labels.`
             : "")
         : "No answer was recorded.",
     ...(refused.length > 0 ? { refused } : {}),

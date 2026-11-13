@@ -112,6 +112,10 @@ export interface StewardMessage {
     // been shown at this label and is now among the node's sources
     // (release-gate-service.ts). The context is counts and fixed words.
     | "page_shown"
+    // A mandate at a label this one does not read paid for, or asked for, a
+    // pass on the node here, and its asking came through the gate
+    // (release-gate-service.ts). The context is fixed words.
+    | "funded_from_above"
     // A reader of a page this graph published of the node made a
     // contribution on the public graph through it (inbound-service.ts). The
     // context is the contribution as it was made, public text from the

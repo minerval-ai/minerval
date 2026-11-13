@@ -26,6 +26,8 @@ import { markOf, type Mark } from "./page-fingerprint.js";
  * question's assessment says remains open. `supplier` is the name of who
  * supplied one source and the words of any interest recorded for it.
  */
+import { ITEM_PART_WORDS } from "./gate-kinds.js";
+
 export const PART_KINDS = [
   "wording",
   "summary",
@@ -65,9 +67,9 @@ const KIND_WORDS: Record<string, [one: string, several: string]> = {
   subclaim: ["a subclaim with how it bears", "subclaims with how they bear"],
 };
 
-/** A part's kind in words: "an argument against". */
+/** A part's kind in words: "an argument against". An item that is not a node's page has parts of its own kinds (gate-kinds.ts). */
 export function kindWords(descriptor: string, count = 1): string {
-  const words = KIND_WORDS[descriptor] ?? KIND_WORDS[descriptor.split(":")[0]!] ?? ["a part", "parts"];
+  const words = KIND_WORDS[descriptor] ?? KIND_WORDS[descriptor.split(":")[0]!] ?? ITEM_PART_WORDS[descriptor] ?? ["a part", "parts"];
   return count === 1 ? words[0] : `${count} ${words[1]}`;
 }
 

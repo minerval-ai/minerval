@@ -247,7 +247,19 @@ export async function recordWork(input: {
       ]);
     }
     return { id: row!.id };
+  }).then(async (recorded) => {
+    // Work with an outcome on a request taken up from another label is its answer: it goes to the gate.
+    if (input.outcome != null) await answerDown(input.requestId);
+    return recorded;
   });
+}
+
+/** Where this request was taken up from a label that does not read it, offer what it found to that label's gate. */
+async function answerDown(requestId: string): Promise<void> {
+  const { oneLabelOnly } = await import("./judgment-version-service.js");
+  if (oneLabelOnly()) return;
+  const { offerDown } = await import("./request-adoption-service.js");
+  await offerDown("answer", requestId);
 }
 
 /**
@@ -285,6 +297,7 @@ export async function setRequestState(input: {
   // A closed request takes no more work: its rows close and its funders'
   // unspent money returns.
   if (isClosed(input.state)) await closeRequestActions(input.requestId);
+  if (isClosed(input.state)) await answerDown(input.requestId);
 }
 
 /** Sharpen a request's wording: what it asks, why, what would satisfy it, who could do it, whom it is put to. */
@@ -533,6 +546,12 @@ export interface RequestView {
    */
   taken_up_from?: { public_request_id: string } | { request_id: string; label: string };
   /**
+   * That the request was taken up by work at a label the reader may not
+   * read, as it came through the gate from there, and whether an answer
+   * has come through or is still at the gate. Absent where nothing came.
+   */
+  taken_up_above?: { said_at: string; answer: "through the gate" | "at the gate" | "none yet"; answer_source_id?: string };
+  /**
    * The requests at other labels that took this one up, for a reader who
    * reads those labels: each is where the work on it at that label is
    * recorded. Absent where the reader reads none, so a reader of this
@@ -660,6 +679,17 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       ORDER BY a.adopted_at, a.id`,
     [ids]
   );
+  // What has come to these requests through a gate from a label the reader may not read: that one was taken
+  // up there, and an answer. The rows are this side's own and name nothing of the other (release-gate-service.ts).
+  const fromAbove = (await import("./judgment-version-service.js")).oneLabelOnly()
+    ? []
+    : await rawQuery<{ reply_ref: string; kind: string; shown_at: Date | null; source_id: string | null }>(
+        `SELECT s.reply_ref, p.kind, p.shown_at, p.source_id
+           FROM shown_pages p JOIN shown_showings s ON s.id = p.showing_id
+          WHERE s.reply_ref = ANY($1::uuid[]) AND p.kind IN ('taken_up', 'answer') AND p.stage <> 'overtaken'
+          ORDER BY p.opened_at`,
+        [ids]
+      );
   const jobIds = [...new Set(work.map((w) => w.funded_by_job_id).filter((j): j is string => !!j))];
   const fundingLabels = new Map<string, string | null>(
     await Promise.all(
@@ -728,6 +758,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
         ...(above.length > 0
           ? { taken_up_at: above.map((a) => ({ label: a.label, request_id: a.request_id, state: a.state })) }
           : {}),
+        ...takenUpAbove(fromAbove.filter((f) => f.reply_ref === r.id)),
       };
     })(),
   }));
@@ -947,4 +978,21 @@ async function noActiveNodeMessage(missing: string[]): Promise<string> {
     ...[...merged.values()].map((m) => m.message),
     ...(gone.length > 0 ? [`No active node ${gone.join(", ")}`] : []),
   ].join(" ");
+}
+
+/** What the gate has let through to a request from a label its reader may not read, in fixed words. */
+function takenUpAbove(rows: { kind: string; shown_at: Date | null; source_id: string | null }[]): {
+  taken_up_above?: { said_at: string; answer: "through the gate" | "at the gate" | "none yet"; answer_source_id?: string };
+} {
+  const told = rows.find((r) => r.kind === "taken_up" && r.shown_at);
+  const answers = rows.filter((r) => r.kind === "answer");
+  const through = [...answers].reverse().find((r) => r.shown_at);
+  if (!told && !through) return {};
+  return {
+    taken_up_above: {
+      said_at: (told?.shown_at ?? through!.shown_at!).toISOString(),
+      answer: through ? "through the gate" : answers.length > 0 ? "at the gate" : "none yet",
+      ...(through?.source_id ? { answer_source_id: through.source_id } : {}),
+    },
+  };
 }

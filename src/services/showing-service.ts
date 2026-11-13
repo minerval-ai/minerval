@@ -55,6 +55,8 @@ import {
   type PartKind,
 } from "./page-parts.js";
 import { getPromptSet } from "./prompt-set.js";
+import type { GateKind } from "./gate-kinds.js";
+import { gateOf, modesFor, type ItemScope } from "./gate-settings-service.js";
 import {
   destinationLabel,
   ensureBoundaryPolicy,
@@ -75,7 +77,7 @@ export function bothSides<T>(fn: () => Promise<T>): Promise<T> {
 
 export const SHOWING_FORMS = ["once", "standing"] as const;
 export type ShowingForm = (typeof SHOWING_FORMS)[number];
-export const SHOWING_SCOPES = ["node", "under"] as const;
+export const SHOWING_SCOPES = ["node", "under", "mandate", "boundary", "item"] as const;
 export type ShowingScope = (typeof SHOWING_SCOPES)[number];
 
 /** Why a standing showing was ended. The person ending it picks one; nobody checks it. */
@@ -145,7 +147,12 @@ const judgmentOf = (nodeKind: string) => JUDGMENT_TABLES[nodeKind] ?? JUDGMENT_T
 
 interface ShowingRow {
   id: string;
-  node_id: string;
+  kind: GateKind;
+  /** Null for an item that is not a node's page, and for a flow set for a mandate or a whole boundary. */
+  node_id: string | null;
+  subject_ref: string | null;
+  reply_ref: string | null;
+  payer_grant_id: string | null;
   to_label: string | null;
   to_outside: boolean;
   boundary_id: string;
@@ -156,7 +163,7 @@ interface ShowingRow {
   page_label: string;
 }
 
-const SHOWING_COLUMNS = `id, node_id, to_label, to_outside, boundary_id, form, scope, asked_at, ended_at, sensitivity_label AS page_label`;
+const SHOWING_COLUMNS = `id, kind, node_id, subject_ref, reply_ref, payer_grant_id, to_label, to_outside, boundary_id, form, scope, asked_at, ended_at, sensitivity_label AS page_label`;
 
 const boundaryOf = (s: Pick<ShowingRow, "page_label" | "to_label">): Boundary => ({ from: s.page_label, to: s.to_label });
 const destinationOf = (s: Pick<ShowingRow, "page_label" | "to_label">): string => destinationLabel(boundaryOf(s));
@@ -175,19 +182,15 @@ export async function ownOrganizationParty(): Promise<{ id: string; name: string
  * person holds `direct` and reads `pageLabel`.
  */
 export async function askShowing(input: {
-  nodeId: string;
+  /** The node, for scope `node` or `under`. */
+  nodeId?: string | null;
+  /** The mandate, for scope `mandate`. */
+  scopeRef?: string | null;
   pageLabel: string;
   toLabel: string | null;
   form: ShowingForm;
   scope: ShowingScope;
   actor: Actor;
-  /**
-   * For a showing outside: the asker's choice that each package is sent to
-   * the public graph as it is released, with no person sending each one
-   * (services/outbound-service.ts). Recorded with the showing, under the
-   * asker's name.
-   */
-  sendAsReleased?: boolean;
 }): Promise<{ showing_id: string; boundary_id: string; policy: { id: string; version: number; hash: string }; pages_opened: number }> {
   if (oneLabelOnly()) {
     throw new ShowingError(
@@ -209,14 +212,25 @@ export async function askShowing(input: {
         );
       }
     }
-    const [node] = await rawQuery<NodeRow & { readable: boolean }>(
-      `SELECT c.id, c.kind, c.text, c.state, c.sensitivity_label AS label, c.origin,
-              c.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text])) AS readable
-         FROM claims c WHERE c.id = $1`,
-      [input.nodeId, pageLabel]
-    );
-    if (!node || !node.readable || node.state !== "active") {
+    const byNode = input.scope === "node" || input.scope === "under";
+    if (!byNode && input.form !== "standing") {
+      throw new ShowingError("BAD_SCOPE", "A flow set for a mandate or for a whole boundary is standing: it covers what is produced from now on.");
+    }
+    if (input.scope === "item") throw new ShowingError("BAD_SCOPE", `A flow's scope is one of: node, under, mandate, boundary.`);
+    const [node] = byNode
+      ? await rawQuery<NodeRow & { readable: boolean }>(
+          `SELECT c.id, c.kind, c.text, c.state, c.sensitivity_label AS label, c.origin,
+                  c.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text])) AS readable
+             FROM claims c WHERE c.id = $1`,
+          [input.nodeId ?? null, pageLabel]
+        )
+      : [];
+    if (byNode && (!node || !node.readable || node.state !== "active")) {
       throw new ShowingError("NODE_NOT_FOUND", `No active node with that id is read at "${pageLabel}".`);
+    }
+    if (input.scope === "mandate") {
+      const [grant] = await rawQuery(`SELECT 1 FROM grants WHERE id = $1 AND sensitivity_label = $2`, [input.scopeRef ?? null, pageLabel]);
+      if (!grant) throw new ShowingError("MANDATE_NOT_FOUND", `No mandate with that id works at "${pageLabel}".`);
     }
     if (!(await ownOrganizationParty())) {
       throw new ShowingError(
@@ -225,12 +239,14 @@ export async function askShowing(input: {
           "outside party's material is the organization's to release, so an administrator adds that party first."
       );
     }
-    const spec = judgmentOf(node.kind);
-    const [version] = await rawQuery<{ id: string }>(
-      `SELECT id FROM ${spec.table}_versions WHERE claim_id = $1 AND sensitivity_label = $2`,
-      [node.id, pageLabel]
-    );
-    if (input.form === "once" && version && (await passRunning(node, pageLabel))) {
+    const spec = judgmentOf(node?.kind ?? "claim");
+    const [version] = node
+      ? await rawQuery<{ id: string }>(
+          `SELECT id FROM ${spec.table}_versions WHERE claim_id = $1 AND sensitivity_label = $2`,
+          [node.id, pageLabel]
+        )
+      : [];
+    if (input.form === "once" && version && node && (await passRunning(node, pageLabel))) {
       throw new ShowingError(
         "PASS_RUNNING",
         `A pass on this node at "${pageLabel}" is running now, and a page shown once is the page as it stands when it is asked for. ` +
@@ -247,18 +263,22 @@ export async function askShowing(input: {
     const boundary: Boundary = { from: pageLabel, to: toLabel };
     const policy = await ensureBoundaryPolicy(boundary);
     const destination = destinationLabel(boundary);
+    // Whether what is released outside is sent as it is released is the gate's setting (gate-settings-service.ts).
+    const gate = (await gateOf(policy.boundary_id))!;
+    const nodeId = node?.id ?? null;
+    const subjectRef = input.scope === "mandate" ? (input.scopeRef ?? null) : null;
     let showingId: string;
     try {
       showingId = await withTransaction(async (tx) => {
         const [row] = await tx.query<{ id: string; asked_at: Date }>(
-          `INSERT INTO showings (node_id, to_label, to_outside, boundary_id, form, scope, asked_by, asked_holding, sensitivity_label)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, asked_at`,
-          [node.id, toLabel, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, pageLabel]
+          `INSERT INTO showings (node_id, subject_ref, to_label, to_outside, boundary_id, form, scope, asked_by, asked_holding, sensitivity_label)
+           VALUES ($1, $10, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, asked_at`,
+          [nodeId, toLabel, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, pageLabel, subjectRef]
         );
         await tx.query(
           `INSERT INTO shown_showings (id, node_id, to_outside, boundary_id, form, scope, asked_by, asked_holding, asked_at, send_as_released, sensitivity_label)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-          [row!.id, node.id, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, row!.asked_at, toLabel === null && input.sendAsReleased === true, destination]
+          [row!.id, nodeId, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, row!.asked_at, toLabel === null && gate.send_as_released, destination]
         );
         await tx.query(
           `INSERT INTO showing_acts (showing_id, act, actor_id, holding, at, sensitivity_label) VALUES ($1, 'asked', $2, $3, $4, $5)`,
@@ -268,8 +288,9 @@ export async function askShowing(input: {
       });
     } catch (err) {
       const e = err as { constraint?: string; cause?: { constraint?: string } } | null;
-      if ((e?.constraint ?? e?.cause?.constraint) === "uq_showings_live") {
-        throw new ShowingError("ALREADY_STANDING", "A standing showing of this node across this boundary, with this scope, already stands.");
+      const hit = e?.constraint ?? e?.cause?.constraint;
+      if (hit === "uq_showings_live" || hit === "uq_showings_live_subject") {
+        throw new ShowingError("ALREADY_STANDING", "A standing flow across this boundary, with this scope, already stands.");
       }
       throw err;
     }
@@ -331,6 +352,23 @@ const WALK_LIMIT = 5000;
 
 /** The nodes a showing covers now: the node asked for, and under scope `under` everything beneath it that the page's label reads. */
 async function nodesCovered(showing: ShowingRow): Promise<Map<string, string | null>> {
+  if (showing.scope === "boundary" || showing.scope === "mandate") {
+    // Every node with a judgment at the page's label; for a mandate, those whose judgment its budget paid for.
+    const rows = await rawQuery<{ id: string }>(
+      `SELECT DISTINCT c.id FROM claims c
+        WHERE c.state = 'active' AND EXISTS (
+          SELECT 1 FROM (
+            SELECT claim_id, funded_by_job_id, sensitivity_label FROM assessments_versions
+            UNION ALL SELECT claim_id, funded_by_job_id, sensitivity_label FROM quantity_estimates_versions
+            UNION ALL SELECT claim_id, funded_by_job_id, sensitivity_label FROM question_assessments_versions) v
+           WHERE v.claim_id = c.id AND v.sensitivity_label = $1
+             AND ($2::uuid IS NULL OR v.funded_by_job_id = (SELECT budget_job_id FROM grants WHERE id = $2)))
+        LIMIT ${WALK_LIMIT}`,
+      [showing.page_label, showing.scope === "mandate" ? showing.subject_ref : null]
+    );
+    return new Map(rows.map((r) => [r.id, null]));
+  }
+  if (!showing.node_id) return new Map();
   const placed = new Map<string, string | null>([[showing.node_id, null]]);
   if (showing.scope !== "under") return placed;
   let frontier = [showing.node_id];
@@ -364,7 +402,7 @@ async function nodesCovered(showing: ShowingRow): Promise<Map<string, string | n
  */
 async function followShowing(showingId: string, opts: { first?: boolean } = {}): Promise<number> {
   const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [showingId]);
-  if (!showing || showing.ended_at) return 0;
+  if (!showing || showing.ended_at || showing.kind !== "page") return 0;
   if (showing.form === "once" && !opts.first) return 0;
   const destination = destinationOf(showing);
   const placed = await nodesCovered(showing);
@@ -449,7 +487,7 @@ export async function followShowings(): Promise<number> {
   if (oneLabelOnly()) return 0;
   return bothSides(async () => {
     const live = await rawQuery<{ id: string }>(
-      `SELECT id FROM showings WHERE ended_at IS NULL AND form = 'standing' ORDER BY asked_at`
+      `SELECT id FROM showings WHERE ended_at IS NULL AND form = 'standing' AND kind = 'page' ORDER BY asked_at`
     );
     let opened = 0;
     for (const s of live) {
@@ -898,9 +936,9 @@ export const REDACT_GROUP = (pageId: string) => `redact:${pageId}`;
 /**
  * Open the page for one version: record it as it stands, divided into its
  * parts, on the page's side; say on the destination side that a version
- * exists and is waiting; and open the redaction on the ledger, which runs
- * when it is paid for. An earlier version of the node that was still
- * waiting to be redacted is not redacted: this one replaced it.
+ * exists and is waiting; and send it on through the gate (startAtGate). An
+ * earlier version of the node that was still waiting to be redacted is not
+ * redacted: this one replaced it.
  */
 async function openPage(
   showing: ShowingRow,
@@ -910,7 +948,6 @@ async function openPage(
   destination: string
 ): Promise<string> {
   const ownOrganization = (await ownOrganizationParty())!.id;
-  const policy = (await ensureBoundaryPolicy(boundaryOf(showing)))!;
   const [reach] = await rawQuery<{ reads: string[] }>(`SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads`, [destination]);
   const saidTo = { reads: reach!.reads, outside: showing.to_outside };
   const page = await runAtLabel(showing.page_label, `the page of node ${node.id} under showing ${showing.id}`, async () => {
@@ -920,11 +957,46 @@ async function openPage(
     for (const p of recorded.parts) partNeeds.push(await partiesFor(p.sources, showing, ownOrganization));
     return { recorded, needs, partNeeds };
   });
+  return recordVersion(showing, destination, {
+    nodeId: node.id,
+    judgmentKind,
+    judgmentId: version.id,
+    versionKey: null,
+    at: version.assessed_at,
+    header: page.recorded.header,
+    needs: page.needs,
+    sourceIds: page.recorded.restsOn,
+    parts: page.recorded.parts.map((p, i) => ({ kind: p.kind, descriptor: p.descriptor, refId: p.refId, original: p.original, needs: page.partNeeds[i]! })),
+  });
+}
 
+/** One version of an item as it is recorded: what is always shown, and its parts as written. */
+export interface RecordedVersion {
+  nodeId: string | null;
+  judgmentKind: string | null;
+  judgmentId: string | null;
+  /** For an item that is not a node's page: the hash of what it was composed from. */
+  versionKey: string | null;
+  at: Date;
+  header: Record<string, unknown>;
+  /** The parties the item itself rests on. */
+  needs: string[];
+  sourceIds: string[];
+  parts: Array<{ kind: string; descriptor: string; refId: string | null; original: string; needs: string[] }>;
+}
+
+/**
+ * Record one version of an item on both sides and send it on through the
+ * gate. A node's page and every other kind of item are recorded the same
+ * way: what is always shown, the parts as written, and whose material each
+ * rests on. Called inside bothSides.
+ */
+export async function recordVersion(showing: ShowingRow, destination: string, v: RecordedVersion): Promise<string> {
+  const policy = (await ensureBoundaryPolicy(boundaryOf(showing)))!;
   const overtaken = await rawQuery<{ id: string }>(
     `UPDATE showing_pages SET stage = 'overtaken'
-      WHERE showing_id = $1 AND node_id = $2 AND stage = 'to_redact' RETURNING id`,
-    [showing.id, node.id]
+      WHERE showing_id = $1 AND node_id IS NOT DISTINCT FROM $2 AND stage = 'to_redact' RETURNING id`,
+    [showing.id, v.nodeId]
   );
   for (const o of overtaken) {
     await rawQuery(`UPDATE shown_pages SET stage = 'overtaken' WHERE id = $1`, [o.id]);
@@ -933,44 +1005,103 @@ async function openPage(
       [REDACT_GROUP(o.id)]
     );
   }
-
   const pageId = await withTransaction(async (tx) => {
     const [row] = await tx.query<{ id: string; opened_at: Date }>(
       `INSERT INTO showing_pages
-         (showing_id, node_id, judgment_kind, judgment_id, judged_at, policy_id, header, header_salt, rests_on, source_ids, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::uuid[], $11::uuid[], $10) RETURNING id, opened_at`,
-      [showing.id, node.id, judgmentKind, version.id, version.assessed_at, policy.id, JSON.stringify(page.recorded.header), newSalt(), page.needs, showing.page_label, page.recorded.restsOn]
+         (showing_id, node_id, judgment_kind, judgment_id, version_key, judged_at, policy_id, header, header_salt, rests_on, source_ids, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $12, $5, $6, $7, $8, $9::uuid[], $11::uuid[], $10) RETURNING id, opened_at`,
+      [showing.id, v.nodeId, v.judgmentKind, v.judgmentId, v.at, policy.id, JSON.stringify(v.header), newSalt(), v.needs, showing.page_label, v.sourceIds, v.versionKey]
     );
     let position = 1;
-    for (const [i, part] of page.recorded.parts.entries()) {
+    for (const part of v.parts) {
       await tx.query(
         `INSERT INTO showing_parts (page_id, position, kind, descriptor, ref_id, original, salt, rests_on, sensitivity_label)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[], $9)`,
-        [row!.id, position++, part.kind, part.descriptor, part.refId, part.original, newSalt(), page.partNeeds[i], showing.page_label]
+        [row!.id, position++, part.kind, part.descriptor, part.refId, part.original, newSalt(), part.needs, showing.page_label]
       );
     }
     await tx.query(
-      `INSERT INTO shown_pages (id, showing_id, node_id, judged_at, opened_at, stage, needs, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, 'to_redact', $6::uuid[], $7)`,
-      [row!.id, showing.id, node.id, version.assessed_at, row!.opened_at, page.needs, destination]
+      `INSERT INTO shown_pages (id, showing_id, kind, node_id, judged_at, opened_at, stage, needs, sensitivity_label)
+       VALUES ($1, $2, $8, $3, $4, $5, 'to_redact', $6::uuid[], $7)`,
+      [row!.id, showing.id, v.nodeId, v.at, row!.opened_at, v.needs, destination, showing.kind]
     );
     return row!.id;
   });
-  await runAtLabel(showing.page_label, `the redaction of page ${pageId}`, () => ensureRedactAction(pageId, node.id));
+  await startAtGate(pageId);
   return pageId;
 }
 
+/** What an item is, as far as a gate setting's scope asks (gate-settings-service.ts). */
+export async function itemScopeOf(showing: ShowingRow, page: Pick<PageRow, "node_id" | "judgment_kind" | "judgment_id">): Promise<ItemScope> {
+  const payers = await payersOf(showing, page);
+  return {
+    boundaryId: showing.boundary_id,
+    kind: showing.kind,
+    fromLabel: showing.page_label,
+    nodeId: page.node_id,
+    subjectRef: showing.subject_ref,
+    replyRef: showing.reply_ref,
+    grantIds: [...new Set([...payers, ...(showing.kind === "mandate" && showing.subject_ref ? [showing.subject_ref] : [])])],
+  };
+}
+
 /**
- * Open, or open again, the ledger row for a page's redaction, at the
- * current label, which is the page's. It runs when someone pays for it: a
- * mandate that values it, or the person who asked.
+ * The mandates an item is the work of, first to pay first: the one the
+ * offer named; the one whose budget paid for the judgment the page carries,
+ * or for the work on the request an answer reports.
  */
-export async function ensureRedactAction(pageId: string, nodeId: string): Promise<string> {
+async function payersOf(showing: ShowingRow, page: Pick<PageRow, "judgment_kind" | "judgment_id">): Promise<string[]> {
+  const out: string[] = [];
+  if (showing.payer_grant_id) out.push(showing.payer_grant_id);
+  const table = page.judgment_kind ? { assessment: "assessments", quantity_estimate: "quantity_estimates", question_assessment: "question_assessments" }[page.judgment_kind] : null;
+  const jobs =
+    table && page.judgment_id
+      ? await rawQuery<{ job: string | null }>(`SELECT funded_by_job_id AS job FROM ${table} WHERE id = $1`, [page.judgment_id])
+      : showing.kind === "answer"
+        ? await rawQuery<{ job: string | null }>(`SELECT funded_by_job_id AS job FROM request_work WHERE request_id = $1 AND funded_by_job_id IS NOT NULL ORDER BY created_at DESC`, [showing.subject_ref])
+        : [];
+  for (const j of jobs) {
+    if (!j.job) continue;
+    const [grant] = await rawQuery<{ id: string }>(`SELECT id FROM grants WHERE budget_job_id = $1`, [j.job]);
+    if (grant && !out.includes(grant.id)) out.push(grant.id);
+  }
+  return out;
+}
+
+/**
+ * An item has been recorded, or Audit returned its redaction: send it on.
+ * Where the gate is open for every party the item rests on, no Redactor
+ * runs: the item is fingerprinted as written and goes to the gate, which
+ * lets it through. Otherwise the Redactor's run is opened on the ledger and
+ * paid for (payForGateWork). Called inside bothSides.
+ */
+async function startAtGate(pageId: string): Promise<void> {
+  const [page] = await rawQuery<PageRow>(`SELECT ${PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [pageId]);
+  const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page!.showing_id]);
+  const parts = await rawQuery<{ rests_on: string[] }>(`SELECT rests_on FROM showing_parts WHERE page_id = $1`, [pageId]);
+  const parties = [...new Set([...page!.rests_on, ...parts.flatMap((p) => p.rests_on)])];
+  const scope = await runAtLabel(showing!.page_label, `the gate setting for item ${pageId}`, () => itemScopeOf(showing!, page!));
+  const modes = await modesFor(scope, parties);
+  if ([...modes.values()].every((m) => m.mode === "open")) {
+    await runAtLabel(showing!.page_label, `item ${pageId} at an open gate`, () => finishRedaction({ pageId, leastSure: [], open: true }));
+    return;
+  }
+  await runAtLabel(showing!.page_label, `the redaction of item ${pageId}`, async () => {
+    const actionId = await ensureRedactAction(pageId, page!.node_id);
+    await payForGateWork(pageId, actionId);
+  });
+}
+
+/**
+ * Open, or open again, the ledger row for an item's redaction, at the
+ * current label, which is the item's.
+ */
+export async function ensureRedactAction(pageId: string, nodeId: string | null): Promise<string> {
   const { estimateLedgerKindCostMicroUsd } = await import("./cost-estimate-service.js");
   const cost = await estimateLedgerKindCostMicroUsd("redact");
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, sensitivity_label)
-     VALUES ('redact', $1, 'standard', $2, $3, 'Redact a page that is to be shown to readers who do not read its label', $4, $5)
+     VALUES ('redact', $1, 'standard', $2, $3, 'Redact what is going to readers who do not read its label', $4, $5)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET status = CASE WHEN actions.status IN ('done', 'superseded', 'cancelled') THEN 'open' ELSE actions.status END,
            updated_at = now()
@@ -981,14 +1112,76 @@ export async function ensureRedactAction(pageId: string, nodeId: string): Promis
   return row!.id;
 }
 
+/**
+ * Pay for an item's redaction or its check, with no person's act. The cost
+ * of sending a result down is part of the cost of the work that produced
+ * it, so it is paid from that work's budget: the mandate the offer named,
+ * then the mandate that paid for the judgment or the request's work, then
+ * the General mandate at the item's label, which pays for that label's
+ * upkeep. The budget is the work's estimated cost; what the run does not
+ * spend goes back.
+ *
+ * Where none of them can pay, the item waits, the other side is told in
+ * fixed words that it is waiting for funds, and the next look (the
+ * scheduler's, followShowings) tries again. A person who holds `fund` can
+ * still pay for it by hand. Run at the item's label.
+ */
+export async function payForGateWork(pageId: string, actionId: string): Promise<boolean> {
+  const [page] = await rawQuery<PageRow>(`SELECT ${PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [pageId]);
+  const [showing] = page ? await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]) : [];
+  if (!page || !showing) return false;
+  const [action] = await rawQuery<{ cost: string; status: string }>(`SELECT cost_est_micro_usd AS cost, status FROM actions WHERE id = $1`, [actionId]);
+  if (!action) return false;
+  const { commissionAction } = await import("./commission-service.js");
+  const { getGeneralMandate } = await import("./allocation-policy-service.js");
+  const general = await getGeneralMandate(showing.page_label).catch(() => null);
+  const payers = [...(await payersOf(showing, page)), ...(general ? [general.grantId] : [])];
+  let paid = false;
+  for (const grantId of [...new Set(payers)]) {
+    const result = await commissionAction({
+      payer: { kind: "grant", grantId },
+      actionId,
+      budgetMicroUsd: Math.max(1, Number(action.cost) || 1),
+      reason: "Sending a result to readers who do not read its label is part of the work that produced it.",
+      commissionedBy: "gate",
+    }).catch(() => null);
+    if (result?.ok) {
+      paid = true;
+      break;
+    }
+  }
+  await rawQuery(`UPDATE showing_pages SET funds_wanted_at = CASE WHEN $2 THEN NULL ELSE COALESCE(funds_wanted_at, now()) END WHERE id = $1`, [pageId, paid]);
+  await bothSides(() => rawQuery(`UPDATE shown_pages SET waiting_for_funds = $2 WHERE id = $1`, [pageId, !paid]));
+  return paid;
+}
+
+/** Try again to pay for every item whose budget could not pay. The scheduler's work, with followShowings. */
+export async function retryGatePayments(): Promise<number> {
+  if (oneLabelOnly()) return 0;
+  return bothSides(async () => {
+    const waiting = await rawQuery<{ id: string; stage: PageStage; redact_action_id: string | null; audit_action_id: string | null; label: string }>(
+      `SELECT p.id, p.stage, p.redact_action_id, a.action_id AS audit_action_id, p.sensitivity_label AS label
+         FROM showing_pages p LEFT JOIN audit_runs a ON a.id = p.audit_run_id
+        WHERE p.funds_wanted_at IS NOT NULL AND p.stage IN ('to_redact', 'to_check') ORDER BY p.funds_wanted_at`
+    );
+    let paid = 0;
+    for (const w of waiting) {
+      const actionId = w.stage === "to_redact" ? w.redact_action_id : w.audit_action_id;
+      if (!actionId) continue;
+      if (await runAtLabel(w.label, `paying for the gate's work on item ${w.id}`, () => payForGateWork(w.id, actionId)).catch(() => false)) paid++;
+    }
+    return paid;
+  });
+}
+
 // ---- the Redactor's work ------------------------------------------------------
 
 interface PageRow {
   id: string;
   showing_id: string;
-  node_id: string;
-  judgment_kind: string;
-  judgment_id: string;
+  node_id: string | null;
+  judgment_kind: string | null;
+  judgment_id: string | null;
   judged_at: Date;
   stage: PageStage;
   round: number;
@@ -1015,7 +1208,7 @@ const PAGE_COLUMNS = `id, showing_id, node_id, judgment_kind, judgment_id, judge
 interface PartRow {
   id: string;
   position: number;
-  kind: PartKind;
+  kind: string;
   descriptor: string;
   ref_id: string | null;
   original: string;
@@ -1091,8 +1284,15 @@ export async function pageToRedact(pageId: string): Promise<Record<string, unkno
       WHERE ${SOURCES_BEHIND_PAGE_SQL} ORDER BY s.title, s.id`,
     [page.node_id, page.source_ids]
   );
+  const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
+  const modes = showing ? await modesFor(await itemScopeOf(showing, page), [...page.rests_on, ...parts.flatMap((p) => p.rests_on)]) : new Map();
+  const person = [...modes.values()].some((m) => m.mode === "person");
   return {
     page_id: page.id,
+    kind_of_thing: showing?.kind ?? "page",
+    gate: person
+      ? "A person decides as well: your work is a proposal, and each part waits for the people who hold release for the parties it rests on."
+      : "The Redactor decides: what you let through goes to its readers once Audit has checked your work, and nobody decides after you.",
     stage: page.stage,
     round: page.round,
     always_shown: JSON.parse(page.header),
@@ -1265,6 +1465,8 @@ export async function finishRedaction(input: {
   leastSure: Array<{ removal_id?: string; part?: number; why: string }>;
   model?: string | null;
   runId?: string | null;
+  /** The gate is open for this item: no Redactor ran, nothing was removed, and there is no redaction to check. */
+  open?: boolean;
 }): Promise<{ root: string; parts: number; removals: Record<string, number> }> {
   const page = await pageAtOwnLabel(input.pageId);
   mustBeRedacting(page);
@@ -1279,6 +1481,7 @@ export async function finishRedaction(input: {
       prompt_set: getPromptSet().hash,
       policy: { version: policy?.version ?? null, hash: policy?.hash ?? null },
       redacted_by_model: input.model ?? null,
+      ...(input.open ? { redaction: "none: the gate was open for this item" } : {}),
       // Additions a deployment makes to a role's prompt are not built yet, so there are none to name.
       role_additions: [],
     },
@@ -1311,7 +1514,15 @@ export async function finishRedaction(input: {
           SET stage = 'to_check', header = $2, root = $3, least_sure = $4::jsonb, redactor_model = $5, redactor_run_id = $6,
               redacted_at = now(), audit_answer = NULL
         WHERE id = $1`,
-      [page.id, header, root, JSON.stringify(input.leastSure ?? []), input.model ?? null, input.runId ?? null]
+      [
+        page.id,
+        header,
+        root,
+        // What the Redactor said of a part it held (release-gate-service.ts, redactorActs) is kept with what it was least sure of.
+        JSON.stringify([...(input.leastSure ?? []), ...(Array.isArray(page.least_sure) ? (page.least_sure as Array<{ held?: boolean }>).filter((l) => l?.held) : [])]),
+        input.model ?? null,
+        input.runId ?? null,
+      ]
     );
   });
   // The step that follows the Redactor's run: the root and the shape go to
@@ -1338,15 +1549,27 @@ export async function finishRedaction(input: {
       }
     });
   });
+  if (input.open) {
+    await rawQuery(`UPDATE showing_pages SET stage = 'at_gate', checked_at = now() WHERE id = $1`, [page.id]);
+    await setStageOnBothSides(page, "at_gate");
+    const { itemReachedGate } = await import("./release-gate-service.js");
+    await itemReachedGate(page.id);
+    return { root, parts: parts.length, removals: counts };
+  }
   const { requestAudit } = await import("./queue-service.js");
   const auditRunId = await requestAudit({
     auditType: "redaction_fidelity",
-    context: `Check the redaction of page ${page.id} (round ${page.round}) before it goes to the people who decide what is released. get_redaction_to_check reads it.`,
+    context: `Check the redaction of item ${page.id} (round ${page.round}) before it goes on through the gate. get_redaction_to_check reads it.`,
     triggeredBy: "redaction_finished",
     dedupeKey: `redaction:${page.id}:${page.round}`,
     claimId: page.node_id,
   });
-  if (auditRunId) await rawQuery(`UPDATE showing_pages SET audit_run_id = $2 WHERE id = $1`, [page.id, auditRunId]);
+  if (auditRunId) {
+    await rawQuery(`UPDATE showing_pages SET audit_run_id = $2 WHERE id = $1`, [page.id, auditRunId]);
+    // The check is paid for as the redaction was, from the budget of the work that is going down.
+    const [audit] = await rawQuery<{ action_id: string | null }>(`SELECT action_id FROM audit_runs WHERE id = $1`, [auditRunId]);
+    if (audit?.action_id) await payForGateWork(page.id, audit.action_id);
+  }
   return { root, parts: parts.length, removals: counts };
 }
 
@@ -1358,12 +1581,26 @@ export async function redactionToCheck(pageId: string): Promise<Record<string, u
   const parts = await partsOf(pageId);
   const removals = await removalsOf(pageId);
   const policy = await policyById(page.policy_id);
+  // The Redactor's holds and delays are rows on the destination side, which this run may not read; only its own acts are taken from them.
+  const kept = await bothSides(() =>
+    rawQuery<{ position: number | null; act: string; reason: string | null; until: Date | null }>(
+      `SELECT sp.position, a.act, a.reason, a.until FROM showing_acts a LEFT JOIN showing_parts sp ON sp.id = a.part_id
+        WHERE a.page_id = $1 AND a.by = 'redactor' ORDER BY a.at, a.id`,
+      [pageId]
+    )
+  );
   return {
     page_id: page.id,
     stage: page.stage,
     round: page.round,
     always_shown: JSON.parse(page.header),
     least_sure: page.least_sure ?? [],
+    held_or_delayed_by_the_redactor: kept.map((k) => ({
+      part: k.position ?? "the whole item",
+      act: k.act.replace(/_/g, " "),
+      ...(k.reason ? { reason: k.reason } : {}),
+      ...(k.until ? { until: k.until.toISOString() } : {}),
+    })),
     parts: parts.map((p) => ({
       part: p.position,
       kind: p.kind,
@@ -1396,6 +1633,14 @@ export async function recordFidelityOutcome(input: {
   }
   if (!input.reasons?.trim()) throw new ShowingError("REASONS_NEEDED", "Give your reasons. They stay at the label of the page.");
   if (input.outcome === "pass") {
+    // The three answers are about a verdict. An item that is not a node's page has none, so its pass needs no answer.
+    if (page.node_id === null && !input.answer) {
+      await rawQuery(`UPDATE showing_pages SET stage = 'at_gate', audit_reasons = $2, checked_at = now() WHERE id = $1`, [page.id, input.reasons.trim()]);
+      await setStageOnBothSides(page, "at_gate");
+      const { itemReachedGate } = await import("./release-gate-service.js");
+      await itemReachedGate(page.id);
+      return { stage: "at_gate" };
+    }
     if (!input.answer || !(input.answer in FIDELITY_ANSWERS)) {
       throw new ShowingError(
         "ANSWER_NEEDED",
@@ -1408,8 +1653,8 @@ export async function recordFidelityOutcome(input: {
       [page.id, answer, input.reasons.trim()]
     );
     await setStageOnBothSides(page, "at_gate", { auditAnswer: answer });
-    const { pageReachedGate } = await import("./release-gate-service.js");
-    await pageReachedGate(page.id);
+    const { itemReachedGate } = await import("./release-gate-service.js");
+    await itemReachedGate(page.id);
     return { stage: "at_gate" };
   }
   await rawQuery(
@@ -1417,7 +1662,8 @@ export async function recordFidelityOutcome(input: {
     [page.id, input.reasons.trim()]
   );
   await setStageOnBothSides(page, "to_redact", { act: "returned_by_check" });
-  await ensureRedactAction(page.id, page.node_id);
+  const actionId = await ensureRedactAction(page.id, page.node_id);
+  await payForGateWork(page.id, actionId);
   return { stage: "to_redact" };
 }
 
@@ -1427,5 +1673,5 @@ export async function showingPage(pageId: string): Promise<PageRow | null> {
   return page ?? null;
 }
 
-export { partsOf as showingPartsOf, removalsOf as showingRemovalsOf, SHOWING_COLUMNS, destinationOf, boundaryOf };
+export { partsOf as showingPartsOf, removalsOf as showingRemovalsOf, SHOWING_COLUMNS, PAGE_COLUMNS, destinationOf, boundaryOf, partiesFor };
 export type { PageRow, PartRow, RemovalRow, ShowingRow, PolicyView };

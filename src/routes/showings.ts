@@ -1,45 +1,51 @@
 /**
- * Showing a node's page below its label: the routes
- * (docs/showing-a-page.md; services/showing-service.ts,
- * services/release-gate-service.ts). Mounted only where READS=members
- * (server/app.ts): the public graph has one label and nothing to show
- * below it.
+ * The gate: the routes (docs/the-gate.md, docs/showing-a-page.md;
+ * services/gate-service.ts, gate-settings-service.ts, showing-service.ts,
+ * release-gate-service.ts). Mounted only where READS=members
+ * (server/app.ts): the public graph has one label and no gate.
  *
- *   GET    /showings: the showings the caller reads, from either side.
- *   GET    /showings/:showing_id: one showing as its destination side
- *     reads it: each node's state, every version, every act.
- *   GET    /showings/:showing_id/pages/:page_id: one shown page, with
- *     what is needed to check it against its fingerprint.
- *   POST   /showings: ask for a page to be shown (direct, session).
- *   POST   /showings/:showing_id/end: end a standing showing (direct, session).
- *   POST   /showings/:showing_id/pages/:page_id/hold: hold a page not yet
- *     shown, or lift that hold (direct, session).
- *   POST   /showings/:showing_id/pages/:page_id/commission: pay for the
- *     page's redaction or its check (fund).
- *   GET    /release/queue: what waits on the caller at the gate (release).
- *   POST   /release/decisions: release, hold or lift, item by item or in
- *     bulk (release, session).
- *   GET    /release/rules, POST /release/rules, DELETE /release/rules/:rule_id:
- *     a party's standing rules (release; the writes from a session).
- *   GET    /redaction-policies, GET /redaction-policies/:policy_id: the
- *     policies the caller reads.
+ *   GET    /gates: the gates the caller has a say over or reads, with
+ *     their settings.
+ *   PUT    /gates/:gate_id: what holds for a gate as a whole: what flows,
+ *     whether the backlog is shown, whether what is released outside is
+ *     sent (administer).
+ *   PUT    /gates/:gate_id/settings: open, the Redactor decides, or a
+ *     person decides as well, for a kind and a scope (administer for the
+ *     gate as a whole; release for a party's material).
+ *   DELETE /gates/settings/:setting_id: end a setting.
+ *   GET    /gate/backlog: how much waits at each gate, of what kinds, for
+ *     how long and on whom. No content.
+ *   GET    /gate/queue: what waits on the caller at a gate (release).
+ *   POST   /gate/decisions: release, approve, remove, hold, delay or lift,
+ *     many items at once (release).
+ *   GET    /gate/items: what came through a gate to a label the caller
+ *     reads, other than nodes' pages.
+ *   POST   /gate/offers: offer a mandate, or a mandate's funding of work,
+ *     to a gate (direct).
+ *   GET    /showings, /showings/:showing_id, /showings/:showing_id/pages/:page_id:
+ *     flows of nodes' pages and what they showed, from either side.
+ *   POST   /showings: set a flow of pages for a node, what sits under it,
+ *     a mandate's work or a whole boundary (direct).
+ *   POST   /showings/:showing_id/end: end a standing flow (direct).
+ *   POST   /showings/:showing_id/pages/:page_id/hold: hold an item not yet
+ *     shown, or lift that hold (direct).
+ *   POST   /showings/:showing_id/pages/:page_id/commission: pay by hand
+ *     for an item's redaction or its check (fund).
+ *   GET    /redaction-policies, GET /redaction-policies/:policy_id.
  *   PUT    /redaction-policies: save a new version of a boundary's policy
- *     (administer, session).
+ *     (administer).
  *
- * Where the line is. Asking for a page to be shown, ending a showing,
- * holding, releasing, setting a rule and saving a policy each decide what
- * leaves a label, and each is recorded with the person who did it and the
- * permissions they held. They are acts of a signed-in person, as changing
- * who may read is: a key or a token that leaked, or an agent following
- * text it read, cannot ask for a page to be shown or open the gate. So they
- * are not MCP tools (mcp/route-tools.ts). Reading a showing, reading the
- * queue and paying for the work are tools: the first two change nothing,
- * and money buys the redaction and its check, never what they conclude or
- * what is released.
+ * Who may act. Each act at a gate takes a permission (`release` for a
+ * party, `direct`, `administer`) and is recorded with the account that
+ * made it and the permissions it held. The account may act from a
+ * signed-in session or through a key or token of its own, so the person a
+ * gate's authorities put there can use their own agent or a script: every
+ * route here is an MCP tool (mcp/route-tools.ts). A key carries its
+ * account's permissions and no others.
  *
  * The acts write on both sides of a boundary, which may share no label, so
- * each route checks the person's permission and the service then writes as
- * the tables' owner. The reads run with the caller's own clearance.
+ * each route checks the account's permission and the service then writes
+ * as the tables' owner. The reads run with the caller's own clearance.
  */
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { holdsPermission, standingOf } from "../permissions.js";
@@ -48,18 +54,19 @@ import { rawQuery } from "../db/client.js";
 import { commissionAction } from "../services/commission-service.js";
 import { owlsToMicroUsd } from "../services/owl.js";
 import { listParties } from "../services/party-service.js";
-import { SEND_CHOICES, type SendChoice } from "../services/outbound-service.js";
+import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES } from "../services/gate-kinds.js";
+import { fundBelow, offerToGate } from "../services/gate-service.js";
+import { FLOW_WORDS, GateError, endGateSetting, gatesFor, setGate, setGateMode } from "../services/gate-settings-service.js";
 import { policyById, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
 import {
   HOLD_REASONS,
-  RULE_CONDITIONS,
   askedShowings,
   decideAtGate,
-  endReleaseRule,
+  gateBacklog,
+  gateQueue,
   holdPage,
-  releaseQueue,
-  releaseRulesFor,
-  setReleaseRule,
+  settleWaiting,
+  shownItems,
   shownPage,
   shownShowing,
   shownShowings,
@@ -91,10 +98,14 @@ const STATUS: Record<string, number> = {
   NOT_HELD: 409,
   NOT_YOUR_PARTY: 403,
   NEEDS_DIRECT: 403,
+  NOT_YOURS_TO_SET: 403,
+  GATE_NOT_FOUND: 404,
+  SETTING_NOT_FOUND: 404,
+  MANDATE_NOT_FOUND: 404,
 };
 
 /** The person acting, with the permissions they hold as the record will show them. */
-async function actorOf(request: FastifyRequest): Promise<GateActor> {
+async function actorOf(request: FastifyRequest): Promise<GateActor & { administer: boolean }> {
   const standing = standingOf(request.auth);
   const names = new Map((await listParties()).map((p) => [p.id, p.name]));
   const holding: string[] = [];
@@ -110,20 +121,28 @@ async function actorOf(request: FastifyRequest): Promise<GateActor> {
     clearance: standing.clearance,
     releaseParties: standing.grants.filter((g) => g.permission === "release" && g.partyId).map((g) => g.partyId!),
     direct: holdsPermission(standing, "direct"),
+    administer: holdsPermission(standing, "administer"),
   };
 }
 
 export async function showingRoutes(app: FastifyInstance): Promise<void> {
   const signedIn = [app.authenticate, app.requireUser];
-  const session = (permission: "direct" | "release" | "administer") => [
+  // An account that holds the permission, from a session or through a key or token of its own.
+  const holder = (permission: "direct" | "release" | "administer") => [app.authenticate, app.requireUser, requirePermission(permission)];
+  // An authority of some gate: an administrator, or a holder of release for a party.
+  const authority = [
     app.authenticate,
-    app.requireSession,
     app.requireUser,
-    requirePermission(permission),
+    async (request: FastifyRequest, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
+      const standing = standingOf(request.auth);
+      if (!holdsPermission(standing, "administer") && !standing.grants.some((g) => g.permission === "release")) {
+        return reply.code(403).send({ error: "A gate is set by an administrator, or by someone who holds release for a party.", code: "NOT_YOURS_TO_SET" });
+      }
+    },
   ];
 
   const refuse = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }, err: unknown) => {
-    if (err instanceof ShowingError) {
+    if (err instanceof ShowingError || err instanceof GateError) {
       return reply.code(STATUS[err.code] ?? 400).send({ error: err.message, code: err.code });
     }
     throw err;
@@ -234,55 +253,49 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- asking ----
 
-  app.post<{ Body: { node_id: string; page_label: string; to_label?: string | null; outside?: boolean; form: "once" | "standing"; scope: "node" | "under"; send?: SendChoice } }>(
+  app.post<{ Body: { node_id?: string; mandate_id?: string; page_label: string; to_label?: string | null; outside?: boolean; form?: "once" | "standing"; scope: "node" | "under" | "mandate" | "boundary" } }>(
     "/showings",
     {
       schema: {
-        tags: ["showings"],
-        summary: "Ask for a node's page to be shown to readers who do not read its label (people who direct the graph, from a signed-in session)",
+        tags: ["gate"],
+        summary: "Set a flow of nodes' pages through a gate: for one node, a node with what sits under it, one mandate's work, or everything at the label (people who direct the graph)",
         description:
-          "The page at `page_label` is shown to readers at `to_label`, or outside the deployment with `outside`. " +
-          "`form` is `once` (the page as it stands, dated, with nothing undertaken about later versions) or " +
-          "`standing` (each later version follows). `scope` is `node` or `under` (the node with what sits under it). " +
-          "Nothing is shown by asking: the page is redacted under the boundary's policy when that work is paid for, " +
-          "checked, and then released or held part by part by the people who hold the permission to release. " +
-          "For a showing outside, `send` says how what is released then leaves: `by_a_person_each_time` (" +
-          SEND_CHOICES.by_a_person_each_time +
-          ") or `as_released` (" +
-          SEND_CHOICES.as_released +
-          ") Left out, a person sends each time.",
+          "Pages written at `page_label` are offered to the gate toward `to_label`, or toward outside the deployment with `outside`. " +
+          "`scope` says which: `node` (with `node_id`), `under` (the node with what sits under it), `mandate` (with `mandate_id`: " +
+          "every node that mandate's work assessed) or `boundary` (every node assessed at the label). `form` is `standing` (each later " +
+          "version follows as it is finished; the default) or, for a node, `once` (the page as it stands, dated). " +
+          "Setting a flow shows nothing by itself: each page goes through the gate under its setting. Its redaction and the " +
+          "check of it are paid from the budget of the work that produced the page, with no further act.",
         body: {
           type: "object",
-          required: ["node_id", "page_label", "form", "scope"],
+          required: ["page_label", "scope"],
           properties: {
             node_id: UUID,
+            mandate_id: UUID,
             page_label: { type: "string", minLength: 1 },
             to_label: { type: ["string", "null"] },
             outside: { type: "boolean" },
             form: { type: "string", enum: [...SHOWING_FORMS] },
-            scope: { type: "string", enum: [...SHOWING_SCOPES] },
-            send: { type: "string", enum: Object.keys(SEND_CHOICES) },
+            scope: { type: "string", enum: SHOWING_SCOPES.filter((x) => x !== "item") },
           },
         },
       },
-      preHandler: session("direct"),
+      preHandler: holder("direct"),
       handler: async (request, reply) => {
         const actor = await actorOf(request);
-        const { node_id, page_label, form, scope } = request.body;
+        const { node_id, mandate_id, page_label, scope } = request.body;
+        const form = request.body.form ?? "standing";
         const outside = request.body.outside === true;
         const toLabel = outside ? null : (request.body.to_label ?? null);
         if (!outside && !toLabel) {
-          return reply.code(400).send({ error: "Say where the page is to be shown: to_label, or outside.", code: "NO_DESTINATION" });
+          return reply.code(400).send({ error: "Say where the pages are to go: to_label, or outside.", code: "NO_DESTINATION" });
         }
-        // A person asks for the showing of a page they can read.
+        // A person sets a flow of pages they can read.
         if (!actor.clearance.includes(page_label)) {
           return reply.code(404).send({ error: `No active node with that id is read at "${page_label}".`, code: "NODE_NOT_FOUND" });
         }
         try {
-          const send: SendChoice = outside && request.body.send === "as_released" ? "as_released" : "by_a_person_each_time";
-          const asked = await askShowing({ nodeId: node_id, pageLabel: page_label, toLabel, form, scope, actor, sendAsReleased: send === "as_released" });
-          // What the person chose about sending, said back to them in the words they chose it in.
-          return reply.code(201).send(outside ? { ...asked, sent: send, sending: SEND_CHOICES[send] } : asked);
+          return reply.code(201).send(await askShowing({ nodeId: node_id ?? null, scopeRef: mandate_id ?? null, pageLabel: page_label, toLabel, form, scope, actor }));
         } catch (err) {
           return refuse(reply, err);
         }
@@ -293,12 +306,12 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { showing_id: string }; Body: { reason: keyof typeof END_REASONS } }>("/showings/:showing_id/end", {
     schema: {
       tags: ["showings"],
-      summary: "End a standing showing (people who direct the graph, from a signed-in session)",
+      summary: "End a standing flow of pages (people who direct the graph)",
       description: "Later versions no longer follow. What was shown stays shown, and the showing stays on the record with the date and the reason.",
       params: { type: "object", required: ["showing_id"], properties: { showing_id: UUID } },
       body: { type: "object", required: ["reason"], properties: { reason: { type: "string", enum: Object.keys(END_REASONS) } } },
     },
-    preHandler: session("direct"),
+    preHandler: holder("direct"),
     handler: async (request, reply) => {
       const actor = await actorOf(request);
       const [mine] = await rawQuery(`SELECT 1 FROM showings WHERE id = $1`, [request.params.showing_id]);
@@ -317,13 +330,13 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ["showings"],
-        summary: "Hold a page that has not been shown, or lift that hold (people who direct the graph, from a signed-in session)",
+        summary: "Hold an item that has not been shown, or lift that hold (people who direct the graph)",
         description:
           "The hold shows on the other side with its date and its reason, which is one of a fixed list. It can be lifted and is never deleted. A page already shown cannot be held.",
         params: { type: "object", required: ["showing_id", "page_id"], properties: { showing_id: UUID, page_id: UUID } },
         body: { type: "object", properties: { lift: { type: "boolean" }, reason: { type: "string", enum: Object.keys(HOLD_REASONS) } } },
       },
-      preHandler: session("direct"),
+      preHandler: holder("direct"),
       handler: async (request, reply) => {
         try {
           await holdPage({ actor: await actorOf(request), pageId: request.params.page_id, lift: request.body?.lift === true, reason: request.body?.reason });
@@ -386,136 +399,286 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- the gate ----
 
-  app.get<{ Querystring: { limit?: number } }>("/release/queue", {
+  app.get("/gates", {
     schema: {
-      tags: ["showings"],
-      summary: "What waits on you at the release gate: the parts of redacted pages that rest on a party whose material you release",
+      tags: ["gate"],
+      summary: "The gates you have a say over or read, each with what is set for it",
       description:
-        "Each item is one part of a page, or the page itself with its verdict, as it would be shown if released: " +
-        "after the Redactor's removals, with the marks, and with what is always shown of the page and the node's " +
-        "wording as they would be shown. The parts the Redactor was least sure of come first, and each item has " +
-        "its removals by category and Audit's answer. A person who also reads at the label the page was written " +
-        "at is given the part as written, each removed passage with the Redactor's note, and why a part was " +
-        "flagged; a person who does not is given a removed passage only from a part that rests on the material " +
-        "of an outside party they release for and on no one else's. An item is released or held whole. Nothing is released by time passing.",
-      querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 200 } } },
+        "There is one gate for each boundary: the pair of the label a thing is produced at and where it goes, a label or outside. " +
+        "For each: what flows to it without anyone asking item by item, whether its backlog is shown to the other side, and its " +
+        "settings by kind of thing, scope and party. A setting is `open`, `redactor` or `person`; `starting_positions` says " +
+        "what holds for a kind where nothing is set. `you_may_set` says what you can change here.",
     },
-    preHandler: [...signedIn, requirePermission("release")],
-    handler: async (request, reply) => reply.send(await releaseQueue(await actorOf(request), { limit: request.query.limit })),
+    preHandler: signedIn,
+    handler: async (request, reply) =>
+      reply.send({ gates: await gatesFor(await actorOf(request)), modes: GATE_MODES, kinds: GATE_KINDS, scopes: GATE_SCOPES, flows: FLOW_WORDS, acts: GATE_ACTS }),
   });
 
-  app.post<{ Body: { party_id: string; decision: "release" | "hold" | "lift"; reason?: string; items: Array<{ page_id: string; part?: number | null }> } }>(
-    "/release/decisions",
-    {
-      schema: {
-        tags: ["showings"],
-        summary: "Release, hold, or lift a hold on parts of pages for one party (holders of release for that party, from a signed-in session)",
-        description:
-          "Each item is a page and a part number, or a page alone for the page itself with its verdict. A decision " +
-          "acts on the whole item: no route changes the text of a part. A hold gives a reason from a fixed list, " +
-          "shows on the other side, can be lifted, and stays on the record. A release is not taken back.",
-        body: {
-          type: "object",
-          required: ["party_id", "decision", "items"],
-          properties: {
-            party_id: UUID,
-            decision: { type: "string", enum: ["release", "hold", "lift"] },
-            reason: { type: "string", enum: Object.keys(HOLD_REASONS) },
+  app.put<{ Params: { gate_id: string }; Body: { flow?: "asked" | "everything"; backlog_shown?: boolean; send_as_released?: boolean } }>("/gates/:gate_id", {
+    schema: {
+      tags: ["gate"],
+      summary: "Set what holds for a gate as a whole: what flows to it, whether its backlog is shown, and whether what is released outside is sent (administrators)",
+      description:
+        "`flow` is `asked` (" + FLOW_WORDS.asked + ") or `everything` (" + FLOW_WORDS.everything + ") " +
+        "`backlog_shown` says whether readers on the other side see how much waits and on whom; it starts true. " +
+        "For the gate to outside, `send_as_released` says whether what is released is sent to the public graph as it is released, " +
+        "with no person sending each package; it starts true. Send only what you are changing. Sending what already stands changes nothing.",
+      params: { type: "object", required: ["gate_id"], properties: { gate_id: UUID } },
+      body: {
+        type: "object",
+        properties: { flow: { type: "string", enum: ["asked", "everything"] }, backlog_shown: { type: "boolean" }, send_as_released: { type: "boolean" } },
+      },
+    },
+    preHandler: holder("administer"),
+    handler: async (request, reply) => {
+      try {
+        const actor = await actorOf(request);
+        const gate = await setGate({
+          boundaryId: request.params.gate_id,
+          flow: request.body.flow,
+          backlogShown: request.body.backlog_shown,
+          sendAsReleased: request.body.send_as_released,
+          actor,
+        });
+        // "Everything" is a standing flow of every page at the label, set under this administrator's name; "asked" ends it.
+        if (request.body.flow === "everything") {
+          await askShowing({ pageLabel: gate.from_label, toLabel: gate.to_label, form: "standing", scope: "boundary", actor }).catch((err: unknown) => {
+            if (!(err instanceof ShowingError && err.code === "ALREADY_STANDING")) throw err;
+          });
+        }
+        if (request.body.flow === "asked") {
+          const [flow] = await rawQuery<{ id: string }>(
+            `SELECT id FROM shown_showings WHERE boundary_id = $1 AND scope = 'boundary' AND ended_at IS NULL`,
+            [gate.boundary_id]
+          );
+          if (flow) await endShowing({ showingId: flow.id, reason: "no_longer_needed", actor });
+        }
+        return reply.send({
+          gate_id: gate.boundary_id,
+          flow: gate.flow,
+          flow_in_words: FLOW_WORDS[gate.flow],
+          backlog_shown_to_the_other_side: gate.backlog_shown,
+          ...(gate.to_outside ? { send_as_released: gate.send_as_released } : {}),
+        });
+      } catch (err) {
+        return refuse(reply, err);
+      }
+    },
+  });
+
+  app.put<{ Params: { gate_id: string }; Body: { mode: string; kind?: string; scope?: string; scope_ref?: string; party_id?: string } }>("/gates/:gate_id/settings", {
+    schema: {
+      tags: ["gate"],
+      summary: "Set how a gate treats a kind of thing in a scope: open, the Redactor decides, or a person decides as well",
+      description:
+        "`mode` is `open` (" + GATE_MODES.open + "), `redactor` (" + GATE_MODES.redactor + ") or `person` (" + GATE_MODES.person + ") " +
+        "`kind` is one kind of thing (" + Object.keys(GATE_KINDS).join(", ") + ") or `*` for every kind, which is the default. " +
+        "`scope` is `boundary` (the default), or `mandate`, `under` or `request` with `scope_ref` naming the mandate, the node or the request. " +
+        "With `party_id` the setting is for that party's material and is set by someone who holds release for the party; without it the " +
+        "setting is for every party that has not said, and is an administrator's. A party's own setting is taken before the gate's, the " +
+        "narrowest scope that covers an item before a wider one, and a setting for the item's kind before one for every kind. " +
+        "It applies from now to everything not yet released. Setting what already stands changes nothing.",
+      params: { type: "object", required: ["gate_id"], properties: { gate_id: UUID } },
+      body: {
+        type: "object",
+        required: ["mode"],
+        properties: {
+          mode: { type: "string", enum: Object.keys(GATE_MODES) },
+          kind: { type: "string", enum: ["*", ...Object.keys(GATE_KINDS)] },
+          scope: { type: "string", enum: Object.keys(GATE_SCOPES) },
+          scope_ref: UUID,
+          party_id: UUID,
+        },
+      },
+    },
+    preHandler: authority,
+    handler: async (request, reply) => {
+      try {
+        const set = await setGateMode({
+          boundaryId: request.params.gate_id,
+          kind: request.body.kind,
+          scope: request.body.scope,
+          scopeRef: request.body.scope_ref ?? null,
+          partyId: request.body.party_id ?? null,
+          mode: request.body.mode,
+          actor: await actorOf(request),
+        });
+        // A loosened setting lets through what was waiting on it.
+        const let_through = set.changed ? await settleWaiting({ boundaryId: request.params.gate_id }) : 0;
+        return reply.send({ ...set, let_through_now: let_through });
+      } catch (err) {
+        return refuse(reply, err);
+      }
+    },
+  });
+
+  app.delete<{ Params: { setting_id: string } }>("/gates/settings/:setting_id", {
+    schema: {
+      tags: ["gate"],
+      summary: "End one setting of a gate, so that what it covered falls under the next widest setting or the starting position",
+      params: { type: "object", required: ["setting_id"], properties: { setting_id: UUID } },
+    },
+    preHandler: authority,
+    handler: async (request, reply) => {
+      try {
+        const ended = await endGateSetting({ settingId: request.params.setting_id, actor: await actorOf(request) });
+        if (ended.changed) await settleWaiting();
+        return reply.send(ended);
+      } catch (err) {
+        return refuse(reply, err);
+      }
+    },
+  });
+
+  app.get<{ Querystring: { gate_id?: string } }>("/gate/backlog", {
+    schema: {
+      tags: ["gate"],
+      summary: "How much has not gone through each gate toward a label you read: how many items, of what kinds, for how long, and what each waits on",
+      description:
+        "Counts and fixed words: the budget, the Redactor's run, Audit's check, the Redactor's hold, a person's hold or decision by party, a delay. " +
+        "Nothing says what any item contains, and the label things come from is named only to someone who has a say over the gate. " +
+        "A long wait on a hold or on a person suggests the policy or the setting needs changing.",
+      querystring: { type: "object", properties: { gate_id: UUID } },
+    },
+    preHandler: signedIn,
+    handler: async (request, reply) => reply.send(await gateBacklog(await actorOf(request), { boundaryId: request.query.gate_id })),
+  });
+
+  app.get<{ Querystring: { limit?: number; kind?: string } }>("/gate/queue", {
+    schema: {
+      tags: ["gate"],
+      summary: "What waits on you at a gate, with everything needed to decide each item",
+      description:
+        "The items that rest on the material of a party you release for and have not gone through: those whose gate is set to a " +
+        "person's decision, and those the Redactor or a person holds or has delayed. Each item is a part, or the item itself, as it " +
+        "would be shown: after removals, with the marks, with what is always shown of it. It carries what the Redactor proposes " +
+        "(let through, hold or delay), its removals by category, whether it flagged the part, Audit's answer, the parties to decide " +
+        "for and the setting each is under. A person who also reads the label the item was written at is given the part as written, " +
+        "each removed passage with the Redactor's note, and why a part was flagged. `kind` narrows it to one kind of thing.",
+      querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 200 }, kind: { type: "string", enum: Object.keys(GATE_KINDS) } } },
+    },
+    preHandler: holder("release"),
+    handler: async (request, reply) => reply.send(await gateQueue(await actorOf(request), { limit: request.query.limit, kind: request.query.kind })),
+  });
+
+  app.post<{
+    Body: {
+      decision?: keyof typeof GATE_ACTS;
+      party_id?: string;
+      reason?: string;
+      until?: string;
+      items: Array<{ item_id?: string; page_id?: string; part?: number | null; decision?: keyof typeof GATE_ACTS; party_id?: string; reason?: string; until?: string; passage?: string; occurrence?: number; category?: string }>;
+    };
+  }>("/gate/decisions", {
+    schema: {
+      tags: ["gate"],
+      summary: "Act at a gate on many items at once: release, approve as the Redactor left it, remove a passage, hold, delay, or lift (holders of release)",
+      description:
+        "Each item names an item (`item_id`, from the queue) and a part number, or the item alone for the item itself. `decision` is one of: " +
+        Object.entries(GATE_ACTS).map(([k, v]) => `\`${k}\` (${v})`).join(" ") +
+        " Give it once for the whole call or on each item. `hold` takes a `reason` from the fixed list; `delay` takes `until`, a date and time; " +
+        "`remove` takes `passage` exactly as it appears in the part and a `category` of the boundary's policy, and can be done until the item " +
+        "itself has been shown. An act is made for every party of yours the item rests on, or for `party_id` alone. No act changes a word. " +
+        "A release is not taken back. Sending the same decision again changes nothing and is counted under `unchanged`; an item that cannot " +
+        "be acted on as asked is listed under `refused` with the reason, and the others are decided.",
+      body: {
+        type: "object",
+        required: ["items"],
+        properties: {
+          decision: { type: "string", enum: Object.keys(GATE_ACTS) },
+          party_id: UUID,
+          reason: { type: "string", enum: Object.keys(HOLD_REASONS) },
+          until: { type: "string", format: "date-time" },
+          items: {
+            type: "array",
+            minItems: 1,
+            maxItems: 500,
             items: {
-              type: "array",
-              minItems: 1,
-              items: { type: "object", required: ["page_id"], properties: { page_id: UUID, part: { type: ["integer", "null"] } } },
+              type: "object",
+              properties: {
+                item_id: UUID,
+                page_id: UUID,
+                part: { type: ["integer", "null"] },
+                decision: { type: "string", enum: Object.keys(GATE_ACTS) },
+                party_id: UUID,
+                reason: { type: "string", enum: Object.keys(HOLD_REASONS) },
+                until: { type: "string", format: "date-time" },
+                passage: { type: "string" },
+                occurrence: { type: "integer", minimum: 1 },
+                category: { type: "string" },
+              },
             },
           },
         },
       },
-      preHandler: session("release"),
-      handler: async (request, reply) => {
-        try {
-          return reply.send(
-            await decideAtGate({
-              actor: await actorOf(request),
-              partyId: request.body.party_id,
-              items: request.body.items,
-              decision: request.body.decision,
-              reason: request.body.reason,
-            })
-          );
-        } catch (err) {
-          return refuse(reply, err);
-        }
-      },
-    }
-  );
-
-  app.get("/release/rules", {
-    schema: {
-      tags: ["showings"],
-      summary: "The standing rules of the parties whose material you release, and the conditions a rule may have",
     },
-    preHandler: [...signedIn, requirePermission("release")],
-    handler: async (request, reply) =>
-      reply.send({ rules: await releaseRulesFor(await actorOf(request)), conditions: RULE_CONDITIONS }),
-  });
-
-  app.post<{ Body: { party_id: string; page_label: string; to_label?: string | null; outside?: boolean; condition: keyof typeof RULE_CONDITIONS; covers_verdict?: boolean } }>(
-    "/release/rules",
-    {
-      schema: {
-        tags: ["showings"],
-        summary: "Set a standing rule that releases parts for one party at one boundary without a person deciding each (holders of release for that party, from a signed-in session)",
-        description:
-          "A rule is a condition the system tests from the record with no judgment in it. It applies to pages that " +
-          "reach the gate after it is set, and each release it makes is recorded as made under it.",
-        body: {
-          type: "object",
-          required: ["party_id", "page_label", "condition"],
-          properties: {
-            party_id: UUID,
-            page_label: { type: "string", minLength: 1 },
-            to_label: { type: ["string", "null"] },
-            outside: { type: "boolean" },
-            condition: { type: "string", enum: Object.keys(RULE_CONDITIONS) },
-            covers_verdict: { type: "boolean" },
-          },
-        },
-      },
-      preHandler: session("release"),
-      handler: async (request, reply) => {
-        const outside = request.body.outside === true;
-        const toLabel = outside ? null : (request.body.to_label ?? null);
-        if (!outside && !toLabel) {
-          return reply.code(400).send({ error: "Say which boundary the rule is for: to_label, or outside.", code: "NO_DESTINATION" });
-        }
-        try {
-          return reply.code(201).send(
-            await setReleaseRule({
-              actor: await actorOf(request),
-              partyId: request.body.party_id,
-              pageLabel: request.body.page_label,
-              toLabel,
-              condition: request.body.condition,
-              coversVerdict: request.body.covers_verdict === true,
-            })
-          );
-        } catch (err) {
-          return refuse(reply, err);
-        }
-      },
-    }
-  );
-
-  app.delete<{ Params: { rule_id: string } }>("/release/rules/:rule_id", {
-    schema: {
-      tags: ["showings"],
-      summary: "End a standing rule (holders of release for its party, from a signed-in session)",
-      params: { type: "object", required: ["rule_id"], properties: { rule_id: UUID } },
-    },
-    preHandler: session("release"),
+    preHandler: holder("release"),
     handler: async (request, reply) => {
       try {
-        await endReleaseRule({ actor: await actorOf(request), ruleId: request.params.rule_id });
-        return reply.send({ ok: true });
+        return reply.send(
+          await decideAtGate({
+            actor: await actorOf(request),
+            partyId: request.body.party_id,
+            items: request.body.items,
+            decision: request.body.decision,
+            reason: request.body.reason,
+            until: request.body.until,
+          })
+        );
+      } catch (err) {
+        return refuse(reply, err);
+      }
+    },
+  });
+
+  app.get<{ Querystring: { kind?: string; answers?: string } }>("/gate/items", {
+    schema: {
+      tags: ["gate"],
+      summary: "What has come through a gate to a label you read, other than nodes' pages: answers, that a request was taken up, mandates, funding",
+      description:
+        "Each with its kind, when it was offered, where it stands in fixed words and, once through, the source its text is in. " +
+        "`answers` narrows it to what answers one request or message at your label.",
+      querystring: { type: "object", properties: { kind: { type: "string", enum: Object.keys(GATE_KINDS).filter((k) => k !== "page") }, answers: UUID } },
+    },
+    preHandler: signedIn,
+    handler: async (request, reply) => reply.send({ items: await shownItems({ kind: request.query.kind, replyRef: request.query.answers }) }),
+  });
+
+  app.post<{ Body: { kind: "mandate" | "funding"; mandate_id: string; to_label: string; node_id?: string; owls?: number } }>("/gate/offers", {
+    schema: {
+      tags: ["gate"],
+      summary: "Offer to a gate that a mandate exists, with its terms, or a mandate's funding of a fresh assessment of a node on the other side (people who direct the graph)",
+      description:
+        "`mandate`: the mandate's name, terms and budget are offered to readers at `to_label`, who do not read the mandate's label. " +
+        "`funding`: the mandate pays `owls` for a pass on `node_id` at `to_label`; the pass is placed when the offer is through the gate. " +
+        "Either goes through the gate under its setting. Offering the same thing again returns the item already there.",
+      body: {
+        type: "object",
+        required: ["kind", "mandate_id", "to_label"],
+        properties: {
+          kind: { type: "string", enum: ["mandate", "funding"] },
+          mandate_id: UUID,
+          to_label: { type: "string", minLength: 1 },
+          node_id: UUID,
+          owls: { type: "number", minimum: 0 },
+        },
+      },
+    },
+    preHandler: holder("direct"),
+    handler: async (request, reply) => {
+      const { kind, mandate_id, to_label, node_id, owls } = request.body;
+      const [grant] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM grants WHERE id = $1`, [mandate_id]);
+      if (!grant) return reply.code(404).send({ error: "No mandate with that id is at a label you read.", code: "MANDATE_NOT_FOUND" });
+      if (kind === "funding" && !node_id) return reply.code(400).send({ error: "Say which node the funding is for.", code: "NO_NODE" });
+      try {
+        const offered =
+          kind === "funding"
+            ? await fundBelow({ grantId: mandate_id, nodeId: node_id!, toLabel: to_label, amountMicroUsd: owlsToMicroUsd(owls ?? 0) })
+            : await offerToGate({ kind: "mandate", fromLabel: grant.label, toLabel: to_label, subject: { grantId: mandate_id } });
+        if (!offered) {
+          return reply.code(409).send({ error: `Readers at "${to_label}" already read the mandate's label, or there is nothing to offer.`, code: "NOTHING_TO_OFFER" });
+        }
+        return reply.code(201).send(offered);
       } catch (err) {
         return refuse(reply, err);
       }
@@ -529,7 +692,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ["showings"],
-        summary: "Save a new version of one boundary's redaction policy (administrators, from a signed-in session)",
+        summary: "Save a new version of one boundary's redaction policy, which is how a gate is mostly tightened or loosened (administrators)",
         description:
           "Give the whole list of categories for the boundary. How removal works and what is shown whenever a page " +
           "is shown are the same at every boundary and are not part of what is saved. A category defined by whether " +
@@ -552,7 +715,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           },
         },
       },
-      preHandler: session("administer"),
+      preHandler: holder("administer"),
       handler: async (request, reply) => {
         const outside = request.body.outside === true;
         const to = outside ? null : (request.body.to_label ?? null);

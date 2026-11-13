@@ -588,9 +588,9 @@ export function getAuditToolDefinitions(): Tool[] {
     {
       name: "get_redaction_to_check",
       description:
-        "For a redaction_fidelity audit: the page as its author recorded it and as the Redactor left it, part by " +
-        "part, each removal with its category and the Redactor's note, what the Redactor was least sure of, what is " +
-        "always shown with the page, and the policy for the boundary in full.",
+        "For a redaction_fidelity audit: the page, or other item, as its author recorded it and as the Redactor left it, part by " +
+        "part, each removal with its category and the Redactor's note, what the Redactor held or delayed and why, what it was " +
+        "least sure of, what is always shown with the item, and the policy for the boundary in full.",
       input_schema: {
         type: "object" as const,
         properties: { page_id: { type: "string", description: "The page's id, from the audit's context" } },
@@ -600,10 +600,11 @@ export function getAuditToolDefinitions(): Tool[] {
     {
       name: "record_fidelity_outcome",
       description:
-        "Record the outcome of a redaction_fidelity audit. 'pass' sends the page on to the people who decide what " +
-        "is released, with your answer to whether what remains still supports the verdict, which is shown with the " +
-        "page in fixed words. 'return' sends the work back to the Redactor with your reasons, and its redaction is " +
-        "opened again. Your reasons stay at the label the page was written at.",
+        "Record the outcome of a redaction_fidelity audit. 'pass' sends the item on through the gate: what the Redactor " +
+        "let through then goes to its readers, unless the gate is set to a person's decision as well. For a node's page, give " +
+        "your answer to whether what remains still supports the verdict, which is shown with the page in fixed words. " +
+        "'return' sends the work back to the Redactor with your reasons, and its redaction is opened again. Your reasons " +
+        "stay at the label the item was written at.",
       input_schema: {
         type: "object" as const,
         properties: {

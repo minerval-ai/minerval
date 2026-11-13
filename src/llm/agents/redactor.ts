@@ -19,15 +19,15 @@ import { withAgent, withSkills } from "../usage-context.js";
 /** What the Redactor is told at the start of a run. */
 export function redactorTaskMessage(input: { round: number }): string {
   return (
-    `A page is to be shown to readers who may not read the label it was written at. Redact it under the policy ` +
+    `Something written at this label is going to readers who may not read it. You are at the gate, under the policy ` +
     `for that boundary.\n\n` +
     (input.round > 1
       ? `This is round ${input.round}: Audit returned your earlier redaction. Its reasons are in get_page_to_redact ` +
         `under returned_by_audit, and your earlier removals are still in place.\n\n`
       : "") +
-    `Read the policy (get_redaction_policy) and the page (get_page_to_redact), remove what a category covers ` +
-    `(redact), and end with finish_redaction, or with cannot_cross if the page cannot be shown under this policy. ` +
-    `A run that ends without one of those two leaves the page waiting to be redacted again.\n\n` +
+    `Read the policy (get_redaction_policy) and the item (get_page_to_redact), remove what a category covers ` +
+    `(redact), hold or delay what a removal cannot protect (hold, delay), and end with finish_redaction. ` +
+    `A run that ends without finish_redaction leaves the item waiting to be redacted again.\n\n` +
     turnBudgetLine(RUN_TURN_GUARD)
   );
 }

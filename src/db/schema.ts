@@ -7776,9 +7776,24 @@ export const showings = pgTable(
   "showings",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    nodeId: uuid("node_id")
-      .notNull()
-      .references(() => claims.id, { onDelete: "cascade" }),
+    // What kind of thing goes down (GATE_KINDS in services/gate-kinds.ts):
+    // a node's page, an answer to a request, the fact that a request was
+    // taken up, a mandate's funding of work below, that a mandate exists,
+    // an answer to a message. One row is one subject offered across one
+    // boundary; each version of it is a row of showing_pages.
+    kind: text("kind").notNull().default("page"),
+    // The node, for a page asked for by node. Null for every other kind and
+    // for a flow of pages set for a mandate or for the whole boundary.
+    nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
+    // The row at this label the item is about, by kind: a request, a
+    // mandate, a message, a ledger row. For a flow of scope 'mandate', the
+    // mandate whose work flows.
+    subjectRef: uuid("subject_ref"),
+    // The row on the destination side that asked, where one did.
+    replyRef: uuid("reply_ref"),
+    // The mandate whose budget pays the Redactor's run and Audit's check,
+    // where the offer named one.
+    payerGrantId: uuid("payer_grant_id"),
     // The destination: a label, or outside the deployment (to_label null).
     toLabel: text("to_label").references(() => labels.name),
     toOutside: boolean("to_outside").notNull().default(false),
@@ -7788,7 +7803,9 @@ export const showings = pgTable(
     // 'once': the page as it stood when asked. 'standing': each later
     // version follows.
     form: text("form").notNull(),
-    // 'node': this node alone. 'under': with what sits under it.
+    // 'node': this node alone. 'under': with what sits under it. 'mandate':
+    // every node a mandate's work assessed at this label. 'boundary': every
+    // node assessed at this label. 'item': the one subject named.
     scope: text("scope").notNull(),
     askedBy: uuid("asked_by").references((): AnyPgColumn => contributors.id),
     // The permissions the person held when they asked, as the record shows
@@ -7806,7 +7823,14 @@ export const showings = pgTable(
   (table) => [
     check("ck_showings_destination", sql`(${table.toLabel} IS NULL) = ${table.toOutside}`),
     check("ck_showings_form", sql`${table.form} IN ('once', 'standing')`),
-    check("ck_showings_scope", sql`${table.scope} IN ('node', 'under')`),
+    check("ck_showings_scope", sql`${table.scope} IN ('node', 'under', 'mandate', 'boundary', 'item')`),
+    check("ck_showings_kind", sql`${table.kind} IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message')`),
+    check(
+      "ck_showings_subject",
+      sql`CASE WHEN ${table.scope} IN ('node', 'under') THEN ${table.nodeId} IS NOT NULL AND ${table.kind} = 'page'
+               WHEN ${table.scope} = 'boundary' THEN ${table.nodeId} IS NULL AND ${table.kind} = 'page'
+               ELSE ${table.nodeId} IS NULL AND ${table.subjectRef} IS NOT NULL END`
+    ),
     check("ck_showings_not_own_label", sql`${table.toLabel} IS NULL OR ${table.toLabel} <> ${table.sensitivityLabel}`),
     index("idx_showings_node").on(table.nodeId),
     // One live showing of a node across a boundary in each form and scope:
@@ -7814,6 +7838,11 @@ export const showings = pgTable(
     uniqueIndex("uq_showings_live")
       .on(table.nodeId, table.boundaryId, table.form, table.scope)
       .where(sql`ended_at IS NULL AND form = 'standing'`),
+    // One live flow for a mandate or a whole boundary, and one row for each
+    // subject of another kind across a boundary.
+    uniqueIndex("uq_showings_live_subject")
+      .on(table.sensitivityLabel, table.boundaryId, table.kind, table.scope, sql`COALESCE(subject_ref, '00000000-0000-0000-0000-000000000000'::uuid)`, sql`COALESCE(payer_grant_id, '00000000-0000-0000-0000-000000000000'::uuid)`)
+      .where(sql`ended_at IS NULL AND node_id IS NULL`),
   ]
 );
 
@@ -7826,13 +7855,19 @@ export const showingPages = pgTable(
     showingId: uuid("showing_id")
       .notNull()
       .references(() => showings.id, { onDelete: "cascade" }),
-    nodeId: uuid("node_id")
-      .notNull()
-      .references(() => claims.id, { onDelete: "cascade" }),
+    // Null for an item that is not a node's page.
+    nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
     // The version of the node's judgment at the page's label this page
     // carries: one of the three judgment tables by kind, so no foreign key.
-    judgmentKind: text("judgment_kind").notNull(),
-    judgmentId: uuid("judgment_id").notNull(),
+    // Null for an item that is not a node's page.
+    judgmentKind: text("judgment_kind"),
+    judgmentId: uuid("judgment_id"),
+    // For an item that is not a node's page: the hash of what it was
+    // composed from, so that offering the same thing again opens nothing.
+    versionKey: text("version_key"),
+    // Set when the budget that pays for this item's redaction or check
+    // could not pay; cleared when the work is paid for.
+    fundsWantedAt: timestamp("funds_wanted_at", { withTimezone: true }),
     judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
     openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
     // to_redact | to_check | at_gate | cannot_cross | overtaken
@@ -7876,6 +7911,7 @@ export const showingPages = pgTable(
   },
   (table) => [
     uniqueIndex("uq_showing_pages_version").on(table.showingId, table.nodeId, table.judgmentId),
+    uniqueIndex("uq_showing_pages_item_version").on(table.sensitivityLabel, table.showingId, table.versionKey).where(sql`node_id IS NULL`),
     index("idx_showing_pages_stage").on(table.stage),
     check(
       "ck_showing_pages_stage",
@@ -7883,7 +7919,8 @@ export const showingPages = pgTable(
     ),
     check(
       "ck_showing_pages_kind",
-      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment')`
+      sql`CASE WHEN ${table.nodeId} IS NULL THEN ${table.judgmentKind} IS NULL AND ${table.versionKey} IS NOT NULL
+               ELSE ${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment') AND ${table.judgmentId} IS NOT NULL END`
     ),
   ]
 );
@@ -7936,6 +7973,8 @@ export const showingRemovals = pgTable(
     note: text("note").notNull(),
     policyId: uuid("policy_id").notNull(),
     madeInRound: integer("made_in_round").notNull().default(1),
+    // The person who made the removal at the gate; null for the Redactor's.
+    madeBy: uuid("made_by").references((): AnyPgColumn => contributors.id),
     // A removal the Redactor took back, after the check returned the work.
     takenBackAt: timestamp("taken_back_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -7952,7 +7991,11 @@ export const shownShowings = pgTable(
   "shown_showings",
   {
     id: uuid("id").primaryKey(),
-    nodeId: uuid("node_id").notNull(),
+    kind: text("kind").notNull().default("page"),
+    nodeId: uuid("node_id"),
+    // The row at this label that asked, where one did. The row the item is
+    // about is at the other label and is not named here.
+    replyRef: uuid("reply_ref"),
     toOutside: boolean("to_outside").notNull().default(false),
     boundaryId: uuid("boundary_id").notNull(),
     form: text("form").notNull(),
@@ -8007,9 +8050,12 @@ export const shownPages = pgTable(
   {
     id: uuid("id").primaryKey(),
     showingId: uuid("showing_id").notNull(),
-    nodeId: uuid("node_id").notNull(),
+    kind: text("kind").notNull().default("page"),
+    nodeId: uuid("node_id"),
     judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
     openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+    // True while the budget that pays for its redaction or check cannot pay.
+    waitingForFunds: boolean("waiting_for_funds").notNull().default(false),
     // Where the page stands, in the fixed words of PAGE_STAGES.
     stage: text("stage").notNull().default("to_redact"),
     round: integer("round").notNull().default(1),
@@ -8072,7 +8118,15 @@ export const showingActs = pgTable(
     actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id),
     // The permissions the actor held when they acted.
     holding: text("holding").array().notNull().default([]),
+    // The gate setting an act of the gate itself was made under.
     ruleId: uuid("rule_id"),
+    // Which kind of actor: 'person', 'redactor' (with its run), 'setting'
+    // (the gate's setting let it through), 'process'.
+    by: text("by").notNull().default("process"),
+    // The Redactor's run, for an act it made.
+    runId: uuid("run_id"),
+    // For a delay: until when.
+    until: timestamp("until", { withTimezone: true }),
     // A category from a fixed list, never free text.
     reason: text("reason"),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
@@ -8084,8 +8138,10 @@ export const showingActs = pgTable(
   ]
 );
 
-// A standing rule a party's holders of `release` set, in words the system
-// can apply without judgment (RULE_CONDITIONS in services/showing-service.ts).
+// The standing rules a party's holders of `release` could set before a gate
+// had settings (two fixed conditions). Nothing sets or applies one now: each
+// live rule was made into a row of gate_settings, which names it. The rows
+// stay because releases made under a rule name the rule (showing_acts.rule_id).
 export const releaseRules = pgTable(
   "release_rules",
   {
@@ -8107,6 +8163,68 @@ export const releaseRules = pgTable(
   (table) => [
     index("idx_release_rules_boundary").on(table.boundaryId),
     check("ck_release_rules_condition", sql`${table.condition} IN ('nothing_removed_and_only_ours', 'only_ours')`),
+  ]
+);
+
+// One gate for each boundary: the pair (the label a thing was produced at,
+// where it goes). The row holds what is set for the gate as a whole. It is
+// kept on the destination side, like the acts, and names no label the
+// destination does not read: the pair itself is on redaction_policies.
+export const gates = pgTable(
+  "gates",
+  {
+    boundaryId: uuid("boundary_id").notNull(),
+    // 'asked': what was asked for from the other side flows, and what a
+    // flow was set for. 'everything': every page at the label is offered.
+    flow: text("flow").notNull().default("asked"),
+    // Whether the destination's readers are shown the backlog. False keeps
+    // it to the gate's authorities.
+    backlogShown: boolean("backlog_shown").notNull().default(true),
+    // For the boundary to outside: whether what is released is sent to the
+    // public graph as it is released, with no person sending each package.
+    sendAsReleased: boolean("send_as_released").notNull().default(true),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sensitivityLabel, table.boundaryId] }),
+    check("ck_gates_flow", sql`${table.flow} IN ('asked', 'everything')`),
+  ]
+);
+
+// How a gate treats what reaches it (GATE_MODES in services/gate-kinds.ts):
+// 'open' (it goes as written), 'redactor' (the Redactor decides), 'person'
+// (the Redactor proposes and the people who hold release decide). A row is
+// for one kind of thing or every kind ('*'), for one scope, and for one
+// party's material or, with no party, for every party that has not said.
+// Rows are ended and never changed, so the record shows what stood when.
+export const gateSettings = pgTable(
+  "gate_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    boundaryId: uuid("boundary_id").notNull(),
+    kind: text("kind").notNull().default("*"),
+    // 'boundary' | 'mandate' | 'under' | 'request'; scope_ref is the
+    // mandate, the node or the request (a row on the side things come from).
+    scope: text("scope").notNull().default("boundary"),
+    scopeRef: uuid("scope_ref"),
+    partyId: uuid("party_id").references(() => parties.id),
+    mode: text("mode").notNull(),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+    setHolding: text("set_holding").array().notNull().default([]),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    // The release rule this row was made from, for a deployment that had rules.
+    fromRule: text("from_rule"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_gate_settings_boundary").on(table.boundaryId),
+    check("ck_gate_settings_mode", sql`${table.mode} IN ('open', 'redactor', 'person')`),
+    check("ck_gate_settings_scope", sql`${table.scope} IN ('boundary', 'mandate', 'under', 'request') AND ((${table.scope} = 'boundary') = (${table.scopeRef} IS NULL))`),
+    check("ck_gate_settings_kind", sql`${table.kind} IN ('*', 'page', 'answer', 'taken_up', 'funding', 'mandate', 'message')`),
   ]
 );
 

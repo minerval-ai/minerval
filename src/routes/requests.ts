@@ -112,6 +112,12 @@ export const REQUEST_SCHEMA = {
         public_request_id: { type: "string", format: "uuid" },
       },
     },
+    // That work at a label the reader may not read took the request up, as it came through the gate
+    // (docs/the-gate.md). Absent where nothing came.
+    taken_up_above: {
+      type: "object",
+      properties: { said_at: { type: "string" }, answer: { type: "string" }, answer_source_id: { type: "string", format: "uuid" } },
+    },
     taken_up_at: {
       type: "array",
       items: {
