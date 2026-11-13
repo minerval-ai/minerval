@@ -9,7 +9,7 @@ import { rawQuery } from "../../src/db/client.js";
 import { creditOwls, seedAllocation, seedClaim, seedGrantWithJob, seedLlmUsage, seedUser, OWL } from "./helpers.js";
 import { grantEscrowBreakdown, grantEscrowBreakdowns } from "../../src/services/regrant-service.js";
 import { getJobContributions, getJobContributorCounts } from "../../src/services/budget-job-service.js";
-import { getGrant, listGrants, serializeGrant, serializeGrants } from "../../src/services/grant-service.js";
+import { getGrant, listGrants, serializeGrant, serializeGrantRow, serializeGrantRows } from "../../src/services/grant-service.js";
 import { getPublicMandate, listMandatesPage } from "../../src/services/mandate-service.js";
 
 async function mandateWithMoney(funder: string, n: number) {
@@ -68,12 +68,13 @@ describe("a list of mandates read in a few statements", () => {
   it("serves GET /grants as the one-grant read serves each", async () => {
     const funder = await seedUser("batched-grants");
     for (const n of [1, 3]) await mandateWithMoney(funder, n);
-    const rows = await listGrants(funder);
-    const many = await serializeGrants(rows);
-    const each = await Promise.all(rows.map(serializeGrant));
+    const { rows } = await listGrants(funder);
+    // The list's short rows, read together, are the rows read one at a time.
+    const many = await serializeGrantRows(rows);
+    const each = await Promise.all(rows.map((g) => serializeGrantRow(g)));
     expect(many).toEqual(each);
-    expect(many.some((g) => g.funded_assessments.length === 3)).toBe(true);
-    expect(await serializeGrants([])).toEqual([]);
+    expect(many.some((g) => g.spent_owls > 0)).toBe(true);
+    expect(await serializeGrantRows([])).toEqual([]);
   });
 
   it("lists mandates with the money and backers their pages show", async () => {
