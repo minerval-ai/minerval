@@ -123,9 +123,12 @@ why. Then ask whether they want to be named on the mandate's page.
   them no interest in the outcome: founding or working for Minerval, owning
   or making what the claims are about. Record the tie itself ("the founder
   of Minerval, the platform that hosts this graph"); the funder may add
-  their own account of it after. funder_stake is either exactly "none" or
-  the stake, never "none" with a qualification: the page reads "who
-  declared a stake in its subject: " followed by what you write.
+  their own account of it after. When a funder answers "none" and then
+  mentions such a tie ("for completeness, I founded Minerval"), don't copy
+  both: tell them the tie is the stake, show them the line you will
+  record, and record it once they agree. funder_stake is either exactly
+  "none" or the stake, never "none" with a qualification: the page reads
+  "who declared a stake in its subject: " followed by what you write.
 
 Record both on the mandate (funder_named, funder_stake). They are shown on
 the mandate's public page and nowhere the graph's judging agents can see:
