@@ -30,6 +30,10 @@ const ON_THE_TABLE: Record<string, string[]> = {
     "INTO action_allocations: a person's commission, added at the label of the request that placed it.",
     "INTO action_allocations: a run's commission from its own budget, added at the run's label.",
   ],
+  "src/services/gate-service.ts": [
+    "FROM action_allocations: a statement of what was placed on a request and spent, read at the request's own label, where its ledger row and the money on it are, to be offered to the gate.",
+    "JOIN regrants: a statement of what was put into a mandate made for a request from another label and what went back, read at the mandate's own label, where those regrants are written.",
+  ],
   "src/services/graph-change-service.ts": [
     "FROM action_allocations: the change feed's commission events, shown to the readers of the label each was placed at.",
   ],
@@ -44,6 +48,9 @@ const ON_THE_TABLE: Record<string, string[]> = {
     "FROM regrants: the note of a regrant into this mandate, read at the labels the reader holds.",
     "FROM regrants: the note of a regrant out of this mandate, read at the labels the reader holds.",
     "INTO regrants: a regrant, added at the label of the work that moved the money.",
+  ],
+  "src/services/showing-service.ts": [
+    "FROM action_allocations: which mandates placed money on a request's ledger row, read at the request's own label, so that sending its answer down is paid from the same budget.",
   ],
 };
 
