@@ -310,6 +310,23 @@ practice the Grantmaker's chat with the funder) is in `spent` and in no
 kind's row, so the view states it on its own, `outside_ledger_owls`: it
 draws on the escrow and is not held to the pace.
 
+### Across labels, upward
+
+In a deployment with more than one label a mandate works at its label, and
+cannot read the labels that read it. Where one of those has been given a
+face at the mandate's label ([architecture.md](architecture.md), "Work
+asked for from below"), the mandate can create a mandate there
+(`spawn_mandate` with `ask_of`) and add to it later (`regrant` with
+`to_asked_request_id`). Both are ordinary regrants recorded at the label
+above. They count against the source's escrow as any regrant does, and what
+the mandate above does not spend returns when it closes. The source is
+given the id of a request at its own label that records what it asked, and
+nothing else: the mandate above, its plan and what it finds reach the
+source's label only through that label's gate. A run above that is paid by
+money from below petitions as any run does; where the mandate paying for it
+is below, the petition is recorded at the run's label and nothing waits on
+it, since it is that label's words going down.
+
 ## Lookouts: cheap standing watch
 
 The Grantmaker's session is judgment at mandate scale: it wakes on what it

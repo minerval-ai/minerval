@@ -265,14 +265,61 @@ export default async function GatesPage() {
       {waitingElsewhere.map((b, n) => (
         <section className={`acct-section${mine.length === 0 && n === 0 ? " admin-first" : ""}`} key={b.gate_id}>
           <div className="acct-head">
-            <h2>Waiting to reach {b.to}</h2>
+            <h2>
+              Waiting to reach {b.to}
+              {b.from ? `, from ${b.from}` : ""}
+            </h2>
           </div>
           <p className="acct-prose acct-measure">
-            From a label you do not read. You are shown how much waits and on whom, and nothing of what it says.
+            {b.from ? "" : "From a label you do not read. "}You are shown how much waits and on whom, and nothing of what it says.
           </p>
           <Backlog lines={b.waiting} />
         </section>
       ))}
+
+      {(backlog?.asked_from_here ?? []).length > 0 && (
+        <section className="acct-section" id="asked">
+          <div className="acct-head">
+            <h2>What was asked from here, and what has come back</h2>
+          </div>
+          <p className="acct-prose acct-measure">
+            Requests made at a label you read of a label above it, which you may not read. Each is paid for when it is asked. What comes
+            back passes that label&rsquo;s gate.
+          </p>
+          <div className="acct-scroll">
+            <table className="account-table acct-table">
+              <thead>
+                <tr>
+                  <th>asked of</th>
+                  <th>requests</th>
+                  <th>told it was taken up</th>
+                  <th>answered</th>
+                  <th>answer at the gate</th>
+                  <th>nothing back yet</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backlog!.asked_from_here.map((a, i) => (
+                  <tr key={i}>
+                    <td>
+                      {a.asked_of}
+                      <span className="acct-detail">asked at {a.asked_at}</span>
+                    </td>
+                    <td>
+                      {a.requests}
+                      <span className="acct-detail">{a.owls_put_behind_them} owls behind them</span>
+                    </td>
+                    <td>{a.told_they_were_taken_up}</td>
+                    <td>{a.answer_through_the_gate}</td>
+                    <td>{a.answer_waiting_at_the_gate}</td>
+                    <td>{a.nothing_back_yet}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {mine.length === 0 && waitingElsewhere.length === 0 && (
         <p className="account-empty admin-first">No gate leads to a label you read, and you have a say over none.</p>

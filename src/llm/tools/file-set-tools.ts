@@ -30,6 +30,7 @@
  * Null-delegate convention: `execute` returns null for a tool that is not
  * the bundle's, so an agent wires it with one spread and one early return.
  */
+import { postureAt } from "../../label-posture.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -532,9 +533,14 @@ export async function createFileSetTools(
   if (sets.length === 0) return NO_FILE_SET_TOOLS;
 
   const config = opts.config ?? loadConfig();
-  const answered = sandboxConfigured(config)
-    ? await sandboxHealth(config)
-    : ({ ok: false, failure: { kind: "not_configured", message: "this deployment has no sandbox configured" } } as const);
+  // A label may be set up so that its runs are offered no command, though
+  // the deployment has a sandbox (src/label-posture.ts).
+  const offHere = postureAt(currentLabel()).sandbox === false;
+  const answered = offHere
+    ? ({ ok: false, failure: { kind: "not_configured", message: "commands are switched off for runs at this label" } } as const)
+    : sandboxConfigured(config)
+      ? await sandboxHealth(config)
+      : ({ ok: false, failure: { kind: "not_configured", message: "this deployment has no sandbox configured" } } as const);
   const health = answered.ok ? answered.value : null;
   // A bundle made outside an agent's entry point (a test, a script) has a
   // scratch directory of its own, which the sandbox removes when it has

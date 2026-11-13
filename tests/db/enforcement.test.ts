@@ -178,7 +178,7 @@ describe("the catalog, with a second label defined", () => {
     expect(facts.on).toBe(true);
     expect(facts.labels).toEqual(expect.arrayContaining(ALL));
     // The schema's ninety-nine (tests/db/label-columns.test.ts lists them).
-    expect(facts.labelledTables.length).toBe(142);
+    expect(facts.labelledTables.length).toBe(143);
     expect(facts.uncoveredTables).toEqual([]);
     expect(facts.viewsReadingAsOwner).toEqual([]);
     expect(facts.sqlViewsUnheld).toEqual([]);
@@ -320,6 +320,8 @@ describe("every labelled table", () => {
     request_targets: { claim_id: "gen_random_uuid()" },
     // Taken up from the public graph's request or from one at a label read, one of the two.
     adopted_requests: { from_request_id: "gen_random_uuid()" },
+    // A face stands for a label other than the one it is shown at, and that label is defined.
+    label_faces: { for_label: "(SELECT name FROM labels WHERE name <> $1 ORDER BY name LIMIT 1)" },
     argument_instances: { argument_id: "gen_random_uuid()" },
     // Kept by a Steward exactly when it names the node.
     requests: { keeper_kind: "'steward'", keeper_claim_id: "gen_random_uuid()" },
@@ -427,7 +429,7 @@ describe("every labelled table", () => {
   it("can be given a row at each label by this test", () => {
     // A table here needs a value this test does not know how to make: teach valueFor.
     expect(unwritable).toEqual([]);
-    expect(written.size).toBe(142);
+    expect(written.size).toBe(143);
   });
 
   for (const reader of READERS) {

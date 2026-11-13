@@ -83,6 +83,23 @@ export async function gateOf(boundaryId: string): Promise<GateRow | null> {
   });
 }
 
+/**
+ * How the label a gate's things come from is named to a reader of the
+ * destination who does not read it: the face that label shows there
+ * (label_faces), or null where it shows none. A label's own name is not
+ * shown to people who may not read it.
+ */
+export async function faceOfGate(boundaryId: string): Promise<string | null> {
+  return asOwner(async () => {
+    const [row] = await rawQuery<{ name: string }>(
+      `SELECT f.name FROM redaction_policies p JOIN label_faces f ON f.for_label = p.from_label AND f.sensitivity_label = COALESCE(p.to_label, 'public')
+        WHERE p.boundary_id = $1 AND p.side = 'page' AND f.withdrawn_at IS NULL LIMIT 1`,
+      [boundaryId]
+    ).catch(() => []);
+    return row?.name ?? null;
+  });
+}
+
 export interface SettingRow {
   id: string;
   boundary_id: string;
@@ -314,7 +331,10 @@ export async function setGate(input: {
  * The gates this person has a say over or reads from the side things come
  * from, each with its settings. A person who holds `release` for a party
  * and does not read the label is shown the settings for that party and for
- * the gate as a whole, and the labels' names: they were put at this gate.
+ * the gate as a whole. The label things come from is named to those who
+ * read it and to administrators, who define the labels; anyone else is
+ * given the face it shows on the other side, or told only that it is a
+ * label they do not read.
  */
 export async function gatesFor(actor: GateAuthority & { clearance: readonly string[] }): Promise<Array<Record<string, unknown>>> {
   return asOwner(async () => {
@@ -333,7 +353,8 @@ export async function gatesFor(actor: GateAuthority & { clearance: readonly stri
       );
       out.push({
         gate_id: gate.boundary_id,
-        from: gate.from_label,
+        from: reads || actor.administer ? gate.from_label : ((await faceOfGate(gate.boundary_id)) ?? "a label you do not read"),
+        from_named_by: reads || actor.administer ? "its label" : "the face it shows where things arrive",
         to: gate.to_outside ? "outside this deployment" : gate.to_label,
         to_outside: gate.to_outside,
         flow: gate.flow,

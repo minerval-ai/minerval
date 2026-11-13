@@ -2904,6 +2904,68 @@ between a private label and the public graph:
   curation, audits and sweeps, which the preflight check
   `standing_mandates` and the setup checklist say.
 
+**Work asked for from below.** Information and funding go up freely, and a
+person or a run at a label cannot read the labels that read it. So there is
+one act, the same at every boundary and in every size: from a label, ask
+for work at a label that reads it, and pay for it
+(`services/ask-above-service.ts`). It has four parts.
+
+- *An address.* A label cannot be named from below, and that it can be
+  asked is something its administrators choose to show. They give it a face
+  at a label it reads (`label_faces`, `PUT /labels/:label/face`): a name and
+  a line saying what can be asked of it. The face is a row at the label it
+  is shown at, so it is read by the ordinary rule, there and at every label
+  that reads that one, and work is addressed to the face. A label with no
+  face cannot be asked. Its own name is never shown.
+- *The asker's record.* An ordinary request at the asker's label, in the
+  asker's words, addressed to the face, with the budget paid and whether it
+  asked for one piece of work or for a mandate (`requests.asked_of_face_id`,
+  `asked_as`, `asked_budget_micro_usd`; `asked_of` on a read). Other readers
+  of that label see it as they see any request. It has no ledger row at its
+  own label, since the work is not that label's, and nothing that happens
+  above is written to it.
+- *The request taken up above*, by the act itself, as any request from the
+  layer below is taken up (`takeUpFromBelow`).
+- *The money, attached above.* For one piece of work it is a commission on
+  the request's ledger row at the label above, from the asker's payer: a
+  person's owls, a mandate's escrow, or a running agent's own budget
+  (`commission` with `ask_of`). The allocation is a row at the label above
+  whose payer is below. The Researcher that takes the request up runs at
+  that label, reads what it reads, and works under its posture. For a
+  mandate it is the whole budget of a new mandate at the label above whose
+  terms are the asker's words (`spawn_mandate` with `ask_of`, or `POST
+  /asks`): a regrant from a mandate, an escrow from a person. It is
+  approved by being paid for, as a decomposition is, because its plan
+  cannot be sent down to be approved; its Grantmaker plans and works it,
+  and closes it as it would any scope it should not accept.
+
+Money needed no new path. A payer's escrow is the sum of its allocations
+and regrants wherever they are (`minerval_whole`), spend is settled against
+them there, and what is not spent stops counting against the payer or
+returns to a person's balance. So unspent money comes back by the ordinary
+settlement and no row below is written. The amounts are the payer's own
+money and are not hidden from it; they are also the one thing a payer can
+see move.
+
+Everything else comes down through the gate or not at all: that the work
+was taken up, each finished piece of it, where the request stands when it
+is closed (the gate offers these itself, from the link the take-up writes),
+and a mandate's making and closing (`services/gate-handoff.ts`). A run that
+asks does not wait for the answer. It concludes on what it can read, and
+the answer, if the gate lets it through, arrives as work on the request it
+filed, which a later pass on the node reads. A run above that was paid for
+from below is told so in its task, and that a petition for more reaches its
+payer only through the gate.
+
+A label can therefore hold nothing but work asked for from below: a label,
+a face, and its own posture (`src/label-posture.ts`: `LABEL_POSTURE` gives a
+label its own value for what a run may fetch, whether commands are run over
+files, and which features are off, each starting from the deployment's).
+Such a label needs no General mandate, and the preflight's check asks
+whether a label holds nodes or judgments of its own, which is what upkeep
+is paid for.
+
+
 **Showing a page to readers who do not read its label.** What a run at
 one label concluded reaches readers who do not read that label in one way:
 a person who directs the graph asks for the node's page to be shown to them,

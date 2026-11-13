@@ -68,7 +68,10 @@ export type LabelFailure =
   | "PUBLIC_READS_NOTHING"
   | "READS_ITSELF"
   | "ALREADY_READS"
-  | "NOT_READ";
+  | "NOT_READ"
+  | "INVALID_FACE"
+  | "FACE_NOT_BELOW"
+  | "NO_FACE";
 
 type Outcome = { ok: true } | { ok: false; code: LabelFailure; message: string };
 
@@ -177,6 +180,104 @@ export async function removeLabelRead(input: { label: string; reads: string; act
     );
     if (deleted.length === 0) return refuse("NOT_READ", `"${label}" does not read "${reads}".`);
     await logAdministrativeEvent(tx, "label_read_removed", input.actorId, { label, reads });
+    return { ok: true };
+  }));
+}
+
+/** The longest a face's name and its line may be. */
+export const FACE_NAME_MAX_CHARS = 80;
+export const FACE_LINE_MAX_CHARS = 500;
+
+export interface LabelFaceView {
+  id: string;
+  /** The label whose work can be asked for. */
+  label: string;
+  /** The label the face is shown at: it, and every label that reads it, may ask. */
+  shown_at: string;
+  name: string;
+  can_be_asked: string;
+  withdrawn: boolean;
+}
+
+/** Every face, for the administrators' page. */
+export async function listLabelFaces(): Promise<LabelFaceView[]> {
+  return asOwner(() =>
+    rawQuery<LabelFaceView>(
+      `SELECT id, for_label AS label, sensitivity_label AS shown_at, name, can_be_asked, (withdrawn_at IS NOT NULL) AS withdrawn
+         FROM label_faces ORDER BY for_label, sensitivity_label`
+    )
+  );
+}
+
+/**
+ * Give a label a public face at a label it reads: a name and a line saying
+ * what can be asked of it. From then on, work can be asked of it from that
+ * label and from every label that reads that label, by people and runs who
+ * do not read it (services/ask-above-service.ts). That the label can be
+ * asked is itself something shown below, which is why it is an
+ * administrator's act and off until one makes it. Showing a face again
+ * replaces its words.
+ */
+export async function showLabelFace(input: {
+  label: string;
+  at: string;
+  name: string;
+  canBeAsked: string;
+  actorId: string;
+}): Promise<Outcome | { ok: true; id: string }> {
+  const label = input.label.trim();
+  const at = input.at.trim();
+  const name = input.name.trim();
+  const line = input.canBeAsked.trim();
+  if (!name || name.length > FACE_NAME_MAX_CHARS || !line || line.length > FACE_LINE_MAX_CHARS) {
+    return refuse(
+      "INVALID_FACE",
+      `A face is a name of at most ${FACE_NAME_MAX_CHARS} characters and a line of at most ${FACE_LINE_MAX_CHARS} saying what can be asked.`
+    );
+  }
+  return asOwner(() => withTransaction(async (tx): Promise<Outcome | { ok: true; id: string }> => {
+    for (const l of [label, at]) {
+      const found = await tx.query(`SELECT 1 FROM labels WHERE name = $1`, [l]);
+      if (found.length === 0) return refuse("UNKNOWN_LABEL", `This deployment defines no label named "${l}".`);
+    }
+    // Shown below, never across or above: the label asked reads the label
+    // it is shown at, so everything an asker there can say is readable to
+    // the work it asks for.
+    const [below] = await tx.query<{ ok: boolean }>(`SELECT minerval_layer_below($1, 'local', $2, 'local') AS ok`, [at, label]);
+    if (label === at || !below?.ok) {
+      return refuse("FACE_NOT_BELOW", `"${label}" does not read "${at}", so it cannot be asked from there: work asked for is done with what its asker's label holds.`);
+    }
+    // One face for each label at each label it is shown at; showing it
+    // again replaces its words, by whoever administers now.
+    const [existing] = await tx.query<{ id: string }>(
+      `UPDATE label_faces SET name = $3, can_be_asked = $4, written_by = $5, withdrawn_at = NULL, updated_at = now()
+        WHERE for_label = $1 AND sensitivity_label = $2 RETURNING id`,
+      [label, at, name, line, input.actorId]
+    );
+    const row =
+      existing ??
+      (
+        await tx.query<{ id: string }>(
+          `INSERT INTO label_faces (for_label, name, can_be_asked, written_by, sensitivity_label)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [label, name, line, input.actorId, at]
+        )
+      )[0];
+    await logAdministrativeEvent(tx, "label_face_shown", input.actorId, { label, at });
+    return { ok: true, id: row!.id };
+  }));
+}
+
+/** Withdraw a label's face at a label: nothing new can be asked of it from there. What was asked stays as it is. */
+export async function withdrawLabelFace(input: { label: string; at: string; actorId: string }): Promise<Outcome> {
+  return asOwner(() => withTransaction(async (tx): Promise<Outcome> => {
+    const gone = await tx.query(
+      `UPDATE label_faces SET withdrawn_at = now(), updated_at = now()
+        WHERE for_label = $1 AND sensitivity_label = $2 AND withdrawn_at IS NULL RETURNING id`,
+      [input.label.trim(), input.at.trim()]
+    );
+    if (gone.length === 0) return refuse("NO_FACE", `"${input.label}" has no face shown at "${input.at}".`);
+    await logAdministrativeEvent(tx, "label_face_withdrawn", input.actorId, { label: input.label.trim(), at: input.at.trim() });
     return { ok: true };
   }));
 }

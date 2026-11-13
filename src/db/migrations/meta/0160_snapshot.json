@@ -1,5 +1,5 @@
 {
-  "id": "d4157f64-3200-45ce-b163-1a3e44d352b3",
+  "id": "74afa50a-652f-4229-a958-d854dd56ae93",
   "prevId": "f2910fc6-f986-42ba-80cc-3ab3424cda89",
   "version": "7",
   "dialect": "postgresql",
@@ -740,6 +740,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "grant_id": {
+          "name": "grant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "sensitivity_label": {
           "name": "sensitivity_label",
           "type": "text",
@@ -760,6 +766,21 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_adopted_requests_grant": {
+          "name": "idx_adopted_requests_grant",
+          "columns": [
+            {
+              "expression": "grant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -833,6 +854,19 @@
             "id"
           ],
           "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "adopted_requests_grant_id_grants_id_fk": {
+          "name": "adopted_requests_grant_id_grants_id_fk",
+          "tableFrom": "adopted_requests",
+          "tableTo": "grants",
+          "columnsFrom": [
+            "grant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "adopted_requests_sensitivity_label_labels_name_fk": {
@@ -12811,291 +12845,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.gate_settings": {
-      "name": "gate_settings",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "boundary_id": {
-          "name": "boundary_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'*'"
-        },
-        "scope": {
-          "name": "scope",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'boundary'"
-        },
-        "scope_ref": {
-          "name": "scope_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "party_id": {
-          "name": "party_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "mode": {
-          "name": "mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "set_by": {
-          "name": "set_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_holding": {
-          "name": "set_holding",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'"
-        },
-        "set_at": {
-          "name": "set_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "ended_at": {
-          "name": "ended_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ended_by": {
-          "name": "ended_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "from_rule": {
-          "name": "from_rule",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "indexes": {
-        "idx_gate_settings_boundary": {
-          "name": "idx_gate_settings_boundary",
-          "columns": [
-            {
-              "expression": "boundary_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "gate_settings_party_id_parties_id_fk": {
-          "name": "gate_settings_party_id_parties_id_fk",
-          "tableFrom": "gate_settings",
-          "tableTo": "parties",
-          "columnsFrom": [
-            "party_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "gate_settings_set_by_contributors_id_fk": {
-          "name": "gate_settings_set_by_contributors_id_fk",
-          "tableFrom": "gate_settings",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "set_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "gate_settings_ended_by_contributors_id_fk": {
-          "name": "gate_settings_ended_by_contributors_id_fk",
-          "tableFrom": "gate_settings",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "ended_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "gate_settings_sensitivity_label_labels_name_fk": {
-          "name": "gate_settings_sensitivity_label_labels_name_fk",
-          "tableFrom": "gate_settings",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_gate_settings_mode": {
-          "name": "ck_gate_settings_mode",
-          "value": "\"gate_settings\".\"mode\" IN ('open', 'redactor', 'person')"
-        },
-        "ck_gate_settings_scope": {
-          "name": "ck_gate_settings_scope",
-          "value": "\"gate_settings\".\"scope\" IN ('boundary', 'mandate', 'under', 'request') AND ((\"gate_settings\".\"scope\" = 'boundary') = (\"gate_settings\".\"scope_ref\" IS NULL))"
-        },
-        "ck_gate_settings_kind": {
-          "name": "ck_gate_settings_kind",
-          "value": "\"gate_settings\".\"kind\" IN ('*', 'page', 'answer', 'taken_up', 'funding', 'mandate', 'message')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.gates": {
-      "name": "gates",
-      "schema": "",
-      "columns": {
-        "boundary_id": {
-          "name": "boundary_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "flow": {
-          "name": "flow",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'asked'"
-        },
-        "backlog_shown": {
-          "name": "backlog_shown",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "send_as_released": {
-          "name": "send_as_released",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "set_by": {
-          "name": "set_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "set_at": {
-          "name": "set_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "sensitivity_label": {
-          "name": "sensitivity_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "minerval_default_label()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "gates_set_by_contributors_id_fk": {
-          "name": "gates_set_by_contributors_id_fk",
-          "tableFrom": "gates",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "set_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "gates_sensitivity_label_labels_name_fk": {
-          "name": "gates_sensitivity_label_labels_name_fk",
-          "tableFrom": "gates",
-          "tableTo": "labels",
-          "columnsFrom": [
-            "sensitivity_label"
-          ],
-          "columnsTo": [
-            "name"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "gates_sensitivity_label_boundary_id_pk": {
-          "name": "gates_sensitivity_label_boundary_id_pk",
-          "columns": [
-            "sensitivity_label",
-            "boundary_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_gates_flow": {
-          "name": "ck_gates_flow",
-          "value": "\"gates\".\"flow\" IN ('asked', 'everything')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.given_addresses": {
       "name": "given_addresses",
       "schema": "",
@@ -14515,6 +14264,131 @@
         "ck_keep_current_queue_state": {
           "name": "ck_keep_current_queue_state",
           "value": "\"keep_current_queue\".\"state\" IN ('waiting', 'sent', 'not_sent')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.label_faces": {
+      "name": "label_faces",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "for_label": {
+          "name": "for_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "can_be_asked": {
+          "name": "can_be_asked",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "written_by": {
+          "name": "written_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sensitivity_label": {
+          "name": "sensitivity_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "minerval_default_label()"
+        }
+      },
+      "indexes": {
+        "uq_label_faces_for_at": {
+          "name": "uq_label_faces_for_at",
+          "columns": [
+            {
+              "expression": "for_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sensitivity_label",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "label_faces_for_label_labels_name_fk": {
+          "name": "label_faces_for_label_labels_name_fk",
+          "tableFrom": "label_faces",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "for_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "label_faces_sensitivity_label_labels_name_fk": {
+          "name": "label_faces_sensitivity_label_labels_name_fk",
+          "tableFrom": "label_faces",
+          "tableTo": "labels",
+          "columnsFrom": [
+            "sensitivity_label"
+          ],
+          "columnsTo": [
+            "name"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_label_faces_not_own": {
+          "name": "ck_label_faces_not_own",
+          "value": "\"label_faces\".\"for_label\" <> \"label_faces\".\"sensitivity_label\""
         }
       },
       "isRLSEnabled": false
@@ -23309,6 +23183,24 @@
             "type": "stored"
           }
         },
+        "asked_of_face_id": {
+          "name": "asked_of_face_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asked_as": {
+          "name": "asked_as",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asked_budget_micro_usd": {
+          "name": "asked_budget_micro_usd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
         "sensitivity_label": {
           "name": "sensitivity_label",
           "type": "text",
@@ -23410,6 +23302,19 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "requests_asked_of_face_id_label_faces_id_fk": {
+          "name": "requests_asked_of_face_id_label_faces_id_fk",
+          "tableFrom": "requests",
+          "tableTo": "label_faces",
+          "columnsFrom": [
+            "asked_of_face_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
         "requests_sensitivity_label_labels_name_fk": {
           "name": "requests_sensitivity_label_labels_name_fk",
           "tableFrom": "requests",
@@ -23428,6 +23333,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_requests_asked_as": {
+          "name": "ck_requests_asked_as",
+          "value": "\"requests\".\"asked_as\" IS NULL OR \"requests\".\"asked_as\" IN ('work', 'mandate')"
+        },
         "ck_requests_filer_kind": {
           "name": "ck_requests_filer_kind",
           "value": "\"requests\".\"filer_kind\" IN ('admin', 'contributor', 'mandate')"
@@ -24304,25 +24213,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "by": {
-          "name": "by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'process'"
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "until": {
-          "name": "until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "reason": {
           "name": "reason",
           "type": "text",
@@ -24456,31 +24346,19 @@
           "name": "node_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "judgment_kind": {
           "name": "judgment_kind",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "judgment_id": {
           "name": "judgment_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "version_key": {
-          "name": "version_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "funds_wanted_at": {
-          "name": "funds_wanted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "judged_at": {
           "name": "judged_at",
@@ -24648,34 +24526,6 @@
           "method": "btree",
           "with": {}
         },
-        "uq_showing_pages_item_version": {
-          "name": "uq_showing_pages_item_version",
-          "columns": [
-            {
-              "expression": "sensitivity_label",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "showing_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "version_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "node_id IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_showing_pages_stage": {
           "name": "idx_showing_pages_stage",
           "columns": [
@@ -24743,7 +24593,7 @@
         },
         "ck_showing_pages_kind": {
           "name": "ck_showing_pages_kind",
-          "value": "CASE WHEN \"showing_pages\".\"node_id\" IS NULL THEN \"showing_pages\".\"judgment_kind\" IS NULL AND \"showing_pages\".\"version_key\" IS NOT NULL\n               ELSE \"showing_pages\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment') AND \"showing_pages\".\"judgment_id\" IS NOT NULL END"
+          "value": "\"showing_pages\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment')"
         }
       },
       "isRLSEnabled": false
@@ -24945,12 +24795,6 @@
           "notNull": true,
           "default": 1
         },
-        "made_by": {
-          "name": "made_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "taken_back_at": {
           "name": "taken_back_at",
           "type": "timestamp with time zone",
@@ -25003,19 +24847,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "showing_removals_made_by_contributors_id_fk": {
-          "name": "showing_removals_made_by_contributors_id_fk",
-          "tableFrom": "showing_removals",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "made_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "showing_removals_sensitivity_label_labels_name_fk": {
           "name": "showing_removals_sensitivity_label_labels_name_fk",
           "tableFrom": "showing_removals",
@@ -25052,36 +24883,11 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'page'"
-        },
         "node_id": {
           "name": "node_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "subject_ref": {
-          "name": "subject_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reply_ref": {
-          "name": "reply_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "payer_grant_id": {
-          "name": "payer_grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "to_label": {
           "name": "to_label",
@@ -25215,52 +25021,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "uq_showings_live_subject": {
-          "name": "uq_showings_live_subject",
-          "columns": [
-            {
-              "expression": "sensitivity_label",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "boundary_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "kind",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "scope",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(subject_ref, '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "COALESCE(payer_grant_id, '00000000-0000-0000-0000-000000000000'::uuid)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "ended_at IS NULL AND node_id IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -25344,15 +25104,7 @@
         },
         "ck_showings_scope": {
           "name": "ck_showings_scope",
-          "value": "\"showings\".\"scope\" IN ('node', 'under', 'mandate', 'boundary', 'item')"
-        },
-        "ck_showings_kind": {
-          "name": "ck_showings_kind",
-          "value": "\"showings\".\"kind\" IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message')"
-        },
-        "ck_showings_subject": {
-          "name": "ck_showings_subject",
-          "value": "CASE WHEN \"showings\".\"scope\" IN ('node', 'under') THEN \"showings\".\"node_id\" IS NOT NULL AND \"showings\".\"kind\" = 'page'\n               WHEN \"showings\".\"scope\" = 'boundary' THEN \"showings\".\"node_id\" IS NULL AND \"showings\".\"kind\" = 'page'\n               ELSE \"showings\".\"node_id\" IS NULL AND \"showings\".\"subject_ref\" IS NOT NULL END"
+          "value": "\"showings\".\"scope\" IN ('node', 'under')"
         },
         "ck_showings_not_own_label": {
           "name": "ck_showings_not_own_label",
@@ -25492,18 +25244,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'page'"
-        },
         "node_id": {
           "name": "node_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "judged_at": {
           "name": "judged_at",
@@ -25516,13 +25261,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "waiting_for_funds": {
-          "name": "waiting_for_funds",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "stage": {
           "name": "stage",
@@ -25779,24 +25517,11 @@
           "primaryKey": true,
           "notNull": true
         },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'page'"
-        },
         "node_id": {
           "name": "node_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "reply_ref": {
-          "name": "reply_ref",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "to_outside": {
           "name": "to_outside",

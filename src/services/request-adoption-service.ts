@@ -215,10 +215,10 @@ export async function answerableBelow(requestIdAbove: string): Promise<Answerabl
  * here must not undo the work it reports, so it is logged and the next
  * offer (the next work recorded, or the request's closing) sends it.
  */
-export async function offerDown(kind: "taken_up" | "answer", requestIdAbove: string): Promise<void> {
+export async function offerDown(kind: "taken_up" | "answer" | "statement", requestIdAbove: string): Promise<void> {
   try {
     const gate = await import("./gate-service.js");
-    await (kind === "taken_up" ? gate.offerTakenUpBelow(requestIdAbove) : gate.offerAnswerBelow(requestIdAbove));
+    await (kind === "taken_up" ? gate.offerTakenUpBelow(requestIdAbove) : kind === "answer" ? gate.offerAnswerBelow(requestIdAbove) : gate.offerStatementBelow(requestIdAbove));
   } catch (err) {
     console.error(`[gate] could not offer ${kind} for request ${requestIdAbove}: ${err instanceof Error ? err.message : String(err)}`);
   }

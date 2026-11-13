@@ -21,6 +21,8 @@ export const GATE_KINDS = {
   funding: "a mandate's funding of work on the other side",
   mandate: "that a mandate exists, with its terms",
   message: "an answer to a message",
+  petition: "a run's petition to the mandate that pays for it",
+  statement: "a statement of what was spent and what was returned",
 } as const;
 export type GateKind = keyof typeof GATE_KINDS;
 export const isGateKind = (k: unknown): k is GateKind => typeof k === "string" && k in GATE_KINDS;
@@ -59,6 +61,11 @@ export const STARTING_MODE: Record<GateKind, GateMode> = {
   funding: "redactor",
   mandate: "redactor",
   message: "redactor",
+  // A petition carries the run's own words about work at its label.
+  petition: "redactor",
+  // A statement is figures in fixed words about the payer's own money, which the payer's own account
+  // already shows as it moves. It starts open: holding it would hide nothing the payer cannot see.
+  statement: "open",
 };
 
 /** What a setting can be narrowed to. A narrower scope is taken before a wider one. */
@@ -124,4 +131,5 @@ export const ITEM_PART_WORDS: Record<string, [one: string, several: string]> = {
   terms: ["a paragraph of a mandate's terms", "paragraphs of mandates' terms"],
   amount: ["an amount of funding", "amounts of funding"],
   reply: ["a paragraph of an answer to a message", "paragraphs of answers to messages"],
+  ask: ["a paragraph of what a run asks its payer for", "paragraphs of what a run asks its payer for"],
 };

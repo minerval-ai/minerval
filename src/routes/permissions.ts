@@ -45,6 +45,11 @@ import {
   LABEL_NAME_PATTERN,
   addLabelRead,
   defineLabel,
+  FACE_LINE_MAX_CHARS,
+  FACE_NAME_MAX_CHARS,
+  listLabelFaces,
+  showLabelFace,
+  withdrawLabelFace,
   listLabels,
   removeLabelRead,
 } from "../services/label-admin-service.js";
@@ -408,6 +413,60 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
+  app.get("/labels/faces", {
+    schema: {
+      tags: ["permissions"],
+      summary: "The faces labels have been given at labels they read, by which work is asked of them from there (administrators)",
+    },
+    preHandler: administrator,
+    handler: async (_request, reply) => reply.send({ faces: await listLabelFaces() }),
+  });
+
+  app.put<{ Params: { label: string }; Body: { at: string; name: string; can_be_asked: string } }>("/labels/:label/face", {
+    schema: {
+      tags: ["permissions"],
+      summary: "Give a label a face at a label it reads, so that work can be asked of it from there (administrators, from a signed-in session)",
+      description: FACE_TOLD,
+      params: { type: "object", required: ["label"], properties: { label: { type: "string" } } },
+      body: {
+        type: "object",
+        required: ["at", "name", "can_be_asked"],
+        properties: {
+          at: { type: "string", minLength: 1 },
+          name: { type: "string", minLength: 1, maxLength: FACE_NAME_MAX_CHARS },
+          can_be_asked: { type: "string", minLength: 1, maxLength: FACE_LINE_MAX_CHARS },
+        },
+      },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const result = await showLabelFace({
+        label: request.params.label,
+        at: request.body.at,
+        name: request.body.name,
+        canBeAsked: request.body.can_be_asked,
+        actorId: request.auth!.userId!,
+      });
+      if (!result.ok) return reply.code(labelStatus(result.code)).send({ error: result.message, code: result.code });
+      return reply.send({ faces: await listLabelFaces() });
+    },
+  });
+
+  app.delete<{ Params: { label: string; at: string } }>("/labels/:label/face/:at", {
+    schema: {
+      tags: ["permissions"],
+      summary: "Withdraw a label's face at a label: nothing new can be asked of it from there (administrators, from a signed-in session)",
+      description: "What was already asked stays as it is, and its work goes on.",
+      params: { type: "object", required: ["label", "at"], properties: { label: { type: "string" }, at: { type: "string" } } },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const result = await withdrawLabelFace({ label: request.params.label, at: request.params.at, actorId: request.auth!.userId! });
+      if (!result.ok) return reply.code(labelStatus(result.code)).send({ error: result.message, code: result.code });
+      return reply.send({ faces: await listLabelFaces() });
+    },
+  });
+
   app.post<{ Params: { label: string }; Body: { reads: string } }>("/labels/:label/reads", {
     schema: {
       tags: ["permissions"],
@@ -485,8 +544,15 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
+/** What giving a label a face shows, and to whom. */
+const FACE_TOLD =
+  "A label cannot be read or named from the labels it reads. Giving it a face at one of them shows there, and at every label that " +
+  "reads that one, that it exists under this name and can be asked for work: people who may fund, mandates and agents' runs there " +
+  "can then ask for and pay for work at it, done by agents that read what it reads. What that work finds comes down only through " +
+  "the label's gate. The name and the line are yours to write and are all that is shown; the label's own name is not.";
+
 function labelStatus(code: string): number {
-  if (code === "UNKNOWN_LABEL" || code === "NOT_READ") return 404;
+  if (code === "UNKNOWN_LABEL" || code === "NOT_READ" || code === "NO_FACE") return 404;
   if (code === "LABEL_EXISTS" || code === "ALREADY_READS") return 409;
   return 400;
 }

@@ -329,6 +329,8 @@ export async function spawnFundedMandate(input: {
   objective: string;
   owls: number;
   note?: string;
+  /** Where the mandate came from, when that changes how it starts (grants.mandate.origin). */
+  origin?: string;
 }): Promise<SpawnMandateResult> {
   const [source] = await rawQuery<{
     id: string;
@@ -361,6 +363,7 @@ export async function spawnFundedMandate(input: {
     plan: null,
     expected_cost_owls: input.owls,
     notes: input.note ?? null,
+    ...(input.origin ? { origin: input.origin } : {}),
     // Its money is the source mandate's, so its funder disclosure is too.
     ...(source.mandate?.funder_named !== undefined
       ? { funder_named: source.mandate.funder_named, funder_stake: source.mandate.funder_stake ?? null }

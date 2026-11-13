@@ -116,7 +116,14 @@ export function mirrorNote(mirror: MirrorBrief): string {
 export function labelNote(
   label: string,
   reads: readonly string[],
-  opts: { writesJudgments?: boolean; mirror?: MirrorBrief | null } = {}
+  opts: {
+    writesJudgments?: boolean;
+    mirror?: MirrorBrief | null;
+    /** What the label sets for its own runs (label-posture.ts postureNote); "" when nothing. */
+    posture?: string;
+    /** What can be asked of labels above this one (ask-above-service.ts askableNote); "" when nothing can. */
+    askable?: string;
+  } = {}
 ): string {
   const mirror = opts.mirror ?? null;
   const own = tick(label);
@@ -163,10 +170,12 @@ export function labelNote(
       `only there.${mirror ? ` ${mirrorWhatItIs(mirror, `what is labeled ${tick(PUBLIC_LABEL)}`)}` : ""}`,
     `What you write: everything this run records carries the label ${own}, whatever you read to write ` +
       `it. ${whoReads}${othersRows}${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}${reports}`,
+    opts.posture ?? "",
     judgments,
     opts.writesJudgments ? shownBelowNote(label) : "",
     `If the work cannot be done well on what this label can read, say so in what you record, so that ` +
       `whoever reads it or pays for the next pass knows what it rests on.`,
+    opts.askable ?? "",
   ];
   return paragraphs.filter(Boolean).join("\n\n");
 }

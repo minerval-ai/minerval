@@ -31,7 +31,7 @@ import { runAtLabel } from "../llm/usage-context.js";
 import { verifyShownPage, type Mark, type Verification } from "./page-fingerprint.js";
 import { RemovalError, applyRemovals, countByCategory, heldWords, kindWords, locate, overlaps } from "./page-parts.js";
 import { GATE_ACTS, GATE_KINDS, HOLDERS, HOLD_REASONS, type GateKind, type HoldReason, type Holder } from "./gate-kinds.js";
-import { gateOf, modesFor, type ModeFound } from "./gate-settings-service.js";
+import { faceOfGate, gateOf, modesFor, type ModeFound } from "./gate-settings-service.js";
 import { VERDICT_DESCRIPTOR, pageRoot, partCommitment, type LeafRecord } from "./page-fingerprint.js";
 import {
   END_REASONS,
@@ -623,9 +623,14 @@ async function arriveItem(pageId: string, showing: ShowingRow): Promise<void> {
   await rawQuery(`UPDATE shown_pages SET source_id = $2 WHERE id = $1`, [pageId, source!.id]);
   const released = parts.filter((p) => p.released_at !== null);
   const marker = `gate item ${pageId}`;
-  if (showing.kind === "answer" && showing.reply_ref) {
+  const onRequest: Partial<Record<GateKind, string>> = {
+    answer: "An answer from work",
+    statement: "A statement of what was spent, from work",
+    mandate: "Word of the mandate made for this request",
+  };
+  if (onRequest[showing.kind] && showing.reply_ref) {
     const summary =
-      `An answer from work at a label this one does not read, as it came through the gate (${marker}; source ${source!.id}). ` +
+      `${onRequest[showing.kind]} at a label this one does not read, as it came through the gate (${marker}; source ${source!.id}). ` +
       `${released.length} of its ${parts.length} part${parts.length === 1 ? "" : "s"} ${released.length === 1 ? "is" : "are"} released.\n\n` +
       parts.map((p) => (p.released_at !== null ? p.text! : heldWords(p.descriptor, holdersOf(acts, p, names)))).join("\n\n");
     await rawQuery(`DELETE FROM request_work WHERE request_id = $1 AND sensitivity_label = $2 AND summary LIKE $3`, [showing.reply_ref, destination, `%(${marker};%`]);
@@ -655,7 +660,76 @@ async function arriveItem(pageId: string, showing: ShowingRow): Promise<void> {
       }).catch((err: unknown) => console.error(`[gate] could not deliver the answer to message ${showing.reply_ref}: ${err instanceof Error ? err.message : String(err)}`));
     }
   }
+  if (showing.kind === "answer" && showing.reply_ref) await answerReachesItsNodes(pageId, showing, destination, source!.id, n > 0);
+  if (showing.kind === "petition" && showing.reply_ref && n === 0) {
+    await runAtLabel(destination, `the arrival of a petition for mandate ${showing.reply_ref}`, async () => {
+      const { raiseToMandate } = await import("./mandate-inbox-service.js");
+      await raiseToMandate({
+        grantId: showing.reply_ref!,
+        targetNodeId: null,
+        targetRef: `shown:${source!.id}`,
+        source: "the gate",
+        summary:
+          `Work this mandate pays for at a label it does not read has petitioned it, and the petition came through the gate (source ${source!.id}). ` +
+          `Adding to what was asked gives that work more to spend; it is not waiting for an answer.\n\n${released.map((p) => p.text!).join("\n\n")}`,
+        detail: { gate_item: pageId, source_id: source!.id },
+      });
+    }).catch((err: unknown) => console.error(`[gate] could not raise the petition of item ${pageId}: ${err instanceof Error ? err.message : String(err)}`));
+  }
   if (showing.kind === "funding" && n === 0) await placeFundingBelow(pageId, showing, destination);
+}
+
+/** What the Steward of a node is told when an answer to a request on the node arrives from a label it does not read. */
+export function answerArrivedMessage(input: { released: number; parts: number; again: boolean }): string {
+  return (
+    `An answer to a request on this node, from work at a label this one does not read, ${input.again ? "has had more of it released and is here again" : "has come through the gate"}. ` +
+    `It is now one of this node's sources, of the kind shown_page: the work's own words, with what a policy removed marked in place and ` +
+    `${input.parts - input.released} of its ${input.parts} part${input.parts === 1 ? "" : "s"} held. Weigh it as you weigh any source. ` +
+    `What was removed and what is held are part of what it tells you, as any omission is.`
+  );
+}
+
+/**
+ * An answer is attached, as a source, to each node the asking request
+ * bears on at the destination label, and a pass on that node is opened
+ * there, so that the Steward that asked reads it on a later pass.
+ */
+async function answerReachesItsNodes(pageId: string, showing: ShowingRow, destination: string, sourceId: string, again: boolean): Promise<void> {
+  const parts = await shownPartsOf(pageId);
+  const nodes = await rawQuery<{ claim_id: string }>(
+    `SELECT t.claim_id FROM request_targets t JOIN claims c ON c.id = t.claim_id
+      WHERE t.request_id = $1 AND t.claim_id IS NOT NULL AND c.state = 'active'
+        AND c.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text]))`,
+    [showing.reply_ref, destination]
+  );
+  for (const { claim_id } of nodes) {
+    await rawQuery(
+      `UPDATE claim_instances i SET detached_at = now(), detached_by = 'showing', detached_reason = 'A later arrival of this answer replaced it.'
+        WHERE i.claim_id = $1 AND i.detached_at IS NULL AND i.created_by = 'showing' AND i.sensitivity_label = $3
+          AND EXISTS (SELECT 1 FROM sources s WHERE s.id = i.source_id AND s.url LIKE $2)`,
+      [claim_id, `minerval:shown-page/${pageId}/%`, destination]
+    );
+    await rawQuery(
+      `INSERT INTO claim_instances (claim_id, source_id, verbatim_text, context, stance, created_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, 'mentions', 'showing', $5)`,
+      [
+        claim_id,
+        sourceId,
+        "An answer to a request on this node, from work at a label this one does not read.",
+        "The source's text is the answer as it came through the gate, with removals marked and held parts named.",
+        destination,
+      ]
+    );
+    await runAtLabel(destination, `the arrival of an answer as item ${pageId}`, async () => {
+      const { enqueueSteward } = await import("./queue-service.js");
+      await enqueueSteward({
+        claimId: claim_id,
+        trigger: "page_shown",
+        context: answerArrivedMessage({ released: parts.filter((p) => p.released_at !== null).length, parts: parts.length, again }),
+        sender: { kind: "system", ref: `shown:${sourceId}` },
+      });
+    }).catch((err: unknown) => console.error(`[gate] could not open the pass for the answer in item ${pageId}: ${err instanceof Error ? err.message : String(err)}`));
+  }
 }
 
 /** What the Steward on the other side is told when a mandate it cannot read pays for a pass on its node. */
@@ -1819,11 +1893,16 @@ export async function gateBacklog(
     return { lines: [...lines.values()], gatesSeen };
   };
   const { lines, gatesSeen } = authority ? await bothSides(read) : await read();
+  // Where things come from: the label's name for those who read it and for administrators, who define
+  // the labels; for anyone else the face that label shows on this side, where it shows one.
   const from = new Map<string, string>();
-  if (authority) {
-    for (const id of gatesSeen.keys()) {
-      const gate = await gateOf(id);
-      if (gate && (reader.administer || reader.releaseParties.length > 0 || reader.clearance.includes(gate.from_label))) from.set(id, gate.from_label);
+  for (const id of gatesSeen.keys()) {
+    const gate = await gateOf(id);
+    if (!gate) continue;
+    if (reader.administer || reader.clearance.includes(gate.from_label)) from.set(id, gate.from_label);
+    else {
+      const face = await faceOfGate(id);
+      if (face) from.set(id, face);
     }
   }
   const hours = (since: Date) => Math.max(0, Math.floor((Date.now() - since.getTime()) / 3_600_000));
@@ -1851,6 +1930,7 @@ export async function gateBacklog(
             })),
         };
       }),
+    asked_from_here: await askedFromHere(),
     note:
       "Counts of what has not gone through each gate, by kind and by what it waits on. An item can wait on more than one thing, so the lines of a gate can add up to more than its items. " +
       "Nothing here says what any item contains. A long wait on the Redactor's hold or on a person suggests the policy or the setting needs changing, which the gate's authorities do.",
@@ -1880,5 +1960,42 @@ export async function shownItems(opts: { kind?: string; replyRef?: string } = {}
     offered_at: r.opened_at.toISOString(),
     state: r.shown_at ? "through the gate" : r.waiting_for_funds ? STAGE_WORDS_UNPAID[r.stage] ?? STAGE_WORDS[r.stage] : STAGE_WORDS[r.stage],
     ...(r.shown_at ? { came_through_at: r.shown_at.toISOString(), source_id: r.source_id } : {}),
+  }));
+}
+
+/**
+ * How much of what the caller's labels asked of a label above, and paid
+ * for, has come back: for each face asked, how many requests, with how
+ * many owls behind them, and for how many the gate has let through that
+ * they were taken up, an answer, or nothing yet. Read with the caller's own
+ * clearance, from rows at the labels they read; it names the face and
+ * never the label behind it.
+ */
+async function askedFromHere(): Promise<Array<Record<string, unknown>>> {
+  const rows = await rawQuery<{ face: string; at: string; asks: number; owls: string; told: number; answered: number; waiting: number; nothing: number }>(
+    `SELECT f.name AS face, r.sensitivity_label AS at, count(*)::int AS asks,
+            COALESCE(sum(r.asked_budget_micro_usd), 0) AS owls,
+            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM shown_showings s JOIN shown_pages p ON p.showing_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'taken_up' AND p.shown_at IS NOT NULL))::int AS told,
+            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM shown_showings s JOIN shown_pages p ON p.showing_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.shown_at IS NOT NULL))::int AS answered,
+            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM shown_showings s JOIN shown_pages p ON p.showing_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.shown_at IS NULL AND p.stage <> 'overtaken')
+                               AND NOT EXISTS (SELECT 1 FROM shown_showings s JOIN shown_pages p ON p.showing_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.shown_at IS NOT NULL))::int AS waiting,
+            count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM shown_showings s JOIN shown_pages p ON p.showing_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.stage <> 'overtaken' AND (p.shown_at IS NOT NULL OR p.kind = 'answer')))::int AS nothing
+       FROM requests r JOIN label_faces f ON f.id = r.asked_of_face_id
+      GROUP BY f.name, r.sensitivity_label ORDER BY f.name, r.sensitivity_label`
+  ).catch(() => []);
+  return rows.map((r) => ({
+    asked_of: r.face,
+    asked_at: r.at,
+    requests: r.asks,
+    owls_put_behind_them: Number(r.owls) / 1_000_000,
+    told_they_were_taken_up: r.told,
+    answer_through_the_gate: r.answered,
+    answer_waiting_at_the_gate: r.waiting,
+    nothing_back_yet: r.nothing,
   }));
 }

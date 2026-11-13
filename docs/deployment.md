@@ -289,6 +289,10 @@ output_usd_per_mtok = 1.5
 |---|---|---|
 | `fetches` | Which addresses the tools of a run that reads a private label take. `"any"`, the starting value: any address, as on the public graph. `"given"`: only an address the deployment was given from outside (a search result, an address in a page the run read, a recorded source, a resolved identifier), used as it was given. That guards against text a run read telling it to fetch an address with private material written into it. It narrows that way out and does not close it, and it costs research: a run cannot write the address for something it knows of, or page through results by editing one ([architecture.md](architecture.md), "The addresses a tool takes"). | `PRIVATE_RUN_FETCHES` |
 
+#### Each label's own posture
+
+`LABEL_POSTURE` (an environment variable; it has no group in the config file yet) gives a label its own value for settings that are otherwise one for the deployment, as a JSON object from a label's name to its settings: `{"evidence-room": {"fetches": "given", "sandbox": false, "features_off": ["mathematics"]}}`. `fetches` is `private_runs.fetches` for runs at that label. `sandbox: false` offers runs at that label no command over a set of files. `features_off` switches features off for runs at that label, on top of `features.off`. A label that is not named works under the deployment's settings. Which providers and outside services a label's runs use is `[provider_labels]`. A run is told its label's own settings in its brief.
+
 #### `[publishing]`
 
 | Name | What it sets | Environment variable |

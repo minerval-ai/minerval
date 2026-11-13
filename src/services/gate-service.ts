@@ -46,7 +46,7 @@ export interface GateOffer {
   /** The label it goes to; null for outside the deployment. */
   toLabel: string | null;
   /** The row at `fromLabel` the item is about. For funding: the node on the other side, with the amount. */
-  subject: { requestId: string } | { grantId: string } | { messageId: string } | { nodeId: string; amountMicroUsd: number };
+  subject: { requestId: string } | { grantId: string } | { messageId: string } | { petitionId: string } | { nodeId: string; amountMicroUsd: number };
   /** The row at `toLabel` that asked, where one did. */
   replyTo?: { requestId: string } | { grantId: string } | { messageId: string };
   /** The mandate whose budget pays the Redactor's run and Audit's check, and, for funding, the work. */
@@ -56,7 +56,7 @@ export interface GateOffer {
 export type OfferState = "released" | "waiting" | "held";
 
 const subjectRefOf = (s: GateOffer["subject"]): string =>
-  "requestId" in s ? s.requestId : "grantId" in s ? s.grantId : "messageId" in s ? s.messageId : s.nodeId;
+  "requestId" in s ? s.requestId : "grantId" in s ? s.grantId : "messageId" in s ? s.messageId : "petitionId" in s ? s.petitionId : s.nodeId;
 const replyRefOf = (r: GateOffer["replyTo"]): string | null =>
   !r ? null : "requestId" in r ? r.requestId : "grantId" in r ? r.grantId : r.messageId;
 
@@ -145,6 +145,57 @@ async function compose(offer: GateOffer): Promise<Composed | null> {
         { kind: "fact", text: `A pass at a label this one does not read was given this message and answered it. ${OUTCOME_SAID[read.outcome] ?? ""}`.trim() },
         ...paragraphsOf(read.outcome_note).map((text) => ({ kind: "reply", text })),
       ],
+    };
+  }
+  if (offer.kind === "petition") {
+    const id = (offer.subject as { petitionId: string }).petitionId;
+    const [p] = await rawQuery<{ asked: string; plan: string; why: string | null; if_refused: string | null; done_so_far: string | null; created_at: Date }>(
+      `SELECT asked_micro_usd AS asked, plan, why, if_refused, done_so_far, created_at FROM petitions WHERE id = $1`,
+      [id]
+    );
+    if (!p) return null;
+    const owls = (Number(p.asked) / 1_000_000).toFixed(2);
+    return {
+      at: p.created_at,
+      header: header({ asked_micro_usd: Number(p.asked) }),
+      parts: [
+        { kind: "amount", text: `Work this mandate pays for, at a label it does not read, asks it for ${owls} owls more.` },
+        ...paragraphsOf(p.plan).map((text) => ({ kind: "ask", text: `What it would do with it: ${text}` })),
+        ...paragraphsOf(p.why).map((text) => ({ kind: "ask", text: `Why: ${text}` })),
+        ...paragraphsOf(p.done_so_far).map((text) => ({ kind: "ask", text: `Done so far: ${text}` })),
+        ...paragraphsOf(p.if_refused).map((text) => ({ kind: "ask", text: `If it is refused: ${text}` })),
+      ],
+    };
+  }
+  if (offer.kind === "statement") {
+    const owls = (micro: number) => (micro / 1_000_000).toFixed(2);
+    if ("grantId" in offer.subject) {
+      // A mandate made for a request from another label, once it has closed: what was put into it and what went back.
+      const [m] = await rawQuery<{ status: string; put_in: string; returned: string; closed_at: Date | null }>(
+        `SELECT g.status, COALESCE(sum(r.amount_micro_usd), 0) AS put_in, COALESCE(sum(r.refunded_micro_usd), 0) AS returned, max(g.updated_at) AS closed_at
+           FROM grants g LEFT JOIN regrants r ON r.to_grant_id = g.id WHERE g.id = $1 GROUP BY g.status`,
+        [offer.subject.grantId]
+      ).catch(() => []);
+      if (!m || !["completed", "cancelled", "declined"].includes(m.status)) return null;
+      return {
+        at: m.closed_at ?? new Date(),
+        header: header({ put_in_micro_usd: Number(m.put_in), returned_micro_usd: Number(m.returned) }),
+        parts: [{ kind: "amount", text: `The mandate has closed. Of ${owls(Number(m.put_in))} owls put into it, ${owls(Number(m.put_in) - Number(m.returned))} were spent and ${owls(Number(m.returned))} went back to those who paid.` }],
+      };
+    }
+    const id = (offer.subject as { requestId: string }).requestId;
+    const [request] = await rawQuery<{ state: string; updated_at: Date }>(`SELECT state, updated_at FROM requests WHERE id = $1`, [id]);
+    if (!request || !["met", "declined", "withdrawn", "moot"].includes(request.state)) return null;
+    const [money] = await rawQuery<{ placed: string; spent: string }>(
+      `SELECT COALESCE(sum(amount_micro_usd), 0) AS placed, COALESCE(sum(spent_micro_usd), 0) AS spent FROM action_allocations WHERE exclusion_group = $1`,
+      [`request:${id}`]
+    );
+    const placed = Number(money?.placed ?? 0);
+    const spent = Number(money?.spent ?? 0);
+    return {
+      at: request.updated_at,
+      header: header({ placed_micro_usd: placed, spent_micro_usd: spent }),
+      parts: [{ kind: "amount", text: `Work on the request has ended. Of ${owls(placed)} owls placed on it, ${owls(spent)} were spent and ${owls(Math.max(0, placed - spent))} went back to whoever paid.` }],
     };
   }
   // funding
@@ -274,7 +325,7 @@ interface BelowOpts {
   payer?: { grantId: string };
 }
 
-async function requestOffer(kind: "answer" | "taken_up", requestIdAbove: string, opts: BelowOpts): Promise<{ item_id: string; state: OfferState } | null> {
+async function requestOffer(kind: "answer" | "taken_up" | "statement", requestIdAbove: string, opts: BelowOpts): Promise<{ item_id: string; state: OfferState } | null> {
   if (oneLabelOnly()) return null;
   return bothSides(async () => {
     const [above] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM requests WHERE id = $1`, [requestIdAbove]);
@@ -302,6 +353,15 @@ export const offerAnswerBelow = (requestIdAbove: string, opts: BelowOpts = {}) =
 
 /** Tell the label that asked that its request was taken up. Called once, when it is. */
 export const offerTakenUpBelow = (requestIdAbove: string, opts: BelowOpts = {}) => requestOffer("taken_up", requestIdAbove, opts);
+
+/**
+ * Tell the label that asked what was spent on its request and what went
+ * back, once work on it has ended. The money itself is not the gate's: it
+ * is the payer's own, and returns by the ordinary settlement as soon as it
+ * is released, where the payer's own account shows it. This is the account
+ * of it in words.
+ */
+export const offerStatementBelow = (requestIdAbove: string, opts: BelowOpts = {}) => requestOffer("statement", requestIdAbove, opts);
 
 /**
  * A mandate pays for, or asks for, a fresh assessment of a node at a label

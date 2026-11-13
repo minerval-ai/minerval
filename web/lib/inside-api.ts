@@ -369,6 +369,17 @@ export interface BacklogLine {
 
 export interface GateBacklog {
   gates: Array<{ gate_id: string; from?: string; to: string; items_waiting: number; waiting: BacklogLine[] }>;
+  /** What the person's labels asked of a label above, by the face asked, and how much has come back. */
+  asked_from_here: Array<{
+    asked_of: string;
+    asked_at: string;
+    requests: number;
+    owls_put_behind_them: number;
+    told_they_were_taken_up: number;
+    answer_through_the_gate: number;
+    answer_waiting_at_the_gate: number;
+    nothing_back_yet: number;
+  }>;
   note: string;
 }
 
