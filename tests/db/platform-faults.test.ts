@@ -556,7 +556,12 @@ describe("what the operator is told", () => {
     const health = await queueHealth();
     const shown = health.deploymentFaults.filter((f) => f.provider === provider);
     expect(shown).toHaveLength(2);
-    expect(JSON.stringify(health.deploymentFaults)).not.toMatch(/402|available credits|x-api-key/);
+    // The provider's words stay out of the view. Its timestamps are left out
+    // of the check, and the status code is matched as a whole number: a bare
+    // /402/ also matched a millisecond field such as "…:30.402Z", so this
+    // failed on roughly one run in a few hundred whatever the change.
+    const words = JSON.stringify(health.deploymentFaults.map(({ since: _s, lastSeen: _l, ...f }) => f));
+    expect(words).not.toMatch(/\b402\b|available credits|x-api-key/);
     expect(health.waitingOnFault.find((w) => w.reason === "credits_fault" && w.kind === "lookout_run")?.rows).toBeGreaterThanOrEqual(1);
   });
 

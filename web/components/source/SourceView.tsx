@@ -28,7 +28,7 @@ export function SourceView({ page, source }: { page: SourcePage; source: DataSou
   return (
     <div className={s.bleed}>
       <div className={s.grid}>
-        <OutlineRail groups={groups} exams={exams} />
+        <OutlineRail groups={groups} exams={exams} findings={new Set(findings.keys())} />
         <div className={s.main}>
           <SourceHead page={page} groups={groups} exams={exams} sample={source === "fixture"} />
           <Examinations
