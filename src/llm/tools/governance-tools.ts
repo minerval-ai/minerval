@@ -4,7 +4,6 @@
  * These give agents the ability to gather context about claims, contributions,
  * and contributors before making decisions.
  */
-import { mayBeGivenSourceText, sourceTextNotGiven } from "../../services/separate-reader.js";
 import { oneCutForClaimSql } from "../../services/mirrored-node-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -444,7 +443,6 @@ async function getContributionDetails(
           title: sources.title,
           sourceType: sources.sourceType,
           rawContent: sources.rawContent,
-          label: sources.sensitivityLabel,
         })
         .from(sources)
         .where(eq(sources.id, contribution.sourceId))
@@ -495,14 +493,9 @@ async function getContributionDetails(
             url: source.url,
             title: source.title,
             source_type: source.sourceType,
-            // The excerpt is the stored text of a source: a run that
-            // writes a page shown to readers who cannot read the source's
-            // label is not given it (services/separate-reader.ts).
-            content_excerpt: !source.rawContent
-              ? null
-              : mayBeGivenSourceText([source.label], source.id)
-                ? source.rawContent.slice(0, 4000)
-                : sourceTextNotGiven("The proposed source"),
+            content_excerpt: source.rawContent
+              ? source.rawContent.slice(0, 4000)
+              : null,
           },
         }
       : {}),

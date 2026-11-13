@@ -118,7 +118,6 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   record_fidelity_outcome: { reads: "private", why: "confirms an outcome on a page held at a label only some readers read" },
   redact: { reads: "private", why: "a part of a page as it reads after a removal, before release" },
   restore: { reads: "private", why: "a part of a page as it reads after a removal is taken back, before release" },
-  answer: { reads: "private", why: "confirms a reader's answer, which can hold a passage of a source only some readers may read" },
   add_answer: { reads: "public", why: "confirms the run's own write to public graph records" },
   add_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
   add_decomposition_edge: { reads: "public", why: "confirms the run's own write to public graph records" },

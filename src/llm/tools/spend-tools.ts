@@ -20,24 +20,13 @@ import { registerAwait } from "../../services/session-service.js";
 import { commissionResearch } from "../../services/research-commission-service.js";
 import type { ResearchModelTier } from "../../services/research-run-service.js";
 import { figureTiersSentence, researcherToolsSentence, sandboxTiersSentence } from "./research-tools.js";
-import { ANSWER_FORMS, parseQuestions, type ReaderQuestion } from "../../services/reader-answers.js";
-import { QUESTIONS_DESCRIPTION, currentSourceTextRule } from "../../services/separate-reader.js";
 
 type Tool = Anthropic.Tool;
 
 export const COMMISSION = "commission";
 export const PETITION_MANDATE = "petition_mandate";
 
-export function getSpendToolDefinitions(
-  opts: {
-    /**
-     * Whether this run may commission research as a reader
-     * (services/separate-reader.ts): a Steward whose node's page is under a
-     * standing showing. Nothing is added to the tool for any other run.
-     */
-    launchesReaders?: boolean;
-  } = {}
-): Tool[] {
+export function getSpendToolDefinitions(): Tool[] {
   return [
     {
       name: COMMISSION,
@@ -62,12 +51,7 @@ export function getSpendToolDefinitions(
         "report goes to this node's inbox for a later pass. The resumption is paid from what this " +
         "run has left, by whoever paid for this run. Without wait, the report goes to this node's " +
         "inbox for its next pass. follow_up_of continues an earlier research run from where it " +
-        "stopped, with its notebook." +
-        (opts.launchesReaders
-          ? " With questions, research is a reader instead: it has open to it the sources that readers of this " +
-            "node's shown page cannot read, it answers each question in the form you set, and its answers come " +
-            "back in place of a report. Your brief says why."
-          : ""),
+        "stopped, with its notebook.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -118,25 +102,6 @@ export function getSpendToolDefinitions(
               "With examine_source_id: what to check, as short labels (\"data\", \"quotation\", \"method\"). " +
               "The Researcher may add one the document turns out to call for.",
           },
-          ...(opts.launchesReaders
-            ? {
-                questions: {
-                  type: "array",
-                  description: `For research: ${QUESTIONS_DESCRIPTION}`,
-                  items: {
-                    type: "object",
-                    properties: {
-                      ask: { type: "string", description: "What you want to know, written for a reader that knows nothing of this node." },
-                      form: { type: "string", enum: [...ANSWER_FORMS] },
-                      unit: { type: "string", description: "For a number: the unit you want it in." },
-                      options: { type: "array", items: { type: "string" }, description: "For a choice: the options." },
-                    },
-                    required: ["ask", "form"],
-                    additionalProperties: false,
-                  },
-                },
-              }
-            : {}),
         },
         required: ["budget_owls", "brief"],
       },
@@ -421,33 +386,9 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
   if (!examineSourceId && input.facets !== undefined) {
     return JSON.stringify({ success: false, message: "facets go with examine_source_id: name the document to examine." });
   }
-  // A reader (services/separate-reader.ts): commissioned with questions, by
-  // a Steward whose node's page is under a standing showing. Whether this
-  // run is one is read from the rule it works under, not from its input.
-  let questions: ReaderQuestion[] | null = null;
-  if (input.questions !== undefined) {
-    const rule = currentSourceTextRule();
-    if (!rule || rule.reader || ctx.agent !== "steward" || !nodeId) {
-      return JSON.stringify({
-        success: false,
-        message:
-          "questions launch a reader, which a Steward does where its node's page is under a standing showing. Here, commission the research without them.",
-      });
-    }
-    if (examineSourceId || input.facets !== undefined) {
-      return JSON.stringify({
-        success: false,
-        message: "A reader answers questions and records nothing on a document, so it takes no examine_source_id.",
-      });
-    }
-    const parsed = parseQuestions(input.questions);
-    if (typeof parsed === "string") return JSON.stringify({ success: false, message: parsed });
-    questions = parsed;
-  }
   const res = await commissionResearch({
     payer,
     nodeId,
-    questions,
     task: brief,
     budgetMicroUsd: budget,
     tier,
@@ -463,8 +404,7 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
   const spent =
     `with a budget of ${owls(budget)} owls from your budget` +
     (after !== null ? ` (you have ${owls(after)} left)` : "") +
-    (examineSourceId ? ", as an examination of the document: its findings go on the document's page and in provenance_get_map" : "") +
-    (questions ? ", as a reader: what returns is its answers, one for each question, and its report stays with its run" : "");
+    (examineSourceId ? ", as an examination of the document: its findings go on the document's page and in provenance_get_map" : "");
   return JSON.stringify({
     success: true,
     research_run_id: res.runId,

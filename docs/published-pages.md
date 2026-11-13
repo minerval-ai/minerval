@@ -33,7 +33,7 @@ outside is to read it, at the moment it was built
 | `state` | The node's state now: not yet assessed, released whole, released in part, or held |
 | `page` | The latest version that is shown: what is always shown, as hashed, with its salt; each released part with its text, marks and salt; each held part with its hash, its kind, who holds it, any reason given and since when; the fingerprint. Where no version has been shown, the latest version as held, by kind and hash alone |
 | `policy` | The version the page was redacted under, in full |
-| `record.made` | The prompt-set hash, the model that assessed and the model that redacted, any addition to a role's prompt, the seal of the assessing run's log with whether its chain checked out, whether the run that wrote the assessment was given the text of sources the page's readers cannot read (`given_source_text`: one of three fixed answers), and how the assessment was paid for |
+| `record.made` | The prompt-set hash, the model that assessed and the model that redacted, any addition to a role's prompt, the seal of the assessing run's log with whether its chain checked out, and how the assessment was paid for |
 | `record.acts` | Everything a person, a rule or the process did on the showing, each with the permissions the person held. People are numbered; no name crosses |
 | `record.versions` | Every version made while the showing stood, held ones as held |
 | `hash`, `signature` | sha256 over the canonical JSON of everything above; Ed25519 over the hash |
@@ -64,14 +64,10 @@ another label under the same page, a label's name, a person's name, the
 deployment's own id for a node that exists only inside) and finds none of
 it in any package.
 
-Three things are added to what is always shown with a page, because the
+Two things are added to what is always shown with a page, because the
 record needs them and they are known only at the page's label: the seal of
-the assessing run's log with whether its chain checked out, whether the run
-that wrote the assessment was given the text of sources the page's readers
-cannot read ([showing-a-page.md](showing-a-page.md), "A separate reader"),
-and how the assessment was paid for. All are in fixed words. The standalone
-check prints the sentence among the things it cannot confirm, since it is
-the deployment's own statement. A funder's declared
+the assessing run's log with whether its chain checked out, and how the
+assessment was paid for. Both are in fixed words. A funder's declared
 stake is said to exist or not; its words stay inside.
 
 ### The key

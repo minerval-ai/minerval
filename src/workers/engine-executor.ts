@@ -88,10 +88,7 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import type { OperatingPolicy } from "../services/operating-policy-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
-import { followedRunOf, renderReaderAnswers, renderResearchReport } from "../services/research-commission-service.js";
-import { answersInOrder } from "../services/reader-answers.js";
-import { sourceTextMarksOfResearch } from "../services/separate-reader.js";
-import { READER_RETURN_NOTE } from "../llm/tools/research-tools.js";
+import { renderResearchReport } from "../services/research-commission-service.js";
 import { deliverReply, resumeMessages, sessionPrivateReasons, takeSessionForResume } from "../services/session-service.js";
 import { runConsistencyChecker } from "../llm/agents/consistency-checker.js";
 import {
@@ -736,13 +733,6 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
   // its claim's map (#865), opened when it was commissioned.
   const examination = run.examination_id ? await getExaminationRow(run.examination_id).catch(() => null) : null;
 
-  // A reader (separate-reader.ts) answers its Steward's questions; a
-  // follow-up opens with an earlier run's report and notebook, and so
-  // starts with that run's marks for the source text it was given.
-  const questions = (run.questions ?? []).length > 0 ? run.questions! : null;
-  const followed = followedRunOf(run.task);
-  const carriedMarks = followed ? await sourceTextMarksOfResearch(followed) : [];
-
   let billedMicroUsd = 0;
   let result: Awaited<ReturnType<typeof runResearcher>> | null = null;
   let failure: unknown = null;
@@ -767,8 +757,6 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
                 ceiling_micro_usd: run.ceiling_micro_usd,
                 notebook: run.notebook,
                 job_id: run.job_id,
-                questions,
-                carried_marks: carriedMarks,
               },
               claim,
               examination: researcherExamination(examination),
@@ -800,7 +788,6 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
     turns: result?.turns,
     servedModels: result?.servedModels,
     error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
-    answers: questions ? (result?.answers ?? answersInOrder(questions, new Map())) : null,
   }).catch(() => null);
   await completeAction(action.id, billedMicroUsd, { meteredJobId: funder.jobId }).catch((err) =>
     console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
@@ -811,23 +798,15 @@ async function runResearchAction(action: RunnableAction): Promise<EngineProcessR
     `SELECT reply_to_session, deliver_to_node FROM research_runs WHERE id = $1`,
     [run.id]
   );
-  const outcome = {
+  const text = renderResearchReport({
     id: run.id,
     status: closed?.status ?? (failure ? "failed" : (result?.status ?? "failed")),
     spent_micro_usd: billedMicroUsd,
     ceiling_micro_usd: Number(run.ceiling_micro_usd),
-  };
-  // A reader's commissioner is given the answers, each beside its question,
-  // and nothing in the reader's own words: no report, no notebook section
-  // names, no error text.
-  const text = questions
-    ? renderReaderAnswers(outcome, questions, closed?.answers ?? answersInOrder(questions, new Map()), READER_RETURN_NOTE)
-    : renderResearchReport({
-        ...outcome,
-        report: result?.report ?? null,
-        notebook: closed?.notebook ?? run.notebook ?? {},
-        error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
-      });
+    report: result?.report ?? null,
+    notebook: closed?.notebook ?? run.notebook ?? {},
+    error: failure ? (failure instanceof Error ? failure.message : String(failure)) : (result?.error ?? null),
+  });
   await deliverReply({
     sessionId: route?.reply_to_session ?? null,
     kind: "research",

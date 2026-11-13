@@ -5693,12 +5693,6 @@ export const researchRuns = pgTable(
     servedModels: jsonb("served_models"),
     report: jsonb("report"),
     notebook: jsonb("notebook").notNull().default({}),
-    // A run launched as a reader (services/separate-reader.ts): the
-    // questions its launcher asked, each with the form its answer takes,
-    // and the answers as they were checked and stored. Null on every other
-    // run. The launcher is given the answers and not the report.
-    questions: jsonb("questions"),
-    answers: jsonb("answers"),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     error: text("error"),

@@ -32,8 +32,6 @@ import {
 import { placeCommission, type CommissionPayer } from "./commission-service.js";
 import { registerAwait } from "./session-service.js";
 import { ExaminationError, linkResearchRun, openExamination } from "./examination-service.js";
-import { answersForLauncher, type ReaderAnswer, type ReaderQuestion } from "./reader-answers.js";
-import { FOLLOW_UP_NOT_GIVEN, mayBeGivenReportOfResearch } from "./separate-reader.js";
 
 export const RESEARCH_GROUP = (runId: string) => `research:${runId}`;
 
@@ -56,12 +54,6 @@ export async function commissionResearch(input: {
   followUpOf?: string | null;
   /** Run it as an examination of this document in the node's map, checking these facets. */
   examine?: { sourceId: string; facets: unknown } | null;
-  /**
-   * Commission the run as a reader (separate-reader.ts): it has open to it
-   * the sources its commissioning Steward is not given, and what returns is
-   * one answer for each of these questions, in the form asked.
-   */
-  questions?: ReaderQuestion[] | null;
   /** The mandate the research serves, when a Grantmaker commissions it. */
   grantId?: string | null;
   /**
@@ -80,20 +72,8 @@ export async function commissionResearch(input: {
       return { ok: false, message: `Research run ${input.followUpOf} served another node; follow up only runs commissioned from this one.` };
     }
   }
-  // A follow-up opens with the earlier run's report and notebook. Where
-  // that run had the text of sources the commissioning run is not given
-  // (separate-reader.ts), an ordinary follow-up would carry its words to a
-  // run whose own report returns to the page's writer, so it is refused; a
-  // reader may continue it, since a reader is given that text anyway. Where
-  // the commissioning run may be given the report, it takes on that run's
-  // marks here, and the follow-up takes them on when it starts
-  // (followedRunOf, read by the engine).
-  const asReader = (input.questions ?? []).length > 0;
-  if (prior && !asReader && !(await mayBeGivenReportOfResearch(prior.id))) {
-    return { ok: false, message: FOLLOW_UP_NOT_GIVEN };
-  }
   const task = prior
-    ? `${FOLLOW_UP_OPENING}${prior.id}. Its brief was:\n\n${prior.task}\n\n` +
+    ? `This continues research run ${prior.id}. Its brief was:\n\n${prior.task}\n\n` +
       `It ended ${prior.status}${prior.report ? `, reporting:\n\n${JSON.stringify(prior.report).slice(0, 12000)}` : ""}.\n\n` +
       `Its notebook is open below. The follow-up asks:\n\n${input.task}`
     : input.task;
@@ -142,7 +122,6 @@ export async function commissionResearch(input: {
     includeConstitution: true,
     ceilingMicroUsd: budget,
     notebook: prior ? carriedNotebook(prior) : null,
-    questions: asReader ? input.questions : null,
   });
   if (examination) await linkResearchRun(examination.id, run.id);
   const [action] = await rawQuery<{ id: string }>(
@@ -174,41 +153,6 @@ export async function commissionResearch(input: {
     [run.id, sessionId, input.nodeId]
   );
   return { ok: true, runId: run.id, actionId: action!.id, waits: sessionId !== null };
-}
-
-/** How a follow-up's task opens, written here and read back by followedRunOf. */
-const FOLLOW_UP_OPENING = "This continues research run ";
-
-/**
- * The run a follow-up continues, read from the opening this module wrote
- * at the head of its task. The engine asks so that a follow-up starts with
- * the marks of the run whose report and notebook it opens with
- * (separate-reader.ts). The opening is written by code, before any of the
- * commissioning agent's words, so an agent cannot write one or remove it.
- */
-export function followedRunOf(task: string): string | null {
-  if (!task.startsWith(FOLLOW_UP_OPENING)) return null;
-  const id = task.slice(FOLLOW_UP_OPENING.length, FOLLOW_UP_OPENING.length + 36);
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : null;
-}
-
-/**
- * How a reader's outcome reads where it is delivered: its answers, each
- * beside its question, and nothing in the reader's own words. No report,
- * no notebook section names, no error text (separate-reader.ts).
- */
-export function renderReaderAnswers(
-  run: { id: string; status: string; spent_micro_usd: number; ceiling_micro_usd: number },
-  questions: readonly ReaderQuestion[],
-  answers: readonly ReaderAnswer[],
-  note: string
-): string {
-  const owls = (m: number) => Math.round(Number(m) / 10_000) / 100;
-  return (
-    `Research run ${run.id}, a reader, ended ${run.status}, having spent ${owls(run.spent_micro_usd)} of its ` +
-    `${owls(run.ceiling_micro_usd)} owls.\n\n` +
-    `${JSON.stringify({ answers: answersForLauncher(questions, answers) }, null, 1)}\n\n${note}`
-  );
 }
 
 /** How a research run's outcome reads where it is delivered. */

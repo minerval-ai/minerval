@@ -37,7 +37,6 @@ import { currentLabel } from "../llm/usage-context.js";
 import { publishedPageAsText, shapeOfPublishedPage, type PublishedPageShape } from "../published-page/shape.js";
 import {
   ATTESTATION_WORDS,
-  GIVEN_SOURCE_TEXT_WORDS,
   HOSTING_WORDS,
   registrationStatement,
   verifyPublishedPage,
@@ -252,7 +251,6 @@ export function sourceTextOf(
       `assessed by ${made?.assessed_by_model ?? "a model not recorded"}; redacted by ${made?.redacted_by_model ?? "a model not recorded"}; ` +
       `additions by the deployment to a role's prompt: ${(made?.role_additions ?? []).length === 0 ? "none" : JSON.stringify(made!.role_additions)}.`,
     runLogWords(made?.run_log ?? null),
-    GIVEN_SOURCE_TEXT_WORDS[made?.given_source_text ?? "not_recorded"] ?? GIVEN_SOURCE_TEXT_WORDS.not_recorded,
     `Paid for by: ${made?.paid_for?.by ?? "not recorded"}${made?.paid_for && made.paid_for.stake !== "not recorded" ? `; ${made.paid_for.stake}` : ""}.`,
     `Removals under the policy: ${removals.length === 0 ? "none" : removals.map(([c, n]) => `${c}: ${n}`).join(", ")}.`,
     `Audit's check of the redaction there: ${pkg.page!.audit ?? "not recorded"}`,

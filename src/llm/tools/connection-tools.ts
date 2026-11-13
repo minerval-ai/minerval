@@ -58,7 +58,6 @@ import {
   type RateState,
 } from "../../services/reading-service.js";
 import { currentLabel } from "../usage-context.js";
-import { connectionLabelOfReading, givenSourceText, withheldFromThisRun } from "../../services/separate-reader.js";
 
 export const OPEN_READING_TOOL_NAME = "open_reading";
 export const KEEP_READING_TOOL_NAME = "keep_reading";
@@ -66,12 +65,6 @@ export const KEEP_READING_TOOL_NAME = "keep_reading";
 export interface ConnectionToolBundle {
   /** The connections' tools, then open_reading and keep_reading. Empty when the run has no connection. */
   definitions: Tool[];
-  /**
-   * The connections this run would have and is not offered because it
-   * writes a page shown to readers who cannot read them
-   * (services/separate-reader.ts), by name.
-   */
-  notOffered?: string[];
   /** The passage for the run's task message. Empty when the run has no connection. */
   note: string;
   /** Run one of the bundle's tools; null for any other tool name. */
@@ -299,11 +292,6 @@ async function call(
 async function open(input: Record<string, unknown>): Promise<string> {
   const offset = Number(input.offset);
   const maxChars = Number(input.max_chars);
-  // A run that writes a shown page is not given the text of sources its
-  // readers cannot read, and any other run is marked with what it is given
-  // (services/separate-reader.ts).
-  const notGiven = givenSourceText(await connectionLabelOfReading(String(input.reading ?? "")), "That reading");
-  if (notGiven) return notGiven;
   const opened = await openReading({
     readingId: String(input.reading ?? ""),
     offset: Number.isFinite(offset) ? offset : undefined,
@@ -341,13 +329,8 @@ export async function createConnectionTools(opts: { config?: ReadsConfig } = {})
   // has administrators (src/permissions.ts).
   if (!membersOnly(opts.config)) return NO_CONNECTION_TOOLS;
   const runLabel = currentLabel();
-  const reached = await connectionsOfferedAt(runLabel);
-  // Where this run writes a page shown to readers who do not read its
-  // label, the connections those readers cannot read are not offered to it
-  // (services/separate-reader.ts). It is told which, by its own brief.
-  const connections = reached.filter((c) => !withheldFromThisRun(c.label));
-  const notOffered = reached.filter((c) => withheldFromThisRun(c.label)).map((c) => c.name);
-  if (connections.length === 0) return notOffered.length > 0 ? { ...NO_CONNECTION_TOOLS, notOffered } : NO_CONNECTION_TOOLS;
+  const connections = await connectionsOfferedAt(runLabel);
+  if (connections.length === 0) return NO_CONNECTION_TOOLS;
 
   const byName = new Map<string, { connection: RunConnection; tool: OfferedTool }>();
   for (const connection of connections) {
@@ -363,15 +346,12 @@ export async function createConnectionTools(opts: { config?: ReadsConfig } = {})
       getKeepReadingToolDefinition(),
     ],
     note: connectionsNote(connections, runLabel),
-    notOffered,
     execute: async (name, input) => {
       try {
         if (name === OPEN_READING_TOOL_NAME) return await open(input);
         if (name === KEEP_READING_TOOL_NAME) return await keep(input);
         const offered = byName.get(name);
         if (!offered) return null;
-        const notGiven = givenSourceText([offered.connection.label], "What that connection returns");
-        if (notGiven) return notGiven;
         return await call(offered.connection, offered.tool, input ?? {});
       } catch (err) {
         // A reading the run may not be told of, or that has nothing to
