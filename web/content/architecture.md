@@ -646,6 +646,17 @@ carries that party's recorded stake. It is cited and read like any other
 source, and nothing outside is asked about it. The public graph has no
 connections. [connections.md](connections.md) has the whole of it.
 
+The same deployment can hold **file sets**: files of any kind (data, logs,
+transcripts, code) taken in together, each file hashed when added, which
+agents explore by running commands in a sandbox the deployment runs, with
+no network. Two more kinds of source come from them. An **analysis** is one
+command an agent ran, kept as the command, any script given with it, the
+sets it could read with their hashes, and its output (`analysis:<id>`). A
+kept **file**, or a passage of one, is the file's own text under its hash
+(`fileset:<set>/<path>`). Both belong to the party whose files they are and
+carry that party's recorded stake. The public graph has no file sets.
+[file-sets.md](file-sets.md) has the whole of it.
+
 #### Source provenance: what the support rests on
 
 A count of a claim's instances treats every appearance as one independent
@@ -2372,7 +2383,9 @@ through an organization's identity provider are in
 [accounts.md](accounts.md), "Members-only deployments". Such a deployment's
 administrators can also connect it to the organization's own systems, so
 that its agents read data where it lives
-([connections.md](connections.md)). With the setting at its starting value
+([connections.md](connections.md)), and the people who direct it can add
+sets of files for its agents to explore in a sandbox it runs
+([file-sets.md](file-sets.md)). With the setting at its starting value
 none of that code runs.
 
 ---

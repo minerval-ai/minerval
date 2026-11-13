@@ -31,7 +31,11 @@
  * carries the connection's label, and so does what any run finds out about
  * the connection (that its server answered, that a tool changed). A call,
  * and the source kept from one, are the run's: its arguments are the run's
- * own words. The tables that carry none are the accounts and their keys,
+ * own words. A set of files (src/file-sets.ts) is the same: the set's
+ * label is named by the person who adds it, its manifest and a file kept
+ * from it are the set's own material and carry the set's label whichever
+ * run keeps the file, and a command a run runs against it, with the
+ * analysis kept from one, is the run's. The tables that carry none are the accounts and their keys,
  * the owl ledger and what is paid from it, the platform's own switches and
  * counters, and the labels themselves.
  * The column is not simply `label` because that name is already a display

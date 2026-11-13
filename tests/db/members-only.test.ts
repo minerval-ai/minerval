@@ -474,6 +474,28 @@ describe("what a permission guards", () => {
       "PATCH /connections/:connection_id": ["administer"],
       "POST /connections/:connection_id/look": ["administer"],
       "PUT /connections/:connection_id/tools": ["administer"],
+      // Sets of files for the agents to read (tests/db/file-sets.test.ts).
+      "POST /file-sets": ["direct"],
+      "PUT /file-sets/:file_set_id/files/*": ["direct"],
+      "POST /file-sets/:file_set_id/close": ["direct"],
+      "PATCH /file-sets/:file_set_id": ["direct"],
+      // Registering a directory decides what label files already on the
+      // deployment's disk get, which is an administrator's to decide.
+      "POST /file-sets/register": ["administer"],
+      "POST /file-sets/:file_set_id/rehash": ["administer"],
+    });
+    // The routes that any one of several permissions opens: the reads of
+    // the file sets, for a person who directs, who uploads sets, or an
+    // administrator, who registers directories as sets.
+    expect(
+      Object.fromEntries(
+        app.routeCatalog.filter((r) => (r.anyPermissions ?? []).length > 0).map((r) => [routeKey(r.method, r.url), r.anyPermissions])
+      )
+    ).toEqual({
+      "GET /file-sets": [["direct", "administer"]],
+      "GET /file-sets/:file_set_id": [["direct", "administer"]],
+      "GET /file-sets/:file_set_id/files": [["direct", "administer"]],
+      "GET /file-sets/:file_set_id/commands": [["direct", "administer"]],
     });
   });
 

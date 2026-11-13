@@ -191,13 +191,13 @@ describe("the labels table", () => {
         "claim_relationships", "claim_source_maps", "claims", "connection_calls", "connection_tools", "connections", "consistency_flags", "consistency_sweeps",
         "contribution_reviews", "contributions", "correspondent_events", "correspondent_plan_items",
         "correspondent_updates", "correspondents", "curation_requests", "enqueue_events", "examination_coverage",
-        "examination_findings", "examinations", "grant_conversations", "grant_sources", "grants", "ingest_focuses",
+        "examination_findings", "examinations", "file_set_files", "file_set_keeps", "file_sets", "grant_conversations", "grant_sources", "grants", "ingest_focuses",
         "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events", "lookout_feed_items",
         "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events", "mandate_inbox",
         "mandate_policy_versions", "mandate_valuations", "mirror_node_changes", "node_messages", "outbound_packages", "outbound_proposals", "outbound_sends", "petitions", "prize_claims", "proof_attempts", "published_page_packages", "published_pages", "publishers", "quantity_cuts",
         "quantity_definitions", "quantity_estimates", "quantity_readings", "question_assessments",
         "reading_citations", "reconciliation_events", "redaction_policies", "regrants", "release_rules", "reputation_events", "request_targets", "request_work",
-        "requests", "research_runs", "setup_parts", "shared_page_analyses", "showing_acts", "showing_pages", "showing_parts", "showing_removals", "showings", "shown_nodes", "shown_pages", "shown_parts", "shown_showings", "source_events", "source_extractions",
+        "requests", "research_runs", "sandbox_calls", "setup_parts", "shared_page_analyses", "showing_acts", "showing_pages", "showing_parts", "showing_removals", "showings", "shown_nodes", "shown_pages", "shown_parts", "shown_showings", "source_events", "source_extractions",
         "source_interests", "source_relationships", "source_segments", "sources", "stated_views", "steward_slots", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );

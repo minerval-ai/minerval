@@ -501,15 +501,43 @@ const ratingWords = (verdict: string, decisive: boolean): string =>
  */
 /**
  * The sources kept in work on these nodes: a reading made through a
- * connection that a run working on the node turned into a source
- * (services/reading-service.ts). An agent keeps a reading when a judgment
- * rests on it, so a kept reading is a source the node's page drew on whether
- * or not an instance was recorded from it, and the party whose system it
- * was read from is asked like any source's. The call's row says which node
- * its run was working on. Read at the page's label, so it finds what that
- * label reads.
+ * connection, or an analysis run in the sandbox over a set of files, that a
+ * run working on the node turned into a source (services/reading-service.ts,
+ * services/analysis-service.ts). An agent keeps one when a judgment rests on
+ * it, so it is a source the node's page drew on whether or not an instance
+ * was recorded from it, and the party whose system or files it came from is
+ * asked like any source's. The call's row says which node its run was
+ * working on. Read at the page's label, so it finds what that label reads.
+ *
+ * A file kept from a set is not found this way: it is the set's own
+ * material, kept at the set's label by a row that names no run and no node,
+ * so it counts where an instance or a judgment's record ties it to the node.
  */
-const KEPT_IN_WORK_ON_SQL = `SELECT DISTINCT source_id FROM connection_calls WHERE claim_id = ANY($1::uuid[]) AND source_id IS NOT NULL`;
+const KEPT_IN_WORK_ON_SQL = `SELECT DISTINCT source_id
+   FROM (SELECT source_id, claim_id, sensitivity_label FROM connection_calls
+         UNION ALL
+         SELECT source_id, claim_id, sensitivity_label FROM sandbox_calls) kept
+  WHERE claim_id = ANY($1::uuid[]) AND source_id IS NOT NULL`;
+
+/**
+ * The parties whose files an analysis could read, for each source that is a
+ * kept analysis. A command is recorded with every set it had mounted, and
+ * the deployment cannot tell which of their files it opened, so an analysis
+ * rests on each of those sets' parties. (A source carries one party at
+ * most, and an analysis over two parties' sets carries none.)
+ */
+async function partiesOfAnalyses(sourceIds: readonly string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (sourceIds.length === 0) return out;
+  const rows = await rawQuery<{ source_id: string; file_sets: Array<{ party_id?: string }> | null }>(
+    `SELECT source_id, file_sets FROM sandbox_calls WHERE source_id = ANY($1::uuid[])`,
+    [[...sourceIds]]
+  );
+  for (const r of rows) {
+    out.set(r.source_id, [...new Set((r.file_sets ?? []).map((s) => s.party_id).filter((p): p is string => typeof p === "string"))]);
+  }
+  return out;
+}
 
 async function keptInWorkOn(nodeIds: readonly string[], atLabel?: string): Promise<string[]> {
   if (nodeIds.length === 0) return [];
@@ -663,6 +691,21 @@ async function readPage(
     // The sources of the readings recorded at this label, and the sources kept at this label in work on the node.
     [[...new Set([...instances.map((i) => i.source_id), ...(await keptInWorkOn([node.id], label))])]]
   );
+  // An analysis over more than one party's files carries no one party: who
+  // supplied it is read from the sets its command had mounted.
+  const analysed = await partiesOfAnalyses(sourceFacts.filter((s) => s.party === null).map((s) => s.id));
+  if (analysed.size > 0) {
+    const named = await rawQuery<{ id: string; name: string; own: boolean }>(
+      `SELECT id, name, is_own_organization AS own FROM parties WHERE id = ANY($1::uuid[]) ORDER BY name, id`,
+      [[...new Set([...analysed.values()].flat())]]
+    );
+    for (const s of sourceFacts) {
+      const parties = named.filter((p) => (analysed.get(s.id) ?? []).includes(p.id));
+      if (parties.length === 0) continue;
+      s.party = parties.map((p) => p.name).join("; ");
+      s.own = parties.every((p) => p.own);
+    }
+  }
   const interests = await rawQuery<{ source_id: string; party: string; stake: string }>(
     `SELECT source_id, party, stake FROM source_interests
       WHERE source_id = ANY($1::uuid[]) AND (claim_id IS NULL OR claim_id = $2) ORDER BY created_at, id`,
@@ -810,8 +853,14 @@ async function partiesFor(sourceIds: readonly string[], showing: ShowingRow, own
     [[...sourceIds], showing.to_label ?? PUBLIC_LABEL, showing.to_outside]
   );
   const parties = new Set<string>();
+  const analysed = await partiesOfAnalyses(rows.filter((s) => !s.already_read && s.party_id === null).map((s) => s.id));
   for (const s of rows) {
     if (s.already_read) continue;
+    const ofSets = analysed.get(s.id);
+    if (ofSets && ofSets.length > 0) {
+      for (const party of ofSets) parties.add(party);
+      continue;
+    }
     if (s.source_type === "shown_page") {
       // A shown page's source is addressed by its page (release-gate-service.ts, arrive), whichever arrival it was.
       const shownPageId = /^minerval:shown-page\/([0-9a-f-]{36})\//.exec(s.url ?? "")?.[1] ?? null;

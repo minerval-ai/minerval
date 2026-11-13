@@ -63,7 +63,7 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|showings|release|redaction-policies|outbound|connections)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|showings|release|redaction-policies|outbound|connections|file-sets)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
 const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(key.slice(key.indexOf(" ") + 1));
 const openRouteTools = () =>
   Object.entries(ROUTE_TOOLS)
@@ -515,8 +515,23 @@ describe("in a members-only deployment", () => {
 
     const reader = toolsOf([]);
     expect(needing("release").sort()).toEqual(["get_release_queue", "list_release_rules"]);
-    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("release")]);
+    // A route that any one of several permissions opens (the reads of the
+    // file sets, for a person who directs or an administrator) is left out
+    // for a caller who holds none of them, and offered to one who holds any.
+    const needingAnyOf = membersApp.routeCatalog
+      .filter((r) => (r.anyPermissions ?? []).length > 0)
+      .flatMap((r) => {
+        const tool = ROUTE_TOOLS[routeKey(r.method, r.url)];
+        return tool ? [tool.name] : [];
+      });
+    expect(needingAnyOf.sort()).toEqual(["get_file_set", "list_file_set_commands", "list_file_set_files", "list_file_sets"]);
+    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("release"), ...needingAnyOf]);
     expect([...reader].sort()).toEqual(all.filter((name) => !gone.has(name)).sort());
+    for (const holding of [["direct"], ["administer"]]) {
+      const tools = toolsOf(holding);
+      for (const name of needingAnyOf) expect(tools, `${name} for a holder of ${holding[0]}`).toContain(name);
+    }
+    for (const name of needingAnyOf) expect(toolsOf(["fund"]), name).not.toContain(name);
 
     const funder = toolsOf(["fund"]);
     for (const name of needing("fund")) expect(funder, name).toContain(name);

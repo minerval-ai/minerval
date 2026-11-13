@@ -124,6 +124,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing. It returns a count, which the route gives the administrator as how many rows the list leaves out. No row's content is read.",
     ],
   ],
+  "src/services/file-set-service.ts": [
+    [
+      "A person is told how many of the commands run against a file set their clearance leaves out of the list; the count is of rows at every label.",
+      "Nothing. It returns a count, which the route gives the person as how many commands the list leaves out. No row's content is read.",
+    ],
+  ],
   "src/services/setup-service.ts": [
     [
       "A setup part is stored once for every label and numbered across all of them, so storing one must see them all.",

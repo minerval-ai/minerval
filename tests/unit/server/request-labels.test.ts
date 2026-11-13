@@ -97,6 +97,8 @@ describe("every route that writes has a rule for its label", () => {
       "POST /contributions",
       "POST /extension/analyze",
       "POST /extension/chat",
+      "POST /file-sets",
+      "POST /file-sets/register",
       "POST /grant-conversations",
       "POST /grants",
       "POST /pages",

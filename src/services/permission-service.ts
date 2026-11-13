@@ -571,8 +571,8 @@ export async function listAccounts(input: { q?: string; limit?: number } = {}): 
  * for. A deployment may hold material from parties who are not to learn of
  * each other, and label and party names can say who they are. A connection
  * is named, with its tools, only to a reader cleared for its label, for the
- * same reason. That an act happened, who did it, to whom, and when, is never
- * withheld.
+ * same reason, and so is a file set. That an act happened, who did it, to
+ * whom, and when, is never withheld.
  */
 /** The administrative acts logged besides grants (administrative_events.action). */
 export type AdministrativeAction =
@@ -587,7 +587,13 @@ export type AdministrativeAction =
   | "connection_added"
   | "connection_changed"
   | "connection_tools_offered"
-  | "connection_tool_withdrawn";
+  | "connection_tool_withdrawn"
+  // File sets (src/file-sets.ts, services/file-set-service.ts). These are
+  // acts of a person who directs the graph, logged with the administrative
+  // ones because they change what agents may read.
+  | "file_set_added"
+  | "file_set_closed"
+  | "file_set_changed";
 
 export interface LogEntry {
   event: "granted" | "removed" | AdministrativeAction;
@@ -616,6 +622,13 @@ export interface LogEntry {
   /** A tool withdrawn from agents, and why: changed, missing or address_changed. */
   tool?: string;
   reason?: string;
+  /** The file set an act was about, by name. */
+  file_set?: string | { withheld: true };
+  /** On a set's closing: how many files it holds, and the hash that fixes them. */
+  files?: number;
+  manifest_sha256?: string;
+  /** On a set switched off or on. */
+  enabled?: boolean;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -652,6 +665,19 @@ export async function permissionLog(
     const connection = connections.get(id);
     if (!connection) return WITHHELD;
     return administers || cleared.has(connection.sensitivity_label) ? connection.name : WITHHELD;
+  };
+  // A file set's name can say as much, and is shown on the same terms.
+  const fileSets = new Map(
+    (
+      await rawQuery<{ id: string; name: string; sensitivity_label: string }>(
+        `SELECT id, name, sensitivity_label FROM file_sets`
+      )
+    ).map((f) => [f.id, f])
+  );
+  const fileSetName = (id: string) => {
+    const set = fileSets.get(id);
+    if (!set) return WITHHELD;
+    return administers || cleared.has(set.sensitivity_label) ? set.name : WITHHELD;
   };
   const labelName = (name: string) => (administers || cleared.has(name) ? name : WITHHELD);
   const partyName = (id: string) => {
@@ -740,6 +766,13 @@ export async function permissionLog(
         if (dropped) entry.no_longer_offered = dropped;
         if (typeof d.tool === "string") entry.tool = d.tool;
       }
+    }
+    if (typeof d.file_set_id === "string") {
+      entry.file_set = fileSetName(d.file_set_id);
+      if (typeof d.files === "string") entry.files = Number(d.files);
+      if (typeof d.manifest_sha256 === "string") entry.manifest_sha256 = d.manifest_sha256;
+      if (typeof d.changed === "string" && d.changed.length > 0) entry.changed = d.changed.split("\n");
+      if (typeof d.enabled === "string") entry.enabled = d.enabled === "true";
     }
     return entry;
   });

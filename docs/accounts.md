@@ -155,12 +155,12 @@ code decides who should hold which.
 
 | permission | held | lets its holder | never lets anyone |
 |---|---|---|---|
-| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)) | edit an assessment or a run's log |
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, among them sets of files they upload, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)) | edit an assessment or a run's log |
 | `release` | for one party | release or hold, part by part, what a page shown to readers who do not read its label carries of that party's material, set standing rules for it ([showing-a-page.md](showing-a-page.md)), and release the words a node is proposed to the public graph in | edit what the agents wrote, or release another party's material |
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
-| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files | act under a permission they have not also been granted, or change who may do what without a log entry |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
@@ -185,6 +185,7 @@ The routes a permission guards, in each mode (`requirePermission` in
 | `POST /grants` | a direct service caller | `direct` and `fund` |
 | the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
 | the routes for connections ([connections.md](connections.md)) | not mounted | `administer`, and a signed-in session for every write |
+| the routes for file sets ([file-sets.md](file-sets.md)) | not mounted | `direct` for the reads and for uploading a set; `administer` for registering a directory, which decides what label files already on the deployment's disk get; a set's label within the caller's clearance, and a signed-in session for every write |
 
 Taking money back asks for no permission in either mode: withdrawing from a
 mandate, cancelling a grant, a job or an order. A funder may take back
@@ -350,8 +351,9 @@ not MCP tools; the reads are.
 `permission_grants` is state and log in one. A row is a grant; removing it
 marks the same row with who removed it and when; no row is deleted. The
 other administrative acts (a label defined, a pair of labels added or
-removed, a party added, a source's party set, and every change to a
-connection or to the tools it offers) each write a row to
+removed, a party added, a source's party set, every change to a
+connection or to the tools it offers, and a file set added, closed or
+switched off, whoever's act it was) each write a row to
 `administrative_events` in the same transaction as the change. The last
 live grant of `administer` cannot be removed.
 
@@ -361,7 +363,8 @@ a label the reader is not cleared for, or of a party that is neither the
 organization itself nor one the reader holds `release` for, is replaced by
 `{"withheld": true}`: a deployment may hold material from parties who are
 not to learn of each other. A connection's name and its tools' names are
-withheld the same way from a reader not cleared for the connection's label. That an act happened, who did it, to whom and
+withheld the same way from a reader not cleared for the connection's label,
+and so is a file set's name. That an act happened, who did it, to whom and
 when is always shown.
 
 ### The first administrator

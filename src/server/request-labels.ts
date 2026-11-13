@@ -75,6 +75,7 @@ export const CARRIERS = {
   showing_page: { table: "showing_pages", noun: "page under a showing" },
   proof_attempt: { table: "proof_attempts", noun: "proof attempt" },
   connection: { table: "connections", noun: "connection" },
+  file_set: { table: "file_sets", noun: "file set" },
 } as const;
 
 export type Carrier = keyof typeof CARRIERS;
@@ -327,6 +328,28 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     "connection_id",
     "Changes which of the connection's tools are offered: rows at the connection's label."
   ),
+
+  // ---- file sets: members-only deployments only ----
+  "POST /file-sets": {
+    rule: "chosen",
+    why: "A set of files is new material. The person adding it names its label among the labels they read.",
+  },
+  "POST /file-sets/register": {
+    rule: "chosen",
+    why: "A directory registered as a set is new to the graph: the administrator names the label its files get, among the labels they read.",
+  },
+  "PUT /file-sets/:file_set_id/files/*": from(
+    "file_set",
+    "file_set_id",
+    "A file uploaded into a set is a row of the set's manifest, which carries the set's label."
+  ),
+  "POST /file-sets/:file_set_id/close": from("file_set", "file_set_id", "Closing a set changes the set's own row."),
+  "POST /file-sets/:file_set_id/rehash": from(
+    "file_set",
+    "file_set_id",
+    "Walking a registered directory again rewrites the set's manifest, at the set's label."
+  ),
+  "PATCH /file-sets/:file_set_id": from("file_set", "file_set_id", "Switching a set off or on changes the set's own row."),
 
   // ---- a shown page leaves the deployment: members-only deployments only ----
   "POST /outbound/send": { rule: "none", why: OUTBOUND },

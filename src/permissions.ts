@@ -76,7 +76,7 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "direct the graph",
     covers:
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
-      "Correspondent for an update, add sources, ask for a node's page to be shown to readers " +
+      "Correspondent for an update, add sources, among them sets of files they upload, ask for a node's page to be shown to readers " +
       "who do not read its label, end a standing showing, hold a page that has not been shown, send what a " +
       "showing outside has released to the public graph, and write the words a node is proposed there in.",
     never: "Edit an assessment or a run's log.",
@@ -117,8 +117,9 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     covers:
       "Grant and remove permissions, define labels and which label reads which, add parties, " +
       "say whose material a source is, save the redaction policy of a boundary, sign the statement that " +
-      "registers the deployment's key to an account on the public graph, and connect the deployment to an " +
-      "organization's systems and pick which of their tools agents are offered.",
+      "registers the deployment's key to an account on the public graph, connect the deployment to an " +
+      "organization's systems and pick which of their tools agents are offered, and register a directory on " +
+      "the deployment's disk as a set of files.",
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",
@@ -208,6 +209,13 @@ export interface ReadsConfig {
  */
 export function membersOnly(config: ReadsConfig = loadConfig()): boolean {
   return config?.reads === "members";
+}
+
+/** What a refusal says where any one of several permissions would do. */
+export function anyPermissionRefusal(permissions: readonly PermissionName[]): string {
+  const phrases = permissions.map((p) => `the permission to ${PERMISSION_DEFINITIONS[p].phrase}`);
+  const listed = phrases.length <= 1 ? (phrases[0] ?? "") : `${phrases.slice(0, -1).join(", ")} or ${phrases[phrases.length - 1]!}`;
+  return `This needs ${listed}, and this account holds ${phrases.length === 2 ? "neither" : "none of them"}. An administrator of this deployment grants them.`;
 }
 
 /** What a refusal for a missing permission says. */

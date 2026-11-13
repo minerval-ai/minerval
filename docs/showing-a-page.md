@@ -265,7 +265,15 @@ record when the page is opened (`partiesFor`):
 - what a node rests on is the sources recorded against its judgment, and
   the same for every premise recorded against it, to the end. A judgment
   whose inputs were not recorded is taken to rest on what is attached to
-  its node now.
+  its node now;
+- and the sources kept in work on the node: a reading made through a
+  connection, or an analysis run over a set of files, that a run working on
+  the node kept as a source ([connections.md](connections.md),
+  [file-sets.md](file-sets.md)). An agent keeps one when a judgment rests
+  on it, so it counts whether or not an instance was recorded from it. A
+  reading rests on the party whose system it was read from. An analysis
+  rests on the party of every set its command had mounted, since the
+  deployment cannot tell which of their files a command opened.
 
 A source the destination already reads takes no release. A source with no
 party on record is the organization's. A part that rests on no party's
@@ -373,7 +381,13 @@ was written at.
   above.
 - **Whose release a part takes is worked out from what is recorded.** A run
   that read a document without recording it as a source of the node leaves
-  no trace for this to find.
+  no trace for this to find. The same goes for a call through a connection,
+  or a command over a set of files, that the run made and did not keep: its
+  party is not asked. Those calls are on record with their run and their
+  party, so asking every party whose material a node's runs read, kept or
+  not, could be built; it would ask parties about pages that rest on
+  nothing of theirs. A file kept from a set and cited nowhere on the node
+  is not found either: the row that keeps it names no run and no node.
 
 ## Routes and tools
 

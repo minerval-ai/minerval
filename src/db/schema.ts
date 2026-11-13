@@ -2184,6 +2184,218 @@ export const connectionCalls = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// file_sets: files of any kind, taken in as a set (src/file-sets.ts)
+//
+// The third way material comes into a private deployment, beside a document
+// and a connection: data exports, logs, evaluation transcripts, code, too
+// large or too raw to be documents. Agents explore a set by running
+// commands in a sandbox the deployment runs, with no network. The public
+// graph has none.
+//
+// What a set holds:
+//   - a name people and agents know it by, and a slug: a short lower-case
+//     word that is the set's directory name in the store and in the
+//     sandbox, and the first part of the address of every file kept from
+//     it. `description` is what whoever added it says it holds.
+//   - where its files are. origin is 'upload' (files streamed in through
+//     the route and kept in the deployment's store) or 'directory' (a
+//     directory already under the root the operator configured, read where
+//     it lies). storage_key is the set's path under the store or under that
+//     root, never an absolute path: the API and the sandbox mount the same
+//     files at different places. Both names are the code's and not held to
+//     a list here.
+//   - whose material it is (party_id) and what that party stands to gain or
+//     lose from what the files show (stake), as a connection has. Both are
+//     carried by every source kept from the set.
+//   - its one label (sensitivity_label): who may read its files. A run is
+//     offered the set only when the label it works at reads this one. The
+//     column has the shared default like every labelled table; the service
+//     that adds a set always states the label.
+//   - state: 'open' while files are being uploaded, 'hashing' while a
+//     registered directory is walked, then 'closed', or 'failed' with
+//     `problem` saying why. A set is closed once filled: no file is added,
+//     changed or removed afterwards, and new files are a new set. Only a
+//     closed set is offered to a run.
+//   - file_count, total_bytes and manifest_hash, written when it closes.
+//     manifest_hash is one SHA-256 over every file's hash and path, so it
+//     fixes the whole set.
+//   - enabled: false switches it off, so no run is offered it. A set is
+//     never deleted, since calls and kept sources refer to it.
+// ---------------------------------------------------------------------------
+export const fileSets = pgTable(
+  "file_sets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description").notNull().default(""),
+    origin: text("origin").notNull(),
+    storageKey: text("storage_key").notNull(),
+    partyId: uuid("party_id")
+      .notNull()
+      .references(() => parties.id),
+    stake: text("stake").notNull(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    state: text("state").notNull().default("open"),
+    problem: text("problem"),
+    fileCount: integer("file_count").notNull().default(0),
+    totalBytes: bigint("total_bytes", { mode: "number" }).notNull().default(0),
+    manifestHash: text("manifest_hash"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    enabled: boolean("enabled").notNull().default(true),
+    createdBy: uuid("created_by").references((): AnyPgColumn => contributors.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("uq_file_sets_name").on(sql`lower(${table.name})`),
+    uniqueIndex("uq_file_sets_slug").on(table.slug),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// file_set_files: a set's manifest
+//
+// One row per file: its path inside the set, its size, and the SHA-256
+// taken when it was added. Rows are written while the set fills and never
+// changed afterwards.
+//
+// sensitivity_label is the set's: a path can say as much as the file it
+// names (a person, a customer, a project), and a hash answers whether a
+// known file is in the set. The row is derived from the set, the same
+// whoever asks, so it carries the set's label (src/labels.ts).
+// ---------------------------------------------------------------------------
+export const fileSetFiles = pgTable(
+  "file_set_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fileSetId: uuid("file_set_id")
+      .notNull()
+      .references(() => fileSets.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull(),
+    sha256: text("sha256").notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_file_set_files_path").on(table.fileSetId, table.path)]
+);
+
+// ---------------------------------------------------------------------------
+// sandbox_calls: every command an agent ran in the sandbox
+//
+// One row per command: the command line, the files the agent gave with it
+// (a script, usually; `files` holds each one's path, text and SHA-256), the
+// sets it could read (`file_sets`: each one's id, name, slug, manifest hash
+// and where it was mounted), when, and what came back. The output is stored
+// whole as text with its SHA-256, whatever part of it the agent was shown.
+// outcome is NULL while the command is running, then how it ended:
+// 'exited' (with exit_code), 'timed_out', 'memory', 'output_ceiling',
+// 'scratch_full', 'killed', or 'failed' when the sandbox gave no answer
+// (`error` says why). `written` lists the files the command wrote in its
+// scratch directory, each with its size and hash; their contents are not
+// kept. sandbox_version, sandbox_image and python name what it ran in.
+//
+// A call is not a source. When an agent's work rests on one it keeps it
+// (keep_analysis): source_id then names the source row made from the call,
+// and kept_at when.
+//
+// sensitivity_label is the label of the run that ran the command, like
+// anything a run writes: the command and any script are the run's own
+// words, stored with what they produced. That label always reads the label
+// of every set the command could read, or the run would not have been
+// offered them. A source kept from the call takes its label from here.
+//
+// run_id, agent and claim_id are the calling run's, from the usage context,
+// with no foreign keys, like llm_usage.
+// ---------------------------------------------------------------------------
+export const sandboxCalls = pgTable(
+  "sandbox_calls",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    command: text("command").notNull(),
+    files: jsonb("files").notNull().default([]),
+    fileSets: jsonb("file_sets").notNull().default([]),
+    calledAt: timestamp("called_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    durationMs: integer("duration_ms"),
+    outcome: text("outcome"),
+    exitCode: integer("exit_code"),
+    error: text("error"),
+    output: text("output"),
+    outputHash: text("output_hash"),
+    outputChars: integer("output_chars"),
+    written: jsonb("written"),
+    writtenNotListed: integer("written_not_listed"),
+    sandboxVersion: text("sandbox_version"),
+    sandboxImage: text("sandbox_image"),
+    python: text("python"),
+    runId: uuid("run_id"),
+    agent: text("agent"),
+    claimId: uuid("claim_id"),
+    sourceId: uuid("source_id").references(() => sources.id, { onDelete: "set null" }),
+    keptAt: timestamp("kept_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    // The lists read them newest first.
+    index("idx_sandbox_calls_time").on(table.calledAt),
+    // A set's page lists and counts the commands that had it mounted
+    // (file_sets @> '[{"id": ...}]').
+    index("idx_sandbox_calls_file_sets").using("gin", table.fileSets),
+    index("idx_sandbox_calls_source")
+      .on(table.sourceId)
+      .where(sql`source_id IS NOT NULL`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// file_set_keeps: a file of a set, or a passage of one, kept as a source
+//
+// One row per source made by keep_file: which file, and for a passage which
+// lines (first_line and last_line, counted from 1; both NULL for the whole
+// file). The source is derived mechanically from the file and is the same
+// whoever asks, so it carries the set's label and party, and the same file
+// or passage kept twice is one source and one row. For the same reason the
+// row does not say which run kept it or for which node: a run at a label
+// that reads the set's may keep a file, and the row is at the set's label
+// (sensitivity_label): it says which file of the set work has rested on,
+// and which lines of it.
+// ---------------------------------------------------------------------------
+export const fileSetKeeps = pgTable(
+  "file_set_keeps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fileSetId: uuid("file_set_id")
+      .notNull()
+      .references(() => fileSets.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id")
+      .notNull()
+      .references(() => fileSetFiles.id, { onDelete: "cascade" }),
+    firstLine: integer("first_line"),
+    lastLine: integer("last_line"),
+    sourceId: uuid("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    keptAt: timestamp("kept_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_file_set_keeps_source").on(table.sourceId),
+    index("idx_file_set_keeps_set").on(table.fileSetId),
+  ]
+);
+
+// ---------------------------------------------------------------------------
 // jobs
 // ---------------------------------------------------------------------------
 export const jobs = pgTable(

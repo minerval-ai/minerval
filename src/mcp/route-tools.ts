@@ -17,9 +17,9 @@
  * a feature off (src/features.ts) does not mount that feature's routes, so
  * their generated tools are absent there: registerRouteTools walks the
  * catalog of mounted routes. The hand-written tools of a feature are gated
- * in server.ts. The routes for permissions, parties, labels and connections
- * are mounted only by a members-only deployment (src/permissions.ts), so
- * their tools exist only there.
+ * in server.ts. The routes for permissions, parties, labels, connections and
+ * file sets are mounted only by a members-only deployment
+ * (src/permissions.ts), so their tools exist only there.
  *
  * In a members-only deployment a route may ask for a permission
  * (server/require-permission.ts). A caller who does not hold it is not
@@ -294,6 +294,12 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /connections": { name: "list_connections" },
   "GET /connections/:connection_id": { name: "get_connection" },
   "GET /connections/:connection_id/calls": { name: "list_connection_calls" },
+  // Sets of files the deployment holds for its agents (src/file-sets.ts),
+  // in the same deployments. The reads; the writes are excluded below.
+  "GET /file-sets": { name: "list_file_sets" },
+  "GET /file-sets/:file_set_id": { name: "get_file_set" },
+  "GET /file-sets/:file_set_id/files": { name: "list_file_set_files" },
+  "GET /file-sets/:file_set_id/commands": { name: "list_file_set_commands" },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
@@ -395,6 +401,19 @@ const CONNECTION_SESSION =
   "deployment at a server or widen what agents are offered. The matching reads " +
   "(list_connections, get_connection, list_connection_calls) are tools.";
 
+const FILE_SET_SESSION =
+  "Changes which files the graph's agents may read, so it takes a signed-in dashboard session as " +
+  "well as the permission to direct: a leaked key, an access token, or an agent following text it " +
+  "read can then never place files in front of agents or move them to another label. The matching " +
+  "reads (list_file_sets, get_file_set, list_file_set_files, list_file_set_commands) are tools.";
+
+const FILE_SET_REGISTER_SESSION =
+  "Decides what label files already on the deployment's disk get, and so which agents may read " +
+  "them, so it takes a signed-in dashboard session as well as the permission to administer: a " +
+  "leaked key, an access token, or an agent following text it read can then never put a directory " +
+  "in front of agents. The matching reads (list_file_sets, get_file_set, list_file_set_files, " +
+  "list_file_set_commands) are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /outbound/proposals": OUTBOUND_SESSION,
@@ -408,6 +427,12 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /release/rules": SHOWING_SESSION,
   "DELETE /release/rules/:rule_id": SHOWING_SESSION,
   "PUT /redaction-policies": SHOWING_SESSION,
+  "POST /file-sets/register": FILE_SET_REGISTER_SESSION,
+  "POST /file-sets/:file_set_id/rehash": FILE_SET_REGISTER_SESSION,
+  "POST /file-sets": FILE_SET_SESSION,
+  "PUT /file-sets/:file_set_id/files/*": FILE_SET_SESSION,
+  "POST /file-sets/:file_set_id/close": FILE_SET_SESSION,
+  "PATCH /file-sets/:file_set_id": FILE_SET_SESSION,
   "POST /connections": CONNECTION_SESSION,
   "PATCH /connections/:connection_id": CONNECTION_SESSION,
   "POST /connections/:connection_id/look": CONNECTION_SESSION,
@@ -662,9 +687,16 @@ function toolResult(statusCode: number, contentType: string, raw: string): CallT
  * no route's permission binds.
  */
 function missingPermission(route: CatalogRoute, auth: RequestAuth): PermissionName | null {
-  if (!route.permissions || route.permissions.length === 0 || !membersOnly()) return null;
+  if (!membersOnly()) return null;
   const standing = standingOf(auth);
-  return route.permissions.find((p) => !holdsPermission(standing, p)) ?? null;
+  const missing = (route.permissions ?? []).find((p) => !holdsPermission(standing, p));
+  if (missing) return missing;
+  // A route that any one of several permissions opens: the first of them is
+  // the one named to a caller who holds none.
+  for (const group of route.anyPermissions ?? []) {
+    if (!group.some((p) => holdsPermission(standing, p))) return group[0] ?? null;
+  }
+  return null;
 }
 
 /**

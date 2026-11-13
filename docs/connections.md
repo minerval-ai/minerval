@@ -5,7 +5,7 @@ It is in a warehouse, a wiki, a ticket system, a log store. A **connection**
 points a deployment at an MCP server over one such system, and the agents
 that weigh evidence are given the server's reading tools. It is one of the
 three ways material comes into a graph, beside a document or an address and
-a set of files.
+a set of files ([file-sets.md](file-sets.md)).
 
 Connections exist only in a members-only deployment
 ([accounts.md](accounts.md), "Members-only deployments"), because adding one
@@ -433,4 +433,5 @@ no run will be offered; the runs say so in their briefs.
 Not built here: connections on the public graph; a preflight check of
 connections (`checkConnections` reads the connections its caller reads; a
 check of every label's needs a caller that reads every label, and a
-decision about who is shown its report).
+decision about who is shown its report). Sets of files explored in a sandbox are in
+[file-sets.md](file-sets.md).

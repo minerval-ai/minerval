@@ -1,6 +1,6 @@
 /**
- * What a run read through a connection and kept is a source its node's page
- * drew on (docs/showing-a-page.md, "The gate"), whether or not an instance
+ * What a run read through a connection, or computed over a set of files, and
+ * kept is a source its node's page drew on (docs/showing-a-page.md, "The gate"), whether or not an instance
  * was recorded from it: an agent keeps a reading when a judgment rests on
  * it. So when the page is shown to readers who do not read its label, the
  * party whose system the reading came from is among those asked, and the
@@ -46,6 +46,38 @@ async function call(node: string, label: string, kept: boolean): Promise<{ call:
   });
 }
 
+/** A command a run working on `node` ran over the sets of two parties, kept as a source. An analysis over two parties' sets carries no one party. */
+async function analysis(node: string, label: string): Promise<string> {
+  return system(async () => {
+    const callId = randomUUID();
+    const [row] = await rawQuery<{ id: string }>(
+      `INSERT INTO sources (url, title, raw_content, content_hash, page_url_hash, facts_checked_at, sensitivity_label, party_id)
+       VALUES ($1, 'Analysis of 2 file sets', 'An analysis.', $2, '', now(), $3, NULL) RETURNING id`,
+      [`analysis:${callId}`, `hash-${callId}`, label]
+    );
+    await rawQuery(
+      `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, sensitivity_label)
+       VALUES ($1, NULL, 'Corvid; Dunlin', 'Corvid: paid on its figures. Dunlin: audited on them.', 'file_set', $2)`,
+      [row!.id, label]
+    );
+    await rawQuery(
+      `INSERT INTO sandbox_calls (id, command, file_sets, outcome, output, output_hash, output_chars, claim_id, source_id, kept_at, sensitivity_label)
+       VALUES ($1, 'python3 compare.py', $2::jsonb, 'exited', 'ok', 'h', 2, $3, $4, now(), $5)`,
+      [
+        callId,
+        JSON.stringify([
+          { id: randomUUID(), name: "Corvid ledger", party_id: id.corvid, party: "Corvid" },
+          { id: randomUUID(), name: "Dunlin audit", party_id: id.dunlin, party: "Dunlin" },
+        ]),
+        node,
+        row!.id,
+        label,
+      ]
+    );
+    return row!.id;
+  });
+}
+
 async function pageOf(showingId: string): Promise<{ rests_on: string[]; header: { sources: Array<Record<string, unknown>> } }> {
   const [page] = await system(() =>
     rawQuery<{ rests_on: string[]; header: string }>(`SELECT rests_on, header FROM showing_pages WHERE showing_id = $1`, [showingId])
@@ -68,6 +100,8 @@ beforeAll(async () => {
     }
     const [corvid] = await rawQuery<{ id: string }>(`INSERT INTO parties (name) VALUES ($1) RETURNING id`, [`Corvid ${Date.now()}`]);
     id.corvid = corvid!.id;
+    const [dunlin] = await rawQuery<{ id: string }>(`INSERT INTO parties (name) VALUES ($1) RETURNING id`, [`Dunlin ${Date.now()}`]);
+    id.dunlin = dunlin!.id;
     const [connection] = await rawQuery<{ id: string }>(
       `INSERT INTO connections (name, tool_prefix, url, party_id, stake, sensitivity_label)
        VALUES ($1, $2, 'https://warehouse.corvid.example/mcp', $3, 'Corvid is paid on the figures its warehouse shows.', $4) RETURNING id`,
@@ -86,15 +120,19 @@ beforeAll(async () => {
   await version(id.looked!, C, "inconclusive", "Nothing found either way.");
   id.keptSource = (await call(id.rested!, C, true)).source!;
   await call(id.looked!, C, false);
+  id.compared = await seedNode(C, "The warehouse's ledger agrees with the audit");
+  await version(id.compared!, C, "supported", "The two agree line by line.");
+  id.analysisSource = await analysis(id.compared!, C);
 }, 180_000);
 
 afterAll(async () => {
   await system(async () => {
     await rawQuery(`DELETE FROM connections WHERE id = $1`, [id.connection]);
-    await rawQuery(`DELETE FROM sources WHERE id = $1`, [id.keptSource]);
+    await rawQuery(`DELETE FROM sandbox_calls WHERE source_id = $1`, [id.analysisSource]);
+    await rawQuery(`DELETE FROM sources WHERE id = ANY($1::uuid[])`, [[id.keptSource, id.analysisSource]]);
   }).catch((err: unknown) => console.warn("[showing-kept-material] cleanup:", err instanceof Error ? err.message : err));
   await unwall();
-  await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.corvid, ...(id.orgMadeHere ? [id.org] : [])]])).catch(
+  await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.corvid, id.dunlin, ...(id.orgMadeHere ? [id.org] : [])]])).catch(
     (err: unknown) => console.warn("[showing-kept-material] cleanup:", err instanceof Error ? err.message : err)
   );
 }, 180_000);
@@ -122,6 +160,16 @@ describe("a page whose run kept a reading", () => {
     for (const p of parts.filter((x) => x.kind === "summary" || x.kind === "reasoning" || x.kind === "wording")) {
       expect(p.rests_on, p.kind).toEqual([id.corvid]);
     }
+  });
+
+  it("an analysis kept in work on the node rests on the party of every set its command had mounted", async () => {
+    const asked = await askShowing({ nodeId: id.compared!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+    const page = await pageOf(asked.showing_id);
+    // The source itself carries no one party, and is not taken for the organization's own.
+    expect([...page.rests_on].sort()).toEqual([id.corvid, id.dunlin].sort());
+    expect(page.header.sources).toEqual([
+      { source: 1, kind: "unknown", fingerprint: expect.stringMatching(/^hash-/), supplied_by: "an_outside_party", interest_recorded: true },
+    ]);
   });
 
   it("a call that was made and not kept is not a source: the page rests on the organization alone", async () => {

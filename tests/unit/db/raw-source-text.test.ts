@@ -68,8 +68,11 @@ describe("a source's stored text", () => {
     // new source when its package is admitted, and returns none.
     // reading-service writes a kept reading's text into a new source and
     // returns none of it: a run reads a reading's stored result through
-    // open_reading, named below.
+    // open_reading, named below. analysis-service does the same for a kept
+    // analysis and a kept file: the output a run reads comes through
+    // run_command and open_output, named below.
     expect(mentioning("services", /raw_content|rawContent\b/)).toEqual([
+      "services/analysis-service.ts",
       "services/examination-service.ts",
       "services/published-page-service.ts",
       "services/reading-service.ts",
@@ -99,8 +102,10 @@ describe("a source's stored text", () => {
       "examination_outline",
       "get_contribution_details",
       "get_page_to_redact",
+      "open_output",
       "open_reading",
       "provenance_read_source",
+      "run_command",
     ]);
     // A connection's own tools are named by an administrator's prefix and a
     // server, so they are known by the shape of the name.

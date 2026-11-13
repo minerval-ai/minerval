@@ -1,0 +1,16 @@
+# The Python libraries in the sandbox image, pinned: a kept analysis names
+# the image it ran in, and the image fixes these versions. server.py lists
+# the same libraries (LIBRARIES) and /health reports which ones import.
+numpy==2.5.3
+pandas==3.0.5
+scipy==1.18.1
+statsmodels==0.15.0
+scikit-learn==1.9.1
+matplotlib==3.11.2
+pyarrow==26.0.1
+polars==2.1.0
+duckdb==2.0.0
+openpyxl==3.1.5
+lxml==6.1.3
+beautifulsoup4==4.15.0
+PyYAML==6.0.3
