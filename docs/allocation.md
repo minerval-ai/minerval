@@ -1619,12 +1619,25 @@ carries these tools ("The Grantmaker's session", above).
 
 Grants are created by talking to the **Grantmaker agent** — the best
 available model, running with the full constitution — in
-`/account/grants/new` (API: `/grant-conversations`). It behaves like a
+the Ask section (`/ask/mandates/new`; API: `/grant-conversations`). It behaves like a
 well-informed colleague in plan mode: surveys the scope, asks what it needs
 to, pushes back, quotes expected costs in owls from the live estimates, and
 drafts a concrete mandate. Nothing runs and nothing is charged until the
 funder funds the draft, which escrows the budget and starts the grant with
 the mandate as its plan.
+
+A grant and the mandate it funds are one row and, on the site, one thing
+with one name: a mandate. It has one page (`/mandates/:id`, where its
+manager also sees what waits on them) and one conversation, which sits in
+the Ask section beside the Assistant's and is listed there under
+Mandates: `/ask/mandates/new` to start one, and `/ask/mandates/:id` for
+the manager of a funded one, with the mandate at a glance beside it and
+the controls to approve the plan, top up and withdraw. The Assistant
+works for the user and a Grantmaker works for the graph, so the two are
+kept as two conversations and each says which it is. The older addresses
+(`/account/grants`, `/account/grants/new`, `/account/grants/:id`)
+redirect. The API and MCP names keep "grant" (`list_grants`,
+`top_up_grant`): they are what callers already use.
 
 Design principles, in force in the implementation:
 

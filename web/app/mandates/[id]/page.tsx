@@ -20,9 +20,8 @@ import { AgentsSection } from "../../../components/mandate/AgentsSection";
 import { SpendingSection } from "../../../components/mandate/SpendingSection";
 import { AttemptsTable, PrizesSection } from "../../../components/mandate/Prizes";
 import { approveGrantAction, cancelGrantAction } from "../../account/actions";
-import { TopUpGrant } from "../../account/grants/[id]/TopUpGrant";
+import { TopUpGrant } from "../../../components/mandate/TopUpGrant";
 import { ContributeBox } from "./ContributeBox";
-import { MandateChat } from "./MandateChat";
 
 export const metadata: Metadata = { title: "Mandate · Minerval" };
 export const dynamic = "force-dynamic";
@@ -135,9 +134,9 @@ function ManagerStrip({ mandate }: { mandate: MandateDetailView }) {
             </form>
           )}
           {mandate.conversation_id && (
-            <a className="mnd-button" href="#grantmaker">
+            <Link className="mnd-button" href={`/ask/mandates/${mandate.id}`}>
               Talk to its Grantmaker
-            </a>
+            </Link>
           )}
           {mandate.status === "active" && (
             <details className="mnd-do">
@@ -622,22 +621,12 @@ export default async function MandatePage({
 
       <section className="acct-section mnd-ask" aria-label="Ask about this mandate">
         <div className="sc">Ask your Assistant about this mandate</div>
-        <AskBox placeholder="Which of its verdicts changed, and why?" />
+        <AskBox
+          placeholder="Which of its verdicts changed, and why?"
+          about={`the mandate “${mandate.title}” (/mandates/${mandate.id})`}
+        />
       </section>
 
-      {mandate.is_manager && mandate.conversation_id && (
-        <section className="acct-section" id="grantmaker">
-          <div className="acct-head">
-            <h2>Talk to its Grantmaker</h2>
-            <span className="acct-note">only you see this</span>
-          </div>
-          <p className="acct-note mnd-lede">
-            Ask how the work is going, or redirect what remains of the budget. It can amend the part of the plan
-            that has not run. The conversation is charged to the mandate&rsquo;s budget.
-          </p>
-          <MandateChat conversationId={mandate.conversation_id} />
-        </section>
-      )}
     </div>
   );
 }

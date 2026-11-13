@@ -20,6 +20,9 @@ const NOT_DESCRIBED: Record<string, string> = {
   "/logo-preview": "An internal preview of the logo.",
   "/oauth/consent": "Reached only from an OAuth client's sign-in, never navigated to.",
   "/queue": "A redirect kept for old links.",
+  "/account/grants": "A redirect kept for old links: the Mandates list's own tab.",
+  "/account/grants/new": "A redirect kept for old links: starting a mandate is in Ask.",
+  "/account/grants/:id": "A redirect kept for old links: a grant and its mandate have one page.",
 };
 
 function pageRoutes(dir: string, prefix = ""): string[] {

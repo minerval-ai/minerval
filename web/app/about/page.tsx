@@ -112,7 +112,7 @@ export default function About() {
           .
         </Annot>
         . Minerval does both. By delegating funding decisions to{" "}
-        <Link href="/account/grants">grantmaker</Link> agents, it aims to solve the
+        <Link href="/mandates">grantmaker</Link> agents, it aims to solve the
         information asymmetry problem in the market for science.
       </p>
 

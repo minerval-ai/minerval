@@ -112,8 +112,8 @@ export function rowAction(m: MandateListRow, mine: boolean): { href: string; lab
   if (mine) {
     if (m.status === "pending_approval") return { href: page, label: "Read and approve →", urgent: true };
     if (m.status === "active" && m.budget_status === "paused_budget") return { href: page, label: "Top up →", urgent: true };
-    if (m.status === "planning") return { href: page, label: "Keep drafting →", urgent: false };
-    if (m.status === "active") return { href: `${page}#grantmaker`, label: "Its Grantmaker →", urgent: false };
+    if (m.status === "planning") return { href: `/ask/mandates/${m.id}`, label: "Keep drafting →", urgent: false };
+    if (m.status === "active") return { href: `/ask/mandates/${m.id}`, label: "Its Grantmaker →", urgent: false };
     return { href: page, label: "Open →", urgent: false };
   }
   if (m.status === "active") return { href: `${page}#spending`, label: "Back it →", urgent: false };

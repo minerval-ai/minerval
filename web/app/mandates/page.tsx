@@ -153,7 +153,7 @@ export default async function MandatesPage({
       <PageHead
         title="Mandates"
         actions={
-          <Link href="/account/grants/new" className="mnd-button mnd-button-main">
+          <Link href="/ask/mandates/new" className="mnd-button mnd-button-main">
             Start a mandate
           </Link>
         }

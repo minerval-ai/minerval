@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 // The Ask section's sidebar: start a conversation, and get back to the
-// conversations, pages and mandates the account already has.
+// conversations, pages and mandates the account already has. A mandate
+// opens the conversation with its Grantmaker, a different agent from the
+// Assistant, which is why it is under its own heading.
 
 export interface SidebarItem {
   id: string;
@@ -19,7 +21,10 @@ function Section({
   href,
   active,
   empty,
+  more,
 }: {
+  /** A link under the list: the way to start one, or to see them all. */
+  more?: { href: string; label: string };
   title: string;
   items: SidebarItem[];
   href: (id: string) => string;
@@ -47,6 +52,11 @@ function Section({
           ))}
         </ul>
       )}
+      {more && (
+        <p className="ask-side-more">
+          <Link href={more.href}>{more.label}</Link>
+        </p>
+      )}
     </section>
   );
 }
@@ -55,11 +65,18 @@ export function AskSidebar({
   conversations,
   pages,
   mandates,
+  drafts,
 }: {
   conversations: SidebarItem[];
   pages: SidebarItem[];
+  /** The mandates the user funds: each opens the conversation with its Grantmaker. */
   mandates: SidebarItem[];
+  /** Conversations with a Grantmaker not yet funded. */
+  drafts: SidebarItem[];
 }) {
+  // A mandate and a draft are both a conversation with a Grantmaker; the
+  // list holds both, drafts first, each at its own address.
+  const withGrantmakers = [...drafts.map((d) => ({ ...d, id: `c/${d.id}` })), ...mandates];
   const path = usePathname();
   const body = (
     <>
@@ -82,10 +99,11 @@ export function AskSidebar({
       />
       <Section
         title="Mandates"
-        items={mandates}
-        href={(id) => `/account/grants/${id}`}
+        items={withGrantmakers}
+        href={(id) => `/ask/mandates/${id}`}
         active={path}
-        empty="You have funded no mandates."
+        empty="You have started no mandates."
+        more={{ href: "/ask/mandates/new", label: "Start a mandate" }}
       />
     </>
   );

@@ -56,7 +56,7 @@ describe("a row", () => {
   it("leads the manager to what waits on them, and anyone else to backing it", () => {
     expect(rowAction(row({ status: "pending_approval" }), true)).toMatchObject({ label: "Read and approve →", urgent: true });
     expect(rowAction(row({ budget_status: "paused_budget" }), true)).toMatchObject({ label: "Top up →", urgent: true });
-    expect(rowAction(row({}), true)).toMatchObject({ href: "/mandates/m-1#grantmaker", urgent: false });
+    expect(rowAction(row({}), true)).toMatchObject({ href: "/ask/mandates/m-1", urgent: false });
     expect(rowAction(row({}), false)).toMatchObject({ href: "/mandates/m-1#spending", label: "Back it →" });
     expect(rowAction(row({ status: "completed" }), false).label).toBe("Open →");
   });

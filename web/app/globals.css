@@ -2577,3 +2577,27 @@ p.mnds-empty { margin: 1.4rem 0; }
   .mnds-action { grid-row: 2; grid-column: 2; }
   .mnds-bar .fnd-search { flex: 1 1 100%; }
 }
+
+/* A conversation with a Grantmaker, in the Ask shell. */
+.ask-side-more { margin: 0.35rem 0 0; font-size: 0.76rem; }
+.askm-who {
+  margin-right: 0.45rem; padding: 0.08rem 0.4rem; border-radius: 3px; background: var(--paper-sunk);
+  font-size: 0.64rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft);
+}
+.askm-bar-link { flex-shrink: 0; font-family: var(--sans); font-size: 0.74rem; }
+.askm-panel { font-size: 0.86rem; }
+.askm-panel .ask-panel-title a, .askm-panel .ask-panel-title a:visited { color: var(--ink); }
+.askm-panel .mnd-budget { margin: 0.5rem 0 0.2rem; }
+.askm-do { display: flex; flex-direction: column; gap: 0.5rem; align-items: stretch; }
+.askm-do .mnd-button { width: 100%; justify-content: center; }
+.askm-do details > :not(summary) { margin-top: 0.5rem; }
+.askm-do .key-create { margin: 0.5rem 0 0; max-width: none; }
+.askm-do form .acct-note { margin: 0.4rem 0 0; }
+.askm-suggest { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; padding: 0 0.1rem 0.35rem; }
+.askm-suggest .linklike { font-size: 0.72rem; }
+.ask-dock .ask-bill > span + span { color: var(--faint); }
+.askm-fold { display: none; border-bottom: 1px solid var(--rule-soft); font-family: var(--sans); font-size: 0.8rem; }
+.askm-fold > summary { padding: 0.5rem 1.6rem; color: var(--muted); cursor: pointer; }
+.askm-fold > .askm-panel { display: flex; flex-direction: column; gap: 0.8rem; padding: 0.4rem 1.6rem 1rem; max-height: 55dvh; overflow-y: auto; }
+@media (max-width: 1099px) { .askm-fold { display: block; } }
+@media (max-width: 760px) { .askm-fold > summary, .askm-fold > .askm-panel { padding-left: 1rem; padding-right: 1rem; } }

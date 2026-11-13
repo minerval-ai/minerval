@@ -822,6 +822,25 @@ export async function fundGrantConversation(
   });
 }
 
+/** A granting conversation as a list shows it: no messages, its draft's title. */
+export interface GrantConversationSummary {
+  id: string;
+  status: GrantConversationView["status"];
+  title: string | null;
+  message_count: number;
+  turn: { state: "replying" | "idle" | "failed" };
+  grant_id: string | null;
+  updated_at: string;
+}
+
+/** The user's conversations with Grantmakers, newest first. */
+export async function listGrantConversations(externalId: string): Promise<GrantConversationSummary[]> {
+  const r = await accountFetch<{ conversations: GrantConversationSummary[] }>("/grant-conversations", {
+    actingUser: externalId,
+  });
+  return r.conversations;
+}
+
 export async function getGrantConversation(
   externalId: string,
   conversationId: string

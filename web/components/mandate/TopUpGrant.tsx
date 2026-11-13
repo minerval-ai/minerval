@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import { topUpGrantAction, type JobActionState } from "../../actions";
+import { topUpGrantAction, type JobActionState } from "@/app/account/actions";
 
 export function TopUpGrant({
   grantId,
@@ -35,7 +35,7 @@ export function TopUpGrant({
       </form>
       {state.ok && (
         <p className="meter-caption" role="status">
-          Budget added{paused ? "; the grant picks up where it left off" : ""}.
+          Budget added{paused ? "; the mandate picks up where it left off" : ""}.
         </p>
       )}
       {state.error && <p className="form-error">{state.error}</p>}
