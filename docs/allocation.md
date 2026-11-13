@@ -47,11 +47,22 @@ judgment its agents make, never a keyword filter's. Every decision is
 logged with its reason (`mandate_decisions`) and shown on the mandate's
 page.
 
-Budgets are set at the high end of what work of that kind costs (the
-costing skill), because a run that has what it needs finishes the work and
-gives back the rest. When the work turns out to need more, its agent
-**petitions** the mandate paying for the run and gets the answer in its
-session, carrying on meanwhile. Neither a budget nor a petition is ever a verdict input: what a
+Budgets are set at what the work needs to be done properly (the costing
+skill), because a run that has what it needs finishes the work and gives
+back the rest. cost_sheet's figures are what past runs spent while held to
+their budgets, so they are read as a floor: a run told its budget is "the
+high end of what work like this usually costs, so most runs finish well
+inside it" economized, and the next estimate was built from those
+economized runs, so budgets ratcheted down (a standard Steward pass was
+priced at $0.85 in Nov 2026, with a median spend of $0.34 and the passes on
+a breaking story stopping short; see the FAA ground-stop mandate). A run is
+now told its budget is for doing the work properly and to use what the
+work needs. When the work turns out to need more, its agent
+**petitions** the mandate paying for the run, as soon as it sees that, and
+gets the answer in its session, carrying on meanwhile. The spend line after
+each turn counts the turns left only from 70% of the budget on, and the
+notice that most of the budget is spent comes at 70%, with what is left and
+the invitation to petition. Neither a budget nor a petition is ever a verdict input: what a
 mandate chose to pay for orders work and selects effort, and appears
 nowhere in an assessment.
 
@@ -263,9 +274,8 @@ The briefing's budget line states the figure, whose it is (the policy's,
 with its reason, or the platform's default and why), that it is held
 against the pace while the pass runs, that the opening turn is paid
 from it, and how to add to it (src/llm/prompts/pass-budget.ts). The line
-other agents get, that a budget is "set at the high end of what work like
-this usually costs", is true of a commission budgeted from the costing
-skill and was never true of these passes, so they do not get it.
+other agents get, that a budget is "for doing this work properly", gives
+way to that basis here, since the figure is the mandate's own.
 
 The opening turn itself is not made cheaper here. Sittings are usually
 further apart than the provider's prompt cache lasts, so each reads its

@@ -760,7 +760,8 @@ describe("harness stops", () => {
     await runResearcher(input());
     const notes = mocks.script.notes;
     expect(notes[0]).toMatch(/^Budget: \$1\.00 of \$2\.00 spent \(50%\)\./);
-    expect(notes[1]).toContain("Your last turn cost $0.10; at that rate about 9 turns remain");
+    // The turns left are counted only from 70 percent of the budget on.
+    expect(notes[1]).toBe("Budget: $1.10 of $2.00 spent (55%).");
     expect(notes[2]).toMatch(/^Budget: \$1\.80 of \$2\.00 spent \(90%\)/);
     expect(notes[2]).toContain("about fifteen percent");
     expect(notes[3]).not.toContain("about fifteen percent");

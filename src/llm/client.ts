@@ -494,7 +494,7 @@ export function turnCounterLine(used: number, max: number): string {
  * spent, and when all of it is. The money, not the turn guard, is what
  * normally ends such a run.
  */
-export const BUDGET_WRAP_UP_FRACTION = 0.85;
+export const BUDGET_WRAP_UP_FRACTION = 0.7;
 export function budgetWrapUpNotice(
   spentMicroUsd: number,
   ceilingMicroUsd: number,
@@ -512,14 +512,15 @@ export function budgetWrapUpNotice(
         : "")
     );
   }
+  const left = `$${(Math.max(0, ceilingMicroUsd - spentMicroUsd) / 1_000_000).toFixed(2)}`;
   return (
-    `Budget notice: most of this run's budget is spent. ` +
+    `Budget notice: ${left} of this run's budget is left. ` +
     (canPetition
-      ? `If what is left of the work is essential and needs more, petition for ` +
-        `it now (petition_mandate) and say what it is for. Otherwise finish `
-      : `Finish `) +
-    `the work in hand and make your concluding tool call(s) soon; whatever is ` +
-    `not recorded when the run ends is lost.`
+      ? `If the work is not done, petition now for what finishing it properly needs ` +
+        `(petition_mandate), say what it is for, and keep working while it is decided. ` +
+        `If it is done, record it.`
+      : `Finish the work in hand and record it.`) +
+    ` Whatever is not recorded when the run ends is lost.`
   );
 }
 

@@ -7,7 +7,7 @@ description: >-
   worth doing is a separate judgment.
 metadata:
   minerval:
-    version: 9
+    version: 10
     since_epoch: 2026-09-domain-skills
     changelog:
       3: Consistency sweeps are on cost_sheet and fundable as plan items (#831), so the Grantmaker prices one by its partition's size.
@@ -18,6 +18,7 @@ metadata:
       7: "A stewarding plan item is a standing order the mandate commissions (#849): its budget is budget_owls or the pass's estimate, on the strong tier unless the item says standard, and a deepen item also orders a pass on each child waiting for one. The daily rate must cover one pass's budget."
       8: "A plan item is standard unless it names strong (#956); a deepen item orders first assessments for unassessed children only (#961); a waiting order no longer holds later ones; an order can be amended or withdrawn until its pass runs, and extend_plan previews what items would commission."
       9: "A mandate is paced as needed or steady, not by a daily rate, and its Grantmaker holds a reserve; the Grantmaker runs in one long session whose sittings re-read the conversation; research is commissioned."
+      10: "Budgets are set at what the work needs, with cost_sheet's figures read as a floor (they are what past runs spent under their budgets); a first pass on a node with no sources, or on a live story, usually needs $3 to $5; petition as soon as a run sees it needs more."
     kind: method
 ---
 
@@ -36,16 +37,22 @@ target, or a signal of how much the work matters.
 whoever pays sets the run's budget and pays it in full, the run starts at
 once, and what it does not spend comes back. So when you commission a run
 (a Steward pass with `commission`, a request with fund_request, anything an
-officer decides to pay for), set the budget at the high end of what
-cost_sheet says such work costs, not the middle: a run that has what it
-needs finishes the work, and the rest returns. Go higher when you expect
-this run to be larger than most, and say why in the brief. A budget is
+officer decides to pay for), set the budget at what doing the work
+properly needs. cost_sheet's figures are what past runs spent while held
+to their budgets, so they trail what the work needs: read them as a floor,
+never a target. A run that has what it needs finishes the work, and the
+rest returns. A first pass on a node the graph holds no sources for, or on
+a story still unfolding, usually needs $3 to $5 at the standard tier, since
+its Steward has to search and read before it can judge; a fresh look at a
+settled node can stay near the price list. Go higher when you expect this
+run to be larger than most, and say why in the brief. A budget is
 held against its payer's pace while the run is working, so a padded one
 can delay other work a little where the pace is steady; a short one stops
 work half done.
 
 **When your own run needs more.** If doing the work properly needs more
-than your budget holds, ask with petition_mandate: say what you would do
+than your budget holds, ask with petition_mandate as soon as you see it, not
+when the money is nearly gone: say what you would do
 with the money, why your budget cannot cover it, and what you will
 conclude if the answer is no. The answer comes in the run. A petition is
 not a failure of your estimate; a pattern of petitions for one kind of
