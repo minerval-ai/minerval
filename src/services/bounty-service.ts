@@ -33,6 +33,7 @@
  */
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { PLATFORM_EXTERNAL_ID, getPlatformAccountId } from "./platform-account.js";
 import { requestAudit } from "./queue-service.js";
@@ -1381,6 +1382,9 @@ export interface OpenBountyListing {
   text: string;
   claim_type: string;
   assessment_status: string | null;
+  /** Present only where more than one judgment of the claim is in force for the asker (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
   importance: number;
   checked: "proof" | "disproof" | null;
   bounty: BountySummary;
@@ -1437,6 +1441,8 @@ export async function listOpenBounties(opts: {
       bounty: await bountySummary(normalize(bounty)),
     });
   }
+  // Where more than one judgment of a claim is in force for the asker, its listing says so.
+  await markSeveralInForce(items, (i) => i.claim_id);
   return { items, total: Number(count?.n ?? 0) };
 }
 

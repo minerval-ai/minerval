@@ -454,6 +454,8 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 .queue-form { margin-top: 0.6rem; }
 .queue-limits > summary { cursor: pointer; }
 .several-assessments, .several-assessments:visited { color: var(--ink); text-decoration: none; }
+/* Under a summary that counts each node by one assessment, where some have more (SeveralAssessments.tsx). */
+.several-counted { margin: 0.45rem 0 0; font-size: 0.74rem; line-height: 1.4; color: var(--ink-soft, var(--ink)); }
 .queue-limits > summary h2 { display: inline; }
 .queue-page { border-top: 2px solid var(--ink); padding: 0.7rem 0 0.4rem; margin-bottom: 1.2rem; max-width: 46rem; }
 .queue-page-head { margin: 0 0 0.4rem; font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }

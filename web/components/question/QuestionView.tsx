@@ -1,3 +1,4 @@
+import { SeveralAssessments, SeveralCounted, severalAmong } from "@/components/SeveralAssessments";
 import Link from "next/link";
 import type { ClaimDetail, QuestionAnswer, QuestionDetail } from "@/lib/types";
 import { DEFINED_IN, QUESTION_STANDING, isStanding, statusMeta, isStatus } from "@/lib/ontology";
@@ -40,7 +41,12 @@ function AnswerMark({ a }: { a: QuestionAnswer }) {
   if (a.kind === "quantity" && a.estimate && a.unit) {
     return <span className="qty-chip">{describeEstimate(a.estimate, a.unit).lead}</span>;
   }
-  return a.status ? <StatusBadge status={a.status} /> : <Unassessed />;
+  return (
+    <>
+      {a.status ? <StatusBadge status={a.status} /> : <Unassessed />}
+      <SeveralAssessments id={a.id} n={a.judgments_in_force} />
+    </>
+  );
 }
 
 function Answers({ q }: { q: QuestionDetail }) {
@@ -152,6 +158,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
               <li key={p.id}>
                 {p.status ? <Swatch status={p.status} /> : <span className="swatch st-unassessed" />}{" "}
                 <Link href={`/claims/${p.id}`}>{p.text}</Link>
+                <SeveralAssessments id={p.id} n={p.judgments_in_force} />
                 {p.status && isStatus(p.status) && (
                   <span className={styles.presStatus}> · {statusMeta(p.status).label.toLowerCase()}</span>
                 )}
@@ -290,6 +297,7 @@ export function QuestionRail({ detail }: { detail: ClaimDetail }) {
           </li>
         ))}
       </ul>
+      <SeveralCounted n={severalAmong([...q.answers, ...q.subquestions, ...q.presuppositions])} of="nodes" />
     </aside>
   );
 }

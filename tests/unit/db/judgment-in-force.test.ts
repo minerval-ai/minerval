@@ -47,6 +47,8 @@ const MAY_MENTION_IS_CURRENT: Record<string, string> = {
     "Reads history: whether a judgment a finding cites by id has since been superseded.",
   "src/services/mirror-manifest.ts":
     "Orders the mirror applier's writes: the judgment that stopped being current is written before the one that became it. Reads no judgment.",
+  "src/services/sql-service.ts":
+    "Names the column of read-only SQL's `assessments` view in the note a result carries, which says what the flag means to a reader of several labels. No query.",
   "src/schemas/claim.ts": "Declares is_current as a field of the history rows the API serves; no query.",
   "src/routes/claims.ts": "Response schemas and the formatter for history rows; its reads of the current verdict use the view.",
 };

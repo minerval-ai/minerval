@@ -536,11 +536,41 @@ of the node, which also lists each judgment under `versions` with its own
 `coverage` and `since_assessed`. An argument's evaluation is said the same
 way (`argument_evaluations_in_force` on a tree's row; `evaluations_in_force`
 and `evaluations` on the argument's own read). The web app shows "N
-assessments" on such a row, linking to the node. Reads that still give one
-judgment and do not say so: citations, the extension's lookups, findings,
-monitors, a session's snapshot, a source's segments, bounties, claim links,
-the Mira export, a question's listed answers and a quantity's bases, and
-read-only SQL's `assessments` view.
+assessments" on such a row, linking to the node.
+
+The other reads that give a node's status, and what each does for such a
+reader. For a reader with one judgment in force each is what it was.
+
+| Read | What it does |
+| --- | --- |
+| Dependents (`GET /claims/:id/dependents`, and the node's own read) | The count and the sentence on each dependent's row |
+| Claim links (a node's `related`) | The same, on each counterpart |
+| A question's presuppositions, subquestions, listed answers and what depends on it | The same, on each entry |
+| A quantity's bases: the claims its readings bear through, and the claims that cut it | The same, on each claim |
+| A source's segments (`GET /sources/:id/document`) | The same, on the claim each instance is of |
+| Bounties (`GET /prizes`) | The same, on each listing |
+| Monitors: performed settling and empty chairs | The same, on each candidate. The candidate is still picked by the most recently made judgment, and now says so |
+| The extension's lookups | `judgments_in_force` and the sentence on an annotation's `claim`; the assessor that compares the page with the graph is given the sentence too |
+| A session's snapshot (what a paused run is told when it resumes) | One more sentence beside the status: "N judgments of this node are in force for this run, made at labels that do not read each other. The status given here is that of the most recently made, and none replaces another." |
+| Citations (`GET /claims/:id/citation`) | Not a count alone. The evidence record carries every assessment in force, whole, under `assessments_in_force` (most recently made first; `assessment` is the first), because a record is read away from the graph and its reader cannot come back for the others. The citation names one assessment by id and version and says how many there are. A premise's status carries the count |
+| The nanopublication | The assertion states the pinned assessment; the publication info names every one in force (`mv:assessmentInForce`) |
+| The MIRA export | Every assessment in force is a node of its own (`mv:Assessment`, for a claim and for a question), with its label, verdict and reasoning. A neighbour whose status is one of several carries `mv:judgmentsInForce` |
+| Findings | No count: one judgment is not chosen at all. A filter by the claim's status finds a finding under the status of either judgment in force, the counts beside the filter count it under each, and a cited assessment is `current` while it is its own label's current one (a judgment at another label does not make it old). `cited_assessments` carries the count |
+| Read-only SQL's `assessments` view | One row for each judgment: `is_current` is true for every judgment in force for the session (migration 0145), so a join on it returns a row for each and nothing is chosen by date. The note on the result says so to a reader of more than one label besides `public` |
+
+On the web, the rails (what depends on a node, see also, a question's
+rail), the compass and the map count each node once, by the one status its
+row carries. Each row that has more than one says "N assessments", and a
+summary drawn over several nodes says how many of them have more than one
+and that each is counted by the most recently made.
+
+Not reached: the overturn-rate and evidence-monotonicity monitors read a
+node's whole history of assessments in order of time, so on a node judged
+at two labels they read a change of label as a change of mind. A quantity's
+or a question's own page gives the one estimate or answer its read names
+and lists the others under `versions`. An analysis of a page that the
+extension stored is shared between readers, and its stored verdicts were
+made against one judgment.
 
 The account page shows no way to buy owls where `entitlement.owls_created_here`
 is true, gives what an owl is there in the API's words

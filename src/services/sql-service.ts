@@ -334,7 +334,10 @@ async function askerClearance(): Promise<string[] | null> {
  * What a result says about the rows it was computed over, on a deployment
  * with more than one label. The asker is told which labels it read and
  * that everything else was left out before the query ran, since a count
- * that silently covers less than the whole graph would mislead.
+ * that silently covers less than the whole graph would mislead. An asker
+ * who reads more than one label besides `public` is also told what
+ * is_current means in `assessments`, where they may have two judgments of
+ * a node in force (migration 0145).
  */
 export function sqlClearanceNote(clearance: readonly string[]): string {
   const read = [...clearance].sort((a, b) => (a === PUBLIC_LABEL ? -1 : b === PUBLIC_LABEL ? 1 : a < b ? -1 : 1));
@@ -345,7 +348,13 @@ export function sqlClearanceNote(clearance: readonly string[]): string {
     `This graph holds material that only some of its readers may see. These views showed you the rows ` +
     `labeled ${list}, which is what you may read. Rows at any other label were left out before your ` +
     `query ran, so a count, a sum or an empty result here is over what you can read and not over ` +
-    `everything the graph holds.`
+    `everything the graph holds.` +
+    // Only a reader of two labels that do not read each other can have two.
+    (read.length > 2
+      ? ` In \`assessments\`, is_current is true for each judgment of a node that is in force for you. ` +
+        `Where two of your labels do not read each other, a node can have one at each, and a join on ` +
+        `is_current then returns a row for each. Neither replaces the other.`
+      : ``)
   );
 }
 

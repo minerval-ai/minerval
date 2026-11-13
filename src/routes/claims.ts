@@ -1332,6 +1332,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_status: { type: "string", nullable: true },
                     assessment_confidence: { type: "number", nullable: true },
                     assessment_credence: { type: "number", nullable: true },
+                    // Only where more than one judgment of the dependent is in force for the reader.
+                    judgments_in_force: { type: "integer", description: JUDGMENTS_IN_FORCE_DESCRIPTION },
+                    judgments_in_force_note: { type: "string" },
                     // How many edges up this dependent sits: 1 is direct.
                     depth: { type: "integer" },
                     // Mathematics (§8.3): the live bounty, the derived

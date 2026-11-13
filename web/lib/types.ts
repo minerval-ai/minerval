@@ -387,12 +387,16 @@ export interface RelatedClaim {
   text: string;
   claim_type: ClaimType;
   assessment_status: AssessmentStatus | null;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   assessment_confidence: number | null;
   assessment_credence: number | null;
 }
 
 export interface DependentClaim {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   claim_type: ClaimType;
   relation_type: RelationType;
@@ -817,6 +821,8 @@ export type QuestionStanding = "answered" | "leaning" | "open" | "ill_posed" | "
 /** A candidate answer: a claim or a quantity (§7a). */
 export interface QuestionAnswer {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   kind: NodeKind;
   status: AssessmentStatus | null;
@@ -838,6 +844,8 @@ export interface AnswerRelation {
 
 export interface QuestionNodeRef {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   status?: AssessmentStatus | null;
   standing?: QuestionStanding | null;

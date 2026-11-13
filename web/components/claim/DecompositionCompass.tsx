@@ -1,5 +1,6 @@
 "use client";
 
+import { SeveralCounted } from "@/components/SeveralAssessments";
 import { useEffect, useState } from "react";
 import type { TreeNode } from "@/lib/types";
 import {
@@ -213,6 +214,7 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
       <p className={styles.compassNote}>by effect on this claim, not by subclaim status</p>
       </>
       )}
+      <SeveralCounted n={scored.filter((s) => (s.node.judgments_in_force ?? 0) > 1).length} of="premises" />
 
       {/* jump-list: the top-level lines of reasoning. Clicking scrolls the centre
           column to that block; the active one tracks the reading position. No

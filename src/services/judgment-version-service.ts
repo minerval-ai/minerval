@@ -475,3 +475,101 @@ export const JUDGMENTS_IN_FORCE_DESCRIPTION =
   "holds two labels that do not read each other may have a judgment in force at each, and a read that gives one " +
   "judgment for a node then gives the most recently made. `judgments_in_force_note` says so in a sentence. " +
   "Nothing chooses between them; get_claim lists each under `versions`";
+
+/**
+ * The count and its sentence for one node, as fields to spread into a read
+ * of it: empty where one judgment, or none, is in force for the asker, so
+ * the read is then exactly what it was.
+ */
+export async function severalInForceFields(
+  nodeId: string | null | undefined
+): Promise<{ judgments_in_force?: number; judgments_in_force_note?: string }> {
+  if (oneLabelOnly() || !nodeId) return {};
+  const n = (await judgmentsInForce([nodeId]).catch(() => new Map<string, number>())).get(nodeId.toLowerCase());
+  return n ? { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) } : {};
+}
+
+/** One judgment of a proposition in force for the asker, as an export carries it whole. */
+export interface JudgmentInForce {
+  id: string;
+  /** The label it was made at: who may read it. */
+  label: string;
+  status: string;
+  confidence: number;
+  claim_credence: number | null;
+  summary: string;
+  reasoning_trace: string;
+  model: string | null;
+  assessed_at: string;
+}
+
+/**
+ * Every assessment of a proposition in force for the asker, where that is
+ * more than one: most recently made first, which is the order a read that
+ * names one takes its one from. Empty where one is in force, or none, and
+ * on a deployment whose only label is `public`. A record made to be read
+ * away from the graph (a citation's evidence record, the MIRA export)
+ * carries these whole and not a count, since its reader cannot come back
+ * and ask for the others.
+ */
+export async function assessmentsInForce(nodeId: string): Promise<JudgmentInForce[]> {
+  if (oneLabelOnly()) return [];
+  const rows = await rawQuery<Omit<JudgmentInForce, "assessed_at" | "confidence" | "claim_credence"> & {
+    assessed_at: Date; confidence: number | string; claim_credence: number | string | null;
+  }>(
+    `SELECT v.id, v.sensitivity_label AS label, v.status, v.confidence, v.claim_credence,
+            COALESCE(v.summary, v.reasoning_trace) AS summary, v.reasoning_trace, v.model, v.assessed_at
+       FROM assessments_versions v
+      WHERE v.claim_id = $1 AND v.in_force
+      ORDER BY v.assessed_at DESC, v.id`,
+    [nodeId]
+  );
+  if (rows.length < 2) return [];
+  return rows.map((r) => ({
+    ...r,
+    confidence: Number(r.confidence),
+    claim_credence: r.claim_credence == null ? null : Number(r.claim_credence),
+    assessed_at: new Date(r.assessed_at).toISOString(),
+  }));
+}
+
+/**
+ * What a run is told beside a node's one status, where more than one
+ * judgment of the node is in force for the run. Empty where one is.
+ */
+export async function severalInForceForRun(nodeId: string | null | undefined): Promise<string> {
+  if (oneLabelOnly() || !nodeId) return "";
+  const n = (await judgmentsInForce([nodeId]).catch(() => new Map<string, number>())).get(nodeId.toLowerCase());
+  return n
+    ? `${n} judgments of this node are in force for this run, made at labels that do not read each other. ` +
+      `The status given here is that of the most recently made, and none replaces another.`
+    : "";
+}
+
+/** One assessment of a question in force for the asker, as an export carries it whole. */
+export interface QuestionJudgmentInForce {
+  id: string;
+  label: string;
+  standing: string;
+  favored_ids: string[];
+  summary: string | null;
+  reasoning_trace: string;
+  incomplete: string | null;
+  model: string | null;
+  assessed_at: string;
+}
+
+/** The same as assessmentsInForce for a question: every assessment in force for the asker, where more than one. */
+export async function questionAssessmentsInForce(nodeId: string): Promise<QuestionJudgmentInForce[]> {
+  if (oneLabelOnly()) return [];
+  const rows = await rawQuery<Omit<QuestionJudgmentInForce, "assessed_at"> & { assessed_at: Date }>(
+    `SELECT v.id, v.sensitivity_label AS label, v.standing, v.favored_claim_ids::text[] AS favored_ids,
+            v.summary, v.reasoning_trace, v.incomplete, v.model, v.assessed_at
+       FROM question_assessments_versions v
+      WHERE v.claim_id = $1 AND v.in_force
+      ORDER BY v.assessed_at DESC, v.id`,
+    [nodeId]
+  );
+  if (rows.length < 2) return [];
+  return rows.map((r) => ({ ...r, assessed_at: new Date(r.assessed_at).toISOString() }));
+}

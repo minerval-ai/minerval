@@ -1,5 +1,6 @@
 "use client";
 
+import { SeveralAssessments } from "@/components/SeveralAssessments";
 import Link from "next/link";
 import {
   useCallback, useEffect, useMemo, useRef, useState,
@@ -357,6 +358,7 @@ export function GraphView({
           ? {
               id: node.id, text: node.text, claimType: node.claim_type,
               status: node.assessment_status, confidence: node.assessment_confidence,
+              severalInForce: node.judgments_in_force,
               credence: node.assessment_credence ?? null,
               seedCredence: node.assessment_status == null ? node.seed_credence ?? null : null,
               relation: node.relation_type, reasoning: node.reasoning,
@@ -381,6 +383,7 @@ export function GraphView({
               .map((d): ClaimBits => ({
                 id: d.id, text: d.text, claimType: d.claim_type,
                 status: d.assessment_status, confidence: d.assessment_confidence,
+                severalInForce: d.judgments_in_force,
                 credence: d.assessment_credence ?? null,
                 relation: d.relation_type, reasoning: null,
                 argumentId: null, argumentName: null, argumentStance: null,
@@ -1135,6 +1138,7 @@ export function GraphView({
                         {c.status && <span className="badge-glyph">{meta.glyph}</span>}
                         {meta.label}
                       </span>
+                      <SeveralAssessments id={c.id} n={c.severalInForce} />
                       {/* Credence beside the badge (#238): the reader's number,
                           P(claim true), mirroring the claim page's hierarchy.
                           Labelled and meterless (#160); rendered only when the

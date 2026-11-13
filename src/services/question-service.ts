@@ -21,7 +21,7 @@ import {
   type QuestionStanding,
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
-import { recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
+import { markSeveralInForce, recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
 import { holdsMirror, mirroredRowMessage, publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
@@ -317,6 +317,9 @@ export interface QuestionNodeRefView {
   kind: NodeKind;
   status: string | null;
   standing: QuestionStanding | null;
+  /** Present only where more than one judgment of the node is in force for the asker (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
 }
 
 export interface QuestionAnswerView {
@@ -324,6 +327,9 @@ export interface QuestionAnswerView {
   text: string;
   kind: NodeKind;
   status: string | null;
+  /** Present only where more than one judgment of the answer is in force for the asker. */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
   credence: number | null;
   estimate: QuantityEstimate | null;
   unit: QuantityUnit | null;
@@ -442,7 +448,7 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
   });
   const answers = children.filter((r) => r.relation_type === "answers");
   const answerSet = new Set(answers.map((r) => r.id));
-  return {
+  const detail: QuestionDetailView = {
     standing: cur?.standing ?? null,
     assessment: cur
       ? {
@@ -476,4 +482,11 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
     depended_on_by: dependedOnBy.map(ref),
     instances,
   };
+  // Every node this page gives a status or a standing for: where more than
+  // one judgment of one is in force for the asker, its entry says so.
+  await markSeveralInForce(
+    [...detail.presuppositions, ...detail.subquestions, ...detail.answers, ...detail.depended_on_by],
+    (n) => n.id
+  );
+  return detail;
 }

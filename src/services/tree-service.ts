@@ -1,5 +1,5 @@
 import { rawQuery } from "../db/client.js";
-import { evaluationsInForce, judgmentsInForce, severalEvaluationsNote, severalInForceNote } from "./judgment-version-service.js";
+import { evaluationsInForce, judgmentsInForce, markSeveralInForce, severalEvaluationsNote, severalInForceNote } from "./judgment-version-service.js";
 import type { TreeNode } from "../schemas/claim.js";
 import {
   stewardParkSelectSql,
@@ -307,6 +307,9 @@ export interface DependentClaim {
   assessment_status: string | null;
   assessment_confidence: number | null;
   assessment_credence: number | null;
+  /** Present only where more than one judgment of the dependent is in force for the asker (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
   // Mathematics (docs/mathematics.md §8.3), see TreeNodeMathFields.
   bounty_micro_usd: number | null;
   checked: "proof" | "disproof" | null;
@@ -341,7 +344,10 @@ export async function getClaimDependents(claimId: string): Promise<DependentClai
      ORDER BY c.importance DESC, a.confidence DESC NULLS LAST, c.text`,
     [claimId]
   );
-  return rows.map(dependentRow);
+  // Where more than one judgment of a dependent is in force for the asker, the row says so.
+  const out = rows.map(dependentRow);
+  await markSeveralInForce(out, (r) => r.id);
+  return out;
 }
 
 /** One claim reached by walking upward, with how many edges away it sits. */
@@ -417,6 +423,7 @@ export async function getTransitiveDependents(
       (y.assessment_confidence ?? 0) - (x.assessment_confidence ?? 0) ||
       x.depth - y.depth
   );
+  await markSeveralInForce(found, (r) => r.id);
   return { dependents: found, total: found.length, truncated };
 }
 
@@ -460,10 +467,9 @@ export async function listClaimDependents(
     );
     return { dependents: [], total: parseInt(count?.count ?? "0", 10) };
   }
-  return {
-    dependents: rows.map(({ total: _total, ...dep }) => dependentRow(dep)),
-    total: parseInt(rows[0]!.total, 10),
-  };
+  const dependents = rows.map(({ total: _total, ...dep }) => dependentRow(dep));
+  await markSeveralInForce(dependents, (r) => r.id);
+  return { dependents, total: parseInt(rows[0]!.total, 10) };
 }
 
 /**

@@ -53,6 +53,7 @@ import {
   type QuantityDefinitionView,
 } from "./quantity-service.js";
 import { rawQuery } from "../db/client.js";
+import { judgmentsInForce, severalInForceNote } from "./judgment-version-service.js";
 import { readerKey } from "../db/clearance.js";
 import { untraced } from "../llm/usage-context.js";
 
@@ -91,6 +92,9 @@ export interface PageAnnotation {
     status_confidence: number;
     subclaim_count: number;
     url: string;
+    /** Present only where more than one judgment of the node is in force for the asker: what is given is the most recently made (judgment-version-service.ts). */
+    judgments_in_force?: number;
+    judgments_in_force_note?: string;
   } | null;
 }
 
@@ -226,6 +230,7 @@ export function buildAnnotations(input: {
       statusConfidence: number;
       subclaimCount: number;
       claimUrl: string;
+      judgmentsInForce?: number;
     } | null;
   }>;
   /** Verdicts keyed by claim index; missing/matched-less indices degrade. */
@@ -269,6 +274,7 @@ export function buildAnnotations(input: {
         status_confidence: c.matched.statusConfidence,
         subclaim_count: c.matched.subclaimCount,
         url: c.matched.claimUrl,
+        ...(c.matched.judgmentsInForce ? severalOnAnnotation(c.matched.judgmentsInForce) : {}),
       },
     };
   });
@@ -366,6 +372,18 @@ export interface MatchedClaim {
   standing: QuestionStanding | null;
   subclaimCount: number;
   claimUrl: string;
+  /**
+   * Set only where more than one judgment of the node is in force for the
+   * asker (two labels that do not read each other): how many. The status,
+   * estimate or standing above is then the most recently made of them, and
+   * every annotation and the assessor are told so.
+   */
+  judgmentsInForce?: number;
+}
+
+/** What an annotation's claim carries where more than one judgment of it is in force for the asker. */
+export function severalOnAnnotation(n: number): { judgments_in_force: number; judgments_in_force_note: string } {
+  return { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) };
 }
 
 /** The trace's opening, for a record written before summaries existed. */
@@ -434,6 +452,8 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
     matched.assessed = !!row;
     matched.summary = readerSummary(row?.summary, row?.reasoning_trace);
   }
+  const several = (await judgmentsInForce([claimId]).catch(() => new Map<string, number>())).get(claimId.toLowerCase());
+  if (several) matched.judgmentsInForce = several;
   return matched;
 }
 
@@ -644,6 +664,7 @@ async function analyzePageUncached(
           ? { definition: s.matched.definition, estimate: s.matched.estimate }
           : {}),
         ...(s.matched.kind === "question" ? { standing: s.matched.standing } : {}),
+        ...(s.matched.judgmentsInForce ? { several_judgments: severalInForceNote(s.matched.judgmentsInForce) } : {}),
         subclaim_count: s.matched.subclaimCount,
       },
     });

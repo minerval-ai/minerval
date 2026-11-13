@@ -18,6 +18,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
+import { judgmentsInForce, severalInForceNote } from "./judgment-version-service.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { htmlToText } from "./source-map-service.js";
@@ -312,7 +313,8 @@ export async function segmentSourceOnce(sourceId: string): Promise<void> {
 
 export interface DocumentInstanceView {
   instance_id: string;
-  claim: { id: string; text: string; status: string | null };
+  /** `judgments_in_force` is present only where more than one judgment of the claim is in force for the asker; `status` is then the most recently made (judgment-version-service.ts). */
+  claim: { id: string; text: string; status: string | null; judgments_in_force?: number; judgments_in_force_note?: string };
   stance: string;
   verbatim_text: string;
   /** The claim Steward's reading of this appearance, in that claim's voice. */
@@ -419,9 +421,14 @@ export async function getSourceDocument(
       [sourceId]
     ),
   ]);
+  const several = await judgmentsInForce(instances.map((i) => i.claim_id)).catch(() => new Map<string, number>());
+  const severalOf = (claimId: string) => {
+    const n = several.get(claimId.toLowerCase());
+    return n ? { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) } : {};
+  };
   const view = (i: (typeof instances)[number]): DocumentInstanceView => ({
     instance_id: i.id,
-    claim: { id: i.claim_id, text: i.claim_text, status: i.status },
+    claim: { id: i.claim_id, text: i.claim_text, status: i.status, ...severalOf(i.claim_id) },
     stance: i.stance,
     verbatim_text: i.verbatim_text,
     reading: i.support ? { support: i.support, note: i.note, source_read: i.source_read === true } : null,

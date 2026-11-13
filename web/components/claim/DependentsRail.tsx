@@ -8,6 +8,7 @@ import {
   DEFINED_IN, STEWARD_SOURCE,
 } from "@/lib/ontology";
 import { Term } from "@/components/Term";
+import { SeveralAssessments, SeveralCounted, severalAmong } from "@/components/SeveralAssessments";
 import styles from "./margins.module.css";
 
 // Above this many dependents, a dot-per-claim row stops being legible, so we
@@ -110,6 +111,8 @@ export function DependentsRail({ dependents }: { dependents: DependentClaim[] })
         </>
       )}
 
+      <SeveralCounted n={severalAmong(dependents)} of="claims" />
+
       <button type="button" className={styles.railToggle} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         {open ? "▾ hide" : "▸ show what builds on this"}
       </button>
@@ -138,6 +141,7 @@ export function DependentsRail({ dependents }: { dependents: DependentClaim[] })
                   {/* Status label only — the bare verdict-confidence number
                       that used to follow it read as P(claim true) (#160). */}
                   <span className={styles.depConf}>{st.label}</span>
+                  <SeveralAssessments id={d.id} n={d.judgments_in_force} />
                   {d.reasoning && (
                     <button
                       type="button"

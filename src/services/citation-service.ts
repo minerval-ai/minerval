@@ -1,5 +1,6 @@
 import { and, count, eq, lte } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
+import { assessmentsInForce, markSeveralInForce, severalInForceNote, type JudgmentInForce } from "./judgment-version-service.js";
 import { assessments } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { getClaimById } from "./claim-service.js";
@@ -50,6 +51,13 @@ export interface ClaimCitation {
   text: string;
   bibtex: string;
   csl: Record<string, unknown>;
+  /**
+   * Present only where more than one assessment of the claim is in force for
+   * the caller: how many. The citation names one, the most recently made;
+   * the evidence record carries each under `assessments_in_force`.
+   */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
 }
 
 export interface EvidenceRecord {
@@ -75,6 +83,16 @@ export interface EvidenceRecord {
     model: string | null;
     assessed_at: string;
   } | null;
+  /**
+   * Present only where more than one assessment of the claim is in force for
+   * the caller (a reader who holds two labels that do not read each other):
+   * every one of them, whole, most recently made first. `assessment` above
+   * is the first of these. The record is read away from the graph, so it
+   * carries each and not a count, and nothing chooses between them.
+   */
+  assessments_in_force?: JudgmentInForce[];
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
   arguments: {
     id: string;
     name: string | null;
@@ -92,6 +110,9 @@ export interface EvidenceRecord {
       text: string;
       relation: string;
       status: string | null;
+      /** Present only where more than one judgment of the premise is in force for the caller. */
+      judgments_in_force?: number;
+      judgments_in_force_note?: string;
     }[];
   }[];
   instances: {
@@ -293,13 +314,17 @@ export async function assembleEvidenceRecord(
   );
   const subclaimsByArgument = new Map<
     string,
-    { id: string; text: string; relation: string; status: string | null }[]
+    EvidenceRecord["arguments"][number]["subclaims"]
   >();
   for (const row of subclaimRows) {
     const list = subclaimsByArgument.get(row.argument_id) ?? [];
     list.push({ id: row.id, text: row.text, relation: row.relation, status: row.status });
     subclaimsByArgument.set(row.argument_id, list);
   }
+  // A premise's status is one judgment's. Where the caller has two in force, the premise says so.
+  await markSeveralInForce([...subclaimsByArgument.values()].flat(), (s) => s.id);
+  // And the claim's own: every assessment in force for the caller, where that is more than one.
+  const inForce = await assessmentsInForce(claimId).catch(() => [] as JudgmentInForce[]);
 
   // The instances the claim carries (detached ones are not its), in the
   // order a reader sees them on the claim page, never insertion order.
@@ -367,6 +392,13 @@ export async function assembleEvidenceRecord(
           assessed_at: assessment.assessedAt.toISOString(),
         }
       : null,
+    ...(inForce.length > 1
+      ? {
+          assessments_in_force: inForce,
+          judgments_in_force: inForce.length,
+          judgments_in_force_note: severalInForceNote(inForce.length),
+        }
+      : {}),
     arguments: args.map((a) => ({
       id: a.id,
       name: a.name,
@@ -435,6 +467,9 @@ export async function assembleClaimCitation(
     text: formatTextCitation(input),
     bibtex: formatBibtex(input),
     csl: formatCslJson(input),
+    ...(record.judgments_in_force
+      ? { judgments_in_force: record.judgments_in_force, judgments_in_force_note: record.judgments_in_force_note }
+      : {}),
   };
 
   return { citation, evidence_record: record };

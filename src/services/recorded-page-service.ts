@@ -25,7 +25,7 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { readerKey } from "../db/clearance.js";
 import { PAGE_HASH_PREFIX_CHARS } from "./page-url.js";
-import { AnalysisCache, loadMatchedClaim, type MatchedClaim } from "./extension-service.js";
+import { AnalysisCache, loadMatchedClaim, severalOnAnnotation, type MatchedClaim } from "./extension-service.js";
 import type { NodeKind } from "../schemas/kinds.js";
 
 const PREFIX_RE = new RegExp(`^[0-9a-f]{${PAGE_HASH_PREFIX_CHARS}}$`);
@@ -93,6 +93,9 @@ export interface RecordedPassage {
     summary: string | null;
     subclaim_count: number;
     url: string;
+    /** Present only where more than one judgment of the node is in force for the asker. */
+    judgments_in_force?: number;
+    judgments_in_force_note?: string;
   };
 }
 
@@ -198,6 +201,7 @@ export async function getRecordedPage(urlHash: string): Promise<RecordedPage | n
         summary: node.summary,
         subclaim_count: node.subclaimCount,
         url: node.claimUrl,
+        ...(node.judgmentsInForce ? severalOnAnnotation(node.judgmentsInForce) : {}),
       },
     });
   }

@@ -11,6 +11,7 @@
  */
 import { holdsMirror } from "./mirrored-node-service.js";
 import { rawQuery } from "../db/client.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { CLAIM_LINK_KINDS } from "../schemas/common.js";
 
@@ -101,6 +102,9 @@ export interface RelatedClaim {
   assessment_status: string | null;
   assessment_confidence: number | null;
   assessment_credence: number | null;
+  /** Present only where more than one judgment of the counterpart is in force for the asker (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
 }
 
 /**
@@ -110,7 +114,7 @@ export interface RelatedClaim {
  * and a deprecated claim is no longer a place to send a reader.
  */
 export async function listRelatedClaims(claimId: string): Promise<RelatedClaim[]> {
-  return rawQuery<RelatedClaim>(
+  const related = await rawQuery<RelatedClaim>(
     `SELECT l.id AS link_id, l.kind, l.reasoning, l.created_by, l.created_at,
             c.id, c.text, c.claim_type,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
@@ -124,4 +128,7 @@ export async function listRelatedClaims(claimId: string): Promise<RelatedClaim[]
       ORDER BY l.created_at, l.id`,
     [claimId]
   );
+  // Where more than one judgment of a counterpart is in force for the asker, its row says so.
+  await markSeveralInForce(related, (r) => r.id);
+  return related;
 }

@@ -39,6 +39,7 @@ import {
 import {
   AnalysisCache,
   loadMatchedClaim,
+  severalOnAnnotation,
   type AnnotationVerdict,
   type PageAnalysis,
   type PageAnnotation,
@@ -259,6 +260,7 @@ export async function getSharedAnalysis(urlHash: string): Promise<SharedPageAnal
         status_confidence: matched.statusConfidence,
         subclaim_count: matched.subclaimCount,
         url: matched.claimUrl,
+        ...(matched.judgmentsInForce ? severalOnAnnotation(matched.judgmentsInForce) : {}),
       },
     };
   });

@@ -22,7 +22,7 @@ import {
   type ValueShown,
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
-import { recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
+import { markSeveralInForce, recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
 import {
   holdsMirror,
   mirroredNode,
@@ -375,15 +375,20 @@ export async function getQuantityDetail(claimId: string): Promise<QuantityDetail
       [claimId]
     ),
   ]);
+  const readingViews = readings.map(({ bc_id, bc_text, bc_status, ...r }) => ({
+    ...r,
+    claim: bc_id ? { id: bc_id, text: bc_text!, status: bc_status } : null,
+  }));
+  // The claims this quantity's page gives a status for: where more than one
+  // judgment of one is in force for the asker, it says so.
+  await markSeveralInForce(readingViews.flatMap((r) => (r.claim ? [r.claim] : [])), (c) => c.id);
+  await markSeveralInForce(cuts, (c) => c.id);
   return {
     definition,
     estimate: current?.estimate ?? null,
     assessed: current?.assessed ?? null,
     estimates,
-    readings: readings.map(({ bc_id, bc_text, bc_status, ...r }) => ({
-      ...r,
-      claim: bc_id ? { id: bc_id, text: bc_text!, status: bc_status } : null,
-    })),
+    readings: readingViews,
     cuts,
     figures_not_yet_recorded: Number(unrecorded[0]?.n ?? 0),
   };
