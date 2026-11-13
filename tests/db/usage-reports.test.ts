@@ -192,6 +192,8 @@ afterAll(async () => {
   await rawQuery(`DELETE FROM administrative_events`);
   await rawQuery(`DELETE FROM permission_grants`);
   await rawQuery(`DELETE FROM account_groups`);
+  // The organization's own party, made when this file's first administrator signed in.
+  await rawQuery(`DELETE FROM parties`);
 });
 
 describe("preparing", () => {
