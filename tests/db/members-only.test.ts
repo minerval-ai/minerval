@@ -482,7 +482,6 @@ describe("what a permission guards", () => {
       "POST /permissions/grants": ["administer"],
       "DELETE /permissions/grants/:grant_id": ["administer"],
       "GET /permissions/accounts": ["administer"],
-      "GET /parties": [["administer", "direct"]],
       "POST /parties": ["administer"],
       "PUT /sources/:source_id/party": ["administer"],
       "GET /labels": ["administer"],
@@ -524,6 +523,8 @@ describe("what a permission guards", () => {
       "GET /file-sets/:file_set_id": [["direct", "administer"]],
       "GET /file-sets/:file_set_id/files": [["direct", "administer"]],
       "GET /file-sets/:file_set_id/commands": [["direct", "administer"]],
+      // The parties, in full for an administrator and by name for a person who directs.
+      "GET /parties": [["administer", "direct"]],
     });
   });
 
