@@ -81,6 +81,71 @@ export async function grantCommittedMicroUsd(
   return (await grantEscrowBreakdown(grant, tx)).committed;
 }
 
+/**
+ * The escrow's terms for a list of mandates (`$1` their grant ids, `$2`
+ * their budget jobs, in the same order), one row each: one statement for one
+ * mandate or for a page of them, so a list of mandates and a mandate's own
+ * page cannot count its money differently. Each table is read once for the
+ * whole list, grouped, rather than once per mandate and term.
+ */
+const ESCROW_TERMS_SQL = `
+  SELECT ge.grant_id,
+         COALESCE(al.shares, 0)::bigint AS shares,
+         COALESCE(al.outstanding, 0)::bigint AS outstanding,
+         -- Metered spend on this job that NO allocation share accounts for.
+         --
+         -- This used to subtract actions.metered_cost_micro_usd — the full cost
+         -- of every ledger run — when what it means to subtract is what those
+         -- runs consumed AS SHARES. The two differ by exactly the overage on
+         -- runs that cost more than they were allocated, so the old form
+         -- cancelled that overage out and left it in no term at all (23.57 owls
+         -- on the General mandate's first epoch, invisible to its own escrow).
+         -- Subtracting shares means anything spent and not shared counts here.
+         GREATEST(0, COALESCE(u.metered, 0) - COALESCE(al.shares, 0))::bigint AS nonledger,
+         COALESCE(rg.total, 0)::bigint AS regrants,
+         -- Bounties held against this escrow, prizes paid from it, and the
+         -- prize-review reserve: one fragment, shared with the settlement
+         -- statement so the two readings cannot drift.
+         ${prizeCommitmentSql("ge.grant_id")} AS prizes
+    FROM unnest($1::uuid[], $2::uuid[]) AS ge(grant_id, job_id)
+    LEFT JOIN (
+      SELECT grant_id,
+             SUM(spent_micro_usd) AS shares,
+             SUM(amount_micro_usd - spent_micro_usd) FILTER (WHERE released_at IS NULL) AS outstanding
+        FROM action_allocations
+       WHERE grant_id = ANY($1::uuid[])
+       GROUP BY grant_id
+    ) al ON al.grant_id = ge.grant_id
+    LEFT JOIN (
+      SELECT job_id, SUM(cost_micro_usd) AS metered
+        FROM llm_usage
+       WHERE job_id = ANY($2::uuid[])
+       GROUP BY job_id
+    ) u ON u.job_id = ge.job_id
+    LEFT JOIN (
+      SELECT from_grant_id, SUM(amount_micro_usd - refunded_micro_usd) AS total
+        FROM regrants
+       WHERE from_grant_id = ANY($1::uuid[])
+       GROUP BY from_grant_id
+    ) rg ON rg.from_grant_id = ge.grant_id`;
+
+interface EscrowTermsRow {
+  shares: number | string;
+  outstanding: number | string;
+  nonledger: number | string;
+  regrants: number | string;
+  prizes: number | string;
+}
+
+function breakdownOf(row: EscrowTermsRow | undefined): GrantEscrowBreakdown {
+  const spent = Number(row?.shares ?? 0) + Number(row?.nonledger ?? 0);
+  const held = Number(row?.outstanding ?? 0);
+  const regrants = Number(row?.regrants ?? 0);
+  const prizes = Number(row?.prizes ?? 0);
+  const outsideLedger = Number(row?.nonledger ?? 0);
+  return { spent, outsideLedger, held, regrants, prizes, committed: spent + held + regrants + prizes };
+}
+
 /** grantCommittedMicroUsd's terms, for the reports that show them. */
 export async function grantEscrowBreakdown(
   grant: {
@@ -91,49 +156,27 @@ export async function grantEscrowBreakdown(
 ): Promise<GrantEscrowBreakdown> {
   const query = <T,>(text: string, params?: unknown[]) =>
     tx ? tx.query<T>(text, params) : rawQuery<T>(text, params);
-  const [row] = await query<{
-    shares: number;
-    outstanding: number;
-    nonledger: number;
-    regrants: number;
-    prizes: number;
-  }>(
-    `SELECT
-       COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
-                  WHERE grant_id = $1), 0)::bigint AS shares,
-       COALESCE((SELECT SUM(amount_micro_usd - spent_micro_usd)
-                   FROM action_allocations
-                  WHERE grant_id = $1 AND released_at IS NULL), 0)::bigint
-         AS outstanding,
-       -- Metered spend on this job that NO allocation share accounts for.
-       --
-       -- This used to subtract actions.metered_cost_micro_usd — the full cost
-       -- of every ledger run — when what it means to subtract is what those
-       -- runs consumed AS SHARES. The two differ by exactly the overage on
-       -- runs that cost more than they were allocated, so the old form
-       -- cancelled that overage out and left it in no term at all (23.57 owls
-       -- on the General mandate's first epoch, invisible to its own escrow).
-       -- Subtracting shares means anything spent and not shared counts here.
-       GREATEST(0,
-         COALESCE((SELECT SUM(cost_micro_usd) FROM llm_usage
-                    WHERE job_id = $2), 0)
-         - COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
-                      WHERE grant_id = $1), 0))::bigint AS nonledger,
-       COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
-                   FROM regrants WHERE from_grant_id = $1), 0)::bigint
-         AS regrants,
-       -- Bounties held against this escrow, prizes paid from it, and the
-       -- prize-review reserve: one fragment, shared with the settlement
-       -- statement so the two readings cannot drift.
-       ${prizeCommitmentSql("$1")} AS prizes`,
-    [grant.id, grant.budgetJobId]
-  );
-  const spent = Number(row?.shares ?? 0) + Number(row?.nonledger ?? 0);
-  const held = Number(row?.outstanding ?? 0);
-  const regrants = Number(row?.regrants ?? 0);
-  const prizes = Number(row?.prizes ?? 0);
-  const outsideLedger = Number(row?.nonledger ?? 0);
-  return { spent, outsideLedger, held, regrants, prizes, committed: spent + held + regrants + prizes };
+  const [row] = await query<EscrowTermsRow>(ESCROW_TERMS_SQL, [[grant.id], [grant.budgetJobId]]);
+  return breakdownOf(row);
+}
+
+/**
+ * grantEscrowBreakdown for many mandates in one statement, keyed by grant
+ * id: a list of mandates reads each one's money without a round trip per
+ * row. Every grant asked for is in the map.
+ */
+export async function grantEscrowBreakdowns(
+  grants: Array<{ id: string; budgetJobId: string }>
+): Promise<Map<string, GrantEscrowBreakdown>> {
+  const out = new Map<string, GrantEscrowBreakdown>();
+  if (grants.length === 0) return out;
+  const rows = await rawQuery<EscrowTermsRow & { grant_id: string }>(ESCROW_TERMS_SQL, [
+    grants.map((g) => g.id),
+    grants.map((g) => g.budgetJobId),
+  ]);
+  const byId = new Map(rows.map((r) => [r.grant_id, r]));
+  for (const g of grants) out.set(g.id, breakdownOf(byId.get(g.id)));
+  return out;
 }
 
 export interface RegrantEdge {

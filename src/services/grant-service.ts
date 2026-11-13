@@ -17,7 +17,7 @@
  * disclosed on the assessments they produce, and grant stakes feed queue
  * priority only (§19, "Allocating Attention and Paid Attention").
  */
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
@@ -25,7 +25,7 @@ import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import type { PlanItemLedger } from "./action-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
-import { grantEscrowBreakdown } from "./regrant-service.js";
+import { grantEscrowBreakdowns, type GrantEscrowBreakdown } from "./regrant-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
@@ -770,33 +770,66 @@ export async function getFundingLabelForJob(
 
 /** Dashboard payload: live spend, progress, and the claims this grant touched. */
 export async function serializeGrant(grant: Grant) {
-  const db = getDb();
-  const [job] = await db
-    .select()
-    .from(budgetJobs)
-    .where(eq(budgetJobs.id, grant.budgetJobId))
-    .limit(1);
-  // Spent as every mandate report counts it (grantEscrowBreakdown, #849).
-  const spent = job
-    ? (await grantEscrowBreakdown({ id: grant.id, budgetJobId: job.id })).spent
-    : 0;
-  const budget = job ? Number(job.budgetMicroUsd) : 0;
+  const [one] = await serializeGrants([grant]);
+  return one!;
+}
 
-  // What the grant actually bought: assessments stamped with its job id.
-  const funded = await rawQuery<{
-    claim_id: string;
-    text: string;
-    status: string;
-    assessed_at: Date;
-  }>(
-    `SELECT a.claim_id, c.text, a.status, a.assessed_at
-       FROM assessments a JOIN claims c ON c.id = a.claim_id
-      WHERE a.funded_by_job_id = $1
-      ORDER BY a.assessed_at DESC
-      LIMIT 50`,
-    [grant.budgetJobId]
+/**
+ * serializeGrant for a list, in three statements whatever its length: the
+ * jobs, their escrows (grantEscrowBreakdowns) and the assessments each
+ * bought. GET /grants used to read three statements per grant, and the Ask
+ * section's sidebar reads it on every page.
+ */
+export async function serializeGrants(list: Grant[]) {
+  if (list.length === 0) return [];
+  const jobIds = list.map((g) => g.budgetJobId);
+  const [jobs, escrows, fundedRows] = await Promise.all([
+    getDb().select().from(budgetJobs).where(inArray(budgetJobs.id, jobIds)),
+    // Spent as every mandate report counts it (grantEscrowBreakdown, #849).
+    grantEscrowBreakdowns(list.map((g) => ({ id: g.id, budgetJobId: g.budgetJobId }))),
+    // What each grant actually bought: assessments stamped with its job id,
+    // its fifty latest.
+    rawQuery<{
+      job_id: string;
+      claim_id: string;
+      text: string;
+      status: string;
+      assessed_at: Date;
+    }>(
+      `SELECT f.job_id, f.claim_id, c.text, f.status, f.assessed_at
+         FROM unnest($1::uuid[]) AS j(id)
+         CROSS JOIN LATERAL (
+           SELECT a.funded_by_job_id AS job_id, a.claim_id, a.status, a.assessed_at
+             FROM assessments a
+            WHERE a.funded_by_job_id = j.id
+            ORDER BY a.assessed_at DESC
+            LIMIT 50
+         ) f
+         JOIN claims c ON c.id = f.claim_id
+        ORDER BY f.job_id, f.assessed_at DESC`,
+      [jobIds]
+    ),
+  ]);
+  const jobOf = new Map(jobs.map((j) => [j.id, j]));
+  const fundedOf = new Map<string, typeof fundedRows>();
+  for (const r of fundedRows) {
+    const rows = fundedOf.get(r.job_id) ?? [];
+    rows.push(r);
+    fundedOf.set(r.job_id, rows);
+  }
+  return list.map((grant) =>
+    serializedGrant(grant, jobOf.get(grant.budgetJobId) ?? null, escrows.get(grant.id)!, fundedOf.get(grant.budgetJobId) ?? [])
   );
+}
 
+function serializedGrant(
+  grant: Grant,
+  job: typeof budgetJobs.$inferSelect | null,
+  escrow: GrantEscrowBreakdown,
+  funded: Array<{ claim_id: string; text: string; status: string; assessed_at: Date }>
+) {
+  const spent = job ? escrow.spent : 0;
+  const budget = job ? Number(job.budgetMicroUsd) : 0;
   return {
     id: grant.id,
     name: grant.name,
