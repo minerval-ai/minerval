@@ -102,6 +102,9 @@ afterAll(async () => {
   // Leave the database as it was found: no rows, pairs or labels of this file.
   await system(async () => {
     await rawQuery(`DELETE FROM claims WHERE id = ANY($1::uuid[])`, [Object.values(claimIds)]);
+    // What this file's rows at these labels left in the record of changes (an argument added, a node reworded):
+    // history with no key to the node, so it does not go with the node.
+    await rawQuery(`DELETE FROM node_changes WHERE sensitivity_label = ANY($1::text[])`, [[A, B, C]]);
     await rawQuery(`DELETE FROM label_reads WHERE label = ANY($1::text[])`, [[A, B, C]]);
     await rawQuery(`DELETE FROM labels WHERE name = ANY($1::text[])`, [[A, B, C]]);
   });
