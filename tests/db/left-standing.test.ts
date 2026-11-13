@@ -19,6 +19,7 @@ import { setNoContextSessionForTests, withSystemClearance } from "../../src/db/c
 import { ensureEnforcement } from "../../src/db/enforcement.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { readsAnothersJudgment } from "../../src/llm/agents/claim-steward.js";
 import { executeLeaveStandingTool } from "../../src/llm/tools/leave-standing-tool.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { versionsNote } from "../../src/llm/agents/steward-changes-note.js";
@@ -131,6 +132,14 @@ describe("a Steward at a that leaves the public judgment standing", () => {
     const read = (await person([A], () => getClaimView(node))) as unknown as Record<string, unknown>;
     expect(read.not_examined_at).toEqual([A]);
     expect(read.left_standing).toBeUndefined();
+  });
+
+  it("is given the task that names the two outcomes: the node is judged at a label it reads and not at its own", async () => {
+    expect(await runAt(A, () => readsAnothersJudgment(node, "claim"))).toBe(true);
+    // Not the Steward at the node's own label, and not on a node of the run's own.
+    expect(await runAt(PUBLIC_LABEL, () => readsAnothersJudgment(node, "claim"))).toBe(false);
+    const own = await seedNode(A, "A claim of a's own, for the task");
+    expect(await runAt(A, () => readsAnothersJudgment(own, "claim"))).toBe(false);
   });
 
   it("records the label, the time, the run, the judgment left standing and its reasons, and no judgment", async () => {
@@ -246,6 +255,8 @@ describe("a Steward at a that leaves the public judgment standing", () => {
 
   it("gives way to a judgment recorded at a afterwards, with nothing written to say so", async () => {
     expect((await runAt(A, () => assess(node, "supported", "With what a holds, read against the public reasoning."))).success).toBe(true);
+    // With a judgment of its own, the Steward at a has the ordinary revisit's task.
+    expect(await runAt(A, () => readsAnothersJudgment(node, "claim"))).toBe(false);
     const view = (await person([A], () => nodeVersions(node, "claim")))!;
     expect(view.left_standing).toEqual([]);
     expect(view.not_examined_at).toEqual([]);

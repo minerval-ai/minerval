@@ -58,7 +58,7 @@ import { CODE_EXECUTION_TOOL, CODE_EXECUTION_USD_PER_HOUR } from "../instrument-
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { createFigureTools } from "../tools/figure-tools.js";
-import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentRunPrivate } from "../usage-context.js";
+import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentRunPrivate, currentLabel } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
@@ -178,6 +178,32 @@ async function hasCurrentJudgment(claimId: string, kind: NodeKind): Promise<bool
   return rows.length > 0;
 }
 
+/** The view of each kind's current judgments, one for each label. */
+const JUDGMENT_VERSIONS_VIEW: Record<NodeKind, string> = {
+  claim: "assessments_versions",
+  quantity: "quantity_estimates_versions",
+  question: "question_assessments_versions",
+};
+
+/**
+ * Whether the node carries another label than this run's and this run's
+ * label has no judgment of it, so that the judgment in force for the run
+ * is one made at a label it reads. Never on the public graph, where there
+ * is one label and nothing is asked. A failed read counts as no.
+ */
+export async function readsAnothersJudgment(claimId: string, kind: NodeKind): Promise<boolean> {
+  if (oneLabelOnly()) return false;
+  const label = currentLabel();
+  const rows = await rawQuery<{ node_label: string; own: boolean }>(
+    `SELECT c.sensitivity_label AS node_label,
+            EXISTS (SELECT 1 FROM ${JUDGMENT_VERSIONS_VIEW[kind]} v
+                     WHERE v.claim_id = c.id AND v.sensitivity_label = $2) AS own
+       FROM claims c WHERE c.id = $1`,
+    [claimId, label]
+  ).catch(() => []);
+  return rows.length > 0 && rows[0]!.node_label !== label && !rows[0]!.own;
+}
+
 /**
  * Whether the node has structure: an active subclaim, subquestion or answer,
  * or an unretired argument. null when the read fails, so the pass note
@@ -248,7 +274,7 @@ it.`;
  * decision is the whole outcome. Re-recording the same verdict would also
  * mark every argument evaluation stale and ask for each to be re-recorded.
  */
-function defaultTask(passNote: string, kind: NodeKind, mustRecord: boolean): PassTask {
+export function defaultTask(passNote: string, kind: NodeKind, mustRecord: boolean, readsAnothers = false): PassTask {
   const noun = kind === "claim" ? "claim" : kind;
   const tool = ASSESSMENT_TOOL[kind];
   const record =
@@ -273,6 +299,28 @@ of what they assert and how that stands before you read its instances or rely
 on its current assessment. When you need them, get_claim_instances returns the
 instances recorded so far; which of them belong on the ${noun}, and in what
 order a reader sees them, is yours to decide.`;
+  // A node at a label this run reads, judged there and not at this run's
+  // label (services/left-standing-service.ts). The pass owes one of two
+  // outcomes, and the logged decision alone is neither: it would leave the
+  // node's page saying nobody had looked from this label.
+  if (readsAnothers) {
+    return {
+      text: `${opening}
+
+The ${noun} carries another label than this run's. The current assessment was
+made at a label this run reads, and this run's label has none of its own.
+Before the run ends, record your own: ${record}. Or leave the one you read
+standing for readers at this run's label (${LEAVE_STANDING_TOOL_NAME}, with
+your reasons). Either is the complete outcome of this pass.`,
+      concluding: `your assessment (${tool}), or ${LEAVE_STANDING_TOOL_NAME}`,
+      nudge: {
+        when: (done) => !done.has(tool) && !done.has(LEAVE_STANDING_TOOL_NAME),
+        message:
+          `You ended your turn without recording an outcome for this ${noun}. Record your own ` +
+          `assessment with ${tool}, or leave the one you read standing with ${LEAVE_STANDING_TOOL_NAME}.`,
+      },
+    };
+  }
   if (mustRecord) {
     return {
       text: `${opening}
@@ -824,7 +872,7 @@ a cent.`
   const task =
     formalTask ??
     moneyTask(input.trigger) ??
-    defaultTask(passNote, kind, !judged);
+    defaultTask(passNote, kind, !judged, judged && (await readsAnothersJudgment(input.claimId, kind)));
 
   // What has changed under the node's judgment since it was written (#566):
   // which premises were judged again, added or removed, which sources came
