@@ -21,8 +21,10 @@ import {
   listGrants,
   getGrant,
   serializeGrant,
+  serializeGrantRow,
   GRANT_POLICIES,
 } from "../services/grant-service.js";
+import { DETAIL_QUERY_PROPERTIES, type DetailOptions } from "../services/read-detail.js";
 import { topUpBudgetJob } from "../services/budget-job-service.js";
 import { microUsdToOwls } from "../services/owl.js";
 import { isDirectService } from "../server/plugins/auth.js";
@@ -95,27 +97,60 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.get("/", {
+  app.get<{ Querystring: { status?: string; offset?: number; limit?: number } }>("/", {
     schema: {
       tags: ["grants"],
-      summary: "List the authenticated user's grants",
+      summary: "List the authenticated user's grants, newest first",
+      description:
+        "One short row per grant: id, title, status, budget, spent and held owls, how many " +
+        "items its plan has, page_url (its public page) and funder_url (your page for it, " +
+        "with its Grantmaker). get_grant reads one whole. `total` counts every grant that " +
+        "matches `status`.",
+      querystring: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            enum: ["planning", "pending_approval", "active", "completed", "cancelled"],
+            description: "Only grants in this state.",
+          },
+          offset: { type: "integer", minimum: 0, default: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+        },
+      },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const rows = await listGrants(request.auth!.userId!);
+      const page = await listGrants(request.auth!.userId!, {
+        status: request.query.status,
+        offset: request.query.offset,
+        limit: request.query.limit,
+      });
       return reply.send({
-        grants: await Promise.all(rows.map(serializeGrant)),
+        grants: await Promise.all(page.rows.map((g) => serializeGrantRow(g))),
+        total: page.total,
       });
     },
   });
 
-  app.get<{ Params: { id: string } }>("/:id", {
+  app.get<{ Params: { id: string }; Querystring: DetailOptions }>("/:id", {
     schema: {
       tags: ["grants"],
       summary: "Get one grant with live spend, plan, and funded assessments",
+      description:
+        "Carries page_url (the mandate's public page) and funder_url (your page for it, with " +
+        "its Grantmaker). By default a summary: the plan's items a page at a time, each with " +
+        "its index, state, and who added it and when (added_by, added_at), plan_item_counts " +
+        "for the whole plan, the funded assessments cut to list_limit, and `collections` " +
+        "giving each list's whole length; detail=full for everything. spent_owls and " +
+        "held_owls are counted as get_mandate counts them.",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
+      },
+      querystring: {
+        type: "object",
+        properties: DETAIL_QUERY_PROPERTIES,
       },
     },
     preHandler: [app.authenticate, app.requireUser],
@@ -126,7 +161,7 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
           .code(404)
           .send({ error: "Grant not found", code: "NOT_FOUND" });
       }
-      return reply.send({ grant: await serializeGrant(grant) });
+      return reply.send({ grant: await serializeGrant(grant, request.query) });
     },
   });
 

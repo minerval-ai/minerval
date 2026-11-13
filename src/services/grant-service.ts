@@ -17,7 +17,7 @@
  * disclosed on the assessments they produce, and grant stakes feed queue
  * priority only (§19, "Allocating Attention and Paid Attention").
  */
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
@@ -27,9 +27,12 @@ import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
 import type { FeaturesConfig } from "../features.js";
+import { countStates, cutList, pagePlanItems, type DetailOptions } from "./read-detail.js";
+import { describePlanItems } from "./plan-state.js";
+import { mandateFunderUrl, mandatePageUrl } from "./mandate-urls.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 
@@ -145,6 +148,16 @@ export interface PlanItem {
   withdrawn?: { at: string; note?: string };
   /** assess/reassess/deepen: the last change of tier or budget (amend_plan_items). */
   amended?: { at: string; note?: string };
+  /**
+   * Who put the item in the plan, and when (PLAN_ITEM_AUTHORS): stamped by
+   * the path that wrote it, never by the plan's author, so a reader can tell
+   * the Grantmaker's own addition from one its funder asked for in the chat
+   * or one a planning pass drafted. With the run that wrote it, when one was
+   * open. Absent on items written before it was recorded.
+   */
+  added_by?: PlanItemAuthor;
+  added_at?: string;
+  added_run_id?: string;
   /**
    * The item's standing on the ledger, written by the plan-to-ledger
    * materializer (action-service.ts) on every sweep and on extend_plan:
@@ -482,7 +495,38 @@ export function validatePlanItems(
  * never dropped on one of them: an ingest's focus was, on two, and a scoped
  * ingest silently became a whole-document one. A blank focus is no focus.
  */
-export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
+/**
+ * Who adds items to a plan, by the path that wrote them:
+ *   grantmaker_draft     the Grantmaker's draft in the granting conversation
+ *                        (propose_mandate), funded as drafted
+ *   grantmaker_planning  the planning pass that drafts a plan for approval
+ *                        (submit_plan)
+ *   grantmaker_chat      the Grantmaker in the funder's management chat
+ *                        (adjust_plan), with the funder present
+ *   grantmaker_review    the Grantmaker's own review pass (extend_plan,
+ *                        adjust_plan), whatever woke it: a lookout's flag, a
+ *                        check-in, a settled run
+ */
+export const PLAN_ITEM_AUTHORS = [
+  "grantmaker_draft",
+  "grantmaker_planning",
+  "grantmaker_chat",
+  "grantmaker_review",
+] as const;
+export type PlanItemAuthor = (typeof PLAN_ITEM_AUTHORS)[number];
+
+/** Who wrote a set of items, when, and in which run (normalizePlanItems). */
+export interface PlanItemStamp {
+  by: PlanItemAuthor;
+  /** Defaults to now. */
+  at?: Date;
+  /** Defaults to the run open in the usage context, if any. */
+  runId?: string | null;
+}
+
+export function normalizePlanItems(items: readonly PlanItem[], stamp?: PlanItemStamp): PlanItem[] {
+  const at = stamp ? (stamp.at ?? new Date()).toISOString() : null;
+  const runId = stamp ? (stamp.runId !== undefined ? stamp.runId : getUsageContext().runId ?? null) : null;
   return items.map((it) => {
     const focus = it.action === "ingest" && typeof it.focus === "string" ? it.focus.trim() : "";
     const partition =
@@ -511,6 +555,8 @@ export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
         : {}),
       ...(it.is_calibration !== undefined ? { is_calibration: !!it.is_calibration } : {}),
       ...(it.lifetime_cap_owls !== undefined ? { lifetime_cap_owls: Number(it.lifetime_cap_owls) } : {}),
+      // The writer's stamp; whatever the author put in these fields is dropped.
+      ...(stamp ? { added_by: stamp.by, added_at: at!, ...(runId ? { added_run_id: runId } : {}) } : {}),
     };
   });
 }
@@ -705,15 +751,23 @@ export async function cancelGrant(input: {
 
 export async function listGrants(
   funderUserId: string,
-  limit = 50
-): Promise<Grant[]> {
+  opts: { status?: string; offset?: number; limit?: number } = {}
+): Promise<{ rows: Grant[]; total: number }> {
   const db = getDb();
-  return db
-    .select()
-    .from(grants)
-    .where(eq(grants.funderUserId, funderUserId))
-    .orderBy(desc(grants.createdAt))
-    .limit(limit);
+  const where = opts.status
+    ? and(eq(grants.funderUserId, funderUserId), eq(grants.status, opts.status))
+    : eq(grants.funderUserId, funderUserId);
+  const [rows, counted] = await Promise.all([
+    db
+      .select()
+      .from(grants)
+      .where(where)
+      .orderBy(desc(grants.createdAt))
+      .limit(Math.min(100, Math.max(1, opts.limit ?? 50)))
+      .offset(Math.max(0, opts.offset ?? 0)),
+    db.select({ n: count() }).from(grants).where(where),
+  ]);
+  return { rows, total: Number(counted[0]?.n ?? 0) };
 }
 
 export async function getGrant(grantId: string): Promise<Grant | null> {
@@ -768,19 +822,60 @@ export async function getFundingLabelForJob(
   return null;
 }
 
-/** Dashboard payload: live spend, progress, and the claims this grant touched. */
-export async function serializeGrant(grant: Grant) {
+/**
+ * A grant's money as every mandate report counts it (grantEscrowBreakdown,
+ * #849): get_grant, get_mandate and get_mandate_allocation all read it from
+ * here, so the three cannot disagree. `held` is what running or waiting work
+ * has committed and not yet spent.
+ */
+async function grantMoney(grant: Grant): Promise<{ budget: number; spent: number; held: number; jobStatus: string | null }> {
   const db = getDb();
   const [job] = await db
     .select()
     .from(budgetJobs)
     .where(eq(budgetJobs.id, grant.budgetJobId))
     .limit(1);
-  // Spent as every mandate report counts it (grantEscrowBreakdown, #849).
-  const spent = job
-    ? (await grantEscrowBreakdown({ id: grant.id, budgetJobId: job.id })).spent
-    : 0;
-  const budget = job ? Number(job.budgetMicroUsd) : 0;
+  if (!job) return { budget: 0, spent: 0, held: 0, jobStatus: null };
+  const escrow = await grantEscrowBreakdown({ id: grant.id, budgetJobId: job.id });
+  return { budget: Number(job.budgetMicroUsd), spent: escrow.spent, held: escrow.held, jobStatus: job.status };
+}
+
+/**
+ * One grant in the funder's list: enough to choose it. get_grant has the
+ * plan and the assessments it bought.
+ */
+export async function serializeGrantRow(grant: Grant) {
+  const money = await grantMoney(grant);
+  const items = ((grant.plan as { items?: unknown[] } | null)?.items ?? []).length;
+  return {
+    id: grant.id,
+    name: grant.name,
+    title: (grant.mandate as { title?: string } | null)?.title ?? grant.name,
+    policy: grant.policy,
+    status: grant.status,
+    budget_owls: microUsdToOwls(money.budget),
+    spent_owls: microUsdToOwls(Math.min(money.spent, money.budget)),
+    held_owls: microUsdToOwls(money.held),
+    budget_status: money.jobStatus,
+    budget_job_id: grant.budgetJobId,
+    plan_items: items,
+    page_url: mandatePageUrl(grant.id),
+    funder_url: mandateFunderUrl(grant.id),
+    created_at: grant.createdAt?.toISOString(),
+    updated_at: grant.updatedAt?.toISOString(),
+  };
+}
+
+/**
+ * Dashboard payload: live spend, progress, and the claims this grant
+ * touched. By default a summary (mandate-service.ts, shapeMandateDetail):
+ * the plan's items a page at a time, each with its index, state and who
+ * added it, and the funded assessments cut to list_limit, with
+ * `collections` giving each whole length; `detail: "full"` is everything.
+ */
+export async function serializeGrant(grant: Grant, opts: DetailOptions = {}) {
+  const money = await grantMoney(grant);
+  const { spent, budget } = money;
 
   // What the grant actually bought: assessments stamped with its job id.
   const funded = await rawQuery<{
@@ -797,6 +892,12 @@ export async function serializeGrant(grant: Grant) {
     [grant.budgetJobId]
   );
 
+  const plan = grant.plan as { strategy?: string; items?: PlanItem[] } | null;
+  const described = describePlanItems(plan?.items ?? [], grant.planCursor);
+  const page = pagePlanItems(described, opts);
+  const assessments = cutList(funded, opts);
+  const detail = opts.detail ?? "summary";
+
   return {
     id: grant.id,
     name: grant.name,
@@ -805,17 +906,32 @@ export async function serializeGrant(grant: Grant) {
     scope_claim_id: grant.scopeClaimId,
     scope_query: grant.scopeQuery,
     budget_owls: microUsdToOwls(budget),
+    // Counted as get_mandate and get_mandate_allocation count them.
     spent_owls: microUsdToOwls(Math.min(spent, budget)),
-    budget_status: job?.status ?? null,
+    held_owls: microUsdToOwls(money.held),
+    budget_status: money.jobStatus,
     budget_job_id: grant.budgetJobId,
-    plan: grant.plan ?? null,
+    page_url: mandatePageUrl(grant.id),
+    funder_url: mandateFunderUrl(grant.id),
+    plan: plan ? { ...plan, items: page.items } : null,
     plan_cursor: grant.planCursor,
-    funded_assessments: funded.map((f) => ({
+    plan_item_counts: countStates(described),
+    funded_assessments: assessments.list.map((f) => ({
       claim_id: f.claim_id,
       text: f.text,
       status: f.status,
       assessed_at: f.assessed_at?.toISOString(),
     })),
+    detail,
+    collections: { plan_items: page.size, funded_assessments: assessments.size },
+    ...(detail === "summary"
+      ? {
+          detail_note:
+            "Summary: the plan's items a page at a time (items_offset, items_limit, items_state), " +
+            "the funded assessments cut to list_limit; detail=full for everything. get_mandate " +
+            "and get_mandate_work read the same mandate in more ways.",
+        }
+      : {}),
     created_at: grant.createdAt?.toISOString(),
     updated_at: grant.updatedAt?.toISOString(),
   };

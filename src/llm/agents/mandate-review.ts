@@ -835,7 +835,7 @@ async function runMandateReviewImpl(input: {
         const problem = validateMandate(probe, await planProposalRefs(grant.id));
         if (problem) return JSON.stringify({ success: false, problem });
         // Stored in the one plan-item form every path writes (#684).
-        const stored = normalizePlanItems(newItems);
+        const stored = normalizePlanItems(newItems, { by: "grantmaker_review" });
         if (toolInput.preview === true) {
           const { previewPlanOrders } = await import("../../services/standing-order-service.js");
           return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grant.id, stored)) });

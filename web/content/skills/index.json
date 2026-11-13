@@ -1257,7 +1257,7 @@
       "name": "sql",
       "displayName": "Sql",
       "description": "How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.",
-      "version": 11,
+      "version": 12,
       "sinceEpoch": "2026-11-responsive-funding",
       "kind": "method",
       "domains": [],
@@ -1330,7 +1330,7 @@
         }
       ],
       "tools": [],
-      "bodyChars": 10360
+      "bodyChars": 10608
     }
   ]
 }

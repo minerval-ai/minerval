@@ -6,9 +6,10 @@ description: >-
   readers and agents most often ask.
 metadata:
   minerval:
-    version: 11
+    version: 12
     since_epoch: 2026-11-responsive-funding
     changelog:
+      12: "plan_items carries added_by, added_at and added_run_id: who put each item in the plan (the Grantmaker's draft, its planning pass, its chat with the funder, or its own review pass) and when; null on items added before they were recorded"
       11: "ledger: waiting_on, waiting_since and next_attempt_at are set only while the platform's next attempt is still ahead; a row whose wait has ended is due and reads as a plain open row, where it used to go on reading as waiting"
       10: "mandates carries pace and the Grantmaker's reserve in place of the daily rate"
       9: "ledger carries waiting_on, waiting_since and next_attempt_at (#971): an open row a platform fault is holding says so, with the class of the fault; such a row is retried by the platform and commissioning it again buys nothing"
@@ -96,7 +97,10 @@ unknown.
   node_id, url, partition, variant, focus, rationale, ledger_status,
   ledger_reason, action_id (the ledger row it names), exclusion_group,
   ledger_checked_at, proposed_kind, proposed_text, proposal_ref, node_ref,
-  contribution_id. Join action_id to `ledger` to check a plan against
+  contribution_id, added_by (who put the item in the plan:
+  grantmaker_draft, grantmaker_planning, grantmaker_chat with the funder,
+  or grantmaker_review, its own pass whatever woke it), added_at and
+  added_run_id (null on items added before these were recorded). Join action_id to `ledger` to check a plan against
   what ran: a named row that is missing, or whose status disagrees with
   ledger_status, is a plan out of step with its ledger. A `propose` item
   is a node the plan asked the graph to take in: proposed_kind and

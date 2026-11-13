@@ -339,14 +339,29 @@ describe("GET /billing/ledger", () => {
         created_at: "2026-08-01T00:00:00.000Z",
       },
     ]);
-    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1", 50);
+    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1", 50, expect.objectContaining({ offset: 0 }));
   });
 
   it("returns as many entries as asked for, and refuses more than 500", async () => {
     const app = await buildApp();
     await app.inject({ method: "GET", url: "/billing/ledger?limit=200" });
-    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1", 200);
+    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1", 200, expect.objectContaining({ offset: 0 }));
     const tooMany = await app.inject({ method: "GET", url: "/billing/ledger?limit=501" });
     expect(tooMany.statusCode).toBe(400);
+  });
+
+  it("pages, and narrows to one job and a window of time", async () => {
+    const app = await buildApp();
+    const job = "8f0e9a3c-6b6a-4b1e-9d63-6f1f3f0b9c11";
+    await app.inject({
+      method: "GET",
+      url: `/billing/ledger?offset=50&job_id=${job}&since=2026-11-01T00:00:00Z&until=2026-11-02T00:00:00Z`,
+    });
+    expect(mocks.listOwlLedger).toHaveBeenCalledWith("u-1", 50, {
+      offset: 50,
+      jobId: job,
+      since: new Date("2026-11-01T00:00:00Z"),
+      until: new Date("2026-11-02T00:00:00Z"),
+    });
   });
 });

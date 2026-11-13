@@ -10,7 +10,7 @@
  * budget floor the job PAUSES with a progress checkpoint and waits for a
  * top-up — it never silently dies mid-run (src/workers/budget-job-pipeline.ts).
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, type BudgetJob } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
@@ -536,15 +536,20 @@ export async function cancelBudgetJob(input: {
 
 export async function listBudgetJobs(
   userId: string,
-  limit = 50
+  limit = 50,
+  opts: { offset?: number; kind?: string; status?: string } = {}
 ): Promise<BudgetJob[]> {
   const db = getDb();
+  const conditions = [eq(budgetJobs.userId, userId)];
+  if (opts.kind) conditions.push(eq(budgetJobs.kind, opts.kind));
+  if (opts.status) conditions.push(eq(budgetJobs.status, opts.status));
   return db
     .select()
     .from(budgetJobs)
-    .where(eq(budgetJobs.userId, userId))
+    .where(and(...conditions))
     .orderBy(desc(budgetJobs.createdAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, opts.offset ?? 0));
 }
 
 export async function getBudgetJob(jobId: string): Promise<BudgetJob | null> {

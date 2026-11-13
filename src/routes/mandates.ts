@@ -45,6 +45,13 @@ import {
   type MandateWorkKind,
 } from "../services/mandate-work-service.js";
 import { mandatePrizesBlock } from "../services/bounty-service.js";
+import {
+  DETAIL_QUERY_PROPERTIES,
+  MANDATE_LIST_DETAILS,
+  shapeMandateDetail,
+  type DetailOptions,
+  type MandateListDetail,
+} from "../services/read-detail.js";
 import { getLookout, listLookoutFlags, lookoutPrecision } from "../services/lookout-service.js";
 import { presentsCredentials } from "../server/plugins/auth.js";
 import { optionalAuthHook } from "../server/optional-auth.js";
@@ -70,6 +77,7 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
       order?: MandateOrder;
       offset?: number;
       limit?: number;
+      detail?: MandateListDetail;
     };
   }>("/", {
     schema: {
@@ -84,7 +92,10 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
         "narrows: `live` (the default: at work, or stopped on a spent budget), `active`, " +
         "`paused`, `finished`, `any`, and for the caller's own `needs_you` (a plan awaiting " +
         "approval, or a budget spent). The response carries `total` for the page's query, " +
-        "the count in each state for the scope and words, and the count in each scope.",
+        "the count in each state for the scope and words, and the count in each scope. " +
+        "Each row is compact by default (id, title, the objective's first words, status, budget, " +
+        "spent, held, backers, assessments, page_url, and for your own funder_url); detail=full " +
+        "gives every field, and get_mandate gives one mandate whole.",
       querystring: {
         type: "object",
         properties: {
@@ -100,6 +111,14 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
           },
           offset: { type: "integer", minimum: 0, default: 0 },
           limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+          detail: {
+            type: "string",
+            enum: [...MANDATE_LIST_DETAILS],
+            default: "compact",
+            description:
+              "compact (the default): a short row per mandate; full: every field a row has " +
+              "(the whole objective, the funder's disclosure, the action mix).",
+          },
         },
       },
     },
@@ -119,20 +138,32 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
         order: q.order,
         offset: q.offset,
         limit: q.limit ?? 50,
+        detail: q.detail,
       });
       return reply.send(page);
     },
   });
 
-  app.get<{ Params: { id: string } }>("/:id", {
+  app.get<{ Params: { id: string }; Querystring: DetailOptions }>("/:id", {
     schema: {
       tags: ["mandates"],
       summary:
         "One mandate's public dashboard: budget, spend, contributors, plan " +
         "progress, funded assessments, and (when it ingests) the pipeline",
+      description:
+        "Carries page_url (its page on the site) and, for its funder, funder_url (their page " +
+        "for it, with its Grantmaker). By default a summary: the plan's items a page at a time, " +
+        "each with who added it and when (added_by, added_at), plan_item_counts for the whole " +
+        "plan, every other list cut to list_limit, and `collections` giving each list's whole " +
+        "length; detail=full for everything. spent_owls, held_owls and budget_owls are counted " +
+        "as get_grant and get_mandate_allocation count them.",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
+      },
+      querystring: {
+        type: "object",
+        properties: DETAIL_QUERY_PROPERTIES,
       },
     },
     preHandler: [optionalAuth],
@@ -156,7 +187,9 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
         mandatePrizesBlock(request.params.id).catch(() => null),
         listMandateAttempts(request.params.id).catch(() => []),
       ]);
-      return reply.send({ mandate: { ...mandate, prizes, attempts } });
+      return reply.send({
+        mandate: shapeMandateDetail({ ...mandate, prizes, attempts }, request.query),
+      });
     },
   });
 
@@ -271,7 +304,9 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
         "and where its pace stands (as needed or steady, and the Grantmaker's reserve), what it " +
         "commissioned in the last 30 days and how those runs used their " +
         "budgets (paged), its officers' and Grantmaker's recent decisions, " +
-        "and the petitions it heard",
+        "the petitions it heard, and what its Grantmaker is watching for " +
+        "(`watching`: its session, its next scheduled check-in, and the " +
+        "subscriptions it and the mandate's inbox hold)",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
@@ -361,7 +396,9 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
             .code(status)
             .send({ error: result.message, code: result.code });
         }
-        return reply.send({ mandate: result.mandate });
+        // The mandate as get_mandate's summary gives it: a contributor wants
+        // to see where it stands, not its whole plan again.
+        return reply.send({ mandate: result.mandate ? shapeMandateDetail(result.mandate, {}) : result.mandate });
       },
     }
   );

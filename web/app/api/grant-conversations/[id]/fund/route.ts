@@ -26,6 +26,7 @@ export async function POST(
   }
   const body = (await request.json().catch(() => ({}))) as {
     budget_owls?: number;
+    acknowledge_warnings?: boolean | string[];
   };
   const budget = Number(body.budget_owls);
   if (!(budget > 0)) {
@@ -35,7 +36,13 @@ export async function POST(
     );
   }
   try {
-    const result = await fundGrantConversation(session.externalId, id, budget);
+    const ack = body.acknowledge_warnings;
+    const result = await fundGrantConversation(
+      session.externalId,
+      id,
+      budget,
+      ack === true || (Array.isArray(ack) && ack.every((x) => typeof x === "string")) ? ack : undefined
+    );
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof AccountApiError) {

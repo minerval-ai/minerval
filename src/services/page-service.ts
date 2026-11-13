@@ -166,13 +166,14 @@ export async function getPage(id: string, userId: string): Promise<AssistantPage
   return page && page.userId === userId ? page : null;
 }
 
-export async function listPages(userId: string, limit = 100): Promise<AssistantPage[]> {
+export async function listPages(userId: string, limit = 100, offset = 0): Promise<AssistantPage[]> {
   return getDb()
     .select()
     .from(assistantPages)
     .where(eq(assistantPages.userId, userId))
     .orderBy(desc(assistantPages.savedAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, offset));
 }
 
 export async function deletePage(id: string, userId: string): Promise<boolean> {

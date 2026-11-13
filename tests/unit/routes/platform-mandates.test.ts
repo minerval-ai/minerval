@@ -36,7 +36,8 @@ vi.mock("../../../src/services/grant-conversation-service.js", () => ({
   serializeConversationSummary: vi.fn(),
   serializeSentMessage: vi.fn(),
   getConversationAfterTurn: vi.fn(),
-  MAX_TURN_WAIT_SECONDS: 25,
+  MAX_TURN_WAIT_SECONDS: 120,
+  SUGGESTED_TURN_WAIT_SECONDS: 50,
 }));
 
 const CONVO = "c0c0c0c0-0000-4000-8000-000000000001";
@@ -161,11 +162,20 @@ describe("platform-grantmaking keys", () => {
 
 describe("GET /grant-conversations/platform/:id", () => {
   it("is public", async () => {
-    mocks.getPublicPlatformConversation.mockResolvedValue({ id: CONVO, funder: "Minerval", status: "proposed" });
+    const messages = [
+      { role: "user", content: "a", at: "2026-11-01T00:00:00.000Z" },
+      { role: "assistant", content: "b", at: "2026-11-01T00:01:00.000Z" },
+    ];
+    mocks.getPublicPlatformConversation.mockResolvedValue({ id: CONVO, funder: "Minerval", status: "proposed", messages });
     const app = await buildApp();
     const res = await app.inject({ method: "GET", url: `/grant-conversations/platform/${CONVO}` });
     expect(res.statusCode).toBe(200);
-    expect(res.json().conversation).toMatchObject({ id: CONVO, funder: "Minerval" });
+    expect(res.json().conversation).toMatchObject({ id: CONVO, funder: "Minerval", message_count: 2 });
+    expect(res.json().conversation.messages).toHaveLength(2);
+    // A follower reads only what came after what it holds.
+    const later = (await app.inject({ method: "GET", url: `/grant-conversations/platform/${CONVO}?after=1` })).json();
+    expect(later.conversation).toMatchObject({ message_count: 2, messages_after: 1 });
+    expect(later.conversation.messages.map((m: { content: string }) => m.content)).toEqual(["b"]);
   });
 
   it("answers 404 for anything that is not a platform conversation", async () => {

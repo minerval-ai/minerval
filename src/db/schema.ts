@@ -4452,6 +4452,11 @@ export const grantConversations = pgTable(
     // a second so whoever is reading the conversation sees it form. Cleared
     // when the turn ends: the finished reply is in messages.
     turnPartial: text("turn_partial"),
+    // What the running turn has done so far: {steps, recent: [{tool, about,
+    // at}]}, the latest few steps newest last. A Grantmaker turn can spend
+    // minutes in tools before it writes a word, so this is what a reader
+    // sees of it meanwhile. Cleared when the turn ends.
+    turnActivity: jsonb("turn_activity"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -6391,6 +6396,10 @@ export const quantityEstimates = pgTable(
     marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
+    // The agent run that wrote it, as on assessments.run_id: what a reader
+    // opens on the run log to see how the estimate was reached. Null on
+    // estimates written before it was recorded.
+    runId: uuid("run_id"),
     // Whether what this judgment was made against was recorded with it
     // (judgment_inputs, #566). False on judgments from before that record,
     // which therefore cannot be said to be stale or fresh by it.

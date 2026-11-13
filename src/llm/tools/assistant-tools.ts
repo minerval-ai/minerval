@@ -69,6 +69,28 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   withdraw_from_mandate: "cancel",
 };
 
+/**
+ * Held calls that wait for the user's press even when they allow the tool's
+ * kind without asking, each with the reason. Acknowledging a drafted
+ * mandate's warnings (fund_grant's acknowledge_warnings) is the funder's
+ * own agreement to what the warnings say, such as that a stake line may
+ * identify them; an allowance to fund is not that agreement, and text the
+ * Assistant read must not be able to give it.
+ */
+export const ALWAYS_ASKS: Readonly<Record<string, { when: (input: Record<string, unknown>) => boolean; reason: string }>> = {
+  fund_grant: {
+    when: (input) =>
+      input.acknowledge_warnings === true ||
+      (Array.isArray(input.acknowledge_warnings) && input.acknowledge_warnings.length > 0),
+    reason: "It acknowledges the draft's warnings, which only the funder can agree to.",
+  },
+};
+
+/** Whether this held call waits for the user's press whatever they allow (ALWAYS_ASKS). */
+export function alwaysAsks(tool: string, input: Record<string, unknown>): boolean {
+  return ALWAYS_ASKS[tool]?.when(input) ?? false;
+}
+
 /** What each held tool does, as its card says it to the user. */
 export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   propose_claim: "Propose a node to the graph",

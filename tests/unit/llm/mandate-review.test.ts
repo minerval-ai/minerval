@@ -211,7 +211,8 @@ describe("runMandateReview", () => {
     expect(items.items.properties).toHaveProperty("focus");
     const append = state.updates.find((u) => u.sql.includes("plan->'items'"))!;
     expect(JSON.parse(append.params[1] as string)).toEqual([
-      { action: "ingest", url: "https://x.test/r", rationale: "r", focus: "grid prices" },
+      // Stamped with who added it (the review pass) and when.
+      { action: "ingest", url: "https://x.test/r", rationale: "r", focus: "grid prices", added_by: "grantmaker_review", added_at: expect.any(String) },
     ]);
   });
 

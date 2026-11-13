@@ -757,6 +757,15 @@ export interface GrantMandateView {
   expected_cost_owls: number;
   expected_cost_usd: number;
   notes: string | null;
+  /** What the funder must read before funding; funding is refused until they are acknowledged. */
+  warnings?: MandateWarningView[];
+}
+
+export interface MandateWarningView {
+  id: string;
+  about: string;
+  text: string;
+  raised_by: "grantmaker" | "platform";
 }
 
 export interface GrantConversationView {
@@ -813,11 +822,15 @@ export async function continueGrantConversation(
 export async function fundGrantConversation(
   externalId: string,
   conversationId: string,
-  budgetOwls: number
+  budgetOwls: number,
+  acknowledgeWarnings?: boolean | string[]
 ): Promise<{ grant_id: string; conversation: { id: string; status: string } }> {
   return accountFetch(`/grant-conversations/${pathSegment(conversationId)}/fund`, {
     method: "POST",
-    body: { budget_owls: budgetOwls },
+    body: {
+      budget_owls: budgetOwls,
+      ...(acknowledgeWarnings !== undefined ? { acknowledge_warnings: acknowledgeWarnings } : {}),
+    },
     actingUser: externalId,
   });
 }
@@ -1176,7 +1189,8 @@ export interface MandatePrizesView {
 }
 
 export async function listMandates(): Promise<MandateSummaryView[]> {
-  const r = await accountFetch<{ mandates: MandateSummaryView[] }>("/mandates");
+  // Every field of each row: the API answers a short row by default.
+  const r = await accountFetch<{ mandates: MandateSummaryView[] }>("/mandates?detail=full");
   return r.mandates;
 }
 
@@ -1210,6 +1224,8 @@ export async function fetchMandatesPage(
   if (opts.order) params.set("order", opts.order);
   if (opts.offset) params.set("offset", String(opts.offset));
   if (opts.limit) params.set("limit", String(opts.limit));
+  // Every field of each row: the API answers a short row by default.
+  params.set("detail", "full");
   return accountFetch<MandateListPage>(
     `/mandates${params.size > 0 ? `?${params}` : ""}`,
     externalId ? { actingUser: externalId } : {}
@@ -1220,8 +1236,10 @@ export async function fetchMandateView(
   mandateId: string,
   externalId?: string | null
 ): Promise<MandateDetailView> {
+  // The whole mandate, as the page renders it: the API answers a summary by
+  // default (the plan a page at a time, other lists cut short).
   const r = await accountFetch<{ mandate: MandateDetailView }>(
-    `/mandates/${pathSegment(mandateId)}`,
+    `/mandates/${pathSegment(mandateId)}?detail=full`,
     externalId ? { actingUser: externalId } : {}
   );
   return {

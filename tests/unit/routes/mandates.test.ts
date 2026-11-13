@@ -93,6 +93,25 @@ describe("GET /mandates/:id", () => {
     expect(mocks.listMandateAttempts).toHaveBeenCalledWith(MANDATE_ID);
   });
 
+  it("answers a summary by default, its plan a page at a time, and everything with detail=full", async () => {
+    const plan_items = Array.from({ length: 30 }, (_, index) => ({ index, state: "queued", action: "assess", rationale: "r" }));
+    mocks.getPublicMandate.mockResolvedValue({ ...mandate, plan_items, contributors: [] });
+    mocks.mandatePrizesBlock.mockResolvedValue(null);
+    mocks.listMandateAttempts.mockResolvedValue([]);
+    const app = await buildApp();
+    const summary = (await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}?items_offset=25` })).json().mandate;
+    expect(summary.detail).toBe("summary");
+    expect(summary.plan_items.map((i: { index: number }) => i.index)).toEqual([25, 26, 27, 28, 29]);
+    expect(summary.collections.plan_items).toEqual({ total: 30, returned: 5, offset: 25 });
+    expect(summary.plan_item_counts).toMatchObject({ total: 30, queued: 30 });
+    const full = (await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}?detail=full` })).json().mandate;
+    expect(full.plan_items).toHaveLength(30);
+    expect((await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}?items_state=nonsense` })).statusCode).toBe(400);
+    mocks.getPublicMandate.mockReset();
+    mocks.mandatePrizesBlock.mockReset();
+    mocks.listMandateAttempts.mockReset();
+  });
+
   it("serves an empty attempts array and a null prizes block when their loaders fail", async () => {
     mocks.getPublicMandate.mockResolvedValueOnce(mandate);
     mocks.mandatePrizesBlock.mockRejectedValueOnce(new Error("no fund"));
@@ -183,7 +202,7 @@ describe("GET /mandates", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual(page);
     expect(mocks.listMandatesPage).toHaveBeenCalledWith({
-      scope: "all", viewerUserId: null, state: "live", q: undefined, order: undefined, offset: 0, limit: 50,
+      scope: "all", viewerUserId: null, state: "live", q: undefined, order: undefined, offset: 0, limit: 50, detail: "compact",
     });
   });
 
@@ -192,7 +211,7 @@ describe("GET /mandates", () => {
     const app = await buildApp();
     await app.inject({ method: "GET", url: "/mandates?scope=platform&state=finished&q=oversight&order=newest&offset=25&limit=25" });
     expect(mocks.listMandatesPage).toHaveBeenCalledWith({
-      scope: "platform", viewerUserId: null, state: "finished", q: "oversight", order: "newest", offset: 25, limit: 25,
+      scope: "platform", viewerUserId: null, state: "finished", q: "oversight", order: "newest", offset: 25, limit: 25, detail: "compact",
     });
   });
 
