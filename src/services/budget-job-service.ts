@@ -254,6 +254,23 @@ export async function getJobContributions(
   }));
 }
 
+/**
+ * How many people have put owls behind each of these jobs: the length of
+ * getJobContributions for each, in one statement. A job no one has backed
+ * is absent from the map.
+ */
+export async function getJobContributorCounts(jobIds: string[]): Promise<Map<string, number>> {
+  if (jobIds.length === 0) return new Map();
+  const rows = await rawQuery<{ job_id: string; n: string | number }>(
+    `SELECT job_id, count(DISTINCT user_id) AS n
+       FROM owl_ledger
+      WHERE job_id = ANY($1::uuid[]) AND reason = 'escrow_hold'
+      GROUP BY job_id`,
+    [jobIds]
+  );
+  return new Map(rows.map((r) => [r.job_id, Number(r.n)]));
+}
+
 /** A job's budget less its metered spend, in micro-USD (0 for no such job). */
 export async function getJobRemainingMicroUsd(jobId: string): Promise<number> {
   const [row] = await rawQuery<{ budget: string }>(`SELECT budget_micro_usd::bigint AS budget FROM budget_jobs WHERE id = $1`, [jobId]);

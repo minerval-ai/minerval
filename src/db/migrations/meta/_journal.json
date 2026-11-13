@@ -1023,6 +1023,13 @@
       "when": 1794610700237,
       "tag": "0145_extraction_lane",
       "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1794612184397,
+      "tag": "0146_mandate_read_indexes",
+      "breakpoints": true
     }
   ]
 }

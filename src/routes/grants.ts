@@ -21,6 +21,7 @@ import {
   listGrants,
   getGrant,
   serializeGrant,
+  serializeGrants,
   GRANT_POLICIES,
 } from "../services/grant-service.js";
 import { topUpBudgetJob } from "../services/budget-job-service.js";
@@ -104,7 +105,7 @@ export async function grantRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const rows = await listGrants(request.auth!.userId!);
       return reply.send({
-        grants: await Promise.all(rows.map(serializeGrant)),
+        grants: await serializeGrants(rows),
       });
     },
   });

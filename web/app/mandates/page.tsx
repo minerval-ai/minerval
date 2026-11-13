@@ -125,12 +125,19 @@ export default async function MandatesPage({
       },
       viewer
     );
+  // Where that is undecided, both tabs are read at once rather than one
+  // after the other, and the one the count chooses is shown.
+  const ifOwn = mandatesView(query, !!viewer, 1);
   try {
-    page = await load(view);
-    const settled = mandatesView(query, !!viewer, page.scopes.mine);
+    const [first, own] = await Promise.all([
+      load(view),
+      ifOwn.scope !== view.scope ? load(ifOwn).catch(() => null) : Promise.resolve(null),
+    ]);
+    page = first;
+    const settled = mandatesView(query, !!viewer, first.scopes.mine);
     if (settled.scope !== view.scope) {
       view = settled;
-      page = await load(view);
+      page = own ?? (await load(view));
     }
   } catch {
     // fall through to the empty state
