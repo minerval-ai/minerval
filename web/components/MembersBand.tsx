@@ -15,10 +15,13 @@ import type { MyPermissions } from "../lib/account-api";
 export function MembersBand({ mine }: { mine: MyPermissions }) {
   const direct = mine.permissions.includes("direct");
   const administer = mine.permissions.includes("administer");
-  if (!direct && !administer) return null;
+  // The pages about the public graph are read by every member; the link is shown to those who can act there.
+  const release = mine.permissions.includes("release");
+  if (!direct && !administer && !release) return null;
   return (
     <nav className="members-band" aria-label="This deployment">
       {direct && <Link href="/sources/new">Add a source</Link>}
+      {(direct || release) && <Link href="/admin/outside">The public graph</Link>}
       {administer && <Link href="/admin">Administration</Link>}
     </nav>
   );

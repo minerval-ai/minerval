@@ -899,6 +899,17 @@ export interface RequestItem {
     backing_usd: number;
   } | null;
   work?: RequestWork[];
+  // Accounts that have said, on the request's record, that they are taking
+  // it up, each with what followed as the record shows it (docs/outward-acts.md).
+  taken_up?: {
+    by: string;
+    account_id: string;
+    at: string;
+    followed: string;
+    in_words: string;
+    published_page_id: string | null;
+    node_id: string | null;
+  }[];
 }
 
 export interface SearchResultItem {
@@ -1191,6 +1202,10 @@ export interface ContributionDetail {
     // landed on. Optional so an older API reads as "not yet".
     became_claim_id?: string | null;
     page_url?: string | null;
+    // Where it was made through a published page on its node: the page, and
+    // what the graph that published it has said became of the contribution.
+    about_published_page_id?: string | null;
+    through_published_page?: { published_page_id: string; publisher: string; node_id: string; state: string; in_words: string } | null;
   };
   review: {
     id: string;

@@ -385,8 +385,12 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
 
       const review = await getReviewForContribution(contribution.id);
 
+      // Where it was made through a published page: what the graph that published the page has said became of it (publisher-record-service.ts).
+      const { answerToContribution } = await import("../services/publisher-record-service.js");
+      const through = await answerToContribution(contribution.id);
+
       return reply.send({
-        contribution: formatContribution(contribution),
+        contribution: { ...formatContribution(contribution), ...(through ? { through_published_page: through } : {}) },
         review: review
           ? {
               id: review.id,

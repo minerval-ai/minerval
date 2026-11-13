@@ -82,6 +82,13 @@ export function PublishedNotes({ claimId, published }: { claimId: string; publis
               </>
             )}{" "}
             {p.state === "held" || p.state === "not_yet_assessed" ? <>Its latest version there: {stateWords(p).toLowerCase()}.</> : null}
+            {p.said_back && p.said_back.admitted > 0 ? (
+              <>
+                {" "}
+                Readers have made {p.said_back.admitted} contribution{p.said_back.admitted === 1 ? "" : "s"} through that page
+                {p.said_back.unanswered > 0 ? `, of which ${p.said_back.unanswered} ${p.said_back.unanswered === 1 ? "stands" : "stand"} unanswered by that graph` : ""}.
+              </>
+            ) : null}
           </p>
         );
       })}
@@ -363,6 +370,55 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+/** Whether the publishing deployment asks this graph for a fresh public assessment when its own version of a public node changes, as its package states it. */
+function keepsCurrentWords(k: PublishedPageView["keeps_public_versions_current"]): string {
+  if (!k) return "The package does not say whether the publishing deployment asks this graph for a fresh public assessment when its own version of a public node changes.";
+  if (k.setting === "off") {
+    return "The publishing deployment has turned off asking this graph for a fresh public assessment when its own version of a public node changes.";
+  }
+  return k.a_public_mandate_pays_for_it
+    ? "When its own version of a public node changes, the publishing deployment asks a public mandate it funds for a fresh public assessment of that node here."
+    : "The publishing deployment's setting for asking this graph for a fresh public assessment when its own version of a public node changes is on, and no public mandate of its own pays for it, so nothing is asked.";
+}
+
+/**
+ * What readers have said back through this page, and what became of each
+ * (docs/outward-acts.md). A contribution made through the page is an
+ * ordinary contribution on the claim; what is added here is whether the
+ * publishing graph has said it received it, and whether a version made
+ * since is published or held.
+ */
+export function PublishedSaidBack({ view, claimId }: { view: PublishedPageView; claimId: string }) {
+  const said = view.said_back ?? [];
+  return (
+    <section className="section" id="said-back">
+      <h2>What readers have said back</h2>
+      <p className="section-note">
+        Anyone may challenge this page, or propose to the claim through it. A contribution made that way is reviewed here like any other, and{" "}
+        {view.publisher.name}&rsquo;s graph reads it from this graph&rsquo;s public record. Below is each one with what that graph has said became of
+        it. A contribution with no reassessment paid for there stands unanswered.{" "}
+        <Link href={`/claims/${claimId}?contribute=challenge&through=${view.published_page_id}#contribute`}>Challenge this page, or propose through it</Link>.
+      </p>
+      {said.length === 0 ? (
+        <p className="section-note">Nothing has been contributed through this page yet.</p>
+      ) : (
+        <ul className="record-list" style={{ fontFamily: "var(--sans)", fontSize: ".86rem" }}>
+          {said.map((s) => (
+            <li key={s.contribution_id} style={{ marginBottom: ".6rem" }}>
+              <Link href={`/contributions/${s.contribution_id}`}>
+                {s.type.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())} of {day(s.submitted_at)}
+              </Link>
+              {s.review !== "admitted" && <> ({s.review} here)</>}
+              <br />
+              <span className="held-mark" aria-hidden /> {s.in_words}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** How this page was published: fields stamped when each thing happened. They are a record, not claims, and carry no status. */
 export function PublicationRecord({ view }: { view: PublishedPageView }) {
   const made = view.record.made;
@@ -385,6 +441,7 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
           {view.publisher.runs_on.charAt(0).toUpperCase() + view.publisher.runs_on.slice(1)}, by the publisher&rsquo;s own statement. {view.publisher.attested_by.charAt(0).toUpperCase() + view.publisher.attested_by.slice(1)}.
         </Row>
         <Row label="Published">{showingWords(view)}</Row>
+        <Row label="Public versions">{keepsCurrentWords(view.keeps_public_versions_current)}</Row>
         <Row label="Sent">{view.record.sent.charAt(0).toUpperCase() + view.record.sent.slice(1)}. Package {view.package} of {view.packages.length}, received {day(view.received_at)}.</Row>
         {made && (
           <>

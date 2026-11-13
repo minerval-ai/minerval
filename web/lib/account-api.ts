@@ -658,6 +658,8 @@ export async function submitContribution(
     evidenceUrls?: string[];
     mergeTargetClaimId?: string;
     proposedCanonicalForm?: string;
+    /** A published page on the node, when the contribution is made through it. */
+    aboutPublishedPageId?: string;
     displayName?: string;
   }
 ): Promise<SubmittedContribution> {
@@ -678,6 +680,9 @@ export async function submitContribution(
           : {}),
         ...(input.proposedCanonicalForm
           ? { proposed_canonical_form: input.proposedCanonicalForm }
+          : {}),
+        ...(input.aboutPublishedPageId
+          ? { about_published_page_id: input.aboutPublishedPageId }
           : {}),
         ...(input.displayName
           ? { contributor_display_name: input.displayName }

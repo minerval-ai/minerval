@@ -193,6 +193,20 @@ export default async function ContributionPage({
         )}
       </section>
 
+      {c.through_published_page && (
+        <section>
+          <h2>Made through a published page</h2>
+          <p>
+            This contribution was made through{" "}
+            <Link href={`/claims/${c.through_published_page.node_id}?published=${c.through_published_page.published_page_id}`}>
+              the redacted assessment on sealed evidence
+            </Link>{" "}
+            that {c.through_published_page.publisher}&rsquo;s graph publishes on this claim. It is reviewed here like any
+            contribution. What that graph has said became of it: {c.through_published_page.in_words}
+          </p>
+        </section>
+      )}
+
       <section>
         <h2>The review</h2>
         {review ? (

@@ -767,7 +767,15 @@ export async function listPublishedPages(opts: { nodeId?: string; accountId?: st
       `SELECT id, sequence, hash, state, package, checked, source_id, received_at FROM published_page_packages WHERE published_page_id = $1 ORDER BY sequence DESC LIMIT 1`,
       [r.id]
     );
-    out.push({ ...summaryOf(r, r.publisher, latest), node: r.node, on_the_node: await standingOnNode(r) });
+    const { saidBackOnPage } = await import("./publisher-record-service.js");
+    const said = (await saidBackOnPage(r.id)).filter((e) => e.review === "admitted");
+    out.push({
+      ...summaryOf(r, r.publisher, latest),
+      node: r.node,
+      on_the_node: await standingOnNode(r),
+      // Contributions made here through the page and admitted, and how many of them stand with no answer from the publishing graph.
+      said_back: { admitted: said.length, unanswered: said.filter((e) => e.state === "unanswered" || e.state === "not_acknowledged").length },
+    });
   }
   return out;
 }

@@ -819,5 +819,8 @@ export interface PublisherRecord {
   name: string;
   registrations: Array<{ key_id: string; public_key: string; runs_on: string; attested_by: string; declared_interest: string | null; registered_at: string; retired_at: string | null }>;
   published_pages: PublishedPageSummary[];
+  /** What this graph's own record holds of the publisher, as counts and dates in sentences (docs/outward-acts.md). */
+  record?: { in_words: string[] };
+  record_note?: string;
   note: string;
 }

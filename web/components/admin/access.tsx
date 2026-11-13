@@ -52,6 +52,12 @@ const PAGES: Array<{ href: string; name: string }> = [
   { href: "/admin/connections", name: "Connections" },
   { href: "/admin/owls", name: "Owls" },
   { href: "/admin/usage-report", name: "Usage report" },
+  // What passes between this deployment and the public graph besides pages (docs/outward-acts.md).
+  { href: "/admin/outside", name: "The public graph" },
+  { href: "/admin/outside/requests", name: "Public requests" },
+  { href: "/admin/outside/keep-current", name: "Keeping public versions current" },
+  { href: "/admin/outside/said-back", name: "What readers said back" },
+  { href: "/admin/outside/reports", name: "Agents' reports" },
 ];
 
 /** The administration pages, as a line of links with the current one marked. For administrators. */
