@@ -2,44 +2,51 @@ import { when, type ExamView, type Group } from "./model";
 import { Tick } from "./Notes";
 import s from "./source.module.css";
 
-// The document's own outline, with how many passages each claim's work has
-// marked and, per examination, whether a section was examined in full, in
-// part, or not at all. Wide screens only; the page reads in order without it.
-export function OutlineRail({ groups, exams }: { groups: Group[]; exams: ExamView[] }) {
+// The passages the graph's work has touched, by the section each sits in,
+// with how many claims mark it and, per examination, whether it was
+// examined. The document's own outline is not repeated here: on a scraped
+// page it is mostly the site's navigation, forty headings over one quoted
+// passage. Wide screens only; the page reads in order without it.
+export function OutlineRail({
+  groups, exams, findings,
+}: {
+  groups: Group[];
+  exams: ExamView[];
+  /** Segments an examination found something in, which lead the text as marked passages do. */
+  findings: ReadonlySet<string>;
+}) {
   const leaves = groups.flatMap((g) => g.leaves);
   const marked = leaves.filter((l) => l.seg.instances.length > 0).length;
+  const lead = groups.flatMap((g) =>
+    g.leaves
+      .filter((l) => l.seg.instances.length > 0 || findings.has(l.seg.id))
+      .map((l) => ({ id: l.seg.id, label: [g.label, l.sub, l.seg.label].filter(Boolean).join(" · ") || "Opening", marks: l.seg.instances.length })),
+  );
   return (
-    <aside className={s.rail} aria-label="Outline">
-      {groups.length > 0 && (
+    <aside className={s.rail} aria-label="Quoted passages">
+      {leaves.length > 0 && (
         <nav>
           <div className={s.railHead}>
-            <span className="sc">Outline</span>
+            <span className="sc">Quoted</span>
             <span className={s.railSub}>{marked} of {leaves.length} passages marked</span>
           </div>
-          <ul className={s.olist}>
-            {groups.map((g) => {
-              const marks = g.leaves.filter((l) => l.seg.instances.length > 0).length;
-              return (
-                <li key={g.id}>
-                  <a href={`#grp-${g.id}`}>
-                    <span>{g.label ?? "Opening"}</span>
-                    <span className={s.omarks}>{marks || ""}</span>
+          {lead.length > 0 ? (
+            <ul className={s.olist}>
+              {lead.map((l) => (
+                <li key={l.id}>
+                  <a href={`#seg-${l.id}`}>
+                    <span>{l.label}</span>
+                    <span className={s.omarks}>{l.marks || ""}</span>
                     {exams.length > 0 && (
                       <span className={s.ocells}>
                         {exams.map((ev) => {
-                          const n = g.leaves.filter((l) => ev.covered.has(l.seg.id)).length;
-                          const style =
-                            n === 0
-                              ? undefined
-                              : n >= g.leaves.length
-                                ? { background: ev.color, borderColor: ev.color }
-                                : { background: `repeating-linear-gradient(90deg, ${ev.color} 0 3px, transparent 3px 5px)`, borderColor: ev.color };
+                          const on = ev.covered.has(l.id);
                           return (
                             <span
                               key={ev.exam.id}
                               className={s.ocell}
-                              style={style}
-                              title={`${ev.code}: ${n === 0 ? "not examined" : n >= g.leaves.length ? "examined" : "examined in part"}`}
+                              style={on ? { background: ev.color, borderColor: ev.color } : undefined}
+                              title={`${ev.code}: ${on ? "examined" : "not examined"}`}
                             />
                           );
                         })}
@@ -47,9 +54,11 @@ export function OutlineRail({ groups, exams }: { groups: Group[]; exams: ExamVie
                     )}
                   </a>
                 </li>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          ) : (
+            <p className={s.railNone}>None yet</p>
+          )}
         </nav>
       )}
       <div>
