@@ -41,7 +41,7 @@ export type SourceKind =
   | "dataset" | "official_statistics" | "transcript" | "treaty" | "court_record" | "legislation"
   | "journal_article" | "preprint" | "conference_paper" | "book" | "book_chapter" | "thesis"
   | "report" | "standard" | "news_article" | "opinion" | "press_release" | "blog_post"
-  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "shown_page" | "unknown";
+  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "shown_page" | "published_page" | "unknown";
 
 export interface TreeNode {
   id: string;

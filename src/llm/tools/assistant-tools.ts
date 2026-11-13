@@ -39,6 +39,7 @@ export const HELD_KINDS = {
   assess: "Order and fund assessments of single nodes",
   fund: "Fund requests and mandates, and approve a mandate's plan",
   cancel: "Cancel orders, jobs and mandates, and withdraw funding",
+  send_outside: "Send released pages, and proposals of nodes, from this deployment to the public graph",
 } as const;
 
 export type HeldKind = keyof typeof HELD_KINDS;
@@ -52,6 +53,9 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   propose_claim: "propose",
   submit_source: "submit",
   submit_contribution: "submit",
+  submit_published_page: "submit",
+  register_publisher_key: "submit",
+  send_pages_outside: "send_outside",
   submit_appeal: "submit",
   challenge_prize_claim: "submit",
   order_assessment: "assess",
@@ -76,6 +80,9 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   propose_claim: "Propose a node to the graph",
   submit_source: "Submit a source for the graph to read",
   submit_contribution: "Submit a contribution",
+  submit_published_page: "Submit a page your deployment publishes, as a source on its node",
+  register_publisher_key: "Put your account on public record as the publisher for a deployment's key",
+  send_pages_outside: "Send what this showing has released to the public graph, under the organization's account",
   submit_appeal: "Appeal a decision",
   challenge_prize_claim: "Challenge a prize claim",
   order_assessment: "Order an assessment",

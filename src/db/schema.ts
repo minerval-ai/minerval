@@ -1241,7 +1241,7 @@ export const sources = pgTable("sources", {
   // two together).
   check(
     "ck_sources_source_type",
-    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'shown_page', 'unknown')`
+    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'shown_page', 'published_page', 'unknown')`
   ),
 ]);
 
@@ -7116,6 +7116,11 @@ export const shownShowings = pgTable(
     endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
     endedHolding: text("ended_holding").array(),
     endReason: text("end_reason"),
+    // For a showing outside: whether the person who asked chose, then, that
+    // each package is sent to the public graph as it is released, with no
+    // person sending each one (services/outbound-service.ts). False means a
+    // person sends each package.
+    sendAsReleased: boolean("send_as_released").notNull().default(false),
     // The destination's label; `public` for a showing outside.
     sensitivityLabel: sensitivityLabelColumn(),
   },
@@ -7291,5 +7296,202 @@ export const redactionPolicies = pgTable(
       "ck_redaction_policies_pair",
       sql`(${table.side} = 'page') = (${table.fromLabel} IS NOT NULL)`
     ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// A shown page leaves the deployment and is read on the public graph
+// (docs/published-pages.md).
+//
+// Two sides, in one codebase, and a deployment uses one of them.
+//
+//   In a deployment that shows pages outside: outbound_packages,
+//   outbound_sends, outbound_proposals. They are built from the
+//   destination-side rows of a showing outside, which are at `public`, by a
+//   connection cleared for `public` alone, and they are at `public`
+//   themselves: what is released to anyone may be read by every member.
+//
+//   On a graph that admits published pages: publishers, published_pages,
+//   published_page_packages. The public graph has one label and these are
+//   at it.
+// ---------------------------------------------------------------------------
+
+// One signed package: the state of one node under one showing outside, as
+// the outside reads it, at the moment it was built. A node's packages are
+// numbered and each names the one before.
+export const outboundPackages = pgTable(
+  "outbound_packages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    // The node's id on the public graph: its own for a mirrored node, and
+    // for a node that exists only here the node its proposal became.
+    publicNodeId: uuid("public_node_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    // The hash of what the package says apart from its place in the
+    // sequence and when it was built: a new package is built when this
+    // differs from the last one's.
+    contentHash: text("content_hash").notNull(),
+    hash: text("hash").notNull(),
+    package: jsonb("package").notNull(),
+    builtAt: timestamp("built_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_outbound_packages_sequence").on(table.showingId, table.nodeId, table.sequence),
+    uniqueIndex("uq_outbound_packages_hash").on(table.hash),
+  ]
+);
+
+// Every time a package or a proposal left, or was handed to a person to
+// carry: who did it, how, and what came back. Rows are added and never
+// changed.
+export const outboundSends = pgTable(
+  "outbound_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    packageId: uuid("package_id"),
+    proposalId: uuid("proposal_id"),
+    // Who sent it; null when it went under a standing choice.
+    sentBy: uuid("sent_by").references((): AnyPgColumn => contributors.id),
+    holding: text("holding").array().notNull().default([]),
+    underStandingChoice: boolean("under_standing_choice").notNull().default(false),
+    // 'https' or 'file'.
+    how: text("how").notNull(),
+    // 'admitted', 'refused', 'failed' or 'handed_over'.
+    result: text("result").notNull(),
+    // What the public graph answered, or why it could not be reached.
+    detail: text("detail"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_outbound_sends_package").on(table.packageId),
+    check("ck_outbound_sends_how", sql`${table.how} IN ('https', 'file')`),
+    check("ck_outbound_sends_result", sql`${table.result} IN ('admitted', 'refused', 'failed', 'handed_over')`),
+  ]
+);
+
+// A node that exists only in this deployment, proposed to the public graph
+// so that its page has a node to appear on. The words are a person's, who
+// holds `direct`, and each party the node's wording rests on releases them.
+export const outboundProposals = pgTable(
+  "outbound_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    // 'claim', 'quantity' or 'question'.
+    nodeKind: text("node_kind").notNull().default("claim"),
+    // The words to be proposed.
+    text: text("text").notNull(),
+    writtenBy: uuid("written_by").references((): AnyPgColumn => contributors.id),
+    writtenHolding: text("written_holding").array().notNull().default([]),
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow(),
+    // The parties whose release the words take, and the releases given:
+    // [{ party_id, by, holding, at }].
+    needs: uuid("needs").array().notNull().default([]),
+    releases: jsonb("releases").notNull().default([]),
+    // 'waiting_for_release', 'ready', 'sent', 'on_the_public_graph',
+    // 'not_admitted' or 'replaced'.
+    state: text("state").notNull().default("waiting_for_release"),
+    // The contribution the proposal became on the public graph.
+    publicContributionId: text("public_contribution_id"),
+    publicNodeId: uuid("public_node_id"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_outbound_proposals_node").on(table.showingId, table.nodeId),
+    check(
+      "ck_outbound_proposals_state",
+      sql`${table.state} IN ('waiting_for_release', 'ready', 'sent', 'on_the_public_graph', 'not_admitted', 'replaced')`
+    ),
+  ]
+);
+
+// An account that has registered a deployment's signing key. The row is a
+// public record: who registered it, the key, and where the deployment is
+// said to run, in fixed words. A registration is never changed: a new one
+// for the same key retires the one before.
+export const publishers = pgTable(
+  "publishers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id),
+    keyId: text("key_id").notNull(),
+    publicKey: text("public_key").notNull(),
+    // One of HOSTING_WORDS in src/published-page/verify.ts.
+    hosting: text("hosting").notNull(),
+    // What the publisher says of its own interest in what it publishes, in
+    // its own words; null where it said nothing.
+    declaredInterest: text("declared_interest"),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_publishers_live_key").on(table.keyId).where(sql`${table.retiredAt} IS NULL`),
+    index("idx_publishers_account").on(table.accountId),
+    check("ck_publishers_hosting", sql`${table.hosting} IN ('own_machines', 'minerval', 'third_party')`),
+  ]
+);
+
+// One node's page under one showing of one publisher: what the packages
+// received for it add up to. The contribution is the publisher's
+// submission of it to the node, reviewed as any contribution is.
+export const publishedPages = pgTable(
+  "published_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The account that submitted it, and the key its packages are signed with.
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id),
+    keyId: text("key_id").notNull(),
+    // The showing's id in the publisher's deployment.
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references((): AnyPgColumn => claims.id),
+    contributionId: uuid("contribution_id").references((): AnyPgColumn => contributions.id),
+    latestSequence: integer("latest_sequence").notNull().default(0),
+    firstReceivedAt: timestamp("first_received_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_published_pages_showing_node").on(table.keyId, table.showingId, table.nodeId),
+    index("idx_published_pages_node").on(table.nodeId),
+  ]
+);
+
+// Every package received, as signed. Nothing is replaced: a later package
+// is a later row.
+export const publishedPagePackages = pgTable(
+  "published_page_packages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    publishedPageId: uuid("published_page_id")
+      .notNull()
+      .references((): AnyPgColumn => publishedPages.id),
+    sequence: integer("sequence").notNull(),
+    hash: text("hash").notNull(),
+    // The state the package states: one of the four.
+    state: text("state").notNull(),
+    package: jsonb("package").notNull(),
+    // What the check confirmed and could not show when the package arrived.
+    checked: jsonb("checked").notNull(),
+    // The package as a source, where it carries a shown page.
+    sourceId: uuid("source_id").references((): AnyPgColumn => sources.id),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_published_page_packages_sequence").on(table.publishedPageId, table.sequence),
+    uniqueIndex("uq_published_page_packages_hash").on(table.hash),
   ]
 );

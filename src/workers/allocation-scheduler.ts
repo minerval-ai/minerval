@@ -49,6 +49,7 @@ import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { slotColumnSql } from "../services/steward-lease.js";
 import { followShowings } from "../services/showing-service.js";
+import { followOutbound } from "../services/outbound-service.js";
 import {
   openReassessmentsForVersionsMadeBesideEarlier,
   openReassessmentsForVersionsWithoutMaterial,
@@ -171,6 +172,13 @@ export async function allocationSchedulerTick(
   // a redaction runs nothing; it runs when it is paid for.
   await followShowings().catch((err: unknown) =>
     console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // 1e. Pages shown outside (outbound-service.ts): a signed package is
+  // built for each change in what the outside would read, and sent where
+  // the person who asked for the showing chose that. It runs no agent.
+  await followOutbound().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following pages shown outside failed: ${err instanceof Error ? err.message : String(err)}`)
   );
 
   // 2. The pending list's order, for display and the fallback lane. It

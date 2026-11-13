@@ -89,7 +89,7 @@ export const ALWAYS_SHOWN: readonly string[] = [
   "That something was removed, in the place it was removed from.",
   "That each source exists: its kind, its fingerprint, whether the organization itself or an outside party supplied it, and whether an interest in the node is recorded for it. The supplier's name and the words of the interest are a part of the page like any other.",
   "The gaps the page itself records: that each exists, and where it stands.",
-  "How the page was made: the prompt set, the version of this policy, the model, and any addition a deployment made to a role's prompt.",
+  "How the page was made: the prompt set, the version of this policy, the model, any addition a deployment made to a role's prompt, the seal of the assessing run's log with whether its chain checks out, and whether a mandate or a person's order paid for the assessment and whether its funder declared a stake.",
   "The number of removals in each category.",
 ];
 

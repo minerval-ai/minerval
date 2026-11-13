@@ -181,6 +181,13 @@ export async function askShowing(input: {
   form: ShowingForm;
   scope: ShowingScope;
   actor: Actor;
+  /**
+   * For a showing outside: the asker's choice that each package is sent to
+   * the public graph as it is released, with no person sending each one
+   * (services/outbound-service.ts). Recorded with the showing, under the
+   * asker's name.
+   */
+  sendAsReleased?: boolean;
 }): Promise<{ showing_id: string; boundary_id: string; policy: { id: string; version: number; hash: string }; pages_opened: number }> {
   if (oneLabelOnly()) {
     throw new ShowingError(
@@ -249,9 +256,9 @@ export async function askShowing(input: {
           [node.id, toLabel, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, pageLabel]
         );
         await tx.query(
-          `INSERT INTO shown_showings (id, node_id, to_outside, boundary_id, form, scope, asked_by, asked_holding, asked_at, sensitivity_label)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [row!.id, node.id, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, row!.asked_at, destination]
+          `INSERT INTO shown_showings (id, node_id, to_outside, boundary_id, form, scope, asked_by, asked_holding, asked_at, send_as_released, sensitivity_label)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [row!.id, node.id, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, row!.asked_at, toLabel === null && input.sendAsReleased === true, destination]
         );
         await tx.query(
           `INSERT INTO showing_acts (showing_id, act, actor_id, holding, at, sensitivity_label) VALUES ($1, 'asked', $2, $3, $4, $5)`,
@@ -711,9 +718,57 @@ async function readPage(
       requests: requests.map((q) => ({ state: q.state, addressed_to_someone: q.addressed_to !== null, filed: q.created_at.toISOString().slice(0, 10) })),
       names_what_remains_open: paragraphsOf(version.incomplete as string | null).length > 0,
     },
-    made: { assessed_by_model: (version.model as string | null) ?? null },
+    made: {
+      assessed_by_model: (version.model as string | null) ?? null,
+      run_log: await runLogFacts((version.run_id as string | null) ?? null),
+      paid_for: await paidForFacts((version.funded_by_job_id as string | null) ?? null),
+    },
   };
   return { header, parts, sources: versionSources };
+}
+
+/**
+ * What is shown of the assessing run's log: whether it is sealed, the seal,
+ * how many steps it counted, and whether its chain checked out here when
+ * the page was recorded (services/run-log.ts). The log itself stays at the
+ * page's label. Null where the version names no run.
+ */
+async function runLogFacts(runId: string | null): Promise<{ sealed: boolean; seal: string | null; steps: number | null; chain_verifies: boolean | null } | null> {
+  if (!runId) return null;
+  const { verifyRunLog } = await import("./run-view-service.js");
+  const check = await verifyRunLog(runId, { isService: true }).catch(() => null);
+  if (!check || !("sealed" in check)) return { sealed: false, seal: null, steps: null, chain_verifies: null };
+  return { sealed: check.sealed, seal: check.log_hash, steps: check.steps_counted, chain_verifies: check.intact };
+}
+
+/** How the assessment was paid for, in the only words that are shown. A declared stake's own words stay at the page's label. */
+export const PAID_BY = {
+  mandate: "a mandate",
+  order: "a person's order",
+  job: "a funded job",
+  not_recorded: "not recorded",
+} as const;
+export const PAYER_STAKE = {
+  declared: "its funder declared a stake in the subject",
+  none: "its funder declared no stake in the subject",
+  not_asked: "its funder was not asked about a stake",
+  not_recorded: "not recorded",
+} as const;
+
+async function paidForFacts(jobId: string | null): Promise<{ by: string; stake: string }> {
+  if (!jobId) return { by: PAID_BY.not_recorded, stake: PAYER_STAKE.not_recorded };
+  const [grant] = await rawQuery<{ named: string | null; stake: string | null }>(
+    `SELECT mandate->>'funder_named' AS named, mandate->>'funder_stake' AS stake FROM grants WHERE budget_job_id = $1`,
+    [jobId]
+  );
+  if (grant) {
+    return {
+      by: PAID_BY.mandate,
+      stake: grant.named === null ? PAYER_STAKE.not_asked : grant.stake?.trim() ? PAYER_STAKE.declared : PAYER_STAKE.none,
+    };
+  }
+  const [order] = await rawQuery(`SELECT 1 FROM assessment_orders WHERE id = $1`, [jobId]);
+  return { by: order ? PAID_BY.order : PAID_BY.job, stake: PAYER_STAKE.not_recorded };
 }
 
 /**

@@ -1099,3 +1099,185 @@ export async function askedShowings(): Promise<Array<Record<string, unknown>>> {
   }
   return out;
 }
+
+// ---- what a showing outside says to the outside ------------------------------------
+
+/**
+ * One node under a showing outside, as the outside is to read it: its state,
+ * the current version's page with each released part's text and salt and
+ * each held part's hash, kind and who holds it, every version made while
+ * the showing stood, and every act with the permissions held. This is what
+ * a signed package carries (services/outbound-service.ts), and everything
+ * in it comes from the destination-side rows of the showing, which are at
+ * `public`.
+ *
+ * It holds no age and no clock reading, so that the same state always
+ * gives the same answer: a new package is built when this changes.
+ *
+ * People are numbered in the order they first acted on the showing. No
+ * name of a person is included.
+ *
+ * Read with the caller's own clearance; the package builder calls it as
+ * work at `public`, where nothing at another label can be read.
+ */
+export async function outsideRecord(showingId: string, nodeId: string): Promise<{
+  showing: { id: string; form: string; scope: string; asked_at: string; send: "by_a_person_each_time" | "as_released"; ended: null | { at: string; because: string } };
+  node: { covered_from: string; first_assessed_at: string | null; showing_began: string; left: null | { at: string; because: string } };
+  state: NodeState;
+  page: null | Record<string, unknown>;
+  policy: null | { version: number; hash: string; text: string };
+  made: null | Record<string, unknown>;
+  acts: Array<Record<string, unknown>>;
+  versions: Array<Record<string, unknown>>;
+} | null> {
+  const [showing] = await rawQuery<{
+    id: string; boundary_id: string; form: string; scope: string; asked_at: Date; ended_at: Date | null; end_reason: string | null; send_as_released: boolean;
+  }>(
+    `SELECT id, boundary_id, form, scope, asked_at, ended_at, end_reason, send_as_released FROM shown_showings WHERE id = $1 AND to_outside`,
+    [showingId]
+  );
+  if (!showing) return null;
+  const [node] = await rawQuery<{ entered_at: Date; left_at: Date | null; left_reason: string | null; first_assessed_at: Date | null }>(
+    `SELECT entered_at, left_at, left_reason, first_assessed_at FROM shown_nodes WHERE showing_id = $1 AND node_id = $2 ORDER BY entered_at LIMIT 1`,
+    [showingId, nodeId]
+  );
+  if (!node) return null;
+  const pages = await rawQuery<ShownPageRow>(
+    `SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE showing_id = $1 AND node_id = $2 ORDER BY judged_at DESC, opened_at DESC`,
+    [showingId, nodeId]
+  );
+  const allActs = await rawQuery<ActRow & { party: string | null; position: number | null }>(
+    `SELECT a.id, a.showing_id, a.page_id, a.part_id, a.act, a.party_id, a.actor_id, a.holding, a.rule_id, a.reason, a.at,
+            p.name AS party, sp.position
+       FROM showing_acts a LEFT JOIN parties p ON p.id = a.party_id LEFT JOIN shown_parts sp ON sp.id = a.part_id
+      WHERE a.showing_id = $1 ORDER BY a.at, a.id`,
+    [showingId]
+  );
+  const people = new Map<string, string>();
+  for (const a of allActs) if (a.actor_id && !people.has(a.actor_id)) people.set(a.actor_id, `person ${people.size + 1}`);
+  const pageIds = new Set(pages.map((p) => p.id));
+
+  const versions: Array<Record<string, unknown>> = [];
+  let current: Record<string, unknown> | null = null;
+  let currentState: NodeState = "not_yet_assessed";
+  let policy: { version: number; hash: string; text: string } | null = null;
+  let made: Record<string, unknown> | null = null;
+  const live = pages.filter((p) => p.stage !== "overtaken");
+  for (const page of pages) {
+    const parts = await shownPartsOf(page.id);
+    const acts = allActs.filter((a) => a.page_id === page.id);
+    const names = await partyNames([...page.needs, ...parts.flatMap((p) => p.needs)]);
+    const heldParts = parts.filter((p) => p.released_at === null);
+    const directHold = pageHeldByDirect(acts);
+    const waitingOn = page.needs.filter((party) => standingOf(acts, null, party) !== "released").map((party) => names.get(party) ?? "a party");
+    const header = page.shown_at && page.header ? (JSON.parse(page.header) as Record<string, unknown>) : null;
+    const state: NodeState | "not_redacted" =
+      page.stage === "overtaken" ? "not_redacted" : !page.shown_at ? "held" : heldParts.length === 0 ? "released_whole" : "released_in_part";
+    const because = directHold
+      ? `held by a person who directs the graph (${HOLD_REASONS[(directHold.reason ?? "no_reason_given") as HoldReason]})`
+      : page.stage === "at_gate"
+        ? `waiting on ${waitingOn.join(" and ") || "the people who decide what is released"}`
+        : STAGE_WORDS[page.stage];
+    const since = (directHold?.at ?? page.opened_at).toISOString();
+    versions.push({
+      page_id: page.id,
+      version_of: page.judged_at.toISOString(),
+      state,
+      ...(state === "held" || state === "not_redacted" ? { held_because: because, held_since: since } : { shown_at: page.shown_at!.toISOString() }),
+      ...(state === "released_in_part" ? { parts_held: heldParts.length, held_kinds: heldByKind(heldParts) } : {}),
+      ...(header ? { of_parts: parts.length, removals: (header.removals as Record<string, number>) ?? {} } : {}),
+      fingerprint: page.root,
+    });
+    if (page.id === live[0]?.id) currentState = state as NodeState;
+    // The page carried is the latest version that is shown, or the latest version where none is.
+    if (page.id !== (live.find((p) => p.shown_at !== null) ?? live[0])?.id) continue;
+    const heldOf = (part: ShownPartRow) => {
+      const holders = part.needs.filter((party) => standingOf(acts, part.id, party) !== "released");
+      const holds = holders
+        .map((party) => [...acts].reverse().find((a) => a.part_id === part.id && a.party_id === party && a.act === "held" && standingOf(acts, part.id, party) === "held"))
+        .filter((a): a is (typeof acts)[number] => !!a);
+      return {
+        by: holders.map((party) => names.get(party) ?? "a party"),
+        reasons: [...new Set(holds.map((a) => HOLD_REASONS[(a.reason ?? "no_reason_given") as HoldReason] ?? "no reason given"))],
+        since: holds.length > 0 ? holds.map((a) => a.at.toISOString()).sort()[0]! : null,
+      };
+    };
+    current = {
+      id: page.id,
+      version_of: page.judged_at.toISOString(),
+      state,
+      held: page.shown_at ? null : { because, since },
+      shown_at: page.shown_at?.toISOString() ?? null,
+      redaction_round: page.round,
+      fingerprint: page.root,
+      earlier_fingerprints: page.roots,
+      always_shown: page.shown_at && page.header ? { text: page.header, salt: page.header_salt } : null,
+      always_shown_hash: page.header_commitment,
+      // Until the page itself is shown no part's text is on this side, whoever has released it.
+      parts: parts.map((p) =>
+        page.shown_at && p.released_at !== null
+          ? { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, text: p.text, marks: p.marks ?? [], salt: p.salt }
+          : { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, held: heldOf(p) }
+      ),
+      audit: page.shown_at && page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : null,
+    };
+    if (header) {
+      const how = (header.made ?? {}) as Record<string, unknown>;
+      made = {
+        prompt_set: how.prompt_set ?? null,
+        assessed_by_model: how.assessed_by_model ?? null,
+        redacted_by_model: how.redacted_by_model ?? null,
+        role_additions: how.role_additions ?? [],
+        run_log: how.run_log ?? null,
+        paid_for: how.paid_for ?? null,
+      };
+      const under = (how.policy ?? {}) as { version?: number | null };
+      const [row] = await rawQuery<{ version: number; hash: string; body: string }>(
+        `SELECT version, hash, body FROM redaction_policies WHERE boundary_id = $1 AND side = 'destination' AND version = $2`,
+        [showing.boundary_id, under.version ?? null]
+      );
+      if (row) policy = { version: row.version, hash: row.hash, text: row.body };
+    }
+  }
+
+  return {
+    showing: {
+      id: showing.id,
+      form: showing.form,
+      scope: showing.scope,
+      asked_at: showing.asked_at.toISOString(),
+      send: showing.send_as_released ? "as_released" : "by_a_person_each_time",
+      ended: showing.ended_at
+        ? { at: showing.ended_at.toISOString(), because: END_REASONS[(showing.end_reason ?? "no_reason_given") as keyof typeof END_REASONS] ?? "no reason given" }
+        : null,
+    },
+    node: {
+      covered_from: node.entered_at.toISOString(),
+      first_assessed_at: node.first_assessed_at?.toISOString() ?? null,
+      showing_began:
+        node.first_assessed_at === null || node.first_assessed_at > node.entered_at
+          ? "before the node was first assessed"
+          : "after the node was first assessed",
+      left: node.left_at
+        ? { at: node.left_at.toISOString(), because: LEFT_REASONS[node.left_reason as keyof typeof LEFT_REASONS] ?? "not recorded" }
+        : null,
+    },
+    state: currentState,
+    page: current,
+    policy,
+    made,
+    acts: allActs
+      .filter((a) => a.page_id === null || pageIds.has(a.page_id))
+      .map((a) => ({
+        at: a.at.toISOString(),
+        what: ACT_WORDS[a.act] ?? a.act,
+        ...(a.page_id ? { page_id: a.page_id, on: a.part_id ? `part ${a.position ?? "?"}` : "the page" } : {}),
+        ...(a.party ? { for_party: a.party } : {}),
+        by: a.actor_id ? people.get(a.actor_id)! : a.rule_id ? "a standing rule" : "the process",
+        holding: a.holding,
+        ...(a.reason && (a.act === "held" || a.act === "page_held") ? { reason: HOLD_REASONS[a.reason as HoldReason] ?? a.reason } : {}),
+        ...(a.reason && a.act === "ended" ? { reason: END_REASONS[a.reason as keyof typeof END_REASONS] ?? a.reason } : {}),
+      })),
+    versions,
+  };
+}

@@ -1319,6 +1319,29 @@ const configSchema = z.object({
     .default("")
     .transform((s) => s.split(",").map((k) => k.trim()).filter((k) => k.length > 0)),
   mirrorApplyIntervalSeconds: z.coerce.number().default(300),
+
+  // Pages shown outside (docs/published-pages.md). A deployment that shows
+  // pages outside signs each package with this key: an Ed25519 private key
+  // in PEM form, held as a secret, made the way the mirror's is
+  // (`npx tsx scripts/published-page.ts keygen`). Its public half is
+  // registered on the public graph by the organization's account there.
+  publishSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // Where this deployment runs, stated on every package in fixed words:
+  // "own_machines" (the organization's own), "minerval" (Minerval's) or
+  // "third_party" (a third party's). No default: a package is not built
+  // until the deployment has said.
+  deploymentHosting: z.enum(["", "own_machines", "minerval", "third_party"]).default(""),
+  // The public graph's API address and the key of the organization's own
+  // account there. With these the deployment sends packages and proposals
+  // over HTTPS, as a client of the routes any account uses. Without them a
+  // person carries each package as a file.
+  publicGraphApiUrl: z.string().default(""),
+  publicGraphApiKey: z.string().default(""),
+  // The largest package a graph admits, in bytes. A backstop: a page is a
+  // node's assessment with its arguments and readings, a few hundred
+  // kilobytes at most, and the route that receives one parses it whole
+  // before it can check the signature.
+  publishedPageMaxBytes: z.coerce.number().default(4_000_000),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -1588,6 +1611,11 @@ export function loadConfig(): Config {
     mirrorFeedApiKey: process.env.MIRROR_FEED_API_KEY,
     mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
     mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
+    publishSigningKey: process.env.PUBLISH_SIGNING_KEY,
+    deploymentHosting: process.env.DEPLOYMENT_HOSTING,
+    publicGraphApiUrl: process.env.PUBLIC_GRAPH_API_URL,
+    publicGraphApiKey: process.env.PUBLIC_GRAPH_API_KEY,
+    publishedPageMaxBytes: process.env.PUBLISHED_PAGE_MAX_BYTES,
   });
 
   // What the two provider settings can only be checked for together: a name

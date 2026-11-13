@@ -256,6 +256,39 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /release/queue": { name: "get_release_queue" },
   "GET /release/rules": { name: "list_release_rules" },
   "POST /showings/:showing_id/pages/:page_id/commission": { name: "fund_showing_work", note: ESCROWS_OWLS },
+  // A shown page leaves the deployment (docs/published-pages.md). Reading
+  // where it stands, and sending, which takes a person: the Assistant
+  // holds it for its user, and a key or a token alone is refused.
+  "GET /outbound": { name: "list_pages_going_outside" },
+  "POST /outbound/send": {
+    name: "send_pages_outside",
+    note:
+      "This is an outward act: it submits released pages to the public graph under the organization's account, and " +
+      "shows outside that this graph assessed the node and when. It runs only for a person: the Assistant shows its " +
+      "user a card, and a key or a token alone is refused.",
+  },
+
+  // ---- published pages: on a graph anyone may read ----
+  "POST /publishers": {
+    name: "register_publisher_key",
+    note: "Free. The registration is public under your account's name.",
+  },
+  "GET /publishers/:account_id": { name: "get_publisher" },
+  "POST /published-pages": {
+    name: "submit_published_page",
+    note:
+      "The submission is reviewed before the page is attached to its node; track it with get_contribution_status. " +
+      SPENDS_OWLS +
+      " Only a publication's first package is charged.",
+  },
+  "GET /published-pages": { name: "list_published_pages" },
+  "GET /published-pages/:published_page_id": {
+    name: "get_published_page",
+    note:
+      "Free. A published page is another graph's assessment, made on evidence that is not public. Report it as that " +
+      "graph's, with its publisher and what its record says, and keep it apart from this graph's own assessment of the node.",
+  },
+  "GET /published-pages/:published_page_id/package": { name: "get_published_page_package" },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
@@ -343,8 +376,19 @@ const SHOWING_SESSION =
   "reads (list_showings, get_showing, get_shown_page, get_release_queue, list_release_rules, " +
   "list_redaction_policies) are tools, and so is paying for the work (fund_showing_work).";
 
+const OUTBOUND_SESSION =
+  "Decides what leaves the deployment or who speaks for it outside: the words a node is proposed to the public " +
+  "graph in, a party's release of those words, a package handed to a person as a file, and the signed statement " +
+  "that registers the deployment's key to an account. Each is recorded with the person who did it and takes a " +
+  "signed-in dashboard session, as asking for a showing does. Reading where things stand " +
+  "(list_pages_going_outside) and sending what has been released (send_pages_outside) are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
+  "POST /outbound/proposals": OUTBOUND_SESSION,
+  "POST /outbound/proposals/:proposal_id/release": OUTBOUND_SESSION,
+  "POST /outbound/packages/:package_id/file": OUTBOUND_SESSION,
+  "POST /outbound/registration": OUTBOUND_SESSION,
   "POST /showings": SHOWING_SESSION,
   "POST /showings/:showing_id/end": SHOWING_SESSION,
   "POST /showings/:showing_id/pages/:page_id/hold": SHOWING_SESSION,

@@ -120,6 +120,13 @@ const from = (
 const SHOWING =
   "Writes on both sides of a boundary, the label a page was written at and the label it is shown to. The two may share no label, so the request cannot work at one. The route checks the person's permission, and the showing service writes each row on the database owner's connection, naming its label (services/showing-service.ts).";
 
+const OUTBOUND =
+  "What a showing outside has released is kept at `public`, and so is the record of its leaving: packages, " +
+  "proposals and sends. The route checks the person's permission and the service writes those rows at `public` " +
+  "as the tables' owner (services/outbound-service.ts). It reads nothing at the person's other labels.";
+const PUBLISHED =
+  "Mounted only on a graph anyone may read, which holds everything at `public`: there is no other label for the " +
+  "request to work at (routes/published-pages.ts).";
 const OPERATOR =
   "Guarded by the operator key, which names no person and carries no clearance: the request reads and writes `public` alone.";
 const ADMINISTRATION =
@@ -301,6 +308,17 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /release/rules": { rule: "none", why: SHOWING },
   "DELETE /release/rules/:rule_id": { rule: "none", why: SHOWING },
   "PUT /redaction-policies": { rule: "none", why: SHOWING },
+
+  // ---- a shown page leaves the deployment: members-only deployments only ----
+  "POST /outbound/send": { rule: "none", why: OUTBOUND },
+  "POST /outbound/packages/:package_id/file": { rule: "none", why: OUTBOUND },
+  "POST /outbound/proposals": { rule: "none", why: OUTBOUND },
+  "POST /outbound/proposals/:proposal_id/release": { rule: "none", why: OUTBOUND },
+  "POST /outbound/registration": { rule: "none", why: "Signs a statement with the deployment's key and writes nothing." },
+
+  // ---- published pages: mounted only where anyone may read, where `public` is the one label ----
+  "POST /publishers": { rule: "none", why: PUBLISHED },
+  "POST /published-pages": { rule: "none", why: PUBLISHED },
 
   // ---- the operator key ----
   "POST /operator/administrators": { rule: "none", why: OPERATOR },

@@ -117,6 +117,10 @@ export async function buildHandoff(
   if (c.contribution_type === "claim_prize") {
     return { error: "A prize claim's admission brings the Steward; nothing to hand over." };
   }
+  const [published] = await rawQuery(`SELECT 1 FROM published_pages WHERE contribution_id = $1`, [c.id]);
+  if (published) {
+    return { error: "A published page reaches the node's Steward when its submission is admitted; nothing to hand over." };
+  }
   const targets = [c.claim_id, c.merge_target_claim_id].filter(Boolean) as string[];
   const claimId = input.claimId?.trim() || c.claim_id;
   if (!claimId || !targets.includes(claimId)) {

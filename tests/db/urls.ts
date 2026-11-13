@@ -16,12 +16,14 @@ export const TEST_DATABASE_ADMIN_URL =
  * More scratch databases, for the mirror's tests (tests/db/mirror-*.test.ts
  * and private-on-mirror.test.ts): a publisher and a private deployment are
  * two databases, and carrying a graph from one to the other needs both.
- * Named after the suite's database (`<name>_mirror_a`, `_b`, `_c`) and made
+ * Named after the suite's database (`<name>_mirror_a`, `_b`, `_c`, `_d`) and made
  * by the global setup as copies of it once the migrations have run. `c` is
  * the publisher of private-on-mirror.test.ts alone, so that it and the
- * round trip, which each start a feed of their own, do not meet.
+ * round trip, which each start a feed of their own, do not meet. `d` is the
+ * public graph of published-pages.test.ts, which runs the app on it as a
+ * second process.
  */
-export const MIRROR_DATABASE_SIDES = ["a", "b", "c"] as const;
+export const MIRROR_DATABASE_SIDES = ["a", "b", "c", "d"] as const;
 export function mirrorDatabaseUrl(side: (typeof MIRROR_DATABASE_SIDES)[number], base: string = TEST_DATABASE_URL): string {
   const url = new URL(base);
   url.pathname = `${url.pathname}_mirror_${side}`;

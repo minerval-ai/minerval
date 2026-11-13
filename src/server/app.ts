@@ -56,6 +56,8 @@ import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { permissionRoutes } from "../routes/permissions.js";
 import { showingRoutes } from "../routes/showings.js";
+import { outboundRoutes } from "../routes/outbound.js";
+import { publishedPageRoutes } from "../routes/published-pages.js";
 import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
 
@@ -169,6 +171,12 @@ export async function buildApp() {
     // Showing a page below its label needs a second label and the
     // permissions that say who may ask and who may release.
     await app.register(showingRoutes);
+    // A page shown outside leaves from here (docs/published-pages.md).
+    await app.register(outboundRoutes);
+  } else {
+    // A graph anyone may read admits pages other graphs publish, as sources
+    // their publishers submit (docs/published-pages.md).
+    await app.register(publishedPageRoutes);
   }
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool

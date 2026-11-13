@@ -48,6 +48,7 @@ import { rawQuery } from "../db/client.js";
 import { commissionAction } from "../services/commission-service.js";
 import { owlsToMicroUsd } from "../services/owl.js";
 import { listParties } from "../services/party-service.js";
+import { SEND_CHOICES, type SendChoice } from "../services/outbound-service.js";
 import { policyById, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
 import {
   HOLD_REASONS,
@@ -225,7 +226,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- asking ----
 
-  app.post<{ Body: { node_id: string; page_label: string; to_label?: string | null; outside?: boolean; form: "once" | "standing"; scope: "node" | "under" } }>(
+  app.post<{ Body: { node_id: string; page_label: string; to_label?: string | null; outside?: boolean; form: "once" | "standing"; scope: "node" | "under"; send?: SendChoice } }>(
     "/showings",
     {
       schema: {
@@ -236,7 +237,12 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           "`form` is `once` (the page as it stands, dated, with nothing undertaken about later versions) or " +
           "`standing` (each later version follows). `scope` is `node` or `under` (the node with what sits under it). " +
           "Nothing is shown by asking: the page is redacted under the boundary's policy when that work is paid for, " +
-          "checked, and then released or held part by part by the people who hold the permission to release.",
+          "checked, and then released or held part by part by the people who hold the permission to release. " +
+          "For a showing outside, `send` says how what is released then leaves: `by_a_person_each_time` (" +
+          SEND_CHOICES.by_a_person_each_time +
+          ") or `as_released` (" +
+          SEND_CHOICES.as_released +
+          ") Left out, a person sends each time.",
         body: {
           type: "object",
           required: ["node_id", "page_label", "form", "scope"],
@@ -247,6 +253,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
             outside: { type: "boolean" },
             form: { type: "string", enum: [...SHOWING_FORMS] },
             scope: { type: "string", enum: [...SHOWING_SCOPES] },
+            send: { type: "string", enum: Object.keys(SEND_CHOICES) },
           },
         },
       },
@@ -264,7 +271,10 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           return reply.code(404).send({ error: `No active node with that id is read at "${page_label}".`, code: "NODE_NOT_FOUND" });
         }
         try {
-          return reply.code(201).send(await askShowing({ nodeId: node_id, pageLabel: page_label, toLabel, form, scope, actor }));
+          const send: SendChoice = outside && request.body.send === "as_released" ? "as_released" : "by_a_person_each_time";
+          const asked = await askShowing({ nodeId: node_id, pageLabel: page_label, toLabel, form, scope, actor, sendAsReleased: send === "as_released" });
+          // What the person chose about sending, said back to them in the words they chose it in.
+          return reply.code(201).send(outside ? { ...asked, sent: send, sending: SEND_CHOICES[send] } : asked);
         } catch (err) {
           return refuse(reply, err);
         }

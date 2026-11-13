@@ -15,7 +15,7 @@
  *  3. Apply the full migration chain with drizzle-kit. Any migration
  *     failure fails the whole suite loudly, before a single test runs —
  *     migration-from-zero is itself under test.
- *  4. Copy the migrated, still empty database three times, for the mirror's tests
+ *  4. Copy the migrated, still empty database once for each side, for the mirror's tests
  *     (tests/db/urls.ts, mirrorDatabaseUrl): a publisher and a private
  *     deployment are two databases.
  *

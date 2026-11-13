@@ -310,6 +310,8 @@ export const SOURCE_KIND_DESCRIPTIONS = {
   webpage: "a web page of none of the kinds above: an organization's page, documentation, a product page",
   shown_page:
     "a page of this graph, written at a label this one does not read and shown here with what was removed or held marked in its place",
+  published_page:
+    "a page of another graph, made there on evidence that is not public and published with what was removed or held marked in its place",
   unknown: "not yet identified",
 } as const;
 
@@ -328,10 +330,12 @@ export const GENERIC_SOURCE_KINDS: ReadonlySet<string> = new Set<SourceKind>(["u
 
 /**
  * The kinds an agent may state for a source it read: every kind but
- * "unknown", which is the absence of one, and "shown_page", which only the
- * showing of a page records (services/showing-service.ts).
+ * "unknown", which is the absence of one, "shown_page", which only the
+ * showing of a page records (services/showing-service.ts), and
+ * "published_page", which only the admission of a signed package records
+ * (services/published-page-service.ts).
  */
-export const STATABLE_SOURCE_KINDS = SOURCE_KINDS.filter((k) => k !== "unknown" && k !== "shown_page");
+export const STATABLE_SOURCE_KINDS = SOURCE_KINDS.filter((k) => k !== "unknown" && k !== "shown_page" && k !== "published_page");
 
 /** `value` as a kind an agent may state, or null when it is not one. */
 export function statedSourceKind(value: unknown): SourceKind | null {
