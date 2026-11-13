@@ -94,7 +94,7 @@ A private deployment, one that serves only its signed-in members, has these page
 | `/showings/new` | For holders of the permission to direct: ask for a node's page to be shown, reached from the node's page. It says what each choice shows and to whom |
 | `/release` | For holders of the permission to release a party's material: the parts of redacted pages waiting on them, oldest first, to release or hold, and that party's standing rules |
 | `/redaction-policies`, `/redaction-policies/:id` | For every member: the redaction policy of each boundary they can read, in full. For an administrator who reads the label the pages are written at, saving the next version |
-| `/outbound` | For every member: each signed package built for a page shown outside, whether it was sent and what the public graph answered. For holders of the permission to direct, sending, taking a package as a file, and the words a node that exists only in the deployment is proposed in |
+| `/outbound` | Pages sent outside. For every member: each signed package built for a page shown outside, whether it was sent and what the public graph answered. For holders of the permission to direct, sending, taking a package as a file, and the words a node that exists only in the deployment is proposed in |
 | `/file-sets`, `/file-sets/:id` | For holders of the permission to direct or to administer: the sets of files added for agents to explore in the deployment's sandbox; one set's files with their hashes, the commands agents ran, uploading into it and switching it off |
 
 ## Owls in the interface
