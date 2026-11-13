@@ -134,6 +134,16 @@ export interface GrantmakerTurnResult {
 const TITLE_MAX_CHARS = 200;
 const FUNDER_STAKE_MAX_CHARS = 500;
 
+/** The one way to record that a funder declared no stake. */
+const NO_STAKE = /^none\.?$/i;
+/**
+ * A stake line that opens by saying there is none and then goes on. The page
+ * prints the line after "who declared a stake in its subject:", so "None
+ * declared: … he is the founder of Minerval" read as a stake of "None
+ * declared". Either there is no stake ("none") or the line states it.
+ */
+const SAYS_NO_STAKE = /^(none|no stake|no interest|nothing|n\/a)\b/i;
+
 /**
  * Tool-use turns in one chat reply. Not a spending limit (funded turns
  * meter to the escrow, conversation turns are rate-limited): a person is
@@ -170,7 +180,10 @@ const MANDATE_SCHEMA = {
       maxLength: FUNDER_STAKE_MAX_CHARS,
       description:
         "The stake the funder declared in the mandate's subject, in words a " +
-        "reader can weigh, or \"none\" when they declared none. Shown on the " +
+        "reader can weigh, or exactly \"none\" when they declared none. The page " +
+        "prints it after \"who declared a stake in its subject:\", so write the " +
+        "stake itself (\"the founder of Minerval, the platform that hosts this " +
+        "graph\"), never \"none\" followed by a qualification. Shown on the " +
         "mandate's page whether or not the funder is named.",
     },
     scope_claim_id: {
@@ -284,6 +297,14 @@ export function validateMandate(raw: GrantMandate, knownRefs: readonly string[] 
   }
   if (typeof raw.funder_stake !== "string" || !raw.funder_stake.trim()) {
     return 'funder_stake is required: ask the funder about any stake in the subject, and record it or "none"';
+  }
+  if (!NO_STAKE.test(raw.funder_stake.trim()) && SAYS_NO_STAKE.test(raw.funder_stake.trim())) {
+    return (
+      'funder_stake is either exactly "none" or the stake itself, since the page reads "who declared a ' +
+      'stake in its subject: <funder_stake>". Don\'t write "none" and then qualify it: if the funder has ' +
+      "a tie a reader would weigh (founding or working for the platform, owning what the claims are " +
+      "about), that tie is the stake; state it plainly, with the funder's own account of it if they want one"
+    );
   }
   if (!raw.objective?.trim()) return "objective is required";
   if (!raw.plan?.items?.length) return "the plan needs at least one item";
@@ -717,7 +738,7 @@ async function runGrantmakerTurnImpl(input: {
           plan: { ...raw.plan, items: normalizePlanItems(raw.plan.items) },
           expected_cost_owls: raw.expected_cost_owls,
           funder_named: raw.funder_named,
-          funder_stake: /^none\.?$/i.test(String(raw.funder_stake).trim())
+          funder_stake: NO_STAKE.test(String(raw.funder_stake).trim())
             ? null
             : String(raw.funder_stake).trim(),
           ...(raw.notes ? { notes: String(raw.notes) } : {}),

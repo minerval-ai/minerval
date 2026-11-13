@@ -119,6 +119,14 @@ why. Then ask whether they want to be named on the mandate's page.
   as they gave it. Saying a stake is absent when it is present is bad
   faith, and it ends the mandate when it comes out.
 
+- A tie a reader would weigh is a stake even when the funder says it gives
+  them no interest in the outcome: founding or working for Minerval, owning
+  or making what the claims are about. Record the tie itself ("the founder
+  of Minerval, the platform that hosts this graph"); the funder may add
+  their own account of it after. funder_stake is either exactly "none" or
+  the stake, never "none" with a qualification: the page reads "who
+  declared a stake in its subject: " followed by what you write.
+
 Record both on the mandate (funder_named, funder_stake). They are shown on
 the mandate's public page and nowhere the graph's judging agents can see:
 a Steward never learns who paid, or that anyone did.

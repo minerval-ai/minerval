@@ -784,7 +784,9 @@ speaker's declared stake recorded as that source's interest.
 - **Beside the assessment.** The node's page shows stated views in a section
   of their own after the assessment, each with who stated it, when, how it
   stands, its words, its declared stake, and what became of its reasons. The
-  section says that its place gives a statement no weight. Stated views are
+  section says that its place gives a statement no weight. A page with none
+  shows no section, only a quiet invitation to state one at the foot of the
+  reading column. Stated views are
   left out of the page's list of instances so that they are not shown twice;
   for the Steward they are instances like any other.
 - **Where views and assessments differ.** `GET /stated-views`

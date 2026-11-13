@@ -1846,6 +1846,12 @@ the mandate (`funder_named`, `funder_stake`) and on its public page.
 - A funder with a stake may stay anonymous only if the stake is disclosed
   in words a reader can weigh. One who will not disclose a stake they have
   is declined.
+- A tie a reader would weigh is a stake even when the funder says it gives
+  them no interest in the outcome (founding Minerval, making the product the
+  claims are about), and it is recorded as the tie. `funder_stake` is exactly
+  "none" or the stake itself, never "none" with a qualification: the page
+  prints it after "who declared a stake in its subject:", and
+  `validateMandate` refuses the mixed form.
 - Declarations are on the funder's word. A false one is bad faith, and it
   ends the mandate when it comes out.
 - A mandate a mandate spawns carries its source's declaration; the
