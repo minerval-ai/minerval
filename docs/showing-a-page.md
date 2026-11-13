@@ -8,10 +8,13 @@ page written at one label is shown to readers who may not read that label,
 at another label inside the deployment or outside it, with what was removed
 marked in its place, and in a form those readers can check.
 
-It is one act at every boundary. Showing what was concluded at one label to
-the readers of another, and showing it outside the deployment, are the same
-steps with a different destination. This document describes those steps as
-built. A showing outside goes through every step below, and what it
+A node's page is one kind of thing that passes a gate, and the gate is the
+same at every boundary ([the-gate.md](the-gate.md): its acts, its settings,
+what flows, who pays, the backlog). Showing what was concluded at one label
+to the readers of another, and showing it outside the deployment, are the
+same steps with a different destination. This document describes a page's
+own part of those steps as built: what a page is, its parts, the policy,
+the fingerprint, and what its readers see. A showing outside goes through every step below, and what it
 releases is then carried out of the deployment in a signed package and read
 on the public graph: [published-pages.md](published-pages.md).
 
@@ -41,9 +44,11 @@ it is a showing across that other boundary, under that boundary's policy.
 
 ## Asking
 
-A person who holds the permission to direct the graph asks for a node's
-page at a label they read to be shown to a named label, or outside
-(`POST /showings`). The destination must not already read the page's label.
+A person who holds the permission to direct the graph sets a flow of pages
+at a label they read toward a named label, or outside (`POST /showings`):
+for one node, a node with what sits under it, every node one mandate's
+work assessed, or every node assessed at the label
+([the-gate.md](the-gate.md), "What flows"). The destination must not already read the page's label.
 The two labels need not be related in any other way: a page at one label
 can be shown at another that neither reads nor is read by it.
 
@@ -58,10 +63,8 @@ can be shown at another that neither reads nor is read by it.
   showing ended). A node that also sits under other things appears once, in
   its place under the shown node.
 
-How a page is shown is chosen each time it is asked for. There are no
-deployment defaults, and nothing is shown that nobody asked to show. Ending
-a standing showing is a dated event with a reason from a fixed list; what
-was shown stays shown.
+No page is offered to a gate that no flow covers. Ending a standing flow is
+a dated event with a reason from a fixed list; what was shown stays shown.
 
 Every act on a showing is a row that names who did it and the permissions
 they held then (`showing_acts`), so a reader on the other side can see when
@@ -159,12 +162,13 @@ under.
 
 ## Redaction
 
-Asking opens a ledger row for the page's redaction (kind `redact`), at the
-page's label. Like every run, it happens when someone pays for it: a mandate
-that values it, or a person with the permission to fund
-(`POST /showings/:id/pages/:page_id/commission`). A standing showing opens
-one for each new version. A version replaced before its redaction ran is
-not redacted, and stays in the showing's history as that.
+Where the gate is open for a page, no Redactor runs: the page is
+fingerprinted as written and goes. Otherwise a ledger row is opened for the
+page's redaction (kind `redact`), at the page's label, and is paid for at
+once from the budget of the work that produced the page, with no person's
+act ([the-gate.md](the-gate.md), "Who pays"). A standing flow opens one
+for each new version. A version replaced before its redaction ran is not
+redacted, and stays in the flow's history as that.
 
 A page is recorded from a finished version. While a Steward's pass on the
 node at the page's label is running, a standing showing does not record the
@@ -188,17 +192,23 @@ tools:
   the policy's categories, with a note. The passage is replaced by
   `[redacted: <category>]`. Nothing else in the part changes.
 - `restore`: take a removal back.
-- `cannot_cross`: say that the page cannot be shown under this policy,
-  because something that is always shown could not be shown without giving
-  away what a category protects. The destination then sees the page as held.
+- `hold_part`: hold one part, or the whole page when no part is given, with
+  a reason from the fixed list and a note. It is for what a removal cannot
+  protect, such as something that is always shown. The destination sees
+  that it is held by the Redactor, with the reason's fixed words.
+- `delay_part`: keep a part or the page back until a time. `lift_hold`
+  takes back a hold or a delay of its own.
 - `finish_redaction`: end the pass, naming the decisions it was least sure
-  of in either direction. It also names there a part whose wording looks
+  of in either direction. What it did not hold or delay goes on under the
+  gate's setting. It also names there a part whose wording looks
   arranged to carry something other than its sense ("What this does not
   protect against", below).
 
 No tool writes a word onto the page. The Redactor's notes, its account of
-what it was least sure of, and its reason for `cannot_cross` stay at the
-page's label.
+what it was least sure of, and its note on a hold stay at the page's
+label. `get_page_to_redact` tells it how the gate is set for the page:
+whether what it lets through goes once Audit has checked its work, or
+waits for a person.
 
 The Redactor runs on the model `REDACTOR_MODEL` names, and on the Steward's
 model (`STEWARD_MODEL`) where that is unset: it reads a page a Steward wrote
@@ -238,11 +248,11 @@ shown outside rebuilds the same tree from a signed package
 ## The check
 
 Audit checks each round of redaction before the page goes on (audit type
-`redaction_fidelity`, a ledger row like any audit). It reads the page as
+`redaction_fidelity`, a ledger row paid for as the redaction was). It reads the page as
 written and as redacted, each removal with its category and note, and the
 policy, and answers three questions: did anything the policy protects pass;
-was anything removed that the policy does not name; does what remains still
-support the verdict, as far as the policy allows.
+was anything removed or held that the policy does not name; does what
+remains still support the verdict, as far as the policy allows.
 
 It passes the work or returns it to the Redactor with reasons. Returned
 work is redone on the ledger, and the destination sees that a round was
@@ -256,7 +266,11 @@ so that the answer cannot itself give anything away:
 
 ## The gate
 
-After the check, people decide part by part.
+After the check the page is at the gate, and the gate's setting decides
+what happens to each part for each party it rests on
+([the-gate.md](the-gate.md), "Settings"): under the Redactor's decision,
+what the Redactor let through goes; under a person's decision as well, it
+waits for that party's holders of `release`.
 
 A part rests on the parties whose material it draws on, worked out from the
 record when the page is opened (`partiesFor`):
@@ -292,16 +306,20 @@ needs both.
 whoever they choose. The design does not decide who that is, and one person
 may hold `direct` and `release`.
 
-- **Release and hold act on a whole part.** No route changes the text of a
-  part: a changed part would not match its hash.
-- **A hold** is the one word for anything not released. It carries who,
-  when and a reason from a fixed list; it shows on the other side in place
-  of the part ("An argument against, held by <party>"); it can be lifted;
-  and it stays on the record. A release is not taken back. A person who
-  directs the graph may hold a page that has not been shown.
-- **Nothing is released by time passing.** An item nobody has acted on
-  shows as held, with how long it has waited.
-- **The queue** (`GET /release/queue`) shows each item as it would be
+- **No act changes a word.** A part is let through, has a passage removed
+  and marked, is held or is delayed: by the Redactor or by a person, with
+  the same acts. A person's removal records the part's hash and the page's
+  fingerprint again, and can be made until the page itself is shown.
+- **A hold** carries who, when and a reason from a fixed list; it shows on
+  the other side in place of the part ("An argument against, held by
+  <party>", or "held by the Redactor"); it can be lifted; and it stays on
+  the record. A release is not taken back. A person who directs the graph
+  may hold a page that has not been shown.
+- **A part nobody has released shows as held**, with how long it has
+  waited, and is counted in the gate's backlog.
+- **The queue** (`GET /gate/queue`) lists what waits on a person: the
+  items whose gate is set to a person's decision, and those the Redactor
+  or a person holds or has delayed. It shows each item as it would be
   shown if released: the part after the Redactor's removals, with the
   marks, and with it what is always shown of the page and the node's
   wording as they would be shown. The parts the Redactor was least sure of
@@ -322,15 +340,20 @@ may hold `direct` and `release`.
   every removed passage of every such page, at a label they do not read.
   They see that a part was flagged and not why. The queue says what they
   are and are not shown on each such item and once for the whole answer.
-- **Standing rules.** A party's holders of `release` may set a rule at one
-  boundary, as a condition the system tests from the record: release a part
-  when the Redactor removed nothing from it and it rests on this party's
-  material alone; or when it rests on this party's material alone. A rule
-  may also cover the page itself. It applies to pages that reach the gate
-  after it is set, and each release it makes is recorded as made under it.
+- **Settings took the place of standing rules.** A party's holders of
+  `release` set the gate for that party's material to the Redactor's
+  decision or to a person's, for the whole boundary or a narrower scope.
+  Each release the gate makes under a setting is recorded as made under
+  it. A deployment that had the two earlier rules has them as settings:
+  "release what rests on our material alone" became the Redactor's
+  decision for that party, and "release it only where nothing was removed"
+  became a person's decision, which releases nothing the party had not
+  allowed. A gate that existed before settings did keeps a person's
+  decision until its administrators change it.
 
-The page is shown when every party its verdict rests on has released it
-and no person who directs the graph holds it. From then each part shows as
+The page is shown when every party its verdict rests on has released it,
+by the gate's setting or by a person, and neither the Redactor nor a
+person who directs the graph holds it. From then each part shows as
 its text once every party it rests on has released it.
 
 ## What the destination sees
@@ -344,8 +367,9 @@ in any of them:
 - **released in part**: how many parts of how many are held, and of which
   kinds;
 - **held**: with why, in fixed words (waiting for its redaction, waiting
-  for the check, waiting on named parties, held by a person who directs
-  the graph, or unable to be shown under the policy), and for how long.
+  for the check, waiting for funds, waiting on named parties, held by the
+  Redactor, delayed until a time, or held by a person who directs the
+  graph), and for how long.
 
 Every version made while a standing showing stands is in the showing's
 history, the held ones included. The record gives the date the node came
@@ -381,8 +405,8 @@ made against an earlier one, and no reassessment is opened for it
 (`minerval_only_shown_pages_between`): everything in the page was already
 in front of the version it was shown from.
 
-This is the one way text reaches a label that does not read the label it
-was written at.
+The gate is the one way text reaches a label that does not read the label
+it was written at.
 
 ## What this does not protect against
 
@@ -400,8 +424,9 @@ was written at.
   Where a part looks that way, it names the part in `finish_redaction`'s
   `least_sure` with what it saw, which Audit is given and which the people
   at the gate who read the page's label see first on that part. The
-  Redactor may not see it, and nothing holds a page on this ground except
-  a person's decision at the gate.
+  Redactor may not see it. Under the Redactor's decision a part it only
+  named there goes on once Audit passes the work; a gate set to a person's
+  decision is where a person looks at it first.
 - **The check against the fingerprint shows that what was released is what
   was written. It does not show that the logged run was the only run**, or
   that the nodes shown were chosen without sight of their verdicts. The
@@ -420,12 +445,13 @@ was written at.
 
 ## Routes and tools
 
-Reading a showing, reading the queue and paying for the work are MCP tools.
-Asking for a showing, ending one, holding, releasing, setting a rule and
-saving a policy are acts of a signed-in person and are not tools: each
-decides what leaves a label and is recorded with the person who did it, so
-a key that leaked or an agent following text it read cannot do any of them
-(`src/routes/showings.ts`).
+Every route is an MCP tool (`src/routes/showings.ts`,
+`src/mcp/route-tools.ts`). Each act at a gate takes its permission
+(`release` for a party, `direct`, `administer`) and is recorded with the
+account that made it. The account may act from a signed-in session or
+through a key or token of its own, so the person a gate's authorities put
+there can use their own agent or a script. The Assistant holds each act for
+its user, under the kind "Act at a gate".
 
 ## Not built here
 
@@ -436,7 +462,7 @@ a key that leaked or an agent following text it read cannot do any of them
   part wait on which party (`waiting_on` on `GET /showings`: kind and
   party, never text), a queue item names its node and carries the reason
   and date of a hold already placed, and the lists of hold and end reasons
-  are served with `GET /showings` and `GET /release/queue`.
+  are served with `GET /showings` and `GET /gate/queue`.
 - A node at the destination label for a page whose node the destination
   cannot read.
 - Additions a deployment makes to a role's prompt. The record names none

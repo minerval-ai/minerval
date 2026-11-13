@@ -4,7 +4,7 @@ import type { MyPermissions } from "../lib/account-api";
 // A line above every page of a members-only deployment, for a member whose
 // permissions open pages the public site does not have: showings for a
 // member who reads at a label besides `public` or acts on showings, the
-// release queue for whoever holds release for a party, file sets and adding
+// gate for whoever holds release for a party, file sets and adding
 // a source for whoever holds the permission to direct, and the
 // administration pages for whoever holds the permission to administer. A
 // member who holds none of these is shown no line at all.
@@ -26,7 +26,7 @@ export function MembersBand({ mine }: { mine: MyPermissions }) {
   return (
     <nav className="members-band" aria-label="This deployment">
       {showings && <Link href="/showings">Showings</Link>}
-      {release && <Link href="/release">Release queue</Link>}
+      {release && <Link href="/gate">At the gate</Link>}
       {(direct || administer) && <Link href="/file-sets">File sets</Link>}
       {direct && <Link href="/sources/new">Add a source</Link>}
       {/* The pages about the public graph are read by every member; the link is shown to those who can act there. */}

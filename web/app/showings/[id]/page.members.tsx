@@ -139,7 +139,7 @@ export default async function ShowingPage({ params }: { params: Promise<{ id: st
                           )}
                           {mine?.waiting_on && mine.waiting_on.length > 0 && (
                             <span className="acct-detail">
-                              Waiting at the release queue:{" "}
+                              Waiting at the gate:{" "}
                               {mine.waiting_on
                                 .map((w) => `${w.part === null ? "the page itself" : `part ${w.part}, ${w.kind}`} on ${w.party}${w.standing === "held" ? " (holding it)" : ""}`)
                                 .join("; ")}
@@ -245,7 +245,7 @@ export default async function ShowingPage({ params }: { params: Promise<{ id: st
                         {p.stage_in_words.charAt(0).toUpperCase() + p.stage_in_words.slice(1)}.
                         {p.waiting_on && p.waiting_on.length > 0 && (
                           <span className="acct-detail">
-                            Waiting at the release queue:{" "}
+                            Waiting at the gate:{" "}
                             {p.waiting_on
                               .map((w) => `${w.part === null ? "the page itself" : `part ${w.part}, ${w.kind}`} on ${w.party}${w.standing === "held" ? " (holding it)" : ""}`)
                               .join("; ")}

@@ -6,7 +6,6 @@ import { NeedsPermission, can, viewer } from "@/components/admin/access";
 import { WorkNav, day } from "@/components/inside/nav";
 import { fetchMyLabels } from "@/lib/admin-api";
 import { fetchClaimDetail } from "@/lib/api";
-import { fetchOutbound } from "@/lib/inside-api";
 import { askShowingAction } from "../actions";
 
 export const metadata: Metadata = { title: "Show a page · Minerval" };
@@ -37,11 +36,7 @@ export default async function AskShowingPage({ searchParams }: { searchParams: P
     );
   }
   const versions = (detail.versions ?? []).filter((v) => v.label !== "public");
-  const [mine, outbound] = await Promise.all([
-    fetchMyLabels(who.externalId),
-    fetchOutbound(who.externalId).catch(() => null),
-  ]);
-  const sending = outbound?.how_sending_works ?? {};
+  const mine = await fetchMyLabels(who.externalId);
 
   return (
     <div className="admin-page">
@@ -162,29 +157,12 @@ export default async function AskShowingPage({ searchParams }: { searchParams: P
             </label>
           </fieldset>
 
-          <fieldset className="admin-fieldset inside-choices">
-            <legend>Only for a showing outside: how what is released leaves</legend>
-            <label className="admin-check">
-              <input type="radio" name="send" value="by_a_person_each_time" />
-              <span>
-                A person sends each time.
-                <small>{sending.by_a_person_each_time ?? "Each package waits until a person who directs the graph sends it."}</small>
-              </span>
-            </label>
-            <label className="admin-check">
-              <input type="radio" name="send" value="as_released" />
-              <span>
-                Sent as soon as it is released.
-                <small>{sending.as_released ?? "Each package is sent to the public graph as soon as it is built, with nobody sending it."}</small>
-              </span>
-            </label>
-          </fieldset>
-
           <div className="acct-prose acct-measure inside-next">
             <p>
-              <strong>Asking shows nothing.</strong> The page is first redacted under the policy for this boundary, and Audit checks the
-              redaction; each of those is a run that happens when someone pays for it. Then the people who hold release for each party
-              whose material a part rests on release it or hold it, part by part. Nothing is released by time passing.
+              <strong>Asking shows nothing by itself.</strong> The page goes to the gate between the two sides. Unless the gate is set
+              otherwise, the Redactor removes what the policy for this boundary protects, Audit checks its work, and what the Redactor let
+              through is then shown, with nobody waiting on a person. Both runs are paid from the budget of the work that produced the page.
+              The gate&rsquo;s settings, and whether what is released outside is sent as it is released, are on <Link href="/gates">Gates</Link>.
             </p>
             <p>
               Some things are shown whenever the page is shown, and nothing is removed from them: the verdict with its confidence, what

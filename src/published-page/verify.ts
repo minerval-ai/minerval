@@ -89,7 +89,7 @@ export interface PackageAct {
   what: string;
   on?: string;
   page_id?: string;
-  /** "person 1", "a standing rule" or "the process". People are numbered in the order they first acted; no name crosses. */
+  /** "person 1", "the Redactor", "the gate's setting" or "the process". People are numbered in the order they first acted; no name crosses. */
   by: string;
   /** The permissions the person held when they acted. */
   holding: string[];

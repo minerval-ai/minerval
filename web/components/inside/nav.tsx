@@ -2,10 +2,10 @@ import Link from "next/link";
 import type { Viewer } from "../admin/access";
 
 // The links down the left side of the pages a member works in once the
-// deployment holds material at more than one label: showings, the release
-// queue, sending outside, file sets and the redaction policies. A person is
-// shown a link for what they can do: the release queue for whoever holds
-// release for a party, sending outside and file sets for whoever directs
+// deployment holds material at more than one label: showings, the gates,
+// sending outside, file sets and the redaction policies. A person is
+// shown a link for what they can do: what waits on them at a gate for
+// whoever holds release for a party, sending outside and file sets for whoever directs
 // (file sets for administrators too, who register directories), and one
 // line for the administration pages for whoever administers. Showings and
 // the policies are read by every member, each as far as their labels go.
@@ -16,7 +16,8 @@ import type { Viewer } from "../admin/access";
 
 export const WORK_PAGES: Array<{ href: string; name: string; needs?: string[] }> = [
   { href: "/showings", name: "Showings" },
-  { href: "/release", name: "Release queue", needs: ["release"] },
+  { href: "/gates", name: "Gates" },
+  { href: "/gate", name: "At the gate", needs: ["release"] },
   // Pages leave in signed packages, listed here. Everything else that passes between this deployment and the
   // public graph (its account there, mandates, requests, reports) is on the page after it (docs/outward-acts.md).
   { href: "/outbound", name: "Pages sent outside", needs: ["direct"] },

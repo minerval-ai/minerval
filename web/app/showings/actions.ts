@@ -8,19 +8,21 @@ import { AccountApiError } from "../../lib/account-api";
 import {
   askShowing,
   decideAtGate,
-  endReleaseRule,
+  endGateSetting,
   endShowing,
   holdShownPage,
   payForShowingWork,
   releaseProposal,
   savePolicy,
   sendOutside,
-  setReleaseRule,
+  setGate,
+  setGateMode,
   writeProposal,
+  type GateDecision,
   type PolicyCategory,
 } from "../../lib/inside-api";
 
-// What the forms on the pages for showings, the release queue, a boundary's
+// What the forms on the pages for showings, the gates, a boundary's
 // policy and sending outside do. Each acts for the person in the server's
 // own session, never for anyone a form names, and the API decides whether
 // they may. What the API refuses is said beside the form in the API's own
@@ -62,10 +64,6 @@ export async function askShowingAction(_previous: FormState, form: FormData): Pr
   if (formOf !== "once" && formOf !== "standing") return { error: "Choose once or standing." };
   if (scope !== "node" && scope !== "under") return { error: "Choose what the showing covers." };
   const outside = to === "outside";
-  const send = text(form, "send");
-  if (outside && send !== "as_released" && send !== "by_a_person_each_time") {
-    return { error: "Choose how what is released leaves the deployment." };
-  }
   let showingId: string;
   try {
     const asked = await askShowing(user, {
@@ -73,7 +71,7 @@ export async function askShowingAction(_previous: FormState, form: FormData): Pr
       page_label: pageLabel,
       form: formOf,
       scope,
-      ...(outside ? { outside: true, send: send as "as_released" | "by_a_person_each_time" } : { to_label: to.replace(/^label:/, "") }),
+      ...(outside ? { outside: true } : { to_label: to.replace(/^label:/, "") }),
     });
     showingId = asked.showing_id;
   } catch (err) {
@@ -126,79 +124,126 @@ export async function payForWorkAction(_previous: FormState, form: FormData): Pr
   }
 }
 
-// --- the release queue ------------------------------------------------------------
+// --- at the gate ------------------------------------------------------------------
+
+const DECISIONS: readonly GateDecision[] = ["release", "approve", "hold", "lift", "delay", "remove"];
 
 export async function decideAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
-  const decision = text(form, "decision");
-  if (decision !== "release" && decision !== "hold" && decision !== "lift") return { error: "Choose release or hold." };
+  const decision = text(form, "decision") as GateDecision;
+  if (!DECISIONS.includes(decision)) return { error: "Choose what to do with the ticked items." };
   const reason = text(form, "reason");
   if (decision === "hold" && !reason) return { error: "A hold gives a reason from the list. It is all the other side is told." };
+  const until = text(form, "until");
+  if (decision === "delay" && !until) return { error: "A delay gives the date and time it runs until." };
   const items = form
     .getAll("item")
     .map(String)
     .filter(Boolean)
     .map((value) => {
-      const [pageId, part] = value.split(":");
-      return { page_id: pageId!, part: part === "page" ? null : Number(part) };
+      const [itemId, part] = value.split(":");
+      return { item_id: itemId!, part: part === "page" ? null : Number(part) };
     });
   if (items.length === 0) return { error: "Tick at least one item." };
+  if (decision === "remove") {
+    const passage = String(form.get("passage") ?? "");
+    const category = text(form, "category");
+    if (!passage || !category) return { error: "Give the passage exactly as it appears in the part, and the policy's category that covers it." };
+    for (const item of items) Object.assign(item, { passage, category });
+  }
   try {
     const result = await decideAtGate(user, {
-      party_id: text(form, "party_id"),
+      ...(text(form, "party_id") ? { party_id: text(form, "party_id") } : {}),
       decision,
       ...(decision === "hold" ? { reason } : {}),
+      ...(decision === "delay" ? { until: new Date(until).toISOString() } : {}),
       items,
     });
-    revalidatePath("/release");
+    revalidatePath("/gate");
+    revalidatePath("/gates");
     revalidatePath("/showings", "layout");
+    const n = result.decided;
+    const s = n === 1 ? "" : "s";
     const done =
       decision === "release"
-        ? `Released ${result.decided} item${result.decided === 1 ? "" : "s"}. A release is not taken back.`
-        : decision === "hold"
-          ? `Held ${result.decided} item${result.decided === 1 ? "" : "s"}. Each hold shows on the other side and can be lifted.`
-          : `Lifted the hold on ${result.decided} item${result.decided === 1 ? "" : "s"}.`;
-    const shown = result.shown.length > 0 ? ` ${result.shown.length === 1 ? "A page is" : `${result.shown.length} pages are`} now shown.` : "";
+        ? `Released ${n} item${s}. A release is not taken back.`
+        : decision === "approve"
+          ? `Approved ${n} item${s} as the Redactor left ${n === 1 ? "it" : "them"}. What it held or delayed stays back.`
+          : decision === "hold"
+            ? `Held ${n} item${s}. Each hold shows on the other side and can be lifted.`
+            : decision === "delay"
+              ? `Delayed ${n} item${s}. ${n === 1 ? "It goes" : "They go"} when the time comes, unless someone holds ${n === 1 ? "it" : "them"}.`
+              : decision === "remove"
+                ? `Removed the passage from ${n} part${s}, with the category's mark in its place.`
+                : `Lifted the hold or delay on ${n} item${s}.`;
+    const shown = result.shown.length > 0 ? ` ${result.shown.length === 1 ? "An item is" : `${result.shown.length} items are`} now shown.` : "";
+    const same = result.unchanged > 0 ? ` ${result.unchanged} already stood that way.` : "";
     const not = result.refused.length > 0 ? ` Not done for ${result.refused.length}: ${[...new Set(result.refused.map((r) => r.why))].join(" ")}` : "";
-    return result.decided === 0 && result.refused.length > 0 ? { error: not.trim() } : { notice: `${done}${shown}${not}` };
+    return n === 0 && result.refused.length > 0 ? { error: not.trim() } : { notice: `${done}${shown}${same}${not}` };
   } catch (err) {
     return refused(err);
   }
 }
 
-export async function setRuleAction(_previous: FormState, form: FormData): Promise<FormState> {
+// --- setting a gate ----------------------------------------------------------------
+
+export async function setGateModeAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
-  const to = text(form, "to");
-  const pageLabel = text(form, "page_label");
-  const condition = text(form, "condition");
-  if (!pageLabel || !to || !condition) return { error: "Choose the party, the two sides of the boundary and the condition." };
+  const mode = text(form, "mode");
+  if (!mode) return { error: "Choose how the gate treats it." };
+  const scope = text(form, "scope") || "boundary";
+  const scopeRef = text(form, "scope_ref");
+  if (scope !== "boundary" && !scopeRef) return { error: "Give the id of the mandate, the node or the request the setting is for." };
   try {
-    await setReleaseRule(user, {
-      party_id: text(form, "party_id"),
-      page_label: pageLabel,
-      ...(to === "outside" ? { outside: true } : { to_label: to.replace(/^label:/, "") }),
-      condition,
-      covers_verdict: form.get("covers_verdict") === "on",
+    const set = await setGateMode(user, text(form, "gate_id"), {
+      mode,
+      kind: text(form, "kind") || "*",
+      scope,
+      ...(scope !== "boundary" ? { scope_ref: scopeRef } : {}),
+      ...(text(form, "party_id") ? { party_id: text(form, "party_id") } : {}),
+    });
+    revalidatePath("/gates");
+    revalidatePath("/gate");
+    return {
+      notice: set.changed
+        ? `Set. ${set.applies}${set.let_through_now > 0 ? ` ${set.let_through_now} part${set.let_through_now === 1 ? "" : "s"} went through just now.` : ""}`
+        : "That is how it already stands. Nothing changed.",
+    };
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+export async function endGateSettingAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  try {
+    await endGateSetting(user, text(form, "setting_id"));
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/gates");
+  revalidatePath("/gate");
+  return { notice: "Ended. What it covered now falls under the next widest setting, or the gate's starting position." };
+}
+
+export async function setGateAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  const flow = text(form, "flow");
+  try {
+    await setGate(user, text(form, "gate_id"), {
+      ...(flow ? { flow } : {}),
+      backlog_shown: form.get("backlog_shown") === "on",
+      ...(form.has("outside") ? { send_as_released: form.get("send_as_released") === "on" } : {}),
     });
   } catch (err) {
     return refused(err);
   }
-  revalidatePath("/release");
-  return { notice: "The rule is set. It applies to pages that reach the queue from now on, and each release it makes is recorded as made under it." };
-}
-
-export async function endRuleAction(_previous: FormState, form: FormData): Promise<FormState> {
-  const user = await actingUser();
-  if (!user) return NOT_SIGNED_IN;
-  try {
-    await endReleaseRule(user, text(form, "rule_id"));
-  } catch (err) {
-    return refused(err);
-  }
-  revalidatePath("/release");
-  return { notice: "Ended." };
+  revalidatePath("/gates");
+  return { notice: "Saved." };
 }
 
 // --- a boundary's policy -----------------------------------------------------------

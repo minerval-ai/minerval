@@ -3,7 +3,7 @@ import { accountFetch, pathSegment } from "./account-api";
 
 // Server-only client for what a member of a private deployment works
 // through once it holds material at more than one label: showing a node's
-// page to readers who do not read its label, the release queue, a
+// page to readers who do not read its label, the gates, a
 // boundary's redaction policy, sending outside, and sets of files
 // (docs/showing-a-page.md, docs/published-pages.md, docs/file-sets.md).
 // Every call names the signed-in person, and the API decides what they may
@@ -166,7 +166,6 @@ export interface AskShowing {
   outside?: boolean;
   form: "once" | "standing";
   scope: "node" | "under";
-  send?: "by_a_person_each_time" | "as_released";
 }
 
 export function askShowing(
@@ -206,7 +205,7 @@ export function payForShowingWork(
   });
 }
 
-// --- the release queue (GET /release/queue, POST /release/decisions, /release/rules) ---
+// --- the gate (GET /gate/queue, POST /gate/decisions, /gates, /gate/backlog) ---------
 
 export interface QueueStanding {
   party: { id: string; name: string };
@@ -214,108 +213,167 @@ export interface QueueStanding {
 }
 
 export interface QueueItem {
+  item_id: string;
   page_id: string;
+  /** What kind of thing the item is: a node's page, an answer, a mandate, a message, funding. */
+  kind_of_thing: string;
+  kind_of_thing_in_words: string;
   showing_id: string;
-  node_id: string;
+  node_id?: string;
   /** The node's wording, where the person reads the node. */
   node?: string;
   /** A hold one of the person's parties has already placed on the item. */
   held?: Array<{ party: { id: string; name: string }; reason: string | null; since: string | null }>;
+  /** The Redactor's hold, where it holds the item, and a delay that stands. */
+  held_by_the_redactor?: { reason: string; since: string };
+  delayed_until?: string;
+  the_redactor_proposes: "let through" | "hold" | "delay";
   audit: string | null;
   waiting_since: string | null;
-  /** The part's place on the page; null for the page itself, with its verdict. */
+  /** The part's place in the item; null for the item itself (a page with its verdict). */
   part: number | null;
   kind: string;
-  decide_for: Array<{ id: string; name: string }>;
+  decide_for: Array<{ id: string; name: string; setting?: string }>;
   rests_on: QueueStanding[];
   removals_by_category?: Record<string, number>;
   redactor_least_sure?: boolean;
   why_least_sure?: string[];
-  /** The part as the Steward wrote it, where the person reads at the label the page was written at. */
+  /** The part as it was written, where the person reads at the label it was written at. */
   as_written?: string;
-  /** The part as it would be shown if released: after the Redactor's removals, with the marks. */
+  /** The part as it would be shown if released: after removals, with the marks. */
   as_it_would_be_shown?: string;
   /**
    * The passages removed from the part. With the Redactor's note where the
-   * person reads at the page's label; without it, and only for a part that
+   * person reads at the item's label; without it, and only for a part that
    * rests on the material of outside parties they release for and no one
    * else's, where they do not.
    */
   removals?: Array<{ passage: string; category: string; redactor_note?: string }>;
-  /** What is shown whenever anything of the page is shown. */
+  /** What is shown whenever anything of the item is shown. */
   always_shown?: Record<string, unknown>;
   /** The node's wording as the page would show it, where the node is at the page's label. */
   wording_as_it_would_be_shown?: string;
-  /** The API's sentence, where the person does not read at the label the page was written at: what they are and are not shown. */
+  /** The API's sentence, where the person does not read at the label the item was written at: what they are and are not shown. */
   shown_as_released?: string;
 }
 
-export interface ReleaseQueue {
+export interface GateQueue {
   items: QueueItem[];
   more_waiting: boolean;
   not_reading_the_label?: string;
   /** The fixed list a hold gives its reason from: each key with the words the other side is told. */
   hold_reasons: Record<string, string>;
+  /** The acts at a gate, each in the API's words. */
+  acts: Record<string, string>;
   note: string;
 }
 
-export function fetchReleaseQueue(externalId: string): Promise<ReleaseQueue> {
-  return accountFetch("/release/queue?limit=200", { actingUser: externalId });
+export function fetchGateQueue(externalId: string): Promise<GateQueue> {
+  return accountFetch("/gate/queue?limit=200", { actingUser: externalId });
 }
+
+export type GateDecision = "release" | "approve" | "remove" | "hold" | "delay" | "lift";
 
 export interface Decided {
   decided: number;
-  refused: Array<{ item: { page_id: string; part?: number | null }; why: string }>;
+  unchanged: number;
+  refused: Array<{ item: { item_id?: string; part?: number | null }; why: string }>;
   shown: string[];
 }
 
 export function decideAtGate(
   externalId: string,
   body: {
-    party_id: string;
-    decision: "release" | "hold" | "lift";
+    party_id?: string;
+    decision: GateDecision;
     reason?: string;
-    items: Array<{ page_id: string; part: number | null }>;
+    until?: string;
+    items: Array<{ item_id: string; part?: number | null; passage?: string; category?: string }>;
   }
 ): Promise<Decided> {
-  return accountFetch("/release/decisions", { method: "POST", actingUser: externalId, body });
+  return accountFetch("/gate/decisions", { method: "POST", actingUser: externalId, body });
 }
 
-export interface ReleaseRule {
-  rule_id: string;
-  party: { id: string; name: string };
-  boundary_id: string;
-  condition: string;
+export interface GateSetting {
+  setting_id: string;
+  kind: string;
+  scope: string;
+  scope_in_words: string;
+  scope_ref: string | null;
+  party: { id: string; name: string } | null;
+  mode: string;
   in_words: string;
-  covers_verdict: boolean;
   set_by: string | null;
   set_holding: string[];
   set_at: string;
-  ended_at: string | null;
+  made_from_release_rule?: string;
 }
 
-export function fetchReleaseRules(
-  externalId: string
-): Promise<{ rules: ReleaseRule[]; conditions: Record<string, string> }> {
-  return accountFetch("/release/rules", { actingUser: externalId });
+export interface Gate {
+  gate_id: string;
+  from: string;
+  to: string;
+  to_outside: boolean;
+  flow: "asked" | "everything";
+  flow_in_words: string;
+  backlog_shown_to_the_other_side: boolean;
+  send_as_released?: boolean;
+  starting_positions: Record<string, string>;
+  settings: GateSetting[];
+  you_may_set: { the_gate_as_a_whole: boolean; for_parties: Array<{ id: string; name: string }> };
 }
 
-export function setReleaseRule(
+export interface Gates {
+  gates: Gate[];
+  modes: Record<string, string>;
+  kinds: Record<string, string>;
+  scopes: Record<string, string>;
+  flows: Record<string, string>;
+  acts: Record<string, string>;
+}
+
+export function fetchGates(externalId: string): Promise<Gates> {
+  return accountFetch("/gates", { actingUser: externalId });
+}
+
+export function setGate(
   externalId: string,
-  body: {
-    party_id: string;
-    page_label: string;
-    to_label?: string;
-    outside?: boolean;
-    condition: string;
-    covers_verdict: boolean;
-  }
+  gateId: string,
+  body: { flow?: string; backlog_shown?: boolean; send_as_released?: boolean }
 ): Promise<unknown> {
-  return accountFetch("/release/rules", { method: "POST", actingUser: externalId, body });
+  return accountFetch(`/gates/${seg(gateId)}`, { method: "PUT", actingUser: externalId, body });
 }
 
-export function endReleaseRule(externalId: string, ruleId: string): Promise<unknown> {
-  return accountFetch(`/release/rules/${seg(ruleId)}`, { method: "DELETE", actingUser: externalId });
+export function setGateMode(
+  externalId: string,
+  gateId: string,
+  body: { mode: string; kind?: string; scope?: string; scope_ref?: string; party_id?: string }
+): Promise<{ setting_id: string; changed: boolean; applies: string; let_through_now: number }> {
+  return accountFetch(`/gates/${seg(gateId)}/settings`, { method: "PUT", actingUser: externalId, body });
+}
+
+export function endGateSetting(externalId: string, settingId: string): Promise<unknown> {
+  return accountFetch(`/gates/settings/${seg(settingId)}`, { method: "DELETE", actingUser: externalId });
+}
+
+export interface BacklogLine {
+  kind: string;
+  kind_in_words: string;
+  waiting_on: string;
+  in_words: string;
+  party?: string;
+  items: number;
+  parts?: number;
+  oldest_waiting_hours: number;
+}
+
+export interface GateBacklog {
+  gates: Array<{ gate_id: string; from?: string; to: string; items_waiting: number; waiting: BacklogLine[] }>;
+  note: string;
+}
+
+export function fetchGateBacklog(externalId: string): Promise<GateBacklog> {
+  return accountFetch("/gate/backlog", { actingUser: externalId });
 }
 
 // --- redaction policies (GET /redaction-policies, PUT /redaction-policies) -----------

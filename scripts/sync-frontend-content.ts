@@ -187,8 +187,8 @@ const AGENTS: AgentMeta[] = [
   // one label (services/showing-service.ts). Its prompt is published like
   // every other, since readers of a shown page weigh how it was made.
   { key: "redactor", name: "Redactor", stage: 10, group: "governance",
-    tagline: "Prepares a page written at one label to be shown to readers who may not read that label, under the policy for that boundary. It removes the passages a category of the policy covers and marks each removal in place. Its tools change no word of the page, and it does not decide what is then released.",
-    invokedWhen: "In a deployment that holds material at more than one label: a person who directs the graph asks for a node's page to be shown to readers who do not read its label, and again for each later version while a standing showing stands. Each run is a ledger action that runs when it is paid for. The public graph has one label and no Redactor runs there.",
+    tagline: "Works at the gate where something written at one label goes to readers who may not read that label: a node's page, an answer, a mandate's terms or funding. Under the policy for that boundary it removes the passages a category covers and marks each removal in place, and may hold or delay a part. Its tools change no word. What it lets through goes once Audit has checked its work, unless the gate is set for a person to decide as well.",
+    invokedWhen: "In a deployment that holds material at more than one label: when a page a flow covers has a new version, when work on a request taken up from another label has a result, when a message from another label is answered, or when a mandate or its funding is offered to a gate, unless the gate is open for it. Each run is a ledger action paid from the budget of the work whose result is going down. The public graph has one label and no Redactor runs there.",
     model: `${modelLabel(MODELS.strong)} (the Steward's model, unless REDACTOR_MODEL names another)`, fn: getRedactorSystemPrompt },
   // The solver (docs/mathematics.md §7.1): an instrument, not an
   // administrator. It owns no claim, holds no standing, receives no

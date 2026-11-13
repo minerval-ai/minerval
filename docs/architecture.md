@@ -2844,9 +2844,10 @@ holds, laid over the graph at the labels it reads, down to the public
 graph, which a deployment holds through its mirror. Reading goes up
 freely, and so does everything that makes work respond: what is said,
 asked and changed below reaches the work above. Nothing is written below
-to make that happen, and nothing the work above does about it is shown
-below, where readers may not read what it rests on. What goes down goes
-through a showing (below). Four things, each the same between two labels as
+to make that happen. What the work above does about it goes down through
+the gate between the two labels ([the-gate.md](the-gate.md)), where
+readers may not read what it rests on: that a request was taken up, an
+answer to it, an answer to a message. Four things, each the same between two labels as
 between a private label and the public graph:
 
 - *Messages.* A message is one row at its sender's label
@@ -2859,8 +2860,8 @@ between a private label and the public graph:
   arrive the same way. That the pass read it, and its answer, is a row at
   the pass's own label (`node_message_reads`, one for each message and
   label), so the message stays unread and unanswered for the pass at its
-  own label, and an answer from above is not sent to the sender
-  (`src/services/inbox-service.ts`). A message opens no work above. The
+  own label. An answer from above is offered to the gate and reaches the
+  sender when it is through (`src/services/inbox-service.ts`). A message opens no work above. The
   sender pays, if it pays, for a pass at its own label; the layer above
   reads the message on its next pass, and a mandate's review counts the
   messages waiting for a pass at the mandate's label on the nodes it pays
@@ -2880,9 +2881,12 @@ between a private label and the public graph:
   that label's take-up of the request and make it if there is none; a
   person who directs the graph does the same with
   `POST /requests/:request_id/adopt`. A reader of the label above sees the
-  link on both requests (`taken_up_from`, `taken_up_at`). The request below
-  shows nothing new. `answerableBelow` in that file is where a later
-  answer downward starts.
+  link on both requests (`taken_up_from`, `taken_up_at`). That it was
+  taken up is offered to the gate between the two labels at once, and what
+  work on it finds is offered each time work with an outcome is recorded
+  or the request is closed (`offerDown`, which reads `answerableBelow`).
+  What the gate lets through shows on the request below
+  (`taken_up_above`, and a row in its work log).
 - *Changes.* What a judgment's record of its inputs cannot show, because
   the row is overwritten in place, is written as it happens to
   `node_changes`: a node reworded, its kind corrected, merged away or

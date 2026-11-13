@@ -107,8 +107,8 @@ export default async function ShowingsPage() {
         </div>
         <p className="acct-prose acct-measure">
           Pages written at a label you read that someone has asked to be shown elsewhere, with where each stands on its way: its redaction,
-          the check of the redaction, and the release queue. The redaction and its check are each a run that happens when someone pays for
-          it.
+          the check of the redaction, and the gate. The redaction and its check are paid from the budget of the work that produced the
+          page, with nobody commissioning them.
         </p>
         {asked.length === 0 ? (
           <p className="account-empty">

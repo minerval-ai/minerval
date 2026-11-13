@@ -82,7 +82,7 @@ in general. For a specific question, go to the section:
 | Labels: who may read what, and which outside services a run's text reaches | §28 |
 | Why a node can carry more than one judgment, one at each label | §29 |
 | Mandates and funding inside a private graph | §30 |
-| A page shown to readers who cannot see its evidence: redaction, release, holds | §31 |
+| What goes from a label to readers who do not read it: the gate, the Redactor and a person at it, redaction, holds, release | §31 |
 | How the public graph weighs a page a private graph published | §32 |
 
 ## Principles that carry over to your own work

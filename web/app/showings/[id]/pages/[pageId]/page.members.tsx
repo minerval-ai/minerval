@@ -73,7 +73,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
         {day(a.at)}: {a.by} {a.what}
         {a.for_party ? ` for ${a.for_party}` : ""}
         {a.reason ? ` (${a.reason})` : ""}
-        {a.rule_id ? ", under a standing rule" : ""}.
+        {a.rule_id ? ", under a setting of the gate" : ""}.
       </span>
     ));
   const categories = Object.keys(header.removals ?? {});
@@ -97,7 +97,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
       {!page.parts ? (
         <p className="account-empty admin-first">
           This page has not been shown, so none of it is here. {stateOfVersion(page)}. The parts of a page, and who must release each, are
-          listed to the people who hold release in the release queue until the page is shown.
+          listed to the people who hold release, at the gate, until the page is shown.
         </p>
       ) : (
         <>

@@ -91,7 +91,7 @@ The sweep that reads assessments against one another. Each Steward reads its own
 
 ### Redactor (`roles/redactor.md`)
 
-Prepares a page written at one label to be shown to readers who may not read that label, under the policy for that boundary. It removes the passages a category of the policy covers and marks each removal in place. Its tools change no word of the page, and it does not decide what is then released.
+Works at the gate where something written at one label goes to readers who may not read that label: a node's page, an answer, a mandate's terms or funding. Under the policy for that boundary it removes the passages a category covers and marks each removal in place, and may hold or delay a part. Its tools change no word. What it lets through goes once Audit has checked its work, unless the gate is set for a person to decide as well.
 
 ### Solver (`roles/math-solver.md`)
 

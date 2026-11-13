@@ -7751,10 +7751,16 @@ export const questionAssessmentVersions = pgView("question_assessments_versions"
 // it is for.
 //
 //   At the page's label:        showings, showing_pages, showing_parts,
-//                               showing_removals
+//                               showing_removals, gate_settings
 //   At the destination's label: shown_showings, shown_nodes, shown_pages,
-//                               shown_parts, showing_acts, release_rules
+//                               shown_parts, showing_acts, gates
 //   One row on each side:       redaction_policies
+//
+// These tables are the gate's (docs/the-gate.md). They were built for a
+// node's page and keep those names. A row of `showings` is one thing
+// offered across one boundary, or a flow of pages, and `showings.kind`
+// says which kind of thing; a row of `showing_pages` is one version of an
+// item of any kind, with its parts.
 //
 // A showing outside the deployment keeps its destination-side rows at
 // `public`: what is released to anyone may be read by every member.
@@ -8114,7 +8120,7 @@ export const showingActs = pgTable(
     act: text("act").notNull(),
     // The party the act was made for, where it was made under `release`.
     partyId: uuid("party_id").references(() => parties.id),
-    // Who acted; null for an act of the process or of a standing rule.
+    // Who acted; null for an act of the process, of the Redactor or of the gate's setting.
     actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id),
     // The permissions the actor held when they acted.
     holding: text("holding").array().notNull().default([]),

@@ -90,8 +90,9 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     scope: "party",
     phrase: "release one party's material",
     covers:
-      "Release or hold, part by part, what a page shown to readers who do not read its label " +
-      "carries of one party's material, set standing rules for it, and release the words a node is proposed " +
+      "Act at a gate on what rests on one party's material: approve, release, remove a passage from, hold or delay " +
+      "each part of a page or other item going to readers who do not read its label, set the gate for that " +
+      "party's material, and release the words a node is proposed " +
       "to the public graph in. For the organization's own material: send an agent's report, as redacted, to Minerval's " +
       "maintainers. It is granted for that party alone.",
     never: "Edit what the agents wrote, or release another party's material.",

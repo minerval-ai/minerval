@@ -4,19 +4,20 @@ import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
 import { NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
 import { WorkNav, day, waited } from "@/components/inside/nav";
-import { fetchMyLabels } from "@/lib/admin-api";
-import { fetchReleaseQueue, fetchReleaseRules, type QueueItem } from "@/lib/inside-api";
+import { fetchGateQueue, type QueueItem } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
-import { decideAction, endRuleAction, setRuleAction } from "../showings/actions";
+import { decideAction } from "../showings/actions";
 import { QueueForm } from "./QueueForm";
 
-export const metadata: Metadata = { title: "Release queue · Minerval" };
+export const metadata: Metadata = { title: "At the gate · Minerval" };
 export const dynamic = "force-dynamic";
 
-// The release queue (GET /release/queue; docs/showing-a-page.md, "The
-// gate"): for a person who holds release for a party, the parts of redacted
-// pages that rest on that party's material and wait on them, oldest page
-// first. Each part is shown as it would go, with what is always shown of
+// What waits on a person at a gate (GET /gate/queue; docs/the-gate.md): for
+// a person who holds release for a party, the parts of items that rest on
+// that party's material and have not gone through, oldest first. These are
+// the items whose gate is set to a person's decision, and those the
+// Redactor or a person holds or has delayed; everything else went as the
+// Redactor left it. Each part is shown as it would go, with what is always shown of
 // its page and the node's wording as they would go: that is the text the
 // person's decision releases. Where the person reads at the label the page
 // was written at, the Redactor's removals are a difference against what the
@@ -68,33 +69,28 @@ function alwaysShown(header: Record<string, unknown>): string {
 export default async function ReleaseQueuePage() {
   const who = await viewer();
   if (!who) return null;
-  if (!can(who, "release")) return <NeedsPermission title="Release queue" permission="release" />;
-  const [queue, rules, labels] = await Promise.all([
-    fetchReleaseQueue(who.externalId),
-    fetchReleaseRules(who.externalId).catch(() => ({ rules: [], conditions: {} as Record<string, string> })),
-    fetchMyLabels(who.externalId).catch(() => null),
-  ]);
+  if (!can(who, "release")) return <NeedsPermission title="At the gate" permission="release" />;
+  const queue = await fetchGateQueue(who.externalId);
   const parties = who.mine.grants.filter((g) => g.permission === "release" && g.party).map((g) => g.party!);
   const uniqueParties = [...new Map(parties.map((p) => [p.id, p])).values()];
   const now = Date.now();
   // The API says on every item of a page the person does not read the label of what they are and are not shown. The page gives its sentence in full once, on the first.
   const firstUnread = queue.items.find((i) => i.shown_as_released);
-  const ruleLabels = (labels?.labels ?? []).filter((l) => l.name !== "public");
 
   return (
     <div className="admin-page">
       <PageHead
-        title="Release queue"
-        lede="Parts of redacted pages that wait on you. A page written at one label is being shown to people who do not read that label, and each part of it that rests on a party's material is released or held by the people who hold release for that party. You hold it for the parties named below."
+        title="At the gate"
+        lede="What waits on you at a gate. Something written at one label is going to people who do not read that label. Most of it goes as the Redactor left it. What is listed here is what a gate is set to ask a person about, for a party you hold release for, and what the Redactor or a person holds or has delayed."
       />
-      <WorkNav who={who} current="/release" />
+      <WorkNav who={who} current="/gate" />
       <Notice>{queue.note}</Notice>
       {queue.not_reading_the_label && <p className="acct-prose acct-measure queue-unread">{queue.not_reading_the_label}</p>}
 
       {uniqueParties.map((party) => {
         const items = queue.items.filter((i) => i.decide_for.some((p) => p.id === party.id));
-        const pages = [...new Set(items.map((i) => i.page_id))];
-        const anyHeld = items.some((i) => i.rests_on.some((r) => r.party.id === party.id && r.standing === "held"));
+        const pages = [...new Set(items.map((i) => i.item_id))];
+        const anyHeld = items.some((i) => i.held_by_the_redactor || i.delayed_until || i.rests_on.some((r) => r.party.id === party.id && r.standing === "held"));
         return (
           <section className={`acct-section${party.id === uniqueParties[0]!.id ? " admin-first" : ""}`} key={party.id} id={`party-${party.id}`}>
             <div className="acct-head">
@@ -105,7 +101,7 @@ export default async function ReleaseQueuePage() {
             ) : (
               <QueueForm action={decideAction} partyId={party.id} reasons={queue.hold_reasons} anyHeld={anyHeld}>
                 {pages.map((pageId) => {
-                  const ofPage = items.filter((i) => i.page_id === pageId);
+                  const ofPage = items.filter((i) => i.item_id === pageId);
                   const first = ofPage[0]!;
                   return (
                     <div className="queue-page" key={pageId}>
@@ -115,6 +111,8 @@ export default async function ReleaseQueuePage() {
                             <Link href={`/claims/${first.node_id}`}>{first.node}</Link>
                           ) : first.wording_as_it_would_be_shown ? (
                             <>A page of a node you do not read, whose wording would be shown as: {first.wording_as_it_would_be_shown}</>
+                          ) : first.kind_of_thing !== "page" ? (
+                            capital(first.kind_of_thing_in_words)
                           ) : (
                             "A page of a node you do not read"
                           )}
@@ -128,11 +126,16 @@ export default async function ReleaseQueuePage() {
                         const others = item.rests_on.filter((r) => r.party.id !== party.id);
                         const removed = Object.entries(item.removals_by_category ?? {});
                         return (
-                          <div className="queue-item" key={`${item.page_id}:${item.part ?? "page"}`}>
+                          <div className="queue-item" key={`${item.item_id}:${item.part ?? "page"}`}>
                             <label className="queue-item-head">
-                              <input type="checkbox" name="item" value={`${item.page_id}:${item.part ?? "page"}`} />
+                              <input type="checkbox" name="item" value={`${item.item_id}:${item.part ?? "page"}`} />
                               <span>
-                                <span className="sc">{item.part === null ? "The page" : `Part ${item.part}`}</span> {capital(item.kind)}
+                                <span className="sc">{item.part === null ? "The item" : `Part ${item.part}`}</span> {capital(item.kind)}
+                                <span className="tag">
+                                  the Redactor would {item.the_redactor_proposes === "let through" ? "let this through" : `${item.the_redactor_proposes} this`}
+                                </span>
+                                {item.held_by_the_redactor && <span className="tag">held by the Redactor: {item.held_by_the_redactor.reason}</span>}
+                                {item.delayed_until && <span className="tag">delayed until {when(item.delayed_until)}</span>}
                                 {item.redactor_least_sure && <span className="tag">the Redactor was least sure here</span>}
                                 {mine?.standing === "held" && (
                                   <span className="tag">
@@ -147,8 +150,8 @@ export default async function ReleaseQueuePage() {
                             </label>
                             {item.part === null && (
                               <p className="queue-fact">
-                                Releasing this releases the verdict and everything that is shown whenever the page is shown. Holding it
-                                holds the whole page, whatever is decided about its parts.
+                                Releasing this releases everything that is shown whenever the item is shown: for a page, its verdict.
+                                Holding it holds the whole item, whatever is decided about its parts.
                               </p>
                             )}
                             {item.shown_as_released && (
@@ -223,158 +226,32 @@ export default async function ReleaseQueuePage() {
 
       <details className="acct-section queue-limits" id="limits" open={queue.items.length === 0}>
         <summary>
-          <h2>What cannot be done here, and why</h2>
+          <h2>What you can do here, and what nobody can</h2>
         </summary>
         <ul className="inside-list acct-measure">
+          {Object.entries(queue.acts).map(([act, words]) => (
+            <li key={act}>
+              <strong>{capital(act)}.</strong> {words}
+            </li>
+          ))}
           <li>
-            <strong>No text is edited.</strong> Each part was hashed when the redaction finished, and the people it is shown to check what
-            they read against that hash. An edited part would no longer match, so a part is released as written or held whole.
+            <strong>No text is edited.</strong> Each part is hashed as it stands, and the people it is shown to check what they read
+            against that hash. A passage can be removed and marked, and a part can be held; no word can be changed.
           </li>
           <li>
-            <strong>A release is not taken back.</strong> Once a part is shown, people have read it. A hold can be lifted later; a release
-            cannot be undone.
-          </li>
-          <li>
-            <strong>Nothing is released by time passing.</strong> An item nobody acts on stays held. The people the page is shown to see
-            that it is held and for how long, so the age beside each page below is what they see too.
+            <strong>A release is not taken back.</strong> Once a part is shown, people have read it. A hold or a delay can be lifted
+            later; a release cannot be undone.
           </li>
           <li>
             <strong>A hold gives a reason from a fixed list.</strong> It is all the other side is told, beside who holds the part and
             since when. Nobody checks it.
           </li>
           <li>
-            <strong>You decide for your own parties only.</strong> A part that rests on two parties&rsquo; material needs both, and is shown
-            once both have released it.
+            <strong>The other side sees how much waits.</strong> Not what it says: how many items, of what kinds, for how long, and
+            whether on the Redactor or on a person. How this gate is set is on <Link href="/gates">Gates</Link>.
           </li>
         </ul>
       </details>
-
-      <section className="acct-section" id="rules">
-        <div className="acct-head">
-          <h2>Standing rules</h2>
-        </div>
-        <p className="acct-prose acct-measure">
-          A rule releases parts for one party at one boundary without a person deciding each. It is a condition the system tests from the
-          record, with no judgement in it. It applies to pages that reach this queue after it is set, and every release it makes is recorded
-          as made under it, where the people the page is shown to can read that. A standing showing does not flow unless a rule covers the
-          page itself: without one, each later assessment waits here.
-        </p>
-        {rules.rules.length === 0 ? (
-          <p className="account-empty">No standing rule is set for a party you release for.</p>
-        ) : (
-          <div className="acct-scroll">
-            <table className="account-table acct-table">
-              <thead>
-                <tr>
-                  <th>party</th>
-                  <th>rule</th>
-                  <th>set</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rules.rules.map((r) => (
-                  <tr key={r.rule_id}>
-                    <td>{r.party.name}</td>
-                    <td>
-                      {r.in_words}
-                      <span className="acct-detail">{r.covers_verdict ? "It also releases the page itself, with its verdict." : "It does not release the page itself: a person does that."}</span>
-                    </td>
-                    <td>
-                      {when(r.set_at)}
-                      <span className="acct-detail">by {r.set_by ?? "someone not on record"}, holding {r.set_holding.join(", ")}</span>
-                      {r.ended_at && <span className="acct-detail">ended {when(r.ended_at)}</span>}
-                    </td>
-                    <td>
-                      {!r.ended_at && (
-                        <ActionForm action={endRuleAction} submit="end" inline danger>
-                          <input type="hidden" name="rule_id" value={r.rule_id} />
-                        </ActionForm>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {labels && uniqueParties.length > 0 && ruleLabels.length === 0 && (
-          <p className="acct-prose acct-measure">
-            A rule is set for pages written at one label, and this page offers the labels you read, because the name of a label is not
-            shown to people who may not read it. You read at no label besides public, so a rule cannot be set from this page.
-          </p>
-        )}
-        {labels && uniqueParties.length > 0 && ruleLabels.length > 0 && (
-          <details className="admin-args">
-            <summary>set a rule</summary>
-            <ActionForm action={setRuleAction} submit="Set this rule">
-              <label>
-                Party
-                <select name="party_id" required defaultValue={uniqueParties.length === 1 ? uniqueParties[0]!.id : ""}>
-                  <option value="" disabled>
-                    Choose a party
-                  </option>
-                  {uniqueParties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="admin-form-row">
-                <label>
-                  Pages written at
-                  <select name="page_label" required defaultValue="">
-                    <option value="" disabled>
-                      Choose a label
-                    </option>
-                    {ruleLabels.map((l) => (
-                      <option key={l.name} value={l.name}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Shown to
-                  <select name="to" required defaultValue="">
-                    <option value="" disabled>
-                      Choose
-                    </option>
-                    {labels.labels.map((l) => (
-                      <option key={l.name} value={`label:${l.name}`}>
-                        people who read at {l.name}
-                      </option>
-                    ))}
-                    <option value="outside">people outside this deployment</option>
-                  </select>
-                </label>
-              </div>
-              <label>
-                Condition
-                <select name="condition" required defaultValue="">
-                  <option value="" disabled>
-                    Choose a condition
-                  </option>
-                  {Object.entries(rules.conditions).map(([key, words]) => (
-                    <option key={key} value={key}>
-                      {words}
-                    </option>
-                  ))}
-                </select>
-                <small>
-                  The labels offered are the ones you read, because the name of a label is not shown to people who may not read it. So a
-                  rule for pages written at a label you do not read cannot be set from this page.
-                </small>
-              </label>
-              <label className="admin-check">
-                <input type="checkbox" name="covers_verdict" />
-                <span>Also release the page itself, with its verdict, for this party. Without this a person releases each page.</span>
-              </label>
-            </ActionForm>
-          </details>
-        )}
-      </section>
     </div>
   );
 }

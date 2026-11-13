@@ -1,4 +1,4 @@
-// Words the pages for showings, the release queue and sending outside share.
+// Words the pages for showings, the gates and sending outside share.
 // The two fixed lists of reasons (for a hold, for ending a showing) are the
 // API's, served with GET /showings and GET /release/queue.
 
