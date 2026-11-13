@@ -1,5 +1,5 @@
 {
-  "id": "c812beba-0e96-40ff-ba7c-30d21535d84f",
+  "id": "705b3d87-6c5d-41ac-bd20-3077b35be839",
   "prevId": "c6bbc394-b762-4c35-a483-2a158165690f",
   "version": "7",
   "dialect": "postgresql",
@@ -13350,12 +13350,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "ck_keep_current_exceptions_one": {
-          "name": "ck_keep_current_exceptions_one",
-          "value": "\"keep_current_exceptions\".\"grant_id\" IS NOT NULL OR \"keep_current_exceptions\".\"node_id\" IS NOT NULL"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.keep_current_queue": {
@@ -17532,10 +17527,6 @@
         "ck_outward_acts_result": {
           "name": "ck_outward_acts_result",
           "value": "\"outward_acts\".\"result\" IN ('done', 'refused', 'failed')"
-        },
-        "ck_outward_acts_actor": {
-          "name": "ck_outward_acts_actor",
-          "value": "(\"outward_acts\".\"acted_by\" IS NULL) <> (\"outward_acts\".\"under_standing_choice\" IS NULL)"
         }
       },
       "isRLSEnabled": false

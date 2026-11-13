@@ -8151,10 +8151,6 @@ export const outwardActs = pgTable(
   (table) => [
     index("idx_outward_acts_at").on(table.at),
     check("ck_outward_acts_result", sql`${table.result} IN ('done', 'refused', 'failed')`),
-    check(
-      "ck_outward_acts_actor",
-      sql`(${table.actedBy} IS NULL) <> (${table.underStandingChoice} IS NULL)`
-    ),
   ]
 );
 
@@ -8291,10 +8287,7 @@ export const keepCurrentExceptions = pgTable(
     liftedAt: timestamp("lifted_at", { withTimezone: true }),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [
-    index("idx_keep_current_exceptions").on(table.grantId, table.nodeId),
-    check("ck_keep_current_exceptions_one", sql`${table.grantId} IS NOT NULL OR ${table.nodeId} IS NOT NULL`),
-  ]
+  (table) => [index("idx_keep_current_exceptions").on(table.grantId, table.nodeId)]
 );
 
 // An agent's report on its way to Minerval's maintainers: the Redactor's

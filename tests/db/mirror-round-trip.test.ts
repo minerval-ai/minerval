@@ -404,6 +404,16 @@ async function seedPublicGraph(): Promise<void> {
     stake: "Its research program rests on the finding.",
     recorded_by: "claim_steward",
   });
+  // The public record that is not rows of the graph: a contribution on a node, and a request that bears on one.
+  // The feed carries their public columns, with no account (mirror-feed-service.ts, refreshFeedRecords).
+  const [contributor] = await pub.query<{ id: string }>(`INSERT INTO contributors (display_name, external_id) VALUES ('A contributor', $1) RETURNING id`, [`round-trip:${randomUUID()}`]);
+  await ins(pub, "contributions", { claim_id: id.parent, contributor_id: contributor!.id, contribution_type: "challenge", content: "The trial was not blinded." });
+  const [request] = await pub.query<{ id: string }>(
+    `INSERT INTO requests (ask, why, satisfied_by, filer_kind, filer_agent, keeper_kind, keeper_claim_id)
+     VALUES ('A blinded replication.', 'The assessment turns on it.', 'A registered report.', 'admin', 'claim_steward', 'steward', $1) RETURNING id`,
+    [id.parent]
+  );
+  await ins(pub, "request_targets", { request_id: request!.id, claim_id: id.parent });
   await ins(pub, "judgment_inputs", {
     id: id.inputPremise,
     judgment_kind: "assessment",

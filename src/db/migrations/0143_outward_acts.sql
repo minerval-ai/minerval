@@ -80,8 +80,7 @@ CREATE TABLE "keep_current_exceptions" (
 	"set_by" uuid,
 	"set_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"lifted_at" timestamp with time zone,
-	"sensitivity_label" text DEFAULT minerval_default_label() NOT NULL,
-	CONSTRAINT "ck_keep_current_exceptions_one" CHECK ("keep_current_exceptions"."grant_id" IS NOT NULL OR "keep_current_exceptions"."node_id" IS NOT NULL)
+	"sensitivity_label" text DEFAULT minerval_default_label() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "keep_current_queue" (
@@ -110,8 +109,7 @@ CREATE TABLE "outward_acts" (
 	"public_graph_said" text,
 	"at" timestamp with time zone DEFAULT now() NOT NULL,
 	"sensitivity_label" text DEFAULT minerval_default_label() NOT NULL,
-	CONSTRAINT "ck_outward_acts_result" CHECK ("outward_acts"."result" IN ('done', 'refused', 'failed')),
-	CONSTRAINT "ck_outward_acts_actor" CHECK (("outward_acts"."acted_by" IS NULL) <> ("outward_acts"."under_standing_choice" IS NULL))
+	CONSTRAINT "ck_outward_acts_result" CHECK ("outward_acts"."result" IN ('done', 'refused', 'failed'))
 );
 --> statement-breakpoint
 CREATE TABLE "outward_settings" (
