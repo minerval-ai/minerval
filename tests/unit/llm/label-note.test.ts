@@ -13,90 +13,34 @@ type MessageParam = Anthropic.MessageParam;
 
 const INTERNAL =
   "## This run's label\n\n" +
-  "This graph holds material that only some of its readers may see. Everything it holds carries a label " +
-  "saying who may read it. This run works at one label, fixed before it started: `internal`.\n\n" +
-  "What you can read: what is labeled `internal`, and what is labeled `public`, which `internal` reads. " +
-  "The database withholds everything else from the tools you read the graph with. A search or a read " +
-  "that comes back empty has looked only at what this label can read.\n\n" +
-  "What you write: each new thing this run records (a judgment, an argument, a reading of a source, a " +
-  "message, a request) carries the label `internal`, whatever you read to write it. Readers who are not " +
-  "cleared for `internal` do not see it. What already carries another label is not this run's to " +
-  "change. A tool that would change or remove it refuses and says so, because that label's readers " +
-  "would read the change as their own label's work. What `internal` has to say about such a thing is " +
-  "recorded as something new, at `internal`.\n\n" +
-  "A node can carry a judgment at each label: a version, made by a run at that label from what that " +
-  "label reads, and replaced only by a run at that label. Where you can read more than one, the node's " +
-  "full read lists them under `versions`, each with its label, and says which are in force for this " +
-  "run. A version is in force unless another one you can read was made at a label that reads its label, " +
-  "and so with sight of everything it saw and more. Where a read gives a single judgment for a node, it " +
-  "is the one in force, and the most recent of them if two labels that do not read each other each have " +
-  "one.\n\n" +
-  "If the work cannot be done well on what this label can read, say so in what you record, so that " +
-  "whoever reads it or pays for the next pass knows what it rests on.";
+  "This graph holds material that only some of its readers may see, and everything in it carries a label saying who may read it. This run works at one label, fixed before it started: `internal`.\n\n" +
+  "What you can read: what is labeled `internal`, and what is labeled `public`, which `internal` reads. No tool returns anything else, so a search or a read that comes back empty has looked only there.\n\n" +
+  "What you write: everything this run records carries the label `internal`, whatever you read to write it. Readers who are not cleared for `internal` do not see it. What carries another label is not this run's to change, and a tool that would change or remove it refuses. The reason is that this run has read material at `internal`, and what a run at `internal` writes reaches readers who are not cleared for `internal` only as a page shown to them, with what was removed marked. What `internal` has to say about such a thing is recorded as something new, at `internal`.\n\n" +
+  "A node can carry a judgment at each label, each made by a run at that label from what that label reads. A node's full read lists the judgments you can read under `versions`, each with its label, and marks which are in force for this run: one is in force unless another you can read was made at a label that reads its label. A read that gives a single judgment gives the one in force, or the most recent where two labels that do not read each other each have one.\n\n" +
+  "If the work cannot be done well on what this label can read, say so in what you record, so that whoever reads it or pays for the next pass knows what it rests on.";
 
-/** The same run, of a role that records judgments. */
 const INTERNAL_STEWARD =
   "## This run's label\n\n" +
-  "This graph holds material that only some of its readers may see. Everything it holds carries a label " +
-  "saying who may read it. This run works at one label, fixed before it started: `internal`.\n\n" +
-  "What you can read: what is labeled `internal`, and what is labeled `public`, which `internal` reads. " +
-  "The database withholds everything else from the tools you read the graph with. A search or a read " +
-  "that comes back empty has looked only at what this label can read.\n\n" +
-  "What you write: each new thing this run records (a judgment, an argument, a reading of a source, a " +
-  "message, a request) carries the label `internal`, whatever you read to write it. Readers who are not " +
-  "cleared for `internal` do not see it. What already carries another label is not this run's to " +
-  "change. A tool that would change or remove it refuses and says so, because that label's readers " +
-  "would read the change as their own label's work. What `internal` has to say about such a thing is " +
-  "recorded as something new, at `internal`.\n\n" +
+  "This graph holds material that only some of its readers may see, and everything in it carries a label saying who may read it. This run works at one label, fixed before it started: `internal`.\n\n" +
+  "What you can read: what is labeled `internal`, and what is labeled `public`, which `internal` reads. No tool returns anything else, so a search or a read that comes back empty has looked only there.\n\n" +
+  "What you write: everything this run records carries the label `internal`, whatever you read to write it. Readers who are not cleared for `internal` do not see it. What carries another label is not this run's to change, and a tool that would change or remove it refuses. The reason is that this run has read material at `internal`, and what a run at `internal` writes reaches readers who are not cleared for `internal` only as a page shown to them, with what was removed marked. What `internal` has to say about such a thing is recorded as something new, at `internal`.\n\n" +
   "## A judgment at each label\n\n" +
-  "A node in this graph can carry more than one judgment at once, one for each label: a version. Each " +
-  "is made by a run at its label, which saw only what that label reads, and each is a full assessment " +
-  "held to every standard you work under. This run writes the version at `internal` and no other: the " +
-  "tools that record an assessment, an estimate, a question's assessment or an argument's evaluation " +
-  "record it at `internal`.\n\n" +
-  "The versions you read at `public` are not yours to change, and nothing you record replaces them. " +
-  "Each goes on standing for the readers and runs that work from it, and is reassessed on its own " +
-  "inputs like any judgment. A node that carries another label is not yours to reword or restructure " +
-  "either: its wording, its importance and the structure recorded at its label belong to the Steward " +
-  "that works at that label. What you add to it (an argument, a subclaim, a source) is recorded at " +
-  "`internal`, beside what is there.\n\n" +
-  "On a node that carries another label, a version at `internal` is stored only when material at " +
-  "`internal` bears on the node: a source labeled `internal` attached to it, a node labeled `internal` " +
-  "under it, or a node under it that carries a version at `internal`. The tool that records the version " +
-  "refuses when there is none. The reason is that a version at `internal` should differ from the one it " +
-  "reads only where material at `internal` makes the difference, so that a reader can trace the " +
-  "difference to something named. Whether a source really bears on the node is your judgment, and the " +
-  "tool checks only that one is attached. Where nothing at `internal` bears, there is nothing at " +
-  "`internal` to judge: record no version, say so with log_stewardship_decision, and the version you " +
-  "read stands for readers at `internal`. A node that itself carries the label `internal` needs no such " +
-  "material: its judgment is simply its judgment.\n\n" +
-  "Where you read a version at another label, start from it. Read its reasoning as you would a " +
-  "colleague's, then ask what the material at `internal` changes. Your version owes that one coherence, " +
-  "not deference (\u00a721): where the two differ, the material at `internal` accounts for the difference, " +
-  "and your reasoning says how. A disagreement about evidence the other version could see is a case " +
-  "against that version, not a version of your own. Record it as a request (file_request), which stays " +
-  "at `internal`. A version that agrees with the one you read is still worth recording when material at " +
-  "`internal` changes the confidence, the credence, or what the verdict rests on.\n\n" +
-  "Your version records the versions it was made beside: the current version at each label that " +
-  "`internal` reads, as they stood. When one of them is replaced, readers at `internal` are shown that " +
-  "yours was made against an earlier version, and a reassessment is opened at `internal`, which runs " +
-  "when it is funded. Whether the change matters is your judgment when it does.\n\n" +
-  "get_claim lists a node's versions under `versions`, each with its label, and says which are in force " +
-  "for this run: a version is in force unless another one you can read was made at a label that reads " +
-  "its label. Where a read gives a single judgment for a node, it is the one in force, and the most " +
-  "recent of them if two labels that do not read each other each have one.\n\n" +
+  "A node can carry a judgment at each label, each made by a run at that label from what that label reads. This run records the one at `internal`.\n\n" +
+  "Yours does not replace the judgments you read at `public`: readers at those labels go on reading them, and each is reassessed on its own inputs. A node that carries another label keeps its wording, its importance and its structure, which belong to the Steward at that label; what you add to it (an argument, a subclaim, a source) is recorded at `internal`.\n\n" +
+  "On a node that carries another label, the tool records a judgment at `internal` only when something at `internal` is attached to the node: a source labeled `internal`, a node labeled `internal` under it, or a node under it that carries a judgment at `internal`. The reason is that a reader should be able to trace a judgment at `internal` to what `internal` has that the other label lacks. Whether what is attached bears on the node is your judgment; the tool checks only that it is there. Where nothing at `internal` bears, record no judgment and say so with log_stewardship_decision; readers at `internal` then read the judgment at the other label. A node labeled `internal` needs no such material.\n\n" +
+  "Where you read a judgment at another label, read its reasoning as you would a colleague's. Yours is your own assessment of everything you read, and owes the other coherence, not deference (§21). Where the two differ, your reasoning says why: what the material at `internal` changes, and, where you read the evidence you share differently, that you do and how. A judgment that agrees with the one you read is still worth recording when material at `internal` changes the confidence, the credence, or what the verdict rests on. The Steward at the other label does not read what is written at `internal`, so a point against its judgment is recorded as a request (file_request), which the people who direct this graph can act on.\n\n" +
+  "Your judgment records the judgment it was made beside at each label `internal` reads. When one of those is replaced, readers at `internal` are shown that, and a reassessment at `internal` is opened, which runs when it is funded. Whether the change matters is your judgment then.\n\n" +
+  "get_claim lists the judgments you can read under `versions`, each with its label, and marks which are in force for this run: one is in force unless another you can read was made at a label that reads its label. A read that gives a single judgment gives the one in force, or the most recent where two labels that do not read each other each have one.\n\n" +
   "## Showing a page to readers who do not read its label\n\n" +
-  "A person who directs this graph may ask for a node's page at `internal` to be shown to readers who do " +
-  "not read `internal`, at another label here or outside this deployment, so that what was concluded can " +
-  "be read where the evidence for it cannot. What is shown is the page as you wrote it, less the " +
-  "passages a Redactor removes under that boundary's policy and marks in place, and less the parts " +
-  "that the people who hold the permission to release decide to hold. Nobody rewords it. " +
-  "get_redaction_policies returns the policies for pages written at `internal`. Write what you conclude, " +
-  "whether or not the page is shown. You may arrange the reasoning so that a reader can follow it " +
-  "after removals, for example by saying what a sensitive figure shows in a sentence apart from the " +
-  "figure.\n\n" +
-  "If the work cannot be done well on what this label can read, say so in what you record, so that " +
-  "whoever reads it or pays for the next pass knows what it rests on.";
+  "A person who directs this graph may ask for a node's page at `internal` to be shown to readers who do not read `internal`, at another label here or outside this deployment, so that what was concluded can be read where the evidence for it cannot. What is shown is the page as you wrote it, less the passages a Redactor removes under that boundary's policy and marks in place, and less the parts that the people who hold the permission to release decide to hold. Nobody rewords it. get_redaction_policies returns the policies for pages written at `internal`. Write what you conclude, whether or not the page is shown. You may arrange the reasoning so that a reader can follow it after removals, for example by saying what a sensitive figure shows in a sentence apart from the figure.\n\n" +
+  "If the work cannot be done well on what this label can read, say so in what you record, so that whoever reads it or pays for the next pass knows what it rests on.";
+
+const MIRROR_ALONE =
+  "## The public graph, mirrored\n\n" +
+  "Part of this graph is the public graph itself, copied here by a mirror that follows it. The copy shows the public graph as of 2026-11-12 17:08 UTC, not as of now, and a node's full read says so under `mirrored`.\n\n" +
+  "No run here changes a mirrored row, and a tool that would refuses: the next batch from the public graph would overwrite the change, and until then readers would take it for the public graph's own. What this run adds to a mirrored node (an argument, a subclaim, a source) is this deployment's own, beside what is there. On a mirrored node the judgment at `public` is the public graph's own. None is made or paid for in this deployment, because readers would take it for the public graph's; a fresh one is funded on the public graph.\n\n" +
+  "If you judge that the public graph has a mirrored node wrong, in its wording, its structure or its assessment, record a request (file_request, where your role has it; otherwise say so in what you report). The request stays in this deployment: raising it on the public graph would show what this deployment is working on, which is for the people who direct it to decide.";
+
 
 describe("labelNote", () => {
   it("says the label, what it reads, what the run's writes carry, and how to read a node's versions", () => {
@@ -107,8 +51,15 @@ describe("labelNote", () => {
     const note = labelNote("internal", ["internal", "public"], { writesJudgments: true });
     expect(note).toBe(INTERNAL_STEWARD);
     // What the tool refuses, with the reason and what to do instead.
-    expect(note).toContain("The tool that records the version refuses when there is none. The reason is that");
-    expect(note).toContain("record no version, say so with log_stewardship_decision");
+    expect(note).toContain("the tool records a judgment at `internal` only when something at `internal` is attached to the node");
+    expect(note).toContain("The reason is that a reader should be able to trace a judgment at `internal`");
+    expect(note).toContain("record no judgment and say so with log_stewardship_decision");
+    // It is the run's own assessment of everything it reads, and says which part of a difference its label's material makes.
+    expect(note).toContain("Yours is your own assessment of everything you read, and owes the other coherence, not deference (§21).");
+    expect(note).not.toContain("not a version of your own");
+    // The reason it may not change another label's rows is the one that matters: what it read here.
+    expect(note).toContain("reaches readers who are not cleared for `internal` only as a page shown to them");
+    expect(note).not.toContain("would read the change as their own label's work");
     // The paragraph that said a node holds one judgment in force is gone from both.
     for (const text of [INTERNAL, INTERNAL_STEWARD]) {
       expect(text).not.toContain("A node holds one judgment in force");
@@ -120,10 +71,10 @@ describe("labelNote", () => {
 
   it("says less to a run that records judgments at a label that reads no other", () => {
     const note = labelNote("public", ["public"], { writesJudgments: true });
-    expect(note).toContain(
-      "`public` reads no other label, so on every node this run reads, the version at `public` is the only one it sees."
-    );
-    expect(note).not.toContain("is stored only when material");
+    expect(note).toContain("`public` reads no other label, so the judgment at `public` is the only one this run sees on any node.");
+    expect(note).not.toContain("only when something at");
+    // A run that reads no other label never meets a row at one.
+    expect(note).not.toContain("is not this run's to change");
   });
 
   it("names every label the run's label reads, public last", () => {
@@ -200,6 +151,18 @@ describe("withLabelNote", () => {
 
 describe("on a deployment that mirrors the public graph", () => {
   const mirror = { publicGraphAsOf: "2026-11-12T17:08:45.113Z" };
+  const WHAT_IT_IS =
+    "Part of what is labeled `public` is the public graph itself, copied here by a mirror that follows it. The copy " +
+    "shows the public graph as of 2026-11-12 17:08 UTC, not as of now, and a node's full read says so under `mirrored`.";
+  const NOT_CHANGED =
+    "No run here changes a mirrored row, and a tool that would refuses: the next batch from the public graph would " +
+    "overwrite the change, and until then readers would take it for the public graph's own.";
+  const PUBLIC_JUDGMENT =
+    "On a mirrored node the judgment at `public` is the public graph's own. None is made or paid for in this " +
+    "deployment, because readers would take it for the public graph's; a fresh one is funded on the public graph.";
+  const REQUEST_STAYS =
+    "raising it on the public graph would show what this deployment is working on, which is for the people who " +
+    "direct it to decide.";
 
   it("says nothing of the mirror where none is held, word for word", () => {
     for (const writesJudgments of [true, false]) {
@@ -209,75 +172,38 @@ describe("on a deployment that mirrors the public graph", () => {
     }
   });
 
-  it("tells a Steward at a private label what is mirrored and as of when, why it is not changed, whose the public version is, and where a request goes", () => {
-    const note = labelNote("internal", ["internal", "public"], { writesJudgments: true, mirror });
-    const plain = labelNote("internal", ["internal", "public"], { writesJudgments: true });
-    const added = [
-      " Part of what is labeled `public` is the public graph itself, read through a mirror: a copy of its nodes, with their arguments, sources and assessments, that follows it. It shows the public graph as of 2026-11-12 17:08 UTC, when the newest batch applied here was cut, not as of now. A node's full read says under `mirrored` that it is one of these.",
-      " A mirrored row is not changed by any run in this deployment, at any label: the next batch from the public graph would overwrite the change, and until then readers would take it for the public graph's own. A tool that would change one refuses and says so.",
-      " On a mirrored node the version at `public` is the public graph's own assessment, which arrives with the mirror, and the Steward at that label is the public graph's: no run in this deployment records a version there.",
-      " A request about a mirrored node stays in this deployment like any other. Raising it on the public graph would show what this deployment is working on, so that is for the people who direct the deployment to decide, and no tool of yours sends anything there.",
+  it("tells every run what is mirrored and as of when, why it is not changed, whose the public judgment is, and where a request goes, each once", () => {
+    const runs = [
+      labelNote("internal", ["internal", "public"], { writesJudgments: true, mirror }),
+      labelNote("internal", ["internal", "public"], { mirror }),
+      labelNote("public", ["public"], { writesJudgments: true, mirror }),
+      labelNote("public", ["public"], { mirror }),
     ];
-    // Each is a sentence or two inside a passage that was already there, and
-    // taking them out gives back the note as it was: nothing else moved.
-    let without = note;
-    for (const sentence of added) {
-      expect(note.split(sentence).length - 1, sentence).toBe(1);
+    for (const note of runs) {
+      for (const sentence of [WHAT_IT_IS, NOT_CHANGED, PUBLIC_JUDGMENT, REQUEST_STAYS]) {
+        expect(note.split(sentence).length - 1, sentence).toBe(1);
+      }
+    }
+    // Taking the mirror's sentences out of a private Steward's note gives back the note without a mirror.
+    const plain = labelNote("internal", ["internal", "public"], { writesJudgments: true });
+    let without = runs[0]!;
+    for (const sentence of [
+      ` ${WHAT_IT_IS}`,
+      ` ${NOT_CHANGED}`,
+      ` ${PUBLIC_JUDGMENT}`,
+      " That holds for a mirrored node you judge the public graph has wrong, in its wording, its structure or its " +
+        `assessment: the request stays in this deployment, since ${REQUEST_STAYS}`,
+    ]) {
       without = without.replace(sentence, "");
     }
     expect(without).toBe(plain);
-  });
-
-  it("tells a run that records no judgments the same, in the passage it already has", () => {
-    const note = labelNote("internal", ["internal", "public"], { mirror });
-    expect(note).toContain("It shows the public graph as of 2026-11-12 17:08 UTC");
-    expect(note).toContain("A mirrored row is not changed by any run in this deployment, at any label");
-    expect(note).toContain(
-      "On a mirrored node the version at `public` is the public graph's own assessment. No pass on a mirrored node " +
-        "at `public` is opened, paid for or run in this deployment: an assessment of it made here at `public` would " +
-        "be this deployment's, shown to readers as the public graph's. A fresh " +
-        "public assessment is funded on the public graph. If you judge that the public graph has a mirrored node " +
-        "wrong, in its wording, its structure or its assessment, that is a request (file_request, where your role " +
-        "has it; otherwise say so in what you report). A request about a mirrored node stays in this deployment " +
-        "like any other."
-    );
-    expect(note).not.toContain("## A judgment at each label");
-  });
-
-  it("tells a Steward at public that no pass on a mirrored node is opened here", () => {
-    const note = labelNote("public", ["public"], { writesJudgments: true, mirror });
-    expect(note).toContain(
-      "On a mirrored node the version at `public` is the public graph's own assessment, which arrives with the " +
-        "mirror, and no run in this deployment records one. No pass on a mirrored node at `public` is opened, paid " +
-        "for or run in this deployment: an assessment of it made here at `public` " +
-        "would be this deployment's, shown to readers as the public graph's. A fresh public assessment is funded on " +
-        "the public graph. If you judge that the public graph has a mirrored node wrong, that is a request " +
-        "(file_request)."
-    );
+    expect(runs[1]).not.toContain("## A judgment at each label");
   });
 
   it("gives a deployment with one label the passage on its own, since it has no label note", () => {
-    expect(mirrorNote(mirror, { writesJudgments: true })).toBe(
-      "## The public graph, mirrored\n\n" +
-        "Part of this graph is the public graph itself, read through a mirror: a copy of its nodes, with their " +
-        "arguments, sources and assessments, that follows it. It shows the public graph as of 2026-11-12 17:08 UTC, " +
-        "when the newest batch applied here was cut, not as of now. A node's full read says under `mirrored` that " +
-        "it is one of these.\n\n" +
-        "A mirrored row is not changed by any run in this deployment, at any label: the next batch from the public " +
-        "graph would overwrite the change, and until then readers would take it for the public graph's own. A tool " +
-        "that would change one refuses and says so. What this run adds to a mirrored node (an argument, a subclaim, " +
-        "a source) is a row of this deployment's own, beside what is there. No pass on a mirrored node at `public` " +
-        "is opened, paid for or run in this deployment: an assessment of it made here at `public` would be this " +
-        "deployment's, shown to readers as the public graph's. A fresh public " +
-        "assessment is funded on the public graph. No run here records an assessment of a mirrored node " +
-        "either.\n\n" +
-        "If you judge that the public graph has a mirrored node wrong, in its wording, its structure or its " +
-        "assessment, that is a request (file_request, where your role has it; otherwise say so in what you report). " +
-        "A request about a mirrored node stays in this deployment like any other. Raising it on the public graph " +
-        "would show what this deployment is working on, so that is for the people who direct the deployment to " +
-        "decide, and no tool of yours sends anything there."
-    );
-    expect(mirrorNote(mirror)).not.toContain("No run here records an assessment");
+    expect(mirrorNote(mirror)).toBe(MIRROR_ALONE);
+    expect(MIRROR_ALONE).toContain(NOT_CHANGED);
+    expect(MIRROR_ALONE).toContain(PUBLIC_JUDGMENT);
   });
 
   it("is said once: a note that states a newer time is not added to a first message that already carries one", () => {
@@ -291,9 +217,9 @@ describe("on a deployment that mirrors the public graph", () => {
   });
 
   it("is plain prose in the house style", () => {
-    for (const note of [labelNote("internal", ["internal", "public"], { writesJudgments: true, mirror }), mirrorNote(mirror, { writesJudgments: true })]) {
+    for (const note of [labelNote("internal", ["internal", "public"], { writesJudgments: true, mirror }), mirrorNote(mirror)]) {
       // No em-dashes, and American spelling for what an agent reads.
-      expect(note).not.toMatch(/[\u2014\u2013]/);
+      expect(note).not.toMatch(/[—–]/);
       expect(note).not.toMatch(/labelled/);
     }
   });

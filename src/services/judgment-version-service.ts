@@ -107,11 +107,12 @@ export function anotherLabelsNodeMessage(at: { label: string; nodeLabel: string 
   return (
     `Not changed. This node carries the label \`${at.nodeLabel}\` and this run works at \`${at.label}\`. ` +
     `What this would change (the node's ${what}) is for the Steward that works at the node's own label to ` +
-    `change, and a change made from \`${at.label}\` would be read by readers of \`${at.nodeLabel}\` as ` +
-    `their own label's work. What ` +
+    `change: this run has read material at \`${at.label}\`, and what it writes reaches readers who are not ` +
+    `cleared for \`${at.label}\` only as a page shown to them, with what was removed marked. What ` +
     `\`${at.label}\` has to add to the node is recorded at \`${at.label}\`, beside what is there: an ` +
-    `argument, a subclaim, a source, a version of its judgment. If the node should change on grounds its ` +
-    `own label could see, record that as a request (file_request).`
+    `argument, a subclaim, a source, a judgment of its own. If the node should change on grounds its ` +
+    `own label could see, record that as a request (file_request), which the people who direct this graph ` +
+    `can act on.`
   );
 }
 
