@@ -23,7 +23,13 @@
 import { FUNDING_CALL_MAX_OWLS, FUNDING_CALL_MAX_NOTE } from "../services/owl.js";
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import {
-  listPublicMandates,
+  listMandatesPage,
+  MANDATE_SCOPES,
+  MANDATE_LIST_STATES,
+  MANDATE_ORDERS,
+  type MandateScope,
+  type MandateListState,
+  type MandateOrder,
   getPublicMandate,
   readableMandateRef,
   getMandateAllocationView,
@@ -56,22 +62,65 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  app.get<{ Querystring: { limit?: number } }>("/", {
+  app.get<{
+    Querystring: {
+      scope?: MandateScope;
+      state?: MandateListState;
+      q?: string;
+      order?: MandateOrder;
+      offset?: number;
+      limit?: number;
+    };
+  }>("/", {
     schema: {
       tags: ["mandates"],
       summary:
-        "Public mandates open to contribution: platform-run first, then " +
-        "largest budgets",
+        "Mandates, a page at a time: every public one, the platform's, or the caller's own; " +
+        "narrowed by state and by words in the title or objective",
+      description:
+        "With no parameters: the mandates open to backing, platform-run first, then largest " +
+        "budgets. `scope` is `all` (every mandate that has started), `platform`, or `mine` " +
+        "(every mandate the caller funds, from its first draft; needs an account). `state` " +
+        "narrows: `live` (the default: at work, or stopped on a spent budget), `active`, " +
+        "`paused`, `finished`, `any`, and for the caller's own `needs_you` (a plan awaiting " +
+        "approval, or a budget spent). The response carries `total` for the page's query, " +
+        "the count in each state for the scope and words, and the count in each scope.",
       querystring: {
         type: "object",
         properties: {
+          scope: { type: "string", enum: [...MANDATE_SCOPES], default: "all" },
+          state: { type: "string", enum: [...MANDATE_LIST_STATES], default: "live" },
+          q: { type: "string", maxLength: 200, description: "Words to find in the title or objective." },
+          order: {
+            type: "string",
+            enum: [...MANDATE_ORDERS],
+            description:
+              "budget (platform-run first, then largest; the default), recent (last changed), " +
+              "newest, backers, or needs_you (the default for `mine`).",
+          },
+          offset: { type: "integer", minimum: 0, default: 0 },
           limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
         },
       },
     },
+    preHandler: [optionalAuth],
     handler: async (request, reply) => {
-      const mandates = await listPublicMandates(request.query.limit ?? 50);
-      return reply.send({ mandates });
+      const q = request.query;
+      if (q.scope === "mine" && !request.auth?.userId) {
+        return reply
+          .code(401)
+          .send({ error: "Your own mandates need an account", code: "UNAUTHORIZED" });
+      }
+      const page = await listMandatesPage({
+        scope: q.scope,
+        viewerUserId: request.auth?.userId ?? null,
+        state: q.state,
+        q: q.q,
+        order: q.order,
+        offset: q.offset,
+        limit: q.limit ?? 50,
+      });
+      return reply.send(page);
     },
   });
 

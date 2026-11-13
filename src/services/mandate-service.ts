@@ -143,20 +143,191 @@ async function summarize(row: GrantRow): Promise<MandateSummary> {
   };
 }
 
+// ---------------------------------------------------------------------------
+// The list, at scale
+// ---------------------------------------------------------------------------
+
+/** Whose mandates: the viewer's own, the platform's, or every public one. */
+export const MANDATE_SCOPES = ["all", "platform", "mine"] as const;
+export type MandateScope = (typeof MANDATE_SCOPES)[number];
+
 /**
- * The public listing: platform mandates first, then by total budget. Only
- * live mandates (active or budget-paused) are contributable; completed and
- * cancelled ones drop off.
+ * A narrowing by where a mandate stands. `live` is every mandate still
+ * open to backing (at work, or stopped on a spent budget), which is what
+ * the list gave before it could be narrowed and what it gives by default;
+ * `active` and `paused` split it. `needs_you` is the manager's: a plan
+ * waiting for their approval, or a budget spent with work stopped.
  */
-export async function listPublicMandates(limit = 50): Promise<MandateSummary[]> {
-  const rows = await rawQuery<GrantRow>(
-    `${GRANT_SELECT}
-      WHERE g.status = 'active'
-      ORDER BY g.is_platform DESC, j.budget_micro_usd DESC, g.created_at ASC
-      LIMIT $1`,
-    [limit]
+export const MANDATE_LIST_STATES = ["live", "any", "active", "paused", "finished", "needs_you"] as const;
+export type MandateListState = (typeof MANDATE_LIST_STATES)[number];
+
+export const MANDATE_ORDERS = ["budget", "recent", "newest", "backers", "needs_you"] as const;
+export type MandateOrder = (typeof MANDATE_ORDERS)[number];
+
+export interface MandateListQuery {
+  scope?: MandateScope;
+  /** Required for `mine`. */
+  viewerUserId?: string | null;
+  state?: MandateListState;
+  /** Words to find in the title or objective. */
+  q?: string;
+  order?: MandateOrder;
+  limit?: number;
+  offset?: number;
+}
+
+export interface MandateListRow extends MandateSummary {
+  /** Its budget's state: `paused_budget` when the budget is spent and work has stopped. */
+  budget_status: string;
+  updated_at: string | null;
+  /** Nodes it has had judged: claims, questions and quantities. */
+  assessments: number;
+  /** Set on the viewer's own: whether something waits on them. */
+  needs_you?: boolean;
+}
+
+export interface MandateListPage {
+  mandates: MandateListRow[];
+  /** How many match the scope, the state and the words. */
+  total: number;
+  /** In this scope and for these words, how many stand in each state. */
+  states: Record<MandateListState, number>;
+  /** How many each scope holds; `mine` is null for a caller who is not signed in. */
+  scopes: { all: number; platform: number; mine: number | null };
+}
+
+// Where a mandate stands, as SQL over g (grants) and j (its budget job).
+const STATE_SQL: Record<MandateListState, string> = {
+  live: "g.status = 'active'",
+  any: "TRUE",
+  active: "g.status = 'active' AND j.status <> 'paused_budget'",
+  paused: "g.status = 'active' AND j.status = 'paused_budget'",
+  finished: "g.status IN ('completed', 'cancelled')",
+  needs_you:
+    "(g.status = 'pending_approval' OR (g.status = 'active' AND j.status = 'paused_budget'))",
+};
+
+const BACKERS_SQL = `(SELECT count(DISTINCT l.user_id) FROM owl_ledger l
+                       WHERE l.job_id = g.budget_job_id AND l.reason = 'escrow_hold')`;
+
+const ORDER_SQL: Record<MandateOrder, string> = {
+  budget: "g.is_platform DESC, j.budget_micro_usd DESC, g.created_at ASC",
+  recent: "g.updated_at DESC NULLS LAST, g.created_at DESC",
+  newest: "g.created_at DESC",
+  backers: `${BACKERS_SQL} DESC, j.budget_micro_usd DESC`,
+  needs_you: `(${STATE_SQL.needs_you}) DESC, (g.status IN ('completed', 'cancelled')) ASC, g.updated_at DESC NULLS LAST`,
+};
+
+/**
+ * The list of mandates a page at a time (`GET /mandates`). A public scope
+ * holds mandates that have started (active, finished, withdrawn); the
+ * viewer's own scope holds every mandate they fund, from the first draft.
+ * Mandates used to be listed fifty at most and only while active, so a
+ * finished mandate, and the fifty-first, could not be found.
+ */
+export async function listMandatesPage(query: MandateListQuery): Promise<MandateListPage> {
+  const scope = query.scope ?? "all";
+  const viewer = query.viewerUserId ?? null;
+  const state = query.state ?? "live";
+  const limit = Math.max(1, Math.min(100, query.limit ?? 25));
+  const offset = Math.max(0, query.offset ?? 0);
+  const words = query.q?.trim() || null;
+
+  const scopeSql = (which: MandateScope): string =>
+    which === "mine"
+      ? "g.funder_user_id = $1::uuid"
+      : which === "platform"
+        ? "g.is_platform AND g.status IN ('active', 'completed', 'cancelled')"
+        : "g.status IN ('active', 'completed', 'cancelled')";
+  // $1 is typed here because a public scope does not otherwise mention it.
+  const wordsSql = `$1::uuid IS NOT DISTINCT FROM $1::uuid AND ($2::text IS NULL
+        OR COALESCE(g.mandate->>'title', g.name) ILIKE '%' || $2 || '%'
+        OR g.mandate->>'objective' ILIKE '%' || $2 || '%')`;
+  // ILIKE's own wildcards in the words are matched as themselves.
+  const like = words ? words.replace(/[\\%_]/g, (c) => `\\${c}`) : null;
+  const FROM = `FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id`;
+
+  const empty: MandateListPage = {
+    mandates: [],
+    total: 0,
+    states: { live: 0, any: 0, active: 0, paused: 0, finished: 0, needs_you: 0 },
+    scopes: { all: 0, platform: 0, mine: viewer ? 0 : null },
+  };
+  const mineWithoutViewer = scope === "mine" && !viewer;
+
+  const [rows, states, scopes] = await Promise.all([
+    mineWithoutViewer
+      ? Promise.resolve([])
+      : rawQuery<GrantRow & { updated_at: Date | null; assessments: number }>(
+          `${GRANT_SELECT.replace("g.created_at,", "g.created_at, g.updated_at,")}
+            WHERE ${scopeSql(scope)} AND ${STATE_SQL[state]} AND ${wordsSql}
+            ORDER BY ${ORDER_SQL[query.order ?? (scope === "mine" ? "needs_you" : "budget")]}, g.id
+            LIMIT $3 OFFSET $4`,
+          [viewer, like, limit, offset]
+        ),
+    mineWithoutViewer
+      ? Promise.resolve([])
+      : rawQuery<Record<MandateListState, string>>(
+          `SELECT ${MANDATE_LIST_STATES.map((st) => `count(*) FILTER (WHERE ${STATE_SQL[st]}) AS ${st}`).join(", ")}
+             ${FROM} WHERE ${scopeSql(scope)} AND ${wordsSql}`,
+          [viewer, like]
+        ),
+    rawQuery<{ all: string; platform: string; mine: string }>(
+      `SELECT count(*) FILTER (WHERE ${scopeSql("all")}) AS "all",
+              count(*) FILTER (WHERE ${scopeSql("platform")}) AS platform,
+              count(*) FILTER (WHERE $1::uuid IS NOT NULL AND ${scopeSql("mine")}) AS mine
+         ${FROM}`,
+      [viewer]
+    ),
+  ]);
+
+  const counted = states[0];
+  const stateCounts = counted
+    ? (Object.fromEntries(MANDATE_LIST_STATES.map((st) => [st, Number(counted[st])])) as Record<MandateListState, number>)
+    : empty.states;
+  const judged = rows.length
+    ? await rawQuery<{ job_id: string; n: string }>(
+        `SELECT job_id, count(DISTINCT claim_id) AS n FROM (
+           SELECT funded_by_job_id AS job_id, claim_id FROM assessments WHERE funded_by_job_id = ANY($1::uuid[])
+           UNION ALL
+           SELECT funded_by_job_id, claim_id FROM question_assessments WHERE funded_by_job_id = ANY($1::uuid[])
+           UNION ALL
+           SELECT funded_by_job_id, claim_id FROM quantity_estimates WHERE funded_by_job_id = ANY($1::uuid[])
+         ) j GROUP BY job_id`,
+        [rows.map((r) => r.budget_job_id)]
+      )
+    : [];
+  const judgedBy = new Map(judged.map((r) => [r.job_id, Number(r.n)]));
+
+  const mandates = await Promise.all(
+    rows.map(async (row): Promise<MandateListRow> => {
+      const mine = !!viewer && row.funder_user_id === viewer;
+      return {
+        ...(await summarize(row)),
+        budget_status: row.job_status,
+        updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+        assessments: judgedBy.get(row.budget_job_id) ?? 0,
+        ...(mine
+          ? {
+              needs_you:
+                row.status === "pending_approval" ||
+                (row.status === "active" && row.job_status === "paused_budget"),
+            }
+          : {}),
+      };
+    })
   );
-  return Promise.all(rows.map(summarize));
+
+  return {
+    mandates,
+    total: stateCounts[state],
+    states: stateCounts,
+    scopes: {
+      all: Number(scopes[0]?.all ?? 0),
+      platform: Number(scopes[0]?.platform ?? 0),
+      mine: viewer ? Number(scopes[0]?.mine ?? 0) : null,
+    },
+  };
 }
 
 export interface SourcePipelineRow {

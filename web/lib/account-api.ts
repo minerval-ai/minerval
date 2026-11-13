@@ -1152,6 +1152,42 @@ export async function listMandates(): Promise<MandateSummaryView[]> {
   return r.mandates;
 }
 
+export type MandateScope = "all" | "platform" | "mine";
+export type MandateListState = "live" | "any" | "active" | "paused" | "finished" | "needs_you";
+export type MandateOrder = "budget" | "recent" | "newest" | "backers" | "needs_you";
+
+export interface MandateListRow extends MandateSummaryView {
+  budget_status: string;
+  updated_at: string | null;
+  assessments: number;
+  needs_you?: boolean;
+}
+
+export interface MandateListPage {
+  mandates: MandateListRow[];
+  total: number;
+  states: Record<MandateListState, number>;
+  scopes: { all: number; platform: number; mine: number | null };
+}
+
+/** One page of the list of mandates, with the counts its tabs and filters show. */
+export async function fetchMandatesPage(
+  opts: { scope?: MandateScope; state?: MandateListState; q?: string; order?: MandateOrder; offset?: number; limit?: number },
+  externalId?: string | null
+): Promise<MandateListPage> {
+  const params = new URLSearchParams();
+  if (opts.scope) params.set("scope", opts.scope);
+  if (opts.state) params.set("state", opts.state);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.order) params.set("order", opts.order);
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  return accountFetch<MandateListPage>(
+    `/mandates${params.size > 0 ? `?${params}` : ""}`,
+    externalId ? { actingUser: externalId } : {}
+  );
+}
+
 export async function fetchMandateView(
   mandateId: string,
   externalId?: string | null

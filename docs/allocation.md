@@ -1918,9 +1918,17 @@ A mandate is managed by one person but is a public thing (`/mandates`,
 API `GET /mandates`): anyone can read its dashboard and put their own owls
 behind it (`POST /mandates/:id/contribute`), with every contribution
 escrowed per user and unspent budget refunded to contributors pro rata.
-The discovery page gives pride of place to the largest mandates and above
-all to the platform's own standing mandates (Mathematics and AI Economics
-to start — `scripts/seed-platform-mandates.ts`).
+The list (`/mandates`) is in three tabs, each of which can hold hundreds:
+the reader's own (every mandate they fund, from its first draft, with what
+needs them first), the platform's own standing mandates (Mathematics and
+AI Economics to start, `scripts/seed-platform-mandates.ts`), and
+everyone's, largest budgets first. A tab is searched by title and
+objective, narrowed by state (active, paused on a spent budget, finished)
+and read a page at a time. `GET /mandates` (MCP `list_mandates`) serves
+the same: `scope`, `state`, `q`, `order`, `offset` and `limit`, with the
+count in each state and scope; with no parameters it lists the mandates
+open to backing, as it always has. A public scope holds only mandates that
+have started.
 
 The mandate's page (`/mandates/:id`) sets the mandate itself (title,
 objective, strategy) as a document, and reports on it under it: completed

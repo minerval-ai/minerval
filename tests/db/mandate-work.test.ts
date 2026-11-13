@@ -18,7 +18,7 @@ import {
   mandateWorkCounts,
   recordMandateUpdate,
 } from "../../src/services/mandate-work-service.js";
-import { getPublicMandate, readableMandateRef } from "../../src/services/mandate-service.js";
+import { getPublicMandate, listMandatesPage, readableMandateRef } from "../../src/services/mandate-service.js";
 
 async function mandate(grantStatus = "active") {
   const funder = await seedUser("work-funder");
@@ -206,5 +206,83 @@ describe("who may read a mandate", () => {
     expect(pub?.funder_notes ?? []).toEqual([]);
     const own = await getPublicMandate(grantId, funder);
     expect(own?.funder_notes?.length).toBe(1);
+  });
+});
+
+describe("the list of mandates", () => {
+  // Other tests leave mandates behind, so each check here finds its own by a word no other title has.
+  async function named(word: string, opts: { grantStatus?: string; jobStatus?: string; budget?: number; funder?: string } = {}) {
+    const funder = opts.funder ?? (await seedUser("list-funder"));
+    const { grantId, jobId } = await seedGrantWithJob({
+      funderId: funder,
+      budgetMicroUsd: opts.budget ?? 10_000_000,
+      grantStatus: opts.grantStatus,
+      jobStatus: opts.jobStatus,
+    });
+    await rawQuery(`UPDATE grants SET mandate = jsonb_build_object('title', $2::text, 'objective', 'An objective.') WHERE id = $1`, [
+      grantId,
+      `Listed ${word}`,
+    ]);
+    return { funder, grantId, jobId };
+  }
+
+  it("finds by words, counts each state, and keeps drafts out of the public list", async () => {
+    const word = `zq${randomUUID().slice(0, 8)}`;
+    const active = await named(word, { budget: 30_000_000 });
+    const paused = await named(word, { jobStatus: "paused_budget", budget: 20_000_000 });
+    const finished = await named(word, { grantStatus: "completed" });
+    const draft = await named(word, { grantStatus: "pending_approval" });
+    await named("something else entirely");
+
+    const any = await listMandatesPage({ q: word, state: "any" });
+    expect(any.total).toBe(3);
+    expect(any.states).toMatchObject({ any: 3, live: 2, active: 1, paused: 1, finished: 1 });
+    expect(any.mandates.map((m) => m.id)).toEqual([active.grantId, paused.grantId, finished.grantId]);
+    expect(any.mandates.map((m) => m.id)).not.toContain(draft.grantId);
+    expect(any.scopes.mine).toBeNull();
+
+    const live = await listMandatesPage({ q: word });
+    expect(live.mandates.map((m) => m.id)).toEqual([active.grantId, paused.grantId]);
+    expect((await listMandatesPage({ q: word, state: "paused" })).mandates.map((m) => m.id)).toEqual([paused.grantId]);
+
+    const second = await listMandatesPage({ q: word, state: "any", limit: 1, offset: 1 });
+    expect(second.total).toBe(3);
+    expect(second.mandates.map((m) => m.id)).toEqual([paused.grantId]);
+  });
+
+  it("matches a wildcard in the words as itself", async () => {
+    const word = `zq${randomUUID().slice(0, 8)}`;
+    await named(word);
+    expect((await listMandatesPage({ q: `${word.slice(0, 4)}%${word.slice(-2)}`, state: "any" })).total).toBe(0);
+  });
+
+  it("lists a funder's own from the first draft, what needs them first, and counts the nodes judged", async () => {
+    const word = `zq${randomUUID().slice(0, 8)}`;
+    const funder = await seedUser("list-owner");
+    const working = await named(word, { funder });
+    const draft = await named(word, { funder, grantStatus: "pending_approval" });
+    await named(word);
+    const claim = await seedClaim("listed claim");
+    const question = await seedClaim("listed question");
+    await rawQuery(
+      `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, funded_by_job_id) VALUES ($1, 'supported', 0.7, 't', $2)`,
+      [claim, working.jobId]
+    );
+    await rawQuery(
+      `INSERT INTO question_assessments (claim_id, standing, reasoning_trace, funded_by_job_id) VALUES ($1, 'open', 't', $2)`,
+      [question, working.jobId]
+    );
+
+    const mine = await listMandatesPage({ scope: "mine", viewerUserId: funder, state: "any", q: word });
+    expect(mine.mandates.map((m) => m.id)).toEqual([draft.grantId, working.grantId]);
+    expect(mine.mandates.map((m) => m.needs_you)).toEqual([true, false]);
+    expect(mine.mandates[1]!.assessments).toBe(2);
+    expect(mine.states.needs_you).toBe(1);
+    expect(mine.scopes.mine).toBe(2);
+
+    expect((await listMandatesPage({ scope: "mine", state: "any", q: word })).mandates).toEqual([]);
+    const pub = await listMandatesPage({ q: word, state: "any", viewerUserId: funder });
+    expect(pub.mandates.find((m) => m.id === working.grantId)?.needs_you).toBe(false);
+    expect(pub.mandates.some((m) => m.id === draft.grantId)).toBe(false);
   });
 });

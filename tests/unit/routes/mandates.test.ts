@@ -11,12 +11,16 @@ const mocks = vi.hoisted(() => ({
   listMandateAttempts: vi.fn(),
   mandatePrizesBlock: vi.fn(),
   readableMandateRef: vi.fn(),
+  listMandatesPage: vi.fn(),
   listMandateWork: vi.fn(),
   listMandateUpdates: vi.fn(),
 }));
 
 vi.mock("../../../src/services/mandate-service.js", () => ({
-  listPublicMandates: vi.fn(async () => []),
+  listMandatesPage: mocks.listMandatesPage,
+  MANDATE_SCOPES: ["all", "platform", "mine"],
+  MANDATE_LIST_STATES: ["live", "any", "active", "paused", "finished", "needs_you"],
+  MANDATE_ORDERS: ["budget", "recent", "newest", "backers", "needs_you"],
   getPublicMandate: mocks.getPublicMandate,
   getMandateAllocationView: vi.fn(),
   contributeToMandate: vi.fn(),
@@ -69,6 +73,7 @@ beforeEach(() => {
   mocks.listMandateAttempts.mockReset();
   mocks.mandatePrizesBlock.mockReset();
   mocks.readableMandateRef.mockReset();
+  mocks.listMandatesPage.mockReset();
   mocks.listMandateWork.mockReset();
   mocks.listMandateUpdates.mockReset();
 });
@@ -165,5 +170,36 @@ describe("GET /mandates/:id/updates", () => {
     const app = await buildApp();
     expect((await app.inject({ method: "GET", url: `/mandates/${MANDATE_ID}/updates` })).statusCode).toBe(404);
     expect(mocks.listMandateUpdates).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /mandates", () => {
+  const page = { mandates: [], total: 0, states: {}, scopes: { all: 0, platform: 0, mine: null } };
+
+  it("lists the mandates open to backing when asked for nothing in particular", async () => {
+    mocks.listMandatesPage.mockResolvedValueOnce(page);
+    const app = await buildApp();
+    const res = await app.inject({ method: "GET", url: "/mandates" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(page);
+    expect(mocks.listMandatesPage).toHaveBeenCalledWith({
+      scope: "all", viewerUserId: null, state: "live", q: undefined, order: undefined, offset: 0, limit: 50,
+    });
+  });
+
+  it("passes the scope, state, words, order and page asked for", async () => {
+    mocks.listMandatesPage.mockResolvedValueOnce(page);
+    const app = await buildApp();
+    await app.inject({ method: "GET", url: "/mandates?scope=platform&state=finished&q=oversight&order=newest&offset=25&limit=25" });
+    expect(mocks.listMandatesPage).toHaveBeenCalledWith({
+      scope: "platform", viewerUserId: null, state: "finished", q: "oversight", order: "newest", offset: 25, limit: 25,
+    });
+  });
+
+  it("refuses a caller's own mandates to a caller with no account, and a state it does not know", async () => {
+    const app = await buildApp();
+    expect((await app.inject({ method: "GET", url: "/mandates?scope=mine" })).statusCode).toBe(401);
+    expect((await app.inject({ method: "GET", url: "/mandates?state=secret" })).statusCode).toBe(400);
+    expect(mocks.listMandatesPage).not.toHaveBeenCalled();
   });
 });
