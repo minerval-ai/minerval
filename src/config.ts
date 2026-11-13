@@ -1474,6 +1474,19 @@ const configSchema = z.object({
   // over HTTPS, as a client of the routes any account uses. Without them a
   // person carries each package as a file.
   publicGraphApiUrl: z.string().default(""),
+  // Which addresses the tools of a run that reads a private label take
+  // (src/services/given-addresses.ts). "any", the starting value: any
+  // address, as on the public graph, and nothing of the rule exists. "given":
+  // only an address the deployment was given from outside (a search result,
+  // an address in a page read, a recorded source, a resolved identifier),
+  // used as it was given. That guards against text a run read telling it to
+  // fetch an address with private material written into it. It narrows that
+  // way out and does not close it (a search query is still text sent out),
+  // and it costs research: a run cannot write the address for something it
+  // knows of, or page through results by editing one. Nearly every run in a
+  // private graph reads private material, so "given" changes almost all of
+  // them, which is why it is the organization's choice and not the default.
+  privateRunFetches: z.enum(["any", "given"]).default("any"),
   // Who may act on the public graph in the organization's name from inside
   // this deployment: take a request up, open or fund a public mandate, fund
   // a public node (docs/outward-acts.md). The holders of one permission,
@@ -1864,6 +1877,7 @@ export function loadConfig(): Config {
     deploymentHosting: process.env.DEPLOYMENT_HOSTING,
     publicGraphApiUrl: process.env.PUBLIC_GRAPH_API_URL,
     publicActsBy: process.env.PUBLIC_ACTS_BY || undefined,
+    privateRunFetches: process.env.PRIVATE_RUN_FETCHES || undefined,
     publicGraphApiKey: process.env.PUBLIC_GRAPH_API_KEY,
     publishedPageMaxBytes: process.env.PUBLISHED_PAGE_MAX_BYTES,
   });

@@ -428,6 +428,26 @@ function checkDatabaseOwner(facts: DeploymentCheckFacts): DeploymentOutcome {
   );
 }
 
+function checkPrivateRunFetches(facts: DeploymentCheckFacts): DeploymentOutcome {
+  if (facts.holdsPrivate === false) {
+    return notApplicable("Public is the only label, so no run reads private material and this setting is not used.");
+  }
+  if (facts.config.privateRunFetches === "given") {
+    return pass(
+      'private_runs.fetches is "given": a run that reads a private label can fetch only an address the deployment was given from outside ' +
+        "(a search result, an address in a page it read, a recorded source, a resolved identifier). That guards against text a run read " +
+        "telling it to fetch an address with private material written into it. It narrows that way out and does not close it: a search " +
+        "query is still text sent out. It costs research: a run cannot write the address for something it knows of, or reach the next " +
+        "page of results by editing one. Each such run is told this in its brief."
+    );
+  }
+  return pass(
+    'private_runs.fetches is "any", the starting value: a run that reads a private label fetches any address, as a run on the public ' +
+      'graph does. Text such a run reads could tell it to fetch an address with private material written into it; setting it to "given" ' +
+      "(PRIVATE_RUN_FETCHES=given) holds those runs to addresses the deployment was given, at a cost to their research."
+  );
+}
+
 /** The checks, in the order they are reported, after the ones every deployment has. */
 export const DEPLOYMENT_CHECKS: ReadonlyArray<{
   name: string;
@@ -447,6 +467,7 @@ export const DEPLOYMENT_CHECKS: ReadonlyArray<{
   { name: "publishing", blocking: false, run: checkPublishing },
   { name: "public_graph", blocking: false, run: checkPublicGraph },
   { name: "public_acts", blocking: false, run: checkPublicActs },
+  { name: "private_run_fetches", blocking: false, run: checkPrivateRunFetches },
   { name: "connections", blocking: false, run: checkConnections },
   { name: "file_sets", blocking: false, run: checkFileSets },
   { name: "sandbox", blocking: false, run: checkSandboxService },

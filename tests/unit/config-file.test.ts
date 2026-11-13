@@ -202,6 +202,7 @@ const SAMPLES: Record<string, { file: ConfigFileValue; loads?: unknown }> = {
       { model: "a-vendor/priced", inputUsdPerMtok: 1, outputUsdPerMtok: 2, cacheReadMultiplier: 0.2, cacheWriteMultiplier: 1 },
     ],
   },
+  "private_runs.fetches": { file: "given" },
   "publishing.hosting": { file: "third_party" },
   "public_graph.acts_by": { file: "fund" },
   "public_graph.price": { file: "flat" },
@@ -356,7 +357,7 @@ describe("what a file is refused for", () => {
   it("names an unknown group or setting, what is near it, and what the place holds", () => {
     expect(problemsOf(() => parse('[run_logs]\nmode = "record"\n'))).toEqual([
       "run_logs is not a group of settings. Did you mean run_log? The groups are: features, models, " +
-        "model_providers, outside_services, provider_labels, run_log, hosting, database, pricing, publishing, " +
+        "model_providers, outside_services, provider_labels, run_log, hosting, database, pricing, private_runs, publishing, " +
         "public_graph, usage_report, file_sets, sandbox.",
     ]);
     expect(problemsOf(() => parse('[run_log]\nmodes = "record"\n'))).toEqual([

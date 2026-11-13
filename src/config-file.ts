@@ -321,6 +321,9 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
     },
   },
 
+  // Which addresses the tools of a run that reads a private label take.
+  { key: "private_runs.fetches", env: "PRIVATE_RUN_FETCHES", kind: "text", field: "privateRunFetches" },
+
   // Showing pages outside (docs/published-pages.md). The signing key is a secret.
   { key: "publishing.hosting", env: "DEPLOYMENT_HOSTING", kind: "text", field: "deploymentHosting" },
   secret("publishing.signing_key", "PUBLISH_SIGNING_KEY"),
@@ -389,6 +392,11 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
   "pricing.model_prices":
     "A price this deployment states for a model, in US dollars per million tokens: for a model the rate table " +
     "does not know, or in place of the table's. Where owls are created, a run on a model with no price is refused.",
+  private_runs:
+    "Runs that read a private label. fetches is \"any\" (the starting value: a tool takes any address, as on the " +
+    "public graph) or \"given\": a tool takes only an address the deployment was given from outside, which guards " +
+    "against text a run read telling it to fetch an address with private material written into it. It narrows " +
+    "that way out and does not close it, and a run can then not write an address for something it knows of.",
   publishing:
     "Showing pages outside. hosting says where this deployment runs (own_machines, minerval or third_party) and is " +
     "stated in every package. The signing key is PUBLISH_SIGNING_KEY.",

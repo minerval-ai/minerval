@@ -144,6 +144,7 @@ const PREFLIGHT_WORDS: Record<string, { title: string; todo?: string }> = {
   publishing: { title: "Signing pages shown outside" },
   public_graph: { title: "The public graph" },
   public_acts: { title: "Who may act on the public graph" },
+  private_run_fetches: { title: "The addresses a private run may fetch" },
   connections: { title: "Connections' credentials" },
   file_sets: { title: "Where sets of files are kept" },
   sandbox: { title: "The sandbox" },

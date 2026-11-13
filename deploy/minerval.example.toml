@@ -191,6 +191,12 @@ cap_text_analysis_owls = 0.1
 # input_usd_per_mtok = 0.5
 # output_usd_per_mtok = 1.5
 
+# Runs that read a private label. fetches is "any" (a tool takes any address,
+# as on the public graph) or "given": a tool takes only an address the
+# deployment was given from outside. See PRIVATE_RUN_FETCHES in deploy/env.example.
+# [private_runs]
+# fetches = "any"
+
 # Showing pages outside. hosting says where this deployment runs
 # (own_machines, minerval or third_party) and is stated in every package.
 # The signing key is PUBLISH_SIGNING_KEY.

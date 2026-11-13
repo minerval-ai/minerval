@@ -283,6 +283,12 @@ output_usd_per_mtok = 1.5
 | `input_usd_per_mtok`, `output_usd_per_mtok` | What a call costs, in US dollars per million tokens. Both are required; `0` for a model the deployment counts as free. | `inputUsdPerMtok`, `outputUsdPerMtok` |
 | `cache_read_multiplier`, `cache_write_multiplier` | Optional: what a cached read and a cache write cost, as a multiple of the input price. | `cacheReadMultiplier`, `cacheWriteMultiplier` |
 
+#### `[private_runs]`
+
+| Name | What it sets | Environment variable |
+|---|---|---|
+| `fetches` | Which addresses the tools of a run that reads a private label take. `"any"`, the starting value: any address, as on the public graph. `"given"`: only an address the deployment was given from outside (a search result, an address in a page the run read, a recorded source, a resolved identifier), used as it was given. That guards against text a run read telling it to fetch an address with private material written into it. It narrows that way out and does not close it, and it costs research: a run cannot write the address for something it knows of, or page through results by editing one ([architecture.md](architecture.md), "The addresses a tool takes"). | `PRIVATE_RUN_FETCHES` |
+
 #### `[publishing]`
 
 | Name | What it sets | Environment variable |
@@ -451,6 +457,7 @@ at that label does not run at all.
 | `publishing` | Where a page is shown outside or hosting is set: `PUBLISH_SIGNING_KEY` is an Ed25519 private key and `publishing.hosting` is set. Not applicable where nothing is shown outside. The key is never printed. | no |
 | `public_graph` | `public_graph.api_url` is an https address and `PUBLIC_GRAPH_API_KEY` is set with it. With a signing key and no address it passes and says packages are carried as files. The public graph is not called. | no |
 | `public_acts` | Which permission's holders may act on the public graph in the organization's name, and how many grants of it are live. With none it passes and says nobody can act there. | no |
+| `private_run_fetches` | Whether runs that read a private label fetch any address or only addresses the deployment was given, with what the second guards against and what it costs. It passes either way: it is the organization's choice. | no |
 | `connections` | For the connections that are on, how many name a credential variable that is not set, by label. It calls no server: whether each answers is on the connections page. | no |
 | `file_sets` | `file_sets.store_dir` exists and can be written, and `file_sets.directory_root` exists and can be read, where each is set. It says the registered root carries no label. | no |
 | `sandbox` | With `sandbox.url` set: `SANDBOX_TOKEN` is set and the service answers, with its version and image. File sets with no sandbox pass, saying they cannot be explored. | no |

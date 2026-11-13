@@ -1954,6 +1954,18 @@ cover that path.
 
 ### The addresses a tool takes
 
+This is a deployment's choice, and it is off unless the deployment turns it
+on: `PRIVATE_RUN_FETCHES=given` (`private_runs.fetches` in the config file;
+[deployment.md](deployment.md)). It starts off because nearly every run in a
+private graph reads private material, so the rule changes what almost every
+run can fetch, and a deployment starts from public Minerval's own settings.
+While it is off none of what follows exists: no address is recorded, no call
+is held, `resolve_identifier` is not offered and no run is told of it. What
+follows describes a deployment that has turned it on. One that turns it on
+later starts with nothing recorded as given; its runs still use the address
+of every recorded source they can read, and what a search, a page or the
+identifier tool gives from then on.
+
 Clearing `web_pages` for a label says that the open web may receive
 addresses from runs at that label. It does not say which addresses. An
 agent reads text other people wrote, and such text can carry instructions.
@@ -2039,8 +2051,16 @@ put to the user. A researcher an admin launches works at
 the admin's label and under the same rule, and an address in its brief is
 usable when the deployment was given it, which an address the launching
 admin read always is. On the public graph, where `public` is the only
-label, none of this exists: no tool is added, no call is changed, nothing
-is said, and `given_addresses` stays empty.
+label, and in a deployment that has not turned the rule on, none of this
+exists: no tool is added, no call is changed, nothing is said, and
+`given_addresses` stays empty.
+
+Where a provider's own search returns results and no address can be read
+from them, the run would meet only refusals. That is a fault in this code's
+reading of the provider's response and not the run's doing, so it is raised
+once as a report on Minerval's machinery (`reportUnreadSearchResults` in
+`src/llm/address-rule.ts`), with the shape of the response and none of its
+content.
 
 Not covered: text a run sends as a query (to a search engine, to Elicit,
 to Crossref's search) and the arguments it passes a connection's tools,
@@ -2748,7 +2768,7 @@ describes it.
 A page is shown word for word, so on a node under a standing showing the
 run that writes the page is not given the text of sources the showing's
 readers cannot read (`src/services/separate-reader.ts`). A reader, which is
-the Researcher launched with `delegate_research` and `questions`, has them
+the Researcher commissioned with `commission` (kind research) and `questions`, has them
 open and returns one answer for each question in a set form: a yes or no, a
 number, a date, a choice among the Steward's options, or a passage of at
 most 600 characters cut from the source's stored text

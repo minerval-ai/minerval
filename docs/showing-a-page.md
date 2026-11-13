@@ -387,13 +387,22 @@ hand in what it writes, and not both.
   the form the Steward set.
 
 **The reader is the Researcher.** It is not a new role or a new kind of
-run. A Steward launches it as it launches any research, with
-`delegate_research`, adding `questions`. It works at the Steward's label,
-is paid from the Steward's pass like any instrument, keeps what it reads as
-sources (`keep_reading`, `keep_analysis`, `keep_file`), and reports. What
-differs at this boundary is what comes back: its answers reach the Steward,
-and its report and notebook stay with its run, for people who hold the
-permission to open raw sources at that label.
+run. A Steward commissions it as it commissions any research, with
+`commission` (kind research), adding `questions`. It works at the Steward's
+label, is paid from the Steward's pass like any instrument, runs on its own
+while the Steward carries on, keeps what it reads as sources
+(`keep_reading`, `keep_analysis`, `keep_file`), and reports. What differs at
+this boundary is what comes back: its answers reach the Steward, where a
+report would (into its session, or its node's inbox), and its report and
+notebook stay with its run, for people who hold the permission to open raw
+sources at that label.
+
+A report in a Researcher's own words is held to the same rule wherever it
+reaches a run: in a session's reply, in a message in the node's inbox, and
+in a follow-up, which opens with the earlier run's report and notebook. A
+follow-up to a run that had the text is refused where its report would
+return to the run that writes the page, and otherwise starts with that
+run's marks (`followedRunOf` in `src/services/research-commission-service.ts`).
 
 **What an answer is** (`src/services/reader-answers.ts`). The Steward
 writes each question and chooses its form.
@@ -507,9 +516,10 @@ sources it is not given and why.
   reports. A run that takes up a request opens with the notebook of the
   request's earlier run, whatever that run was given. Neither is held to a
   form.
-- Research the Steward commissions to run on its own (`commission`, kind
-  research) is not launched as a reader. A reader runs inside the Steward's
-  turn, under the wall-clock cap a delegated run has.
+- A follow-up names the run it continues in the opening of its task, which
+  the commissioning code writes, and the engine reads the marks to carry
+  from there. A column for it on the run's row would say the same more
+  plainly.
 - The release queue does not yet show a reader's questions and answers
   beside the page they informed. They are on the run's row.
 

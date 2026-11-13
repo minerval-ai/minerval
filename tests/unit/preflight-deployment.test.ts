@@ -52,7 +52,7 @@ describe("the checks as a list", () => {
   it("names each once, and blocks agent work on two, each for a reason written beside it", () => {
     expect(DEPLOYMENT_CHECKS.map((c) => c.name)).toEqual([
       "database_tls", "database_owner", "owls", "model_prices", "usage_report", "standing_mandates", "own_organization",
-      "publishing", "public_graph", "public_acts", "connections", "file_sets", "sandbox", "sandbox_confinement",
+      "publishing", "public_graph", "public_acts", "private_run_fetches", "connections", "file_sets", "sandbox", "sandbox_confinement",
     ]);
     expect(DEPLOYMENT_CHECKS.filter((c) => c.blocking).map((c) => c.name)).toEqual(["model_prices", "sandbox_confinement"]);
   });
@@ -231,6 +231,19 @@ describe("connections, file sets and the sandbox", () => {
     const out = run("sandbox_confinement", facts({ config: token, deployment: { sandbox: open } }));
     expect(out.status).toBe("fail");
     expect(out.message).toContain("no_route_out (connected to 1.1.1.1:443)");
+  });
+});
+
+describe("the addresses a private run's tools take", () => {
+  it("says which it is, what turning it on guards against and costs, and fails neither way", () => {
+    expect(run("private_run_fetches", facts({ holdsPrivate: false })).status).toBe("not_applicable");
+    const off = run("private_run_fetches", facts());
+    expect(off.status).toBe("pass");
+    expect(off.message).toContain('private_runs.fetches is "any", the starting value');
+    const on = run("private_run_fetches", facts({ config: config({ privateRunFetches: "given" }) }));
+    expect(on.status).toBe("pass");
+    expect(on.message).toContain("It narrows that way out and does not close it");
+    expect(on.message).toContain("It costs research");
   });
 });
 

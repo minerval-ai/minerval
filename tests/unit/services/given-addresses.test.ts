@@ -205,3 +205,20 @@ describe("what a run reads", () => {
     expect(tool.description).not.toContain("—");
   });
 });
+
+describe("a provider's search whose results this code cannot read", () => {
+  it("is known for what it is: results, in a shape searchResultAddresses reads no address from", async () => {
+    const { holdsSearchResults, searchResultAddresses } = await import("../../../src/llm/address-rule.js");
+    const known = [{ type: "web_search_tool_result", content: [{ type: "web_search_result", url: "https://example.org/a" }] }];
+    expect(searchResultAddresses(known)).toEqual(["https://example.org/a"]);
+    // A shape no provider has been seen to send, but one could: results under another name.
+    const unknown = [{ type: "web_search_tool_result", content: [{ type: "search_hit", link: "https://example.org/a" }] }];
+    expect(searchResultAddresses(unknown)).toEqual([]);
+    expect(holdsSearchResults(unknown)).toBe(true);
+    expect(holdsSearchResults([{ type: "openrouter_search_results", content: "1. example.org" }])).toBe(true);
+    // An error, an empty result and a turn with no search are not results.
+    expect(holdsSearchResults([{ type: "web_search_tool_result", content: { type: "web_search_tool_result_error", error_code: "unavailable" } }])).toBe(false);
+    expect(holdsSearchResults([{ type: "web_search_tool_result", content: [] }])).toBe(false);
+    expect(holdsSearchResults([{ type: "text", text: "search results: none" }])).toBe(false);
+  });
+});
