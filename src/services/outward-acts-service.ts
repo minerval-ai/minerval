@@ -717,8 +717,9 @@ export async function noticeChangedVersions(): Promise<number> {
   if (!state.sends || !state.set_at) return 0;
   const since = state.set_at;
   return atEveryLabel(async () => {
-    const versions = await rawQuery<{ node_id: string; label: string; at: Date; job: string | null }>(
-      `SELECT v.node_id, v.label, v.at, v.job FROM (
+    // The version's time is carried as the database wrote it: a JavaScript date would drop its microseconds, and the same version would be noticed again.
+    const versions = await rawQuery<{ node_id: string; label: string; at: Date; at_exact: string; job: string | null }>(
+      `SELECT v.node_id, v.label, v.at, v.at::text AS at_exact, v.job FROM (
          SELECT a.claim_id AS node_id, a.sensitivity_label AS label, a.assessed_at AS at, a.funded_by_job_id AS job FROM assessments_in_force a
          UNION ALL
          SELECT q.claim_id, q.sensitivity_label, q.assessed_at, q.funded_by_job_id FROM quantity_estimates_in_force q
@@ -747,8 +748,8 @@ export async function noticeChangedVersions(): Promise<number> {
       }
       await rawQuery(
         `INSERT INTO keep_current_queue (node_id, version_at, paid_by_grant_id, due_at, state, because, settled_at, sensitivity_label)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
-        [v.node_id, v.at, grant?.id ?? null, new Date(due), leftOut ? "not_sent" : "waiting", leftOut ? NOT_SENT_WORDS[leftOut] : null, leftOut ? new Date() : null, v.label]
+         VALUES ($1, $2::timestamptz, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
+        [v.node_id, v.at_exact, grant?.id ?? null, new Date(due), leftOut ? "not_sent" : "waiting", leftOut ? NOT_SENT_WORDS[leftOut] : null, leftOut ? new Date() : null, v.label]
       );
       noticed++;
     }

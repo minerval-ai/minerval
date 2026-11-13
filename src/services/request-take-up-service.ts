@@ -148,17 +148,22 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
     );
     const shown = page && (page.state === "released_whole" || page.state === "released_in_part");
     const took = `${r.by_label} said on ${day(r.created_at)} that it is taking this request up.`;
+    const pageOf = page ? (page.node ? `"${page.node}"` : "a node this request bears on") : "";
     let followed: TakenUp["followed"];
     let words: string;
-    if (shown) {
-      followed = "a_page_shown";
-      words = `${took} Since then it has published its graph's page of ${page.node ? `"${page.node}"` : "a node this request bears on"} (${day(page.received_at)}).`;
-    } else if (r.outcome === "declined") {
+    if (r.outcome === "declined") {
+      // Its own statement stands as it made it. A page it published afterwards is said beside it, and whether that page meets the request is not this record's to say.
       followed = "declined";
-      words = `${took} On ${day(r.outcome_at ?? r.created_at)} it said it will not do the work: ${DECLINE_REASONS[(r.decline_reason ?? "no_reason") as DeclineReason] ?? DECLINE_REASONS.no_reason}. The reason is its own, chosen from a fixed list, and nobody checks it.`;
+      words =
+        `${took} On ${day(r.outcome_at ?? r.created_at)} it said it will not do the work: ${DECLINE_REASONS[(r.decline_reason ?? "no_reason") as DeclineReason] ?? DECLINE_REASONS.no_reason}. ` +
+        `The reason is its own, chosen from a fixed list, and nobody checks it.` +
+        (shown && r.outcome_at && page.received_at.getTime() > r.outcome_at.getTime() ? ` It has since published its graph's page of ${pageOf} (${day(page.received_at)}).` : "");
+    } else if (shown) {
+      followed = "a_page_shown";
+      words = `${took} Since then it has published its graph's page of ${pageOf} (${day(page.received_at)}).`;
     } else if (page) {
       followed = "a_page_held";
-      words = `${took} Its graph's page of ${page.node ? `"${page.node}"` : "a node this request bears on"} is published as ${page.state === "not_yet_assessed" ? "not yet assessed" : "held"} (${day(page.received_at)}), with nothing of it shown.`;
+      words = `${took} Its graph's page of ${pageOf} is published as ${page.state === "not_yet_assessed" ? "not yet assessed" : "held"} (${day(page.received_at)}), with nothing of it shown.`;
     } else {
       followed = "nothing_yet";
       const days = Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86_400_000));

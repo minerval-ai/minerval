@@ -100,7 +100,7 @@ export async function ensureInboundAction(nodeId: string): Promise<string> {
   const cost = await estimateLedgerKindCostMicroUsd("inbound_review");
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO actions (kind, exclusion_group, variant, claim_id, target_ref, label, cost_est_micro_usd, sensitivity_label)
-     VALUES ('inbound_review', $1, 'standard', $2, $2::text, 'Read what the public said about a page this graph published, and summarize it for the node''s Steward', $3, $4)
+     VALUES ('inbound_review', $1, 'standard', $2::uuid, $2::text, 'Read what the public said about a page this graph published, and summarize it for the node''s Steward', $3, $4)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET status = CASE WHEN actions.status IN ('done', 'superseded', 'cancelled') THEN 'open' ELSE actions.status END,
            updated_at = now()
