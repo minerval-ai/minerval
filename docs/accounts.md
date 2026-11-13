@@ -697,6 +697,24 @@ message that says how to state one (`ModelNotPricedError`). `GET
 /owls/created` lists the models the deployment is configured to run that
 have no price, so the gap can be closed before a run meets it.
 
+### Asking a label you do not read
+
+A label's administrators may give it a face at a label it reads: a name and
+a line saying what can be asked of it (`PUT /labels/:label/face`, with `at`,
+`name` and `can_be_asked`; `GET /labels/faces` lists them, `DELETE
+/labels/:label/face/:at` withdraws one). `GET /asks/askable` lists the
+faces of labels you do not read, with the label of yours each is shown at.
+A person who may fund asks with `POST /asks`: the face, whether it is one
+piece of work or a mandate, the ask in their own words, and a budget in
+owls. The ask is recorded as a request at the label the face is shown at,
+which is the asker's record and is read there like any request; the work is
+done at the label asked. Whether it was taken up, what it found and what it
+cost reach the asker only through that label's gate. What is not spent
+returns to the asker's balance.
+
+A label that holds only work asked for this way needs no General mandate:
+each piece of its work was paid for by whoever asked.
+
 ### The standing mandates, set up in the app
 
 Every deployment needs a General mandate, which pays for upkeep and, since

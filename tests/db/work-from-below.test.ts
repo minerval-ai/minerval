@@ -338,7 +338,7 @@ describe("work asked for from below", () => {
     expect((await at(A, () => listRequests({ claimId: node, limit: 10 }))).items.map((r) => r.id)).toEqual([out.request_id]);
     // Its budget went down by what it paid, and nothing waits on an answer: no session is paused, no research run is the Steward's.
     expect(budget.microUsd).toBe(12 * OWL);
-    expect(await at(A, () => rawQuery(`SELECT 1 FROM research_runs`))).toEqual([]);
+    expect(await system(() => rawQuery(`SELECT 1 FROM research_runs WHERE task = $1`, [brief]))).toEqual([]);
     expect(await at(A, () => rawQuery(`SELECT 1 FROM agent_sessions WHERE node_id = $1`, [node]))).toEqual([]);
     // In the room: the request taken up, its ledger row at the room's label, paid by the money from below along the chain of runs.
     const link = await system(() =>

@@ -490,6 +490,11 @@ describe("what a permission guards", () => {
       "POST /labels": ["administer"],
       "POST /labels/:label/reads": ["administer"],
       "DELETE /labels/:label/reads/:reads": ["administer"],
+      // A label's face, by which work is asked of it from below (tests/db/work-from-below.test.ts).
+      "GET /labels/faces": ["administer"],
+      "PUT /labels/:label/face": ["administer"],
+      "DELETE /labels/:label/face/:at": ["administer"],
+      "POST /asks": ["fund"],
       // Connections to an organization's systems (tests/db/connections.test.ts).
       "GET /connections": ["administer"],
       "GET /connections/:connection_id": ["administer"],
@@ -748,7 +753,7 @@ describe("an MCP caller and the Assistant", () => {
     const mine = app.routeCatalog
       .map((r) => routeKey(r.method, r.url))
       .filter((key) => /^\S+ \/(permissions|parties|labels)(\/|$)|\/party$|^POST \/operator\/administrators$/.test(key));
-    expect(mine.length).toBe(16);
+    expect(mine.length).toBe(19);
     for (const key of mine) {
       const isRead = key.startsWith("GET ");
       expect(key in ROUTE_TOOLS, key).toBe(isRead);

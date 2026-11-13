@@ -320,6 +320,8 @@ describe("every labelled table", () => {
     request_targets: { claim_id: "gen_random_uuid()" },
     // Taken up from the public graph's request or from one at a label read, one of the two.
     adopted_requests: { from_request_id: "gen_random_uuid()" },
+    // A face stands for a label other than the one it is shown at, and that label is defined.
+    label_faces: { for_label: "(SELECT name FROM labels WHERE name <> $1 ORDER BY name LIMIT 1)" },
     argument_instances: { argument_id: "gen_random_uuid()" },
     // Kept by a Steward exactly when it names the node.
     requests: { keeper_kind: "'steward'", keeper_claim_id: "gen_random_uuid()" },

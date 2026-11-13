@@ -196,7 +196,7 @@ describe("the labels table", () => {
         "examination_findings", "examinations", "feed_contributions", "feed_request_targets", "feed_requests",
         "file_set_files", "file_set_keeps", "file_sets", "given_addresses", "grant_conversations", "grant_sources",
         "grants", "inbound_contributions", "ingest_focuses", "jobs", "judgment_inputs",
-        "keep_current_exceptions", "keep_current_queue", "lean_checks", "llm_usage", "lookout_events",
+        "keep_current_exceptions", "keep_current_queue", "label_faces", "lean_checks", "llm_usage", "lookout_events",
         "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
         "mandate_events", "mandate_inbox", "mandate_policy_versions", "mandate_valuations", "node_changes",
         "node_message_reads", "node_messages", "outbound_packages", "outbound_proposals", "outbound_sends", "outward_acts",

@@ -194,6 +194,22 @@
  * here goes the other way. An answer, a take-up, or a read from above is
  * not shown below, where its readers may not read what it rests on.
  *
+ * Work asked for from below. A label cannot be read or named from the
+ * labels it reads. Its administrators may give it a face at one of them
+ * (label_faces: a name and a line, a row at the label it is shown at), and
+ * from there a person who may fund, a mandate or a run can ask for work at
+ * it and pay for it (services/ask-above-service.ts). The ask is an ordinary
+ * request at the asker's label, which is the asker's record of it. The act
+ * takes it up at the label above and attaches the money there: a
+ * commission on its ledger row, whose payer is below, or the budget of a
+ * new mandate. So an allocation and a regrant may sit at a label above
+ * their payer's, and a payer's escrow counts them wherever they are. The
+ * run that does the work is at the label above, under that label's posture
+ * (src/label-posture.ts). What it finds, and every other account of it,
+ * comes down through the gate (services/gate-handoff.ts) or not at all. A
+ * petition from such a run names a mandate at a label that does not read
+ * its own: it is recorded and nothing waits on it.
+ *
  * Other work belongs to a row that carries a label of its own, and runs at
  * that row's label whichever sweep, timer or run happens to start it. A
  * mandate decides for its work: the rows its plan becomes, its planning
