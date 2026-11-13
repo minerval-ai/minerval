@@ -49,7 +49,7 @@ import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { getGeneralMandate } from "../services/allocation-policy-service.js";
+import { AT_ANY_LABEL, getGeneralMandate } from "../services/allocation-policy-service.js";
 import {
   actionBudgetMicroUsd,
   actionWaitingOn,
@@ -162,7 +162,7 @@ export async function processNextStewardTask(
   // consulted before a covered action: that run carries its funder, and the
   // breaker exempts it. (Checked here, outside any usage context, it read
   // the unattributed counters and stalled funded work along with them.)
-  const mandate = await getGeneralMandate();
+  const mandate = await getGeneralMandate(AT_ANY_LABEL);
 
   // The ledger's verdict first — the engine's only execution rule. What
   // runs is what some payer commissioned; with a mandate in place, nothing

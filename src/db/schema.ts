@@ -6879,6 +6879,36 @@ export const nodeMessages = pgTable(
   ]
 );
 
+// A message read at a label above the one it was sent at (src/labels.ts,
+// "Word from the layer below"). A message is one row at its sender's label,
+// and its own read_at, outcome and answer are those of the pass at that
+// label. A pass at a label that reads it is given it too, and what that
+// pass did with it is this row, at the pass's label: that it was read, and
+// the answer if one was given. Nothing is written to the message, so its
+// own Steward's inbox, and what readers of its label see, are as they were.
+// One row for each message and label.
+export const nodeMessageReads = pgTable(
+  "node_message_reads",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => nodeMessages.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+    outcome: text("outcome"),
+    outcomeNote: text("outcome_note"),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+    // The label of the pass that read it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.sensitivityLabel] }),
+    check(
+      "ck_node_message_reads_outcome",
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('changed', 'no_change', 'disagree')`
+    ),
+  ]
+);
+
 // A petition (petition_mandate): a running agent asking the mandate paying
 // for it for more money. Decided by a program officer under the mandate's
 // operating policy, or by its Grantmaker when the officer escalates. A
@@ -7405,55 +7435,63 @@ export const mirrorRefusals = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// mirror_node_changes: what the public graph changed on a node this
-// deployment mirrors, as each applied batch found it
-// (services/mirror-apply-service.ts, services/mirror-upkeep.ts)
+// node_changes: what the layer below changed on a node, kept for the work
+// above it (docs/architecture.md, "Word from the layer below")
 //
-// A deployment's own judgments and nodes rest on mirrored ones: a version at
-// a private label beside the public assessment, a private node with a
-// public premise. When a batch rewords such a node, adds, rewrites or
-// retires an argument on it, merges it away or withdraws it, the judgments
-// that rest on it were made against the node as it was. Edges, sources and
-// judgments are compared from the record a judgment keeps of its inputs
-// (judgment_inputs); a wording, an argument and a withdrawal leave no such
-// trace once the row is overwritten, so the applier writes what it
-// replaced here, in the batch's own transaction.
+// A judgment at a label rests on nodes that belong to the layer below it: a
+// version at a private label beside the public assessment, a version at one
+// label beside the judgment at a label it reads, a node with a premise at
+// either. When such a node is reworded, has an argument added, rewritten,
+// retired or removed, has its kind corrected, is merged away or is
+// withdrawn, the judgments that rest on it were made against the node as it
+// was. Edges, sources and judgments are compared from the record a judgment
+// keeps of its inputs (judgment_inputs); a wording, an argument, a kind and
+// a withdrawal leave no such trace once the row is overwritten, so what was
+// replaced is written here, in the transaction that replaced it.
 //
-// A row is a fact about the public graph and says nothing of what this
-// deployment holds: it is written for every mirrored node the batch
-// changed in one of these ways, whether or not anything private rests on
-// it, and it carries the label `public` like the rows it describes. The
-// Steward's note of what has changed since a judgment reads it
-// (llm/agents/steward-changes-note.ts), and a read of the node says when
-// the public graph merged or withdrew it.
+// There are two writers and one reader. For a node the public graph holds,
+// the mirror's applier writes the row as each batch is applied, with the
+// batch's sequence and when the public graph cut it
+// (services/mirror-apply-service.ts). For a node of the deployment's own,
+// the database writes it (minerval_note_node_change, migration 0158), and
+// only where the deployment has a label besides `public`: with one label
+// there is no layer above to tell. Either way the row is a fact about the
+// node, the same whoever looks, so it carries the node's label (the
+// argument's, for an argument) and says nothing of what any other label
+// holds. The Steward's note of what has changed since a judgment reads it
+// (llm/agents/changes-below-note.ts), and a read of a mirrored node says
+// when the public graph merged or withdrew it.
 // ---------------------------------------------------------------------------
-export const mirrorNodeChanges = pgTable(
-  "mirror_node_changes",
+export const nodeChanges = pgTable(
+  "node_changes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // The mirrored node. No foreign key: the row is history, and outlives a
-    // node the public graph deleted outright.
+    // The node. No foreign key: the row is history, and outlives a node the
+    // public graph deleted outright.
     claimId: uuid("claim_id").notNull(),
-    // The batch that carried the change, and when the public graph cut it.
-    sequence: bigint("sequence", { mode: "number" }).notNull(),
-    cutAt: timestamp("cut_at", { withTimezone: true }).notNull(),
+    // For a mirrored node: the batch that carried the change, and when the
+    // public graph cut it. Null for a change made in this deployment.
+    sequence: bigint("sequence", { mode: "number" }),
+    cutAt: timestamp("cut_at", { withTimezone: true }),
     // 'reworded' | 'argument_added' | 'argument_rewritten' |
-    // 'argument_retired' | 'argument_removed' | 'merged' | 'withdrawn'
+    // 'argument_retired' | 'argument_removed' | 'kind_corrected' |
+    // 'merged' | 'withdrawn'
     change: text("change").notNull(),
-    // What the change was, in the public graph's own words: the wording
-    // before and after, an argument's id and name, the node it was merged
-    // into, how it was withdrawn.
+    // What the change was, in the words of the layer that made it: the
+    // wording before and after, an argument's id and name, the kind before
+    // and after, the node it was merged into, how it was withdrawn.
     detail: jsonb("detail").notNull().default({}),
+    // When the change was made here: applied, for a batch.
     appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
-    // Who may read this row (src/labels.ts): everyone, as the mirrored
-    // rows it describes. The applier names it.
+    // Who may read this row (src/labels.ts): whoever reads the row it
+    // describes. `public` for a mirrored node, named by the applier.
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    index("idx_mirror_node_changes_claim").on(table.claimId, table.appliedAt),
+    index("idx_node_changes_claim").on(table.claimId, table.appliedAt),
     check(
-      "ck_mirror_node_changes_change",
-      sql`${table.change} IN ('reworded', 'argument_added', 'argument_rewritten', 'argument_retired', 'argument_removed', 'merged', 'withdrawn')`
+      "ck_node_changes_change",
+      sql`${table.change} IN ('reworded', 'argument_added', 'argument_rewritten', 'argument_retired', 'argument_removed', 'kind_corrected', 'merged', 'withdrawn')`
     ),
   ]
 );
@@ -8444,10 +8482,16 @@ export const inboundContributions = pgTable(
   ]
 );
 
-// A public request this deployment works on. The request itself is an
-// ordinary request here (request_id), at the label of this row; this row
-// links it to the public one it was adopted from. Adopting says nothing
-// outside. `taken_up_at` is set when a person said in public, in the
+// A request from the layer below, taken up at a label that reads it
+// (docs/architecture.md, "Word from the layer below"). The layer below is
+// the public graph, whose requests the mirror brings (public_request_id),
+// or a label this row's label reads (from_request_id); one of the two is
+// set. The request worked on is an ordinary request here (request_id), at
+// the label of this row, so it is funded, done and answered at that label
+// like any other, with what that label reads. This row links it to the one
+// it was taken up from, and is the record a later answer downward starts
+// from: nothing here is shown to readers of the label below. For a public
+// request, `taken_up_at` is set when a person said in public, in the
 // organization's name, that the graph is taking it up.
 export const adoptedRequests = pgTable(
   "adopted_requests",
@@ -8456,7 +8500,8 @@ export const adoptedRequests = pgTable(
     requestId: uuid("request_id")
       .notNull()
       .references(() => requests.id, { onDelete: "cascade" }),
-    publicRequestId: uuid("public_request_id").notNull(),
+    publicRequestId: uuid("public_request_id"),
+    fromRequestId: uuid("from_request_id").references((): AnyPgColumn => requests.id, { onDelete: "cascade" }),
     adoptedBy: uuid("adopted_by").references((): AnyPgColumn => contributors.id),
     adoptedAt: timestamp("adopted_at", { withTimezone: true }).notNull().defaultNow(),
     takenUpAt: timestamp("taken_up_at", { withTimezone: true }),
@@ -8467,6 +8512,11 @@ export const adoptedRequests = pgTable(
   (table) => [
     uniqueIndex("uq_adopted_requests_request").on(table.requestId),
     index("idx_adopted_requests_public").on(table.publicRequestId),
+    index("idx_adopted_requests_from").on(table.fromRequestId),
+    check(
+      "ck_adopted_requests_from",
+      sql`(${table.publicRequestId} IS NULL) <> (${table.fromRequestId} IS NULL)`
+    ),
   ]
 );
 

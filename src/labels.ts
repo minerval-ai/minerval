@@ -159,8 +159,27 @@
  * for a node's assess, curate and formalize groups, a document's ingest
  * and a partition's sweep), its Steward's slot is a row of its own
  * (steward_slots, services/steward-lease.ts), an order is one for each
- * person, node and label, and a message waits for a pass at the label it
- * was sent at and is read by no other.
+ * person, node and label, and a message opens work only at the label it
+ * was sent at.
+ *
+ * Word from the layer below. What a label reads is the layer below it,
+ * down to the public graph, and what happens there reaches the work above
+ * without anything being written below. A pass on a node is given the
+ * messages sent at the labels it reads as well as its own, each marked
+ * with its label; that it read one, and what it answered, is a row at the
+ * pass's label (node_message_reads, services/inbox-service.ts), so the
+ * message stays as it was for the pass at its own label. A request filed
+ * below is taken up above as a request of the label that takes it up,
+ * linked to it (adopted_requests, services/request-adoption-service.ts),
+ * and is funded, done and answered there. What the layer below changes on
+ * a node in place (a wording, an argument, a kind, a withdrawal) is
+ * written at the node's label as it happens (node_changes) and told to
+ * the Steward above on its next pass (llm/agents/changes-below-note.ts).
+ * And each label's upkeep is paid by the General mandate at that label
+ * (services/allocation-policy-service.ts). The mirror is the bottom case
+ * of each: a public request adopted, a mirrored node's changes. Nothing
+ * here goes the other way. An answer, a take-up, or a read from above is
+ * not shown below, where its readers may not read what it rests on.
  *
  * Other work belongs to a row that carries a label of its own, and runs at
  * that row's label whichever sweep, timer or run happens to start it. A

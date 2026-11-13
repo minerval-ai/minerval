@@ -320,21 +320,31 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const fund = async (input: Record<string, unknown>): Promise<string> => {
     if (!fundsRequests) return refuse("Only a mandate's Grantmaker funds requests.");
     if (!options.grantId) return refuse("There is no mandate here to fund a request from.");
-    const requestId = str(input.request_id);
+    let requestId = str(input.request_id);
     if (!UUID_RE.test(requestId)) return refuse(`"${requestId}" is not a request id.`);
     const budgetUsd = Number(input.budget_usd);
     if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) return refuse("budget_usd must be a positive number of USD.");
+    // A mandate pays for work at its own label (constitution §30). A request
+    // filed at a label below is taken up at this one, and the money goes on
+    // that request's row: on the row below it would buy a run that reads
+    // less than this mandate does, and show the label below that someone
+    // above is paying (request-adoption-service.ts).
+    const asked = requestId;
+    const { requestToActOn } = await import("../../services/request-adoption-service.js");
+    const acted = await requestToActOn(asked, { kind: "mandate", grantId: options.grantId });
+    requestId = acted.id;
     const placed = await allocateMandateToRequest({
       grantId: options.grantId,
       requestId,
       microUsd: Math.round(budgetUsd * 1_000_000),
     });
-    if (!placed.ok) return refuse(`${placed.message}.`);
+    if (!placed.ok) return refuse(`${placed.message}.${acted.note ? ` ${acted.note}` : ""}`);
     const what = placed.variant === "scope" ? "its scoping pass (it has no budget yet)" : "the full work";
     const committed = await grantCommittedMicroUsd({ id: options.grantId, budgetJobId: await budgetJobOf(options.grantId) }).catch(() => null);
     return JSON.stringify({
       success: true,
       request_id: requestId,
+      ...(acted.note ? { taken_up_from: asked, taken_up: acted.note } : {}),
       funded: what,
       status: placed.status,
       budget_usd: usdText(placed.placedMicroUsd),

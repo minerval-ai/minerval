@@ -62,6 +62,7 @@ import {
   setRequestState,
   setRequestTargets,
 } from "../../services/request-service.js";
+import { requestToActOn } from "../../services/request-adoption-service.js";
 import { changeNodeKind } from "../../services/reconciliation-service.js";
 import {
   DOCUMENT_REVIEW_ORDERS,
@@ -1369,11 +1370,17 @@ async function executeKindToolImpl(
     }
 
     case "revise_request": {
-      const requestId = str(input.request_id);
-      const denied = await mayKeep(requestId, ctx);
+      // A request filed at a label below is that label's row. Its keeper
+      // here keeps this label's take-up of it (request-adoption-service.ts).
+      const denied = await mayKeep(str(input.request_id), ctx);
       if (denied) return refuse(denied);
       const rewords = ["ask", "why", "satisfied_by", "who_could", "addressed_to"].some((k) => input[k] !== undefined);
       if (!rewords && input.budget_usd === undefined) return refuse("Nothing to revise.");
+      const { id: requestId, note: takenUp } = await requestToActOn(str(input.request_id), {
+        kind: "admin",
+        agent: ctx.role,
+        runId: usage.runId ?? null,
+      });
       if (rewords) {
         await reviseRequest({
           requestId,
@@ -1387,17 +1394,23 @@ async function executeKindToolImpl(
       if (input.budget_usd !== undefined) {
         await setRequestBudget({ requestId, budgetUsd: Number(input.budget_usd) });
       }
-      return ok(`Request ${requestId} revised.`);
+      return ok(`Request ${requestId} revised.${takenUp ? ` ${takenUp}` : ""}`, takenUp ? { request_id: requestId } : {});
     }
 
     case "close_request": {
-      const requestId = str(input.request_id);
-      const denied = await mayKeep(requestId, ctx);
+      const denied = await mayKeep(str(input.request_id), ctx);
       if (denied) return refuse(denied);
       const state = str(input.state);
       if (!["met", "declined", "moot"].includes(state)) return refuse("state must be met, declined, or moot.");
+      if (!str(input.note).trim() && state !== "met") return refuse(`A request ${state} says why.`);
+      // As for revise_request: what is closed is this label's own request.
+      const { id: requestId, note: takenUp } = await requestToActOn(str(input.request_id), {
+        kind: "admin",
+        agent: ctx.role,
+        runId: usage.runId ?? null,
+      });
       await setRequestState({ requestId, state: state as never, note: str(input.note) });
-      return ok(`Request ${requestId} closed as ${state}.`);
+      return ok(`Request ${requestId} closed as ${state}.${takenUp ? ` ${takenUp}` : ""}`, takenUp ? { request_id: requestId } : {});
     }
 
     case "set_request_targets": {

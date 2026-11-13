@@ -50,7 +50,7 @@
  * say so.
  *
  * What a batch changed on a node that leaves no other trace (its wording,
- * an argument, a merge, a withdrawal) is written to mirror_node_changes in
+ * an argument, a merge, a withdrawal) is written to node_changes in
  * the same transaction, and the result names the nodes whose public
  * judgment moved, for the upkeep that follows (services/mirror-upkeep.ts).
  *
@@ -392,14 +392,14 @@ const JUDGED_COLUMN: Record<string, string> = {
 
 type NodeChange = "reworded" | "argument_added" | "argument_rewritten" | "argument_retired" | "argument_removed" | "merged" | "withdrawn";
 
-/** Record what this batch changed on a mirrored node (db/schema.ts, mirror_node_changes). */
+/** Record what this batch changed on a mirrored node (db/schema.ts, node_changes). */
 async function recordNodeChanges(
   w: Working,
   changes: Array<{ claim_id: string; change: NodeChange; detail: Record<string, unknown> }>
 ): Promise<void> {
   if (changes.length === 0) return;
   await w.tx.query(
-    `INSERT INTO mirror_node_changes (claim_id, sequence, cut_at, change, detail, sensitivity_label)
+    `INSERT INTO node_changes (claim_id, sequence, cut_at, change, detail, sensitivity_label)
      SELECT c.claim_id, $2, $3, c.change, c.detail, '${PUBLIC_LABEL}'
        FROM jsonb_to_recordset($1::jsonb) AS c(claim_id uuid, change text, detail jsonb)`,
     [JSON.stringify(changes), w.batch.sequence, w.batch.cut_at]

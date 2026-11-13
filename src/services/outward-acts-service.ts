@@ -468,33 +468,39 @@ export async function adoptRequest(input: { publicRequestId: string; label?: str
     }
     if (!input.actor.clearance.includes(label)) throw new OutwardError("LABEL_NOT_READ", "You do not read that label.", 403);
   }
-  return runAtLabel(label, `adopting public request ${pub.id}`, async () => {
-    const [existing] = await rawQuery<{ id: string; request_id: string }>(
-      `SELECT id, request_id FROM adopted_requests WHERE public_request_id = $1 AND sensitivity_label = $2`,
-      [pub.id, label]
+  // One mechanism for every layer below (request-adoption-service.ts): the public graph is the bottom one.
+  const { takeUpFromBelow } = await import("./request-adoption-service.js");
+  const taken = await runAtLabel(label, `adopting public request ${pub.id}`, () =>
+    takeUpFromBelow({ publicRequestId: pub.id }, { filer: { kind: "contributor", contributorId: input.actor.id }, contributorId: input.actor.id })
+  );
+  return taken!;
+}
+
+/**
+ * Take up, at `label`, a request filed at a label that `label` reads: the
+ * same act as adopting a public request, one layer up. It becomes an
+ * ordinary request at `label`, linked to the one below, and nothing is
+ * shown to the readers of the label below.
+ */
+export async function adoptRequestFromBelow(input: { requestId: string; label?: string | null; actor: GateActor }): Promise<{ adoption_id: string; request_id: string; already: boolean }> {
+  const label = input.label ?? "";
+  if (!label) throw new OutwardError("LABEL_NEEDED", "Say which label the work on this request is to be done at: one you read that reads the request's own. GET /labels/mine lists them.", 422);
+  if (!input.actor.clearance.includes(label)) throw new OutwardError("LABEL_NOT_READ", "You do not read that label.", 403);
+  const { takeUpFromBelow } = await import("./request-adoption-service.js");
+  const { RequestError } = await import("./request-service.js");
+  try {
+    // At `label` the read is held to what `label` reads: a request it does not read is not found.
+    const taken = await runAtLabel(label, `taking up request ${input.requestId} from the label below`, () =>
+      takeUpFromBelow({ requestId: input.requestId }, { filer: { kind: "contributor", contributorId: input.actor.id }, contributorId: input.actor.id })
     );
-    if (existing) return { adoption_id: existing.id, request_id: existing.request_id, already: true };
-    const targets = await rawQuery<{ claim_id: string }>(
-      `SELECT t.claim_id FROM feed_request_targets t JOIN claims c ON c.id = t.claim_id WHERE t.request_id = $1`,
-      [pub.id]
-    );
-    const { fileRequest } = await import("./request-service.js");
-    const filed = await fileRequest({
-      ask: pub.ask,
-      why: pub.why,
-      satisfiedBy: pub.satisfied_by,
-      whoCould: pub.who_could,
-      addressedTo: pub.addressed_to,
-      bearsOnText: pub.bears_on_text ?? (targets.length === 0 ? "What the public request describes." : null),
-      claimIds: targets.map((t) => t.claim_id),
-      filer: { kind: "contributor", contributorId: input.actor.id },
-    });
-    const [row] = await rawQuery<{ id: string }>(
-      `INSERT INTO adopted_requests (request_id, public_request_id, adopted_by, sensitivity_label) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [filed.id, pub.id, input.actor.id, label]
-    );
-    return { adoption_id: row!.id, request_id: filed.id, already: false };
-  });
+    if (!taken) {
+      throw new OutwardError("SAME_LABEL", "That request is already at this label, so there is nothing to take up: it is funded and worked there as it stands.", 409);
+    }
+    return taken;
+  } catch (err) {
+    if (err instanceof RequestError) throw new OutwardError("REQUEST_NOT_FOUND", "No request with that id is one that label reads.", 404);
+    throw err;
+  }
 }
 
 async function adoptionFor(adoptionId: string): Promise<{ id: string; public_request_id: string; taken_up_at: Date | null; declined_at: Date | null; label: string }> {

@@ -547,6 +547,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /outside/mandates/conversations/:conversation_id/messages": OUTWARD_WORDS,
   "PUT /outside/choices/:key": OUTWARD_SESSION,
   "POST /outside/requests/:public_request_id/adopt": OUTWARD_SESSION,
+  "POST /requests/:request_id/adopt": OUTWARD_SESSION,
   "POST /outside/keep-current/leave-out": OUTWARD_SESSION,
   "DELETE /outside/keep-current/leave-out/:id": OUTWARD_SESSION,
   "POST /outbound/proposals": OUTBOUND_SESSION,

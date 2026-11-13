@@ -526,6 +526,19 @@ export interface RequestView {
    * above.
    */
   taken_up: TakenUp[];
+  /**
+   * Where the request was taken up from the layer below
+   * (request-adoption-service.ts): the public graph's request, or the
+   * request at a label this one's label reads. Absent on any other request.
+   */
+  taken_up_from?: { public_request_id: string } | { request_id: string; label: string };
+  /**
+   * The requests at other labels that took this one up, for a reader who
+   * reads those labels: each is where the work on it at that label is
+   * recorded. Absent where the reader reads none, so a reader of this
+   * request's own label alone is shown nothing.
+   */
+  taken_up_at?: { label: string; request_id: string; state: RequestState }[];
 }
 
 interface RequestRowJoined {
@@ -633,6 +646,20 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
     ),
   ]);
   const takenUp = await takenUpOn(ids);
+  // Read as the caller, like everything here: a take-up at a label the
+  // reader does not read is not returned by the database.
+  const adoptions = await rawQuery<{
+    request_id: string; public_request_id: string | null; from_request_id: string | null;
+    from_label: string | null; label: string; state: RequestState;
+  }>(
+    `SELECT a.request_id, a.public_request_id, a.from_request_id, f.sensitivity_label AS from_label,
+            a.sensitivity_label AS label, r.state
+       FROM adopted_requests a JOIN requests r ON r.id = a.request_id
+       LEFT JOIN requests f ON f.id = a.from_request_id
+      WHERE a.request_id = ANY($1::uuid[]) OR a.from_request_id = ANY($1::uuid[])
+      ORDER BY a.adopted_at, a.id`,
+    [ids]
+  );
   const jobIds = [...new Set(work.map((w) => w.funded_by_job_id).filter((j): j is string => !!j))];
   const fundingLabels = new Map<string, string | null>(
     await Promise.all(
@@ -687,6 +714,22 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       ),
     })),
     taken_up: takenUp.get(r.id) ?? [],
+    ...(() => {
+      const from = adoptions.find((a) => a.request_id === r.id);
+      const above = adoptions.filter((a) => a.from_request_id === r.id);
+      return {
+        ...(from
+          ? {
+              taken_up_from: from.from_request_id
+                ? { request_id: from.from_request_id, label: from.from_label ?? "" }
+                : { public_request_id: from.public_request_id! },
+            }
+          : {}),
+        ...(above.length > 0
+          ? { taken_up_at: above.map((a) => ({ label: a.label, request_id: a.request_id, state: a.state })) }
+          : {}),
+      };
+    })(),
   }));
 }
 

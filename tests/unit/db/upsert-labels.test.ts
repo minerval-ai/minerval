@@ -48,6 +48,8 @@ const OTHERWISE: Record<string, string> = {
   "src/services/feed-service.ts lookout_feeds":
     "A feed's settings and the title the feed itself gives, on the lookout's own row for that address.",
   "src/services/session-service.ts agent_sessions": "What a paused session is waiting for, added by that session's own run to its own row.",
+  "src/services/inbox-service.ts node_message_reads":
+    "That a pass at a label read a message sent at another, and what it answered. The key is the message and the reading label, and the row is written with the pass's own label, so the row it lands on is at the writer's label by its key.",
 };
 
 const HELD = "sameLabelOnly";
@@ -97,7 +99,7 @@ describe("an upsert onto a labelled table", () => {
   const tables = labelledTables();
 
   it("writes its words only into a row at its writer's own label, or is listed here with why it writes none", () => {
-    expect(tables.sql.size).toBe(139);
+    expect(tables.sql.size).toBe(140);
     const unheld = new Set<string>();
     let held = 0;
     for (const path of sourceFiles(join(repo, "src"))) {

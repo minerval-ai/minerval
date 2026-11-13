@@ -79,6 +79,7 @@ import {
   liveCurationRequests,
 } from "../services/curation-service.js";
 import {
+  AT_ANY_LABEL,
   getGeneralMandate,
 } from "../services/allocation-policy-service.js";
 import { getPlatformAccountId, getReserveJob } from "../services/bounty-service.js";
@@ -279,7 +280,7 @@ async function nextFallbackAction(): Promise<RunnableAction | null> {
   if (!config.backgroundFallbackLaneEnabled) return null;
   const kinds: string[] = [];
   const curatorCap = config.curatorMaxRuns ?? 0;
-  const general = await getGeneralMandate();
+  const general = await getGeneralMandate(AT_ANY_LABEL);
   if (!general && (curatorCap <= 0 || fallbackCuratorRuns < curatorCap)) {
     kinds.push("curate");
   }

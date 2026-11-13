@@ -402,6 +402,12 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /outbound/registration": { rule: "none", why: "Signs a statement with the deployment's key and writes nothing." },
   "PUT /outside/choices/:key": { rule: "none", why: OUTWARD },
   "POST /outside/requests/:public_request_id/adopt": { rule: "none", why: OUTWARD },
+  "POST /requests/:request_id/adopt": {
+    rule: "none",
+    why:
+      "The request taken up is at one label and the request it becomes is at another, which the person names. The service checks that the " +
+      "person reads the label named and writes there as work at that label (services/outward-acts-service.ts, adoptRequestFromBelow).",
+  },
   "POST /outside/requests/adopted/:adoption_id/take-up": { rule: "none", why: OUTWARD },
   "POST /outside/requests/adopted/:adoption_id/decline": { rule: "none", why: OUTWARD },
   "POST /outside/mandates": { rule: "none", why: OUTWARD },

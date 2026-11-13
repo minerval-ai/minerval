@@ -480,6 +480,11 @@ export async function fundGrantSelfActions(): Promise<number> {
              AND g.id = (
               SELECT gg.id FROM grants gg
                WHERE gg.is_platform = true AND gg.policy = 'general' AND gg.status = 'active'
+                 -- The General mandate at the sweep's own label: a label's
+                 -- upkeep is paid by its own (allocation-policy-service.ts,
+                 -- getGeneralMandate), and a label without one is not swept
+                 -- on another label's money.
+                 AND gg.sensitivity_label = a.sensitivity_label
                ORDER BY gg.created_at ASC LIMIT 1))
          -- A mandate's own sweep item (#831): the row the item opened,
          -- while the item waits for its sweep, at the variant it named or,

@@ -52,6 +52,7 @@ import {
   STANDING_CHOICES,
   TAKE_UP_TOLD,
   adoptRequest,
+  adoptRequestFromBelow,
   backPublicMandate,
   declineInPublic,
   fundPublicMandate,
@@ -278,6 +279,24 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
     preHandler: inSession("direct"),
     handler: async (request, reply) =>
       tried(reply, async () => adoptRequest({ publicRequestId: request.params.public_request_id, label: request.body?.label ?? null, actor: await actorOf(request) }), true),
+  });
+
+  // The same act one layer up: a request filed at a label below one the
+  // person reads, taken up at that label (services/request-adoption-service.ts).
+  app.post<{ Params: { request_id: string }; Body: { label: string } }>("/requests/:request_id/adopt", {
+    schema: {
+      tags: ["requests"],
+      summary: "Take up, at a label you read, a request filed at a label it reads (people who direct the graph, from a signed-in session)",
+      description:
+        "The request at your label carries the words of the one below and what it bears on, and is linked to it. The work is funded, done and " +
+        "judged at your label, by agents that read what your label reads. Nothing is added to the request below: its readers are not shown that " +
+        "it was taken up or what was found, since that comes from a label they may not read. A label takes a request up once.",
+      params: { type: "object", required: ["request_id"], properties: { request_id: UUID } },
+      body: { type: "object", required: ["label"], properties: { label: { type: "string", minLength: 1, maxLength: 100 } } },
+    },
+    preHandler: inSession("direct"),
+    handler: async (request, reply) =>
+      tried(reply, async () => adoptRequestFromBelow({ requestId: request.params.request_id, label: request.body?.label ?? null, actor: await actorOf(request) }), true),
   });
 
   app.post<{ Params: { adoption_id: string } }>("/outside/requests/adopted/:adoption_id/take-up", {

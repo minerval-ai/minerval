@@ -170,7 +170,7 @@ export async function mirroredFacts(claimId: string): Promise<MirroredFacts | nu
   if (node.state !== "active") {
     const [change] = await rawQuery<{ change: string; cut_at: string }>(
       `SELECT change, to_char(cut_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS cut_at
-         FROM mirror_node_changes
+         FROM node_changes
         WHERE claim_id = $1 AND change IN ('merged', 'withdrawn')
         ORDER BY applied_at DESC, id DESC LIMIT 1`,
       [claimId]

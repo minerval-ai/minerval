@@ -9,6 +9,9 @@
  */
 import { rawQuery } from "../db/client.js";
 import { microUsdToOwls } from "./owl.js";
+import { waitsForPassAt } from "./inbox-service.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 const owls = (micro: number | string | null | undefined) => microUsdToOwls(Number(micro ?? 0));
 
@@ -79,10 +82,10 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
   const [waiting] = await rawQuery<{ n: number; oldest: string | null }>(
     `SELECT count(*)::int AS n, MIN(m.created_at)::text AS oldest
        FROM node_messages m
-      WHERE m.read_at IS NULL AND m.trigger <> 'message_reply'
+      WHERE ${oneLabelOnly() ? "m.read_at IS NULL" : waitsForPassAt("m", "$2")} AND m.trigger <> 'message_reply'
         AND m.node_id IN (SELECT DISTINCT a.claim_id FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
                            WHERE al.grant_id = $1 AND a.claim_id IS NOT NULL)`,
-    [grantId]
+    oneLabelOnly() ? [grantId] : [grantId, currentLabel()]
   );
   const answers = await rawQuery<{ outcome: string; n: number }>(
     `SELECT m.outcome, count(*)::int AS n FROM node_messages m
