@@ -315,6 +315,18 @@ export interface MandateDetail extends MandateSummary {
   grantmaker: import("./mandate-work-service.js").GrantmakerStanding | null;
   /** How many of its Grantmaker's updates are kept (GET /mandates/:id/updates). */
   updates_total: number;
+  /**
+   * Its Grantmaker's direction for now: the dated first section of the
+   * operating policy (operating-policy-service.ts), which GET
+   * /mandates/:id/allocation serves whole. Null until one is written.
+   */
+  direction: { text: string; at: string | null } | null;
+  /**
+   * The platform faults open now (deployment-fault-service.ts), as public
+   * surfaces show them. Work a fault stops stays funded and is retried; a
+   * reader seeing open work that does not move is owed the reason.
+   */
+  platform_faults: Array<{ reason: string; since: string; waiting_rows: number }>;
   /** Set only for the manager: what its Grantmaker has asked of them, newest first. */
   funder_notes?: Array<{ at: string; note: string }>;
   /** Set only for the manager: the conversation to keep talking in. */
@@ -424,6 +436,13 @@ export async function getPublicMandate(
     work.grantmakerStanding(row.id).catch(() => null),
     work.listMandateUpdates(row.id, { limit: 1 }).catch(() => ({ total: 0, updates: [] })),
   ]);
+  const policy = (row.mandate as { operating_policy?: { current?: string; current_at?: string } } | null)
+    ?.operating_policy;
+  const direction = policy?.current?.trim()
+    ? { text: policy.current.trim(), at: policy.current_at ?? null }
+    : null;
+  const { openDeploymentFaults } = await import("./deployment-fault-service.js");
+  const faults = await openDeploymentFaults().catch(() => []);
   const funderNotes = isManager
     ? ((row.mandate as { funder_notes?: Array<{ at: string; note: string }> } | null)?.funder_notes ?? [])
     : [];
@@ -474,6 +493,12 @@ export async function getPublicMandate(
     findings,
     grantmaker,
     updates_total: updates.total,
+    direction,
+    platform_faults: faults.map((f) => ({
+      reason: f.reasonLabel,
+      since: f.since,
+      waiting_rows: f.waitingRows,
+    })),
     ...(isManager ? { funder_notes: funderNotes.slice(-5).reverse() } : {}),
     ...(isManager
       ? { is_manager: true, ...(conversationId ? { conversation_id: conversationId } : {}) }

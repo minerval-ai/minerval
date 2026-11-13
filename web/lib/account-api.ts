@@ -969,6 +969,9 @@ export interface MandateDetailView extends MandateSummaryView {
     /** sweep items: a topic tag's slug, or "residual". */
     partition?: string;
     rationale: string;
+    /** A standing order's tier and budget, when its author named them. */
+    variant?: "standard" | "strong" | "max";
+    budget_owls?: number;
     state: "done" | "current" | "queued" | "waiting" | "blocked" | "cancelled";
     /** The item's ledger standing; null before its first materialization. */
     ledger: {
@@ -977,9 +980,21 @@ export interface MandateDetailView extends MandateSummaryView {
       action_id?: string;
       exclusion_group?: string;
       checked_at: string;
+      /** The commission a standing order placed, once it has. */
+      order?: { budget_owls: number; tier: "standard" | "strong"; placed_at: string };
     } | null;
   }>;
   contributors: Array<{ name: string; owls: number; is_manager: boolean }>;
+  // Every kind of work the mandate has paid for, counted whole; absent from
+  // an older API, as are the five fields after it.
+  work_counts?: MandateWorkCounts | null;
+  findings?: Array<{ id: string; headline: string; importance: number; first_noted_at: string | null }>;
+  grantmaker?: GrantmakerStanding | null;
+  updates_total?: number;
+  direction?: { text: string; at: string | null } | null;
+  platform_faults?: Array<{ reason: string; since: string; waiting_rows: number }>;
+  /** Set only for the manager: what its Grantmaker has asked of them, newest first. */
+  funder_notes?: Array<{ at: string; note: string }>;
   funded_assessments: Array<{
     claim_id: string;
     text: string;
@@ -999,6 +1014,113 @@ export interface MandateDetailView extends MandateSummaryView {
   // mandate, and until the API serves them.
   prizes: MandatePrizesView | null;
   attempts: AttemptSummary[];
+}
+
+/** A mandate's completed work, counted whole by kind. */
+export interface MandateWorkCounts {
+  assessments: { nodes: number; claims: number; questions: number; quantities: number; passes: number };
+  sources: number;
+  requests: number;
+  research: number;
+  proposals: number;
+  findings: number;
+}
+
+/** Whether a mandate's Grantmaker is at work or waiting, and on what. */
+export interface GrantmakerStanding {
+  state: "working" | "waiting" | "none";
+  check_in_at: string | null;
+  runs_awaited: number;
+  nodes_watched: number;
+  spend_threshold: boolean;
+}
+
+export type MandateWorkKind = "assessments" | "sources" | "requests" | "research" | "proposals";
+
+export interface MandateAssessedNode {
+  claim_id: string;
+  node_kind: "claim" | "question" | "quantity";
+  text: string;
+  verdict: string | null;
+  confidence: number | null;
+  importance: number | null;
+  assessed_at: string | null;
+  passes: number;
+}
+export interface MandateRequestWork {
+  request_id: string;
+  ask: string;
+  state: string;
+  by: string;
+  outcome: string | null;
+  summary: string;
+  budget_owls: number | null;
+  at: string | null;
+  runs: number;
+}
+export interface MandateResearchRun {
+  id: string;
+  run_id: string | null;
+  claim_id: string | null;
+  request_id: string | null;
+  task: string;
+  status: string;
+  spent_owls: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+export interface MandateProposalRow {
+  contribution_id: string;
+  claim_id: string | null;
+  type: string;
+  text: string;
+  review_status: string;
+  submitted_at: string | null;
+}
+export interface MandateWorkPage<T = unknown> {
+  kind: MandateWorkKind;
+  total: number;
+  items: T[];
+}
+
+/** One page of one kind of a mandate's completed work; null when it cannot be read. */
+export async function fetchMandateWork<T = unknown>(
+  mandateId: string,
+  opts: { kind: MandateWorkKind; node?: string; order?: string; offset?: number; limit?: number },
+  externalId?: string | null
+): Promise<MandateWorkPage<T> | null> {
+  const params = new URLSearchParams({ kind: opts.kind });
+  if (opts.node) params.set("node", opts.node);
+  if (opts.order) params.set("order", opts.order);
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  try {
+    return await accountFetch<MandateWorkPage<T>>(
+      `/mandates/${pathSegment(mandateId)}/work?${params}`,
+      externalId ? { actingUser: externalId } : {}
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** A mandate's Grantmaker's kept updates, newest first. */
+export async function fetchMandateUpdates(
+  mandateId: string,
+  opts: { offset?: number; limit?: number } = {},
+  externalId?: string | null
+): Promise<{ total: number; updates: Array<{ at: string; note: string }> }> {
+  const params = new URLSearchParams();
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  try {
+    return await accountFetch(
+      `/mandates/${pathSegment(mandateId)}/updates${params.size > 0 ? `?${params}` : ""}`,
+      externalId ? { actingUser: externalId } : {}
+    );
+  } catch {
+    return { total: 0, updates: [] };
+  }
 }
 
 // All derived and none stored (§8.1), in owls at cost: the escrow, what is
