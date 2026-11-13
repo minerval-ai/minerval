@@ -1,5 +1,5 @@
 {
-  "id": "4893fed4-4706-4d64-91f1-d28ed3172ef4",
+  "id": "e88a74d9-1dc9-4231-abc1-8d18ba335975",
   "prevId": "9f2dd11e-557a-4f2d-a8b9-bf13155999f5",
   "version": "7",
   "dialect": "postgresql",
@@ -5134,12 +5134,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "minerval_default_label()"
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -13880,7 +13874,7 @@
         },
         "ck_judgment_inputs_judgment_kind": {
           "name": "ck_judgment_inputs_judgment_kind",
-          "value": "\"judgment_inputs\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation', 'left_standing')"
+          "value": "\"judgment_inputs\".\"judgment_kind\" IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation')"
         },
         "ck_judgment_inputs_input_kind": {
           "name": "ck_judgment_inputs_input_kind",
@@ -23114,18 +23108,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
-        },
-        "questions": {
-          "name": "questions",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "answers": {
-          "name": "answers",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         },
         "started_at": {
           "name": "started_at",

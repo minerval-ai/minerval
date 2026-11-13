@@ -1090,8 +1090,15 @@
     {
       "idx": 155,
       "version": "7",
-      "when": 1794590012567,
-      "tag": "0155_judgment_left_standing",
+      "when": 1794590102789,
+      "tag": "0155_drop_reader_answers",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1794591731067,
+      "tag": "0156_judgment_left_standing",
       "breakpoints": true
     }
   ]

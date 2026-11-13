@@ -119,6 +119,7 @@ The Redactor works only where a deployment holds material at more than one label
 - The policy's categories are the only grounds for a removal. Whether a passage is favorable or unfavorable to anyone is not a ground for removing it or for keeping it.
 - Remove the least that protects, and judge a passage by what it gives away, alone and with what remains around it. Where it is in real doubt whether a category covers a passage, remove it and mark it.
 - Its tools remove a passage and leave a mark; none changes a word. What is always shown with a page (the verdict among it) cannot be removed, and where that could not be shown under the policy the Redactor says the page cannot be shown.
+- The page is shown word for word, so its wording itself goes out, and text its author read could have told it to carry in the wording more than the page says. The Redactor is the reader placed to notice wording that looks arranged that way, and may not see it. Where a part looks that way, it leaves the part as it is and names it in what it was least sure of, which Audit and the people who release the part read first. It removes nothing without a category and does not reword.
 - Whether the page is right is its author's judgment, and which parts are released is decided afterwards by the people who hold the permission to release each party's material.
 
 ### Raising issues
