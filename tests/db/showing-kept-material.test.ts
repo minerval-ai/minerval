@@ -13,7 +13,8 @@ import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
 import type { GateActor } from "../../src/services/release-gate-service.js";
 import { askShowing } from "../../src/services/showing-service.js";
-import { A, C, seedNode, seedUser, system, unwall, version, wall } from "./review-3-common.js";
+import { summarizeCoverage } from "../../src/services/coverage-service.js";
+import { A, C, asPerson, seedNode, seedUser, system, unwall, version, wall } from "./review-3-common.js";
 
 const id: Record<string, string> = {};
 let director: GateActor;
@@ -177,5 +178,19 @@ describe("a page whose run kept a reading", () => {
     const page = await pageOf(asked.showing_id);
     expect(page.rests_on).toEqual([id.org]);
     expect(page.header.sources).toEqual([]);
+  });
+});
+
+describe("what a judgment at a private label was made on, where it rests on a kept reading and no instance", () => {
+  it("is said to a reader of that label as evidence they can read, and to one who does not read it as evidence they cannot", async () => {
+    // A public node judged at a, on a reading the run kept before it wrote the judgment. Nothing at a is attached to the node.
+    const node = await seedNode("public", "The warehouse shipped on every working day in March");
+    const kept = await call(node, A, true);
+    await version(node, A, "supported", "The warehouse's own rows show it.");
+    const said = async (reads: string[]) =>
+      (await asPerson([A, "public"], () => summarizeCoverage([node], { saidTo: { reads, outside: false } }))).get(node);
+    expect(await said([A, "public"])).toEqual({ examined: true, on: ["evidence_this_reader_can_read"] });
+    expect(await said(["public"])).toEqual({ examined: true, on: ["evidence_this_reader_cannot_read"] });
+    await system(() => rawQuery(`DELETE FROM sources WHERE id = $1`, [kept.source]));
   });
 });

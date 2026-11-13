@@ -41,6 +41,7 @@ import { ASSESS_GROUP, ensureAssessActions, reconcileActions } from "../../src/s
 import { getClaimView } from "../../src/services/claim-view-service.js";
 import { createContribution } from "../../src/services/contribution-service.js";
 import { requestCuration } from "../../src/services/curation-service.js";
+import { executeLeaveStandingTool } from "../../src/llm/tools/leave-standing-tool.js";
 import { nodeVersions } from "../../src/services/judgment-version-service.js";
 import {
   ROW_REFUSAL_FOR_MEMBERS,
@@ -433,6 +434,19 @@ describe("a public claim, mirrored into a deployment with private labels", () =>
 // ---------------------------------------------------------------------------
 
 describe("a version at a on a mirrored claim", () => {
+  it("may be left unmade: a examines the node and leaves the public graph's judgment standing, which is recorded at a", async () => {
+    const left = JSON.parse((await runAt(A, () => executeLeaveStandingTool("leave_judgment_standing", { claim_id: id.parent, reasoning: "Nothing a holds changes the public reading." })))!);
+    expect(left).toMatchObject({ success: true, left_standing: [PUBLIC_LABEL], retired_own: false });
+    const forA = (await person([A], () => nodeVersions(id.parent, "claim")))!;
+    expect(forA.left_standing.map((e) => [e.label, e.judgments, e.open_again])).toEqual([[A, [{ label: PUBLIC_LABEL, replaced: false }], false]]);
+    expect(forA.versions.map((v) => [v.label, v.in_force])).toEqual([[PUBLIC_LABEL, true]]);
+    // The mirrored row is untouched, and at the node's own label there is nothing to leave standing.
+    expect(await current(id.parent)).toEqual([{ label: PUBLIC_LABEL, origin: "mirror", status: "inconclusive" }]);
+    const atPublic = JSON.parse((await runAt(PUBLIC_LABEL, () => executeLeaveStandingTool("leave_judgment_standing", { claim_id: id.parent, reasoning: "x" })))!);
+    expect(atPublic.success).toBe(false);
+    expect(atPublic.message).toContain("This node carries this run's own label, `public`");
+  });
+
   it("is recorded beside the public one, with or without a source at a attached to the node", async () => {
     const without = await runAt(A, () => assess(id.parent));
     expect(without.success).toBe(true);
