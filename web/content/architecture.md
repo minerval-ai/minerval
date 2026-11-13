@@ -1961,7 +1961,14 @@ record the first two.
 ### Workers and failure handling
 
 Ingestion and the governance pipelines ride SQS queues in production and an
-in-memory runner locally, with identical handlers. Stewardship is the
+in-memory runner locally, with identical handlers. Each SQS queue has a
+poller in the API process (`src/workers/poller.ts`) that runs several
+messages at once where its queue allows it (URL extraction, three by
+default), extends a running message's visibility as it goes, and gives up
+on a handler that stops making progress, returning its message to the
+queue; docs/infrastructure.md, "The extraction lane", has the whole of it,
+with the sweep that puts a stopped extraction's ledger row back in line.
+Stewardship is the
 exception: it has no message queue at all. A claim's steward-state column
 marks it a CANDIDATE (idempotently — a claim re-triggered while already
 pending coalesces into one run), the action ledger holds its

@@ -335,13 +335,39 @@ export interface SourcePipelineRow {
   url: string;
   title: string | null;
   ingested_at: string | null;
+  /** The extraction job's own status (pending, processing, completed, failed). */
   extraction_status: string | null;
+  /**
+   * Where the source's extraction is (extractionStage): queued (waiting its
+   * turn in the extraction queue), extracting (a worker is reading it),
+   * done, or failed. Null when no extraction is recorded.
+   */
+  extraction_stage: ExtractionStage | null;
+  /** When a worker took the extraction up; null while it is queued. */
+  extraction_started_at: string | null;
+  /**
+   * For a queued extraction, how many extractions submitted before it are
+   * still waiting: a count of earlier unstarted extraction jobs, so
+   * approximate, as the queue does not promise its order. Null otherwise.
+   */
+  extraction_queued_ahead: number | null;
   claims_linked: number;
   claims_assessed: number;
   avg_importance: number | null;
   max_importance: number | null;
   contested_claims: number;
   importance_histogram: number[];
+}
+
+export type ExtractionStage = "queued" | "extracting" | "done" | "failed";
+
+/** An extraction job's status, as a stage a reader can act on. */
+export function extractionStage(status: string | null): ExtractionStage | null {
+  if (status === "pending") return "queued";
+  if (status === "processing") return "extracting";
+  if (status === "completed") return "done";
+  if (status === "failed") return "failed";
+  return null;
 }
 
 /**
@@ -358,6 +384,8 @@ export async function getMandatePipeline(
     title: string | null;
     ingested_at: Date | null;
     extraction_status: string | null;
+    extraction_started_at: Date | null;
+    queued_ahead: number | null;
     claims_linked: number;
     claims_assessed: number;
     avg_importance: number | null;
@@ -370,6 +398,15 @@ export async function getMandatePipeline(
   }>(
     `SELECT gs.source_id, gs.url, s.title, gs.created_at AS ingested_at,
             j.status AS extraction_status,
+            j.started_at AS extraction_started_at,
+            -- The extractions submitted before this one and not yet taken
+            -- up (four days: how long the queue keeps a message).
+            CASE WHEN j.status = 'pending' THEN
+              (SELECT count(*)::int FROM jobs q
+                WHERE q.type = 'url_extraction' AND q.status = 'pending'
+                  AND q.created_at < j.created_at
+                  AND q.created_at > now() - interval '4 days')
+            END AS queued_ahead,
             COUNT(DISTINCT ci.claim_id)::int AS claims_linked,
             COUNT(DISTINCT ci.claim_id)
               FILTER (WHERE a.id IS NOT NULL)::int AS claims_assessed,
@@ -393,7 +430,7 @@ export async function getMandatePipeline(
        LEFT JOIN assessments_in_force a
          ON a.claim_id = ci.claim_id
       WHERE gs.grant_id = $1
-      GROUP BY gs.source_id, gs.url, s.title, gs.created_at, j.status
+      GROUP BY gs.source_id, gs.url, s.title, gs.created_at, j.status, j.started_at, j.created_at
       ORDER BY gs.created_at ASC`,
     [grantId]
   );
@@ -403,6 +440,10 @@ export async function getMandatePipeline(
     title: r.title,
     ingested_at: r.ingested_at?.toISOString() ?? null,
     extraction_status: r.extraction_status,
+    extraction_stage: extractionStage(r.extraction_status),
+    extraction_started_at:
+      r.extraction_status === "pending" ? null : (r.extraction_started_at?.toISOString() ?? null),
+    extraction_queued_ahead: r.queued_ahead == null ? null : Number(r.queued_ahead),
     claims_linked: r.claims_linked,
     claims_assessed: r.claims_assessed,
     avg_importance:

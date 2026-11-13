@@ -432,8 +432,10 @@ async function runGrantmakerTurnImpl(input: {
   const pipelineTool: Tool = {
     name: "ingestion_report",
     description:
-      "The grant's ingestion pipeline: each source brought in, extraction " +
-      "status, how many claims it linked or minted, how many are assessed, " +
+      "The grant's ingestion pipeline: each source brought in, where its " +
+      "extraction is (extraction_stage: queued, with extraction_queued_ahead " +
+      "the extractions waiting ahead of it, extracting since " +
+      "extraction_started_at, done or failed), how many claims it linked or minted, how many are assessed, " +
       "average and max importance, contested counts, and an importance " +
       "histogram per source. Use this for 'where are the claims coming " +
       "from' and source-quality questions.",

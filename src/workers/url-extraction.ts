@@ -23,10 +23,17 @@ import { matchClaim, type MatchDecision } from "../llm/agents/matcher.js";
 import { requestCuration } from "../services/curation-service.js";
 import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import { generateEmbedding } from "../services/embedding-service.js";
-import { updateJob, getJobById } from "../services/job-service.js";
+import { updateJob, getJobById, startJobAttempt, stillHoldsJob } from "../services/job-service.js";
 import { enqueueClaimPipeline, requestAudit } from "../services/queue-service.js";
 import type { UrlExtractionMessage } from "../services/queue-service.js";
-import { currentLabel, runAtLabel, runWithUsageContext, withCostMeter } from "../llm/usage-context.js";
+import {
+  currentLabel,
+  runAtLabel,
+  runWithUsageContext,
+  withCostMeter,
+  withProgressListener,
+} from "../llm/usage-context.js";
+import type { HandlerContext } from "./poller.js";
 import { loadConfig } from "../config.js";
 import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 import { recordSourceKind } from "../services/source-service.js";
@@ -38,6 +45,62 @@ import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { normalizeFocus, recordExtraction, type UndecidedProposal } from "../services/ingest-focus-service.js";
 import { recordArgumentPassages } from "../services/argument-passage-service.js";
 import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment-fault.js";
+
+/**
+ * This run no longer holds its job: its poller gave up on it (no progress
+ * for the lane's stall window), a later attempt took the job up, or the
+ * recovery sweep abandoned the job and its ledger row submitted the source
+ * again. The run stops at its next step and writes nothing more: the job,
+ * its ledger row and its message belong to whoever holds them now.
+ */
+export class ExtractionAbandonedError extends Error {
+  constructor(jobId: string) {
+    super(`extraction of job ${jobId} was given up on; a later attempt holds it`);
+    this.name = "ExtractionAbandonedError";
+  }
+}
+
+/**
+ * How often a run that is making progress stamps it on its job. The
+ * recovery sweep reads the stamp (recovery-sweep.ts, INGEST_STALL_MINUTES);
+ * this only keeps the writes few.
+ */
+const HEARTBEAT_STAMP_MS = 30_000;
+
+/**
+ * A run's hold on its job: its attempt number, a heartbeat stamped on the
+ * job as the run makes progress, and the checkpoint it passes between
+ * steps, which throws ExtractionAbandonedError once the hold is gone.
+ */
+interface JobHold {
+  checkpoint: () => Promise<void>;
+  heartbeat: () => void;
+}
+
+function holdJob(jobId: string, attempt: number, signal?: AbortSignal): JobHold {
+  let lost = false;
+  let lastStamp = Date.now();
+  return {
+    heartbeat: () => {
+      if (lost || Date.now() - lastStamp < HEARTBEAT_STAMP_MS) return;
+      lastStamp = Date.now();
+      void stillHoldsJob(jobId, attempt).then(
+        (held) => {
+          if (!held) lost = true;
+        },
+        () => undefined
+      );
+    },
+    checkpoint: async () => {
+      if (lost || signal?.aborted) throw new ExtractionAbandonedError(jobId);
+      lastStamp = Date.now();
+      if (!(await stillHoldsJob(jobId, attempt))) {
+        lost = true;
+        throw new ExtractionAbandonedError(jobId);
+      }
+    },
+  };
+}
 
 /**
  * Handle a URL extraction message:
@@ -56,9 +119,27 @@ import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment
  * be onboarded, keep that label.
  */
 export async function handleUrlExtraction(
-  message: UrlExtractionMessage
+  message: UrlExtractionMessage,
+  ctx?: Partial<HandlerContext>
 ): Promise<void> {
   const job = await getJobById(message.jobId);
+  // The job is taken up here, not when it was queued: its start and its
+  // attempt are what the ledger and a mandate's pipeline read to tell an
+  // extraction that is waiting its turn from one being read
+  // (docs/infrastructure.md, "The extraction lane"). A job that completed
+  // already, or that the recovery sweep gave up on, is not run again: the
+  // message is a second delivery, or its ledger row has submitted the
+  // source anew.
+  // A job that cannot be found is not taken up: runAtLabel below refuses to
+  // run work whose label is unknown.
+  const taken = job ? await startJobAttempt(message.jobId) : { attempt: 0 };
+  if (!taken) {
+    console.warn(
+      `[url-extraction] job ${message.jobId} (${message.url}) is finished or was given up on; message dropped`
+    );
+    return;
+  }
+  const hold = holdJob(message.jobId, taken.attempt, ctx?.signal);
   let billedMicroUsd: number;
   try {
     ({ billedMicroUsd } = await runAtLabel(job?.sensitivityLabel, `job ${message.jobId}`, () =>
@@ -70,10 +151,17 @@ export async function handleUrlExtraction(
           // the spend draws down the escrow, not the submitter's balance.
           jobId: message.meterJobId ?? message.jobId,
         },
-        () => withCostMeter(() => processUrlExtraction(message))
+        () =>
+          withProgressListener(hold.heartbeat, () => withCostMeter(() => processUrlExtraction(message, hold)))
       )
     ));
   } catch (err) {
+    if (err instanceof ExtractionAbandonedError) {
+      // Not a failure of the source, nor this run's to record: whoever
+      // holds the job now finishes it, and its ledger row with it.
+      console.warn(`[url-extraction] ${message.url}: ${err.message}`);
+      return;
+    }
     const group = message.ingestGroup ?? `ingest:${message.url}`;
     // A deployment fault (a model provider out of credits, or its key
     // rejected) says nothing about the source: the ledger row is not
@@ -260,13 +348,12 @@ async function settleSourceIngestCharge(
 }
 
 async function processUrlExtraction(
-  message: UrlExtractionMessage
+  message: UrlExtractionMessage,
+  hold: JobHold
 ): Promise<void> {
   const db = getDb();
 
   try {
-    await updateJob(message.jobId, { status: "processing" });
-
     // Get the source
     const [source] = await db
       .select()
@@ -326,6 +413,7 @@ async function processUrlExtraction(
       // Where the document reasons about each claim (#541).
       recordArguments: true,
     });
+    await hold.checkpoint();
 
     let claimsCreated = 0;
     let claimsMatched = 0;
@@ -527,7 +615,11 @@ async function processUrlExtraction(
     const deferred: Array<{ claim: ExtractedClaim; kind: NodeKind }> = [];
     const undecided: UndecidedProposal[] = [];
 
+    // Each claim's Matcher run starts only while this run still holds the
+    // job, so a run the lane gave up on stops here instead of matching on
+    // beside its successor.
     for (const claim of extracted) {
+      await hold.checkpoint();
       const proposedKind = NODE_KIND_SET.has(claim.kind ?? "") ? (claim.kind as NodeKind) : "claim";
       const matchResult = await matchFor(claim, proposedKind);
       if (matchResult.outcome === "undecided") {
@@ -538,6 +630,7 @@ async function processUrlExtraction(
     }
 
     for (const { claim, kind } of deferred) {
+      await hold.checkpoint();
       const matchResult = await matchFor(claim, kind);
       if (matchResult.outcome === "undecided") {
         undecided.push({
@@ -595,6 +688,7 @@ async function processUrlExtraction(
       )
     );
 
+    await hold.checkpoint();
     await updateJob(message.jobId, {
       status: "completed",
       result: {
@@ -620,8 +714,9 @@ async function processUrlExtraction(
     });
   } catch (err) {
     // A platform fault is recorded by handleUrlExtraction, by its public
-    // class and with whether the platform retries the ingest.
-    if (!deploymentFaultOf(err)) {
+    // class and with whether the platform retries the ingest. A run that
+    // lost its hold records nothing: the job is another run's.
+    if (!deploymentFaultOf(err) && !(err instanceof ExtractionAbandonedError)) {
       await updateJob(message.jobId, {
         status: "failed",
         error: err instanceof Error ? err.message : String(err),

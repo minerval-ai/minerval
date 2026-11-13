@@ -878,6 +878,11 @@ export interface MandatePipelineRow {
   title: string | null;
   ingested_at: string | null;
   extraction_status: string | null;
+  /** queued (waiting its turn), extracting, done or failed; null with no extraction. */
+  extraction_stage?: "queued" | "extracting" | "done" | "failed" | null;
+  extraction_started_at?: string | null;
+  /** For a queued extraction, about how many are waiting ahead of it. */
+  extraction_queued_ahead?: number | null;
   claims_linked: number;
   claims_assessed: number;
   avg_importance: number | null;
