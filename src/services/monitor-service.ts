@@ -44,6 +44,8 @@ import {
 } from "./monitor-math.js";
 import { PLATFORM_FAULT_LABELS, isPlatformFaultReason, waitingOnFaultSql, type PlatformFaultReason } from "./deployment-fault.js";
 import { openDeploymentFaults, type DeploymentFaultView } from "./deployment-fault-service.js";
+import { taggingQueueHealth } from "./tag-service.js";
+import type { TaggingLaneWait } from "./tagging-lane.js";
 
 export const MONITOR_SIGNALS = [
   "performed_settling",
@@ -625,6 +627,14 @@ export interface QueueHealthReport {
    * count that stays here is rows waiting on something other than the fault.
    */
   waitingOnFault: Array<{ reason: PlatformFaultReason; reasonLabel: string; kind: string; rows: number; due: number; since: string | null }>;
+  /**
+   * The tagging lane, which has no ledger rows and so is in none of the
+   * above: claims waiting to be tagged, claims parked out of the drain, and
+   * `waiting` when the lane is holding off right now, on a platform fault or
+   * on the platform's spend breaker, with since when and when it tries a
+   * claim next (services/tagging-lane.ts). Null is the healthy reading.
+   */
+  taggingLane: { pending: number; parked: number; waiting: TaggingLaneWait | null };
 }
 
 /**
@@ -634,8 +644,9 @@ export interface QueueHealthReport {
  * content.
  */
 export async function queueHealth(t: MonitorThresholds = defaultThresholds()): Promise<QueueHealthReport> {
-  const [faults, waitingRows] = await Promise.all([
+  const [faults, tagging, waitingRows] = await Promise.all([
     openDeploymentFaults(),
+    taggingQueueHealth(),
     // Waiting means the next attempt is still ahead (deployment-fault.ts,
     // waitingOnFaultSql). A row whose next attempt has come is counted as
     // due, apart: the executors may pick it, and a fault that has ended must
@@ -643,7 +654,7 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
     rawQuery<{ fault_reason: string; kind: string; n: number; due: number; since: Date | null }>(
       `SELECT a.fault_reason, a.kind,
               (COUNT(*) FILTER (WHERE ${waitingOnFaultSql("a")}))::int AS n,
-              (COUNT(*) FILTER (WHERE NOT ${waitingOnFaultSql("a")}))::int AS due,
+              (COUNT(*) FILTER (WHERE ${waitingOnFaultSql("a")} IS NOT TRUE))::int AS due,
               MIN(a.fault_since) AS since
          FROM actions a WHERE a.status = 'open' AND a.fault_reason IS NOT NULL
         GROUP BY a.fault_reason, a.kind ORDER BY MIN(a.fault_since)`
@@ -664,7 +675,7 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
   return {
     signal: "queue_health",
     description:
-      "Steward lane by state, oldest pending age, queue-depth snapshot trend, error-parked claims with the class of their failure, the deployment faults open now with the ledger rows waiting on them, and the ledger rows a platform fault last stopped: those still waiting for their next attempt (rows) and those whose next attempt has come (due).",
+      "Steward lane by state, oldest pending age, queue-depth snapshot trend, error-parked claims with the class of their failure, the deployment faults open now with the ledger rows waiting on them, and the ledger rows a platform fault last stopped: those still waiting for their next attempt (rows) and those whose next attempt has come (due). Also the tagging lane's depth and what it is waiting on, if anything.",
     thresholds: { snapshotPoints: t.snapshotPoints, limit: t.limit },
     states: counts,
     oldestPending: o
@@ -688,6 +699,7 @@ export async function queueHealth(t: MonitorThresholds = defaultThresholds()): P
         ? [{ reason: w.fault_reason, reasonLabel: PLATFORM_FAULT_LABELS[w.fault_reason], kind: w.kind, rows: w.n, due: w.due, since: iso(w.since) }]
         : []
     ),
+    taggingLane: { pending: tagging.pending, parked: tagging.parked, waiting: tagging.waiting },
   };
 }
 

@@ -184,7 +184,21 @@ embedded claim means "awaiting the tagger", so a new claim, the backfill
 of the existing graph, and a claim whose canonical form changed are all the
 same mechanism, drained a few claims per tick most-important-first
 (`TAGGING_INTERVAL_SECONDS`, `TAGGING_BATCH_SIZE`; the drain leases rows
-with a lease column so several tasks may run it). The vocabulary can be
+with a lease column so several tasks may run it). The lane has no ledger
+rows and nobody pays for a pass, so it keeps its own wait
+(`services/tagging-lane.ts`, one row of `platform_flags`). A platform fault
+(a provider that refuses or cannot serve the tagger's call once the
+client's retries are spent) ends the tick and holds the lane for the
+engine's wait, 30 seconds doubling to 10 minutes; one claim is tried when
+it ends, and the claim that met the fault is back in the queue uncounted.
+The process-wide spend breaker, which bounds the tagger's unattributed
+calls, is checked before each lease, so a spent breaker opens no run. Either
+way `GET /queue` (`tagging.waiting`) and `/monitors` (`queue_health`,
+`taggingLane`) say what the lane waits on, since when and until when, and
+nothing once the next attempt is due. Before this a tick that met a fault
+leased the next claim at once, five to a tick every 30 seconds, and a spent
+breaker was met inside a run: 97 of the tagger's 168 runs on 2026-11-13
+were recorded as its errors. The vocabulary can be
 seeded before the first drain from clusters in the embedding space
 (`scripts/seed-tags-from-clusters.ts`: spherical k-means over every
 claim's embedding, each cluster named by the same model from its

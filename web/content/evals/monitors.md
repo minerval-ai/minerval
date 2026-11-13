@@ -425,7 +425,14 @@ the same doubling, but it is not waiting on it: the executors may pick it,
 and a `due` count that stays is rows waiting on something else. Counting
 both as waiting showed thirteen rows held by a fault that had ended hours
 before (2026-11-13). The rows a deployment fault lists as waiting, the
-public ledger view and a mandate's briefing use the same test. A fault is filed on the agents' channel once,
+public ledger view and a mandate's briefing use the same test.
+`taggingLane` is the tagging lane, which has no ledger rows and so is in
+none of those counts: claims `pending` and `parked`, and `waiting` when the
+lane is holding off right now, with the reason (`credits_fault`,
+`credentials_fault`, `provider_unavailable`, or `spend_breaker` for the
+process-wide limit on unattributed calls), since when, when it tries a
+claim next, and how many attempts in a row a fault has stopped
+(`services/tagging-lane.ts`). Null is the healthy reading. A fault is filed on the agents' channel once,
 at severity blocking, when it opens (`noteDeploymentFault`), and closes
 here when the provider has served a call and refused none for ten minutes.
 The provider's own text is in the log line and the service-scoped report

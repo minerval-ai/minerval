@@ -65,6 +65,14 @@ import {
 } from "../../src/services/deployment-fault-service.js";
 import { collectMandateEvents, pendingMandateEvents } from "../../src/services/mandate-event-service.js";
 import { queueHealth } from "../../src/services/monitor-service.js";
+import { taggingQueueHealth } from "../../src/services/tag-service.js";
+import {
+  clearTaggingLaneWait,
+  currentTaggingLaneWait,
+  holdTaggingLaneOnBreaker,
+  holdTaggingLaneOnFault,
+  readTaggingLaneWait,
+} from "../../src/services/tagging-lane.js";
 import { createJob } from "../../src/services/job-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
@@ -578,6 +586,49 @@ describe("an ingest a deployment fault stops", () => {
     const [job] = await rawQuery<{ status: string; error: string }>(`SELECT status, error FROM jobs WHERE id = $1`, [p.jobId]);
     expect(job).toMatchObject({ status: "failed", error: "The document could not be parsed" });
     expect(await collectMandateEvents(p.grantId)).toBe(1);
+  });
+});
+
+describe("the tagging lane, which has no ledger row", () => {
+  // The lane's wait is one row of platform_flags (services/tagging-lane.ts),
+  // written by whichever task met the fault and read by the process that
+  // serves /queue and /monitors.
+  afterEach(() => clearTaggingLaneWait());
+
+  it("says on /queue and /monitors what it is waiting on, since when and until when, and stops saying so when the attempt is due", async () => {
+    expect((await taggingQueueHealth()).waiting).toBeNull();
+
+    const placed = await holdTaggingLaneOnFault("credits_fault", null);
+    expect(placed).toMatchObject({ reason: "credits_fault", attempts: 1 });
+    const health = await taggingQueueHealth();
+    expect(health.waiting).toMatchObject({ reason: "credits_fault", attempts: 1, since: placed.since, next_attempt_at: placed.next_attempt_at });
+    expect(health.waiting!.reason_label).toContain("out of credits");
+    expect(typeof health.pending).toBe("number");
+    const lane = (await queueHealth()).taggingLane;
+    expect(lane.waiting).toMatchObject({ reason: "credits_fault", next_attempt_at: placed.next_attempt_at });
+    expect(lane.pending).toBe(health.pending);
+
+    // A second refusal continues the count from the first and keeps its since.
+    const second = await holdTaggingLaneOnFault("credits_fault", await readTaggingLaneWait());
+    expect(second).toMatchObject({ attempts: 2, since: placed.since });
+    expect(Date.parse(second.next_attempt_at) - Date.now()).toBeGreaterThan(FAULT_RETRY_BASE_SECONDS * 2 * 1000 - 5000);
+
+    // Its time has come and no tick has run yet: due, not waiting.
+    const later = Date.parse(second.next_attempt_at) + 1;
+    expect(await currentTaggingLaneWait(later)).toBeNull();
+    expect(await readTaggingLaneWait()).toMatchObject({ reason: "credits_fault", attempts: 2 });
+
+    await clearTaggingLaneWait();
+    expect((await taggingQueueHealth()).waiting).toBeNull();
+    expect((await queueHealth()).taggingLane.waiting).toBeNull();
+  });
+
+  it("says so when it is the spend breaker it waits on, until the breaker's window rolls over", async () => {
+    const placed = await holdTaggingLaneOnBreaker("hourly_call_count", null);
+    expect(Date.parse(placed.next_attempt_at) % 3_600_000).toBe(0);
+    const health = await taggingQueueHealth();
+    expect(health.waiting).toMatchObject({ reason: "spend_breaker", attempts: 0 });
+    expect(health.waiting!.reason_label).toContain("spend breaker");
   });
 });
 
