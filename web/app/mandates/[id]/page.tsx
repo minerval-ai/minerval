@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { auth } from "../../../auth";
 import { accountApiConfigured, fetchMandateView, type MandateDetailView } from "../../../lib/account-api";
@@ -502,6 +503,22 @@ function HistorySection({ mandate }: { mandate: MandateDetailView }) {
   );
 }
 
+/**
+ * A section that reads more than the mandate holds (its actions' wording, a
+ * page of completed work), as it stands while that read is under way: the
+ * rest of the page is sent without waiting for it.
+ */
+function SectionReading({ id, title }: { id: string; title: string }) {
+  return (
+    <section className="acct-section" id={id} aria-busy="true">
+      <div className="acct-head">
+        <h2>{title}</h2>
+      </div>
+      <p className="acct-note">Reading…</p>
+    </section>
+  );
+}
+
 export default async function MandatePage({
   params,
   searchParams,
@@ -520,18 +537,23 @@ export default async function MandatePage({
   }
   const session = await auth();
   const viewer = session?.externalId ?? null;
-  let mandate: MandateDetailView;
-  try {
-    mandate = await fetchMandateView(id, viewer);
-  } catch {
-    notFound();
-  }
-  const view = mandatePageView(await searchParams);
-  const live = mandate.status === "active";
-  const [allocation, features] = await Promise.all([
-    live ? fetchMandateAllocation(mandate.id) : Promise.resolve(null),
+  // The mandate, its operations view and the features are read together,
+  // not one after another. The operations view answers only for an active
+  // mandate (null otherwise), and is dropped below for any other.
+  const [read, allocationRead, features, query] = await Promise.all([
+    fetchMandateView(id, viewer).then(
+      (m) => ({ ok: true as const, mandate: m }),
+      () => ({ ok: false as const })
+    ),
+    fetchMandateAllocation(id),
     loadFeatures(),
+    searchParams,
   ]);
+  if (!read.ok) notFound();
+  const mandate: MandateDetailView = read.mandate;
+  const view = mandatePageView(query);
+  const live = mandate.status === "active";
+  const allocation = live ? allocationRead : null;
   const budget = allocation?.budget ?? null;
   const running = (allocation?.kinds ?? []).reduce((n, k) => n + k.running, 0);
   const prizes = mandate.prizes ?? null;
@@ -614,7 +636,9 @@ export default async function MandatePage({
       </nav>
 
       <NowSection mandate={mandate} allocation={allocation} />
-      <PlanSection mandate={mandate} view={view} budget={budget} />
+      <Suspense fallback={<SectionReading id="actions" title="Actions" />}>
+        <PlanSection mandate={mandate} view={view} budget={budget} />
+      </Suspense>
       <AgentsSection mandate={mandate} allocation={allocation} />
       <SpendingSection
         mandate={mandate}
@@ -642,7 +666,9 @@ export default async function MandatePage({
           )}
       {mathematicsOn && mandate.skills?.includes("mathematics") && <MandateRecord grantId={mandate.id} />}
 
-      <CompletedWork mandate={mandate} view={view} viewer={viewer} />
+      <Suspense fallback={<SectionReading id="completed" title="Completed work" />}>
+        <CompletedWork mandate={mandate} view={view} viewer={viewer} />
+      </Suspense>
 
       <HistorySection mandate={mandate} />
 
