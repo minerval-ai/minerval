@@ -1944,9 +1944,9 @@ open to backing, as it always has. A public scope holds only mandates that
 have started.
 
 The mandate's page (`/mandates/:id`) sets the mandate itself (title,
-objective, strategy) as a document, and reports on it under it: completed
-work, what is happening now, the plan, its agents, its spending and its
-history. Text an agent wrote is on a sheet with a byline; everything else
+objective, strategy) as a document, and reports on it under it: what is
+happening now, its actions (the items of its plan), its agents, its
+spending, its completed work and its history. Text an agent wrote is on a sheet with a byline; everything else
 is the page's own. A mandate that has not started (still being drafted,
 or its plan awaiting approval) is readable by its funder alone, who sees
 on the same page what waits on them and the controls to approve the
@@ -1963,7 +1963,10 @@ the mandates it funded. The findings its agents noted stand beside them.
 "Now" shows its Grantmaker's current direction (the dated first section
 of the operating policy) and latest update, whether its Grantmaker is at
 work or waiting and what will wake it (counts and times only: a
-subscription's reason is its run's own words), the work that is open,
+subscription's reason is its run's own words), its latest sittings as
+links to the run log (`/runs/:id` reads itself again every few seconds
+while a run is under way, so a sitting can be watched as it works; whether
+a transcript is public is the run log's rule), the work that is open,
 and any platform fault that is holding work up. The manager can keep talking to the Grantmaker on the
 same page at any time: after funding, the conversation runs in management
 mode, where the agent has analytics tools over exactly the data the

@@ -1009,6 +1009,15 @@ export interface MandateDetailView extends MandateSummaryView {
   work_counts?: MandateWorkCounts | null;
   findings?: Array<{ id: string; headline: string; importance: number; first_noted_at: string | null }>;
   grantmaker?: GrantmakerStanding | null;
+  /** Its Grantmaker's latest sittings on the run log, newest first. */
+  sittings?: Array<{
+    run_id: string;
+    started_at: string;
+    finished_at: string | null;
+    outcome: string | null;
+    steps: number;
+    public: boolean;
+  }>;
   updates_total?: number;
   direction?: { text: string; at: string | null } | null;
   platform_faults?: Array<{ reason: string; since: string; waiting_rows: number }>;

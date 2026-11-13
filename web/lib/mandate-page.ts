@@ -42,7 +42,7 @@ const one = (v: string | string[] | undefined): string | undefined => (Array.isA
 export function mandatePageView(query: Query): MandatePageView {
   const work = one(query.work);
   const node = one(query.node);
-  const plan = one(query.plan);
+  const plan = one(query.actions);
   const page = Number(one(query.wp));
   return {
     work:
@@ -82,7 +82,7 @@ export function mandateHref(
   if (next.order !== "recent") q.set("order", next.order);
   if (next.page > 1) q.set("wp", String(next.page));
   else if (next.full) q.set("all", "1");
-  if (next.plan !== "open") q.set("plan", next.plan);
+  if (next.plan !== "open") q.set("actions", next.plan);
   if (next.planAll) q.set("pall", "1");
   const qs = q.toString();
   return `/mandates/${id}${qs ? `?${qs}` : ""}#${anchor}`;

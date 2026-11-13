@@ -484,6 +484,8 @@ export interface MandateDetail extends MandateSummary {
   findings: Array<{ id: string; headline: string; importance: number; first_noted_at: string | null }>;
   /** Whether its Grantmaker is at work or waiting, and on what. */
   grantmaker: import("./mandate-work-service.js").GrantmakerStanding | null;
+  /** Its Grantmaker's latest sittings on the run log, newest first, at most five. */
+  sittings: import("./mandate-work-service.js").GrantmakerSitting[];
   /** How many of its Grantmaker's updates are kept (GET /mandates/:id/updates). */
   updates_total: number;
   /**
@@ -601,11 +603,12 @@ export async function getPublicMandate(
   // None of these may hide the page.
   const work = await import("./mandate-work-service.js");
   const ref = { id: row.id, budgetJobId: row.budget_job_id };
-  const [workCounts, findings, grantmaker, updates] = await Promise.all([
+  const [workCounts, findings, grantmaker, updates, sittings] = await Promise.all([
     work.mandateWorkCounts(ref).catch(() => null),
     work.mandateFindings(ref).catch(() => []),
     work.grantmakerStanding(row.id).catch(() => null),
     work.listMandateUpdates(row.id, { limit: 1 }).catch(() => ({ total: 0, updates: [] })),
+    work.grantmakerSittings(ref).catch(() => []),
   ]);
   const policy = (row.mandate as { operating_policy?: { current?: string; current_at?: string } } | null)
     ?.operating_policy;
@@ -664,6 +667,7 @@ export async function getPublicMandate(
     findings,
     grantmaker,
     updates_total: updates.total,
+    sittings,
     direction,
     platform_faults: faults.map((f) => ({
       reason: f.reasonLabel,

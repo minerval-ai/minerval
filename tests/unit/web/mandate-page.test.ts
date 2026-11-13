@@ -28,7 +28,7 @@ describe("the page's address", () => {
   });
 
   it("ignores what it does not know", () => {
-    const v = mandatePageView({ work: "everything", node: "argument", order: "oldest", wp: "-3", plan: "soon" });
+    const v = mandatePageView({ work: "everything", node: "argument", order: "oldest", wp: "-3", actions: "soon" });
     expect(v).toMatchObject({ work: "assessments", node: null, order: "recent", page: 1, plan: "open" });
   });
 
@@ -44,12 +44,12 @@ describe("the page's address", () => {
   });
 
   it("starts a list again when what it lists changes, and keeps the other section's choice", () => {
-    const v = mandatePageView({ wp: "3", node: "question", plan: "done" });
+    const v = mandatePageView({ wp: "3", node: "question", actions: "done" });
     expect(mandateHref(ID, v, { order: "importance" }, "completed")).toBe(
-      "/mandates/m-1?node=question&order=importance&all=1&plan=done#completed"
+      "/mandates/m-1?node=question&order=importance&all=1&actions=done#completed"
     );
-    expect(mandateHref(ID, v, { work: "sources" }, "completed")).toBe("/mandates/m-1?work=sources&plan=done#completed");
-    expect(mandateHref(ID, v, { plan: "cancelled" }, "plan")).toBe("/mandates/m-1?node=question&wp=3&plan=cancelled#plan");
+    expect(mandateHref(ID, v, { work: "sources" }, "completed")).toBe("/mandates/m-1?work=sources&actions=done#completed");
+    expect(mandateHref(ID, v, { plan: "cancelled" }, "actions")).toBe("/mandates/m-1?node=question&wp=3&actions=cancelled#actions");
   });
 });
 

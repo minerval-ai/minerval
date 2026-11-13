@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { apiConfigured, fetchRun, fetchRunSteps } from "@/lib/api";
 import { modelDisplayName } from "@/lib/model-names";
 import { PageHead } from "@/components/PageHead";
+import { LiveRefresh } from "@/components/LiveRefresh";
 
 // One agent run (#553): what it was given, what it did, step by step. A run
 // that read private data is withheld, and the page says why.
@@ -67,8 +68,13 @@ export default async function RunPage({ params }: { params: Promise<Params> }) {
   const steps = page?.steps ?? [];
   const setup = run.setup;
 
+  // A run still going is followed as it works. One that never finished (its
+  // process died) looks the same on the record, so only a recent one is.
+  const following = !run.finished_at && Date.now() - new Date(run.started_at).getTime() < 3 * 3_600_000;
+
   return (
     <div className="col-wide">
+      {following && <LiveRefresh />}
       <PageHead
         kicker="Agent run"
         title={

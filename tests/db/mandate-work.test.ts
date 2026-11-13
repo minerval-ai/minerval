@@ -11,6 +11,7 @@ import { rawQuery } from "../../src/db/client.js";
 import { seedAction, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 import {
   MANDATE_UPDATES_KEPT,
+  grantmakerSittings,
   grantmakerStanding,
   listMandateUpdates,
   listMandateWork,
@@ -178,6 +179,24 @@ describe("where a mandate's Grantmaker stands", () => {
     const standing = await grantmakerStanding(grantId);
     expect(standing).toMatchObject({ state: "waiting", runs_awaited: 1, nodes_watched: 1, spend_threshold: false });
     expect(new Date(standing.check_in_at!).getTime()).toBe(due.getTime());
+  });
+});
+
+describe("a Grantmaker's sittings", () => {
+  it("lists its review passes newest first, the one under way unfinished, and says which are public", async () => {
+    const { jobId, ref } = await mandate();
+    await rawQuery(
+      `INSERT INTO agent_runs (agent, job_id, started_at, finished_at, outcome, steps, private_reasons)
+       VALUES ('mandate_review', $1, now() - interval '2 hours', now() - interval '1 hour', 'ok', 14, '{}'),
+              ('mandate_review', $1, now() - interval '5 minutes', NULL, NULL, 3, '{input:grantmaker-brief}'),
+              ('steward', $1, now(), now(), 'ok', 9, '{}')`,
+      [jobId]
+    );
+    const sittings = await grantmakerSittings(ref);
+    expect(sittings.map((s) => [s.finished_at === null, s.steps, s.public])).toEqual([
+      [true, 3, false],
+      [false, 14, true],
+    ]);
   });
 });
 

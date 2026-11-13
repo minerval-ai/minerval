@@ -17,7 +17,8 @@ import {
   type PlanTab,
 } from "@/lib/mandate-page";
 
-// The plan: the actions its Grantmaker has written down, under three heads
+// The actions its Grantmaker has written down for the mandate (the record
+// calls the list its plan; the page calls them what they are), under three heads
 // (waiting or running, done, cancelled). An action that orders a pass is a
 // standing order, and each one that has not finished says how it stands and
 // why, in the ledger's own words.
@@ -63,9 +64,9 @@ export async function PlanSection({
   const used = budget?.pace_window_used_owls ?? 0;
 
   return (
-    <section className="acct-section" id="plan">
+    <section className="acct-section" id="actions">
       <div className="acct-head">
-        <h2>Plan</h2>
+        <h2>Actions</h2>
         <span className="acct-note">
           {items.length.toLocaleString("en-US")} action{items.length === 1 ? "" : "s"}, written by its Grantmaker
         </span>
@@ -79,7 +80,7 @@ export async function PlanSection({
             {TABS.map(([key, label]) => (
               <Link
                 key={key}
-                href={mandateHref(id, view, { plan: key }, "plan")}
+                href={mandateHref(id, view, { plan: key }, "actions")}
                 aria-current={view.plan === key ? "true" : undefined}
                 scroll={false}
               >
@@ -179,7 +180,7 @@ export async function PlanSection({
               <span className="acct-num">
                 {shown.length} of {rows.length}
               </span>
-              <Link className="mnd-button" href={mandateHref(id, view, { planAll: true }, "plan")} scroll={false}>
+              <Link className="mnd-button" href={mandateHref(id, view, { planAll: true }, "actions")} scroll={false}>
                 Show all {rows.length}
               </Link>
             </div>

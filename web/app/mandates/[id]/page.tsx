@@ -288,6 +288,7 @@ function NowSection({
   const faults = (mandate.platform_faults ?? []).filter((f) => f.waiting_rows > 0);
   const live = mandate.status === "active";
   const updates = mandate.updates_total ?? (mandate.last_review ? 1 : 0);
+  const sittings = mandate.sittings ?? [];
   return (
     <section className="acct-section" id="now">
       <div className="acct-head">
@@ -370,7 +371,32 @@ function NowSection({
               </div>
             </>
           )}
-          <h3 className={`mnd-h3${live && g && g.state !== "none" ? " mnd-h3-gap" : ""}`}>Open work</h3>
+          {sittings.length > 0 && (
+            <>
+              <h3 className={`mnd-h3${live && g && g.state !== "none" ? " mnd-h3-gap" : ""}`}>Watch it work</h3>
+              <p className="acct-note">
+                Each sitting is on the run log, step by step: what it was told, what it read, what it
+                commissioned and why.
+              </p>
+              {sittings.map((s) => (
+                <div className="acct-line" key={s.run_id}>
+                  <span>
+                    <Link href={`/runs/${s.run_id}`}>
+                      {s.finished_at ? `Sitting of ${s.started_at.slice(0, 16).replace("T", " ")} UTC` : "At work now: watch →"}
+                    </Link>
+                    {!s.public && <span className="acct-detail">not public</span>}
+                  </span>
+                  <span className="acct-detail acct-num">
+                    {s.steps} step{s.steps === 1 ? "" : "s"}
+                    {s.finished_at ? "" : " so far"}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+          <h3 className={`mnd-h3${(live && g && g.state !== "none") || sittings.length > 0 ? " mnd-h3-gap" : ""}`}>
+            Open work
+          </h3>
           {openByKind.size === 0 ? (
             <p className="acct-note">{live ? "Nothing is running now." : "None: the mandate is not live."}</p>
           ) : (
@@ -578,16 +604,15 @@ export default async function MandatePage({
 
       <nav className="acct-nav" aria-label="On this page">
         <a href="#mandate">The mandate</a>
-        <a href="#completed">Completed work</a>
         <a href="#now">Now</a>
-        <a href="#plan">Plan</a>
+        <a href="#actions">Actions</a>
         <a href="#agents">Agents</a>
         <a href="#spending">Spending</a>
         {showPrizes && <a href="#prizes">Prizes</a>}
+        <a href="#completed">Completed work</a>
         <a href="#history">History</a>
       </nav>
 
-      <CompletedWork mandate={mandate} view={view} viewer={viewer} />
       <NowSection mandate={mandate} allocation={allocation} />
       <PlanSection mandate={mandate} view={view} budget={budget} />
       <AgentsSection mandate={mandate} allocation={allocation} />
@@ -616,6 +641,8 @@ export default async function MandatePage({
             </section>
           )}
       {mathematicsOn && mandate.skills?.includes("mathematics") && <MandateRecord grantId={mandate.id} />}
+
+      <CompletedWork mandate={mandate} view={view} viewer={viewer} />
 
       <HistorySection mandate={mandate} />
 

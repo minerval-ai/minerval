@@ -127,7 +127,7 @@ export function MandatePanel({
                 Approve the plan and start
               </button>
               <p className="acct-note">
-                <Link href={`/mandates/${mandate.id}#plan`}>Read the plan first →</Link>
+                <Link href={`/mandates/${mandate.id}#actions`}>Read its actions first →</Link>
               </p>
             </form>
           )}

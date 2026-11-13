@@ -419,6 +419,51 @@ export async function grantmakerStanding(grantId: string): Promise<GrantmakerSta
   };
 }
 
+/** One sitting of a mandate's Grantmaker, as the run log holds it. */
+export interface GrantmakerSitting {
+  run_id: string;
+  started_at: string;
+  /** Null while it is at work. */
+  finished_at: string | null;
+  outcome: string | null;
+  steps: number;
+  /** Whether its transcript is public; a private one's page says why it is withheld. */
+  public: boolean;
+}
+
+/**
+ * The latest sittings of a mandate's Grantmaker (its review passes), newest
+ * first, so a reader can open one on the run log and watch it work: what it
+ * was told, what it read, what it commissioned and why. Each is a run
+ * metered to the mandate's budget job. Whether a transcript may be read is
+ * the run log's decision (llm/run-visibility.ts), not this list's.
+ */
+export async function grantmakerSittings(m: MandateRef, limit = 5): Promise<GrantmakerSitting[]> {
+  const rows = await rawQuery<{
+    id: string;
+    started_at: Date;
+    finished_at: Date | null;
+    outcome: string | null;
+    steps: number;
+    private_reasons: string[] | null;
+  }>(
+    `SELECT id, started_at, finished_at, outcome, steps, private_reasons
+       FROM agent_runs
+      WHERE job_id = $1 AND agent = 'mandate_review'
+      ORDER BY started_at DESC
+      LIMIT $2`,
+    [m.budgetJobId, limit]
+  );
+  return rows.map((r) => ({
+    run_id: r.id,
+    started_at: iso(r.started_at)!,
+    finished_at: iso(r.finished_at),
+    outcome: r.outcome,
+    steps: Number(r.steps),
+    public: (r.private_reasons ?? []).length === 0,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Its Grantmaker's updates
 // ---------------------------------------------------------------------------
