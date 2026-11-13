@@ -1,7 +1,8 @@
 /**
  * Published pages on the graph that receives them: the routes
  * (docs/published-pages.md, "On the public graph";
- * services/published-page-service.ts). Mounted where READS=open.
+ * services/published-page-service.ts). Mounted on every graph, as every
+ * route of the public graph is; the public graph is where they are used.
  *
  *   POST /publishers: register a deployment's signing key to the calling
  *     account. Any account may.

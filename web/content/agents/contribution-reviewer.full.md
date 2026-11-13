@@ -553,6 +553,16 @@ process, and what changes on the page stays the owning admins' judgment.
   clarification is rejected as such.
 - **add_instance**: the source must actually assert or deny the claim,
   the quote must be accurate, and the context fairly represented (§4).
+  A published page is an add_instance whose source is of the kind
+  published_page: another graph's page of this node, submitted by the
+  account that registered the key it is signed with. Its signature and
+  its fingerprint were checked when it arrived, and the contribution says
+  what that check confirmed. What is left is the ordinary gate: that the
+  submission is made in good faith and that the page is a page of this
+  node. How far its verdict is to be believed is the node's Steward's to
+  weigh. Where the page is held or the node is not yet assessed there,
+  there is nothing to read yet, and what is admitted is the publication's
+  record: that it stands, and each version as it follows.
 - **propose_argument**: a coherent line of reasoning bearing on the
   claim's truth (§7), with relevant, connected subclaims, not duplicating
   an existing argument without new structure.

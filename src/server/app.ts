@@ -173,11 +173,11 @@ export async function buildApp() {
     await app.register(showingRoutes);
     // A page shown outside leaves from here (docs/published-pages.md).
     await app.register(outboundRoutes);
-  } else {
-    // A graph anyone may read admits pages other graphs publish, as sources
-    // their publishers submit (docs/published-pages.md).
-    await app.register(publishedPageRoutes);
   }
+  // Every graph admits pages other graphs publish, as sources their
+  // publishers submit (docs/published-pages.md). It is the public graph
+  // that these are built for and tested on.
+  await app.register(publishedPageRoutes);
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool
   // either: the tools are built from the catalog of mounted routes.

@@ -186,6 +186,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing: it reads whether the boundary has a policy yet. The starting text is then saved by the call above.",
     ],
   ],
+  "src/services/outbound-service.ts": [
+    [
+      "A person's act on what leaves the deployment is recorded at `public`, where the released record of a showing outside is kept, once the route has checked the person.",
+      "Rows at `public` and nowhere else, each naming that label: the words of a proposal a person wrote, a party's release of them, and the log of each send. It reads the destination-side rows of showings outside, which are at `public`. The package itself is not built here: it is built by work at `public` (runAtLabel), which leaves this clearance and can read no other label.",
+    ],
+  ],
   "src/services/showing-service.ts": [
     [
       "Showing a page below its label keeps rows on both sides of a boundary, the page's label and the destination's, and the two may share no label.",
@@ -269,6 +275,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   ],
   "src/workers/trace-retention.ts": [["Retention deletes expired runs at every label.", "Nothing: it deletes."]],
   "scripts/enforcement-plans.ts": [["Measuring plans reads the seeded rows as the owner.", "Nothing: it explains statements."]],
+  "scripts/published-page.ts": [
+    [
+      "An operator exports the packages of pages shown outside, which are at `public`.",
+      "Nothing in the database: it reads outbound_packages, whose rows are at `public`, and writes each as a file for a person to carry.",
+    ],
+  ],
 };
 
 /** Files that open a connection themselves, and whose it is. */

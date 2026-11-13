@@ -368,9 +368,9 @@ export async function buildOutboundPackages(opts: { showingId?: string } = {}): 
         continue;
       }
       await rawQuery(
-        `INSERT INTO outbound_packages (showing_id, node_id, public_node_id, sequence, content_hash, hash, package)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
-        [n.showing_id, n.node_id, publicNodeId, body.sequence, contentHash, hash, JSON.stringify(signed)]
+        `INSERT INTO outbound_packages (showing_id, node_id, public_node_id, sequence, content_hash, hash, package, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)`,
+        [n.showing_id, n.node_id, publicNodeId, body.sequence, contentHash, hash, JSON.stringify(signed), PUBLIC_LABEL]
       );
       built++;
     }

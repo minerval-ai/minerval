@@ -63,9 +63,11 @@ describe("a source's stored text", () => {
     // the showing of a page: release-gate-service writes the page as shown
     // into a new source's text and returns none, and showing-service hands a
     // Redactor a window of a source its page drew on, through a tool named
-    // below.
+    // below. published-page-service writes a published page's text into a
+    // new source when its package is admitted, and returns none.
     expect(mentioning("services", /raw_content|rawContent\b/)).toEqual([
       "services/examination-service.ts",
+      "services/published-page-service.ts",
       "services/release-gate-service.ts",
       "services/showing-service.ts",
       "services/source-content.ts",

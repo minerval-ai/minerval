@@ -278,6 +278,18 @@ export function syncFrontendContent(contentDir: string): {
   copyFileSync(resolve(root, "docs/policies.md"), resolve(contentDir, "policies.md"));
   copyFileSync(resolve(root, "docs/rewards-policy.md"), resolve(contentDir, "rewards-policy.md"));
   copyFileSync(resolve(root, "docs/contributor-terms.md"), resolve(contentDir, "contributor-terms.md"));
+  // The check of a published page and the reading of its shape run in the
+  // reader's browser as well (docs/published-pages.md), so the web app
+  // carries the two files that do them, word for word. They import nothing
+  // but each other; only the import's spelling differs between the builds.
+  const publishedDir = resolve(root, "web/lib/published-page");
+  mkdirSync(publishedDir, { recursive: true });
+  for (const name of ["verify.ts", "shape.ts"]) {
+    writeFileSync(
+      resolve(publishedDir, name),
+      readFileSync(resolve(root, "src/published-page", name), "utf-8").replace('from "./verify.js"', 'from "./verify"')
+    );
+  }
   copyFileSync(resolve(root, "docs/terms-of-service.md"), resolve(contentDir, "terms-of-service.md"));
 
   // ---- the prompt set: the identity of everything vendored below ----------

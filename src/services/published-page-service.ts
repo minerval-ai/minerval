@@ -470,12 +470,20 @@ export async function admitPackage(examined: Awaited<ReturnType<typeof examinePa
     await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`published-page:${pkg.publisher.key_id}:${pkg.showing.id}:${pkg.node.public_id}`]);
     let publication = examined.publication;
     if (!publication) {
-      const [made] = await tx.query<PublicationRow>(
-        `INSERT INTO published_pages (account_id, key_id, showing_id, node_id, sensitivity_label) VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (key_id, showing_id, node_id) DO UPDATE SET key_id = EXCLUDED.key_id RETURNING ${PUBLICATION_COLUMNS}`,
-        [publisher.account_id, pkg.publisher.key_id, pkg.showing.id, pkg.node.public_id, currentLabel()]
-      );
-      publication = made!;
+      // Under the lock above: another request may have made the row since this one was examined.
+      const [made] = await tx.query<PublicationRow>(`SELECT ${PUBLICATION_COLUMNS} FROM published_pages WHERE key_id = $1 AND showing_id = $2 AND node_id = $3`, [
+        pkg.publisher.key_id,
+        pkg.showing.id,
+        pkg.node.public_id,
+      ]);
+      publication =
+        made ??
+        (
+          await tx.query<PublicationRow>(
+            `INSERT INTO published_pages (account_id, key_id, showing_id, node_id, sensitivity_label) VALUES ($1, $2, $3, $4, $5) RETURNING ${PUBLICATION_COLUMNS}`,
+            [publisher.account_id, pkg.publisher.key_id, pkg.showing.id, pkg.node.public_id, currentLabel()]
+          )
+        )[0]!;
     }
     let sourceId: string | null = null;
     const address = SOURCE_ADDRESS(publication!.id, pkg.sequence);

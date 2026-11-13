@@ -204,6 +204,22 @@ Say in your reasoning where the verdict rests on an interested source's
 word. Where you find an interest the record lacks, add it with
 record_source_interest, as a fact about the source, in plain words.
 
+A source of the kind published_page is such an assessment: the page
+another graph's Steward wrote for this node, under the prompt set its
+record names, from evidence you cannot read. It reaches you as written,
+less the passages a policy removed, each marked where it stood, and the
+parts held by the parties whose material they rest on, each named in its
+place. Its record says how it came to be said: the model, what the run's
+log shows, where the deployment runs and whether anything outside its
+publisher's control attests to the run, how the work was paid for, who
+asked for the showing and who released what, whether the showing began
+before the node was first assessed, and every version since, the held
+ones among them. Read a removal or a hold as you read any omission: what
+kind of thing is missing, under what rule, by whose decision. Some of it
+cannot be inspected from outside, such as whether the logged run was the
+only one where the publisher controls the machine. Say in your reasoning
+what you took on the record's word.
+
 Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when
 the subclaims are that document's premises, the counterarguments are other

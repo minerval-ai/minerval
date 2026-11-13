@@ -77,6 +77,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/db/migration-head.ts:_head": "The newest migration's number and tag, read from a file in the repository.",
   "src/llm/provider-clearance.ts:settingFoundWhole": "The provider setting once every label it names was found defined: the configuration object itself, which is the same for every reader.",
   "src/services/prompt-set.ts:cached": "The prompt set, read from files in the repository.",
+  "src/services/outbound-service.ts:cachedSigner": "The deployment's signing key for pages shown outside, parsed once from the configuration. No rows.",
   "src/services/queue-service.ts:_sqsClient": "The message queue's client.",
   "src/services/setup-service.ts:registry": "Where each prompt part comes from in the repository.",
   "src/services/stripe-service.ts:_stripe": "The payment provider's client.",

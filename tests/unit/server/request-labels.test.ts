@@ -99,6 +99,8 @@ describe("every route that writes has a rule for its label", () => {
       "POST /grant-conversations",
       "POST /grants",
       "POST /pages",
+      "POST /published-pages",
+      "POST /publishers",
       "POST /sources",
     ]);
   });
