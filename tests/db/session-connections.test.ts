@@ -39,9 +39,11 @@ describe("the session pools together", () => {
     const most: number[] = [];
     for (let round = 0; round < 2; round++) {
       for (const label of ["public", ...LABELS]) {
-        // Fifteen statements at once at this label: fifteen connections of its pool.
+        // Eight statements at once at this label: eight connections of its
+        // pool. Five sessions of eight is forty where each pool keeps its
+        // own, and the burst is kept small because the cluster is shared.
         await runAtLabel(label, "a burst of work at one label", () =>
-          Promise.all(Array.from({ length: 15 }, () => rawQuery(`SELECT pg_sleep(0.05)`)))
+          Promise.all(Array.from({ length: 8 }, () => rawQuery(`SELECT pg_sleep(0.05)`)))
         );
         most.push(openSessionConnections());
       }
