@@ -451,6 +451,17 @@ const configSchema = z.object({
   // short-lived token: a derived password would change with it, and tasks
   // started before the change could no longer open such a connection.
   clearedRolePassword: z.string().optional(),
+  // How connections to the database are encrypted (db/client.ts,
+  // databaseSsl). Unset is what it always was: in production, TLS verified
+  // against the RDS certificate bundle the image carries, and none
+  // elsewhere. A deployment whose Postgres is not on RDS says which of two
+  // things holds: DATABASE_CA_FILE names the certificate authority its
+  // server's certificate is verified against, or DATABASE_TLS=off says the
+  // database is reached over a network that is the deployment's own (the
+  // packaged Compose network, docs/self-hosting.md) and connections are
+  // not encrypted. There is no setting that encrypts without verifying.
+  databaseTls: z.enum(["off"]).optional(),
+  databaseCaFile: z.string().optional(),
   /** The replica read-only SQL runs on, and the two login roles (infra/lib/database-stack.ts). */
   sqlDbHost: z.string().optional(),
   sqlDbPort: z.coerce.number().optional(),
@@ -1731,6 +1742,8 @@ export function loadConfig(): Config {
     sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
     sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
     clearedRolePassword: process.env.CLEARED_ROLE_PASSWORD || undefined,
+    databaseTls: process.env.DATABASE_TLS || undefined,
+    databaseCaFile: process.env.DATABASE_CA_FILE || undefined,
     sqlDbHost: process.env.SQL_DB_HOST,
     sqlDbPort: process.env.SQL_DB_PORT,
     sqlAgentDbUser: process.env.SQL_AGENT_DB_USERNAME,
@@ -1838,6 +1851,14 @@ export function loadConfig(): Config {
       sqlAgentDatabaseUrl: _config.sqlAgentDatabaseUrl ?? url(_config.sqlAgentDbUser, _config.sqlAgentDbPassword),
       sqlCallerDatabaseUrl: _config.sqlCallerDatabaseUrl ?? url(_config.sqlCallerDbUser, _config.sqlCallerDbPassword),
     };
+  }
+
+  if (_config.databaseTls === "off" && _config.databaseCaFile) {
+    _config = null;
+    throw new Error(
+      "DATABASE_TLS=off and DATABASE_CA_FILE are both set. One says connections to the database are not " +
+        "encrypted and the other names the authority to verify its certificate against. Set one of them."
+    );
   }
 
   // Settings that only make sense together. Each refusal says what to change.

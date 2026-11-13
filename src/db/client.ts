@@ -27,11 +27,21 @@ let _pool: pg.Pool | null = null;
 
 /**
  * TLS for every connection to the database, the pool's and read-only SQL's
- * (services/sql-service.ts) alike: in production, verified against the RDS
- * CA bundle, since RDS refuses unencrypted connections there.
+ * (services/sql-service.ts) alike. With nothing set: in production,
+ * verified against the RDS CA bundle, since RDS refuses unencrypted
+ * connections there, and none elsewhere. A deployment on another Postgres
+ * names its own certificate authority (DATABASE_CA_FILE), in any
+ * environment, or says its database is on its own network and connections
+ * are not encrypted (DATABASE_TLS=off). A connection is never encrypted
+ * without its server being verified.
  */
 export function databaseSsl(): pg.ClientConfig["ssl"] {
-  if (loadConfig().env !== "production") return undefined;
+  const config = loadConfig();
+  if (config.databaseTls === "off") return undefined;
+  if (config.databaseCaFile) {
+    return { ca: readFileSync(config.databaseCaFile, "utf8"), rejectUnauthorized: true };
+  }
+  if (config.env !== "production") return undefined;
   return {
     ca: readFileSync(join(process.cwd(), "rds-ca-bundle.pem"), "utf8"),
     rejectUnauthorized: true,

@@ -12,8 +12,8 @@ network. This directory is the whole of it:
 | `requirements.txt` | The Python libraries in the image, pinned. |
 | `VERSION` | The service's version, recorded on every kept analysis. Raise it when the service's behavior changes. |
 
-The Docker Compose packaging is a separate change. This page says what it
-has to provide.
+`deploy/compose.yml` runs it as part of a packaged deployment
+(`docs/self-hosting.md`). This page says what any packaging has to provide.
 
 ## What the service does
 
@@ -137,15 +137,10 @@ machine has a network and a writable disk. That is the probe working.
 
 ## Not yet verified
 
-- **The image has not been built.** The Dockerfile was written and read,
-  not run: the base image, the package names and the pinned library
-  versions have not been through a build.
-- **The probe's passing path has not been seen in a container.** Run as a
-  local process, the probe passes the checks that are the service's own
-  doing and fails the ones that are the container's, which the tests
-  assert. That every check passes in a container set up as this page says,
-  and that Docker's default seccomp profile lets the three Landlock system
-  calls through, are still to be seen.
+- **Seen once, on one kernel.** The image was built from this Dockerfile
+  and run by `deploy/compose.yml` on Linux 6.18 (Landlock ABI 7) under
+  Docker Engine 29 with its default seccomp profile: every check of the
+  probe passed. No other kernel, runtime or seccomp profile has been tried.
 - **Older kernels give a command less.** Landlock refuses TCP to a command
   only from Linux 6.7, and holds a command's signals to its own processes
   only from 6.12. Before 6.7, that a command has no network rests on the

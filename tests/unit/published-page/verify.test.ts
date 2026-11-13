@@ -129,7 +129,12 @@ describe("the check of a published page", () => {
     const check = await verifyPublishedPage(pkg, { publisherKey: key.publicKey });
     expect(check.failed).toEqual([]);
     expect(check.confirmed.some((c) => c.startsWith("The page is held, and its 6 parts by kind and hash rebuild the fingerprint"))).toBe(true);
-    expect(JSON.stringify(pkg)).not.toContain("4711");
+    // No part's words are in a held page. The check is on phrases with a
+    // space in them: a bare run of digits such as the figure itself can
+    // turn up by chance in a hash or a signature, which carry none.
+    for (const words of ["The meters show", "a target of 4500", "The target was met", "From the meters"]) {
+      expect(JSON.stringify(pkg)).not.toContain(words);
+    }
   });
 
   it("uses the same hash and key id as the code that signs", async () => {

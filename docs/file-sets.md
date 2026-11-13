@@ -497,18 +497,13 @@ and rests on its set's party.
 
 ## Not yet verified
 
-For whoever packages the sandbox. The same list is in `sandbox/README.md`.
+The same list is in `sandbox/README.md`.
 
-- **The image has not been built.** `sandbox/Dockerfile` was written and
-  read, not run: the base image, the package names and the pinned library
-  versions have not been through a build.
-- **The probe's passing path has not been seen in a container.** Run as a
-  local process, the probe passes the checks that are the service's own
-  doing and fails the ones that are the container's (a writable store, a
-  route out), which the tests assert. That every check passes in a
-  container set up as `sandbox/README.md` says, and that Docker's default
-  seccomp profile lets the Landlock system calls through, are still to be
-  seen.
+- **Seen once, on one kernel.** The image was built from
+  `sandbox/Dockerfile` and run by `deploy/compose.yml`
+  ([self-hosting.md](self-hosting.md)) on Linux 6.18 (Landlock ABI 7) under
+  Docker Engine 29 with its default seccomp profile: every check of the
+  probe passed. No other kernel, runtime or seccomp profile has been tried.
 - **Older kernels give a command less.** Landlock refuses TCP to a command
   only from Linux 6.7, and holds a command's signals to its own processes
   only from 6.12. Before 6.7, that a command has no network rests on the

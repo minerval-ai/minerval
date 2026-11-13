@@ -11,31 +11,43 @@
 // the gate in the root layout (components/MembersGate.tsx) tells a visitor
 // why they see nothing, and this is what keeps the page they asked for from
 // being rendered at all.
-import { NextResponse } from "next/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { auth } from "./auth";
 import { fetchMyPermissions } from "./lib/account-api";
 import { GATE_PATH, GATE_REFUSAL, gateDecision, wantsPage } from "./lib/gate";
 
-export const proxy = auth(async (request) => {
-  const externalId = request.auth?.externalId ?? null;
-  let member = false;
-  if (externalId) {
-    try {
-      member = (await fetchMyPermissions(externalId)).member;
-    } catch (err) {
-      // What could not be checked is not let through. The gate page says so.
-      console.error("[minerval] the gate could not read the signed-in account's permissions:", err);
+// The gate page is this app's own, so the request is rewritten to it at the
+// address the app itself was asked at (`ownUrl`), which is not always the
+// address in `request.url` below: where the site's public address is set
+// (AUTH_URL), Auth.js hands the handler a request rewritten to that
+// address, and a rewrite to it is a request out to the public address. In
+// a container that address is another port or another host, which the app
+// cannot reach from inside, and every page then failed.
+const gate = (ownUrl: string) =>
+  auth(async (request) => {
+    const externalId = request.auth?.externalId ?? null;
+    let member = false;
+    if (externalId) {
+      try {
+        member = (await fetchMyPermissions(externalId)).member;
+      } catch (err) {
+        // What could not be checked is not let through. The gate page says so.
+        console.error("[minerval] the gate could not read the signed-in account's permissions:", err);
+      }
     }
-  }
-  switch (gateDecision({ member, wantsPage: wantsPage(request.headers) })) {
-    case "through":
-      return NextResponse.next();
-    case "gate_page":
-      return NextResponse.rewrite(new URL(GATE_PATH, request.url));
-    case "refuse":
-      return NextResponse.json(GATE_REFUSAL, { status: 401 });
-  }
-});
+    switch (gateDecision({ member, wantsPage: wantsPage(request.headers) })) {
+      case "through":
+        return NextResponse.next();
+      case "gate_page":
+        return NextResponse.rewrite(new URL(GATE_PATH, ownUrl));
+      case "refuse":
+        return NextResponse.json(GATE_REFUSAL, { status: 401 });
+    }
+  });
+
+export function proxy(request: NextRequest, event: NextFetchEvent) {
+  return (gate(request.url) as unknown as (request: NextRequest, event: NextFetchEvent) => Promise<Response>)(request, event);
+}
 
 // Every request but the ones signing in needs before there is a session
 // (the sign-in handlers, and the stylesheet, scripts and icons of the gate
