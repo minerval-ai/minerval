@@ -285,7 +285,11 @@ export async function fileIssueForReport(
     if (!githubIssuesConfigured()) return null;
     if (await staysInside(row.id)) return null;
     const config = loadConfig();
-    if (row.origin === "external" && !config.githubIssuesIncludeExternal) {
+// A report its sender asked to be kept to the maintainers (POST /reports
+    // with private: true) is never filed as an issue, whatever the setting
+    // for outside reports says: an issue may be read by anyone.
+    if ((row.context_refs as Record<string, unknown> | null)?.private === true) return null;
+        if (row.origin === "external" && !config.githubIssuesIncludeExternal) {
       return null;
     }
     const labels = labelsForReport(row);

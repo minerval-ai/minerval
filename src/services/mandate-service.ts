@@ -817,3 +817,64 @@ export function mandateText(mandate: GrantMandate | null): MandateText {
     disclosure: str("disclosure"),
   };
 }
+
+/** What a mandate's officers are told when one of its funders raises a node: fixed words, so the route carries nothing a funder wrote. */
+export const FUNDER_RAISE_SUMMARY = "A funder of this mandate asks for a fresh assessment of this node.";
+
+/**
+ * A funder puts a node in front of a mandate's officers
+ * (docs/outward-acts.md, "Keeping the public version current"; constitution
+ * §19: "the work the system puts in front of it"). Money moves between
+ * funders and mandates and command never does, so this asks: the officers
+ * decide under the operating policy. Only an account with money held in
+ * the mandate may ask, and the item is fixed words with the node: nothing
+ * the funder wrote reaches the officers this way.
+ */
+export async function raiseNodeToMandate(input: {
+  grantId: string;
+  userId: string;
+  nodeId: string;
+}): Promise<
+  | { ok: true; folded: boolean; in_words: string }
+  | { ok: false; code: "NOT_FOUND" | "NOT_OPEN" | "NOT_A_FUNDER" | "NODE_NOT_FOUND"; message: string }
+> {
+  const [row] = await rawQuery<GrantRow>(`${GRANT_SELECT} WHERE g.id = $1`, [input.grantId]);
+  if (!row) return { ok: false, code: "NOT_FOUND", message: "Mandate not found" };
+  if (row.status !== "active") return { ok: false, code: "NOT_OPEN", message: `This mandate is ${row.status} and takes nothing new` };
+  const [held] = await rawQuery<{ held: string | null }>(
+    `SELECT -SUM(amount_micro_usd)::bigint AS held FROM owl_ledger WHERE job_id = $1 AND user_id = $2 AND reason = 'escrow_hold'`,
+    [row.budget_job_id, input.userId]
+  );
+  if (!(Number(held?.held ?? 0) > 0)) {
+    return {
+      ok: false,
+      code: "NOT_A_FUNDER",
+      message: "Only an account with money in this mandate may put a node in front of its officers. Anyone may fund the node's assessment directly, or contribute to the mandate first.",
+    };
+  }
+  const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id = $1 AND state = 'active'`, [input.nodeId]);
+  if (!node) return { ok: false, code: "NODE_NOT_FOUND", message: "No active node has that id." };
+  const { ensureAssessActions } = await import("./action-service.js");
+  await ensureAssessActions(node.id).catch(() => undefined);
+  const [action] = await rawQuery<{ id: string }>(
+    `SELECT id FROM actions WHERE claim_id = $1 AND kind IN ('assess', 'reassess') AND status = 'open' ORDER BY created_at DESC LIMIT 1`,
+    [node.id]
+  );
+  const { raiseToMandate } = await import("./mandate-inbox-service.js");
+  const raised = await raiseToMandate({
+    grantId: input.grantId,
+    kind: "raised",
+    targetNodeId: node.id,
+    source: "a funder of this mandate",
+    summary: FUNDER_RAISE_SUMMARY,
+    detail: { asked: "a fresh assessment", ...(action ? { action_id: action.id } : {}) },
+  });
+  if (!raised) return { ok: false, code: "NOT_FOUND", message: "Mandate not found" };
+  return {
+    ok: true,
+    folded: raised.folded,
+    in_words: raised.folded
+      ? "This node was already waiting in front of the mandate's officers. Nothing new was added."
+      : "The node is in front of the mandate's officers, who decide under its operating policy whether its money pays for a fresh assessment. The request and their decision are on the mandate's page.",
+  };
+}

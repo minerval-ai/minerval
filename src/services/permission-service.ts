@@ -577,6 +577,9 @@ export async function listAccounts(input: { q?: string; limit?: number } = {}): 
  */
 /** The administrative acts logged besides grants (administrative_events.action). */
 export type AdministrativeAction =
+  // A standing choice about what leaves the deployment with nobody acting
+  // was set or changed (outward-acts-service.ts, setStandingChoice).
+  | "standing_choice_set"
   | "label_defined"
   | "label_read_added"
   | "label_read_removed"

@@ -114,6 +114,7 @@ describe("every route that writes has a rule for its label", () => {
       "POST /pages",
       "POST /published-pages",
       "POST /publishers",
+      "POST /reports",
       "POST /sources",
       "POST /standing-mandates/:name",
     ]);

@@ -70,7 +70,7 @@ const STATUS: Record<string, number> = {
 };
 
 /** The person acting, with the permissions they hold as the record will show them (routes/showings.ts has the same). */
-async function actorOf(request: FastifyRequest): Promise<GateActor> {
+export async function actorOf(request: FastifyRequest): Promise<GateActor> {
   const standing = standingOf(request.auth);
   const names = new Map((await listParties()).map((p) => [p.id, p.name]));
   const holding: string[] = [];

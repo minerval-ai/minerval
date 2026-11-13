@@ -51,6 +51,9 @@ describe("the mirror manifest", () => {
       "argument_evaluations",
       "source_interests",
       "judgment_inputs",
+      "feed_contributions",
+      "feed_requests",
+      "feed_request_targets",
     ]);
     for (const table of tables) {
       const at = names.indexOf(table.name);

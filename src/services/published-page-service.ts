@@ -213,7 +213,13 @@ function runLogWords(log: NonNullable<PublishedPagePackage["record"]["made"]>["r
  * reader without a page to render it on reads. The facts first, each from
  * the package or from the check made when it arrived, then the page.
  */
-export function sourceTextOf(pkg: PublishedPagePackage, publisher: { name: string; declared_interest: string | null }, check: PackageCheck): string {
+export function sourceTextOf(
+  pkg: PublishedPagePackage,
+  publisher: { name: string; declared_interest: string | null },
+  check: PackageCheck,
+  /** The publisher's other pages and the requests it took up, from this graph's record (publisher-record-service.ts). */
+  publishersRecord: string[] = []
+): string {
   const shape = shapeOfPublishedPage(pkg)!;
   const made = pkg.record.made;
   const removals = Object.entries(shape.removals);
@@ -253,6 +259,24 @@ export function sourceTextOf(pkg: PublishedPagePackage, publisher: { name: strin
       .map((a) => `${day(a.at)} ${a.by}${a.holding.length > 0 ? ` (holding ${a.holding.join(", ")})` : ""} ${a.what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${a.reason}` : ""}`)
       .join("; ")}.`,
     `Versions made while the showing stood: ${pkg.record.versions.map(versionLine).join("; ")}.`,
+    ...(pkg.deployment.keeps_public_versions_current
+      ? [
+          `The deployment's setting for asking this graph for a fresh public assessment when its own version of a public node changes: ${pkg.deployment.keeps_public_versions_current.setting}` +
+            (pkg.deployment.keeps_public_versions_current.setting === "on"
+              ? pkg.deployment.keeps_public_versions_current.a_public_mandate_pays_for_it
+                ? ", and a public mandate of its own pays for it."
+                : ", and no public mandate of its own pays for it, so nothing is asked."
+              : "."),
+        ]
+      : []),
+    ...((pkg.record.said_back ?? []).length > 0
+      ? [
+          `Contributions made here through this page that the deployment says it received: ${pkg.record.said_back!
+            .map((e) => `${day(e.received_at)}, ${e.read}${e.reassessment ? `, reassessment ${e.reassessment}` : ""}`)
+            .join("; ")}.`,
+        ]
+      : []),
+    ...(publishersRecord.length > 0 ? [`From this graph's own record of the publisher: ${publishersRecord.join(" ")}`] : []),
     `What this graph checked when the package arrived: ${check.confirmed.join(" ")}`,
     `What that check cannot show: ${check.cannot_show.join(" ")}`,
     "",
@@ -488,7 +512,8 @@ export async function admitPackage(examined: Awaited<ReturnType<typeof examinePa
     let sourceId: string | null = null;
     const address = SOURCE_ADDRESS(publication!.id, pkg.sequence);
     if (shown) {
-      const text = sourceTextOf(pkg, publisher, check);
+      const { publisherFacts, publisherFactsLines } = await import("./publisher-record-service.js");
+      const text = sourceTextOf(pkg, publisher, check, publisherFactsLines(await publisherFacts(publication.account_id, { except: publication.id }), "its other pages"));
       const [source] = await tx.query<{ id: string }>(
         `INSERT INTO sources (url, title, content_hash, raw_content, source_type, publisher, published_date, page_url_hash, sensitivity_label)
          VALUES ($1, $2, $3, $4, 'published_page', $5, $6, '', $7) RETURNING id`,
@@ -805,6 +830,9 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
       acts: pkg.record.acts,
     },
     versions: pkg.record.versions,
+    // Contributions made here through this page, each with what became of it (publisher-record-service.ts).
+    said_back: await (await import("./publisher-record-service.js")).saidBackOnPage(publication.id),
+    keeps_public_versions_current: pkg.deployment.keeps_public_versions_current ?? null,
     check: chosen.checked,
     packages: packages.map((p) => ({ package: p.sequence, state: p.state, received_at: p.received_at.toISOString(), hash: p.hash })),
   };
@@ -843,6 +871,15 @@ export async function publisherRecord(accountId: string): Promise<Record<string,
       retired_at: r.retired_at?.toISOString() ?? null,
     })),
     published_pages: await listPublishedPages({ accountId }),
+    // What this graph's own record holds of the publisher, as counts and dates (publisher-record-service.ts).
+    record: await (async () => {
+      const { publisherFacts, publisherFactsLines } = await import("./publisher-record-service.js");
+      const facts = await publisherFacts(accountId);
+      return { facts, in_words: publisherFactsLines(facts) };
+    })(),
+    record_note:
+      "These are counts and dates read from this graph's record when the page is opened. They are not a score, and they say nothing about how far " +
+      "a page is to be believed: that is weighed for each page by the Steward of the node it is on.",
     note:
       "A publisher is an account that registered a deployment's signing key. Anyone can run a deployment and register one, so the registration says who " +
       "submits pages under the key and nothing about how far they are to be believed. Where the deployment runs is the publisher's own statement.",

@@ -204,7 +204,7 @@ export async function stewardTierCostEstimates(): Promise<{
  * an audit has no claim at all.
  */
 export async function estimateLedgerKindCostMicroUsd(
-  kind: "curate" | "audit" | "request_scope" | "redact"
+  kind: "curate" | "audit" | "request_scope" | "redact" | "inbound_review" | "redact_report"
 ): Promise<number> {
   const config = loadConfig();
   const windowDays = config.costEstimateWindowDays ?? 14;
@@ -242,7 +242,7 @@ export async function estimateLedgerKindCostMicroUsd(
   const priorOwls =
     kind === "curate"
       ? policy.est_curate_cost_owls
-      : kind === "audit" || kind === "redact"
+      : kind === "audit" || kind === "redact" || kind === "inbound_review" || kind === "redact_report"
         ? // A redaction reads one page against one policy, as an audit reads
           // one decision against the record: until the ledger has its own
           // series of redactions, the audit's prior stands for it.

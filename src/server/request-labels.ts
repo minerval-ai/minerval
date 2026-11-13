@@ -126,6 +126,11 @@ const OUTBOUND =
   "What a showing outside has released is kept at `public`, and so is the record of its leaving: packages, " +
   "proposals and sends. The route checks the person's permission and the service writes those rows at `public` " +
   "as the tables' owner (services/outbound-service.ts). It reads nothing at the person's other labels.";
+const OUTWARD =
+  "An act on the public graph in the organization's name, or a record of one. The log of such acts and the standing choices are kept at " +
+  "`public` and written as the tables' owner once the route has checked the person; a row that belongs at another label (an adopted " +
+  "request, a report's sending, something left out) is written by work at that label, which the service names after checking that the " +
+  "person reads it (services/outward-acts-service.ts, services/report-sending-service.ts).";
 const OPERATOR =
   "Guarded by the operator key, which names no person and carries no clearance: the request reads and writes `public` alone.";
 const ADMINISTRATION =
@@ -177,6 +182,8 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /budget-jobs/:id/topup": from("budget_job", "id", "Adds to this job's budget."),
   "POST /budget-jobs/:id/cancel": from("budget_job", "id", "Cancels this job."),
   "POST /requests/:request_id/contribute": from("request", "request_id", "The money is for work on this request."),
+  "POST /requests/:request_id/take-up": from("request", "request_id", "A statement on this request's record."),
+  "POST /requests/:request_id/take-up/decline": from("request", "request_id", "A statement on this request's record."),
 
   // ---- mandates ----
   "POST /grants": { rule: "chosen", why: "A mandate created directly is new." },
@@ -185,6 +192,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /grants/:id/cancel": from("mandate", "id", "Stops this mandate."),
   "POST /mandates/:id/contribute": from("mandate", "id", "Backs this mandate."),
   "POST /mandates/:id/withdraw": from("mandate", "id", "Takes a funder's share back from this mandate."),
+  "POST /mandates/:id/raise": from("mandate", "id", "Puts a node in front of this mandate's officers."),
   "POST /grant-conversations": {
     rule: "chosen",
     why: "A granting conversation is new, and the mandate drafted in it takes its label.",
@@ -232,6 +240,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
 
   // ---- reports and findings (service callers) ----
   "PATCH /reports/:id": from("report", "id", "Sets this report's triage status."),
+  "POST /reports": { rule: "chosen", why: "A report an account files is new." },
   "PATCH /findings/:id": from("finding", "id", "Withdraws or restores this finding."),
 
   // ---- mathematics and prizes ----
@@ -378,6 +387,24 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /outbound/proposals": { rule: "none", why: OUTBOUND },
   "POST /outbound/proposals/:proposal_id/release": { rule: "none", why: OUTBOUND },
   "POST /outbound/registration": { rule: "none", why: "Signs a statement with the deployment's key and writes nothing." },
+  "PUT /outside/choices/:key": { rule: "none", why: OUTWARD },
+  "POST /outside/requests/:public_request_id/adopt": { rule: "none", why: OUTWARD },
+  "POST /outside/requests/adopted/:adoption_id/take-up": { rule: "none", why: OUTWARD },
+  "POST /outside/requests/adopted/:adoption_id/decline": { rule: "none", why: OUTWARD },
+  "POST /outside/mandates": { rule: "none", why: OUTWARD },
+  "POST /outside/mandates/conversations/:conversation_id/messages": { rule: "none", why: OUTWARD },
+  "POST /outside/mandates/conversations/:conversation_id/fund": { rule: "none", why: OUTWARD },
+  "POST /outside/mandates/:mandate_id/back": { rule: "none", why: OUTWARD },
+  "POST /outside/nodes/:node_id/fund": { rule: "none", why: OUTWARD },
+  "POST /outside/nodes/:node_id/raise": { rule: "none", why: OUTWARD },
+  "POST /outside/keep-current/leave-out": { rule: "none", why: OUTWARD },
+  "DELETE /outside/keep-current/leave-out/:id": { rule: "none", why: OUTWARD },
+  "POST /outside/reports/:sending_id/send": { rule: "none", why: OUTWARD },
+  "POST /outside/reports/:sending_id/send-facts": { rule: "none", why: OUTWARD },
+  "POST /outside/work/:action_id/commission": {
+    rule: "none",
+    why: "The money is for one ledger row, which is read with the person's own clearance and runs at its own label; the allocation is written by the commission service as every commission's is.",
+  },
 
   // ---- published pages ----
   "POST /publishers": { rule: "chosen", why: "A registration is new: the record that an account publishes for a deployment's key." },

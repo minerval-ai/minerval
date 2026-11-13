@@ -4785,6 +4785,16 @@ export const contributions = pgTable(
       (): any => prizeClaims.id,
       { onDelete: "set null" }
     ),
+    // A contribution made through a published page on its node
+    // (docs/outward-acts.md, "What the public says back"): a challenge to
+    // the page, or a proposal to the node made from it. Which page it
+    // names. It is reviewed as any contribution on the node is. The graph
+    // that published the page learns of it from the mirror's feed. SET NULL
+    // so the contribution outlives a publication.
+    aboutPublishedPageId: uuid("about_published_page_id").references(
+      (): any => publishedPages.id,
+      { onDelete: "set null" }
+    ),
     // Crash-safe processing claim, mirroring the Steward's stewarded_at
     // reclaim (#218): the pipeline handler atomically stamps this before
     // running, so duplicate messages (recovery-sweep re-enqueues, SQS
@@ -5955,6 +5965,13 @@ export const agentReports = pgTable(
     // regression and moves it back to new; withdrawn is the reporter's own
     // reversal through update_issue.
     status: text("status").notNull().default("new"),
+    // In a deployment that keeps its agents' reports inside
+    // (docs/outward-acts.md, "An agent's report, sent to Minerval's
+    // maintainers"): what Audit's triage found the report to be about.
+    // 'minerval' is the machinery every deployment runs, and only such a
+    // report is offered for sending; 'deployment' is this deployment's own
+    // setup, data or connections. NULL until triage says.
+    about: text("about"),
     triageNote: text("triage_note"),
     // Who moved the status last: an audit run id, a service caller, a name.
     triagedBy: text("triaged_by"),
@@ -6663,11 +6680,23 @@ export const requestWork = pgTable(
     budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" }),
     quoteMicroUsd: bigint("quote_micro_usd", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // An account's own statement that it is taking the request up
+    // (docs/outward-acts.md, "Taking up a request in public"), as distinct
+    // from work a run recorded. It commits the account to doing the work
+    // well, not to a result, and funds nothing. `outcome` stays NULL until
+    // the account says it will not do the work ('declined', with a reason
+    // from a fixed list in decline_reason) or takes the statement back
+    // (withdrawn_at). What else followed is read from the record: a page
+    // the account published on a node the request bears on.
+    takenUp: boolean("taken_up").notNull().default(false),
+    declineReason: text("decline_reason"),
+    outcomeAt: timestamp("outcome_at", { withTimezone: true }),
     // The label of the run that recorded the work (src/labels.ts).
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_request_work_request").on(table.requestId),
+    uniqueIndex("uq_request_work_taken_up").on(table.requestId, table.contributorId).where(sql`taken_up`),
     check(
       "ck_request_work_outcome",
       sql`${table.outcome} IS NULL OR ${table.outcome} IN ('met', 'partly_met', 'negative', 'cannot_be_met', 'declined', 'revise')`
@@ -7871,6 +7900,10 @@ export const outboundSends = pgTable(
     result: text("result").notNull(),
     // What the public graph answered, or why it could not be reached.
     detail: text("detail"),
+    // The publication's id on the public graph, as its answer to an
+    // admitted package gave it. A contribution made there through the page
+    // names this id, which is how it is known to be about a page of ours.
+    publicPageId: uuid("public_page_id"),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
     sensitivityLabel: sensitivityLabelColumn(),
   },
@@ -8001,5 +8034,310 @@ export const publishedPagePackages = pgTable(
   (table) => [
     uniqueIndex("uq_published_page_packages_sequence").on(table.publishedPageId, table.sequence),
     uniqueIndex("uq_published_page_packages_hash").on(table.hash),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// Outward acts, and what comes back (docs/outward-acts.md)
+//
+// Showing a page (above) is one way a private graph reaches the public one.
+// These tables are the rest: what the public says back about a page it was
+// shown, public requests taken up, public mandates and funding from inside,
+// keeping the public version of a node current, and an agent's report sent
+// to Minerval's maintainers. Every act is a call to a route any account on
+// the public graph could call, under the organization's own account.
+// ---------------------------------------------------------------------------
+
+// The public graph's contribution record and its requests, as the mirror's
+// feed carries them (services/mirror-manifest.ts). On a graph that
+// publishes a feed these are filled from `contributions` and `requests`
+// just before each cut (mirror-feed-service.ts, refreshFeedRecords), with
+// the public columns and no account. On a deployment that mirrors they
+// hold what the feed brought. They are tables of their own, and not
+// mirrored rows in `contributions` and `requests`, because those tables are
+// working state: a mirrored contribution there would be picked up by this
+// deployment's own review, and a mirrored request by its own Researcher.
+export const feedContributions = pgTable(
+  "feed_contributions",
+  {
+    id: uuid("id").primaryKey(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    contributionType: text("contribution_type").notNull(),
+    content: text("content").notNull(),
+    evidenceUrls: text("evidence_urls").array().notNull().default([]),
+    aboutPublishedPageId: uuid("about_published_page_id"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    reviewStatus: text("review_status").notNull(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [
+    originCheck("ck_feed_contributions_origin", table.origin),
+    index("idx_feed_contributions_claim").on(table.claimId),
+    index("idx_feed_contributions_page").on(table.aboutPublishedPageId),
+  ]
+);
+
+export const feedRequests = pgTable(
+  "feed_requests",
+  {
+    id: uuid("id").primaryKey(),
+    ask: text("ask").notNull(),
+    why: text("why").notNull(),
+    satisfiedBy: text("satisfied_by").notNull(),
+    whoCould: text("who_could"),
+    addressedTo: text("addressed_to"),
+    bearsOnText: text("bears_on_text"),
+    state: text("state").notNull(),
+    stateNote: text("state_note"),
+    filedAt: timestamp("filed_at", { withTimezone: true }).notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [originCheck("ck_feed_requests_origin", table.origin)]
+);
+
+export const feedRequestTargets = pgTable(
+  "feed_request_targets",
+  {
+    id: uuid("id").primaryKey(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => feedRequests.id, { onDelete: "cascade" }),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [
+    originCheck("ck_feed_request_targets_origin", table.origin),
+    index("idx_feed_request_targets_request").on(table.requestId),
+    index("idx_feed_request_targets_claim").on(table.claimId),
+  ]
+);
+
+// Every act of this deployment on the public graph other than sending a
+// package (outbound_sends has those): who did it, holding what, or the
+// standing choice it went under, what was sent, and what the public graph
+// answered. Rows are added and never changed. `sent` holds exactly what
+// left, so that the log is also the check on what crossed. At `public`:
+// each act is public on the public graph, so every member may read that it
+// was made.
+export const outwardActs = pgTable(
+  "outward_acts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // 'take_up_request' | 'decline_request' | 'open_public_mandate' |
+    // 'public_mandate_message' | 'fund_public_mandate' | 'back_public_mandate' |
+    // 'fund_public_node' | 'keep_current' | 'send_report' | 'send_failure_facts'.
+    kind: text("kind").notNull(),
+    actedBy: uuid("acted_by").references((): AnyPgColumn => contributors.id),
+    holding: text("holding").array().notNull().default([]),
+    // The standing choice it went under, when nobody acted: its key in outward_settings.
+    underStandingChoice: text("under_standing_choice"),
+    // The public graph's id for what was acted on: a request, a node, a mandate, a conversation, a report.
+    publicRef: text("public_ref"),
+    sent: jsonb("sent").notNull().default({}),
+    // 'done' | 'refused' | 'failed'.
+    result: text("result").notNull(),
+    publicGraphSaid: text("public_graph_said"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_outward_acts_at").on(table.at),
+    check("ck_outward_acts_result", sql`${table.result} IN ('done', 'refused', 'failed')`),
+    check(
+      "ck_outward_acts_actor",
+      sql`(${table.actedBy} IS NULL) <> (${table.underStandingChoice} IS NULL)`
+    ),
+  ]
+);
+
+// The deployment's standing choices about what goes out with nobody
+// acting. One row per choice, the latest; each change is also a row in
+// administrative_events with who made it. `told` is the text the person was
+// shown about what the choice shows outside, as they were shown it.
+//   keep_public_current: { on, public_mandate_id, delay_hours, batch_hours }
+//   send_failure_facts:  { on }
+//   send_redacted_reports: { on }
+export const outwardSettings = pgTable("outward_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  told: text("told").notNull(),
+  setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+  holding: text("holding").array().notNull().default([]),
+  setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+  sensitivityLabel: sensitivityLabelColumn(),
+});
+
+// A contribution made on the public graph through a page this deployment
+// published, as it came in with the mirror. The contribution's own text is
+// in feed_contributions and is read by one run only: the Contribution
+// Reviewer's, at `public`, which writes `summary` here. Work at any other
+// label is given the summary and never the text. `repeats` names an
+// earlier row that says the same thing: a repeat is counted once and opens
+// nothing. The reassessment a contribution opens is at the label the page
+// came from, so what became of it is copied here in fixed words for the
+// package that tells the outside ('not_funded', 'funded', 'made').
+export const inboundContributions = pgTable(
+  "inbound_contributions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    publicContributionId: uuid("public_contribution_id").notNull(),
+    publicPageId: uuid("public_page_id").notNull(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    contributionType: text("contribution_type").notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    // 'to_read' | 'summarized' | 'repeat' | 'set_aside'.
+    state: text("state").notNull().default("to_read"),
+    summary: text("summary"),
+    repeats: uuid("repeats"),
+    // For 'set_aside': one of a fixed list (inbound-service.ts).
+    setAsideBecause: text("set_aside_because"),
+    readByRun: uuid("read_by_run"),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    actionId: uuid("action_id"),
+    // What became of the reassessment it opened, for the outside.
+    reassessment: text("reassessment"),
+    reassessmentAt: timestamp("reassessment_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_inbound_contributions_public").on(table.publicContributionId),
+    index("idx_inbound_contributions_node").on(table.showingId, table.nodeId),
+    check("ck_inbound_contributions_state", sql`${table.state} IN ('to_read', 'summarized', 'repeat', 'set_aside')`),
+    check(
+      "ck_inbound_contributions_reassessment",
+      sql`${table.reassessment} IS NULL OR ${table.reassessment} IN ('not_funded', 'funded', 'made')`
+    ),
+  ]
+);
+
+// A public request this deployment works on. The request itself is an
+// ordinary request here (request_id), at the label of this row; this row
+// links it to the public one it was adopted from. Adopting says nothing
+// outside. `taken_up_at` is set when a person said in public, in the
+// organization's name, that the graph is taking it up.
+export const adoptedRequests = pgTable(
+  "adopted_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => requests.id, { onDelete: "cascade" }),
+    publicRequestId: uuid("public_request_id").notNull(),
+    adoptedBy: uuid("adopted_by").references((): AnyPgColumn => contributors.id),
+    adoptedAt: timestamp("adopted_at", { withTimezone: true }).notNull().defaultNow(),
+    takenUpAt: timestamp("taken_up_at", { withTimezone: true }),
+    declinedAt: timestamp("declined_at", { withTimezone: true }),
+    declineReason: text("decline_reason"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_adopted_requests_request").on(table.requestId),
+    index("idx_adopted_requests_public").on(table.publicRequestId),
+  ]
+);
+
+// Keeping the public version of a node current: one row each time a
+// version of a mirrored node at another label was replaced, at that
+// version's label, so that a member who does not read the label does not
+// learn from this table that the node was worked on. `due_at` is when the
+// public graph may be asked (the setting's delay and batching); a row that
+// is not sent says why in fixed words.
+export const keepCurrentQueue = pgTable(
+  "keep_current_queue",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    nodeId: uuid("node_id").notNull(),
+    // The version that changed, and the private mandate whose money paid for it, where one did.
+    versionAt: timestamp("version_at", { withTimezone: true }).notNull(),
+    paidByGrantId: uuid("paid_by_grant_id"),
+    noticedAt: timestamp("noticed_at", { withTimezone: true }).notNull().defaultNow(),
+    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+    // 'waiting' | 'sent' | 'not_sent'.
+    state: text("state").notNull().default("waiting"),
+    because: text("because"),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_keep_current_queue_version").on(table.nodeId, table.versionAt, table.sensitivityLabel),
+    index("idx_keep_current_queue_due").on(table.state, table.dueAt),
+    check("ck_keep_current_queue_state", sql`${table.state} IN ('waiting', 'sent', 'not_sent')`),
+  ]
+);
+
+// Where keeping the public version current is left out: for everything a
+// mandate pays for (grant_id alone), or for one node under it (both), or
+// for one node whoever pays (node_id alone). At the label of the mandate
+// or of the person's request, since which nodes are left out says which
+// are worked on.
+export const keepCurrentExceptions = pgTable(
+  "keep_current_exceptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    grantId: uuid("grant_id"),
+    nodeId: uuid("node_id"),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    liftedAt: timestamp("lifted_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_keep_current_exceptions").on(table.grantId, table.nodeId),
+    check("ck_keep_current_exceptions_one", sql`${table.grantId} IS NOT NULL OR ${table.nodeId} IS NOT NULL`),
+  ]
+);
+
+// An agent's report on its way to Minerval's maintainers: the Redactor's
+// pass over the agent's words, at the report's label, and then the sending.
+// `title` and `body` are the report's words as they stood when the pass
+// began; `removals` are spans of them with the policy category each was
+// removed under. What goes is those words with each span replaced by its
+// mark, and nothing else of the report but facts in fixed vocabulary
+// (report-sending-service.ts, factsOf).
+export const reportSendings = pgTable(
+  "report_sendings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => agentReports.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    policyId: uuid("policy_id"),
+    // [{ id, field: 'title' | 'body', start, end, category, note }]
+    removals: jsonb("removals").notNull().default([]),
+    actionId: uuid("action_id"),
+    // 'to_redact' | 'redacted' | 'sent' | 'not_sent'.
+    state: text("state").notNull().default("to_redact"),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+    redactedByModel: text("redacted_by_model"),
+    sentBy: uuid("sent_by").references((): AnyPgColumn => contributors.id),
+    sentHolding: text("sent_holding").array().notNull().default([]),
+    sentUnderStandingChoice: boolean("sent_under_standing_choice").notNull().default(false),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    publicReportId: uuid("public_report_id"),
+    // What the maintainers' record of it said when last asked: { status, note, issue_url, asked_at }.
+    cameBack: jsonb("came_back"),
+    // The facts of the failure, sent on their own under the standing choice
+    // or by a person: when, and how many sightings they then stated.
+    factsSentAt: timestamp("facts_sent_at", { withTimezone: true }),
+    factsSeen: integer("facts_seen"),
+    factsPublicReportId: uuid("facts_public_report_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_report_sendings_report").on(table.reportId),
+    check("ck_report_sendings_state", sql`${table.state} IN ('to_redact', 'redacted', 'sent', 'not_sent')`),
   ]
 );

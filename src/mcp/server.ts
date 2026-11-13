@@ -66,6 +66,7 @@ import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
   formatContribution,
+  checkAboutPublishedPage,
   checkArgumentTarget,
   getContributionById,
   getReviewForContribution,
@@ -922,6 +923,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .guid()
           .optional()
           .describe("propose_merge of two arguments on the node: the other argument."),
+        about_published_page_id: z
+          .guid()
+          .optional()
+          .describe(
+            "A published page on this node (get_published_page, or the second tab of the node's page), when the contribution is made through it: a challenge to what the page says or to how it was made, or a proposal about what the node rests on. It is reviewed as any contribution on the node is, and the graph that published the page learns of it from the public record."
+          ),
         proposed_canonical_form: z.string().max(2000).optional(),
         request_id: z
           .guid()
@@ -995,6 +1002,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       });
       if (!argumentTarget.ok) return errorResult("ARGUMENT_TARGET", argumentTarget.message);
 
+      const aboutPage = await checkAboutPublishedPage(input.claim_id ?? null, input.about_published_page_id);
+      if (!aboutPage.ok) return errorResult("PUBLISHED_PAGE", aboutPage.message);
+
       const contributor = await getOrCreateContributor({
         externalId,
         displayName: externalId,
@@ -1040,6 +1050,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         argumentId: argumentTarget.argumentId,
         mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
         proposedCanonicalForm: input.proposed_canonical_form,
+        aboutPublishedPageId: aboutPage.publishedPageId,
       });
       await enqueueContribution({ contributionId: contribution.id });
 

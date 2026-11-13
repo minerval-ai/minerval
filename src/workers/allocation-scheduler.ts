@@ -50,6 +50,7 @@ import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { slotColumnSql } from "../services/steward-lease.js";
 import { followShowings } from "../services/showing-service.js";
 import { followOutbound } from "../services/outbound-service.js";
+import { followOutwardActs } from "../services/outward-follow.js";
 import {
   openReassessmentsForVersionsMadeBesideEarlier,
   openReassessmentsForVersionsWithoutMaterial,
@@ -172,6 +173,19 @@ export async function allocationSchedulerTick(
   // a redaction runs nothing; it runs when it is paid for.
   await followShowings().catch((err: unknown) =>
     console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // 1d'. What passes between this deployment and the public graph besides
+  // pages (docs/outward-acts.md), before the packages are built so that a
+  // package says what is now so. Contributions the mirror brought about a
+  // page this deployment published are taken in and their reading opened on
+  // the ledger; summaries already written are given to the node's Steward
+  // at the page's label. Changed versions of public nodes are noticed and,
+  // where the standing choice sends, the public mandate is asked. The
+  // standing choices about agents' reports are followed. None of it runs an
+  // agent here, and on a graph with one label none of it does anything.
+  await followOutwardActs().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following outward acts failed: ${err instanceof Error ? err.message : String(err)}`)
   );
 
   // 1e. Pages shown outside (outbound-service.ts): a signed package is

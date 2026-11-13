@@ -402,7 +402,11 @@ log shows, where the deployment runs and whether anything outside its
 publisher's control attests to the run, how the work was paid for, who
 asked for the showing and who released what, whether the showing began
 before the node was first assessed, and every version since, the held
-ones among them. Read a removal or a hold as you read any omission: what
+ones among them. With it is what this graph's own record holds of the
+publisher's other pages: how many it has published and in which form,
+what is held and for how long, what readers contributed through them and
+what followed, the requests it took up, and where this graph's later
+assessments of those nodes moved. Read a removal or a hold as you read any omission: what
 kind of thing is missing, under what rule, by whose decision. Some of it
 cannot be inspected from outside, such as whether the logged run was the
 only one where the publisher controls the machine. Say in your reasoning

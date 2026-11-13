@@ -54,8 +54,8 @@
     "invokedWhen": "Anyone submits a contribution (a challenge, support, a new instance, an argument, a merge, split or edit, a source's figure for a quantity, an answer to a question, a request or material for one) or a proposal (a new claim, question or source).",
     "model": "Claude Sonnet 5.5",
     "hasConstitution": true,
-    "roleChars": 16267,
-    "fullChars": 114591,
+    "roleChars": 16835,
+    "fullChars": 115159,
     "skills": [
       {
         "name": "costing",
@@ -100,8 +100,8 @@
     "invokedWhen": "When a claim is first onboarded (structure + assess), a subclaim changes, evidence arrives, a contribution is accepted, or on periodic refresh.",
     "model": "Claude Opus 5.5 (standard pass), Claude Fable 5.2 (strong pass and money decisions)",
     "hasConstitution": true,
-    "roleChars": 31018,
-    "fullChars": 129342,
+    "roleChars": 31317,
+    "fullChars": 129641,
     "skills": [
       {
         "name": "costing",
@@ -151,8 +151,8 @@
     "invokedWhen": "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
-    "roleChars": 20494,
-    "fullChars": 118818,
+    "roleChars": 20793,
+    "fullChars": 119117,
     "skills": []
   },
   {
