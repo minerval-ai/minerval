@@ -55,6 +55,7 @@ import {
   type PartKind,
 } from "./page-parts.js";
 import { getPromptSet } from "./prompt-set.js";
+import { givenSourceTextFact } from "./separate-reader.js";
 import {
   destinationLabel,
   ensureBoundaryPolicy,
@@ -787,6 +788,10 @@ async function readPage(
     made: {
       assessed_by_model: (version.model as string | null) ?? null,
       run_log: await runLogFacts((version.run_id as string | null) ?? null),
+      // Whether the run that wrote the version was given the text of
+      // sources the page's readers cannot read: one of three fixed answers,
+      // read from the run's own record (services/separate-reader.ts).
+      given_source_text: await givenSourceTextFact((version.run_id as string | null) ?? null, saidTo.reads),
       paid_for: await paidForFacts((version.funded_by_job_id as string | null) ?? null),
     },
   };

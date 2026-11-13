@@ -24,6 +24,7 @@
  * This is the one way text reaches a label that does not read the label
  * it was written at.
  */
+import { GIVEN_SOURCE_TEXT, type GivenSourceText } from "./separate-reader.js";
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
@@ -352,6 +353,7 @@ function renderShownPage(
       (gaps.names_what_remains_open ? "; it says what remains open." : "."),
     `How it was made: prompt set ${String(made.prompt_set ?? "not recorded").slice(0, 16)}, policy version ${policy.version ?? "not recorded"}` +
       `, assessed by ${String(made.assessed_by_model ?? "a model not recorded")}, redacted by ${String(made.redacted_by_model ?? "a model not recorded")}.`,
+    GIVEN_SOURCE_TEXT[(made.given_source_text as GivenSourceText | undefined) ?? "not_recorded"] ?? GIVEN_SOURCE_TEXT.not_recorded,
     `Removals under the policy: ${removals.length === 0 ? "none" : removals.map(([c, n]) => `${c}: ${n}`).join(", ")}.`,
     `Audit's check of the redaction: ${page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : "not recorded"}`,
     held.length === 0
@@ -1278,6 +1280,8 @@ export async function outsideRecord(showingId: string, nodeId: string): Promise<
         role_additions: how.role_additions ?? [],
         run_log: how.run_log ?? null,
         paid_for: how.paid_for ?? null,
+        // Absent from a page recorded before this was stamped.
+        ...(how.given_source_text ? { given_source_text: how.given_source_text } : {}),
       };
       const under = (how.policy ?? {}) as { version?: number | null };
       const [row] = await rawQuery<{ version: number; hash: string; body: string }>(

@@ -536,7 +536,13 @@ claim as worded.
 ### Instances and sources
 
 A **source** is a retrieved document (URL, title, content hash, raw content,
-type). An **instance** links a canonical claim to one place it actually
+type). Its stored text is fixed once it is stored: the application fills
+text only where none is held, and the database refuses an update that would
+put other text in its place (`minerval_source_text_fixed`, SQLSTATE
+`MVL08`), so text that differs is a new source and what a judgment or a
+shown page's fingerprint rests on cannot be swapped under it. The text of a
+document found unreadable can still be cleared, and a mirrored row is the
+public graph's. An **instance** links a canonical claim to one place it actually
 appeared: the exact `verbatim_text` quote (the passage as that source stated
 it; every source's excerpt is equally verbatim to itself, and none has
 precedence), the surrounding `context`, a brief
@@ -2593,6 +2599,18 @@ page arrives at the destination label as a source, and a reassessment of the
 node is opened there. No other path moves text to a label that does not
 read the label it was written at. [showing-a-page.md](showing-a-page.md)
 describes it.
+
+A page is shown word for word, so on a node under a standing showing the
+run that writes the page is not given the text of sources the showing's
+readers cannot read (`src/services/separate-reader.ts`). A reader, which is
+the Researcher launched with `delegate_research` and `questions`, has them
+open and returns one answer for each question in a set form: a yes or no, a
+number, a date, a choice among the Steward's options, or a passage of at
+most 600 characters cut from the source's stored text
+(`src/services/reader-answers.ts`). The record of every shown page says, in
+one of three fixed sentences, whether the run that wrote it was given such
+text. No other run is affected, and [showing-a-page.md](showing-a-page.md),
+"A separate reader", gives the reasons and what is left open.
 
 **A merge under more than one label.** A merge made here moves what was
 recorded on the merged node onto the node it ends in. The run that makes it

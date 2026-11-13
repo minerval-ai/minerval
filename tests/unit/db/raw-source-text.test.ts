@@ -70,13 +70,18 @@ describe("a source's stored text", () => {
     // returns none of it: a run reads a reading's stored result through
     // open_reading, named below. analysis-service does the same for a kept
     // analysis and a kept file: the output a run reads comes through
-    // run_command and open_output, named below.
+    // run_command and open_output, named below. separate-reader reads
+    // whether a source holds stored text, before a tool hands it to a run
+    // that writes a shown page, and reads the text for a reader's passage to
+    // be cut from: at most 600 characters of it reach the launching Steward,
+    // as a passage an agent chose, which reading at the label covers.
     expect(mentioning("services", /raw_content|rawContent\b/)).toEqual([
       "services/analysis-service.ts",
       "services/examination-service.ts",
       "services/published-page-service.ts",
       "services/reading-service.ts",
       "services/release-gate-service.ts",
+      "services/separate-reader.ts",
       "services/showing-service.ts",
       "services/source-content.ts",
       "services/source-context-service.ts",

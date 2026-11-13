@@ -40,6 +40,7 @@ import {
   writeSourceMap,
 } from "../../services/source-map-service.js";
 import { getProvenanceStory } from "../../services/provenance-story-service.js";
+import { examinedSourceLabel, fetchedFromItsAddress, givenSourceText, storedSourceLabel } from "../../services/separate-reader.js";
 import { orderClaimInstances } from "../../services/claim-instance-service.js";
 import { getSourceFacts } from "../../services/source-facts-service.js";
 import { SourceInterestError, recordSourceInterest } from "../../services/source-interest-service.js";
@@ -203,12 +204,25 @@ export const executeReadSource: SkillToolExecutor = async (input) =>
     if (!sourceId && !url) return refuse("Pass a source_id (from provenance_get_map) or a url.");
     const offsetRaw = Number(input.offset);
     const maxRaw = Number(input.max_chars);
+    // A source already stored at a label other than `public`: a run that
+    // writes a page shown to readers who cannot read that label is not
+    // given its text, and any other run is marked with what it is given
+    // (services/separate-reader.ts). A source not stored yet is fetched
+    // from its own address below, which is the open web.
+    const stored = await storedSourceLabel({ sourceId, url });
+    if (stored) {
+      const notGiven = givenSourceText([stored.label], "That source", stored.id);
+      if (notGiven) return notGiven;
+    }
     const result = await readSourceContent({
       sourceId,
       url,
       offset: Number.isFinite(offsetRaw) ? offsetRaw : undefined,
       maxChars: Number.isFinite(maxRaw) ? maxRaw : undefined,
     });
+    // Fetched from its address in this call: text from the open web, which
+    // this run may go on reading by further windows.
+    if (result.origin === "fetched") fetchedFromItsAddress(result.source.id);
     // On the first window, what is known about the document without
     // judgment (#507): who, where, when, and any correction or retraction.
     // Also on the read that fetched the document, whatever window it asked
@@ -354,6 +368,12 @@ export const executeExaminationOutline: SkillToolExecutor = async (input, ctx) =
     const id = examinationFor(ctx);
     if (!id) return refuse(NO_EXAMINATION);
     if (input.add_facets !== undefined) await addFacets(id, input.add_facets);
+    // The outline holds the opening words of each segment of the document.
+    const examined = await examinedSourceLabel(id);
+    if (examined) {
+      const notGiven = givenSourceText([examined.label], "The document under examination", examined.id);
+      if (notGiven) return notGiven;
+    }
     const outline = await getExaminationOutline(id);
     return JSON.stringify({
       success: true,

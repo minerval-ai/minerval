@@ -42,6 +42,19 @@ export const HOSTING_WORDS = {
 } as const;
 export type Hosting = keyof typeof HOSTING_WORDS;
 
+/**
+ * Whether the run that wrote a page's assessment was given the text of
+ * sources the page's readers cannot read, in the only words a record may
+ * say it in. Where it was not, a separate run read those sources and
+ * answered the writer's questions in set forms, so the page can carry no
+ * more of them than those answers held.
+ */
+export const GIVEN_SOURCE_TEXT_WORDS = {
+  none: "The run that wrote this assessment was given the text of no source that this page's readers cannot read, and no report by a run that was.",
+  some: "The run that wrote this assessment was given the text of sources that this page's readers cannot read, or a report by a run that was.",
+  not_recorded: "Whether the run that wrote this assessment was given the text of sources that this page's readers cannot read is not recorded.",
+} as const;
+
 /** What attests to a run from outside its publisher's control. Today nothing can, and the record says so. */
 export const ATTESTATION_WORDS = {
   nothing: "nothing outside the publisher's control attests to the run",
@@ -173,6 +186,8 @@ export interface PublishedPagePackage {
       role_additions: unknown[];
       run_log: null | { sealed: boolean; seal: string | null; steps: number | null; chain_verifies: boolean | null };
       paid_for: null | { by: string; stake: string };
+      /** One of GIVEN_SOURCE_TEXT_WORDS' keys. Absent from a package built before it was stamped. */
+      given_source_text?: keyof typeof GIVEN_SOURCE_TEXT_WORDS;
     };
     acts: PackageAct[];
     versions: PackageVersion[];
@@ -531,6 +546,9 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
   if (made) {
     if (made.prompt_set !== null && !HEX64.test(made.prompt_set ?? "")) failed.push("The prompt set in the record is not a hash.");
     if (made.run_log && made.run_log.sealed && !HEX64.test(made.run_log.seal ?? "")) failed.push("The run log is said to be sealed, and the record gives no seal.");
+    if (made.given_source_text !== undefined && !(made.given_source_text in GIVEN_SOURCE_TEXT_WORDS)) {
+      failed.push("The record does not say in one of the fixed ways whether the run that wrote the assessment was given the text of sources this page's readers cannot read.");
+    }
   }
   if (page && !pkg.record.versions.some((v) => v.page_id === page.id && v.state === page.state)) {
     failed.push("The version in the package is not in its own history of versions, or is there in another state.");
@@ -557,6 +575,14 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
   if (made?.run_log) {
     cannot.push(
       "That the run's log is whole. The package gives the log's seal and what the deployment found when it checked its own chain; the log itself stays in the deployment."
+    );
+  }
+  if (made) {
+    cannot.push(
+      "That the wording of the released text carries nothing beyond what it says. A page is released word for word, and a check " +
+        "of this kind cannot see what its wording might encode. What limits that is how much of the withheld sources its writer " +
+        `had. The record says: ${GIVEN_SOURCE_TEXT_WORDS[made.given_source_text ?? "not_recorded"]} That is the deployment's ` +
+        "own statement, read from that run's record."
     );
   }
   if (held > 0 || (page && !page.always_shown)) cannot.push("What the held parts say. The check confirms their kinds, their places and that they have not changed.");
