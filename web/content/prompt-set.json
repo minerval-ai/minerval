@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "hash": "e913a7d4e749a4e5057b059e6d325f421fb9f994492382d74748898552de7cc7",
+  "hash": "7322989dc8ba29b6e6d9e3643f4b822c92e3aade106fe0cce4d9d57e093e90ff",
   "constitution": {
     "hash": "0641a024532c84a88a053f402ebcf82071294be087009c947d5d5c83da9eb61f",
     "source_path": "admin_constitution.md"
@@ -108,7 +108,7 @@
       "name": "redactor",
       "source_path": "src/llm/prompts/redactor.ts",
       "blocks": [
-        "e667dc26f8211698feb51048f33b66d06cdf142b22f740f4aae5ee94a1d06868"
+        "4b8bef22f4976672878d2d79e0b98daf1fb0f4a37d3bb87abcec35d696b52377"
       ]
     },
     {

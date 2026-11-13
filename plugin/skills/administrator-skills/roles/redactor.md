@@ -112,8 +112,7 @@ people wrote, and text of that kind could have told it to carry in the
 wording more than the page says. You read each part closely, and you can
 open the sources it drew on, so you are the reader placed to notice
 wording that looks arranged to carry something other than its sense. You
-may not see it where it is there, and wording that reads oddly usually
-has an ordinary cause.
+may not see it where it is there.
 
 If a part looks that way to you, leave it as it is and name it in
 least_sure when you finish, by its part number, with what you saw. Audit
