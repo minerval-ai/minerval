@@ -2685,9 +2685,10 @@ node and no write lands silently on nothing. Code that writes a row
 belonging to another label because the row is the same whoever asks (a
 document's segments, its fetched text and its facts, at the document's)
 runs that write at that label. A row's label does not change on such a
-connection, with no exception. An upsert that would land on a row at
-another label applies only where the row is at the writer's own; the writer
-is told that nothing was written (`sameLabelOnly` in `src/db/clearance.ts`,
+connection, with no exception. An upsert never lands on a row at another
+label: the key it conflicts on holds the label (below, "Each layer keeps
+its own identity"), and one under a key that does not applies only where
+the row is at the writer's own (`sameLabelOnly` in `src/db/clearance.ts`,
 `tests/unit/db/upsert-labels.test.ts`). Two things are let through the
 trigger, each for its reason: settling money changes the money columns of
 allocations and regrants at any label (below), and a row deleted or emptied
@@ -2761,6 +2762,70 @@ reassessment is opened there, once. What neither record can say is that
 data behind a connection has changed. A version that rests on a reading
 rests on the reading as it was made and kept, with its date, and nothing
 tells the deployment that the system it was read from has moved on.
+
+**Each layer keeps its own identity.** A graph at a label is that label's
+own rows over the graph of the labels it reads, down to the public graph's
+rows, which a deployment holds through its mirror. A row's layer is its
+label and its origin: the mirror is the lowest, a label lies below every
+label that reads it, and two labels that do not read each other are
+neither below the other. Identity is per layer. A key a labelled table has
+besides its id (an edge's two nodes and relation, a link's pair, a source's
+address, a tag's slug, a claim's cut of a quantity, a quantity's
+definition, an instance's reading, a feed item, a concern put to the
+Curator) holds `sensitivity_label`, before `origin` where the table is
+replicated. On a graph with one label each index holds exactly the rows it
+held. One rule then covers every such table and the mirror alike
+(`src/services/layer-service.ts`):
+
+- Work at a label is never stopped by a row at a label it does not read,
+  and learns nothing of it. Its insert finds no row and makes its own, with
+  the same result it would have had if the other row were not there
+  (`tests/db/layer-identity.test.ts` compares the two, word for word).
+- Work at a label that reads a row for the thing goes by that row
+  (`heldBelow`). Where the write only finds the thing (an edge, a link, a
+  grouping, a source, a tag, a tagging, a feed item), it is handed the
+  lower row and records nothing. Where it would revise the thing in its own
+  words (an answer's reasoning, a cut, a definition, a reading, a
+  provenance edge), it is refused with the reason
+  (`refuseWhereHeldBelow`): a second row beside the lower one would say the
+  thing twice, and work at one label does not write into another's row.
+  This is what a run was already given against the mirror.
+- Where the higher label recorded the thing first and the lower one records
+  it later, both rows stay. Nothing is moved or deleted, so what hangs from
+  the higher row by its id (an argument's grouping of an edge, an instance
+  on a source, a tagging) is where it was. A node's read lists an edge
+  once, by the lowest layer's row, with what the higher layer wrote beside
+  it (`also_recorded_here`), and an argument's premises count it once. A
+  read that takes one row for a key (a source by its address, a claim's
+  cut, a quantity's definition, a passage's reading, a node's source map,
+  a page's shared analysis) takes the
+  reader's own label's where it has one, which is the row its work wrote
+  and may change, else the lowest layer's. A read of a source names the row
+  a label below holds for the same address (`same_address_source_id`). A
+  tag's slug names the lowest layer's tag.
+- Two labels that do not read each other may each hold the thing, and a
+  reader of both is given both. A label defined later that reads both is in
+  the same position: neither row is below the other, both are listed, and
+  a write at that label is handed one of them. Nothing is merged when a
+  label is defined.
+
+A node is not a key: whether two nodes state one thing is a judgment. The
+Matcher searches at the run's clearance, so work at a label links to a node
+a label below already holds, and work at the lower label, which cannot see
+the higher node, mints its own. The reconcile-candidate scan then puts the
+pair to the Curator at the label that reads both, anchored on that label's
+own node, whichever of the two the scan started from, and the Curator's
+ordinary merge with the lower node as the survivor folds the higher one in
+(`raiseConvergence` in `src/services/curation-service.ts`). That is the act
+a batch of the mirror triggers for a public node that arrives beside a node
+of the deployment's own, and it is the same function. Between labels the
+pair is found by the scan's own sweep and under its allowance
+(`reconcile_candidates_max_per_sweep`, off unless set); for the mirror it
+is found when the batch arrives.
+
+The keys that are still one for the whole deployment are listed, each with
+its reason, in `tests/db/layer-identity-keys.test.ts`, which fails on a
+unique key of a labelled table that neither holds the label nor is listed.
 
 **Work at each label.** Work on a node at a label other than the node's own
 (an internal assessment of a public claim) is keyed by that label
@@ -2960,17 +3025,29 @@ where reads are held.
   against a private row and counts every labelled table at every label
   before and after. The routes the operator key guards act for no person,
   and read and write `public` alone.
-- A table holds one row for each identity whatever the labels. An insert
-  that collides with a row the writer cannot read is refused and says so,
-  which tells the writer the row exists. That holds for sources (found by
-  their address), edges, tags, formal statements, curation requests and the
-  other keys the collision guard covers. Judgments and the work on a node
-  are no longer among them: each label keeps its own version, ledger row,
-  slot and order. A write that lands on such a row at a label the writer
-  reads is refused too, and says so. A mirrored row is the exception in the
-  other direction: where a table has a key besides its id, the key is
-  unique within each graph, so a row of the deployment's own and the public
-  graph's row for the same thing both stand ([mirror.md](mirror.md)).
+- A few keys are still one for the whole deployment
+  (`tests/db/layer-identity-keys.test.ts` lists them with their reasons).
+  Under one of those an insert that collides with a row the writer cannot
+  read is refused and says so, which tells the writer the row exists. The
+  ones a person can reach are the name of a connection's tools and the name
+  of a set of files, which an administrator chooses, and a request's
+  targets and the record of who took it up. A part of a run's setup is
+  stored once under the hash of its text, at the label of the run that
+  first used it, and is not readable by a run at a label that does not
+  read that one.
+- Where a higher label recorded a thing before a lower one did, a read
+  that lists the thing by the route above gives it once. Reads that reach
+  an edge, a link, an answer relation or a tag row by row were not changed
+  and give both rows: a link and an answer relation are listed twice where
+  links and answer relations are listed, as they are against the mirror,
+  and a tag recorded at two labels is two rows in a listing of tags. The
+  undo of a kind change rewrites every definition of the quantity that it
+  reads, and is refused where one of them is another label's.
+- A cut, a definition or a reading that a higher label recorded first can
+  no longer be revised by it once a label it reads records its own: the
+  higher label goes on reading the one it wrote. Recording its own beside
+  a lower one that is already there is refused the same way. A label
+  setting a lower row aside for its own readers is not built.
 - The money views show every label's amounts, ledger keys, ids and who
   commissioned, without the text, and let any cleared connection change the
   money columns of any label's row, which is what settlement does. A ledger

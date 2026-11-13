@@ -1,4 +1,5 @@
 import { rawQuery } from "../db/client.js";
+import { oneDefinitionForQuantitySql } from "./layer-service.js";
 import { evaluationsInForce, judgmentsInForce, markSeveralInForce, severalEvaluationsNote, severalInForceNote } from "./judgment-version-service.js";
 import type { TreeNode } from "../schemas/claim.js";
 import {
@@ -56,8 +57,9 @@ const NODE_PARK_SELECT_SQL = stewardParkSelectSql(
   "c",
   "a.id IS NULL AND qe.claim_id IS NULL AND qa.claim_id IS NULL"
 );
-const NODE_KIND_JOIN_SQL = `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
-         LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+// One definition for a quantity where two layers each hold one (layer-service.ts).
+const nodeKindJoinSql = () => `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
+         LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
          LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id`;
 
 interface MathRowFields {
@@ -200,7 +202,7 @@ export async function getClaimTree(
        FROM claims c
        LEFT JOIN assessments_in_force a ON a.claim_id = c.id
        ${NODE_MATH_JOIN_SQL}
-       ${NODE_KIND_JOIN_SQL}
+       ${nodeKindJoinSql()}
       WHERE c.id = $1`,
     [claimId]
   );
@@ -246,7 +248,7 @@ export async function getClaimTree(
                 ON ae.argument_id = am.argument_id
          LEFT JOIN LATERAL ${argumentLeanCheckLateralSql("arg")} alc ON true
          ${NODE_MATH_JOIN_SQL}
-         ${NODE_KIND_JOIN_SQL}
+         ${nodeKindJoinSql()}
         WHERE cr.parent_claim_id = ANY($1)
           AND c.state = 'active'
         ORDER BY cr.created_at, cr.id, am.created_at, am.argument_id`,

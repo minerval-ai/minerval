@@ -1,4 +1,5 @@
 import { rawQuery, searchableClaims } from "../db/client.js";
+import { oneDefinitionForQuantitySql } from "./layer-service.js";
 import { markSeveralInForce } from "./judgment-version-service.js";
 
 /** Rows of a search, each saying how many judgments of its node are in force for the reader where that is more than one. */
@@ -71,8 +72,9 @@ const PRIZE_SELECT_SQL = `pb.amount_micro_usd AS prize_micro_usd, ${checkedKindS
 // The kinds' verdicts (constitution §2, §7a), joined as the tree joins them:
 // at most one current estimate and one current standing per node, by their
 // partial unique indexes, and one definition per quantity.
-const KIND_JOIN_SQL = `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
-    LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+// (Where two layers each hold a definition, the join takes one: layer-service.ts.)
+const kindJoinSql = () => `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
+    LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
     LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id`;
 const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit`;
 const ASSESSED_SQL = `(CASE c.kind WHEN 'question' THEN qa.id IS NOT NULL
@@ -208,7 +210,7 @@ async function hybridSearchWithEmbedding(
     FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
-    ${KIND_JOIN_SQL}
+    ${kindJoinSql()}
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND (c.text_search @@ websearch_to_tsquery('english', $1)
            OR 1 - (c.embedding <=> $2::vector) > $3)${filterSql}
@@ -256,7 +258,7 @@ async function keywordSearch(
     FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
-    ${KIND_JOIN_SQL}
+    ${kindJoinSql()}
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND c.text_search @@ websearch_to_tsquery('english', $1)${filterSql}
     ORDER BY text_rank DESC

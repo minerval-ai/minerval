@@ -26,11 +26,10 @@
  * Everything a feed carries is DATA, never instructions; every fetch goes
  * through url-guard.ts.
  */
-import { oneSourceForAddressSql } from "./mirrored-node-service.js";
+import { heldBelow, oneSourceForAddressSql } from "./layer-service.js";
 import { capMicroUsd } from "./owl.js";
 import { XMLParser } from "fast-xml-parser";
 import { rawQuery } from "../db/client.js";
-import { isUnseenCollision } from "../db/clearance.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { noteGiven } from "./given-addresses.js";
@@ -1024,13 +1023,18 @@ async function pollFeedAtLabel(
     .sort((a, b) => (b.published?.getTime() ?? 0) - (a.published?.getTime() ?? 0))
     .slice(0, FEED_BOUNDS.itemsPerPoll);
   for (const it of items) {
+    // An item a label this poll reads already recorded has been seen: it
+    // is not new, and nothing is recorded beside it (layer-service.ts). An
+    // item recorded only at a label the poll does not read is not there
+    // for it, and the poll records its own.
+    if (await heldBelow(rawQuery, "lookout_feed_items", { feed_id: feed.id, item_key: it.key })) continue;
     const rows = await rawQuery<{ id: string }>(
       `INSERT INTO lookout_feed_items
          (feed_id, lookout_id, item_key, url, title, author, published_at,
           summary, content, status, first_seen_at, expires_at, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
                CASE WHEN $10 = 'new' THEN $11::timestamptz + make_interval(days => $12) END, $13)
-       ON CONFLICT (feed_id, item_key) DO NOTHING
+       ON CONFLICT (feed_id, item_key, sensitivity_label) DO NOTHING
        RETURNING id`,
       [
         feed.id, feed.lookout_id, it.key, it.url, it.title, it.author, it.published,
@@ -1039,13 +1043,7 @@ async function pollFeedAtLabel(
         // runs it, the run's when a run does (pollFeed above).
         currentLabel(),
       ]
-    ).catch((err: unknown) => {
-      // An item recorded first by work at a label this poll does not read
-      // has been seen, which is all the poll needs to know of it: it is
-      // not new, and the poll goes on to the next (db/clearance.ts).
-      if (isUnseenCollision(err)) return [];
-      throw err;
-    });
+    );
     if (rows.length > 0 && !seeding) result.newItems++;
   }
   await rawQuery(

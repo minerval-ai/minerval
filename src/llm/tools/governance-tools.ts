@@ -4,7 +4,7 @@
  * These give agents the ability to gather context about claims, contributions,
  * and contributors before making decisions.
  */
-import { oneCutForClaimSql } from "../../services/mirrored-node-service.js";
+import { oneCutForClaimSql } from "../../services/layer-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq, sql, desc } from "drizzle-orm";

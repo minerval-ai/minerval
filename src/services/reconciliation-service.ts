@@ -9,6 +9,7 @@
  * the prior structure without erasing history). `reverseReconciliation`
  * undoes a logged event.
  */
+import { oneDefinitionForQuantitySql, refuseWhereHeldBelow } from "./layer-service.js";
 import { mirroredNode, mirroredRowMessage } from "./mirrored-node-service.js";
 import { sameLabelOnly, withSystemClearance, writtenAtOwnLabel } from "../db/clearance.js";
 import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
@@ -857,17 +858,20 @@ export async function changeNodeKind(input: {
       : [];
 
   const [priorDefinition] = await rawQuery<Record<string, unknown>>(
-    `SELECT measures, population, conditions, unit, created_by FROM quantity_definitions WHERE claim_id = $1`,
+    `SELECT measures, population, conditions, unit, created_by FROM quantity_definitions qd WHERE claim_id = $1${oneDefinitionForQuantitySql("qd")}`,
     [claimId]
   );
   if (definition) {
+    // A definition a label this work reads already holds is not this
+    // work's to revise (layer-service.ts).
+    await refuseWhereHeldBelow(rawQuery, "quantity_definitions", { claim_id: claimId }, "this quantity's definition");
     // A definition written for the first time takes this run's label; one
     // that is revised keeps the label it has (src/labels.ts).
     writtenAtOwnLabel(
       await rawQuery(
       `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, 'curator', $6)
-       ON CONFLICT (claim_id, origin) DO UPDATE
+       ON CONFLICT (claim_id, sensitivity_label, origin) DO UPDATE
          SET measures = EXCLUDED.measures, population = EXCLUDED.population,
              conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
        ${sameLabelOnly("quantity_definitions")}
@@ -986,14 +990,15 @@ export async function setQuantityDefinition(input: {
     );
   }
   const [prior] = await rawQuery<Record<string, unknown>>(
-    `SELECT measures, population, conditions, unit, created_by FROM quantity_definitions WHERE claim_id = $1`,
+    `SELECT measures, population, conditions, unit, created_by FROM quantity_definitions qd WHERE claim_id = $1${oneDefinitionForQuantitySql("qd")}`,
     [input.claimId]
   );
+  await refuseWhereHeldBelow(rawQuery, "quantity_definitions", { claim_id: input.claimId }, "this quantity's definition");
   writtenAtOwnLabel(
       await rawQuery(
     `INSERT INTO quantity_definitions (claim_id, measures, population, conditions, unit, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, 'curator', $6)
-     ON CONFLICT (claim_id, origin) DO UPDATE
+     ON CONFLICT (claim_id, sensitivity_label, origin) DO UPDATE
        SET measures = EXCLUDED.measures, population = EXCLUDED.population,
            conditions = EXCLUDED.conditions, unit = EXCLUDED.unit, updated_at = now()
        ${sameLabelOnly("quantity_definitions")}

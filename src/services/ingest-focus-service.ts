@@ -18,7 +18,7 @@
  * the earlier reading left out, and the Matcher links what is already
  * there.
  */
-import { oneSourceForAddressSql } from "./mirrored-node-service.js";
+import { oneSourceForAddressSql } from "./layer-service.js";
 import { createHash } from "node:crypto";
 import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";

@@ -16,6 +16,7 @@
  * other block is a passage. A heuristic, written down and testable, never
  * a model: the same document always divides the same way.
  */
+import { oneReadingForInstanceSql } from "./layer-service.js";
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
 import { judgmentsInForce, severalInForceNote } from "./judgment-version-service.js";
@@ -415,7 +416,7 @@ export async function getSourceDocument(
               ci.stance, ci.verbatim_text, r.support, r.note, r.source_read
          FROM claim_instances ci
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
-         LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id
+         LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id${oneReadingForInstanceSql("r")}
         WHERE ci.source_id = $1 AND ci.detached_at IS NULL
         ORDER BY ci.created_at`,
       [sourceId]

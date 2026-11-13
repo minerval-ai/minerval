@@ -1,5 +1,7 @@
 import { sourceLabel } from "../services/judgment-version-service.js";
 import { sourceMirrorFacts } from "../services/mirrored-node-service.js";
+import { sourceHeldAtALabelBelow } from "../services/layer-service.js";
+import { rawQuery } from "../db/client.js";
 import type { FastifyInstance } from "fastify";
 import { sourceSubmitBody } from "../schemas/source.js";
 import { submitSource } from "../services/source-service.js";
@@ -144,7 +146,11 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       // graph's and as of when, or, for one of the deployment's own, the
       // public graph's row for the same address (mirrored-node-service.ts).
       const mirror = await sourceMirrorFacts(request.params.source_id);
-      return reply.send({ ...facts, ...(label ? { label } : {}), ...(mirror ?? {}) });
+      // Where a label below the source's own holds the same address: that
+      // row, so the two are read as one document recorded twice
+      // (layer-service.ts).
+      const below = await sourceHeldAtALabelBelow(rawQuery, request.params.source_id);
+      return reply.send({ ...facts, ...(label ? { label } : {}), ...(mirror ?? {}), ...(below ?? {}) });
     },
   });
 

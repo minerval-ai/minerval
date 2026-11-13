@@ -157,21 +157,23 @@ It changes one thing of the deployment's own. A judgment recorded here at a mirr
 
 ### Identity is per graph
 
-A deployment's row and a mirrored row can say the same thing: a source at one address, an edge between the same two public claims. Before this, such a pair collided on a unique key and the batch was refused. Now every key a replicated table has besides its id ends with `origin`, so both stand and the mirrored row always applies. On the public graph every row is `local` and each index holds what it held.
+A deployment's row and a mirrored row can say the same thing: a source at one address, an edge between the same two public claims. Before this, such a pair collided on a unique key and the batch was refused. Now every key a replicated table has besides its id ends with `origin`, after the row's label, so both stand and the mirrored row always applies. On the public graph every row is `local` and each index holds what it held.
 
 | Table | Key | What a read does with a pair |
 | --- | --- | --- |
-| `sources` | address | A read by address takes one row: the deployment's own where it is at the label of the work in progress (what that label wrote), else the public graph's, else a row of the deployment's own at another label the work reads (`oneSourceForAddressSql`). A read of either says how it stands to the other (`public_graph_source_id`, or `mirrored`). |
+| `sources` | address | A read by address takes one row: the deployment's own where it is at the label of the work in progress (what that label wrote), else the public graph's, else a row of the deployment's own at a label the work reads, the lowest first (`oneSourceForAddressSql`). A read of either says how it stands to the other (`public_graph_source_id`, or `mirrored`). |
 | `claim_relationships` | parent, child, relation | A node's read lists the edge once: the public graph's row, with what the deployment wrote for its own beside it (`also_recorded_here`). |
 | `claim_links` | the pair and the kind | Both rows are listed. |
 | `answer_relations` | question and the pair | Both rows are listed. |
-| `argument_subclaims` | argument and edge (the primary key, which now ends with `origin`) | One premise where an argument's premises are listed. |
-| `quantity_cuts` | the claim (the primary key, which now ends with `origin`) | A read takes one cut for a claim by the rule a source's address has (`oneCutForClaimSql`). `record_cut` is refused once the public graph holds a cut for the claim. |
-| `quantity_definitions` | the quantity (the primary key, which now ends with `origin`) | No pair arises: a mirrored node's kind and definition are the public graph's, and defining it here is refused. |
+| `argument_subclaims` | argument and edge (the primary key, which ends with the label and `origin`) | One premise where an argument's premises are listed. |
+| `quantity_cuts` | the claim (the primary key, which ends with the label and `origin`) | A read takes one cut for a claim by the rule a source's address has (`oneCutForClaimSql`). `record_cut` is refused once the public graph holds a cut for the claim. |
+| `quantity_definitions` | the quantity (the primary key, which ends with the label and `origin`) | No pair arises: a mirrored node's kind and definition are the public graph's, and defining it here is refused. |
 | `source_segments` | document and position | No pair arises: a mirrored document is not segmented here, and work at a label anchors its instances to the segments that came with the mirror. |
 | the four judgment tables | node, and label where there is more than one | No pair: the judgment of a mirrored node at its own label is the mirrored row. |
 
-A pair arises only when the deployment recorded the thing first. A run that records an edge or a link the public graph already holds is given the public graph's, as it is given one of the deployment's own that is already there. Among a deployment's own rows the key is what it was: one row for each identity whatever the labels, with the guard that refuses a collision the writer cannot see. Tags are not mirrored, so there is nothing to collide with.
+A pair arises only when the deployment recorded the thing first. A run that records an edge or a link the public graph already holds is given the public graph's. Tags are not mirrored, so there is nothing to collide with.
+
+None of this is special to the mirror. The mirror is the lowest layer of a deployment's graph, and the same holds between a label and a label it reads: each key above also holds `sensitivity_label`, a write goes by the row a layer below already holds, and a read gives one row or lists the thing once by the rule in the table ([architecture.md](architecture.md), "Each layer keeps its own identity"; `src/services/layer-service.ts`). What this section calls "the deployment's own" row is, between labels, the higher label's, and "the public graph's" is the row of the label it reads.
 
 ### What a run can and cannot do to a mirrored node
 
@@ -208,7 +210,7 @@ After a sync the applier's worker, and `scripts/mirror.ts`, call `afterMirrorApp
 
 ### Convergence
 
-The Matcher's searches read the mirror and the deployment's own nodes together, at the run's clearance, so a private question about a public claim links to the public node. When the public graph later mints a claim that a node of the deployment's own already states, the batch that brings it pairs each of the deployment's nodes with the nearest node that arrived, and asks the Curator about a pair above the reconcile scan's similarity floor, at the deployment's node's label (`scanArrivedPublicNodes`). If the Curator judges them one, its ordinary `merge_claims` with the public node as the survivor folds the deployment's node into it: its sources, arguments and edges move to the public node, each row at the label it has, the mirrored rows are untouched, and the label's Steward then records its version on the public node. A mirrored node is never the one merged away: `merge_claims` refuses and says to merge the other way.
+The Matcher's searches read the mirror and the deployment's own nodes together, at the run's clearance, so a private question about a public claim links to the public node. When the public graph later mints a claim that a node of the deployment's own already states, the batch that brings it pairs each of the deployment's nodes with the nearest node that arrived, and asks the Curator about a pair above the reconcile scan's similarity floor, at the deployment's node's label (`scanArrivedPublicNodes`, which raises it through `raiseConvergence`, the one act for a node and a node a layer below it; between two labels the reconcile-candidate scan raises the same request at the label that reads both). If the Curator judges them one, its ordinary `merge_claims` with the public node as the survivor folds the deployment's node into it: its sources, arguments and edges move to the public node, each row at the label it has, the mirrored rows are untouched, and the label's Steward then records its version on the public node. A mirrored node is never the one merged away: `merge_claims` refuses and says to merge the other way.
 
 ### What a run and a reader are told
 

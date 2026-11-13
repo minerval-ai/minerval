@@ -351,7 +351,7 @@ function upsertSql(table: ReplicatedTable): string {
           SELECT ${values.join(", ")}
             FROM jsonb_populate_recordset(null::${q(table.name)}, $1::jsonb) r
            ORDER BY ${table.writeOrder.split(",").map((part) => `r.${part.trim()}`).join(", ")}
-          ON CONFLICT (${[...table.key, ...(table.keyPerGraph ? ["origin"] : [])].map(q).join(", ")}) ${onConflict}
+          ON CONFLICT (${table.primaryKey.map(q).join(", ")}) ${onConflict}
           RETURNING ${keyText(table, "t")} AS row_key, (t.xmax = 0) AS inserted`;
 }
 

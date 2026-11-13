@@ -16,6 +16,7 @@
  * Cards are read in one query however many are asked for, so a page showing
  * many claims makes one request (GET /claims/cards).
  */
+import { oneDefinitionForQuantitySql } from "./layer-service.js";
 import { markSeveralInForce } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
@@ -166,7 +167,7 @@ async function readCards(ids: string[]): Promise<Map<string, ClaimCard>> {
        LEFT JOIN assessments_in_force a ON a.claim_id = c.id
        LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
        LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
-       LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+       LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
       WHERE c.id = ANY($1::uuid[])`,
     [ids]
   );

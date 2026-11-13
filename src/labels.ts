@@ -66,10 +66,23 @@
  * changes, and a row is changed or deleted only by work at its own label:
  * a write that would land on a row at another label (an upsert, a plain
  * update) writes nothing and says so, because what it wrote would be read
- * by that row's readers as their own label's work (sameLabelOnly in
- * db/clearance.ts, and the database's own_label_guard behind every write).
- * What a label has to say about a row at another label is a row of its
- * own. The text and the facts a fetch writes into a source's own row are
+ * by that row's readers as their own label's work (the database's
+ * own_label_guard behind every write). What a label has to say about a
+ * row at another label is a row of its own.
+ *
+ * Each layer keeps its own identity. A graph at a label is that label's
+ * own rows over the graph of the labels it reads, down to the public
+ * graph's rows in the mirror. A key a labelled table has besides its id
+ * (an edge's two nodes and relation, a source's address, a tag's slug, a
+ * claim's cut, an instance's reading) holds the label, so a row at one
+ * label and a row for the same thing at another are two rows. Work at a
+ * label is never stopped by a row at a label it does not read, and is
+ * told nothing of it. Work at a label that does read a row for the thing
+ * goes by that row: it is handed it, or refused where it would revise it,
+ * and records no second one. Where the higher label recorded the thing
+ * first and the lower one later, both stay, and a read gives the thing
+ * once (services/layer-service.ts has the rule, for every table and for
+ * the mirror alike). The text and the facts a fetch writes into a source's own row are
  * the same whoever fetches, and are written at the source's label.
  *
  * A judgment at each label. A node may carry one current judgment at each
@@ -196,8 +209,10 @@
  * text it fetches is stored at the document's label, since it is the same
  * whoever fetches it; text a caller hands over with a submission goes
  * into a row only at the caller's own label. An instance has one current
- * reading whoever wrote it, and a source is still found by its URL
- * whatever its label. Telling those apart is later work.
+ * reading at each label, and an address has one source at each: work at a
+ * label goes by the row a label it reads already holds, and where it
+ * recorded its own first it keeps reading that one
+ * (services/layer-service.ts).
  *
  * A carrier whose label is missing is not treated as public: the run is
  * refused (MissingLabelError), because writing private work as public is
@@ -238,8 +253,7 @@
  * only what that label reads as well), and work with nothing in context
  * reads `public` alone. An insert that names no label is given
  * the label of the connection it arrives on, so a forgotten stamp inside
- * a run lands at the run's label. Each label keeping its own copy of a
- * source, its own edges and its own tags is later work.
+ * a run lands at the run's label.
  *
  * A deployment may also hold the public graph's own rows, through a mirror
  * (docs/mirror.md). They are `public`, and they are the public graph's:
@@ -249,6 +263,8 @@
  * (services/mirrored-node-service.ts). A mirrored row and a row of the
  * deployment's own never collide: where a table has a key besides its id,
  * the key is unique within each graph (db/schema.ts, the origin column).
+ * The mirror is the lowest layer, and what holds between a label and a
+ * label it reads holds between a deployment's own rows and the mirror's.
  *
  * One thing is held to a run's label already: where its text may be sent.
  * A model provider or an outside service receives text only from runs at

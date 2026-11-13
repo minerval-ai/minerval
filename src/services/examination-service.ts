@@ -26,6 +26,7 @@
  * message written for the agent; the tool executors turn it into a
  * structured refusal.
  */
+import { oneReadingForInstanceSql, unlessHeldBelowSql } from "./layer-service.js";
 import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
@@ -402,8 +403,11 @@ export async function recordCoverage(input: {
   await segmentsOfSource(exam.source_id, ids);
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO examination_coverage (examination_id, segment_id, facet, sensitivity_label)
-     SELECT $1, unnest($2::uuid[]), $3, $4
-     ON CONFLICT (examination_id, segment_id, facet) DO NOTHING
+     SELECT $1, examined.segment_id, $3, $4 FROM unnest($2::uuid[]) AS examined(segment_id)${unlessHeldBelowSql(
+       "examination_coverage",
+       "held.examination_id = $1 AND held.segment_id = examined.segment_id AND held.facet = $3"
+     )}
+     ON CONFLICT (examination_id, segment_id, facet, sensitivity_label) DO NOTHING
      RETURNING id`,
     [exam.id, ids, facet, currentLabel()]
   );
@@ -437,8 +441,11 @@ export async function recordFinding(input: {
   // A finding on a passage means the passage was examined for that facet.
   await rawQuery(
     `INSERT INTO examination_coverage (examination_id, segment_id, facet, sensitivity_label)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (examination_id, segment_id, facet) DO NOTHING`,
+     SELECT $1, $2::uuid, $3, $4${unlessHeldBelowSql(
+       "examination_coverage",
+       "held.examination_id = $1 AND held.segment_id = $2::uuid AND held.facet = $3"
+     )}
+     ON CONFLICT (examination_id, segment_id, facet, sensitivity_label) DO NOTHING`,
     [exam.id, segmentId, facet, currentLabel()]
   );
   return { id: row!.id, covered: true };
@@ -465,7 +472,7 @@ export async function citeFindings(input: {
     detached_at: Date | null;
   }>(
     `SELECT ci.claim_id, ci.source_id, r.id AS reading_id, ci.detached_at
-       FROM claim_instances ci LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id
+       FROM claim_instances ci LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id${oneReadingForInstanceSql("r")}
       WHERE ci.id = $1`,
     [instanceId]
   );
@@ -491,8 +498,11 @@ export async function citeFindings(input: {
   }
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO reading_citations (reading_id, finding_id, created_by, sensitivity_label)
-     SELECT $1, unnest($2::uuid[]), $3, $4
-     ON CONFLICT (reading_id, finding_id) DO NOTHING RETURNING id`,
+     SELECT $1, cited.finding_id, $3, $4 FROM unnest($2::uuid[]) AS cited(finding_id)${unlessHeldBelowSql(
+       "reading_citations",
+       "held.reading_id = $1 AND held.finding_id = cited.finding_id"
+     )}
+     ON CONFLICT (reading_id, finding_id, sensitivity_label) DO NOTHING RETURNING id`,
     [inst.reading_id, ids, input.createdBy, currentLabel()]
   );
   return { reading_id: inst.reading_id, cited: rows.length };

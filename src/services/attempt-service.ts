@@ -532,7 +532,7 @@ export async function recordAttemptLeanCheck(
         resource, pin_id, image_digest, checker_version, cost_micro_usd, finished_at, sensitivity_label)
      VALUES ($1, 'attempt', $2, $3, $4, 'math_solver', $5, $6, $7, $8::jsonb, $9::jsonb,
              $10, $11::jsonb, $12, $13, $14, $15, $16, $17)
-     ON CONFLICT (formalization_id, submission_sha256, checker_version, mode)
+     ON CONFLICT (formalization_id, submission_sha256, checker_version, mode, sensitivity_label)
        DO UPDATE SET attempt_id = EXCLUDED.attempt_id, run_id = EXCLUDED.run_id,
                      verdict = EXCLUDED.verdict, checks = EXCLUDED.checks,
                      diagnostics = EXCLUDED.diagnostics, truncated = EXCLUDED.truncated,

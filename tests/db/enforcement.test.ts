@@ -834,16 +834,35 @@ describe("a write", () => {
 // ---------------------------------------------------------------------------
 
 describe("a collision with a row the run cannot read", () => {
-  // Left to Postgres the three would differ: a duplicate-key error, nothing
-  // at all, and a refusal by the policy. The guard makes them one refusal.
-  it("is refused with the reason, whether the insert is plain, does nothing on conflict, or updates on conflict", async () => {
+  // A key that holds the label cannot collide across labels: each label
+  // keeps its own row, and work at one is told nothing of another's
+  // (tests/db/layer-identity.test.ts). The guard is for the keys that are
+  // still one for the whole deployment (tests/db/layer-identity-keys.test.ts).
+  it("does not happen on a key that holds the label: each label has its own row, and neither is told of the other's", async () => {
     const slug = `enf-${randomUUID().slice(0, 8)}`;
     const insertTag = (suffix: string) =>
       `INSERT INTO tags (slug, name, sensitivity_label) VALUES ($1, $2, $3) ${suffix} RETURNING id`;
     await at(B, () => rawQuery(insertTag(""), [slug, "Held at B", B]));
     try {
-      for (const onConflict of ["", "ON CONFLICT (slug) DO NOTHING", "ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name"]) {
-        const err = await at(A, () => rawQuery(insertTag(onConflict), [slug, "Wanted at A", A])).then(
+      expect(await at(A, () => rawQuery(insertTag(""), [slug, "Wanted at A", A]))).toHaveLength(1);
+      expect(await at(A, () => rawQuery(insertTag("ON CONFLICT (slug, sensitivity_label) DO NOTHING"), [slug, "Again at A", A]))).toEqual([]);
+      expect(await at(A, () => rawQuery<{ name: string }>(`SELECT name FROM tags WHERE slug = $1`, [slug]))).toEqual([{ name: "Wanted at A" }]);
+      expect(await at(B, () => rawQuery<{ name: string }>(`SELECT name FROM tags WHERE slug = $1`, [slug]))).toEqual([{ name: "Held at B" }]);
+    } finally {
+      await system(() => rawQuery(`DELETE FROM tags WHERE slug = $1`, [slug]));
+    }
+  });
+
+  // Left to Postgres the three would differ: a duplicate-key error, nothing
+  // at all, and a refusal by the policy. The guard makes them one refusal.
+  it("is refused with the reason on a key held once for the whole deployment, whether the insert is plain, does nothing on conflict, or updates on conflict", async () => {
+    const group = `ingest:https://enf.example/${randomUUID()}`;
+    const insertFocus = (suffix: string) =>
+      `INSERT INTO ingest_focuses (exclusion_group, url, focus, sensitivity_label) VALUES ($1, 'https://enf.example/', $2, $3) ${suffix} RETURNING exclusion_group`;
+    await at(B, () => rawQuery(insertFocus(""), [group, "Held at B", B]));
+    try {
+      for (const onConflict of ["", "ON CONFLICT (exclusion_group) DO NOTHING", "ON CONFLICT (exclusion_group) DO UPDATE SET focus = EXCLUDED.focus"]) {
+        const err = await at(A, () => rawQuery(insertFocus(onConflict), [group, "Wanted at A", A])).then(
           () => null,
           (e: unknown) => e
         );
@@ -851,16 +870,19 @@ describe("a collision with a row the run cannot read", () => {
         expect((err as Error).message, onConflict).toBe(
           "this was not written: a row with the same identity already exists at a label this work does not read"
         );
+        expect((err as { hint?: string }).hint, onConflict).toBe(
+          "This key is held once for the whole deployment, whatever the labels. Nothing was changed."
+        );
       }
       // The refusal tells the writer a row is there. It does not show the row.
-      expect(await at(A, () => rawQuery(`SELECT 1 FROM tags WHERE slug = $1`, [slug]))).toEqual([]);
+      expect(await at(A, () => rawQuery(`SELECT 1 FROM ingest_focuses WHERE exclusion_group = $1`, [group]))).toEqual([]);
       // The row at B is as it was, and work that reads B meets it as it always did.
-      expect(await at(B, () => rawQuery<{ name: string }>(`SELECT name FROM tags WHERE slug = $1`, [slug]))).toEqual([{ name: "Held at B" }]);
-      expect(await at(B, () => rawQuery(insertTag("ON CONFLICT (slug) DO NOTHING"), [slug, "Again at B", B]))).toEqual([]);
+      expect(await at(B, () => rawQuery<{ focus: string }>(`SELECT focus FROM ingest_focuses WHERE exclusion_group = $1`, [group]))).toEqual([{ focus: "Held at B" }]);
+      expect(await at(B, () => rawQuery(insertFocus("ON CONFLICT (exclusion_group) DO NOTHING"), [group, "Again at B", B]))).toEqual([]);
       // The owner's connection is not held to it: a duplicate there is a duplicate.
-      await expect(system(() => rawQuery(insertTag(""), [slug, "As the owner", A]))).rejects.toSatisfy((err) => sqlState(err) === "23505");
+      await expect(system(() => rawQuery(insertFocus(""), [group, "As the owner", A]))).rejects.toSatisfy((err) => sqlState(err) === "23505");
     } finally {
-      await system(() => rawQuery(`DELETE FROM tags WHERE slug = $1`, [slug]));
+      await system(() => rawQuery(`DELETE FROM ingest_focuses WHERE exclusion_group = $1`, [group]));
     }
   });
 });

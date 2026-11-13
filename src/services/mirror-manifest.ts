@@ -294,9 +294,17 @@ export interface ReplicatedTable {
   name: string;
   /**
    * The columns that say which row of the public graph this is, in order:
-   * the primary key, without `origin`.
+   * the primary key, without `origin` and without `sensitivity_label`,
+   * which say which layer a row is in and not which row it is.
    */
   key: readonly string[];
+  /**
+   * The primary key as the table has it, in order: the key, and where the
+   * key names other rows, the label and the origin that let each layer
+   * hold its own row for it (db/schema.ts, "The layer"). A mirrored row is
+   * always `public` and `mirror`, so this is the applier's conflict target.
+   */
+  primaryKey: readonly string[];
   /**
    * The key is not an id of its own but names other rows (an argument and
    * an edge), so this deployment can hold a row of its own with the same
@@ -338,7 +346,7 @@ function build(): ReplicatedTable[] {
     const primaryKey = config.primaryKeys[0]
       ? config.primaryKeys[0].columns.map((c) => c.name)
       : config.columns.filter((c) => c.primary).map((c) => c.name);
-    const key = primaryKey.filter((c) => c !== "origin");
+    const key = primaryKey.filter((c) => !EVERY_TABLE.has(c));
     const replicated = config.columns.filter((c) => !EVERY_TABLE.has(c.name) && !(c.name in leftOut));
     const columns = replicated.map((c) => c.name);
     const parents: ReplicatedParent[] = [];
@@ -358,6 +366,7 @@ function build(): ReplicatedTable[] {
     return {
       name: config.name,
       key,
+      primaryKey,
       keyPerGraph: primaryKey.includes("origin"),
       columns,
       leftOut,
