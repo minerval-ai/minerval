@@ -70,6 +70,14 @@ import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
+import {
+  REPORT_NOT_GIVEN,
+  currentSourceTextRule,
+  mayBeGivenReportOfResearch,
+  sourceTextRuleFor,
+  withSourceTextRule,
+  writerNote,
+} from "../../services/separate-reader.js";
 import { randomUUID } from "node:crypto";
 import { runBudgetLeft } from "../run-funding.js";
 import {
@@ -595,7 +603,17 @@ export function runClaimSteward(
     // The run's scratch directory in the sandbox goes when the run ends
     // (tools/file-set-tools.ts); a run that never runs a command asks the
     // sandbox nothing.
-    return withAgent("steward", () => withRunScratch(() => runClaimStewardImpl(input)));
+    // Where the node's page is under a standing showing, this pass writes a
+    // page that is shown word for word to readers who do not read its
+    // label, and is not given the text of sources they cannot read
+    // (services/separate-reader.ts). Looked up inside the run, on its own
+    // connection. On the public graph this reads nothing.
+    return withAgent("steward", () =>
+      withRunScratch(async () => {
+        const rule = await sourceTextRuleFor([input.claimId]);
+        return withSourceTextRule(rule, () => runClaimStewardImpl(input));
+      })
+    );
   });
 }
 
@@ -682,10 +700,21 @@ async function runClaimStewardImpl(input: {
   // The delegation channel (#298): the researcher, launched from this run
   // on this claim and paid from this pass's budget. The bundle counts the
   // runs it launches for the record; money, not the count, bounds them.
+  // Under a standing showing of this node's page, delegate_research can
+  // launch the researcher as a reader, and the run is told what it is not
+  // given and why (services/separate-reader.ts).
+  const sourceTextRule = currentSourceTextRule();
   const researchTools = createResearchTools({
     requestedBy: "claim_steward",
     claimId: input.claimId,
+    launchesReaders: !!sourceTextRule,
   });
+  const readerNote = sourceTextRule
+    ? writerNote(sourceTextRule, {
+        connections: connectionTools.notOffered ?? [],
+        fileSets: fileSetTools.notOffered ?? [],
+      })
+    : "";
 
   // The code-execution sandbox, for the Steward's own analysis (§9): an
   // Anthropic server tool, so present only when this run's model is
@@ -810,7 +839,7 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
-${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
+${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${readerNote ? `\n\n${readerNote}` : ""}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.
@@ -832,13 +861,22 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
   // session, which pauses at the end if it is waiting on anything.
   // A failure here never costs the pass: it runs fresh.
   const resumed = await takeReadySession(input.claimId, "steward").catch(() => null);
+  // A research report among the answers is in a Researcher's own words.
+  // This run takes on the marks of the run that wrote it, or, where this
+  // run writes a shown page and that run had sources its readers cannot
+  // read, is given a fixed sentence in the report's place.
+  if (resumed) {
+    for (const reply of resumed.replies) {
+      if (reply.kind === "research" && !(await mayBeGivenReportOfResearch(reply.ref))) reply.text = REPORT_NOT_GIVEN;
+    }
+  }
   const session = { id: resumed?.session.id ?? randomUUID(), role: "steward", nodeId: input.claimId };
   const initialMessages = resumed
     ? await resumeMessages(resumed.session, resumed.replies, {
         // The connections are said again on resume: which of them the run
         // has, and which of their tools, may have changed while it was paused.
         // So are the file sets, and that the scratch directory starts empty.
-        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief, connectionTools.note, fileSetTools.note].filter(Boolean).join("\n\n"),
+        newMessages: [input.context.trim() ? `Context: ${input.context}` : "", inbox.brief, connectionTools.note, fileSetTools.note, readerNote].filter(Boolean).join("\n\n"),
         budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
       })
     : [{ role: "user" as const, content: userMessage }];

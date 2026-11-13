@@ -57,6 +57,7 @@ import {
   type SandboxHealth,
 } from "../../services/sandbox-client.js";
 import { currentLabel, getUsageContext } from "../usage-context.js";
+import { givenSourceText, setLabelsOfCommand, withheldFromThisRun } from "../../services/separate-reader.js";
 import { PRIVATE_PERSONS_REMINDER } from "./connection-tools.js";
 
 export const RUN_COMMAND_TOOL_NAME = "run_command";
@@ -72,6 +73,12 @@ export const FILE_SET_TOOL_NAMES: readonly string[] = [
 ];
 
 export interface FileSetToolBundle {
+  /**
+   * The sets this run would have and is not offered because it writes a
+   * page shown to readers who cannot read them
+   * (services/separate-reader.ts), by name.
+   */
+  notOffered?: string[];
   /** run_command (where the sandbox answers), open_output, keep_analysis, keep_file. Empty when the run has no set. */
   definitions: Tool[];
   /** The passage for the run's task message. Empty when the run has no set. */
@@ -408,6 +415,11 @@ async function run(
     }
   }
 
+  // What the command prints can be the files' own text: a run that writes a
+  // shown page is not given it, and any other run is marked with what it
+  // is given (services/separate-reader.ts).
+  const notGiven = givenSourceText(mounted.map((s) => s.label), "The output of a command over those file sets");
+  if (notGiven) return notGiven;
   scratch.used = true;
   const ran = await runCommand({ scratchKey: scratch.key, command, files, sets: mounted, health });
   if (!ran.ran) {
@@ -459,6 +471,8 @@ async function run(
 async function open(input: Record<string, unknown>): Promise<string> {
   const offset = Number(input.offset);
   const maxChars = Number(input.max_chars);
+  const notGiven = givenSourceText(await setLabelsOfCommand(String(input.call ?? "")), "That output");
+  if (notGiven) return notGiven;
   const opened = await openOutput({
     callId: String(input.call ?? ""),
     offset: Number.isFinite(offset) ? offset : undefined,
@@ -522,8 +536,13 @@ export async function createFileSetTools(
   // File sets are added by people who hold a permission, and only a
   // members-only deployment has those (src/permissions.ts).
   if (!membersOnly(opts.config)) return NO_FILE_SET_TOOLS;
-  const sets = await fileSetsOfferedAt(currentLabel());
-  if (sets.length === 0) return NO_FILE_SET_TOOLS;
+  const reached = await fileSetsOfferedAt(currentLabel());
+  // Where this run writes a page shown to readers who do not read its
+  // label, the sets those readers cannot read are not mounted for it
+  // (services/separate-reader.ts). It is told which, by its own brief.
+  const sets = reached.filter((s) => !withheldFromThisRun(s.label));
+  const notOffered = reached.filter((s) => withheldFromThisRun(s.label)).map((s) => s.name);
+  if (sets.length === 0) return notOffered.length > 0 ? { ...NO_FILE_SET_TOOLS, notOffered } : NO_FILE_SET_TOOLS;
 
   const config = opts.config ?? loadConfig();
   const answered = sandboxConfigured(config)
@@ -550,6 +569,7 @@ export async function createFileSetTools(
       answered.ok ? { health: answered.value } : { failure: answered.failure },
       config.sandboxHourCostMicroUsd ?? 0
     ),
+    notOffered,
     execute: async (name, input) => {
       try {
         if (name === RUN_COMMAND_TOOL_NAME) {

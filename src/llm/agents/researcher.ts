@@ -41,7 +41,7 @@ import {
 import { LlmRefusalError } from "../errors.js";
 import { modelSupportsLongRun } from "../models.js";
 import { resolveProvider } from "../providers/routing.js";
-import { getUsageContext, markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
+import { currentLabel, getUsageContext, markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import {
   CODE_EXECUTION_TOOL,
   estimateBudget,
@@ -72,6 +72,30 @@ import { executeReadPage, getReadPageToolDefinition, READ_PAGE_TOOL_NAME } from 
 import { createFigureTools } from "../tools/figure-tools.js";
 import type { ToolExecution } from "../tool-output.js";
 import { NO_CONNECTION_TOOLS, createConnectionTools } from "../tools/connection-tools.js";
+import {
+  MAX_PASSAGE_CHARS,
+  NO_ANSWER_REASONS,
+  answersForLauncher,
+  answersInOrder,
+  checkValue,
+  cutPassage,
+  type NoAnswerReason,
+  type ReaderAnswer,
+  type ReaderQuestion,
+} from "../../services/reader-answers.js";
+import {
+  currentSourceTextRule,
+  readerNote,
+  recordedSourceAddress,
+  sourceTextRuleFor,
+  storedTextForPassage,
+  withSourceTextRule,
+  withoutSourcesNote,
+} from "../../services/separate-reader.js";
+import { htmlToText } from "../../services/source-map-service.js";
+
+/** The reasons a reader may give for leaving a question unanswered. `not_reached` is the harness's, for a run that ended first. */
+const READER_NO_ANSWER = (Object.keys(NO_ANSWER_REASONS) as NoAnswerReason[]).filter((r) => r !== "not_reached");
 import { NO_FILE_SET_TOOLS, createFileSetTools, withRunScratch } from "../tools/file-set-tools.js";
 import {
   elicitConfigured,
@@ -186,6 +210,7 @@ import {
   launcherWritesGraph,
   readResearcherPaused,
   stampResearchRun,
+  writeReaderAnswers,
   updateResearchProgress,
   writeResearchNotebookSection,
   type ResearchRunRow,
@@ -452,6 +477,13 @@ export interface ResearcherInput {
      * submit_contribution tool.
      */
     contribution_budget_micro_usd?: number;
+    /**
+     * For a run launched as a reader (services/separate-reader.ts): the
+     * questions its launching Steward asked. The run then has open to it the
+     * sources the Steward is not given, records nothing on the node, and
+     * its answers are what comes back.
+     */
+    questions?: ReaderQuestion[] | null;
   };
   /**
    * The node the run serves. kind is the node's kind; absent is read as
@@ -506,7 +538,44 @@ export interface ResearcherResult {
   servedModels: string[];
   toolNames: string[];
   error: string | null;
+  /** A reader's answers, in the order its questions were asked. Absent on any other run. */
+  answers?: ReaderAnswer[] | null;
 }
+
+/**
+ * The reader's one way of reaching the Steward that launched it
+ * (services/reader-answers.ts). Every field is held to a form, and the
+ * words of a passage are taken from the source's stored text, so nothing
+ * the reader composes is in an answer.
+ */
+export const ANSWER_TOOL: Tool = {
+  name: "answer",
+  description:
+    "Answer one of the Steward's questions, in the form it asked. yes_no: value is yes, no or unclear. number: " +
+    "value is a number, in the unit asked. date: value is YYYY, YYYY-MM or YYYY-MM-DD. choice: value is one of " +
+    "the question's options, exactly as written. passage: value is the words as the source has them, and source " +
+    "is required; the words are found in the source's stored text and the passage is taken from there, so a " +
+    `paraphrase is refused, and a passage holds at most ${MAX_PASSAGE_CHARS} characters. source is the address ` +
+    "of the source the answer rests on: what keep_reading, keep_analysis or keep_file returned, or a recorded " +
+    "source's url or id. Give it wherever an answer rests on one. Where the material does not answer the " +
+    "question, leave value out and give no_answer. Answering a question again replaces the earlier answer. " +
+    "These fields are all that reaches the Steward.",
+  input_schema: {
+    type: "object",
+    properties: {
+      question: { type: "string", description: "The question's id: q1, q2, ..." },
+      value: { type: ["string", "number"], description: "The answer, in the question's form." },
+      source: { type: "string", description: "The address of the source the answer rests on." },
+      no_answer: {
+        type: "string",
+        enum: READER_NO_ANSWER,
+        description: READER_NO_ANSWER.map((r) => `${r}: ${NO_ANSWER_REASONS[r]}`).join(" "),
+      },
+    },
+    required: ["question"],
+    additionalProperties: false,
+  },
+};
 
 function asString(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -521,7 +590,19 @@ function asString(v: unknown): string {
 export async function runResearcher(input: ResearcherInput): Promise<ResearcherResult> {
   // The run's scratch directory in the sandbox goes when the run ends
   // (tools/file-set-tools.ts).
-  return withAgent(RESEARCHER_AGENT, () => withRunScratch(() => runResearcherImpl(input)));
+  return withAgent(RESEARCHER_AGENT, () =>
+    withRunScratch(async () => {
+      // Where a node this run serves has a page under a standing showing,
+      // the run is given the text of sources that page's readers cannot
+      // read only as a reader, whose answers are held to set forms
+      // (services/separate-reader.ts). Looked up inside the run, on its own
+      // connection; on the public graph this reads nothing.
+      const nodeIds = input.claim ? [input.claim.id] : (input.requestNodes ?? []).map((n) => n.id);
+      const rule = await sourceTextRuleFor(nodeIds);
+      const asReader = (input.run.questions ?? []).length > 0;
+      return withSourceTextRule(rule ? { ...rule, reader: asReader } : null, () => runResearcherImpl(input));
+    })
+  );
 }
 
 async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResult> {
@@ -569,9 +650,16 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const scopesRequest = run.requested_by === "request_scope";
   const onRequestNodes = takesUpRequest && requestNodes.length > 0;
   const requestNodeIds = new Set(requestNodes.map((n) => n.id));
+  // A reader (services/separate-reader.ts) answers its launcher's questions
+  // and records nothing on the node: of the provenance tools it keeps the
+  // one that opens a source.
+  const questions = (run.questions ?? []).length > 0 ? run.questions! : null;
+  const asReader = questions !== null;
+  const sourceTextRule = currentSourceTextRule();
   const skillTools = getActiveSkillToolDefinitions(listSkills(), "researcher")
     .filter(
       (t) =>
+        (!asReader || !isProvenanceTool(t.name) || t.name === "provenance_read_source") &&
         (graphWrites || (!isProvenanceTool(t.name) && !t.name.startsWith(EXAMINATION_PREFIX))) &&
         (checker || !isLeanTool(t.name)) &&
         (!isProvenanceTool(t.name) ||
@@ -612,9 +700,9 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   // run scoped to a node. A claim proper takes record_claim_instance, a
   // question record_question_instance; a quantity neither.
   const nodeKind = input.claim ? (input.claim.kind ?? "claim") : null;
-  const recordsInstances = graphWrites && nodeKind === "claim";
-  const recordsQuestionInstances = graphWrites && nodeKind === "question";
-  const recordsArgumentInstances = graphWrites && (nodeKind === "claim" || nodeKind === "quantity");
+  const recordsInstances = graphWrites && !asReader && nodeKind === "claim";
+  const recordsQuestionInstances = graphWrites && !asReader && nodeKind === "question";
+  const recordsArgumentInstances = graphWrites && !asReader && (nodeKind === "claim" || nodeKind === "quantity");
   const submitsContributions =
     run.requested_by === "grantmaker" && !!run.grant_id && (run.contribution_budget_micro_usd ?? 0) > 0;
 
@@ -653,6 +741,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...(recordsQuestionInstances ? [RECORD_QUESTION_INSTANCE_TOOL] : []),
     ...(recordsArgumentInstances ? [RECORD_ARGUMENT_INSTANCE_TOOL] : []),
     ...reportTools.definitions,
+    ...(asReader ? [ANSWER_TOOL] : []),
     NOTEBOOK_WRITE_TOOL,
     NOTEBOOK_READ_TOOL,
     // A run that takes up a request reports its outcome, and may file the
@@ -720,7 +809,68 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     ...taskInput,
     estimate: estimateBudget({ model, ceilingMicroUsd: ceiling, promptChars, longRun }),
   }) + skillLoader.pointerNote + (connectionTools.note ? `\n\n${connectionTools.note}` : "") +
-    (fileSetTools.note ? `\n\n${fileSetTools.note}` : "");
+    (fileSetTools.note ? `\n\n${fileSetTools.note}` : "") +
+    // What a run on a node under a standing showing is told: a reader what
+    // it is for and its questions, any other run what it is not given.
+    (asReader
+      ? `\n\n${readerNote(sourceTextRule ?? { pageLabel: currentLabel(), withheldLabels: [], reader: true }, questions!)}`
+      : sourceTextRule && graphWrites
+        ? `\n\n${withoutSourcesNote(sourceTextRule, {
+            connections: connectionTools.notOffered ?? [],
+            fileSets: fileSetTools.notOffered ?? [],
+          })}`
+        : "");
+
+  // A reader's answers, by question, as each was checked and stored.
+  const given = new Map<string, ReaderAnswer>();
+  const executeAnswer = async (toolInput: Record<string, unknown>): Promise<string> => {
+    const refuse = (message: string) => JSON.stringify({ success: false, message });
+    const id = asString(toolInput.question).trim();
+    const question = questions!.find((q) => q.id === id);
+    if (!question) return refuse(`There is no question "${id}". The questions are ${questions!.map((q) => q.id).join(", ")}.`);
+    const ref = asString(toolInput.source).trim();
+    const none = asString(toolInput.no_answer).trim();
+    let recorded: ReaderAnswer;
+    if (none) {
+      if (!(READER_NO_ANSWER as string[]).includes(none)) return refuse(`no_answer is one of ${READER_NO_ANSWER.join(", ")}.`);
+      recorded = { question: question.id, answer: null, no_answer: none as NoAnswerReason };
+    } else if (question.form === "passage") {
+      if (!ref) return refuse("A passage names the source it is from: give source.");
+      const stored = await storedTextForPassage(ref);
+      if (!stored) {
+        return refuse(
+          "The graph holds no stored text for a source at that address. Keep the reading, the analysis or the file " +
+            "first, and give the address that returns."
+        );
+      }
+      const readable = htmlToText(stored.text);
+      const cut = cutPassage(asString(toolInput.value), stored.text, readable === stored.text ? null : readable);
+      if (typeof cut === "string") return refuse(cut);
+      recorded = { question: question.id, answer: cut, source: stored.address };
+    } else {
+      const value = checkValue(question, toolInput.value);
+      if (typeof value === "string") return refuse(value);
+      let source: string | undefined;
+      if (ref) {
+        const address = await recordedSourceAddress(ref);
+        if (!address) {
+          return refuse(
+            "The graph records no source at that address. Keep the reading, the analysis or the file first, and " +
+              "give the address that returns, or leave source out."
+          );
+        }
+        source = address;
+      }
+      recorded = { question: question.id, answer: value, ...(source ? { source } : {}) };
+    }
+    given.set(question.id, recorded);
+    await writeReaderAnswers(run.id, answersInOrder(questions!, given));
+    return JSON.stringify({
+      success: true,
+      reaches_the_steward: answersForLauncher([question], [recorded])[0],
+      not_yet_answered: questions!.filter((q) => !given.has(q.id)).map((q) => q.id),
+    });
+  };
 
   let reportInput: Record<string, unknown> | null = null;
   let reminded = false;
@@ -772,6 +922,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     if (loaded !== null) return loaded;
     if (name === "notebook_write") return executeNotebookWrite(toolInput);
     if (name === "notebook_read") return JSON.stringify({ success: true, notebook });
+    if (name === ANSWER_TOOL.name) return executeAnswer(toolInput);
     if (name === "report") {
       return JSON.stringify({ success: false, message: "report was already received." });
     }
@@ -918,6 +1069,7 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
     servedModels: [...servedModels],
     toolNames,
     error,
+    ...(asReader ? { answers: answersInOrder(questions!, given) } : {}),
   });
 
   const runLoop = async () => {

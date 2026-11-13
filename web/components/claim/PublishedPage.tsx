@@ -5,6 +5,7 @@ import { RELATION, DEFINED_IN } from "@/lib/ontology";
 import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
 import { SEALED_TAB, day, showingWords, stateWords } from "@/lib/published";
 import type { Block, PublishedPageShape } from "@/lib/published-page/shape";
+import { GIVEN_SOURCE_TEXT_WORDS } from "@/lib/published-page/verify";
 import { modelDisplayName } from "@/lib/model-names";
 import { ArgumentBlock } from "../DecompositionTree";
 import { ArgumentText } from "../ArgumentText";
@@ -466,6 +467,9 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
                 : !log.sealed
                   ? "Not sealed."
                   : `Sealed, ${log.steps ?? "an unrecorded number of"} steps. ${log.chain_verifies === true ? "The deployment found its chain intact when it recorded the page." : log.chain_verifies === false ? "The deployment found its chain broken when it recorded the page." : "The deployment did not say whether its chain is intact."} The log itself stays in the deployment.`}
+            </Row>
+            <Row label="What its writer was given">
+              {GIVEN_SOURCE_TEXT_WORDS[made.given_source_text ?? "not_recorded"]} The deployment states this from that run&rsquo;s own record.
             </Row>
             <Row label="Paid for by">
               {made.paid_for ? `${made.paid_for.by.charAt(0).toUpperCase() + made.paid_for.by.slice(1)}${made.paid_for.stake !== "not recorded" ? `; ${made.paid_for.stake}` : ""}.` : "Not recorded."}
