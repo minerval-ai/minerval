@@ -5156,6 +5156,11 @@ export const auditLog = pgTable(
       .defaultNow(),
     // The label of the run or request that made the entry (src/labels.ts).
     sensitivityLabel: sensitivityLabelColumn(),
+    // The run that made the entry, where one did and said so. Recorded for a
+    // judgment left standing (action 'left_standing'; services/
+    // left-standing-service.ts), so that a reader can open the run that
+    // examined the node. No foreign key, like llm_usage.run_id.
+    runId: uuid("run_id"),
   },
   (table) => [index("idx_audit_log_claim_time").on(table.claimId, table.createdAt)]
 );
@@ -7004,6 +7009,14 @@ export const agentSessions = pgTable(
 // no foreign key; the rows are written in the same statement sequence as the
 // judgment and never updated. A judgment whose inputs_recorded is false has
 // no rows here because none were recorded, not because it rests on nothing.
+//
+// A fifth kind, 'left_standing', records no judgment. A Steward at a label
+// that examined a node at a label it reads and left the judgment there
+// standing has an entry in audit_log saying so (action 'left_standing'),
+// and judgment_id is that entry's id. Its 'beside' rows name the judgments
+// it left standing, as a judgment's name the ones it was made beside, so
+// that the same record says when one of them has been replaced
+// (services/left-standing-service.ts).
 // ---------------------------------------------------------------------------
 export const judgmentInputs = pgTable(
   "judgment_inputs",
@@ -7038,7 +7051,7 @@ export const judgmentInputs = pgTable(
     index("idx_judgment_inputs_judgment").on(table.judgmentKind, table.judgmentId),
     check(
       "ck_judgment_inputs_judgment_kind",
-      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation')`
+      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation', 'left_standing')`
     ),
     check("ck_judgment_inputs_input_kind", sql`${table.inputKind} IN ('premise', 'source', 'beside')`),
     check(

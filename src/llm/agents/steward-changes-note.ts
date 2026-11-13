@@ -196,7 +196,11 @@ export async function loadChangesSinceJudgedNote(claimId: string, kind: NodeKind
  */
 export function versionsNote(
   runLabel: string,
-  node: { label: string; versions: ReadonlyArray<Pick<NodeVersion, "label" | "in_force" | "made_beside" | "versions_since"> & { assessed_at?: unknown }> }
+  node: {
+    label: string;
+    versions: ReadonlyArray<Pick<NodeVersion, "label" | "in_force" | "made_beside" | "versions_since"> & { assessed_at?: unknown }>;
+    left_standing?: ReadonlyArray<{ label: string; examined_at: string; judgments: ReadonlyArray<{ label: string }>; open_again: boolean }>;
+  }
 ): string {
   const others = node.versions.filter((v) => v.label !== runLabel);
   if (node.label === runLabel && others.length === 0) return "";
@@ -219,7 +223,14 @@ export function versionsNote(
         (moved.length > 0 ? ` It was made against an earlier state of what it reads: ${moved.join("; ")}.` : "")
     );
   } else {
-    lines.push(`- ${tick(runLabel)}, this run's own: none recorded.`);
+    const left = node.left_standing?.find((e) => e.label === runLabel);
+    lines.push(
+      left
+        ? `- ${tick(runLabel)}, this run's own: none recorded. A run at ${tick(runLabel)} examined the node on ` +
+          `${left.examined_at.slice(0, 10)} and left the judgment at ${left.judgments.map((j) => tick(j.label)).join(", ")} standing` +
+          (left.open_again ? `. What it left standing has been replaced since, so the question is open again at ${tick(runLabel)}.` : ".")
+        : `- ${tick(runLabel)}, this run's own: none recorded.`
+    );
   }
   for (const v of others) {
     lines.push(`- ${tick(v.label)}${on(v)}${!own && v.in_force ? ". It is the version in force for this run" : ""}.`);

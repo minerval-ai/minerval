@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assessmentOf, byLabelName, detailAt, detailWithoutJudgment, whichToOpen } from "../../../web/lib/inside-versions.js";
+import { assessmentOf, byLabelName, detailAt, detailWithoutJudgment, leftStandingLines, notExaminedLine, whichToOpen } from "../../../web/lib/inside-versions.js";
 import { readerEvidenceLine } from "../../../web/lib/coverage.js";
 import type { ClaimDetail, NodeVersion } from "../../../web/lib/types.js";
 
@@ -111,5 +111,40 @@ describe("what a judgment was made on, said to its reader", () => {
   it("says when it rests on evidence the reader cannot read, in part or wholly", () => {
     expect(readerEvidenceLine({ examined: true, on: ["evidence_this_reader_can_read", "evidence_this_reader_cannot_read"] })).toMatch(/^This assessment was made partly on evidence you can read and partly on evidence you cannot/);
     expect(readerEvidenceLine({ examined: true, on: ["evidence_this_reader_cannot_read"] }, "estimate")).toMatch(/^This estimate was made on evidence you cannot read/);
+  });
+});
+
+describe("a node examined at the reader's label, with another label's assessment left standing", () => {
+  const entry = {
+    label: "internal",
+    examined_at: "2026-11-12T09:00:00.000Z",
+    run_id: null,
+    reasoning: "Queried the order book.",
+    judgments: [{ label: "public", replaced: false }],
+    open_again: false,
+  };
+
+  it("is said in ordinary words, with the date, and as standing while the other assessment stands", () => {
+    expect(leftStandingLines(entry, "12 November 2026")).toEqual({
+      examined:
+        "This node was examined at internal on 12 November 2026, and the public assessment was left standing: its Steward at internal made no separate assessment.",
+      since: "That assessment still stands.",
+    });
+  });
+
+  it("says the question is open again once that assessment has been replaced", () => {
+    const lines = leftStandingLines({ ...entry, judgments: [{ label: "public", replaced: true }], open_again: true }, "12 November 2026");
+    expect(lines.since).toBe(
+      "That assessment has been replaced since, so the newer one has not been looked at from internal. The deployment opens a fresh look at internal when that happens, and it runs when someone pays for it."
+    );
+  });
+
+  it("is a different sentence from never having been examined there, which is not a finding", () => {
+    expect(notExaminedLine([])).toBeNull();
+    expect(notExaminedLine(["internal"])).toBe(
+      "This node has not been examined at internal: no assessment has been made there, and no Steward there has looked and left another standing. " +
+        "That is not a finding that nothing filed at that label bears on it."
+    );
+    expect(notExaminedLine(["internal", "restricted"])).toContain("at internal and restricted");
   });
 });

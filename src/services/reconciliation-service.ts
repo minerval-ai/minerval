@@ -697,8 +697,7 @@ async function mergeCarriedMessage(input: {
         `.\n\n`
       : "") +
     `This node has ${survivorVersion ? "a version" : "no version"} of its judgment at \`${label}\`. ` +
-    `Whether what moved changes how this node is judged at \`${label}\` is yours to decide: reassess it, and ` +
-    `record a version at \`${label}\` where material at \`${label}\` bears on it.`
+    `Whether what moved changes how this node is judged at \`${label}\` is yours to decide.`
   );
 }
 

@@ -21,7 +21,7 @@ import {
   type QuestionStanding,
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
-import { markSeveralInForce, recordMadeBeside, versionWithoutMaterial, versionWithoutMaterialMessage } from "./judgment-version-service.js";
+import { markSeveralInForce, recordMadeBeside } from "./judgment-version-service.js";
 import { holdsMirror, mirroredRowMessage, publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
@@ -229,13 +229,9 @@ export async function recordQuestionAssessment(input: {
   if (!["answered", "leaning"].includes(input.standing) && favored.length > 0) {
     throw new KindError(`A question that is ${input.standing} favors no answer`);
   }
-  // On a question that carries another label, this label's assessment rests
-  // on material at this label or is not stored (judgment-version-service.ts).
   // A mirrored question's assessment at its own label is the public graph's
   // (mirrored-node-service.ts).
   if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An assessment of it"));
-  const noMaterial = await versionWithoutMaterial(input.claimId);
-  if (noMaterial) throw new KindError(versionWithoutMaterialMessage(noMaterial, "An assessment"));
   return withTransaction(async (tx) => {
     await requireQuestion(tx, input.claimId);
     const answers = await answerIds(tx, input.claimId);

@@ -103,10 +103,10 @@ export interface StewardMessage {
     // first recorded (version-upkeep.ts). The context names the labels and
     // nothing else; whether it matters is the Steward's judgment.
     | "version_beside_changed"
-    // A version at this label on a node that carries another label rested
-    // on material at this label, and that material has since been detached
-    // or removed (version-upkeep.ts). The context says so in fixed words.
-    | "version_material_gone"
+    // A Steward at this label examined the node and left the judgment it
+    // reads at another label standing, and that judgment has since been
+    // replaced (version-upkeep.ts). The context says so in fixed words.
+    | "left_standing_changed"
     // A page of this node written at a label this one does not read has
     // been shown at this label and is now among the node's sources
     // (release-gate-service.ts). The context is counts and fixed words.

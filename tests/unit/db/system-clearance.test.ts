@@ -262,8 +262,8 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing while it sees every label: it reads ids and labels. Each node's message, slot and ledger row are then written inside runAtLabel at the label of the version that is out of date, and the message names only labels that label reads (the versions it was made beside), in fixed words.",
     ],
     [
-      "The upkeep of versions finds, at every label, the versions on a node at another label whose material at their own label is gone; each node's reassessment is then opened at its own version's label.",
-      "Nothing while it sees every label: it reads ids and labels. Each node's message, slot and ledger row are then written inside runAtLabel at the version's own label, and the message is fixed words that name that label and no other.",
+      "The upkeep of versions finds, at every label, the records of a judgment left standing whose judgment has since been replaced; each node's reassessment is then opened at the record's own label.",
+      "Nothing while it sees every label: it reads ids and labels. Each node's message, slot and ledger row are then written inside runAtLabel at the label of the record, and the message names only that label and the labels of the judgments it left standing, which that label reads, in fixed words.",
     ],
   ],
   "src/workers/correspondent-triggers.ts": [

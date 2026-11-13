@@ -536,6 +536,17 @@ export interface CoverageRow {
  * its kind has, whether it is in force for this reader, and what it was
  * made beside. The public graph serves none.
  */
+/** A label's record that it examined a node and left the judgment it reads standing. Not a judgment. */
+export interface LeftStanding {
+  label: string;
+  examined_at: string;
+  run_id: string | null;
+  reasoning: string;
+  judgments: Array<{ label: string; replaced: boolean }>;
+  /** One of them has been replaced, or a label it reads has a judgment made since. */
+  open_again: boolean;
+}
+
 export interface NodeVersion {
   id: string;
   label: string;
@@ -572,6 +583,11 @@ export interface ClaimDetail {
   // versions of the node's judgment this reader may read, those in force
   // first. Absent on the public graph.
   versions?: NodeVersion[];
+  // Where a label the reader reads examined the node and left another
+  // label's judgment standing, and the labels the reader reads at which the
+  // node has been neither judged nor examined. Absent where there are none.
+  left_standing?: LeftStanding[];
+  not_examined_at?: string[];
   // Only where the node is the public graph's, read through a mirror.
   mirrored?: { public_graph_as_of: string | null; public_page_url: string | null } | null;
   assessment: Assessment | null;

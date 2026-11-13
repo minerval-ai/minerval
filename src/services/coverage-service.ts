@@ -186,6 +186,22 @@ export async function summarizeCoverage(
                 (j.kind = 'assessment' AND EXISTS (SELECT 1 FROM assessments x WHERE x.id = j.id AND x.origin = 'mirror'))
              OR (j.kind = 'quantity_estimate' AND EXISTS (SELECT 1 FROM quantity_estimates x WHERE x.id = j.id AND x.origin = 'mirror'))
              OR (j.kind = 'question_assessment' AND EXISTS (SELECT 1 FROM question_assessments x WHERE x.id = j.id AND x.origin = 'mirror'))))
+       UNION ALL
+       -- A reading through a connection, or an analysis of a set of files, that work on the node at the
+       -- judgment's label kept as a source before the judgment was written. An agent keeps one when a
+       -- judgment rests on it, whether or not an instance was recorded from it, so it is part of what the
+       -- judgment was made on (showing-service.ts counts the same sources for a page's release).
+       SELECT j.node_id, s.sensitivity_label, s.source_type, s.origin, s.url
+         FROM judged j
+         JOIN (SELECT claim_id, source_id, sensitivity_label, called_at FROM connection_calls
+               UNION ALL
+               SELECT claim_id, source_id, sensitivity_label, called_at FROM sandbox_calls) k
+           ON k.claim_id = j.node_id AND k.source_id IS NOT NULL AND k.called_at <= j.assessed_at
+         JOIN sources s ON s.id = k.source_id
+        WHERE k.sensitivity_label = COALESCE(
+                (SELECT x.sensitivity_label FROM assessments_in_force x WHERE x.id = j.id),
+                (SELECT x.sensitivity_label FROM quantity_estimates_in_force x WHERE x.id = j.id),
+                (SELECT x.sensitivity_label FROM question_assessments_in_force x WHERE x.id = j.id))
      )
      SELECT j.node_id,
             EXISTS (SELECT 1 FROM made_on m WHERE m.node_id = j.node_id AND m.source_type <> 'shown_page'

@@ -493,7 +493,7 @@ says so where an administrator's list leaves rows out.
 | `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
 | `/admin/outside` and the four pages under it | every member; controls by permission | docs/outward-acts.md: the organization's account on the public graph with its public owls and public mandates, and the log of every act there; public requests adopted and taken up; the setting that keeps public versions current, with what it shows outside; what readers said back about published pages; and the agents' reports, with sending one on to Minerval's maintainers |
 | `/sources/new` | `direct` | Add a document or an address (`POST /sources`), at a label the person chooses where there is more than one |
-| `/claims/:id` | every member | The ordinary page of a node. Where the node carries a judgment at more than one label the reader reads (`versions` on `GET /claims/:id`), a tab for each, opening on the one in force; a reader for whom two are in force, at labels that do not read each other, is shown both in full and neither is chosen. Under the tabs: what the assessment was made on, what it was made beside, and whether that has since been replaced. A page of the node shown to a label the reader reads, or outside, is a further tab drawn by the components of the public site's second tab (`web/lib/inside-node.ts`, `web/components/claim/InsideVersions.tsx`) |
+| `/claims/:id` | every member | The ordinary page of a node. Where the node carries a judgment at more than one label the reader reads (`versions` on `GET /claims/:id`), a tab for each, opening on the one in force; a reader for whom two are in force, at labels that do not read each other, is shown both in full and neither is chosen. Under the tabs: what the assessment was made on, what it was made beside, and whether that has since been replaced; where a label the reader reads examined the node and left another label's assessment standing, that it did, on what date, with the Steward's reasons, and whether that assessment has since been replaced (`left_standing`); and the labels the reader holds at which the node has not been examined at all (`not_examined_at`). A page of the node shown to a label the reader reads, or outside, is a further tab drawn by the components of the public site's second tab (`web/lib/inside-node.ts`, `web/components/claim/InsideVersions.tsx`) |
 | `/showings`, `/showings/:id`, `/showings/:id/pages/:page_id` | every member, as far as their labels reach; controls by permission | docs/showing-a-page.md: the showings a reader may see from either side; one showing with each node's state, every version, every act, and for a reader of the page's label paying for the redaction or its check (`fund`), holding a page and ending a standing showing (`direct`); one version as shown, part by part, with who released or held each, the fingerprint, and a check that runs in the reader's browser |
 | `/showings/new` | `direct` | Ask for a node's page to be shown (`POST /showings`), from the node's page. Nothing is preselected, and each choice says what it shows and to whom |
 | `/release` | `release` | The release queue (`GET /release/queue`): each waiting part as it would be shown, with the Redactor's removals struck through in front of their marks, release and hold part by part or in bulk, what cannot be done there and why, and the party's standing rules |
@@ -537,6 +537,25 @@ of the node, which also lists each judgment under `versions` with its own
 way (`argument_evaluations_in_force` on a tree's row; `evaluations_in_force`
 and `evaluations` on the argument's own read). The web app shows "N
 assessments" on such a row, linking to the node.
+
+**Where a label left a judgment standing.** A Steward at a label, on a
+node at a label it reads, records its own judgment or leaves the one it
+reads standing ([architecture.md](architecture.md), "A judgment at each
+label"). The record that it left one standing is not a judgment. It
+changes no view, puts nothing in force and is counted by none of the reads
+above: every read that gives a node one judgment, every count of judgments
+in force, and every export gives exactly what it would have given without
+it. A reader who holds two labels that do not read each other, where one
+judged the node and the other left the public judgment standing, has the
+first label's judgment in force and no second one, as before. The record
+is served where a node's judgments are listed, on a read of the node
+(`GET /claims/:id` and `get_claim`), as `left_standing`: for each label the
+reader reads that has one, when the node was examined there, by which
+run, the Steward's reasoning, the judgments left standing and whether one
+has since been replaced (`open_again`). `not_examined_at` lists the labels
+the reader reads at which the node has neither a judgment nor such a
+record. The Steward at a label is told the same in the note of its node's
+versions. Lists, trees, searches and exports do not carry either field.
 
 The other reads that give a node's status, and what each does for such a
 reader. For a reader with one judgment in force each is what it was.

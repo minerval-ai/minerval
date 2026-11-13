@@ -53,7 +53,7 @@ import { followOutbound } from "../services/outbound-service.js";
 import { followOutwardActs } from "../services/outward-follow.js";
 import {
   openReassessmentsForVersionsMadeBesideEarlier,
-  openReassessmentsForVersionsWithoutMaterial,
+  openReassessmentsForJudgmentsLeftStanding,
 } from "../services/version-upkeep.js";
 import { withSystemClearance } from "../db/clearance.js";
 
@@ -160,10 +160,11 @@ export async function allocationSchedulerTick(
       `[allocation-scheduler] version upkeep failed: ${err instanceof Error ? err.message : String(err)}`
     )
   );
-  // And versions whose material at their own label has since been removed.
-  await openReassessmentsForVersionsWithoutMaterial().catch((err: unknown) =>
+  // And judgments a label left standing that have since been replaced: the
+  // question is open again at that label.
+  await openReassessmentsForJudgmentsLeftStanding().catch((err: unknown) =>
     console.error(
-      `[allocation-scheduler] version upkeep (material) failed: ${err instanceof Error ? err.message : String(err)}`
+      `[allocation-scheduler] version upkeep (left standing) failed: ${err instanceof Error ? err.message : String(err)}`
     )
   );
 

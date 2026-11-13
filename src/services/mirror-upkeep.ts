@@ -46,7 +46,7 @@ import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import type { ApplyResult } from "./mirror-apply-service.js";
-import { openReassessmentsForVersionsMadeBesideEarlier } from "./version-upkeep.js";
+import { openReassessmentsForJudgmentsLeftStanding, openReassessmentsForVersionsMadeBesideEarlier } from "./version-upkeep.js";
 
 const REASON =
   "After a batch of the mirror, finding what of this deployment's own rests on the nodes the batch touched means reading every label; each Steward's piece is then written at its own label, from rows read there.";
@@ -212,9 +212,8 @@ async function mergedIntoMessage(mergedId: string, label: string): Promise<strin
       ? `Each list names at most ${UPKEEP_NAMED_PER_LIST}, to keep this message short.\n`
       : "") +
     `\nWhat of it bears on this node is yours to judge. What you carry over is recorded here, at ` +
-    `\`${label}\`: a source with record_claim_instance, an argument, a subclaim, and a version of this ` +
-    `node's judgment where material at \`${label}\` bears on it. If you judge that nothing carries over, ` +
-    `say so with log_stewardship_decision.`
+    `\`${label}\`: a source with record_claim_instance, an argument, a subclaim, a version of this ` +
+    `node's judgment. If you judge that nothing carries over, say so with log_stewardship_decision.`
   );
 }
 
@@ -311,6 +310,9 @@ export async function afterMirrorApplied(applied: readonly ApplyResult[]): Promi
 
   await attempt("opening reassessments for versions made beside a replaced public judgment", async () => {
     result.versions = await openReassessmentsForVersionsMadeBesideEarlier({ claimIds: judged });
+  });
+  await attempt("opening reassessments where a label left a replaced public judgment standing", async () => {
+    result.versions += await openReassessmentsForJudgmentsLeftStanding({ claimIds: judged });
   });
   for (const mergedId of merged.keys()) {
     await attempt(`telling the Stewards concerned that ${mergedId} was merged`, async () => {

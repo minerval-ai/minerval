@@ -2,7 +2,7 @@
 // deployment (lib/inside-node.ts reads them; this file decides, with no
 // reading of its own, which the page opens on and how one judgment is put
 // where the ordinary page reads its judgment from).
-import type { Assessment, ClaimDetail, NodeVersion } from "./types";
+import type { Assessment, ClaimDetail, LeftStanding, NodeVersion } from "./types";
 
 /** Which of a node's judgments the page opens on. */
 export type Opened =
@@ -89,3 +89,40 @@ export function detailWithoutJudgment(detail: ClaimDetail): ClaimDetail {
   return { ...detail, assessment: null, coverage: undefined, since_assessed: undefined, seed: null };
 }
 
+
+/** An assessment named in the middle of a sentence. */
+export function versionRef(label: string): string {
+  return label === "public" ? "the public assessment" : `the assessment at ${label}`;
+}
+
+function listOf(names: string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * What the page says where a label the reader reads examined the node and
+ * left another label's assessment standing: that it did and when, and then
+ * whether that assessment still stands. Two sentences, so that the page can
+ * put a link to the run between them. `on` is the date as the page writes
+ * dates.
+ */
+export function leftStandingLines(e: LeftStanding, on: string): { examined: string; since: string } {
+  const one = e.judgments.length === 1;
+  const stood = listOf(e.judgments.map((j) => versionRef(j.label)));
+  return {
+    examined: `This node was examined at ${e.label} on ${on}, and ${stood} ${one ? "was" : "were"} left standing: its Steward at ${e.label} made no separate assessment.`,
+    since: e.open_again
+      ? `${one ? "That assessment has" : "One of those assessments has"} been replaced since, so the newer one has not been looked at from ${e.label}. The deployment opens a fresh look at ${e.label} when that happens, and it runs when someone pays for it.`
+      : `${one ? "That assessment" : "Each of those assessments"} still stands.`,
+  };
+}
+
+/** What the page says of the labels a reader holds at which nobody has looked at the node. Null where there are none. */
+export function notExaminedLine(labels: readonly string[]): string | null {
+  if (labels.length === 0) return null;
+  return (
+    `This node has not been examined at ${listOf([...labels])}: no assessment has been made there, and no Steward there has looked and left another standing. ` +
+    `That is not a finding that nothing filed at ${labels.length === 1 ? "that label" : "those labels"} bears on it.`
+  );
+}

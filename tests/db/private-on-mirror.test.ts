@@ -433,10 +433,9 @@ describe("a public claim, mirrored into a deployment with private labels", () =>
 // ---------------------------------------------------------------------------
 
 describe("a version at a on a mirrored claim", () => {
-  it("is refused while nothing at a bears on the node, and recorded beside the public one once a source at a is attached", async () => {
+  it("is recorded beside the public one, with or without a source at a attached to the node", async () => {
     const without = await runAt(A, () => assess(id.parent));
-    expect(without.success).toBe(false);
-    expect(without.message).toContain(`An assessment at \`${A}\` is stored only when material at \`${A}\` bears on the node`);
+    expect(without.success).toBe(true);
     await attachSource(id.parent, A);
     const recorded = await runAt(A, () => assess(id.parent, "supported", "With a's cores."));
     expect(recorded.success).toBe(true);

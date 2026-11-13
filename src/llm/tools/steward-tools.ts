@@ -24,8 +24,6 @@ import {
   anotherLabelsNodeMessage,
   oneLabelOnly,
   recordMadeBeside,
-  versionWithoutMaterial,
-  versionWithoutMaterialMessage,
 } from "../../services/judgment-version-service.js";
 import {
   claims,
@@ -1480,22 +1478,15 @@ export async function executeStewardTool(
         if (kindRefusal) return kindRefusal;
 
         // A node may carry a version at each label, and this run writes its
-        // own label's. On a node that carries another label, that version
-        // rests on material at this run's label or is not stored
-        // (judgment-version-service.ts). Asked before anything is written,
-        // so a refusal leaves this label's current version standing.
+        // own label's (judgment-version-service.ts). Whether to record one
+        // on a node that carries another label, or to leave the one it
+        // reads standing, is the Steward's judgment
+        // (left-standing-service.ts).
         // The judgment of a mirrored node at the node's own label is the
         // public graph's, and nothing here records one in its place
-        // (mirrored-node-service.ts).
+        // (mirrored-node-service.ts). Asked before anything is written.
         if (await publicGraphJudges(claimId)) {
           return JSON.stringify({ success: false, message: publicJudgmentMessage("An assessment of it") });
-        }
-        const noMaterial = await versionWithoutMaterial(claimId);
-        if (noMaterial) {
-          return JSON.stringify({
-            success: false,
-            message: versionWithoutMaterialMessage(noMaterial, "An assessment"),
-          });
         }
 
         const db = getDb();
@@ -2523,25 +2514,12 @@ export async function executeStewardTool(
           });
         }
 
-        // An evaluation is a version too: on an argument that carries
-        // another label it is stored only where material at this run's
-        // label bears on the argument's claim (judgment-version-service.ts).
-        // The evaluation of a mirrored argument at the argument's own label
-        // is the public graph's (mirrored-node-service.ts).
+        // An evaluation is a version too, recorded at this run's label
+        // (judgment-version-service.ts). The evaluation of a mirrored
+        // argument at the argument's own label is the public graph's
+        // (mirrored-node-service.ts).
         if (await publicGraphEvaluates(argumentId)) {
           return JSON.stringify({ success: false, message: publicJudgmentMessage("An evaluation of this argument") });
-        }
-        if (argument.sensitivityLabel !== currentLabel()) {
-          const noMaterial = await versionWithoutMaterial(argument.claimId);
-          if (noMaterial) {
-            return JSON.stringify({
-              success: false,
-              message: versionWithoutMaterialMessage(
-                { label: noMaterial.label, nodeLabel: argument.sensitivityLabel },
-                "An argument's evaluation"
-              ),
-            });
-          }
         }
 
         // Provenance: stamp the claim assessment this evaluation was derived

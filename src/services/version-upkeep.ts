@@ -183,51 +183,56 @@ export function versionsMovedMessage(
   );
 }
 
-const REASON_MATERIAL =
-  "The upkeep of versions finds, at every label, the versions on a node at another label whose material at their own label is gone; each node's reassessment is then opened at its own version's label.";
+const REASON_LEFT_STANDING =
+  "The upkeep of versions finds, at every label, the records of a judgment left standing whose judgment has since been replaced; each node's reassessment is then opened at the record's own label.";
 
 /**
- * Open a reassessment, at its own label, for every current version on a
- * node at another label that no longer has material at its own label
- * bearing on the node (minerval_material_at). The database refuses such a
- * version when it is recorded; it cannot refuse the later statement that
- * detaches the source or removes the edge the version rested on, so the
- * version is found here and its Steward told. Once for each version: a
- * Steward that looks and leaves it is not asked again. Returns how many it
- * opened. On the public graph there is one label and nothing is asked.
+ * Open a reassessment, at its own label, for every record that a label
+ * examined a node and left the judgment it reads standing
+ * (left-standing-service.ts), where that judgment has since been replaced
+ * or retired, or a label it reads has a judgment made since. The question
+ * is then open again at the record's label. Once for each record: a Steward
+ * that looks again records a judgment or leaves the newer one standing,
+ * which is a new record. Returns how many it opened. Opening one runs
+ * nothing; work runs when a mandate funds it.
+ *
+ * With `claimIds` it looks at those nodes alone, as the sweep above does
+ * for the mirror's applier. On the public graph there is one label and
+ * nothing is asked.
  */
-export async function openReassessmentsForVersionsWithoutMaterial(): Promise<number> {
+export async function openReassessmentsForJudgmentsLeftStanding(
+  opts: { claimIds?: readonly string[] } = {}
+): Promise<number> {
   if (oneLabelOnly()) return 0;
-  const found = await withSystemClearance(REASON_MATERIAL, async () => {
-    const rows: Array<{ version_id: string; claim_id: string; label: string }> = [];
-    for (const { table } of NODE_JUDGMENTS) {
-      rows.push(
-        ...(await rawQuery<{ version_id: string; claim_id: string; label: string }>(
-          `SELECT v.id AS version_id, v.claim_id, v.sensitivity_label AS label
-             FROM ${table}_versions v
-             JOIN claims c ON c.id = v.claim_id AND c.state = 'active'
-            WHERE v.sensitivity_label <> c.sensitivity_label
-              AND NOT minerval_material_at(v.claim_id, v.sensitivity_label)
-              AND NOT EXISTS (SELECT 1 FROM node_messages m
-                               WHERE m.node_id = v.claim_id AND m.trigger = 'version_material_gone'
-                                 AND m.sender_ref = 'material-gone:' || v.id::text
-                                 AND m.sensitivity_label = v.sensitivity_label)
-            LIMIT ${PER_SWEEP}`
-        ))
-      );
-    }
-    return rows;
-  });
+  if (opts.claimIds && opts.claimIds.length === 0) return 0;
+  const { STANDS_SQL, OPEN_AGAIN_SQL } = await import("./left-standing-service.js");
+  const found = await withSystemClearance(REASON_LEFT_STANDING, () =>
+    rawQuery<{ id: string; claim_id: string; label: string; labels: string[] }>(
+      `SELECT a.id, a.claim_id, a.sensitivity_label AS label,
+              ARRAY(SELECT i.input_label FROM judgment_inputs i
+                     WHERE i.judgment_kind = 'left_standing' AND i.judgment_id = a.id ORDER BY 1) AS labels
+         FROM audit_log a
+         JOIN claims c ON c.id = a.claim_id AND c.state = 'active'
+        WHERE ${STANDS_SQL} AND ${OPEN_AGAIN_SQL}
+          ${opts.claimIds ? "AND a.claim_id = ANY($1::uuid[])" : ""}
+          AND NOT EXISTS (SELECT 1 FROM node_messages m
+                           WHERE m.node_id = a.claim_id AND m.trigger = 'left_standing_changed'
+                             AND m.sender_ref = 'left-standing:' || a.id::text
+                             AND m.sensitivity_label = a.sensitivity_label)
+        LIMIT ${PER_SWEEP}`,
+      opts.claimIds ? [[...opts.claimIds]] : []
+    )
+  );
   let opened = 0;
-  for (const { version_id, claim_id, label } of found) {
+  for (const { id, claim_id, label, labels } of found) {
     try {
-      await runAtLabel(label, `the version of node ${claim_id} at ${label}`, async () => {
+      await runAtLabel(label, `the judgment left standing on node ${claim_id} at ${label}`, async () => {
         const { enqueueSteward } = await import("./queue-service.js");
         await enqueueSteward({
           claimId: claim_id,
-          trigger: "version_material_gone",
-          context: versionMaterialGoneMessage(label),
-          sender: { kind: "system", ref: `material-gone:${version_id}` },
+          trigger: "left_standing_changed",
+          context: leftStandingChangedMessage(label, labels),
+          sender: { kind: "system", ref: `left-standing:${id}` },
         });
       });
       opened++;
@@ -242,19 +247,18 @@ export async function openReassessmentsForVersionsWithoutMaterial(): Promise<num
   return opened;
 }
 
-/** What the Steward at `label` is told of a version whose material at that label is gone. */
-export function versionMaterialGoneMessage(label: string): string {
+/**
+ * What the Steward at `label` is told when a judgment its label left
+ * standing has been replaced. It states what happened and what the two
+ * outcomes are; which is right is the Steward's to judge.
+ */
+export function leftStandingChangedMessage(label: string, standingAt: readonly string[]): string {
+  const at = standingAt.map((l) => `\`${l}\``).join(", ");
   return (
-    `The version of this node's judgment at \`${label}\` no longer has anything at \`${label}\` to rest on. ` +
-    `This node carries another label, and a version at \`${label}\` is recorded on it only where material at ` +
-    `\`${label}\` bears on it: a source labeled \`${label}\` attached to the node, a node labeled \`${label}\` ` +
-    `under it, or a node under it that carries a version at \`${label}\`. There was such material when the ` +
-    `version was recorded, and there is none now: it was detached or removed since. The version still ` +
-    `stands, and readers at \`${label}\` are shown it.\n` +
-    `Whether it should stand is yours to judge. If material at \`${label}\` does bear on this node, attach it ` +
-    `again (a source with record_claim_instance, or the node that carries it as a subclaim or a premise) ` +
-    `and record the version again, saying what the material shows. A version cannot be recorded here ` +
-    `while nothing at \`${label}\` is attached. If nothing at \`${label}\` bears on this node any longer, say ` +
-    `so with log_stewardship_decision. You are told this once for each version.`
+    `A run at \`${label}\` examined this node and left the judgment at ${at} standing for readers at ` +
+    `\`${label}\`, recording none of its own. That judgment has been replaced since. Readers at ` +
+    `\`${label}\` read the newer one, and the node's page tells them it has not been looked at from ` +
+    `\`${label}\`. Read the node as it stands with get_claim. Record your own judgment, or leave the ` +
+    `newer one standing with leave_judgment_standing. You are told this once.`
   );
 }

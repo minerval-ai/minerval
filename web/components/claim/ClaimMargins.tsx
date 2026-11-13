@@ -13,7 +13,7 @@ import { WaitingMessagesRail } from "./WaitingMessages";
 import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
 import { ClaimTabs, publishedDetail } from "./PublishedPage";
 import { detailAt, detailWithoutJudgment, type InsideNode } from "@/lib/inside-node";
-import { AskToShow, SeveralInForce, VersionNote, VersionTabs, VersionsInFull } from "./InsideVersions";
+import { AskToShow, ExaminedNote, SeveralInForce, VersionNote, VersionTabs, VersionsInFull } from "./InsideVersions";
 import styles from "./margins.module.css";
 
 // The claim page in its full three-column form (issue #42): the decomposition
@@ -71,6 +71,7 @@ export function ClaimMargins({
       <VersionTabs claimId={detail.claim.id} inside={inside} />
       {open?.kind === "version" && <VersionNote claimId={detail.claim.id} detail={detail} inside={inside} version={open.version} />}
       {open?.kind === "version" && inside.mayAsk && <AskToShow claimId={detail.claim.id} version={open.version} />}
+      {open && open.kind !== "version" && <ExaminedNote inside={inside} />}
     </>
   );
   if (published) {

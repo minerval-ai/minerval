@@ -111,8 +111,8 @@ export function isUnseenCollision(err: unknown): boolean {
  * a row with the same identity exists at a label the work does not read
  * (MVL03), the write would have changed a row's label (MVL04), it would
  * have changed or deleted a row at a label other than the work's own
- * (MVL06), or it would have recorded a version of a judgment with nothing
- * at its label to rest on (MVL07). These are refusals of what was asked,
+ * (MVL06), or it would have recorded a version of a judgment on a node
+ * its label does not read (MVL07). These are refusals of what was asked,
  * with a reason the caller can act on, and not faults: the routes answer
  * them as a conflict, with this text, and an agent's tool returns it.
  */

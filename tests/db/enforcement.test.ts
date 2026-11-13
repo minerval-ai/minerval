@@ -908,7 +908,7 @@ describe("a node's judgment in force", () => {
     expect(await inForce(claimId)).toEqual([{ sensitivity_label: PUBLIC_LABEL }]);
   });
 
-  it("at a label a run cannot see is no obstacle to its own, which still needs material at its own label", async () => {
+  it("at a label a run cannot see is no obstacle to its own, which is recorded beside it", async () => {
     await system(async () => {
       await rawQuery(`UPDATE assessments SET is_current = false WHERE claim_id = $1`, [claimId]);
       await rawQuery(
@@ -918,19 +918,11 @@ describe("a node's judgment in force", () => {
       );
     });
     // A run at A sees no judgment on this public claim. A version of its own
-    // would not collide with B's, which it cannot see: a node carries one
-    // at each label. But nothing at A bears on the node, so there is
-    // nothing at A to judge, and the write is refused with that reason
-    // (tests/db/judgments-per-label.test.ts has the version that is stored).
-    const err = await at(A, () => assess(claimId)).then(
-      () => null,
-      (e: unknown) => e
-    );
-    expect(sqlState(err)).toBe("MVL07");
-    expect((err as Error).message).toBe(
-      `this version was not recorded: nothing at the label "${A}" bears on the node`
-    );
-    expect(await inForce(claimId)).toEqual([{ sensitivity_label: B }]);
+    // does not collide with B's, which it cannot see: a node carries one at
+    // each label, and nothing tests what is attached to the node at A
+    // (tests/db/judgments-per-label.test.ts, tests/db/left-standing.test.ts).
+    await at(A, () => assess(claimId));
+    expect((await inForce(claimId)).map((r) => r.sensitivity_label).sort()).toEqual([A, B].sort());
   });
 
   it("is the owner's to change whatever its label, as a migration or a repair must", async () => {

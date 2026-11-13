@@ -232,13 +232,10 @@ function judgmentsForAWriter(label: string, others: readonly string[], mirror: M
       `its wording, its importance and its structure, which belong to the Steward at that label; what you ` +
       `add to it (an argument, a subclaim, a source) is recorded at ${own}.` +
       (mirrored ? ` ${MIRROR_PUBLIC_JUDGMENT}` : ""),
-    `On a node that carries another label, the tool records a judgment at ${own} only when something at ` +
-      `${own} is attached to the node: a source labeled ${own}, a node labeled ${own} under it, or a node ` +
-      `under it that carries a judgment at ${own}. The reason is that a reader should be able to trace a ` +
-      `judgment at ${own} to what ${own} has that the other label lacks. Whether what is attached bears on ` +
-      `the node is your judgment; the tool checks only that it is there. Where nothing at ${own} bears, ` +
-      `record no judgment and say so with log_stewardship_decision; readers at ${own} then read the ` +
-      `judgment at the other label. A node labeled ${own} needs no such material.`,
+    `On a node that carries another label you record your own judgment at ${own}, or you may leave the ` +
+      `judgment you read standing (leave_judgment_standing). Leaving it standing is a complete outcome: ` +
+      `readers at ${own} go on reading that judgment, and the node's page shows them that it was examined ` +
+      `at ${own}, when, and your reasons.`,
     `Where you read a judgment at another label, read its reasoning as you would a colleague's. Yours is ` +
       `your own assessment of everything you read, and owes the other coherence, not deference (§21). ` +
       `Where the two differ, your reasoning says why: what the material at ${own} changes, and, where you ` +
@@ -250,7 +247,8 @@ function judgmentsForAWriter(label: string, others: readonly string[], mirror: M
       (mirrored ? ` ${MIRROR_REQUEST_AFTER_REQUEST}` : ""),
     `Your judgment records the judgment it was made beside at each label ${own} reads. When one of those ` +
       `is replaced, readers at ${own} are shown that, and a reassessment at ${own} is opened, which runs ` +
-      `when it is funded. Whether the change matters is your judgment then.`,
+      `when it is funded. Whether the change matters is your judgment then. The same is done when a ` +
+      `judgment you left standing is replaced.`,
     `get_claim ${WHICH_JUDGMENT}`,
   ].join("\n\n");
 }

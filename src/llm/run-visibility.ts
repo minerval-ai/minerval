@@ -109,6 +109,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   cannot_cross: { reads: "private", why: "confirms a finding about a page held at a label only some readers read" },
   finish_redaction: { reads: "private", why: "the fingerprint and removal counts of a page not yet released" },
   get_page_to_redact: { reads: "private", why: "a page as written at a label only some readers read, and its sources' text" },
+  leave_judgment_standing: { reads: "public", why: "confirms the run's own write, naming labels and a date and nothing the run read" },
   get_redaction_policies: { reads: "private", why: "boundaries' policies, read by the two sides of each boundary and not by everyone" },
   get_redaction_policy: { reads: "private", why: "a boundary's policy, read by the two sides of that boundary and not by everyone" },
   get_redaction_to_check: { reads: "private", why: "a page as written and as redacted, with the Redactor's notes" },

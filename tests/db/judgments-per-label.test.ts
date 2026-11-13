@@ -31,7 +31,7 @@ import { REQUEST_LABELS } from "../../src/server/request-labels.js";
 import { ASSESS_GROUP } from "../../src/services/action-service.js";
 import { getClaimView } from "../../src/services/claim-view-service.js";
 import { openInbox } from "../../src/services/inbox-service.js";
-import { nodeVersions, versionWithoutMaterialMessage } from "../../src/services/judgment-version-service.js";
+import { nodeVersions } from "../../src/services/judgment-version-service.js";
 import { createOrder } from "../../src/services/order-service.js";
 import { enqueueSteward } from "../../src/services/queue-service.js";
 import { defineQuantity, recordEstimate } from "../../src/services/quantity-service.js";
@@ -246,67 +246,25 @@ describe("a public node with a version at public, at a and at b", () => {
 // ---------------------------------------------------------------------------
 
 describe("a version on a node that carries another label", () => {
-  it("is refused where nothing at its label bears on the node, with what would satisfy it, and the version it reads stands", async () => {
-    const node = await seedNode(PUBLIC_LABEL, "A public claim with nothing private bearing on it");
+  it("is recorded with nothing at its label attached to the node, and the version it reads stands beside it", async () => {
+    const node = await seedNode(PUBLIC_LABEL, "A public claim with nothing private attached to it");
     expect((await runAt(PUBLIC_LABEL, () => assess(node, "supported", "On the public record."))).success).toBe(true);
-    const refused = await runAt(A, () => assess(node, "doubtful", "Read from a."));
-    expect(refused.success).toBe(false);
-    expect(refused.message).toBe(versionWithoutMaterialMessage({ label: A, nodeLabel: PUBLIC_LABEL }, "An assessment"));
-    expect(refused.message).toContain("attach it first");
-    expect(await current(node)).toEqual([{ label: PUBLIC_LABEL, status: "supported" }]);
-    // The database refuses it too, whatever wrote it.
-    const err = await runAt(A, () =>
-      rawQuery(
-        `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, is_current, sensitivity_label)
-         VALUES ($1, 'doubtful', 0.6, 'Written past the tool.', true, $2)`,
-        [node, A]
-      )
-    ).then(
-      () => null,
-      (e: unknown) => e
-    );
-    expect(sqlState(err)).toBe("MVL07");
-    // For a reader of a, the public version is the one in force.
-    expect(await person([A], () => seen(node))).toEqual({ goneBy: [PUBLIC_LABEL], inForce: [PUBLIC_LABEL], beside: [] });
+    // Whether to record one is the Steward's judgment: no tool and no trigger tests what is attached.
+    const recorded = await runAt(A, () => assess(node, "doubtful", "Read from a."));
+    expect(recorded.success).toBe(true);
+    expect((await current(node)).sort((x, y) => (x.label < y.label ? -1 : 1))).toEqual([
+      { label: A, status: "doubtful" },
+      { label: PUBLIC_LABEL, status: "supported" },
+    ]);
+    expect(await person([A], () => seen(node))).toEqual({ goneBy: [A], inForce: [A], beside: [PUBLIC_LABEL] });
+    // b reads the node too, and records its own the same way.
+    expect((await runAt(B, () => assess(node, "supported", "Read from b."))).success).toBe(true);
   });
 
-  it("is stored once material at its label is attached: a source, a node under it, or a node under it with a version there", async () => {
-    // A source at a.
-    const bySource = await seedNode(PUBLIC_LABEL, "A public claim a private document bears on");
-    await attachSource(bySource, A);
-    expect((await runAt(A, () => assess(bySource))).success).toBe(true);
-    // A node at a under it.
-    const byNode = await seedNode(PUBLIC_LABEL, "A public claim a private premise bears on");
-    const premise = await seedNode(A, "A private premise");
-    await system(() =>
-      rawQuery(
-        `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning, sensitivity_label)
-         VALUES ($1, $2, 'supports', 'It bears.', $3)`,
-        [byNode, premise, A]
-      )
-    );
-    expect((await runAt(A, () => assess(byNode))).success).toBe(true);
-    // A public node under it that carries a version at a.
-    const byVersion = await seedNode(PUBLIC_LABEL, "A public claim resting on a public premise judged at a");
-    await system(() =>
-      rawQuery(
-        `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, reasoning, sensitivity_label)
-         VALUES ($1, $2, 'requires', 'It rests on it.', 'public')`,
-        [byVersion, bySource]
-      )
-    );
-    expect((await runAt(A, () => assess(byVersion))).success).toBe(true);
-    // And it does not serve b, which has none of it.
-    expect((await runAt(B, () => assess(byVersion))).success).toBe(false);
-  });
-
-  it("needs none where the node carries the run's own label: a private node's first judgment is simply its judgment", async () => {
+  it("is recorded at a label that reads a private node's label, beside the node's own", async () => {
     const node = await seedNode(A, "A claim that exists only at a");
     expect((await runAt(A, () => assess(node))).success).toBe(true);
     expect(await current(node)).toEqual([{ label: A, status: "supported" }]);
-    // c reads a, and its own version of this node rests on material at c or is not stored.
-    expect((await runAt(C, () => assess(node, "doubtful"))).success).toBe(false);
-    await attachSource(node, C);
     expect((await runAt(C, () => assess(node, "doubtful"))).success).toBe(true);
     expect(await runAt(C, () => seen(node))).toEqual({ goneBy: [C], inForce: [C], beside: [A] });
     expect(await runAt(A, () => seen(node))).toEqual({ goneBy: [A], inForce: [A], beside: [] });
@@ -323,10 +281,6 @@ describe("a version on a node that carries another label", () => {
     );
     const estimate = (low: number, high: number) => ({ form: "interval", low, high }) as never;
     await runAt(PUBLIC_LABEL, () => recordEstimate({ claimId: quantity, estimate: estimate(10, 90), work: "From the public filings." }));
-    await expect(
-      runAt(A, () => recordEstimate({ claimId: quantity, estimate: estimate(40, 50), work: "From the order book." }))
-    ).rejects.toThrow(/An estimate at `jl-a` is stored only when material at `jl-a` bears on the node/);
-    await attachSource(quantity, A);
     await runAt(A, () => recordEstimate({ claimId: quantity, estimate: estimate(40, 50), work: "From the order book." }));
     const versions = await system(() =>
       rawQuery<{ label: string }>(
@@ -334,7 +288,7 @@ describe("a version on a node that carries another label", () => {
         [quantity]
       )
     );
-    expect(versions.map((v) => v.label)).toEqual([A, PUBLIC_LABEL]);
+    expect(versions.map((v) => v.label).sort()).toEqual([A, PUBLIC_LABEL].sort());
     const view = await person([A], () => nodeVersions(quantity, "quantity"));
     expect(view!.versions.map((v) => [v.label, v.in_force])).toEqual([[A, true], [PUBLIC_LABEL, false]]);
   });
@@ -372,7 +326,7 @@ describe("a run and the rows of another label", () => {
     expect(row!.importance).toBe(0.5);
     // What it adds is its own: a decision logged at a leaves the node's row untouched.
     const logged = JSON.parse(
-      await runAt(A, () => executeStewardTool("log_stewardship_decision", { claim_id: node, action_taken: "no_change", reasoning: "Nothing at a bears on it." }))
+      await runAt(A, () => executeStewardTool("log_stewardship_decision", { claim_id: node, action_taken: "no_change", reasoning: "Looked again; no change." }))
     );
     expect(logged.success).toBe(true);
     expect(

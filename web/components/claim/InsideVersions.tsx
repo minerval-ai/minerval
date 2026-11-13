@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { InsideNode, ShownTab } from "@/lib/inside-node";
 import { modelDisplayName } from "@/lib/model-names";
 import { isStatus } from "@/lib/ontology";
+import { leftStandingLines, notExaminedLine, versionRef } from "@/lib/inside-versions";
 import { day, stateWords, type PublishedPageView } from "@/lib/published";
 import type { ClaimDetail, NodeVersion } from "@/lib/types";
 import { Credence, StatusBadge, VerdictConfidence } from "../Assessment";
@@ -38,10 +39,6 @@ function shownTabName(tab: ShownTab): string {
   return tab.from_label ? `Redacted assessment, as shown to ${tab.shown_to}` : SHOWN_TAB_INSIDE;
 }
 
-/** An assessment named in the middle of a sentence. */
-function versionRef(label: string): string {
-  return label === "public" ? "the public assessment" : `the assessment at ${label}`;
-}
 
 const NUMBER_WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six"];
 const numberWord = (n: number) => NUMBER_WORDS[n] ?? String(n);
@@ -120,7 +117,7 @@ export function VersionNote({ claimId, detail, inside, version }: { claimId: str
             first.length === 1 ? (
               <>
                 It is shown first because it was made on the most that you may read. {numberWord(others.length)} other assessment
-                {others.length === 1 ? " of this node is" : "s of this node are"} a tab away, each made on less and each kept as current as this one.
+                {others.length === 1 ? " of this node is" : "s of this node are"} a tab away, each made on less and each with the date it was made.
               </>
             ) : (
               <>
@@ -140,7 +137,47 @@ export function VersionNote({ claimId, detail, inside, version }: { claimId: str
           {line}
         </p>
       ))}
+      <ExaminedNote inside={inside} />
     </div>
+  );
+}
+
+/**
+ * Where the node was examined at a label this reader reads and another
+ * label's assessment was left standing, and where it has not been examined
+ * at all. The two are different things to a reader: the first is a Steward's
+ * decision with its reasons, and the second is nobody having looked.
+ */
+export function ExaminedNote({ inside }: { inside: InsideNode }) {
+  const { leftStanding, notExaminedAt } = inside;
+  const notExamined = notExaminedLine(notExaminedAt);
+  if (leftStanding.length === 0 && !notExamined) return null;
+  return (
+    <>
+      {leftStanding.map((e) => {
+        const lines = leftStandingLines(e, day(e.examined_at));
+        return (
+          <div key={e.label} className="left-standing">
+            <p style={quiet}>
+              {lines.examined}{" "}
+              {e.run_id ? (
+                <>
+                  (<a href={`/runs/${e.run_id}`}>The run</a>.){" "}
+                </>
+              ) : null}
+              {lines.since}
+            </p>
+            <details className="reasoning-detail">
+              <summary>What the Steward at {e.label} looked at, and its reasons</summary>
+              <div className="reasoning">
+                <AssessmentText content={e.reasoning} />
+              </div>
+            </details>
+          </div>
+        );
+      })}
+      {notExamined && <p style={quiet}>{notExamined}</p>}
+    </>
   );
 }
 

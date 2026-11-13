@@ -2532,21 +2532,35 @@ because the row it hangs from was deleted follows its foreign key.
 label, a version: the unique index on each of the four judgment tables is
 on the node and the label. A run writes its own label's version and no
 other, and a version is retired only by work at its own label
-(`minerval_judgment_label_guard`). A version on a node that carries another
-label is stored only where material at the version's own label bears on the
-node (`minerval_material_at`: a source at that label attached to it, a node
-at that label under it, or a node under it with a version at that label);
-otherwise the tool refuses, says what would satisfy it, and the version that
-label reads stands for its readers. A node's own label needs none. The
-database tests it whenever a version becomes current, by an insert or by an
-update, and its refusal (`MVL07`) names the writer's own label and no
-other, in the same words for a node the writer does not read or that does
-not exist. Material removed after a version was recorded is not a write of
-the version and is not refused: the scheduler finds a version left with
-none and opens its reassessment at the version's own label, once, with a
-message that says the material it rested on is gone
-(`openReassessmentsForVersionsWithoutMaterial` in
-`src/services/version-upkeep.ts`).
+(`minerval_judgment_label_guard`). A version is recorded on a node at the
+version's own label or at a label that reads it; the database refuses any
+other (`MVL07`), in the same words for a node the writer's label does not
+read and a node that does not exist.
+
+Nothing tests whether a label has material of its own on a node before it
+records a version there. Whether what a label has bears on a node is a
+judgment, and most of what a label has is never a row: it is read through a
+connection or a set of files during the run. So on a node that carries
+another label, the Steward at a label looks and then does one of two
+things. It records its own version, or it leaves the version it reads
+standing (`leave_judgment_standing`, `src/services/left-standing-service.ts`).
+Leaving it standing is recorded as an entry in the Steward's decision trail
+(`audit_log`, action `left_standing`) with its label, its time, its run and
+its reasoning, and the versions it left standing are recorded the way a
+version records what it was made beside (`judgment_inputs`, `beside`, of
+the kind `left_standing`). The record is not a judgment and puts nothing in
+force: readers at that label go on reading the version in force for them.
+A read of the node serves it as `left_standing`, beside `versions`, and the
+node's page says that the node was examined at that label on that date and
+the other version left standing. `not_examined_at` lists the labels a
+reader holds at which the node has neither, so that a node nobody has
+looked at from a label is not read as one where nothing at that label
+bears. A version recorded at the label later takes the record's place by
+being there. A Steward whose label has a version may leave the other
+standing all the same: its own version is retired, by that run, and stays
+in the node's history. That is refused while the version's page is under a
+standing showing, whose readers would otherwise go on being shown a page
+with its judgment withdrawn.
 
 On a deployment that mirrors the public graph, the `public` version of a
 mirrored node is the mirrored row. Nothing local records one or opens work
@@ -2576,6 +2590,12 @@ Each version records the versions it was made beside (`judgment_inputs`,
 against an earlier one, from the record, and the scheduler opens a
 reassessment for it on the ledger at the version's own label
 (`src/services/version-upkeep.ts`), which runs when a mandate funds it.
+The same is done for a version a label left standing: when it is replaced,
+the read and the page say the question is open again at that label, and a
+reassessment is opened there, once. What neither record can say is that
+data behind a connection has changed. A version that rests on a reading
+rests on the reading as it was made and kept, with its date, and nothing
+tells the deployment that the system it was read from has moved on.
 
 **Work at each label.** Work on a node at a label other than the node's own
 (an internal assessment of a public claim) is keyed by that label

@@ -37,6 +37,8 @@ const MAY_MENTION_IS_CURRENT: Record<string, string> = {
     "Writes the flag: recordQuestionAssessment retires the current assessment before inserting the new one.",
   "src/services/reconciliation-service.ts":
     "Writes the flag: a change of kind or a split retires current judgments, and undoing it brings them back.",
+  "src/services/left-standing-service.ts":
+    "Writes the flag: a Steward that leaves the judgment it reads standing retires its own label's judgment of the node, and that label's evaluations of other labels' arguments. Its reads go through the *_versions views.",
   "src/services/assessment-service.ts":
     "Reads history: every assessment of a claim, each served with its flag.",
   "src/services/claim-events-service.ts":

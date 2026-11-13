@@ -360,6 +360,11 @@ export async function getClaimView(
     // and that the reader may read (judgment-version-service.ts). The
     // judgment served just below is the first of them.
     ...(labelled ? { versions: labelled.versions } : {}),
+    // Where a label the asker reads examined the node and left the judgment
+    // it reads standing (left-standing-service.ts), and the labels the
+    // asker reads at which it has been neither judged nor examined.
+    ...(labelled && labelled.left_standing.length > 0 ? { left_standing: labelled.left_standing } : {}),
+    ...(labelled && labelled.not_examined_at.length > 0 ? { not_examined_at: labelled.not_examined_at } : {}),
     // Where more than one of them is in force for the asker, the judgment below is only the most recently made.
     ...(labelled && labelled.in_force > 1
       ? { judgments_in_force: labelled.in_force, judgments_in_force_note: severalInForceNote(labelled.in_force) }

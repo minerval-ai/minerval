@@ -31,6 +31,7 @@ import { deploymentHoldsLabels, rawQuery } from "../../db/client.js";
 import { PUBLIC_LABEL } from "../../labels.js";
 import { runWithUsageContext } from "../../llm/usage-context.js";
 import { LABEL_DESCRIPTION, VERSIONS_DESCRIPTION } from "../../services/judgment-version-service.js";
+import { LEFT_STANDING_DESCRIPTION, NOT_EXAMINED_AT_DESCRIPTION } from "../../services/left-standing-service.js";
 import { membersOnly, standingOf } from "../../permissions.js";
 import { CARRIERS, REQUEST_LABELS, takesChosenLabel, type RequestLabelRule } from "../request-labels.js";
 import type { FixedLabel, RequestAuth } from "./auth.js";
@@ -311,6 +312,12 @@ function showVersions(route: RouteOptions): void {
             description: VERSIONS_DESCRIPTION,
             items: { type: "object", additionalProperties: true },
           },
+          left_standing: {
+            type: "array",
+            description: LEFT_STANDING_DESCRIPTION,
+            items: { type: "object", additionalProperties: true },
+          },
+          not_examined_at: { type: "array", description: NOT_EXAMINED_AT_DESCRIPTION, items: { type: "string" } },
         },
       },
     },

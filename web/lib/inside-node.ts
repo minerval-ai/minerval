@@ -6,7 +6,7 @@ import { shapeOfPublishedPage } from "./published-page/shape";
 import type { PublishedPagePackage } from "./published-page/verify";
 import { loadStanding } from "./standing";
 import { whichToOpen } from "./inside-versions";
-import type { ClaimDetail, NodeVersion } from "./types";
+import type { ClaimDetail, LeftStanding, NodeVersion } from "./types";
 
 export { assessmentOf, byLabelName, detailAt, detailWithoutJudgment } from "./inside-versions";
 
@@ -37,6 +37,10 @@ export interface InsideNode {
   /** The node's own label. */
   nodeLabel: string | null;
   versions: NodeVersion[];
+  /** Labels this reader reads that examined the node and left another label's assessment standing. */
+  leftStanding: LeftStanding[];
+  /** Labels this reader reads at which the node has been neither assessed nor examined. */
+  notExaminedAt: string[];
   shown: ShownTab[];
   /** Which the page is open on. */
   open:
@@ -161,6 +165,8 @@ export async function loadInsideNode(
   const base = {
     nodeLabel: (detail.claim as { label?: string }).label ?? null,
     versions,
+    leftStanding: detail.left_standing ?? [],
+    notExaminedAt: detail.not_examined_at ?? [],
     shown,
     mayAsk: standing.mine.permissions.includes("direct") && versions.some((v) => v.label !== "public"),
   };

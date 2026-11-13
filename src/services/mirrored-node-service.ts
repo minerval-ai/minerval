@@ -23,7 +23,7 @@
  *    assessment is funded on the public graph.
  *  - What a run adds to a mirrored node is a row of its own, at its own
  *    label: an argument, an edge, a source, and at a label other than the
- *    node's a version of the judgment where material at that label bears.
+ *    node's a version of the judgment.
  *
  * Nothing here is asked on a deployment that does not mirror (holdsMirror):
  * no query is made and no statement changes, so the public graph runs what
@@ -325,7 +325,7 @@ export function publicJudgmentMessage(what: string): string {
     `deployment records one in its place: it would be shown to readers as the public graph's judgment ` +
     `without being it. If the public graph's judgment is wrong on evidence the public graph could see, ` +
     `record that as a request (file_request). A run at a label that reads \`${label}\` records its own ` +
-    `version beside it where material at its label bears on the node.`
+    `version beside it.`
   );
 }
 

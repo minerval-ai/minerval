@@ -874,6 +874,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const response: Record<string, unknown> = {
           claim: labelled ? { ...formatClaim(claim), label: labelled.label } : formatClaim(claim),
           ...(labelled ? { versions: labelled.versions } : {}),
+          // Where a label the reader reads examined the node and left the
+          // judgment it reads standing, and where one has not examined it.
+          ...(labelled && labelled.left_standing.length > 0 ? { left_standing: labelled.left_standing } : {}),
+          ...(labelled && labelled.not_examined_at.length > 0 ? { not_examined_at: labelled.not_examined_at } : {}),
           // Where more than one of them is in force for the reader, `assessment` below is only the most recently made.
           ...(labelled && labelled.in_force > 1
             ? { judgments_in_force: labelled.in_force, judgments_in_force_note: severalInForceNote(labelled.in_force) }

@@ -77,11 +77,11 @@
  * evaluation. A run writes its own label's version and no other, made
  * without sight of anything its label does not read, and a version is
  * replaced only by work at its own label, so each stays current for the
- * readers and runs that go by it. A version on a node that carries another
- * label rests on material at the version's own label (a source at that
- * label on the node, a node at that label under it, or a node under it
- * with a version there) or is not stored: there is then nothing at that
- * label to judge, and the version the label reads stands for its readers.
+ * readers and runs that go by it. On a node that carries another label,
+ * the Steward at a label records its own version or leaves the one it
+ * reads standing for its readers, and that it did so is recorded
+ * (services/left-standing-service.ts). Nothing tests what its label has
+ * attached to the node: whether that bears is its judgment.
  * A reader, like a run, goes by the versions in force for it: among the
  * current versions it may read, every one that no other was made at a
  * label reading its own. Two labels that do not read each other may each

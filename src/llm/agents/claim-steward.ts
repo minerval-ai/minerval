@@ -64,6 +64,7 @@ import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { executePolicyReadTool, getPolicyReadToolDefinition } from "../tools/policy-read-tool.js";
+import { executeLeaveStandingTool, getLeaveStandingToolDefinition, LEAVE_STANDING_TOOL_NAME } from "../tools/leave-standing-tool.js";
 import { oneLabelOnly } from "../../services/judgment-version-service.js";
 import { openInbox, markMessagesRead } from "../../services/inbox-service.js";
 import { rawQuery } from "../../db/client.js";
@@ -307,7 +308,10 @@ your judgment did not change, logging that with ${LOG}
 this pass, and the current assessment stands. Either way, log your decision.`,
     concluding: `your decision (${LOG}), with ${tool} first if your judgment changed`,
     nudge: {
-      when: (done) => !done.has(tool) && !done.has(LOG),
+      // Leaving the judgment it reads standing is a recorded outcome too
+      // (leave-standing-tool.ts; offered where a node carries a judgment at
+      // each label).
+      when: (done) => !done.has(tool) && !done.has(LOG) && !done.has(LEAVE_STANDING_TOOL_NAME),
       message:
         `You ended your turn without recording anything. If your judgment of this ` +
         `${noun} changed, record it with ${tool}; if it did not, log that with ` +
@@ -740,6 +744,10 @@ async function runClaimStewardImpl(input: {
     // Where a page may be shown below its label, the policy it would be
     // shown under (label-note.ts). Not on the public graph.
     ...(oneLabelOnly() ? [] : [getPolicyReadToolDefinition()]),
+    // Where a node can carry a judgment at each label, the Steward's other
+    // outcome on a node at a label it reads (label-note.ts). Not on the
+    // public graph.
+    ...(oneLabelOnly() ? [] : [getLeaveStandingToolDefinition()]),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
@@ -959,6 +967,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     if (sqlOutput !== null) return sqlOutput;
     const policyOutput = await executePolicyReadTool(name, toolInput);
     if (policyOutput !== null) return policyOutput;
+    const leftStanding = await executeLeaveStandingTool(name, toolInput);
+    if (leftStanding !== null) return leftStanding;
     const loaded = await skillLoader.execute(name, toolInput);
     if (loaded !== null) return loaded;
     // The report channel first (#366): null means "not my tool".

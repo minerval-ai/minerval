@@ -3,12 +3,13 @@
  * force, and a version at each label").
  *
  * A node may carry one current judgment at each label: a version. A run
- * writes its own label's version and no other, a version is replaced only
- * by work at its own label, and a version on a node that carries another
- * label rests on material at the version's own label or is not stored. The
- * database holds all three (the unique index, minerval_judgment_label_guard,
- * minerval_material_at). This module is the application's side: what a
- * write seam asks before it writes, what it tells the agent when the
+ * writes its own label's version and no other, and a version is replaced
+ * only by work at its own label. The database holds both (the unique
+ * index, minerval_judgment_label_guard). Whether a label records a version
+ * of its own on a node at a label it reads, or leaves the one it reads
+ * standing, is its Steward's judgment and nothing tests it
+ * (left-standing-service.ts). This module is the application's side: what
+ * a write seam asks before it writes, what it tells the agent when the
  * answer is no, and the reads that show a node's versions side by side.
  *
  * On the public graph there is one label and one version. Every function
@@ -20,6 +21,7 @@ import { enforcementLastKnown } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { currentLabel } from "../llm/usage-context.js";
+import type { LeftStanding } from "./left-standing-service.js";
 
 /** The four tables that hold judgments, by the name the database's rule knows them by. */
 export type JudgmentTable = "assessments" | "quantity_estimates" | "question_assessments" | "argument_evaluations";
@@ -35,56 +37,10 @@ export type JudgmentTable = "assessments" | "quantity_estimates" | "question_ass
  * moment before a process has touched the database. A caller that took the
  * one-label path in that moment on a deployment with more labels has done
  * nothing the database does not catch: a write to a row at another label
- * is refused there, and so is a version with nothing at its label to rest
- * on.
+ * is refused there.
  */
 export function oneLabelOnly(): boolean {
   return enforcementLastKnown() !== true;
-}
-
-/**
- * A version at the label of the work in progress cannot be recorded on this
- * node, because the node carries another label and nothing at this label
- * bears on it. Null when it can be: the node is at this label, or material
- * at this label is attached.
- */
-export async function versionWithoutMaterial(
-  nodeId: string
-): Promise<{ label: string; nodeLabel: string } | null> {
-  if (oneLabelOnly()) return null;
-  const label = currentLabel();
-  const [row] = await rawQuery<{ node_label: string; bears: boolean }>(
-    `SELECT c.sensitivity_label AS node_label,
-            (c.sensitivity_label = $2 OR minerval_material_at(c.id, $2)) AS bears
-       FROM claims c WHERE c.id = $1`,
-    [nodeId, label]
-  );
-  if (!row || row.bears) return null;
-  return { label, nodeLabel: row.node_label };
-}
-
-/**
- * What the agent is told when its version is refused for want of material
- * at its label. It states what the tool does and why, and what would
- * satisfy it; whether anything at the label really bears on the node stays
- * the agent's judgment.
- */
-export function versionWithoutMaterialMessage(
-  refusal: { label: string; nodeLabel: string },
-  what: string
-): string {
-  const { label, nodeLabel } = refusal;
-  return (
-    `Not recorded. This node carries the label \`${nodeLabel}\` and this run works at \`${label}\`. ` +
-    `${what} at \`${label}\` is stored only when material at \`${label}\` bears on the node, and none is ` +
-    `attached to it: no source labeled \`${label}\` on the node, no node labeled \`${label}\` under it, and no ` +
-    `node under it that carries a version at \`${label}\`. That keeps a version at \`${label}\` different ` +
-    `from the one it reads only where material at \`${label}\` makes the difference. With none, there is nothing at ` +
-    `\`${label}\` to judge, and the version you read stands for readers at \`${label}\`. If material at ` +
-    `\`${label}\` does bear on this node, attach it first (a source with record_claim_instance, or the node ` +
-    `that carries it as a subclaim or a premise), say in your reasoning what it shows, and record again. ` +
-    `If none does, record no version here and say so with log_stewardship_decision.`
-  );
 }
 
 /**
@@ -114,12 +70,6 @@ export function anotherLabelsNodeMessage(at: { label: string; nodeLabel: string 
     `own label could see, record that as a request (file_request), which the people who direct this graph ` +
     `can act on.`
   );
-}
-
-/** The same refusal as the database words it (MVL07), turned into the agent's message; null for any other error. */
-export function versionRefusalFromDatabase(err: unknown, nodeLabelFallback: string, what: string): string | null {
-  if ((err as { code?: string } | null)?.code !== "MVL07") return null;
-  return versionWithoutMaterialMessage({ label: currentLabel(), nodeLabel: nodeLabelFallback }, what);
 }
 
 /**
@@ -274,7 +224,7 @@ const VERSION_FIELDS: Record<"claim" | "quantity" | "question", { table: Judgmen
 export async function nodeVersions(
   nodeId: string,
   kind: string
-): Promise<{ label: string; in_force: number; versions: NodeVersion[] } | null> {
+): Promise<{ label: string; in_force: number; versions: NodeVersion[]; left_standing: LeftStanding[]; not_examined_at: string[] } | null> {
   if (oneLabelOnly()) return null;
   const { deploymentHoldsLabels } = await import("../db/client.js");
   if (!(await deploymentHoldsLabels())) return null;
@@ -294,8 +244,17 @@ export async function nodeVersions(
   );
   const beside = await madeBesideOf(spec.table, spec.kind, rows.map((r) => r.id));
   const own = await perJudgment(nodeId, rows.map((r) => r.label));
+  // Where a label the reader reads examined the node and left the judgment
+  // it reads standing, and where one has not examined it at all. A failure
+  // loses the two fields, never the read: absent is "not said".
+  const { examinedAtLabels } = await import("./left-standing-service.js");
+  const examined = await examinedAtLabels(nodeId, node.sensitivity_label, rows.map((r) => r.label)).catch((err) => {
+    console.error(`[versions] what was left standing on ${nodeId} could not be read: ${err instanceof Error ? err.message : err}`);
+    return { left_standing: [], not_examined_at: [] };
+  });
   return {
     label: node.sensitivity_label,
+    ...examined,
     in_force: rows.filter((r) => r.in_force).length,
     versions: rows.map(({ leads: _leads, assessed_at, ...r }) => {
       const record = beside.get(r.id);
