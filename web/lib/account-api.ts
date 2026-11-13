@@ -1210,10 +1210,39 @@ export async function fetchMandatesPage(
   if (opts.order) params.set("order", opts.order);
   if (opts.offset) params.set("offset", String(opts.offset));
   if (opts.limit) params.set("limit", String(opts.limit));
-  return accountFetch<MandateListPage>(
+  const r = await accountFetch<Partial<MandateListPage> & { mandates: MandateListRow[] }>(
     `/mandates${params.size > 0 ? `?${params}` : ""}`,
     externalId ? { actingUser: externalId } : {}
   );
+  return normalizeMandatesPage(r);
+}
+
+/**
+ * A list of mandates as the page reads it, whatever served it. The web app
+ * and the API deploy separately, so for a while after a release the page
+ * can be talking to an API from before the list had counts: that API
+ * answers with the mandates alone. The page then shows what it was given,
+ * counted from the rows, and does not fall over.
+ */
+export function normalizeMandatesPage(
+  r: Partial<MandateListPage> & { mandates?: MandateListRow[] }
+): MandateListPage {
+  const mandates = (r.mandates ?? []).map((m) => ({
+    ...m,
+    budget_status: m.budget_status ?? "running",
+    updated_at: m.updated_at ?? null,
+    assessments: m.assessments ?? 0,
+  }));
+  const n = mandates.length;
+  return {
+    mandates,
+    total: r.total ?? n,
+    states: {
+      live: n, any: n, active: n, paused: 0, finished: 0, needs_you: 0,
+      ...(r.states ?? {}),
+    },
+    scopes: r.scopes ?? { all: n, platform: mandates.filter((m) => m.is_platform).length, mine: null },
+  };
 }
 
 export async function fetchMandateView(
