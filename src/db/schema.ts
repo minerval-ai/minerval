@@ -867,6 +867,10 @@ export const assessments = pgTable(
     // The change stream reads assessments in the order they were written
     // (services/graph-change-service.ts, #562 / #563).
     index("idx_assessments_assessed_at").on(table.assessedAt, table.id),
+    // What a mandate's budget paid for (its page, its list row, its work).
+    index("idx_assessments_funded_by_job")
+      .on(table.fundedByJobId, table.assessedAt)
+      .where(sql`funded_by_job_id IS NOT NULL`),
   ]
 );
 
@@ -2576,7 +2580,9 @@ export const llmUsage = pgTable(
     index("idx_llm_usage_claim").on(table.claimId),
     // Budget pacing sums a job's metered cost on every check — the hottest
     // read of the highest-volume table; it must not seq-scan.
-    index("idx_llm_usage_job").on(table.jobId),
+    // With the cost, so a job's metered total (every report of a mandate's
+    // spend, grantEscrowBreakdown) is read from the index alone.
+    index("idx_llm_usage_job").on(table.jobId, table.costMicroUsd),
     index("idx_llm_usage_run").on(table.runId),
   ]
 );
@@ -2663,7 +2669,9 @@ export const agentRuns = pgTable(
       .on(table.startedAt)
       .where(sql`wrote_to_graph = false`),
     index("idx_agent_runs_claim").on(table.claimId),
-    index("idx_agent_runs_job").on(table.jobId),
+    // A job's runs, and one agent's latest under it (a mandate's Grantmaker
+    // sittings), newest first.
+    index("idx_agent_runs_job").on(table.jobId, table.agent, table.startedAt),
   ]
 );
 
@@ -2964,6 +2972,8 @@ export const owlLedger = pgTable(
   (table) => [
     index("idx_owl_ledger_user_time").on(table.userId, table.createdAt),
     index("idx_owl_ledger_contribution").on(table.contributionId),
+    // A job's escrow holds: its backers, on every mandate list row and page.
+    index("idx_owl_ledger_job").on(table.jobId, table.reason).where(sql`job_id IS NOT NULL`),
   ]
 );
 
@@ -3357,7 +3367,9 @@ export const actionAllocations = pgTable(
     index("idx_action_allocations_group").on(table.exclusionGroup),
     index("idx_action_allocations_parent").on(table.parentActionId),
     index("idx_action_allocations_claim").on(table.claimId),
-    index("idx_action_allocations_grant").on(table.grantId),
+    // A mandate's allocations, and those in a window (its operations view,
+    // its pace).
+    index("idx_action_allocations_grant").on(table.grantId, table.createdAt),
     index("idx_action_allocations_user").on(table.userId),
     // Exactly one funder, positive money, spend never past the amount —
     // the invariants the comments promise, enforced.
@@ -4824,6 +4836,7 @@ export const contributions = pgTable(
     index("idx_contributions_contributor").on(table.contributorId),
     index("idx_contributions_status").on(table.reviewStatus),
     index("idx_contributions_research_run").on(table.researchRunId).where(sql`research_run_id IS NOT NULL`),
+    index("idx_contributions_funded_by_job").on(table.fundedByJobId).where(sql`funded_by_job_id IS NOT NULL`),
   ]
 );
 
@@ -6181,6 +6194,7 @@ export const agentFindings = pgTable(
   },
   (table) => [
     index("idx_agent_findings_claim").on(table.claimId, table.lastNotedAt),
+    index("idx_agent_findings_job").on(table.jobId).where(sql`job_id IS NOT NULL`),
     index("idx_agent_findings_status_noted").on(table.status, table.lastNotedAt),
     index("idx_agent_findings_importance").on(table.importance, table.lastNotedAt),
     check(
@@ -6410,6 +6424,9 @@ export const quantityEstimates = pgTable(
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
     index("idx_quantity_estimates_claim").on(table.claimId),
+    index("idx_quantity_estimates_funded_by_job")
+      .on(table.fundedByJobId)
+      .where(sql`funded_by_job_id IS NOT NULL`),
   ]
 );
 
@@ -6531,6 +6548,9 @@ export const questionAssessments = pgTable(
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
     index("idx_question_assessments_claim").on(table.claimId),
+    index("idx_question_assessments_funded_by_job")
+      .on(table.fundedByJobId)
+      .where(sql`funded_by_job_id IS NOT NULL`),
     check(
       "ck_question_assessments_standing",
       sql`${table.standing} IN ('answered', 'leaning', 'open', 'ill_posed', 'unknown')`
@@ -6720,6 +6740,7 @@ export const requestWork = pgTable(
   },
   (table) => [
     index("idx_request_work_request").on(table.requestId),
+    index("idx_request_work_funded_by_job").on(table.fundedByJobId).where(sql`funded_by_job_id IS NOT NULL`),
     check(
       "ck_request_work_outcome",
       sql`${table.outcome} IS NULL OR ${table.outcome} IN ('met', 'partly_met', 'negative', 'cannot_be_met', 'declined', 'revise')`

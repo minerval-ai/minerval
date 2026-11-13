@@ -1016,6 +1016,13 @@
       "when": 1794606823782,
       "tag": "0144_fault_wait_due",
       "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "7",
+      "when": 1794610705966,
+      "tag": "0145_mandate_read_indexes",
+      "breakpoints": true
     }
   ]
 }
