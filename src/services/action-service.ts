@@ -181,6 +181,16 @@ const FORMALIZE_RETRY_HOURS = 24;
 const ATTEMPT_REOPEN_HOURS = 3;
 
 /**
+ * An extraction job still unfinished after this many days has lost its queue
+ * message: the extraction queue keeps a message four days (SQS's default;
+ * infra/lib/queue-stack.ts sets none). The running ingest row behind it is
+ * then reopened like any row whose worker died. Until then an unfinished job
+ * means the extraction is queued or being read, and the row is left running
+ * (reconcileActions).
+ */
+const INGEST_JOB_LOST_DAYS = 4;
+
+/**
  * Whether a live commission pays for actions row `a` (SQL fragment). A
  * commissioned row runs as soon as it has one, at its payer's budget; the
  * row's own cost estimate only gates the allocator's increments.
@@ -724,12 +734,30 @@ export async function reconcileActions(): Promise<{
   // extraction charged to the same funders. A solver attempt stamps
   // updated_at every turn (§7.9), so three untouched hours means a dead
   // worker, not a long proof.
+  //
+  // An ingest whose extraction is still queued or being read is not dead,
+  // however long it has waited: the extractions are read one after another,
+  // so a mandate that plans twenty-five sources at once has rows that read
+  // `running` for hours with nothing wrong, and on 2026-11-13 a stopped
+  // drain left ten of them waiting twenty hours. Nothing stamps such a row
+  // while it queues, so the 24 hours alone would reopen it, the executor
+  // would submit the source a second time, and both extractions would be
+  // read and metered to the same funders. It is left running while its
+  // extraction job is unfinished (INGEST_JOB_LOST_DAYS says for how long).
   await rawQuery(
-    `UPDATE actions SET status = 'open', updated_at = now()
-      WHERE status = 'running'
-        AND ((kind NOT IN ('ingest', 'attempt_proof') AND updated_at < now() - interval '60 minutes')
-             OR (kind = 'ingest' AND updated_at < now() - interval '24 hours')
-             OR (kind = 'attempt_proof' AND updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
+    `UPDATE actions a SET status = 'open', updated_at = now()
+      WHERE a.status = 'running'
+        AND ((a.kind NOT IN ('ingest', 'attempt_proof') AND a.updated_at < now() - interval '60 minutes')
+             OR (a.kind = 'ingest' AND a.updated_at < now() - interval '24 hours'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM jobs j
+                    WHERE j.type = 'url_extraction' AND j.status IN ('pending', 'processing')
+                      AND j.input->>'url' = a.target_ref
+                      -- Submitted for this run of the row: the executor
+                      -- claims the row, then creates the job.
+                      AND j.created_at >= a.updated_at - interval '1 minute'
+                      AND j.created_at > now() - make_interval(days => ${INGEST_JOB_LOST_DAYS})))
+             OR (a.kind = 'attempt_proof' AND a.updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
