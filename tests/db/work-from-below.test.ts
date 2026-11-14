@@ -524,13 +524,15 @@ describe("work asked for from below", () => {
       expect(work.summary).toContain("The file was read in full.");
       expect(work.summary).toContain("It shows the reserve held in [redacted: commercial figures].");
       const sources = await at(A, () =>
-        rawQuery<{ raw_content: string; source_type: string }>(
-          `SELECT s.raw_content, s.source_type FROM claim_instances i JOIN sources s ON s.id = i.source_id WHERE i.claim_id = $1 AND i.detached_at IS NULL`,
+        rawQuery<{ raw_content: string; source_type: string; verbatim_text: string }>(
+          `SELECT s.raw_content, s.source_type, i.verbatim_text FROM claim_instances i JOIN sources s ON s.id = i.source_id WHERE i.claim_id = $1 AND i.detached_at IS NULL`,
           [node]
         )
       );
       expect(sources).toHaveLength(1);
       expect(sources[0]!.source_type).toBe("shown_page");
+      // The instance's passage is in the source's text, so a Steward's quote check finds it.
+      expect(sources[0]!.raw_content).toContain(sources[0]!.verbatim_text);
       expect(sources[0]!.raw_content).toContain("[redacted: commercial figures]");
       // The Steward's later pass is opened and told so; it did not wait for it.
       const inbox = await at(A, () => withAgent("steward", () => openInbox(node, Date.now())));

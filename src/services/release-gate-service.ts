@@ -821,7 +821,9 @@ async function answerReachesItsNodes(pageId: string, showing: ShowingRow, destin
       [
         claim_id,
         sourceId,
-        "An answer to a request on this node, from work at a label this one does not read.",
+        // The passage is the source's own first sentence (renderShownItem), so
+        // that a Steward checking the instance against the source finds it.
+        `${capitalize(GATE_KINDS.answer)}, from work at a label this one does not read.`,
         "The source's text is the answer as it came through the gate, with removals marked and held parts named.",
         destination,
       ]
