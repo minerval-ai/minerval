@@ -17,7 +17,7 @@ import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { madeBesideOf } from "../../src/services/judgment-version-service.js";
 import { verifyShownPage, type ShownPageForCheck } from "../../src/services/page-fingerprint.js";
-import { readablePolicies, savePolicyVersion } from "../../src/services/redaction-policy.js";
+import { ensureBoundaryPolicy, hashPolicy, readablePolicies, savePolicyVersion } from "../../src/services/redaction-policy.js";
 import {
   askedShowings,
   decideAtGate,
@@ -820,6 +820,24 @@ describe("the policy of a boundary", () => {
     const forA = await atA(() => readablePolicies());
     expect(forA.map((p) => [p.version, p.categories.map((c) => c.name)])).toEqual([[2, ["personal data", "plant layout"]]]);
     expect(forA[0]!.body).toContain("### plant layout");
+  });
+
+  it("takes a new version, with the same categories, when the text every version shares has changed since the last was saved", async () => {
+    // As a deployment that saved its versions before the shared sections were reworded would have them.
+    const boundary = { from: C, to: A };
+    const before = (await system(() => ensureBoundaryPolicy(boundary)))!;
+    const older = before.body.replace(/\n\nA supplier's name, the words of a recorded interest[^\n]*/, "");
+    expect(older).not.toBe(before.body);
+    await system(() => rawQuery(`UPDATE redaction_policies SET body = $2, hash = $3 WHERE boundary_id = $1 AND version = $4`, [before.boundary_id, older, hashPolicy(older), before.version]));
+    const now = await system(() => ensureBoundaryPolicy(boundary));
+    expect(now.version).toBe(before.version + 1);
+    expect(now.categories).toEqual(before.categories);
+    expect(now.body).toBe(before.body.replace(`version ${before.version}`, `version ${now.version}`));
+    expect(now.starting_text).toBe(false);
+    // The version pages were shown under stays as it was, and asking again takes no further version.
+    const [kept] = await system(() => rawQuery<{ hash: string }>(`SELECT hash FROM redaction_policies WHERE boundary_id = $1 AND version = $2 AND side = 'destination'`, [before.boundary_id, before.version]));
+    expect(kept!.hash).toBe(hashPolicy(older));
+    expect((await system(() => ensureBoundaryPolicy(boundary))).version).toBe(now.version);
   });
 });
 

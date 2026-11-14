@@ -143,6 +143,12 @@ cause serious harm; test content. A deployment's administrators save later
 versions with the categories they want (`PUT /redaction-policies`). Two
 sections of every version are written by the code and are the same at every
 boundary: how removal works, and what is shown whenever a page is shown.
+When the code's wording of those two sections changes, the next use of a
+boundary saves a new version with the same categories, as any edit does
+(`ensureBoundaryPolicy`). A page already shown keeps the version, and the
+hash, it was shown under. The always-shown list names facts, never words: a
+supplier's name, the words of a recorded interest and the words of a gap are
+parts, and the policy says so after the list.
 
 A version is refused when it is saved, with the reason, if a category is
 worded by how a passage reflects on someone ("anything unfavorable to the
