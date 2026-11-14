@@ -104,6 +104,7 @@ import { ownershipRefusal } from "./steward-ownership.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { MARGINAL_YIELD_DESCRIPTION } from "./judgment-fields.js";
 import { malformedIdRefusal, writeIdCandidates } from "./id-repair.js";
+import { isMalformedIdError } from "../seen-ids.js";
 import {
   executeStewardStructureTool,
   getStewardStructureToolDefinitions,
@@ -3502,7 +3503,7 @@ export async function executeStewardTool(
     // A malformed uuid reaches the database as a syntax error (22P02).
     // Nothing was written; say which id is malformed and offer the ids the
     // run has seen nearest it, rather than the bare database message.
-    if ((err as { code?: string } | null)?.code === "22P02") return malformedIdRefusal(input);
+    if (isMalformedIdError(err)) return malformedIdRefusal(input);
     // The database's refusal of a write across labels is told whole, with
     // its reason: a limit the agent works under, not a fault of the tool.
     const refusal = mirroredRefusalForAgent(err) ?? refusalForCaller(err);

@@ -10,7 +10,7 @@ import { refusalForCaller } from "../../db/clearance.js";
 import { HOLD_REASONS } from "../../services/gate-kinds.js";
 import { redactorActs } from "../../services/release-gate-service.js";
 import { policyById } from "../../services/redaction-policy.js";
-import { describeIdShape } from "../seen-ids.js";
+import { describeIdShape, isMalformedIdError } from "../seen-ids.js";
 import {
   ShowingError,
   finishRedaction,
@@ -253,7 +253,7 @@ export async function executeRedactorTool(
     if (err instanceof ShowingError) return answer({ success: false, code: err.code, message: err.message });
     // A mistyped id (a removal's or a source's) reaches the database as a syntax error (22P02). It is the
     // model's slip, so the run is told which id and goes on, rather than ending on the database's words.
-    if ((err as { code?: string } | null)?.code === "22P02") {
+    if (isMalformedIdError(err)) {
       const bad = Object.entries(input).filter(([k, v]) => k.endsWith("_id") && describeIdShape(v) !== null);
       return answer({
         success: false,
