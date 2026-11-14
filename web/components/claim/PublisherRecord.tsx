@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { PublisherRecord } from "@/lib/api";
+import type { PublishedMandate, PublisherRecord } from "@/lib/api";
 import { day, showingWords, stateWords } from "@/lib/published";
 
 // A publisher's public record, on its contributor page
@@ -48,6 +48,14 @@ export function PublisherRecordSection({ record }: { record: PublisherRecord }) 
           </p>
         </>
       )}
+      {(record.published_mandates ?? []).length > 0 && (
+        <>
+          <h3 style={{ fontFamily: "var(--sans)", fontSize: ".9rem", marginBottom: ".2rem" }}>Mandates it published, which take requests made here</h3>
+          {record.published_mandates!.map((m) => (
+            <PublishedMandateRow key={m.face_id} m={m} />
+          ))}
+        </>
+      )}
       {record.published_pages.length > 0 && (
         <ul className="record-list" style={{ fontFamily: "var(--sans)", fontSize: ".84rem" }}>
           {record.published_pages.map((p) => (
@@ -69,5 +77,62 @@ export function PublisherRecordSection({ record }: { record: PublisherRecord }) 
         </ul>
       )}
     </section>
+  );
+}
+
+// Spelling for this page's readers: the deployment stamps its words in American English.
+const british = (text: string) => text.replace(/\borganiz/g, "organis").replace(/\bOrganiz/g, "Organis");
+
+// One published mandate: its terms, how its publisher's gate is set for its
+// work as the publishing deployment stamped it, and each change with its
+// date. A request on this graph is addressed to it by its id.
+function PublishedMandateRow({ m }: { m: PublishedMandate }) {
+  const small = { color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem" } as const;
+  return (
+    <div style={{ fontFamily: "var(--sans)", fontSize: ".84rem", marginBottom: "1rem" }}>
+      <p style={{ marginBottom: ".2rem" }}>
+        <strong>{m.name}</strong>
+        {m.withdrawn_at ? `, withdrawn ${day(m.withdrawn_at)}` : ""}. Published {day(m.first_published_at)}
+        {m.last_changed_at !== m.first_published_at ? `, last changed ${day(m.last_changed_at)}` : ""}.{" "}
+        {m.requests_addressed_to_it === 1 ? "One request has been addressed to it." : `${m.requests_addressed_to_it} requests have been addressed to it.`}
+      </p>
+      <p style={{ whiteSpace: "pre-wrap", marginTop: 0 }}>{m.terms}</p>
+      {m.gate ? (
+        <>
+          <p style={{ marginBottom: ".2rem" }}>What it has said it will release, as its gate to outside is set for this mandate&rsquo;s work:</p>
+          <ul className="record-list">
+            {m.gate.settings.map((s) => (
+              <li key={s.kind}>{british(s.in_a_line)}</li>
+            ))}
+            {m.gate.for_requests_under.map((u) => (
+              <li key={`${u.public_node_id}-${u.kind}`}>
+                For requests on <Link href={`/claims/${u.public_node_id}`}>a node</Link> and what sits under it ({u.kind}): {british(u.in_words)}, set on {u.set_on}.
+              </li>
+            ))}
+          </ul>
+          <p style={small}>
+            {british(m.gate.pages_flow)} {british(m.gate.other_parties)}
+            {m.gate.narrower_settings_not_listed > 0 ? ` It has ${m.gate.narrower_settings_not_listed} narrower setting${m.gate.narrower_settings_not_listed === 1 ? "" : "s"}, for single requests, that are not listed.` : ""}
+          </p>
+          <p style={small}>{british(m.gate.money)}</p>
+        </>
+      ) : (
+        <p style={small}>Its package says nothing of how its gate is set.</p>
+      )}
+      <details>
+        <summary style={small}>Its history here, and how to address a request to it</summary>
+        <ul className="record-list" style={small}>
+          {m.history.map((h) => (
+            <li key={h.package}>
+              {day(h.received_at)}: {h.changes.map(british).join(" ")}
+            </li>
+          ))}
+        </ul>
+        <p style={small}>
+          To address a request to it, give <span className="mono">{m.face_id}</span> as the request&rsquo;s addressee. The request stays an ordinary
+          one: anyone may fund or meet it, and its record shows what the publisher did about it. {british(m.note)}
+        </p>
+      </details>
+    </div>
   );
 }

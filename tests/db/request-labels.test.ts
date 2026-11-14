@@ -1783,12 +1783,13 @@ describe("every route that writes, driven against a private target", () => {
     "POST /grant-conversations": async () => () => post(both, "/grant-conversations", { message: "Draft.", label: A }),
     "POST /assistant/conversations": async () => () => post(both, "/assistant/conversations", { message: "Hello.", label: A }),
     "POST /pages": async () => () => post(both, "/pages", { title: "A new page", body: "Some text.", label: A }),
-    // Neither gets as far as writing: the registration is signed by no key, and the package is not one.
+    // None gets as far as writing: the registration is signed by no key, and neither package is one.
     "POST /publishers": async () => () =>
       post(both, "/publishers", { public_key: "A".repeat(43) + "=", hosting: "own_machines", signature: "A".repeat(86) + "==", label: A }),
     "POST /reports": async () => () =>
       post(both, "/reports", { kind: "tool_gap", severity: "annoyance", title: `A tool is missing (${randomUUID()})`, body: "It would help.", label: A }),
     "POST /published-pages": async () => () => post(both, "/published-pages", { package: { format: "not-a-package" }, label: A }),
+    "POST /published-mandates": async () => () => post(both, "/published-mandates", { package: { format: "not-a-package" }, label: A }),
     "POST /extension/analyze": async () => () =>
       post(both, "/extension/analyze", { url: `https://example.org/${randomUUID()}`, title: "A page", text: "Some page text to analyze. ".repeat(20), label: A }),
   };

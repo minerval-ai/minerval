@@ -527,7 +527,7 @@ describe("in a members-only deployment", () => {
     expect(needing("administer").length).toBeGreaterThan(3);
 
     const reader = toolsOf([]);
-    expect(needing("release").sort()).toEqual(["decide_at_gate", "get_gate_queue", "send_report_to_maintainers"]);
+    expect(needing("release").sort()).toEqual(["decide_at_gate", "get_gate_queue"]);
     // A route that any one of several permissions opens (the reads of the
     // file sets, for a person who directs or an administrator) is left out
     // for a caller who holds none of them, and offered to one who holds any.

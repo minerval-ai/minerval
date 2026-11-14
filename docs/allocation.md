@@ -327,6 +327,30 @@ money from below petitions as any run does; where the mandate paying for it
 is below, the petition is recorded at the run's label and nothing waits on
 it, since it is that label's words going down.
 
+### Across labels, downward
+
+A mandate pays for a pass on a node at a label that does not read its own
+by offering it to the gate between them (`funding`; `fundBelow`, or a gate
+named to keep the other side current). Once the gate lets the asking
+through, the pass is commissioned at the lower label with the mandate as
+payer, for the amount the gate let through: one row at the lower label
+naming a payer above, as work asked for from below is a row above naming a
+payer below. The mandate's escrow counts it at once, spend settles against
+it, and what the pass does not spend stops counting when it ends. Where
+the mandate's escrow or pace cannot pay, the pass is opened for that
+label's own funders with the same words, and the item records which.
+
+### The public graph
+
+Owls inside a deployment and public owls do not convert. A mandate an
+organization publishes on the public graph, which public requests can be
+addressed to, pays for the work it takes up from its own budget inside;
+the requester pays nothing there. A member of the public who wants to push
+a question funds the public side: the public graph's own assessment of a
+node the request bears on, which weighs the organization's published page
+when it arrives. Asking a public mandate for a fresh public assessment is
+paid on the public graph from the public owls the organization put into it.
+
 ## Lookouts: cheap standing watch
 
 The Grantmaker's session is judgment at mandate scale: it wakes on what it

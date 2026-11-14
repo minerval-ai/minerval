@@ -345,6 +345,13 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "graph's, with its publisher and what its record says, and keep it apart from this graph's own assessment of the node.",
   },
   "GET /published-pages/:published_page_id/package": { name: "get_published_page_package" },
+  // A mandate another graph published here, which a request can be addressed to (published-mandate-service.ts).
+  "POST /published-mandates": {
+    name: "submit_published_mandate",
+    note: "Free. The mandate stands on your publisher's record under your account's name, and requests here can be addressed to it.",
+  },
+  "GET /published-mandates": { name: "list_published_mandates" },
+  "GET /published-mandates/:face_id/package": { name: "get_published_mandate_package" },
   // Connections to an organization's systems (src/connections.ts), in the
   // same deployments. The reads; the writes are excluded below.
   "GET /connections": { name: "list_connections" },
@@ -416,11 +423,9 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- from inside a private deployment: the public graph (members-only deployments only) ----
   "GET /outside/account": { name: "get_public_graph_account", note: "Free." },
   "GET /outside/log": { name: "list_acts_on_public_graph", note: "Free." },
-  "GET /outside/choices": { name: "list_standing_choices", note: "Free." },
   "GET /outside/requests": { name: "list_public_requests", note: "Free. Read from the mirror, so it tells the public graph nothing." },
   "GET /outside/said-back": { name: "list_public_contributions_received", note: "Free." },
-  "GET /outside/keep-current": { name: "get_keeping_public_versions_current", note: "Free." },
-  "GET /outside/reports": { name: "list_reports_for_sending", note: "Free." },
+  "GET /outside/reports": { name: "list_agents_reports", note: "Free." },
   "GET /outside/mandates/conversations/:conversation_id": { name: "get_public_mandate_conversation", note: "Free." },
   "POST /outside/requests/adopted/:adoption_id/take-up": {
     name: "take_up_public_request",
@@ -446,15 +451,6 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     name: "ask_public_mandate_for_assessment",
     note: "Shows on a public mandate's page that the organization asked about this node. It takes a person, so your user is shown a card.",
   },
-  "POST /outside/reports/:sending_id/send": {
-    name: "send_report_to_maintainers",
-    note: "Releases the report's redacted words to Minerval's maintainers. It takes a person who holds release for the organization's own material, so your user is shown a card.",
-  },
-  "POST /outside/reports/:sending_id/send-facts": {
-    name: "send_failure_facts_to_maintainers",
-    note: "Sends fixed facts and none of the agent's words. It takes a person, so your user is shown a card.",
-  },
-  "POST /outside/work/:action_id/commission": { name: "fund_outward_work", note: ESCROWS_OWLS },
 };
 
 /** Routes a hand-written tool in server.ts already covers. */
@@ -562,14 +558,10 @@ const OUTWARD_SESSION =
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /outside/mandates": OUTWARD_WORDS,
   "POST /outside/mandates/conversations/:conversation_id/messages": OUTWARD_WORDS,
-  "PUT /outside/choices/:key": OUTWARD_SESSION,
   "POST /outside/requests/:public_request_id/adopt": OUTWARD_SESSION,
   "POST /requests/:request_id/adopt": OUTWARD_SESSION,
   "POST /asks": OUTWARD_SESSION,
-  "POST /outside/keep-current/leave-out": OUTWARD_SESSION,
-  "DELETE /outside/keep-current/leave-out/:id": OUTWARD_SESSION,
   "POST /outbound/proposals": OUTBOUND_SESSION,
-  "POST /outbound/proposals/:proposal_id/release": OUTBOUND_SESSION,
   "POST /outbound/packages/:package_id/file": OUTBOUND_SESSION,
   "POST /outbound/registration": OUTBOUND_SESSION,
   "POST /file-sets/register": FILE_SET_REGISTER_SESSION,

@@ -23,6 +23,7 @@
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { loadConfig } from "../config.js";
+import { PublishedMandateError, admitMandatePackage, mandatePackageAsSigned, publishedMandates } from "../services/published-mandate-service.js";
 import { gateContributor } from "../server/contributor-gate.js";
 import { chargeAgenticOp, refundAgenticOp } from "../server/plugins/quota.js";
 import { attachChargeContribution } from "../services/owl-ledger-service.js";
@@ -40,6 +41,19 @@ import {
 } from "../services/published-page-service.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
+
+
+const MANDATE_STATUS: Record<string, number> = {
+  MALFORMED: 422,
+  DOES_NOT_VERIFY: 422,
+  UNREGISTERED_KEY: 403,
+  NOT_YOUR_KEY: 403,
+  HOSTING_DIFFERS: 409,
+  TOO_LONG: 413,
+  OUT_OF_ORDER: 409,
+  CHAIN_BROKEN: 409,
+  REF_IN_USE: 409,
+};
 
 const STATUS: Record<string, number> = {
   UNREGISTERED_KEY: 403,
@@ -158,6 +172,75 @@ export async function publishedPageRoutes(app: FastifyInstance): Promise<void> {
         if (first) await refundAgenticOp(request.auth, "source_ingest").catch(() => {});
         return refuse(reply, err);
       }
+    },
+  });
+
+  app.post<{ Body: { package: unknown } }>("/published-mandates", {
+    bodyLimit: 256 * 1024,
+    schema: {
+      tags: ["published pages"],
+      summary: "Submit a published mandate: a signed package from a deployment whose key your account registered, with the mandate's name, its terms and how your gate is set for its work",
+      description:
+        "A published mandate is a mandate of your own graph that you let through its gate to outside: that it exists, its name and its terms, " +
+        "as your Redactor and the people at that gate left them. It stands on your publisher's record here, and a request on this graph can be " +
+        "addressed to it. With it goes how your gate to outside is set for the mandate's work, stamped by your deployment in fixed words: for " +
+        "the statement that a request was taken up, the statement that the work will not be done, and the page of a node a request bears on, " +
+        "whether the gate is open, whether what your Redactor lets through goes with no person deciding after it, or whether a person decides " +
+        "as well. Each package is kept as received with its date, so a changed term or setting shows as a change. The package is checked " +
+        "before anything is kept: its hash, its signature against your registered key, and its place after the one before it. A package " +
+        "that says the mandate is withdrawn ends it: nothing new can be asked of it. What a publisher says of its own mandate is its own " +
+        "statement and is not reviewed as a contribution is. The same package may be sent again and changes nothing.",
+      body: { type: "object", required: ["package"], properties: { package: { type: "object", additionalProperties: true } } },
+    },
+    preHandler: [app.authenticate, app.requireUser],
+    handler: async (request, reply) => {
+      // Neither priced nor counted: a mandate's package files nothing for review and opens no work, so nothing that a
+      // charge or an hourly count stands for is spent. The key the account registered bounds who may send one.
+      if (!request.contributorExternalId) {
+        return reply.code(403).send({ error: { code: "NO_CONTRIBUTOR_IDENTITY", message: "API key is not bound to a contributor identity" } });
+      }
+      try {
+        const admitted = await admitMandatePackage({ accountId: request.auth!.userId!, pkg: request.body.package });
+        return reply.code(admitted.status === "received" ? 201 : 200).send(admitted);
+      } catch (err) {
+        if (err instanceof PublishedMandateError) {
+          return reply.code(MANDATE_STATUS[err.code] ?? 400).send({ error: { code: err.code, message: err.message } });
+        }
+        throw err;
+      }
+    },
+  });
+
+  app.get<{ Querystring: { account_id?: string; include_withdrawn?: boolean } }>("/published-mandates", {
+    schema: {
+      tags: ["published pages"],
+      summary: "The mandates other graphs have published here, which a request can be addressed to: each with its terms, how its publisher's gate is set for its work, and each change with its date",
+      description:
+        "An organization that runs a private graph can publish a mandate that takes requests made here. `terms` say what it takes up. `gate` " +
+        "is what its publisher has said it will release, as its deployment's gate to outside is set: for each thing that answers a request, " +
+        "`the_gate` is `open`, `redactor` (what its Redactor lets through under its published policy goes, with no person deciding after it) " +
+        "or `person` (a person decides as well). `history` lists every package received with what changed in it. To address a request to " +
+        "one, give its `face_id` as the request's `addressed_to` when proposing or filing the request. The request stays an ordinary one: " +
+        "anyone may fund or meet it, and its record shows whether the publisher took it up, declined it with a reason, published a page on " +
+        "a node it bears on, or has done nothing yet, with how long. Work the publisher does on it is paid for inside its own graph; owls " +
+        "here do not pay for it.",
+      querystring: { type: "object", properties: { account_id: UUID, include_withdrawn: { type: "boolean" } } },
+    },
+    handler: async (request, reply) =>
+      reply.send({ published_mandates: await publishedMandates({ accountId: request.query.account_id, live: request.query.include_withdrawn !== true }) }),
+  });
+
+  app.get<{ Params: { face_id: string }; Querystring: { package?: number } }>("/published-mandates/:face_id/package", {
+    schema: {
+      tags: ["published pages"],
+      summary: "One package of a published mandate exactly as it was signed, with the publisher's key as this graph holds it, for anyone to check",
+      params: { type: "object", required: ["face_id"], properties: { face_id: UUID } },
+      querystring: { type: "object", properties: { package: { type: "integer", minimum: 1 } } },
+    },
+    handler: async (request, reply) => {
+      const found = await mandatePackageAsSigned(request.params.face_id, request.query.package);
+      if (!found) return reply.code(404).send({ error: { code: "NOT_FOUND", message: "No published mandate has that id, or it has no such package." } });
+      return reply.send(found);
     },
   });
 

@@ -42,13 +42,17 @@ vi.hoisted(() => {
 import { loadConfig } from "../../src/config.js";
 import { rawQuery, withTransaction } from "../../src/db/client.js";
 import { setNoContextSessionForTests } from "../../src/db/clearance.js";
-import { executeReportRedactorTool } from "../../src/llm/agents/report-redactor.js";
 import { runAtLabel, withAgent } from "../../src/llm/usage-context.js";
 import { executeAuditTool } from "../../src/llm/tools/audit-tools.js";
 import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
 import { MCP_EXCLUDED_ROUTES, ROUTE_TOOLS } from "../../src/mcp/route-tools.js";
 import { verifyPublishedPage, type PublishedPagePackage } from "../../src/published-page/verify.js";
-import { deliverPublicContributions, takeInPublicContributions } from "../../src/services/inbound-service.js";
+import { deliverAddressedRequests, deliverPublicContributions, takeInPublicContributions } from "../../src/services/inbound-service.js";
+import { FACE_MONEY_WORDS } from "../../src/services/gate-face.js";
+import { waitsForPassAt } from "../../src/services/inbox-service.js";
+import { mandatePackageHash } from "../../src/services/published-mandate-service.js";
+import { createResearchTools } from "../../src/llm/tools/research-tools.js";
+import { seedGrantWithJob } from "./helpers.js";
 import { generateSigningKey } from "../../src/services/mirror-batch.js";
 import { syncMirror, type BatchSource } from "../../src/services/mirror-apply-service.js";
 import { poolDb, type MirrorDb } from "../../src/services/mirror-db.js";
@@ -56,12 +60,15 @@ import { cutBatches, getBatchText, listBatches } from "../../src/services/mirror
 import { replicatedTables } from "../../src/services/mirror-manifest.js";
 import { FUNDER_RAISE_SUMMARY } from "../../src/services/mandate-service.js";
 import { buildOutboundPackages, sendOutbound, signedRegistration } from "../../src/services/outbound-service.js";
-import { STANDING_CHOICES, followKeepCurrent, sendKeepCurrent } from "../../src/services/outward-acts-service.js";
+import { noticeChangedVersions } from "../../src/services/keep-current.js";
+import { sendThroughOutside } from "../../src/services/gate-outside.js";
+import { ensureBoundaryPolicy } from "../../src/services/redaction-policy.js";
+import { gateOf, setGate, setGateMode } from "../../src/services/gate-settings-service.js";
 import { decideAtGate, gateQueue, shownShowing, type GateActor } from "../../src/services/release-gate-service.js";
-import { askAfterSentReports, followReports, minervalToolNames } from "../../src/services/report-sending-service.js";
+import { askAfterSentReports, minervalToolNames, offerReportsToGate } from "../../src/services/report-sending-service.js";
 import { raiseIssue } from "../../src/services/report-service.js";
 import { askShowing, followShowings } from "../../src/services/showing-service.js";
-import { A, asPerson, attachSource, seedNode, system, tag, unwall, wall, personDecidesAt } from "./review-3-common.js";
+import { A, C, asPerson, attachSource, seedNode, system, tag, unwall, wall, personDecidesAt } from "./review-3-common.js";
 import { mirrorDatabaseUrl } from "./urls.js";
 
 const SECRET = "4711 units";
@@ -254,10 +261,51 @@ const acts = (kind: string) =>
     )
   );
 
+/** An administrator, as the gate's settings take one. */
+const administrator = () => ({ id: people.admin!.id, holding: ["administer"], administer: true, releaseParties: [] as string[] });
+
+/** The gate between a label and outside the deployment. */
+const outerGate = async (label: string) => (await ensureBoundaryPolicy({ from: label, to: null })).boundary_id;
+
+/** Set how the gate from `label` to outside treats a kind of thing, as an administrator. */
+const setOuter = async (label: string, kind: string, mode: "open" | "redactor" | "person", more: { scope?: "mandate" | "under" | "request"; scopeRef?: string; delayHours?: number } = {}) =>
+  system(async () =>
+    setGateMode({ boundaryId: await outerGate(label), kind, mode, scope: more.scope, scopeRef: more.scopeRef ?? null, delayHours: more.delayHours, actor: administrator() })
+  );
+
+/** The Redactor's pass over an item at a gate, at `label`: the secret removed wherever it is, then Audit's check passed. */
+async function redactItem(label: string, itemId: string): Promise<void> {
+  const item = JSON.parse(await at(label, "redactor", () => executeRedactorTool("get_page_to_redact", {}, { pageId: itemId }))) as Record<string, any>;
+  for (const part of (item.parts as any[]).filter((p) => String(p.text).includes(SECRET))) {
+    const done = JSON.parse(
+      await at(label, "redactor", () => executeRedactorTool("redact", { part: part.part, passage: SECRET, category: "commercial figures", note: "A figure a counterparty could price against." }, { pageId: itemId }))
+    ) as Record<string, any>;
+    expect(done.success, JSON.stringify(done)).toBe(true);
+  }
+  expect(JSON.parse(await at(label, "redactor", () => executeRedactorTool("finish_redaction", { least_sure: [] }, { pageId: itemId }))).success).toBe(true);
+  const checked = JSON.parse(
+    await at(label, "audit", () => executeAuditTool("record_fidelity_outcome", { page_id: itemId, outcome: "pass", answer: "supports_in_part", reasons: "Each removal is covered." }, {}))
+  ) as Record<string, any>;
+  expect(checked.success, JSON.stringify(checked)).toBe(true);
+}
+
+/** The items of a kind offered to a gate, newest first, from the side they come from. */
+const itemsOf = (kind: string, subject: string) =>
+  system(() =>
+    rawQuery<{ id: string; stage: string; label: string; to_outside: boolean }>(
+      `SELECT p.id, p.stage, s.sensitivity_label AS label, s.to_outside FROM showings s JOIN showing_pages p ON p.showing_id = s.id
+        WHERE s.kind = $1 AND s.subject_ref = $2 AND p.stage <> 'overtaken' ORDER BY p.opened_at DESC, p.id`,
+      [kind, subject]
+    )
+  );
+
 /** Everything this deployment has sent to the public graph through the routes of this piece, as one string. */
 const everythingSent = async () => JSON.stringify(await system(() => rawQuery(`SELECT sent FROM outward_acts`)));
 
+let startedAt = new Date();
+
 beforeAll(async () => {
+  startedAt = new Date();
   setNoContextSessionForTests(null);
   pubPool = new pg.Pool({ connectionString: mirrorDatabaseUrl("e"), max: 4 });
   pub = poolDb(pubPool);
@@ -327,13 +375,14 @@ beforeAll(async () => {
   await app.ready();
 
   // People, each holding what their name says, and each but one reading `a`.
-  for (const who of ["director", "funder", "releaser", "acmeReleaser", "reader", "releaserWhoDoesNotReadA"]) people[who] = await signIn(who);
+  for (const who of ["director", "funder", "releaser", "acmeReleaser", "reader", "releaserWhoDoesNotReadA", "admin"]) people[who] = await signIn(who);
   for (const who of ["director", "funder", "releaser", "acmeReleaser", "reader"]) await grant(who, "read", { label: A });
   await grant("director", "direct");
   await grant("funder", "fund");
   await grant("releaser", "release", { party: id.org });
   await grant("releaserWhoDoesNotReadA", "release", { party: id.org });
   await grant("acmeReleaser", "release", { party: id.acme });
+  await grant("admin", "administer");
   actor.director = { id: people.director!.id, holding: ["direct"], clearance: [A, "public"], releaseParties: [], direct: true };
   actor.org = { id: people.releaser!.id, holding: ["release for the organization"], clearance: [A, "public"], releaseParties: [id.org!], direct: false };
 
@@ -350,20 +399,27 @@ afterAll(async () => {
   }
   Object.assign(loadConfig(), { publishSigningKey: "", deploymentHosting: "", publicGraphApiUrl: "", publicGraphApiKey: "" });
   await system(async () => {
-    for (const table of ["report_sendings", "keep_current_queue", "keep_current_exceptions", "adopted_requests", "inbound_contributions", "outward_acts", "outward_settings"]) {
+    for (const table of ["report_sendings", "adopted_requests", "inbound_contributions", "outward_acts"]) {
       await rawQuery(`DELETE FROM ${table}`);
     }
     await rawQuery(`DELETE FROM agent_report_sightings WHERE report_id IN (SELECT id FROM agent_reports WHERE title LIKE $1)`, [`%${tag}%`]);
     await rawQuery(`DELETE FROM agent_reports WHERE title LIKE $1`, [`%${tag}%`]);
-    await rawQuery(`DELETE FROM administrative_events WHERE action = 'standing_choice_set'`);
+    await rawQuery(`DELETE FROM gate_settings WHERE set_at >= $1`, [startedAt]);
     await rawQuery(`DELETE FROM permission_grants WHERE account_id = ANY($1::uuid[])`, [Object.values(people).map((p) => p.id)]);
-    for (const showingId of [id.showing, id.showingQ].filter(Boolean)) {
+    // Every offer this file made to a gate, of any kind, and what each recorded on both sides of its gate.
+    const offered = await rawQuery<{ id: string }>(`SELECT id FROM showings WHERE asked_at >= $1`, [startedAt]);
+    for (const showingId of [...new Set([id.showing, id.showingQ, ...offered.map((o) => o.id)])].filter(Boolean)) {
+      await rawQuery(`DELETE FROM outbound_proposals WHERE showing_id = $1`, [showingId]);
+      await rawQuery(`DELETE FROM showing_removals WHERE part_id IN (SELECT p.id FROM showing_parts p JOIN showing_pages g ON g.id = p.page_id WHERE g.showing_id = $1)`, [showingId]);
+      await rawQuery(`DELETE FROM showing_parts WHERE page_id IN (SELECT id FROM showing_pages WHERE showing_id = $1)`, [showingId]);
       const [showing] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_showings WHERE id = $1`, [showingId]);
       await rawQuery(`DELETE FROM outbound_sends WHERE package_id IN (SELECT id FROM outbound_packages WHERE showing_id = $1)`, [showingId]);
       await rawQuery(`DELETE FROM outbound_packages WHERE showing_id = $1`, [showingId]);
       await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = $1)`, [showingId]);
       for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = $1`, [showingId]);
       await rawQuery(`DELETE FROM shown_showings WHERE id = $1`, [showingId]);
+      await rawQuery(`DELETE FROM showing_pages WHERE showing_id = $1`, [showingId]);
+      await rawQuery(`DELETE FROM showings WHERE id = $1`, [showingId]);
       await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [showing?.boundary_id ?? null]);
     }
   }).catch((err: unknown) => console.warn("[outward-acts] cleanup:", err instanceof Error ? err.message : err));
@@ -389,8 +445,8 @@ describe("a page shown outside, to begin from", () => {
     expect((await pubReviewer({ contribution_id: publication!.contribution_id, decision: "accept", reasoning: "The publisher's own page of this node." })).success).toBe(true);
 
     const pkg = await latestPackage(id.showing!, id.p!);
-    // On by default, and nothing is behind it: nobody has named a public mandate, so nothing is asked. The package says both.
-    expect(pkg.deployment.keeps_public_versions_current).toEqual({ setting: "on", a_public_mandate_pays_for_it: false });
+    // The gate to outside names no public mandate to keep public versions current, so nothing is asked. The package says so.
+    expect(pkg.deployment.keeps_public_versions_current).toEqual({ setting: "off", a_public_mandate_pays_for_it: false });
     expect(pkg.record.said_back).toBeUndefined();
     // The id the public graph gave the publication is kept with the send: it is how a contribution there is known to be about this page.
     const [sent] = await system(() => rawQuery<{ public_page_id: string }>(`SELECT public_page_id FROM outbound_sends WHERE public_page_id IS NOT NULL LIMIT 1`));
@@ -432,7 +488,11 @@ describe("taking up a request in public", () => {
     expect((await as("reader", { url: `/outside/requests?node_id=${id.p}` })).json.requests[0].here).toHaveLength(1);
   });
 
-  it("says in public that the graph is taking it up: a person who directs, present, and logged with who and what", async () => {
+  it("says in public that the graph is taking it up: a person who directs asks, the gate to outside lets it through under its setting, and the log says what went", async () => {
+    // The organization's standing choice: that it takes a request up, and that it will not do the work, go as they are.
+    // The rest of this gate waits on a person (personDecidesAt above).
+    await setOuter(A, "taken_up", "open");
+    await setOuter(A, "answer", "open");
     // Holding `fund` is not holding `direct`.
     expect((await as("funder", { method: "POST", url: `/outside/requests/adopted/${id.adoption1}/take-up` })).status).toBe(403);
     // A key alone does not act, whoever's it is.
@@ -455,6 +515,7 @@ describe("taking up a request in public", () => {
 
     const taken = await as("director", { method: "POST", url: `/outside/requests/adopted/${id.adoption1}/take-up` });
     expect(taken.status, JSON.stringify(taken.json)).toBe(200);
+    expect(taken.json).toMatchObject({ offered_to_the_gate: true, state: "released" });
     const work = await pubRows<{ by_label: string; contributor_id: string; taken_up: boolean; outcome: string | null; summary: string }>(
       `SELECT by_label, contributor_id, taken_up, outcome, summary FROM request_work WHERE request_id = $1`,
       [id.r1]
@@ -471,13 +532,13 @@ describe("taking up a request in public", () => {
     expect(read.json.taken_up[0].in_words).toMatch(/said on \d{4}-\d\d-\d\d that it is taking this request up\. Nothing has followed on this graph yet, the same day\./);
     expect(read.json.work).toEqual([]);
 
-    // The log: who, holding what, what was sent, what the public graph answered. Nothing was sent but the request's own id in the address.
+    // The log: what was sent, by the gate under its setting, and what the public graph answered. Nothing was sent but the request's own id.
     const logged = await acts("take_up_request");
     expect(logged).toHaveLength(1);
-    expect(logged[0]).toMatchObject({ acted_by: people.director!.id, holding: ["direct"], under_standing_choice: null, public_ref: id.r1, sent: {}, result: "done" });
+    expect(logged[0]).toMatchObject({ acted_by: null, holding: [], under_standing_choice: "the gate", public_ref: id.r1, sent: { request: id.r1 }, result: "done" });
     expect(logged[0]!.public_graph_said).toContain("commits the account to doing the work well, not to a result");
     const log = await as("reader", { url: "/outside/log" });
-    expect(log.json.acts[0]).toMatchObject({ what: "said on the public graph that this graph is taking a request up", by: `director ${tag}`, result: "done" });
+    expect(log.json.acts[0]).toMatchObject({ what: "said on the public graph that this graph is taking a request up", by: "the gate to outside, under its setting", result: "done" });
     // Twice is refused here, and the public graph would not record a second.
     expect((await as("director", { method: "POST", url: `/outside/requests/adopted/${id.adoption1}/take-up` })).json.code).toBe("ALREADY_TAKEN_UP");
   });
@@ -495,7 +556,10 @@ describe("taking up a request in public", () => {
     const read = await pubApi("GET", `/requests/${id.r2}`, undefined, null);
     expect(read.json.taken_up[0].followed).toBe("declined");
     expect(read.json.taken_up[0].in_words).toContain("it said it will not do the work: what the request asks for could not be shown outside the graph that holds it.");
-    expect((await acts("decline_request"))[0]).toMatchObject({ acted_by: people.director!.id, public_ref: id.r2, sent: { reason: "cannot_be_shown" }, result: "done" });
+    expect((await acts("decline_request"))[0]).toMatchObject({ acted_by: null, under_standing_choice: "the gate", public_ref: id.r2, sent: { request: id.r2, reason: "cannot_be_shown" }, result: "done" });
+    // Here the request is closed as declined: this deployment's own record of what became of it.
+    const [here] = await system(() => rawQuery<{ state: string }>(`SELECT r.state FROM requests r JOIN adopted_requests a ON a.request_id = r.id WHERE a.id = $1`, [id.adoption2]));
+    expect(here!.state).toBe("declined");
     expect(await everythingSent()).not.toContain(SECRET);
   });
 });
@@ -573,7 +637,12 @@ describe("what the public says back about a published page", () => {
     expect(await deliverPublicContributions()).toMatchObject({ delivered: 0 });
     const messages = await stewardMessages();
     expect(messages).toHaveLength(1);
-    expect(messages[0]!.label).toBe(A);
+    // Recorded once, at `public`, as word from the layer below every label; a pass at `a` is given it as it is given any message from below.
+    expect(messages[0]!.label).toBe("public");
+    const forA = await system(() =>
+      rawQuery(`SELECT 1 FROM node_messages m WHERE m.node_id = $1 AND m.trigger = 'public_contribution' AND ${waitsForPassAt("m", "$2")}`, [id.p, A])
+    );
+    expect(forA).toHaveLength(1);
     const day = new Date().toISOString().slice(0, 10);
     // The Steward reads the challenge it answers: the text as written, its type and date, what it cites, and where it is on the public graph.
     expect(messages[0]!.body).toBe(
@@ -733,80 +802,77 @@ describe("public owls, public mandates, and funding a public node from inside", 
 });
 
 describe("keeping the public version current", () => {
-  const queue = () => system(() => rawQuery<{ node_id: string; state: string; because: string | null; label: string }>(`SELECT node_id, state, because, sensitivity_label AS label FROM keep_current_queue ORDER BY noticed_at`));
   const inbox = (node: string) => pubRows<{ summary: string }>(`SELECT summary FROM mandate_inbox WHERE grant_id = $1 AND target_node_id = $2`, [id.mandate, node]);
+  const gateAsSeen = async () => ((await as("admin", { url: "/gates" })).json.gates as any[]).find((g) => g.to_outside && g.from === A);
 
-  it("is on from the start and sends nothing until a person has named a public mandate, and says so", async () => {
-    const state = await as("reader", { url: "/outside/keep-current" });
-    expect(state.json).toMatchObject({ setting: "on", sends: false, public_mandate_id: null });
-    expect(state.json.in_words).toBe(
-      "On, and nothing is sent: nobody has named a public mandate to pay for it. A person who may act on the public graph for the organization opens one and names it here."
+  it("asks nothing where the gate to outside names no public mandate, which is where a gate starts, and says so", async () => {
+    const gate = await gateAsSeen();
+    expect(gate).toMatchObject({ keep_current_mandate: null });
+    expect(gate.keeps_the_other_side_current).toBe(
+      "Nothing is asked of the public graph when a version here changes: no public mandate is named to pay for a fresh public assessment."
     );
-    expect(state.json.what_it_shows_outside).toBe(STANDING_CHOICES.keep_public_current.told);
-    await assessAtA(id.p!, "A version made before anybody was told what this shows.", 0.9);
-    expect(await followKeepCurrent()).toEqual({ noticed: 0, asked: 0, not_sent: 0 });
-    expect(await queue()).toEqual([]);
+    await assessAtA(id.p!, "A version made before any mandate was named.", 0.9);
+    expect(await noticeChangedVersions()).toBe(0);
     expect(await inbox(id.p!)).toEqual([]);
   });
 
-  it("is set by a person who may act on the public graph, from a session, with what it shows outside kept as they were shown it", async () => {
-    const body = { on: true, public_mandate_id: id.mandate };
-    expect((await as("funder", { method: "PUT", url: "/outside/choices/keep_public_current", payload: body })).status).toBe(403);
-    const byKey = await app.inject({ method: "PUT", url: "/outside/choices/keep_public_current", headers: { "x-api-key": id.directorKey! }, payload: body });
+  it("is a setting of the gate as a whole, an administrator's: a person who directs cannot set it, nor a key alone", async () => {
+    const gateId = await outerGate(A);
+    const body = { keep_current_mandate: id.mandate };
+    expect((await as("director", { method: "PUT", url: `/gates/${gateId}`, payload: body })).status).toBe(403);
+    const byKey = await app.inject({ method: "PUT", url: `/gates/${gateId}`, headers: { "x-api-key": id.directorKey! }, payload: body });
     expect([401, 403]).toContain(byKey.statusCode);
-    const set = await as("director", { method: "PUT", url: "/outside/choices/keep_public_current", payload: body });
+    const set = await as("admin", { method: "PUT", url: `/gates/${gateId}`, payload: body });
     expect(set.status, JSON.stringify(set.json)).toBe(200);
-    expect(set.json.as_it_stands).toMatchObject({ setting: "on", sends: true, public_mandate_id: id.mandate });
-    const [row] = await system(() => rawQuery<{ told: string; set_by: string; holding: string[] }>(`SELECT told, set_by, holding FROM outward_settings WHERE key = 'keep_public_current'`));
-    expect(row).toEqual({ told: STANDING_CHOICES.keep_public_current.told, set_by: people.director!.id, holding: ["direct"] });
-    // The change is on the log every member reads.
-    const log = await as("reader", { url: "/permissions/log" });
-    expect(JSON.stringify(log.json)).toContain("standing_choice_set");
+    expect(set.json.keeps_the_other_side_current).toContain("the public mandate named is asked for a fresh public assessment of the node");
+    expect((await system(() => gateOf(gateId)))!.keep_current_mandate).toBe(id.mandate);
   });
 
-  it("asks the public mandate when a version of a mirrored node changes, naming the node and nothing else", async () => {
-    // The version made before the choice is not sent on afterwards.
-    expect(await followKeepCurrent()).toEqual({ noticed: 0, asked: 0, not_sent: 0 });
+  it("asks the public mandate when a version of a mirrored node changes, as an item of the kind funding at the gate, naming the node and nothing else", async () => {
+    // The version made before the mandate was named is not asked about afterwards.
+    expect(await noticeChangedVersions()).toBe(0);
+    // The organization lets these go as they are; the rest of this gate waits on a person.
+    await setOuter(A, "funding", "open");
     await assessAtA(id.p!, `A later version, which mentions ${SECRET}.`, 0.9);
-    expect(await followKeepCurrent()).toEqual({ noticed: 1, asked: 1, not_sent: 0 });
-    expect(await queue()).toEqual([{ node_id: id.p, state: "sent", because: null, label: A }]);
+    expect(await noticeChangedVersions()).toBe(1);
+    const [item] = await itemsOf("funding", id.p!);
+    expect(item).toMatchObject({ label: A, to_outside: true });
     expect(await inbox(id.p!)).toEqual([{ summary: FUNDER_RAISE_SUMMARY }]);
     const logged = await acts("keep_current");
     expect(logged).toEqual([
-      expect.objectContaining({ acted_by: null, under_standing_choice: "keep_public_current", public_ref: id.p, sent: { node_id: id.p }, result: "done" }),
+      expect.objectContaining({ acted_by: null, under_standing_choice: "the gate", public_ref: id.p, sent: { node_id: id.p, mandate_id: id.mandate }, result: "done" }),
     ]);
     // Nothing of the version crossed: the request is the node's id, which the public graph already holds.
     expect(JSON.stringify(await pubRows(`SELECT * FROM mandate_inbox WHERE grant_id = $1`, [id.mandate]))).not.toContain(SECRET);
-    // The same version is not sent twice.
-    expect(await followKeepCurrent()).toEqual({ noticed: 0, asked: 0, not_sent: 0 });
+    // The same version is not offered twice.
+    expect(await noticeChangedVersions()).toBe(0);
     // The pages this deployment shows outside now say that a public mandate pays for it.
     await buildOutboundPackages({ showingId: id.showing });
     expect((await latestPackage(id.showing!, id.p!)).deployment.keeps_public_versions_current).toEqual({ setting: "on", a_public_mandate_pays_for_it: true });
   });
 
-  it("leaves a node out where a person who directs says so, and never notices a node that exists only inside", async () => {
-    expect((await as("funder", { method: "POST", url: "/outside/keep-current/leave-out", payload: { node_id: id.q, label: A } })).status).toBe(403);
-    const left = await as("director", { method: "POST", url: "/outside/keep-current/leave-out", payload: { node_id: id.q, label: A } });
-    expect(left.status, JSON.stringify(left.json)).toBe(201);
+  it("holds back a node and what sits under it where a setting says a person decides, and never notices a node that exists only inside", async () => {
+    await setOuter(A, "funding", "person", { scope: "under", scopeRef: id.q });
     await attachSource(id.q!, A, "The calibration certificate.");
     await assessAtA(id.q!, "The meters were calibrated in March.");
     const own = await seedNode(A, "A node of the deployment's own");
     await assessAtA(own, "Assessed inside.");
-    expect(await followKeepCurrent()).toEqual({ noticed: 1, asked: 0, not_sent: 0 });
-    expect((await queue()).find((r) => r.node_id === id.q)).toMatchObject({ state: "not_sent", because: "this node is left out" });
-    expect((await queue()).some((r) => r.node_id === own)).toBe(false);
-    // The one ask about q on the public mandate is the person's own, made earlier; this added none.
+    expect(await noticeChangedVersions()).toBe(1);
+    expect((await itemsOf("funding", id.q!))[0]!.stage).not.toBe("overtaken");
+    expect(await itemsOf("funding", own)).toEqual([]);
+    // The one ask about q on the public mandate is the person's own, made earlier; this added none, since a person has not decided.
     expect(await inbox(id.q!)).toHaveLength(1);
-    // What is left out is recorded at the label the person named, so a member who does not read it does not learn which nodes are worked on.
-    expect((await as("releaserWhoDoesNotReadA", { url: "/outside/keep-current" })).json.left_out).toEqual([]);
-    expect((await as("reader", { url: "/outside/keep-current" })).json.left_out).toHaveLength(1);
   });
 
-  it("waits out a delay, and says where an administrator will see it when the public graph does not take the request", async () => {
-    await as("director", { method: "PUT", url: "/outside/choices/keep_public_current", payload: { on: true, delay_hours: 5 } });
+  it("keeps an asking back for the setting's delay, and logs it when the public graph does not take one", async () => {
+    await setOuter(A, "funding", "open", { delayHours: 5 });
     await assessAtA(id.p!, "A version that waits.", 0.9);
-    expect(await followKeepCurrent()).toEqual({ noticed: 1, asked: 0, not_sent: 0 });
-    expect(await sendKeepCurrent(new Date(Date.now() + 6 * 3_600_000))).toEqual({ asked: 1, not_sent: 0 });
+    expect(await noticeChangedVersions()).toBe(1);
+    const [waiting] = await itemsOf("funding", id.p!);
+    const [of] = await system(() => rawQuery<{ showing_id: string }>(`SELECT showing_id FROM showing_pages WHERE id = $1`, [waiting!.id]));
+    const shown = await everyone(() => shownShowing(of!.showing_id));
+    expect((shown!.acts as any[]).some((a) => a.what === "delayed" && a.page_id === waiting!.id && a.by === "the gate's setting" && typeof a.until === "string")).toBe(true);
+    expect(await inbox(id.p!)).toHaveLength(1);
 
     // A mandate the organization has no money in: the public graph refuses, as it would any account.
     const [job] = await pubRows<{ id: string }>(`INSERT INTO budget_jobs (user_id, kind, budget_micro_usd, status) VALUES ($1, 'grant', 1000000, 'running') RETURNING id`, [id.readerAccount]);
@@ -814,19 +880,19 @@ describe("keeping the public version current", () => {
       `INSERT INTO grants (funder_user_id, budget_job_id, name, policy, status, pace) VALUES ($1, $2, 'Someone else''s mandate', 'custom', 'active', '{"kind":"steady","owls":0.1,"period_hours":24}'::jsonb) RETURNING id`,
       [id.readerAccount, job!.id]
     );
-    await as("director", { method: "PUT", url: "/outside/choices/keep_public_current", payload: { on: true, public_mandate_id: other!.id, delay_hours: 0 } });
+    await system(async () => setGate({ boundaryId: await outerGate(A), keepCurrentMandate: other!.id, actor: administrator() }));
+    await setOuter(A, "funding", "open");
     await assessAtA(id.p!, "A version the public graph is not asked about.", 0.9);
-    expect(await followKeepCurrent()).toEqual({ noticed: 1, asked: 0, not_sent: 1 });
-    const state = await as("reader", { url: "/outside/keep-current" });
-    expect(state.json.last_not_taken.the_public_graph_said).toContain("Only an account with money in this mandate");
-    expect(state.json.versions[0]).toMatchObject({ state: "not_sent", because: "the public graph did not take the request" });
+    expect(await noticeChangedVersions()).toBeGreaterThanOrEqual(1);
+    const refused = (await acts("keep_current")).filter((a) => a.result === "refused");
+    expect(refused.length).toBeGreaterThanOrEqual(1);
+    expect(refused[refused.length - 1]!.public_graph_said).toContain("Only an account with money in this mandate");
   });
 
   it("can be turned off, and every page shown outside then says so", async () => {
-    const off = await as("director", { method: "PUT", url: "/outside/choices/keep_public_current", payload: { on: false } });
-    expect(off.json.as_it_stands.in_words).toBe("Off. Nothing is asked of the public graph when a version here changes, and every page this graph shows outside says so.");
+    await system(async () => setGate({ boundaryId: await outerGate(A), keepCurrentMandate: null, actor: administrator() }));
     await assessAtA(id.p!, "A version made while it is off.", 0.9);
-    expect(await followKeepCurrent()).toEqual({ noticed: 0, asked: 0, not_sent: 0 });
+    expect(await noticeChangedVersions()).toBe(0);
     await followShowings();
     await redactCheckRelease(id.showing!, id.p!);
     await buildAndSend(id.showing!);
@@ -839,7 +905,6 @@ describe("keeping the public version current", () => {
 });
 
 describe("an agent's report, sent to Minerval's maintainers", () => {
-  const sending: Record<string, string> = {};
   const report: Record<string, string> = {};
   const publicReports = () => pubRows<{ id: string; title: string; body: string; surface: string | null; origin: string; reporter_contributor_id: string; context_refs: Record<string, any>; kind: string }>(
     `SELECT id, title, body, surface, origin, reporter_contributor_id, context_refs, kind FROM agent_reports ORDER BY first_seen_at`
@@ -851,10 +916,8 @@ describe("an agent's report, sent to Minerval's maintainers", () => {
   };
   const triage = async (name: string, about: string) =>
     JSON.parse(await at(A, "audit", () => executeAuditTool("triage_report", { report_id: report[name], status: "triaged", note: "Real, and seen once.", about }, {}))) as Record<string, any>;
-  const redact = (name: string, tool: string, input: Record<string, unknown> = {}) =>
-    at(A, "redactor", async () => JSON.parse(await executeReportRedactorTool(tool, input, { sendingId: sending[name]!, model: "a-redactor" })) as Record<string, any>);
 
-  it("stays inside until Audit's triage says it is about Minerval's machinery; only then is it offered, and its redaction opened", async () => {
+  it("stays inside until Audit's triage says it is about Minerval's machinery; only then is it offered to the gate to outside", async () => {
     await raise("tool", { title: `get_claim returned an error while I read ${SECRET}`, body: `I called get_claim on the plant's node and it failed. My notes had ${SECRET} in them.`, surface: "get_claim" });
     await raise("connection", { title: "A warehouse query timed out", body: `The query over the meter table for ${SECRET} timed out.`, surface: `acme_warehouse_${tag}` });
     await raise("setup", { title: "The meter export is in the wrong time zone", body: "The file set's dates are local time.", surface: "run_command" });
@@ -863,20 +926,17 @@ describe("an agent's report, sent to Minerval's maintainers", () => {
     expect(await triage("setup", "deployment")).toMatchObject({ success: true, about: "deployment", offered_for_sending: false });
     expect(await triage("tool", "minerval")).toMatchObject({ success: true, about: "minerval", offered_for_sending: true });
     expect(await triage("connection", "minerval")).toMatchObject({ offered_for_sending: true });
-    const rows = await system(() => rawQuery<{ id: string; report_id: string; state: string; label: string; action_id: string }>(`SELECT id, report_id, state, sensitivity_label AS label, action_id FROM report_sendings`));
-    expect(rows.map((r) => r.report_id).sort()).toEqual([report.tool, report.connection].sort());
-    for (const r of rows) expect(r).toMatchObject({ state: "to_redact", label: A });
-    sending.tool = rows.find((r) => r.report_id === report.tool)!.id;
-    sending.connection = rows.find((r) => r.report_id === report.connection)!.id;
-    const [action] = await system(() => rawQuery<{ kind: string; status: string; label: string }>(`SELECT kind, status, sensitivity_label AS label FROM actions WHERE id = $1`, [rows[0]!.action_id]));
-    expect(action).toEqual({ kind: "redact_report", status: "open", label: A });
+    for (const name of ["tool", "connection"]) expect(await itemsOf("report", report[name]!)).toEqual([expect.objectContaining({ stage: "to_redact", label: A, to_outside: true })]);
+    expect(await itemsOf("report", report.setup!)).toEqual([]);
+    // Offering again changes nothing.
+    expect(await offerReportsToGate()).toBe(0);
 
-    // The page lists the reports written at labels the reader reads, and offers only those about Minerval's machinery.
+    // The page lists the reports written at labels the reader reads, and where each about Minerval's machinery stands at the gate.
     const page = await as("reader", { url: "/outside/reports" });
     const listed = (name: string) => (page.json.reports as any[]).find((r) => r.report_id === report[name]);
-    expect(listed("setup")).toMatchObject({ offered_for_sending: false });
-    expect(listed("setup").sending).toBeUndefined();
-    expect(listed("tool")).toMatchObject({ offered_for_sending: true, sending: { state: "waiting for the Redactor's pass, which runs when it is paid for" } });
+    expect(listed("setup")).toMatchObject({ offered_to_the_gate: false });
+    expect(listed("setup").at_the_gate).toBeUndefined();
+    expect(listed("tool")).toMatchObject({ offered_to_the_gate: true, at_the_gate: { stands: "at the gate, waiting for the Redactor's run" } });
     // A member who does not read `a` is shown none of them.
     expect((await as("releaserWhoDoesNotReadA", { url: "/outside/reports" })).json.reports.filter((r: any) => Object.values(report).includes(r.report_id))).toEqual([]);
   });
@@ -892,95 +952,48 @@ describe("an agent's report, sent to Minerval's maintainers", () => {
     expect(facts("connection").tool).toBeNull();
   });
 
-  it("is not sent before the Redactor's pass, nor by a person who lacks release for the organization's own material or does not read its label", async () => {
-    expect((await as("releaser", { method: "POST", url: `/outside/reports/${sending.tool}/send` })).json.code).toBe("NOT_REDACTED");
-    expect((await redact("tool", "redact_report", { field: "body", passage: SECRET, category: "no such category", note: "x" })).code).toBe("NO_SUCH_CATEGORY");
-    for (const field of ["title", "body"]) {
-      expect((await redact("tool", "redact_report", { field, passage: SECRET, category: "commercial figures", note: "A figure from the plant's records." })).success).toBe(true);
-    }
-    const before = await redact("tool", "get_report_to_redact");
-    expect(before.as_it_would_go.body).toBe("I called get_claim on the plant's node and it failed. My notes had [redacted: commercial figures] in them.");
-    expect(before.sent_with_it_in_fixed_words).toMatchObject({ tool: "get_claim" });
-    expect((await redact("tool", "finish_report_redaction")).success).toBe(true);
-    expect((await redact("tool", "redact_report", { field: "body", passage: "plant", category: "commercial figures", note: "x" })).code).toBe("NOT_REDACTING");
-
-    // The person who directs does not hold release; Acme's reviewer holds it for another party; a third holds it and does not read `a`.
-    expect((await as("director", { method: "POST", url: `/outside/reports/${sending.tool}/send` })).status).toBe(403);
-    expect((await as("acmeReleaser", { method: "POST", url: `/outside/reports/${sending.tool}/send` })).json.code).toBe("RELEASE_NEEDED");
-    expect((await as("releaserWhoDoesNotReadA", { method: "POST", url: `/outside/reports/${sending.tool}/send` })).status).toBe(404);
+  it("goes after the Redactor's pass, Audit's check and a person's approval, where a report starts: only a holder of release for the organization's own material approves", async () => {
+    const [item] = await itemsOf("report", report.tool!);
+    await redactItem(A, item!.id);
     expect(await publicReports()).toEqual([]);
-  });
+    // Acme's reviewer holds release for another party; the person who directs holds none.
+    await expect(
+      decideAtGate({ actor: { ...actor.org!, id: people.acmeReleaser!.id, releaseParties: [id.acme!] }, partyId: id.org!, items: [{ page_id: item!.id }], decision: "approve" })
+    ).rejects.toThrow(/do not hold the permission/);
+    expect((await as("director", { method: "POST", url: "/gate/decisions", payload: { decision: "approve", items: [{ item_id: item!.id }] } })).status).toBe(403);
+    const approved = await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: item!.id }], decision: "approve" });
+    expect(approved.decided).toBeGreaterThan(0);
 
-  it("goes, by one act of a person, as the Redactor left it: privately, under the organization's account, and logged with exactly what went", async () => {
-    const page = await as("releaser", { url: "/outside/reports" });
-    const shown = (page.json.reports as any[]).find((r) => r.report_id === report.tool).sending;
-    expect(shown.as_it_would_go.title).toBe(`get_claim returned an error while I read [redacted: commercial figures] ${tag}`);
-    const sent = await as("releaser", { method: "POST", url: `/outside/reports/${sending.tool}/send` });
-    expect(sent.status, JSON.stringify(sent.json)).toBe(200);
     const arrived = await publicReports();
     expect(arrived).toHaveLength(1);
-    expect(arrived[0]).toMatchObject({
-      title: shown.as_it_would_go.title,
-      body: shown.as_it_would_go.body,
-      surface: "get_claim",
-      origin: "external",
-      reporter_contributor_id: id.orgAccount,
-      kind: "system_failure",
-    });
+    expect(arrived[0]).toMatchObject({ surface: "get_claim", origin: "external", reporter_contributor_id: id.orgAccount, kind: "system_failure" });
+    expect(arrived[0]!.title).toBe(`get_claim returned an error while I read [redacted: commercial figures] ${tag}`);
+    expect(arrived[0]!.body).toBe("I called get_claim on the plant's node and it failed. My notes had [redacted: commercial figures] in them.");
     expect(arrived[0]!.context_refs).toMatchObject({ private: true, seen: 1 });
     id.publicReport = arrived[0]!.id;
     // What went is on the log, and it is exactly what arrived. Nothing else of the report went: no run, no node, no label.
     const [logged] = await acts("send_report");
-    expect(logged).toMatchObject({ acted_by: people.releaser!.id, public_ref: id.publicReport, result: "done" });
+    expect(logged).toMatchObject({ acted_by: null, under_standing_choice: "the gate", public_ref: id.publicReport, result: "done" });
     expect(logged!.sent).toMatchObject({ title: arrived[0]!.title, body: arrived[0]!.body, surface: "get_claim", private: true });
     expect(Object.keys(logged!.sent).sort()).toEqual(["body", "context_refs", "kind", "private", "severity", "surface", "title"]);
     expect(JSON.stringify(arrived)).not.toContain(SECRET);
     expect(JSON.stringify(arrived)).not.toContain(A);
-    expect((await as("releaser", { method: "POST", url: `/outside/reports/${sending.tool}/send` })).json.code).toBe("ALREADY_SENT");
+    // Sent once.
+    expect((await sendThroughOutside()).sent).toBe(0);
   });
 
-  it("sends the facts alone only with a tool of Minerval's own to name, and a report about the deployment not at all", async () => {
-    const noTool = await as("director", { method: "POST", url: `/outside/reports/${sending.connection}/send-facts` });
-    expect(noTool.json.code).toBe("NO_TOOL_NAMED");
-    expect(await publicReports()).toHaveLength(1);
-    expect(await everythingSent()).not.toContain(`acme_warehouse_${tag}`);
-  });
-
-  it("follows the two standing choices only once a person who could do each act has turned each on", async () => {
-    expect(await followReports()).toMatchObject({ facts: 0, reports: 0 });
-    // The facts of tool failures: a person who directs.
-    expect((await as("releaser", { method: "PUT", url: "/outside/choices/send_failure_facts", payload: { on: true } })).status).toBe(403);
-    expect((await as("director", { method: "PUT", url: "/outside/choices/send_failure_facts", payload: { on: true } })).status).toBe(200);
-    // Redacted reports without asking: release for the organization's own material.
-    expect((await as("director", { method: "PUT", url: "/outside/choices/send_redacted_reports", payload: { on: true } })).status).toBe(403);
-    const choices = await as("reader", { url: "/outside/choices" });
-    expect(choices.json.choices.map((c: any) => [c.key, c.on])).toEqual([["keep_public_current", false], ["send_failure_facts", true], ["send_redacted_reports", false]]);
-    expect(choices.json.choices[2].what_it_shows_outside).toBe(STANDING_CHOICES.send_redacted_reports.told);
-
-    expect(await followReports()).toMatchObject({ facts: 1, reports: 0 });
-    const afterFacts = await publicReports();
-    expect(afterFacts).toHaveLength(2);
-    const facts = afterFacts.find((r) => r.id !== id.publicReport)!;
-    expect(facts).toMatchObject({ title: "get_claim: system failure reported in a private deployment", body: "", surface: "get_claim" });
-    expect((await acts("send_failure_facts")).filter((a) => a.result === "done")).toEqual([expect.objectContaining({ acted_by: null, under_standing_choice: "send_failure_facts" })]);
-    // Nothing more goes until the failure is seen again.
-    expect(await followReports()).toMatchObject({ facts: 0 });
-
-    // The second report, redacted, goes under the other choice once a person who holds release turns it on.
-    expect((await redact("connection", "redact_report", { field: "body", passage: SECRET, category: "commercial figures", note: "A figure." })).success).toBe(true);
-    expect((await redact("connection", "finish_report_redaction")).success).toBe(true);
-    expect(await followReports()).toMatchObject({ reports: 0 });
-    expect((await as("releaser", { method: "PUT", url: "/outside/choices/send_redacted_reports", payload: { on: true } })).status).toBe(200);
-    expect(await followReports()).toMatchObject({ reports: 1 });
+  it("goes with no person deciding where the gate's authorities leave reports to the Redactor, and names no tool the organization named", async () => {
+    await setOuter(A, "report", "redactor");
+    const [item] = await itemsOf("report", report.connection!);
+    await redactItem(A, item!.id);
     const all = await publicReports();
-    expect(all).toHaveLength(3);
+    expect(all).toHaveLength(2);
     const second = all.find((r) => r.title.startsWith("A warehouse query timed out"))!;
     expect(second.body).toBe("The query over the meter table for [redacted: commercial figures] timed out.");
-    // The connection's tool, which the organization named, was not sent as the tool.
     expect(second.surface).toBeNull();
     expect(JSON.stringify(all)).not.toContain(SECRET);
     expect(JSON.stringify(all)).not.toContain(`acme_warehouse_${tag}`);
-    expect((await acts("send_report")).map((a) => a.under_standing_choice)).toEqual([null, "send_redacted_reports"]);
+    expect((await acts("send_report")).map((a) => a.under_standing_choice)).toEqual(["the gate", "the gate"]);
   });
 
   it("shows what came back on the report, to people", async () => {
@@ -988,7 +1001,7 @@ describe("an agent's report, sent to Minerval's maintainers", () => {
     expect(await askAfterSentReports()).toBeGreaterThanOrEqual(1);
     const page = await as("reader", { url: "/outside/reports" });
     const mine = (page.json.reports as any[]).find((r) => r.report_id === report.tool);
-    expect(mine.sending).toMatchObject({ state: "sent", sent_by: `releaser ${tag}`, came_back: { status: "actioned", maintainers_note: "Fixed; shipped in the release of 14 November." } });
+    expect(mine.sent).toMatchObject({ on_the_public_graph: id.publicReport, came_back: { status: "actioned", maintainers_note: "Fixed; shipped in the release of 14 November." } });
     // Only the account that filed a report reads it on the public graph.
     expect((await pubApi("GET", `/reports/mine/${id.publicReport}`, undefined, readerKey)).status).toBe(404);
   });
@@ -1035,5 +1048,237 @@ describe("a publisher's record on the public graph", () => {
     );
     expect(source!.raw_content).toContain("From this graph's own record of the publisher: Other pages it has published here: 1 (1 kept published so that each later version follows, 0 shown once).");
     expect(source!.raw_content).toContain("Requests it said it was taking up: 2.");
+  });
+});
+
+describe("asking an organization's graph from the public graph", () => {
+  // The inquiries mandate works at `a` (the organization-wide label); the evidence is at `c`, which reads `a`.
+  const face: Record<string, string> = {};
+  const publicRecord = async (requestId: string) => (await pubApi("GET", `/requests/${requestId}`, undefined, null)).json;
+  const grantmaker = (label: string, grantId: string, tool: string, input: Record<string, unknown>) =>
+    at(label, "grantmaker", async () => JSON.parse((await createResearchTools({ requestedBy: "grantmaker", grantId }).execute(tool, input))!) as Record<string, any>);
+  const fileOnPublic = async (name: string, node: string, ask: string) => {
+    const filed = await fetch(agents, {
+      method: "POST",
+      body: JSON.stringify({
+        agent: "curator",
+        tool: "file_request",
+        input: { ask: `${ask} (${tag})`, why: "The public assessment turns on it.", satisfied_by: "An assessment by a graph that reads the evidence.", claim_ids: [node], addressed_to: face.id },
+      }),
+    }).then((r) => r.json() as Promise<Record<string, any>>);
+    expect(filed.success, JSON.stringify(filed)).toBe(true);
+    const [row] = await pubRows<{ id: string; asked_of_face_id: string; addressed_to: string }>(`SELECT id, asked_of_face_id, addressed_to FROM requests WHERE ask = $1`, [`${ask} (${tag})`]);
+    id[name] = row!.id;
+    return row!;
+  };
+  const assessAtC = (node: string, summary: string, reasoning: string) =>
+    system(async () => {
+      await rawQuery(`UPDATE assessments SET is_current = false WHERE claim_id = $1 AND sensitivity_label = $2`, [node, C]);
+      await rawQuery(
+        `INSERT INTO assessments (claim_id, status, confidence, claim_credence, summary, reasoning_trace, model, is_current, sensitivity_label)
+         VALUES ($1, 'supported', 0.8, 0.8, $2, $3, 'a-model', true, $4)`,
+        [node, summary, reasoning, C]
+      );
+    });
+  const pageItemAtC = async (node: string) => {
+    await followShowings();
+    const [item] = await system(() =>
+      rawQuery<{ id: string; stage: string; showing_id: string }>(
+        `SELECT p.id, p.stage, p.showing_id FROM showings s JOIN showing_pages p ON p.showing_id = s.id
+          WHERE s.kind = 'page' AND s.node_id = $1 AND s.to_outside AND s.sensitivity_label = $2 AND p.stage <> 'overtaken' ORDER BY p.opened_at DESC LIMIT 1`,
+        [node, C]
+      )
+    );
+    return item!;
+  };
+  const sendPages = async (showingId: string) => {
+    await buildOutboundPackages({ showingId });
+    const sent = await sendOutbound({ showingId, sender: { standing: true } });
+    for (const s of sent.sent) expect(s.result, s.detail ?? "").toBe("admitted");
+  };
+  const publishedFace = async () => (await pubApi("GET", `/published-mandates?account_id=${id.orgAccount}`, undefined, null)).json.published_mandates[0];
+
+  beforeAll(async () => {
+    await publicClaim("s", "The plant's emissions stayed within its permit", 330);
+    await publicClaim("t", "The plant's waste water met the discharge limit", 331);
+    await publicClaim("u", "The plant's suppliers were audited this year", 332);
+    await mirror();
+    for (const [label, name] of [[A, "inquiries"], [C, "finance"]] as const) {
+      const { grantId } = await runAtLabel(label, "a test's mandate", () => seedGrantWithJob({ funderId: people.funder!.id, budgetMicroUsd: 40_000_000 }));
+      id[name] = grantId;
+    }
+    await system(() =>
+      rawQuery(`UPDATE grants SET name = $2, mandate = jsonb_build_object('title', $2::text, 'objective', $3::text), pace = '{"kind":"as_needed"}'::jsonb WHERE id = $1`, [
+        id.inquiries,
+        `Questions from the public about the plant ${tag}`,
+        "Takes up requests from the public graph about the plant's operations, where this graph holds evidence that bears on them.\n\nDoes not take up requests for a particular result.",
+      ])
+    );
+  });
+
+  it("publishes the inquiries mandate as the organization's face, with how its gate to outside is set stamped by the system", async () => {
+    // The organization's standing choices for this mandate's work: that a request was taken up, or will not be worked,
+    // goes as it is (set above); a node's page goes with nothing but the Redactor deciding, at both labels its work leaves from.
+    await setOuter(A, "page", "redactor", { scope: "mandate", scopeRef: id.inquiries });
+    await setOuter(C, "page", "redactor");
+    await setOuter(A, "mandate", "open");
+    // Only a person who directs offers it; the route says what it shows outside.
+    const body = { kind: "mandate", mandate_id: id.inquiries, outside: true };
+    expect((await as("funder", { method: "POST", url: "/gate/offers", payload: body })).status).toBe(403);
+    const offered = await as("director", { method: "POST", url: "/gate/offers", payload: body });
+    expect(offered.status, JSON.stringify(offered.json)).toBe(201);
+    expect(offered.json).toMatchObject({ state: "released" });
+    expect(offered.json.what_it_shows_outside).toContain("owls on the public graph do not pay for work in this deployment");
+    face.id = offered.json.addressed_on_the_public_graph_as;
+
+    const published = await publishedFace();
+    expect(published).toMatchObject({ face_id: face.id, name: `Questions from the public about the plant ${tag}`, withdrawn_at: null, requests_addressed_to_it: 0 });
+    expect(published.terms).toContain("Does not take up requests for a particular result.");
+    expect(published.gate.settings.map((s: any) => [s.kind, s.the_gate])).toEqual([["taken_up", "open"], ["answer", "open"], ["page", "redactor"]]);
+    expect(published.gate.settings[2].from).toBe("a setting for everything one mandate's work produced");
+    expect(published.gate.settings[2].in_a_line).toMatch(/^The page of a node a request bears on, which is how what the work found is published: what its Redactor lets through under its published policy goes, with no person deciding after it \(a setting for everything one mandate's work produced, set on \d{4}-\d\d-\d\d\)\.$/);
+    expect(published.gate.money).toBe(FACE_MONEY_WORDS);
+    expect(published.history).toEqual([{ package: 1, received_at: expect.any(String), changes: ["First published."] }]);
+    // The package is signed with the key the organization registered, and anyone can check it.
+    const signed = (await pubApi("GET", `/published-mandates/${face.id}/package`, undefined, null)).json;
+    expect(signed.package.hash).toBe(mandatePackageHash(signed.package));
+    // The publisher's page on the public graph carries it.
+    const record = (await pubApi("GET", `/publishers/${id.orgAccount}`, undefined, null)).json;
+    expect(record.published_mandates.map((m: any) => m.face_id)).toEqual([face.id]);
+    // Nothing of the inside crossed with it: no label, no mandate id, no figure.
+    const all = JSON.stringify(await pubRows(`SELECT package FROM published_mandates`));
+    for (const word of [A, C, id.inquiries!, id.finance!, SECRET]) expect(all).not.toContain(word);
+  });
+
+  it("takes a public request addressed to it as an ordinary request, whose record shows it was addressed there and how long ago", async () => {
+    const row = await fileOnPublic("r3", id.s!, "Say whether the plant's emissions stayed within its permit");
+    expect(row).toMatchObject({ asked_of_face_id: face.id, addressed_to: `Halden Works ${tag}: Questions from the public about the plant ${tag}` });
+    const record = await publicRecord(id.r3!);
+    expect(record.addressed_to_mandate).toMatchObject({ face_id: face.id, stands: "not_taken_up_yet" });
+    expect(record.addressed_to_mandate.in_words).toContain(`has not said whether it takes this request up, the same day.`);
+    // An address that is no published mandate is refused, so a request cannot claim one.
+    const wrong = await fetch(agents, { method: "POST", body: JSON.stringify({ agent: "curator", tool: "file_request", input: { ask: "x", why: "y", satisfied_by: "z", claim_ids: [id.s], addressed_to: randomUUID() } }) }).then((r) => r.json() as Promise<Record<string, any>>);
+    expect(JSON.stringify(wrong)).toContain("No mandate published on this graph");
+  });
+
+  it("arrives inside with the mirror, in the mandate's inbox, and its Grantmaker takes it up with no person acting: that is said in public at once", async () => {
+    await mirror();
+    expect(await deliverAddressedRequests()).toBe(1);
+    expect(await deliverAddressedRequests()).toBe(0);
+    const [raised] = await system(() => rawQuery<{ summary: string; label: string }>(`SELECT summary, sensitivity_label AS label FROM mandate_inbox WHERE grant_id = $1`, [id.inquiries]));
+    expect(raised!.label).toBe(A);
+    expect(raised!.summary).toContain("Say whether the plant's emissions stayed within its permit");
+    expect(raised!.summary).toContain("Whether to take it up is this mandate's to decide, under its terms.");
+
+    const funded = await grantmaker(A, id.inquiries!, "fund_request", { request_id: id.r3, budget_usd: 2 });
+    expect(funded.success, JSON.stringify(funded)).toBe(true);
+    const [taken] = await system(() => rawQuery<{ request_id: string; adopted_by: string | null; label: string }>(`SELECT request_id, adopted_by, sensitivity_label AS label FROM adopted_requests WHERE public_request_id = $1`, [id.r3]));
+    expect(taken).toMatchObject({ adopted_by: null, label: A });
+    id.r3Here = taken!.request_id;
+    const record = await publicRecord(id.r3!);
+    expect(record.addressed_to_mandate.stands).toBe("nothing_yet");
+    expect(record.addressed_to_mandate.in_words).toMatch(/said on \d{4}-\d\d-\d\d that it is taking this request up\. Nothing has followed on this graph yet, the same day\./);
+    const logged = (await acts("take_up_request")).filter((a) => a.public_ref === id.r3);
+    expect(logged).toEqual([expect.objectContaining({ acted_by: null, under_standing_choice: "the gate", result: "done" })]);
+  });
+
+  it("is worked at the label that holds the evidence, and what it found is published as the node's page, through the gate to outside under its setting", async () => {
+    // Finance's Grantmaker takes up, from below, the request the inquiries mandate filed at `a`.
+    const funded = await grantmaker(C, id.finance!, "fund_request", { request_id: id.r3Here, budget_usd: 2 });
+    expect(funded.success, JSON.stringify(funded)).toBe(true);
+    await assessAtC(id.s!, "Within the permit, on the stack monitor's records.", `The stack monitor's records show ${SECRET} of the permitted load.`);
+    const item = await pageItemAtC(id.s!);
+    id.sShowing = item.showing_id;
+    expect(item.stage).toBe("to_redact");
+    // The Redactor decides: once Audit has checked its work, it is released, packaged and sent with no person acting.
+    await redactItem(C, item.id);
+    await sendPages(item.showing_id);
+    const pkg = await latestPackage(item.showing_id, id.s!);
+    expect((await verifyPublishedPage(JSON.stringify(pkg))).ok).toBe(true);
+    expect(pkg.record.versions[0]!.released_under).toEqual([
+      { for_party: expect.stringContaining("Halden Works"), the_gate: "redactor", in_words: expect.any(String), from: "a setting for the whole boundary", set_on: expect.stringMatching(/^\d{4}-\d\d-\d\d$/) },
+    ]);
+    expect(JSON.stringify(pkg)).not.toContain(SECRET);
+    const record = await publicRecord(id.r3!);
+    expect(record.addressed_to_mandate.stands).toBe("a_page_shown");
+  });
+
+  it("restates its face, dated, when a setting changes, and the next page says it went under that setting", async () => {
+    await setOuter(C, "page", "person");
+    await sendThroughOutside();
+    const published = await publishedFace();
+    expect(published.gate.settings.find((s: any) => s.kind === "page").the_gate).toBe("person");
+    expect(published.history).toHaveLength(2);
+    expect(published.history[0].changes.join(" ")).toContain('A setting changed, from "what its Redactor lets through under its published policy goes, with no person deciding after it" to this.');
+
+    await assessAtC(id.s!, "Within the permit, on a second reading.", `A second reading puts it at ${SECRET}.`);
+    const item = await pageItemAtC(id.s!);
+    await redactItem(C, item.id);
+    // Under this setting the Redactor's work is a proposal: nothing goes until a person decides.
+    expect((await system(() => rawQuery<{ stage: string }>(`SELECT stage FROM showing_pages WHERE id = $1`, [item.id])))[0]!.stage).toBe("at_gate");
+    await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: item.id }], decision: "approve" });
+    await sendPages(item.showing_id);
+    const pkg = await latestPackage(item.showing_id, id.s!);
+    expect(pkg.record.versions[0]!.released_under![0]).toMatchObject({ the_gate: "person", from: "a setting for the whole boundary" });
+
+    // Open: what was written goes as written, with no Redactor's run.
+    await setOuter(C, "page", "open");
+    await assessAtC(id.s!, "Within the permit.", "The monitor's records for the year show no exceedance.");
+    const open = await pageItemAtC(id.s!);
+    expect(open.stage).toBe("at_gate");
+    await sendPages(open.showing_id);
+    expect((await latestPackage(open.showing_id, id.s!)).record.versions[0]!.released_under![0]).toMatchObject({ the_gate: "open" });
+  });
+
+  it("shows a held page on the request's public record, with since when", async () => {
+    await setOuter(C, "page", "person");
+    await fileOnPublic("r4", id.t!, "Say whether the plant's waste water met the discharge limit");
+    await mirror();
+    await deliverAddressedRequests();
+    expect((await grantmaker(A, id.inquiries!, "fund_request", { request_id: id.r4, budget_usd: 1 })).success).toBe(true);
+    const [here] = await system(() => rawQuery<{ request_id: string }>(`SELECT request_id FROM adopted_requests WHERE public_request_id = $1`, [id.r4]));
+    expect((await grantmaker(C, id.finance!, "fund_request", { request_id: here!.request_id, budget_usd: 1 })).success).toBe(true);
+    await assessAtC(id.t!, "Over the limit twice in the year.", `The discharge log shows ${SECRET} over two weeks.`);
+    const item = await pageItemAtC(id.t!);
+    await redactItem(C, item.id);
+    await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: item.id }], decision: "hold", reason: "confidentiality" });
+    await sendPages(item.showing_id);
+    const record = await publicRecord(id.r4!);
+    expect(record.addressed_to_mandate.stands).toBe("a_page_held");
+    expect(record.addressed_to_mandate.in_words).toMatch(/is published as held, with nothing of it shown: held since \d{4}-\d\d-\d\d, the same day\./);
+  });
+
+  it("is declined by the Grantmaker with a reason from the fixed list, which is all the public record is told", async () => {
+    await fileOnPublic("r5", id.u!, "Say whether the plant's suppliers were audited this year");
+    await mirror();
+    await deliverAddressedRequests();
+    const declined = await grantmaker(A, id.inquiries!, "decline_asked_request", { request_id: id.r5, reason: "not_held", note: `We hold nothing on suppliers; ${SECRET} is unrelated.` });
+    expect(declined.success, JSON.stringify(declined)).toBe(true);
+    const record = await publicRecord(id.r5!);
+    expect(record.addressed_to_mandate.stands).toBe("declined");
+    expect(record.addressed_to_mandate.in_words).toContain("which this request was addressed to, said on");
+    expect(record.addressed_to_mandate.in_words).toContain("that it will not do the work: it does not hold the evidence the request asks about.");
+    // It was not said to be taken up.
+    expect((await acts("take_up_request")).filter((a) => a.public_ref === id.r5)).toEqual([]);
+  });
+
+  it("lets nothing else cross: no secret, no label and no inside id in anything the public graph holds", async () => {
+    const everything = JSON.stringify([
+      await pubRows(`SELECT * FROM published_mandates`),
+      await pubRows(`SELECT ask, why, state, state_note FROM requests`),
+      await pubRows(`SELECT summary, by_label, decline_reason FROM request_work`),
+      await pubRows(`SELECT package FROM published_page_packages`),
+      await pubRows(`SELECT summary FROM mandate_inbox`),
+    ]);
+    for (const word of [SECRET, `"${A}"`, `"${C}"`, id.inquiries!, id.finance!, id.r3Here!, "We hold nothing on suppliers"]) expect(everything).not.toContain(word);
+    expect(await everythingSent()).not.toContain(SECRET);
+  });
+
+  it("withdraws the face when its offer ends: nothing new can be asked of it, and what was asked keeps its address", async () => {
+    const ended = await as("director", { method: "POST", url: `/showings/${face.id}/end`, payload: { reason: "no_longer_needed" } });
+    expect(ended.status, JSON.stringify(ended.json)).toBe(200);
+    const published = (await pubApi("GET", `/published-mandates?account_id=${id.orgAccount}&include_withdrawn=true`, undefined, null)).json.published_mandates[0];
+    expect(published.withdrawn_at).not.toBeNull();
+    expect((await publicRecord(id.r3!)).addressed_to_mandate).toMatchObject({ face_id: face.id, withdrawn: true });
   });
 });

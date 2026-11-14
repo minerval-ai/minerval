@@ -147,8 +147,9 @@ export function getAuditToolDefinitions(): Tool[] {
                     "What the report is about: " +
                     Object.entries(REPORT_ABOUT).map(([k, v]) => `${k} (${v})`).join("; ") +
                     ". Reports here stay inside this deployment, so Minerval's maintainers hear of a fault in the machinery only if the " +
-                    "organization sends the report on. A report about Minerval's machinery is offered to the organization for that, after " +
-                    "a Redactor's pass over its words; one about this deployment is not. Leave it out where you cannot tell.",
+                    "report goes on. A report about Minerval's machinery is offered to the gate to outside, where its words go through a " +
+                    "Redactor's pass and, where the organization has set it, a person's decision; one about this deployment is not. " +
+                    "Leave it out where you cannot tell.",
                 },
               }
             : {}),

@@ -34,7 +34,7 @@ same acts (`GATE_KINDS` in `src/services/gate-kinds.ts`).
 | `petition` | What a run here asks of the mandate on the other side that pays for it: how much more, and why | The run petitions | An item in that mandate's inbox, for its officers |
 | `message` | The answer a pass here gave to a message sent on the other side | The pass answers it | A reply in the sender's inbox |
 | `mandate` | That a mandate exists here, with its name, terms and budget | It was made for a request from the other side (when made, activated and closed); a person who directs offers it; or everything flows | A row in the asking request's work log where a request asked; listed among what came through (`GET /gate/items`) |
-| `funding` | A mandate here paying for a pass on a node on the other side | The mandate's side asks for it | The pass is opened there |
+| `funding` | A mandate here paying for a pass on a node on the other side | The mandate's side asks for it, or the gate names it to keep the other side current | The pass is commissioned there from the mandate's budget, or opened for that label's funders where the budget cannot pay |
 
 An item is recorded the way a node's page is: a short list of what is
 always shown of it, and its parts as written, each resting on the parties
@@ -204,43 +204,102 @@ and to a gate's authorities shows the settings beside it.
 
 ## Outside
 
-The boundary to outside is the same gate: the same settings, the same
-acts, the same payment. What differs is mechanical. What is released of a
-node's page is built into a signed package and admitted on the public graph
-([published-pages.md](published-pages.md)). Whether a package is sent as
-it is built or waits for a person is the gate's `send_as_released`, which
-starts on.
+The boundary to outside is the same gate: the same kinds, settings, acts
+and payment. Two things truly differ. The public graph is another
+deployment, so arrival there is a signed package or a call to one of its
+ordinary routes under the organization's own account, never a row this
+deployment writes (`src/services/gate-outside.ts`). And owls do not
+convert: public owls pay for nothing inside, and inside owls for nothing
+on the public graph. Whether what the gate lets through is sent as soon as
+it is through, or waits for a person to send it, is the gate's
+`send_as_released`, which starts on.
 
-Only a node's page goes outside through the gate today. Three things that
-are downward flow at the outer boundary still have their own paths:
+What goes outside, by kind:
 
-- **Taking up a public request, and what followed**, are the
-  organization's public statement and its published page
-  ([outward-acts.md](outward-acts.md)). The public graph has no row for an
-  answer to arrive on.
-- **Keeping public versions current** (asking a public mandate for a fresh
-  public assessment when an inside version of a public node changes) is a
-  mandate's funding of work below, and has its own queue, its own delay
-  and batching, and its own exceptions by mandate and node. Each maps onto
-  a gate setting: on is the gate to outside open for `funding`, an
-  exception is a setting scoped to a mandate or a node, and its delay is
-  the gate's. It has not been moved because its rows and the sentence
-  every published page carries about it would have to be moved with it.
-- **An agent's problem report to Minerval's maintainers** has its own
-  Redactor pass and release (`src/services/report-sending-service.ts`).
+| Kind | What leaves | How it arrives |
+|---|---|---|
+| `page` | the node's page as released | a signed package ([published-pages.md](published-pages.md)) |
+| `mandate` | a mandate's name and terms as released, with how this gate is set for its work (below) | a signed package on the publisher's record (`POST /published-mandates`) |
+| `taken_up` | nothing but the request's public id | the account's statement on the request's record that it takes it up |
+| `answer` | a reason from the public graph's fixed list | the account's statement that it will not do the work. What work found goes as the page of each node the request bears on |
+| `funding` | the node's public id | a public mandate the organization funds is asked for a fresh public assessment (keeping public versions current, below) |
+| `report` | an agent's report about Minerval's machinery: facts in fixed words always shown, its words as parts | filed on the public graph's report route, marked private |
+| `proposal` | the words a node held only inside is proposed in | sent as any account proposes a node, once through |
+
+A message, a petition and a statement answer something asked from a label
+inside, and do not go outside. Every send is a row in the log of acts on
+the public graph (`outward_acts`), saying what was sent and whether a
+person or the gate's setting sent it.
+
+### A published mandate: the organization's face
+
+A mandate offered to the gate to outside (`POST /gate/offers` with
+`outside`) is the organization's face on the public graph. Once through,
+it stands on the publisher's record there, and a request on the public
+graph can be addressed to it (its `face_id`, which is the offer's id
+here). The organization's commitment is what it publishes: the mandate's
+terms say what it takes up, and the gate's settings for the mandate's work
+say what it releases. Those settings travel with the mandate, stamped by
+this deployment from the gates' own rows (`src/services/gate-face.ts`):
+for the statement that a request was taken up, the statement that it will
+not be worked, and the page of a node a request bears on, whether the
+gate is open, leaves it to the Redactor, or has a person decide as well,
+how wide the setting is and the day it was set. Nobody writes them as
+prose. Changing a setting of the gate to outside offers every published
+mandate again, and the public graph keeps each package with its date, so
+a change is shown as a change. Ending the offer withdraws the mandate
+there.
+
+A request addressed to a published mandate arrives with the mirror
+(`feed_requests.asked_of_face_id`) and is put in the mandate's inbox at
+its label (`deliverAddressedRequests`). Its Grantmaker decides under the
+mandate's terms, as it decides anything put in front of it: `fund_request`
+takes it up and pays for the work; `decline_asked_request` declines it
+with a reason from the fixed list. No person acts for each one. That it
+was taken up, or will not be worked, goes to the gate to outside like any
+`taken_up` or `answer`; the page of each node it bears on flows to the
+gate from the label that took it up, and from any label above that took
+that request up in turn, as each version is finished. The request's
+public record then shows what followed: taken up, declined with its
+reason, a page published, or a page held with since when.
+
+**Money.** Work on a request the mandate takes up is paid for inside, from
+the mandate's own budget. A member of the public who wants to push a
+question funds the public side: the public graph's own assessment of the
+node, which weighs the published page when it arrives. Every published
+mandate says this in the same words.
+
+### Keeping public versions current
+
+A gate can name a mandate that is asked to pay for a fresh assessment on
+the other side each time a version here changes on a node the other side
+holds (`PUT /gates/:gate_id`, `keep_current_mandate`;
+`src/services/keep-current.ts`). Between two labels it is a mandate at the
+label things come from, which pays `keep_current_owls` for a pass below.
+At the gate to outside it is a public mandate the organization funds,
+which pays on the public graph. Each asking is an item of the kind
+`funding`, under the gate's setting for that kind: open, the Redactor, or
+a person; for the whole boundary, one mandate's work, or a node and what
+sits under it; with a standing delay or batches where the setting has
+them. No mandate is named where a gate starts. Every page shown outside
+says whether its gate asks.
+
+### Delay and batches
+
+A setting can keep what it lets through back for `delay_hours` from when
+it was produced, then send it at the next multiple of `batch_hours`, so
+that when a thing was made is not told by when it arrived. The delay is an
+act of the gate's setting on the item, shown like any delay, and a person
+at the gate may lift it.
 
 ## What is not built
 
-- **Money does not yet cross with funding.** A mandate's funding of a pass
-  at a label that does not read it goes through the gate, and the pass is
-  opened on the other side when it is through, in fixed words. The
-  mandate's money is not placed on that pass: a budget is a row at the
-  mandate's label, and work at the other label can neither read nor draw
-  on it. The pass waits for that label's own funders.
-- **Whose material an answer rests on is not traced.** A page's parts rest
-  on the parties whose sources the judgment read. The parts of an answer,
-  a message, a mandate or a funding item are taken to be the
-  organization's own.
+- **Whose material a message, a mandate or a funding item rests on is not
+  traced.** Their parts are taken to be the organization's own. An
+  answer's findings rest on the parties of the sources the request bears
+  on, the connections its run called and the file sets it had mounted,
+  each paragraph on all of them, since a run's log does not say which
+  sentence came from which.
 - **A petition that comes through is not waited for.** It reaches the
   paying mandate's officers as an item in their inbox; the run that
   petitioned has usually ended by then, and adding to what was asked
@@ -248,8 +307,6 @@ are downward flow at the outer boundary still have their own paths:
 - **An answer to a message reaches a sender that is a Steward.** For any
   other sender it is listed among what came through
   (`GET /gate/items`).
-- **A batch is a shared time.** Items delayed to the same time go
-  together. A gate has no standing schedule of batches.
 - **A holder of `release` who does not read the label things come from**
   is shown its face, or "a label you do not read" where it shows none.
   The destination's name is shown to them: they were put at that gate.

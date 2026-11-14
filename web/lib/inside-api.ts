@@ -307,6 +307,8 @@ export interface GateSetting {
   set_holding: string[];
   set_at: string;
   made_from_release_rule?: string;
+  delay_hours?: number;
+  batch_hours?: number;
 }
 
 export interface Gate {
@@ -318,6 +320,9 @@ export interface Gate {
   flow_in_words: string;
   backlog_shown_to_the_other_side: boolean;
   send_as_released?: boolean;
+  keeps_the_other_side_current: string;
+  keep_current_mandate: string | null;
+  keep_current_owls?: number;
   starting_positions: Record<string, string>;
   settings: GateSetting[];
   you_may_set: { the_gate_as_a_whole: boolean; for_parties: Array<{ id: string; name: string }> };
@@ -339,7 +344,7 @@ export function fetchGates(externalId: string): Promise<Gates> {
 export function setGate(
   externalId: string,
   gateId: string,
-  body: { flow?: string; backlog_shown?: boolean; send_as_released?: boolean }
+  body: { flow?: string; backlog_shown?: boolean; send_as_released?: boolean; keep_current_mandate?: string | null; keep_current_owls?: number }
 ): Promise<unknown> {
   return accountFetch(`/gates/${seg(gateId)}`, { method: "PUT", actingUser: externalId, body });
 }
@@ -347,7 +352,7 @@ export function setGate(
 export function setGateMode(
   externalId: string,
   gateId: string,
-  body: { mode: string; kind?: string; scope?: string; scope_ref?: string; party_id?: string }
+  body: { mode: string; kind?: string; scope?: string; scope_ref?: string; party_id?: string; delay_hours?: number; batch_hours?: number }
 ): Promise<{ setting_id: string; changed: boolean; applies: string; let_through_now: number }> {
   return accountFetch(`/gates/${seg(gateId)}/settings`, { method: "PUT", actingUser: externalId, body });
 }
@@ -507,14 +512,6 @@ export function writeProposal(
   body: { showing_id: string; node_id: string; text?: string }
 ): Promise<{ proposal_id: string; state: string; in_words: string }> {
   return accountFetch("/outbound/proposals", { method: "POST", actingUser: externalId, body });
-}
-
-export function releaseProposal(externalId: string, proposalId: string, partyId: string): Promise<{ state: string }> {
-  return accountFetch(`/outbound/proposals/${seg(proposalId)}/release`, {
-    method: "POST",
-    actingUser: externalId,
-    body: { party_id: partyId },
-  });
 }
 
 // --- file sets (docs/file-sets.md) -----------------------------------------------------

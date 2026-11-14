@@ -185,7 +185,25 @@ export function versionLine(v: PublishedPagePackage["record"]["versions"][number
   return (
     `version of ${day(v.version_of)}: ${state}` +
     (v.state === "released_in_part" ? `, ${v.parts_held} of ${v.of_parts} parts held (${v.held_kinds})` : `, ${v.of_parts} parts`) +
-    `, ${removed} removal${removed === 1 ? "" : "s"} under the policy, shown on ${day(v.shown_at)}`
+    `, ${removed} removal${removed === 1 ? "" : "s"} under the policy, shown on ${day(v.shown_at)}` +
+    releasedUnderWords(v.released_under)
+  );
+}
+
+const GATE_SAID: Record<string, string> = {
+  open: "its publisher's gate was open, so it went as written",
+  redactor: "what the Redactor let through went with no person deciding after it",
+  person: "a person decided as well, after the Redactor",
+};
+
+/** How the publisher's gate was set when a version was released, in a clause. Empty where the package does not say. */
+export function releasedUnderWords(under: PublishedPagePackage["record"]["versions"][number]["released_under"]): string {
+  if (!under || under.length === 0) return "";
+  return (
+    "; released under this setting of its publisher's gate: " +
+    under
+      .map((u) => `for ${u.for_party}'s material, ${GATE_SAID[u.the_gate] ?? u.the_gate} (${u.from}${u.set_on ? `, set on ${u.set_on}` : ""})`)
+      .join("; ")
   );
 }
 
@@ -879,6 +897,8 @@ export async function publisherRecord(accountId: string): Promise<Record<string,
       retired_at: r.retired_at?.toISOString() ?? null,
     })),
     published_pages: await listPublishedPages({ accountId }),
+    // The mandates it has published, which a request here can be addressed to, each with how its gate is set for the mandate's work (published-mandate-service.ts).
+    published_mandates: await (await import("./published-mandate-service.js")).publishedMandates({ accountId }),
     // What this graph's own record holds of the publisher, as counts and dates (publisher-record-service.ts).
     record: await (async () => {
       const { publisherFacts, publisherFactsLines } = await import("./publisher-record-service.js");

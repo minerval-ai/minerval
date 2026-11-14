@@ -136,7 +136,21 @@ export function RequestView({ r }: { r: RequestItem }) {
 
       <RequestFunding r={r} />
 
-      {r.taken_up && r.taken_up.length > 0 && (
+      {r.addressed_to_mandate && (
+        <section>
+          <h2>Addressed to a published mandate</h2>
+          <p className={styles.intro}>
+            A graph that keeps its evidence private published this mandate here, with its terms and how its gate to outside is set for the
+            mandate&rsquo;s work. Whether it takes a request up is its own decision. What followed is read from this graph&rsquo;s record.
+          </p>
+          <p>
+            {r.addressed_to_mandate.in_words.replace(/\borganiz/g, "organis")}{" "}
+            <a href={`/contributors/${r.addressed_to_mandate.publisher.account_id}`}>The publisher&rsquo;s record</a>
+          </p>
+        </section>
+      )}
+
+      {r.taken_up && r.taken_up.filter((t) => t.account_id !== r.addressed_to_mandate?.publisher.account_id).length > 0 && (
         <section>
           <h2>Taken up</h2>
           <p className={styles.intro}>
@@ -144,7 +158,7 @@ export function RequestView({ r }: { r: RequestItem }) {
             and funds nothing. What followed is read from this graph&rsquo;s record, not from the account.
           </p>
           <ul>
-            {r.taken_up.map((t) => (
+            {r.taken_up.filter((t) => t.account_id !== r.addressed_to_mandate?.publisher.account_id).map((t) => (
               <li key={`${t.account_id}-${t.at}`}>
                 {t.in_words}{" "}
                 {t.published_page_id && t.node_id && t.followed === "a_page_shown" && (

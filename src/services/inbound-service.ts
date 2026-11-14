@@ -137,12 +137,16 @@ export async function deliverPublicContributions(): Promise<{ delivered: number;
     let delivered = 0;
     for (const c of fresh) {
       if (!c.page_label) continue;
-      await runAtLabel(c.page_label, `what the public said about the page of node ${c.node_id}`, async () => {
-        const { enqueueSteward } = await import("./queue-service.js");
-        await enqueueSteward({
-          claimId: c.node_id,
+      // What a reader said is word from the layer below every label: public text, on the public graph. It is
+      // recorded once, as a message on the node at `public`, and reaches a pass on the node at each label that
+      // reads `public` by the path any message from a label below takes (inbox-service.ts, waitsForPassAt): the
+      // label the page came from, and any other that holds a judgment of the node.
+      await atPublic(`what the public said about the page of node ${c.node_id}`, async () => {
+        const { postMessage } = await import("./inbox-service.js");
+        await postMessage({
+          nodeId: c.node_id,
           trigger: "public_contribution",
-          context: publicContributionMessage({
+          body: publicContributionMessage({
             type: c.contribution_type,
             submittedAt: c.submitted_at,
             publicId: c.public_contribution_id,
@@ -151,6 +155,12 @@ export async function deliverPublicContributions(): Promise<{ delivered: number;
           }),
           sender: { kind: "system", ref: `inbound:${c.id}` },
         });
+      });
+      // The public record says whether the reassessment it waits on was paid for, so that pass is opened at the
+      // label the page came from. It carries no second copy of the message, and runs when it is paid for.
+      await runAtLabel(c.page_label, `the reassessment opened by what the public said about node ${c.node_id}`, async () => {
+        const { enqueueSteward } = await import("./queue-service.js");
+        await enqueueSteward({ claimId: c.node_id, trigger: "public_contribution", context: "", sender: { kind: "system", ref: `inbound:${c.id}` } });
       });
       await rawQuery(`UPDATE inbound_contributions SET delivered_at = now(), reassessment = 'not_funded', reassessment_at = now() WHERE id = $1`, [c.id]);
       delivered++;
@@ -190,6 +200,78 @@ export async function deliverPublicContributions(): Promise<{ delivered: number;
       }
     }
     return { delivered, moved };
+  });
+}
+
+// ---- requests on the public graph addressed to a mandate this deployment published --------------
+
+const REASON_ADDRESSED =
+  "A request on the public graph is public text, read at `public`, and one addressed to a mandate this deployment published is put in front of that mandate, at the mandate's label, which `public` does not read.";
+
+/** What a mandate's officers and Grantmaker are told when a request on the public graph is addressed to the mandate. */
+export function addressedRequestMessage(input: { id: string; filedAt: Date; ask: string; why: string; satisfiedBy: string; bearsOn: string[]; bearsOnText: string | null }): string {
+  return (
+    `A request on the public graph is addressed to this mandate, which this graph published there (request ${input.id}, filed ` +
+    `${input.filedAt.toISOString().slice(0, 10)}). Its text follows as it was written, outside this deployment.\n\n` +
+    `---\nIt asks for: ${input.ask}\nWhy: ${input.why}\nWhat would satisfy it: ${input.satisfiedBy}\n` +
+    `It bears on: ${[...input.bearsOn.map((n) => `node ${n}`), ...(input.bearsOnText ? [input.bearsOnText] : [])].join("; ") || "nothing it names"}\n---\n\n` +
+    `Whether to take it up is this mandate's to decide, under its terms. fund_request with this request's id takes it up at this label and ` +
+    `pays for the work: that it was taken up is then said on the public graph, and the page of each node it bears on goes to the gate to ` +
+    `outside as it is assessed here. decline_asked_request declines it with a reason from a fixed list, which is what the public graph is ` +
+    `told. Until one or the other, the request's public record shows that it was addressed here and how long ago.`
+  );
+}
+
+/**
+ * Put each request on the public graph that is addressed to a mandate this
+ * deployment published in front of that mandate, once: an item in its
+ * inbox, at its label, with the request as it was written. The mandate's
+ * Grantmaker decides whether to take it up, under the mandate's terms, as
+ * it decides anything put in front of it, and no person acts for each one.
+ * Runs after the mirror brings requests in, and on the scheduler.
+ */
+export async function deliverAddressedRequests(): Promise<number> {
+  if (oneLabelOnly()) return 0;
+  return withSystemClearance(REASON_ADDRESSED, async () => {
+    const fresh = await rawQuery<{
+      id: string; ask: string; why: string; satisfied_by: string; bears_on_text: string | null; filed_at: Date; grant_id: string; label: string;
+    }>(
+      `SELECT f.id, f.ask, f.why, f.satisfied_by, f.bears_on_text, f.filed_at, s.subject_ref AS grant_id, s.sensitivity_label AS label
+         FROM feed_requests f JOIN showings s ON s.id = f.asked_of_face_id
+        WHERE f.origin = 'mirror' AND s.kind = 'mandate' AND s.to_outside AND s.ended_at IS NULL
+          AND f.state IN ('open', 'addressed', 'in_progress')
+          AND NOT EXISTS (SELECT 1 FROM mandate_inbox i WHERE i.grant_id = s.subject_ref AND i.target_ref = 'public-request:' || f.id::text)
+          AND NOT EXISTS (SELECT 1 FROM adopted_requests a WHERE a.public_request_id = f.id AND a.sensitivity_label = s.sensitivity_label)
+        ORDER BY f.filed_at, f.id`
+    );
+    let delivered = 0;
+    for (const r of fresh) {
+      const targets = await rawQuery<{ claim_id: string }>(`SELECT claim_id FROM feed_request_targets WHERE request_id = $1 ORDER BY claim_id`, [r.id]);
+      const raised = await runAtLabel(r.label, `a request on the public graph addressed to mandate ${r.grant_id}`, async () => {
+        const { raiseToMandate } = await import("./mandate-inbox-service.js");
+        return raiseToMandate({
+          grantId: r.grant_id,
+          targetNodeId: null,
+          targetRef: `public-request:${r.id}`,
+          source: "the public graph",
+          summary: addressedRequestMessage({
+            id: r.id,
+            filedAt: r.filed_at,
+            ask: r.ask,
+            why: r.why,
+            satisfiedBy: r.satisfied_by,
+            bearsOn: targets.map((t) => t.claim_id),
+            bearsOnText: r.bears_on_text,
+          }),
+          detail: { public_request_id: r.id },
+        });
+      }).catch((err: unknown) => {
+        console.error(`[inbound] could not put public request ${r.id} in front of its mandate: ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+      });
+      if (raised) delivered++;
+    }
+    return delivered;
   });
 }
 

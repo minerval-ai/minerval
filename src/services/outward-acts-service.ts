@@ -7,21 +7,26 @@
  * the key of the organization's own account (PUBLIC_GRAPH_API_URL,
  * PUBLIC_GRAPH_API_KEY; outbound-service.ts has the client):
  *
- *   - taking a public request up, and later saying the work will not be done;
  *   - opening a public mandate with the public Grantmaker, funding it,
- *     backing an existing one, and funding a public node's assessment;
- *   - asking a public mandate the organization funds for a fresh public
- *     assessment of a node whose version here has changed (keeping the
- *     public version current).
+ *     backing an existing one, funding a public node's assessment, and
+ *     asking a public mandate about a node.
  *
- * Every one of these shows something outside, at least where the
- * organization's attention is. So each is the act of a person who holds the
- * permission the deployment names (PUBLIC_ACTS_BY), present in a signed-in
- * session or pressing the card the Assistant shows for an outward act; or
- * it follows from a standing choice such a person made after being shown,
- * in the words kept with the choice, what it shows outside. Each is a row
- * in outward_acts with who, what was sent, and what the public graph
- * answered.
+ * These are a person spending the organization's public owls and writing
+ * in its name, so each is the act of a person who holds the permission the
+ * deployment names (PUBLIC_ACTS_BY), present in a signed-in session or
+ * pressing the card the Assistant shows for an outward act.
+ *
+ * What goes out because of work done at a label is not here. That a
+ * request was taken up or will not be worked, a request for a fresh public
+ * assessment when a version here changes, a mandate's terms, an agent's
+ * report: each is an item at the gate to outside, let through under that
+ * gate's settings like anything else going to readers who do not read the
+ * label, and sent by gate-outside.ts. A person who wants one of them said
+ * offers it to the gate (takeUpInPublic, declineInPublic).
+ *
+ * Every call to the public graph, from here or from the gate, is a row in
+ * outward_acts with who or what made it, what was sent, and what the
+ * public graph answered.
  *
  * Nothing private crosses here. A call carries ids the public graph already
  * holds, amounts, a reason from a fixed list, or words a person wrote for
@@ -35,13 +40,12 @@
  */
 import { loadConfig } from "../config.js";
 import { withSystemClearance } from "../db/clearance.js";
-import { rawQuery, withTransaction } from "../db/client.js";
+import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import type { PermissionName } from "../permissions.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import { OutboundError, answerOf, call, publicGraph } from "./outbound-service.js";
-import { logAdministrativeEvent } from "./permission-service.js";
 import type { GateActor } from "./release-gate-service.js";
 import { DECLINE_REASONS, type DeclineReason } from "./request-take-up-service.js";
 
@@ -56,7 +60,7 @@ export class OutwardError extends Error {
 }
 
 const REASON_LOG =
-  "The log of acts on the public graph and the deployment's standing choices are kept at `public`, where every member reads them, and are written once the route has checked the person.";
+  "The log of acts on the public graph is kept at `public`, where every member reads it, and is written once the route has checked the person or the gate has let a thing through.";
 const asOwner = <T>(fn: () => Promise<T>) => withSystemClearance(REASON_LOG, fn);
 
 /** The permission whose holders may act on the public graph in the organization's name. */
@@ -76,6 +80,7 @@ export type OutwardActKind =
   | "fund_public_node"
   | "raise_public_node"
   | "keep_current"
+  | "publish_mandate"
   | "send_report"
   | "send_failure_facts";
 
@@ -90,11 +95,16 @@ export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
   fund_public_node: "paid for a public assessment of a node with public owls",
   raise_public_node: "asked a public mandate for a fresh public assessment of a node",
   keep_current: "asked a public mandate for a fresh public assessment of a node whose version here changed",
-  send_report: "sent an agent's report, as redacted, to Minerval's maintainers",
+  publish_mandate: "sent a mandate's name and terms, as the gate let them through, to stand on the organization's record on the public graph",
+  send_report: "sent an agent's report, as the gate let it through, to Minerval's maintainers",
   send_failure_facts: "sent the facts of a tool failure to Minerval's maintainers",
 };
 
-export type Actor = { actor: GateActor } | { standingChoice: StandingChoiceKey };
+/** Who made a call: a person, or the gate to outside sending what its setting let through with nobody sending it. */
+export type Actor = { actor: GateActor } | { gate: true };
+
+/** What the log says under "by" where no person acted. Rows written before the gate sent these name a standing choice. */
+const BY_THE_GATE = "the gate";
 
 export async function logOutwardAct(row: {
   kind: OutwardActKind;
@@ -113,7 +123,7 @@ export async function logOutwardAct(row: {
         row.kind,
         person?.id ?? null,
         person?.holding ?? [],
-        "standingChoice" in row.by ? row.by.standingChoice : null,
+        "gate" in row.by ? BY_THE_GATE : null,
         row.publicRef ?? null,
         JSON.stringify(row.sent),
         row.result,
@@ -182,201 +192,13 @@ export async function outwardLog(opts: { limit?: number } = {}): Promise<Array<R
     at: r.at.toISOString(),
     what: OUTWARD_ACT_WORDS[r.kind] ?? r.kind,
     kind: r.kind,
-    by: r.under_standing_choice ? `the standing choice "${STANDING_CHOICES[r.under_standing_choice as StandingChoiceKey]?.name ?? r.under_standing_choice}"` : r.by,
+    by: r.under_standing_choice === BY_THE_GATE ? "the gate to outside, under its setting" : r.under_standing_choice ? `the standing choice "${r.under_standing_choice}"` : r.by,
     holding: r.holding,
     on_the_public_graph: r.public_ref,
     sent: r.sent,
     result: r.result,
     ...(r.public_graph_said ? { the_public_graph_said: r.public_graph_said } : {}),
   }));
-}
-
-// ---- standing choices -------------------------------------------------------------
-
-/**
- * The choices a deployment makes once about what goes out with nobody
- * acting. `told` is what the person choosing is shown before they choose,
- * and it is stored with the choice as they were shown it. `by` is the
- * permission the person must hold: the one that would let them do each act
- * themselves.
- */
-export const STANDING_CHOICES = {
-  keep_public_current: {
-    name: "Keep the public versions of nodes current",
-    starts: "on" as const,
-    told:
-      "When a version of a public node changes at any label in this deployment, your graph asks the public mandate named here for a fresh " +
-      "public assessment of that node. Nothing your graph holds is sent: the request names the node and nothing else, and the public " +
-      "assessment is made on public evidence by the public graph's own Steward. What this shows outside is which public nodes your graph " +
-      "works on, and when, to anyone who reads that mandate's public page. A delay, or sending in batches, hides when and not which. A " +
-      "mandate here, or one node, can be left out. Whether this is on, and whether a public mandate pays for it, is stated on every page " +
-      "your graph shows outside. It is on unless someone turns it off, and until a person names a public mandate here nothing is sent.",
-  },
-  send_failure_facts: {
-    name: "Send the facts of tool failures to Minerval's maintainers",
-    starts: "off" as const,
-    told:
-      "When one of your graph's agents reports that a tool failed and Audit finds the report to be about Minerval's machinery, your graph " +
-      "sends Minerval's maintainers these facts and nothing else: which tool (only if it is one of Minerval's own tools, by its name in " +
-      "the code), the kind of report and its severity from fixed lists, the version of Minerval your deployment runs, and how many times " +
-      "it was seen. None of the agent's words are sent. What this shows outside is that your organization runs this version and which of " +
-      "Minerval's tools fail for it, to Minerval's maintainers and nobody else.",
-  },
-  send_redacted_reports: {
-    name: "Send agents' reports about Minerval's machinery, as redacted, without asking each time",
-    starts: "off" as const,
-    told:
-      "When Audit finds an agent's report to be about Minerval's machinery and the Redactor has finished its pass over the agent's words, " +
-      "your graph sends the report to Minerval's maintainers as redacted, with nobody reading it first. The words are the agent's own, " +
-      "less what the Redactor removed under the policy for what leaves the report's label, each removal marked. What this shows outside " +
-      "is whatever those words say about what your agents were doing, to Minerval's maintainers and nobody else. A redaction can miss " +
-      "something a person would have caught.",
-  },
-} as const;
-export type StandingChoiceKey = keyof typeof STANDING_CHOICES;
-
-export interface KeepCurrentValue {
-  on: boolean;
-  public_mandate_id: string | null;
-  delay_hours: number;
-  batch_hours: number;
-}
-
-interface SettingRow {
-  key: string;
-  value: Record<string, unknown>;
-  told: string;
-  set_by: string | null;
-  by: string | null;
-  set_at: Date;
-}
-
-async function settingRow(key: StandingChoiceKey): Promise<SettingRow | null> {
-  const [row] = await asOwner(() =>
-    rawQuery<SettingRow>(
-      `SELECT s.key, s.value, s.told, s.set_by, c.display_name AS by, s.set_at FROM outward_settings s LEFT JOIN contributors c ON c.id = s.set_by WHERE s.key = $1`,
-      [key]
-    )
-  );
-  return row ?? null;
-}
-
-/** Whether a standing choice is on. A choice nobody has made is where it starts. */
-export async function standingChoiceOn(key: StandingChoiceKey): Promise<boolean> {
-  const row = await settingRow(key);
-  if (!row) return STANDING_CHOICES[key].starts === "on";
-  return row.value.on === true;
-}
-
-/** Keeping public versions current, as it stands: the setting, and whether anything is behind it. */
-export async function keepCurrentState(): Promise<{
-  setting: "on" | "off";
-  public_mandate_id: string | null;
-  delay_hours: number;
-  batch_hours: number;
-  sends: boolean;
-  in_words: string;
-  set_at: string | null;
-}> {
-  const row = await settingRow("keep_public_current");
-  const value = (row?.value ?? {}) as Partial<KeepCurrentValue>;
-  const on = row ? value.on === true : true;
-  const mandate = typeof value.public_mandate_id === "string" ? value.public_mandate_id : null;
-  const { publicGraphApiUrl, publicGraphApiKey } = loadConfig();
-  const account = Boolean(publicGraphApiUrl && publicGraphApiKey);
-  const sends = on && mandate !== null && account;
-  const in_words = !on
-    ? "Off. Nothing is asked of the public graph when a version here changes, and every page this graph shows outside says so."
-    : !account
-      ? "On, and nothing is sent: this deployment has no account on the public graph to act as (PUBLIC_GRAPH_API_URL, PUBLIC_GRAPH_API_KEY)."
-      : mandate === null
-        ? "On, and nothing is sent: nobody has named a public mandate to pay for it. A person who may act on the public graph for the organization opens one and names it here."
-        : "On. When a version of a public node changes here, the public mandate named is asked for a fresh public assessment of the node.";
-  return {
-    setting: on ? "on" : "off",
-    public_mandate_id: mandate,
-    delay_hours: Number(value.delay_hours ?? 0),
-    batch_hours: Number(value.batch_hours ?? 0),
-    sends,
-    in_words,
-    set_at: row?.set_at.toISOString() ?? null,
-  };
-}
-
-/** What a package says of this setting: fixed words, stamped by the system (published-page/verify.ts). */
-export async function keepCurrentStamp(): Promise<{ setting: "on" | "off"; a_public_mandate_pays_for_it: boolean }> {
-  const state = await keepCurrentState();
-  return { setting: state.setting, a_public_mandate_pays_for_it: state.sends };
-}
-
-/** Every standing choice as it stands, with what each shows outside and who set it. */
-export async function standingChoices(): Promise<Array<Record<string, unknown>>> {
-  const out: Array<Record<string, unknown>> = [];
-  for (const key of Object.keys(STANDING_CHOICES) as StandingChoiceKey[]) {
-    const row = await settingRow(key);
-    out.push({
-      key,
-      name: STANDING_CHOICES[key].name,
-      on: row ? row.value.on === true : STANDING_CHOICES[key].starts === "on",
-      what_it_shows_outside: STANDING_CHOICES[key].told,
-      set_by: row?.by ?? null,
-      set_at: row?.set_at.toISOString() ?? null,
-      ...(key === "keep_public_current" ? { as_it_stands: await keepCurrentState() } : {}),
-      who_may_set_it:
-        key === "send_redacted_reports"
-          ? "a person who holds release for the organization's own material"
-          : key === "send_failure_facts"
-            ? "a person who directs the graph"
-            : `a person who holds ${publicActsPermission()}`,
-    });
-  }
-  return out;
-}
-
-/**
- * Set a standing choice. The route has checked the person. The text the
- * person was shown is stored with the choice, and the change is on the
- * administrative log.
- */
-export async function setStandingChoice(input: {
-  key: StandingChoiceKey;
-  on: boolean;
-  publicMandateId?: string | null;
-  delayHours?: number;
-  batchHours?: number;
-  actor: GateActor;
-}): Promise<Record<string, unknown>> {
-  const def = STANDING_CHOICES[input.key];
-  if (!def) throw new OutwardError("NO_SUCH_CHOICE", `The standing choices are: ${Object.keys(STANDING_CHOICES).join(", ")}.`, 404);
-  const before = await settingRow(input.key);
-  const hours = (n: number | undefined, was: unknown) => Math.min(24 * 90, Math.max(0, Math.round(Number(n ?? was ?? 0))));
-  const value: Record<string, unknown> =
-    input.key === "keep_public_current"
-      ? {
-          on: input.on,
-          public_mandate_id: input.publicMandateId === undefined ? (before?.value.public_mandate_id ?? null) : input.publicMandateId,
-          delay_hours: hours(input.delayHours, before?.value.delay_hours),
-          batch_hours: hours(input.batchHours, before?.value.batch_hours),
-        }
-      : { on: input.on };
-  await asOwner(() =>
-    withTransaction(async (tx) => {
-      await tx.query(
-        `INSERT INTO outward_settings (key, value, told, set_by, holding, set_at, sensitivity_label)
-         VALUES ($1, $2::jsonb, $3, $4, $5, now(), $6)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, told = EXCLUDED.told, set_by = EXCLUDED.set_by, holding = EXCLUDED.holding, set_at = now()`,
-        [input.key, JSON.stringify(value), def.told, input.actor.id, input.actor.holding, PUBLIC_LABEL]
-      );
-      await logAdministrativeEvent(tx, "standing_choice_set", input.actor.id, {
-        choice: def.name,
-        set_to: input.on ? "on" : "off",
-        ...(input.key === "keep_public_current"
-          ? { public_mandate_id: (value.public_mandate_id as string | null) ?? null, delay_hours: String(value.delay_hours), batch_hours: String(value.batch_hours) }
-          : {}),
-      });
-    })
-  );
-  return { key: input.key, name: def.name, on: input.on, what_it_shows_outside: def.told, ...(input.key === "keep_public_current" ? { as_it_stands: await keepCurrentState() } : {}) };
 }
 
 // ---- public requests: adopted, and taken up in public ----------------------------------
@@ -446,7 +268,8 @@ export const TAKE_UP_TOLD =
   "It shows outside that your graph is working on what the request asks about. It commits your graph to doing the work well, not to a result, " +
   "and it funds nothing: the work runs here when a mandate or a person pays for it. The public record then shows what followed: a page your " +
   "graph publishes on a node the request bears on, a statement that the work will not be done with its reason, or nothing yet, with how long. " +
-  "The statement is not taken back.";
+  "It goes through the gate to outside like anything else from a label, and where that gate is open for it, which is where a gate starts, " +
+  "it is said at once. The statement is not taken back.";
 
 /**
  * Adopt a public request: it becomes an ordinary request here, at `label`,
@@ -503,52 +326,75 @@ export async function adoptRequestFromBelow(input: { requestId: string; label?: 
   }
 }
 
-async function adoptionFor(adoptionId: string): Promise<{ id: string; public_request_id: string; taken_up_at: Date | null; declined_at: Date | null; label: string }> {
+async function adoptionFor(adoptionId: string): Promise<{ id: string; request_id: string; public_request_id: string; taken_up_at: Date | null; declined_at: Date | null; label: string }> {
   // Read as the person: an adoption at a label they do not read does not exist for them.
-  const [row] = await rawQuery<{ id: string; public_request_id: string; taken_up_at: Date | null; declined_at: Date | null; label: string }>(
-    `SELECT id, public_request_id, taken_up_at, declined_at, sensitivity_label AS label FROM adopted_requests WHERE id = $1`,
+  const [row] = await rawQuery<{ id: string; request_id: string; public_request_id: string; taken_up_at: Date | null; declined_at: Date | null; label: string }>(
+    `SELECT id, request_id, public_request_id, taken_up_at, declined_at, sensitivity_label AS label FROM adopted_requests WHERE id = $1 AND public_request_id IS NOT NULL`,
     [adoptionId]
   );
   if (!row) throw new OutwardError("ADOPTION_NOT_FOUND", "No adopted request with that id is one you read.", 404);
   return row;
 }
 
-/** Say on the public graph, in the organization's name, that this graph is taking the request up. */
+/**
+ * Have it said on the public graph, in the organization's name, that this
+ * graph is taking the request up. It is offered to the gate to outside as
+ * what any take-up is, and goes under that gate's setting: at once where
+ * the gate is open for it, which is where a gate starts. A request that was
+ * addressed to a mandate this deployment published needs no one to do
+ * this: its taking up is offered when it is taken up.
+ */
 export async function takeUpInPublic(input: { adoptionId: string; actor: GateActor }): Promise<Record<string, unknown>> {
   const adoption = await adoptionFor(input.adoptionId);
   if (adoption.taken_up_at) throw new OutwardError("ALREADY_TAKEN_UP", "This graph has already said in public that it is taking this request up.");
-  const answer = await act({
-    kind: "take_up_request",
-    by: { actor: input.actor },
-    method: "POST",
-    path: `/requests/${adoption.public_request_id}/take-up`,
-    body: {},
-    publicRef: adoption.public_request_id,
-  });
-  await runAtLabel(adoption.label, `recording that request ${adoption.id} was taken up in public`, () =>
-    rawQuery(`UPDATE adopted_requests SET taken_up_at = now() WHERE id = $1`, [adoption.id])
+  const { offerTakenUpBelow } = await import("./gate-service.js");
+  const offered = await runAtLabel(adoption.label, `offering that request ${adoption.request_id} was taken up to the gate to outside`, () =>
+    offerTakenUpBelow(adoption.request_id, { saidByAPerson: true })
   );
-  return { taken_up: true, public_request_id: adoption.public_request_id, the_public_graph_said: String(answer.in_words ?? "") };
+  if (!offered) throw new OutwardError("NOTHING_TO_OFFER", "There is nothing to say outside about this request: this deployment has not said which party is the organization itself, or holds one label only.");
+  return { offered_to_the_gate: true, public_request_id: adoption.public_request_id, ...offered, in_words: OFFERED_WORDS[offered.state] };
 }
 
-/** Say on the public graph that this graph will not do the work it took up, with a reason from the fixed list. */
-export async function declineInPublic(input: { adoptionId: string; reason: string; actor: GateActor }): Promise<Record<string, unknown>> {
+const OFFERED_WORDS: Record<string, string> = {
+  released: "It is through the gate to outside. It is on the public graph once the public graph has taken it, which the log of acts on the public graph shows.",
+  waiting: "It is at the gate to outside, which is set so that something stands between: the Redactor's run, Audit's check, a delay or a person. It is said on the public graph when it is through.",
+  held: "It is held at the gate to outside.",
+};
+
+/**
+ * Say that this graph will not do the work on a request it took up from
+ * the public graph, with a reason from the fixed list. The request here is
+ * closed as declined, which is this deployment's own record of it, and
+ * that it will not be done goes to the gate to outside with the reason.
+ */
+export async function declineInPublic(input: { adoptionId: string; reason: string; note?: string | null; actor: GateActor }): Promise<Record<string, unknown>> {
   if (!(input.reason in DECLINE_REASONS)) throw new OutwardError("UNKNOWN_REASON", `A reason is one of: ${Object.keys(DECLINE_REASONS).join(", ")}.`, 422);
   const adoption = await adoptionFor(input.adoptionId);
-  if (!adoption.taken_up_at) throw new OutwardError("NOT_TAKEN_UP", "This graph has not said in public that it is taking this request up, so there is nothing to answer there. A request adopted here and dropped needs no public statement.");
   if (adoption.declined_at) throw new OutwardError("ALREADY_DECLINED", "This graph has already said in public that it will not do this work.");
-  const answer = await act({
-    kind: "decline_request",
-    by: { actor: input.actor },
-    method: "POST",
-    path: `/requests/${adoption.public_request_id}/take-up/decline`,
-    body: { reason: input.reason },
-    publicRef: adoption.public_request_id,
+  // On the public graph an account declines what it said it was taking up, or what was addressed to a mandate it
+  // published. Anything else was asked of nobody here, and there is nothing to answer there.
+  const answerable = await runAtLabel(adoption.label, `checking whether request ${adoption.request_id} can be declined in public`, async () => {
+    const [offered] = await rawQuery(`SELECT 1 FROM showings WHERE kind = 'taken_up' AND subject_ref = $1 AND to_outside`, [adoption.request_id]);
+    if (offered) return true;
+    const { publishedMandateAskedBy } = await import("./gate-service.js");
+    return (await publishedMandateAskedBy(adoption.public_request_id)) !== null;
   });
-  await runAtLabel(adoption.label, `recording that request ${adoption.id} was declined in public`, () =>
-    rawQuery(`UPDATE adopted_requests SET declined_at = now(), decline_reason = $2 WHERE id = $1`, [adoption.id, input.reason])
-  );
-  return { declined: true, because: DECLINE_REASONS[input.reason as DeclineReason], the_public_graph_said: String(answer.in_words ?? "") };
+  if (!answerable) {
+    throw new OutwardError("NOT_TAKEN_UP", "This graph has not said in public that it is taking this request up, and it was not addressed to a mandate this graph published, so there is nothing to decline there.");
+  }
+  const because = DECLINE_REASONS[input.reason as DeclineReason];
+  const offered = await runAtLabel(adoption.label, `declining request ${adoption.request_id}, taken up from the public graph`, async () => {
+    await rawQuery(`UPDATE adopted_requests SET decline_reason = $2 WHERE id = $1`, [adoption.id, input.reason]);
+    const { setRequestState } = await import("./request-service.js");
+    const [request] = await rawQuery<{ state: string }>(`SELECT state FROM requests WHERE id = $1`, [adoption.request_id]);
+    if (request && !["met", "declined", "withdrawn", "moot"].includes(request.state)) {
+      await setRequestState({ requestId: adoption.request_id, state: input.reason === "moot" ? "moot" : "declined", note: input.note?.trim() || `Declined: ${because}.` });
+    }
+    const { offerAnswerBelow } = await import("./gate-service.js");
+    return offerAnswerBelow(adoption.request_id, { saidByAPerson: true });
+  });
+  if (!offered) throw new OutwardError("NOTHING_TO_OFFER", "There is nothing to say outside about this request: it was met here, or this deployment has not said which party is the organization itself.");
+  return { offered_to_the_gate: true, because, ...offered, in_words: OFFERED_WORDS[offered.state] };
 }
 
 // ---- public owls and public mandates -----------------------------------------------------
@@ -684,194 +530,16 @@ export async function fundPublicNode(input: { nodeId: string; owls: number; acto
   return { funded: true, node_id: id, the_public_graph: answer };
 }
 
-/** Ask one of the organization's public mandates for a fresh public assessment of a mirrored node. */
-export async function raisePublicNode(input: { nodeId: string; mandateId: string; by: Actor }): Promise<Record<string, unknown>> {
-  const id = "actor" in input.by ? await publicNode(input.nodeId) : input.nodeId;
+/** Ask one of the organization's public mandates for a fresh public assessment of a mirrored node: a person's own act, naming the node. */
+export async function raisePublicNode(input: { nodeId: string; mandateId: string; actor: GateActor }): Promise<Record<string, unknown>> {
+  const id = await publicNode(input.nodeId);
   const answer = await act({
-    kind: "actor" in input.by ? "raise_public_node" : "keep_current",
-    by: input.by,
+    kind: "raise_public_node",
+    by: { actor: input.actor },
     method: "POST",
     path: `/mandates/${input.mandateId}/raise`,
     body: { node_id: id },
     publicRef: id,
   });
   return { asked: true, node_id: id, the_public_graph_said: String(answer.in_words ?? "") };
-}
-
-// ---- keeping the public version current -------------------------------------------------------
-
-const REASON_KEEP_CURRENT =
-  "Keeping public versions current looks, at every label, for versions of mirrored nodes that have been replaced, and records each at its own version's label.";
-const atEveryLabel = <T>(fn: () => Promise<T>) => withSystemClearance(REASON_KEEP_CURRENT, fn);
-
-/** Why a changed version was not sent on, in the only words the queue says it in. */
-export const NOT_SENT_WORDS = {
-  left_out_for_the_mandate: "the mandate that paid for the version leaves its work out",
-  node_left_out: "this node is left out",
-  refused: "the public graph did not take the request",
-  unreachable: "the public graph could not be reached",
-  turned_off: "keeping public versions current was turned off before it was due",
-} as const;
-
-/**
- * Record each version of a mirrored node, at a label other than the node's
- * own, that has come into force since the setting was last set by a person,
- * and say when the public graph may be asked about it. Does nothing until
- * the setting sends (keepCurrentState): before a person has named a public
- * mandate, no version is queued, so nothing made earlier is sent later.
- */
-export async function noticeChangedVersions(): Promise<number> {
-  if (oneLabelOnly()) return 0;
-  const state = await keepCurrentState();
-  if (!state.sends || !state.set_at) return 0;
-  const since = state.set_at;
-  return atEveryLabel(async () => {
-    // The version's time is carried as the database wrote it: a JavaScript date would drop its microseconds, and the same version would be noticed again.
-    const versions = await rawQuery<{ node_id: string; label: string; at: Date; at_exact: string; job: string | null }>(
-      `SELECT v.node_id, v.label, v.at, v.at::text AS at_exact, v.job FROM (
-         SELECT a.claim_id AS node_id, a.sensitivity_label AS label, a.assessed_at AS at, a.funded_by_job_id AS job FROM assessments_in_force a
-         UNION ALL
-         SELECT q.claim_id, q.sensitivity_label, q.assessed_at, q.funded_by_job_id FROM quantity_estimates_in_force q
-         UNION ALL
-         SELECT s.claim_id, s.sensitivity_label, s.assessed_at, s.funded_by_job_id FROM question_assessments_in_force s
-       ) v JOIN claims c ON c.id = v.node_id
-       WHERE c.origin = 'mirror' AND v.label <> c.sensitivity_label AND v.at > $1::timestamptz
-         AND NOT EXISTS (SELECT 1 FROM keep_current_queue k WHERE k.node_id = v.node_id AND k.version_at = v.at AND k.sensitivity_label = v.label)`,
-      [since]
-    );
-    let noticed = 0;
-    for (const v of versions) {
-      const [grant] = v.job ? await rawQuery<{ id: string }>(`SELECT id FROM grants WHERE budget_job_id = $1`, [v.job]) : [];
-      const exceptions = await rawQuery<{ grant_id: string | null; node_id: string | null }>(
-        `SELECT grant_id, node_id FROM keep_current_exceptions
-          WHERE lifted_at IS NULL
-            AND ((grant_id IS NULL AND node_id = $1) OR (grant_id = $2 AND (node_id IS NULL OR node_id = $1)))`,
-        [v.node_id, grant?.id ?? null]
-      );
-      const leftOut = exceptions.find((e) => e.grant_id && !e.node_id) ? "left_out_for_the_mandate" : exceptions.length > 0 ? "node_left_out" : null;
-      // Due after the delay, and then at the next batch boundary where batches are set.
-      let due = v.at.getTime() + state.delay_hours * 3_600_000;
-      if (state.batch_hours > 0) {
-        const span = state.batch_hours * 3_600_000;
-        due = Math.ceil(due / span) * span;
-      }
-      await rawQuery(
-        `INSERT INTO keep_current_queue (node_id, version_at, paid_by_grant_id, due_at, state, because, settled_at, sensitivity_label)
-         VALUES ($1, $2::timestamptz, $3, $4, $5, $6, $7, $8) ON CONFLICT DO NOTHING`,
-        [v.node_id, v.at_exact, grant?.id ?? null, new Date(due), leftOut ? "not_sent" : "waiting", leftOut ? NOT_SENT_WORDS[leftOut] : null, leftOut ? new Date() : null, v.label]
-      );
-      noticed++;
-    }
-    return noticed;
-  });
-}
-
-/**
- * Ask the public mandate named in the setting for a fresh public assessment
- * of each node whose changed version is due. One request per node, however
- * many versions and labels are waiting on it. Each is logged as made under
- * the standing choice.
- */
-export async function sendKeepCurrent(now: Date = new Date()): Promise<{ asked: number; not_sent: number }> {
-  if (oneLabelOnly()) return { asked: 0, not_sent: 0 };
-  const state = await keepCurrentState();
-  const settle = (nodeId: string, how: "sent" | "not_sent", because: string | null) =>
-    atEveryLabel(() =>
-      rawQuery(`UPDATE keep_current_queue SET state = $2, because = $3, settled_at = now() WHERE node_id = $1 AND state = 'waiting' AND due_at <= $4`, [nodeId, how, because, now])
-    );
-  const due = await atEveryLabel(() =>
-    rawQuery<{ node_id: string }>(`SELECT DISTINCT node_id FROM keep_current_queue WHERE state = 'waiting' AND due_at <= $1 ORDER BY node_id`, [now])
-  );
-  let asked = 0;
-  let notSent = 0;
-  for (const { node_id } of due) {
-    if (!state.sends || !state.public_mandate_id) {
-      await settle(node_id, "not_sent", NOT_SENT_WORDS.turned_off);
-      notSent++;
-      continue;
-    }
-    try {
-      await raisePublicNode({ nodeId: node_id, mandateId: state.public_mandate_id, by: { standingChoice: "keep_public_current" } });
-      await settle(node_id, "sent", null);
-      asked++;
-    } catch (err) {
-      const code = err instanceof OutwardError ? err.code : "";
-      await settle(node_id, "not_sent", code === "PUBLIC_GRAPH_UNREACHABLE" ? NOT_SENT_WORDS.unreachable : NOT_SENT_WORDS.refused);
-      notSent++;
-    }
-  }
-  return { asked, not_sent: notSent };
-}
-
-/** The scheduler's step: notice, then send what is due. */
-export async function followKeepCurrent(): Promise<{ noticed: number; asked: number; not_sent: number }> {
-  const noticed = await noticeChangedVersions();
-  return { noticed, ...(await sendKeepCurrent()) };
-}
-
-/** What an administrator is shown about keeping public versions current: the setting, what has been asked and what was not, with why. */
-export async function keepCurrentOverview(): Promise<Record<string, unknown>> {
-  const state = await keepCurrentState();
-  // Read as the caller: the queue's rows are at their versions' labels.
-  const rows = await rawQuery<{ node_id: string; node: string | null; version_at: Date; due_at: Date; state: string; because: string | null; settled_at: Date | null }>(
-    `SELECT k.node_id, c.text AS node, k.version_at, k.due_at, k.state, k.because, k.settled_at
-       FROM keep_current_queue k LEFT JOIN claims c ON c.id = k.node_id ORDER BY k.noticed_at DESC LIMIT 100`
-  );
-  const exceptions = await rawQuery<{ id: string; grant_id: string | null; node_id: string | null; node: string | null; set_at: Date; by: string | null }>(
-    `SELECT e.id, e.grant_id, e.node_id, c.text AS node, e.set_at, p.display_name AS by
-       FROM keep_current_exceptions e LEFT JOIN claims c ON c.id = e.node_id LEFT JOIN contributors p ON p.id = e.set_by
-      WHERE e.lifted_at IS NULL ORDER BY e.set_at DESC`
-  );
-  const [lastRefusal] = await rawQuery<{ at: Date; said: string | null }>(
-    `SELECT at, public_graph_said AS said FROM outward_acts WHERE kind = 'keep_current' AND result <> 'done' ORDER BY at DESC LIMIT 1`
-  );
-  return {
-    ...state,
-    what_it_shows_outside: STANDING_CHOICES.keep_public_current.told,
-    ...(lastRefusal ? { last_not_taken: { at: lastRefusal.at.toISOString(), the_public_graph_said: lastRefusal.said } } : {}),
-    versions: rows.map((r) => ({
-      node_id: r.node_id,
-      node: r.node,
-      version_of: r.version_at.toISOString(),
-      due_at: r.due_at.toISOString(),
-      state: r.state,
-      ...(r.because ? { because: r.because } : {}),
-    })),
-    versions_note: "Listed are the changed versions at labels you read. Others may be waiting at labels you do not read.",
-    left_out: exceptions.map((e) => ({ id: e.id, mandate_id: e.grant_id, node_id: e.node_id, node: e.node, set_at: e.set_at.toISOString(), by: e.by })),
-  };
-}
-
-/**
- * Leave a mandate's work, or one node, out of keeping public versions
- * current. For a mandate, the row is at the mandate's label, which the
- * person must read; for a node alone, at the label the person names.
- */
-export async function leaveOut(input: { grantId?: string | null; nodeId?: string | null; label?: string | null; actor: GateActor }): Promise<{ id: string }> {
-  if (!input.grantId && !input.nodeId) throw new OutwardError("NOTHING_NAMED", "Name a mandate, a node, or both.", 422);
-  let label = input.label ?? null;
-  if (input.grantId) {
-    // Read as the person: a mandate at a label they do not read does not exist for them.
-    const [grant] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM grants WHERE id = $1`, [input.grantId]);
-    if (!grant) throw new OutwardError("MANDATE_NOT_FOUND", "No mandate with that id is one you read.", 404);
-    label = grant.label;
-  }
-  if (oneLabelOnly()) label = PUBLIC_LABEL;
-  if (!label) throw new OutwardError("LABEL_NEEDED", "Say which label this is recorded at: one you read. Which nodes are left out says which are worked on, so the record is kept at a label.", 422);
-  if (!input.actor.clearance.includes(label)) throw new OutwardError("LABEL_NOT_READ", "You do not read that label.", 403);
-  return runAtLabel(label, "leaving work out of keeping public versions current", async () => {
-    const [row] = await rawQuery<{ id: string }>(
-      `INSERT INTO keep_current_exceptions (grant_id, node_id, set_by, sensitivity_label) VALUES ($1, $2, $3, $4) RETURNING id`,
-      [input.grantId ?? null, input.nodeId ?? null, input.actor.id, label]
-    );
-    return { id: row!.id };
-  });
-}
-
-export async function takeBackLeaveOut(input: { id: string }): Promise<{ lifted: boolean }> {
-  // As the person, at their clearance: a row at a label they do not read is not found.
-  const [row] = await rawQuery<{ id: string; label: string }>(`SELECT id, sensitivity_label AS label FROM keep_current_exceptions WHERE id = $1 AND lifted_at IS NULL`, [input.id]);
-  if (!row) throw new OutwardError("NOT_FOUND", "Nothing left out has that id at a label you read.", 404);
-  await runAtLabel(row.label, "taking back a leaving-out", () => rawQuery(`UPDATE keep_current_exceptions SET lifted_at = now() WHERE id = $1`, [row.id]));
-  return { lifted: true };
 }

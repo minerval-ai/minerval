@@ -6,8 +6,9 @@
  * real app on its own database (PUBLIC_GRAPH_DATABASE_URL), listening on a
  * port it prints. No model runs here. The two steps of the path that an
  * agent takes (the Contribution Reviewer's decision on a submission, and
- * the node's Steward taking a source off its page) are driven through the
- * agents' own tools on a second port, as the showing tests drive the
+ * the node's Steward taking a source off its page, and an agent of the
+ * public graph filing a request) are driven through the agents' own tools
+ * on a second port, as the showing tests drive the
  * Redactor's and Audit's.
  */
 import { createServer } from "node:http";
@@ -21,6 +22,7 @@ delete process.env.API_KEYS;
 const { buildApp } = await import("../../../src/server/app.js");
 const { executeReviewerTool } = await import("../../../src/llm/tools/reviewer-tools.js");
 const { executeStewardTool } = await import("../../../src/llm/tools/steward-tools.js");
+const { executeKindTool } = await import("../../../src/llm/tools/kind-tools.js");
 const { withAgent } = await import("../../../src/llm/usage-context.js");
 const { publishedPageAsText } = await import("../../../src/published-page/shape.js");
 
@@ -40,7 +42,9 @@ const agents = createServer((req, res) => {
             ? await withAgent("contribution_reviewer", () => executeReviewerTool(tool, input))
             : agent === "steward"
               ? await withAgent("steward", () => executeStewardTool(tool, input, {} as never))
-              : agent === "text"
+              : agent === "curator"
+                ? ((await withAgent("curator", () => executeKindTool(tool, input, { role: "curator", claimId: null, model: "a-model" } as never))) ?? JSON.stringify({ success: false, error: "no such tool" }))
+                : agent === "text"
                 ? JSON.stringify({ text: publishedPageAsText(input as never) })
                 : JSON.stringify({ success: false, error: "no such agent" });
         res.writeHead(200, { "content-type": "application/json" }).end(out);

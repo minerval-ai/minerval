@@ -132,6 +132,17 @@ function hosting(): "own_machines" | "minerval" | "third_party" {
   return where;
 }
 
+/**
+ * The deployment's key as anything that leaves under it is signed: the
+ * key's public half and short name, where the deployment says it runs, and
+ * the signature over a hash. A node's page and a published mandate
+ * (gate-outside.ts) are signed with the same key.
+ */
+export function outsideSigner(): { key_id: string; public_key: string; hosting: string; sign: (hashHex: string) => string } {
+  const s = signer();
+  return { key_id: s.keyId, public_key: s.publicKey, hosting: hosting(), sign: (hashHex) => cryptoSign(null, Buffer.from(hashHex, "hex"), s.key).toString("base64") };
+}
+
 /** The key's public half and where the deployment says it runs: what the organization registers on the public graph. */
 export function publisherIdentity(): { public_key: string; key_id: string; hosting: string } {
   const s = signer();
@@ -208,7 +219,7 @@ export function waitingWords(proposal: ProposalRow | null, parties: Map<string, 
     case "waiting_for_release": {
       const released = new Set(proposal.releases.map((r) => r.party_id));
       const waiting = proposal.needs.filter((p) => !released.has(p)).map((p) => parties.get(p) ?? "a party");
-      return `${only} The words it is to be proposed in were written on ${day(proposal.written_at)} and wait to be released by ${waiting.join(" and ") || "the parties they rest on"}. Nothing of this node is outside.`;
+      return `${only} The words it is to be proposed in were written on ${day(proposal.written_at)} and are at the gate to outside, where they rest on the material of ${waiting.join(" and ") || "the parties the node's wording rests on"}. Nothing of this node is outside.`;
     }
     case "ready":
       return `${only} The words it is to be proposed in are written and released, and wait for a person who directs this graph to send them.`;
@@ -224,9 +235,9 @@ export function waitingWords(proposal: ProposalRow | null, parties: Map<string, 
 /**
  * Write, or approve, the words a node is proposed to the public graph in.
  * The route has checked that the person holds `direct` and reads the node.
- * With no text given, the words are the node's own. They then wait for each
- * party the node's wording rests on, unless they are word for word a
- * wording those parties have already released at the gate.
+ * With no text given, the words are the node's own. They then go to the
+ * gate to outside as an item of their own, unless they are word for word a
+ * wording that has already been through it with the node's page.
  */
 export async function writeProposal(input: { showingId: string; nodeId: string; text?: string; actor: GateActor }): Promise<{ proposal_id: string; state: string; in_words: string }> {
   // Read as the person: someone who cannot read the node is told it does not exist.
@@ -276,33 +287,26 @@ export async function writeProposal(input: { showingId: string; nodeId: string; 
        VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8, $9) RETURNING id`,
       [input.showingId, input.nodeId, node.kind, text, input.actor.id, input.actor.holding, needs, state, PUBLIC_LABEL]
     );
+    // Words that have not been through the gate go to it now, as anything written for readers outside does: an
+    // item of the kind `proposal`, resting on the parties the node's wording rests on, under the gate's setting.
+    // When it is through, the proposal is ready to send (gate-outside.ts).
+    if (state === "waiting_for_release") {
+      const [showing] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM showings WHERE id = $1`, [input.showingId]);
+      const { offerToGate } = await import("./gate-service.js");
+      await offerToGate({ kind: "proposal", fromLabel: showing!.label, toLabel: null, subject: { proposalId: row!.id } });
+    }
+    const [now] = await rawQuery<{ state: string }>(`SELECT state FROM outbound_proposals WHERE id = $1`, [row!.id]);
     return {
       proposal_id: row!.id,
-      state,
+      state: now!.state,
       in_words: alreadyReleased
-        ? "These are the node's words as the parties they rest on released them at the gate, so they are ready to send."
+        ? "These are the node's words as they went through the gate with its page, so they are ready to send."
         : state === "ready"
           ? "These words rest on no party's material, so they are ready to send."
-          : "These words wait for each party the node's wording rests on to release them. Until then nothing of this node is proposed.",
+          : now!.state === "ready"
+            ? "These words went through the gate to outside as it is set, and are ready to send."
+            : "These words are at the gate to outside, as an item of the kind proposal, and go under its setting. Until they are through, nothing of this node is proposed.",
     };
-  });
-}
-
-/** A party's holder of `release` releases the words a node is to be proposed in. */
-export async function releaseProposal(input: { proposalId: string; partyId: string; actor: GateActor }): Promise<{ state: string }> {
-  if (!input.actor.releaseParties.includes(input.partyId)) {
-    throw new OutboundError("NOT_YOUR_PARTY", "This release is for a party whose material you do not hold the permission to release.");
-  }
-  return asOwner(async () => {
-    const [p] = await rawQuery<ProposalRow>(`SELECT ${PROPOSAL_COLUMNS} FROM outbound_proposals WHERE id = $1`, [input.proposalId]);
-    if (!p) throw new OutboundError("PROPOSAL_NOT_FOUND", "No proposal has that id.");
-    if (p.state !== "waiting_for_release") throw new OutboundError("NOT_WAITING", "This proposal is not waiting for a release.");
-    if (!p.needs.includes(input.partyId)) throw new OutboundError("NOT_YOUR_PARTY", "These words do not rest on that party's material.");
-    if (p.releases.some((r) => r.party_id === input.partyId)) throw new OutboundError("ALREADY_RELEASED", "This party has already released these words.");
-    const releases = [...p.releases, { party_id: input.partyId, by: input.actor.id, holding: input.actor.holding, at: new Date().toISOString() }];
-    const state = p.needs.every((party) => releases.some((r) => r.party_id === party)) ? "ready" : "waiting_for_release";
-    await rawQuery(`UPDATE outbound_proposals SET releases = $2::jsonb, state = $3 WHERE id = $1`, [p.id, JSON.stringify(releases), state]);
-    return { state };
   });
 }
 
@@ -331,16 +335,17 @@ export async function buildOutboundPackages(opts: { showingId?: string } = {}): 
   if (oneLabelOnly()) return 0;
   const s = signer();
   const where = hosting();
-  // Stamped on every package: whether this deployment keeps public versions current, and whether anything pays for it.
-  const { keepCurrentStamp } = await import("./outward-acts-service.js");
+  // Stamped on every package: whether the gate the page leaves by asks the public graph for a fresh public
+  // assessment when a version here changes (keep-current.ts).
+  const { keepCurrentStamp } = await import("./keep-current.js");
   const { saidBackFor } = await import("./inbound-service.js");
-  const keepsCurrent = await keepCurrentStamp();
   return atPublic("building the packages of pages shown outside", async () => {
-    const nodes = await rawQuery<{ showing_id: string; node_id: string }>(
-      `SELECT DISTINCT n.showing_id, n.node_id FROM shown_nodes n JOIN shown_showings s ON s.id = n.showing_id
+    const nodes = await rawQuery<{ showing_id: string; node_id: string; boundary_id: string }>(
+      `SELECT DISTINCT n.showing_id, n.node_id, s.boundary_id FROM shown_nodes n JOIN shown_showings s ON s.id = n.showing_id
         WHERE s.to_outside AND ($1::uuid IS NULL OR s.id = $1) ORDER BY n.showing_id, n.node_id`,
       [opts.showingId ?? null]
     );
+    const stamps = new Map<string, Awaited<ReturnType<typeof keepCurrentStamp>>>();
     let built = 0;
     for (const n of nodes) {
       const publicNodeId = await publicNodeOf(n.showing_id, n.node_id);
@@ -348,6 +353,8 @@ export async function buildOutboundPackages(opts: { showingId?: string } = {}): 
       const record = await outsideRecord(n.showing_id, n.node_id);
       if (!record) continue;
       const saidBack = await saidBackFor(n.showing_id, n.node_id);
+      if (!stamps.has(n.boundary_id)) stamps.set(n.boundary_id, await keepCurrentStamp(n.boundary_id));
+      const keepsCurrent = stamps.get(n.boundary_id)!;
       const content = {
         format: PUBLISHED_PAGE_FORMAT,
         publisher: { key_id: s.keyId, public_key: s.publicKey },
@@ -489,8 +496,18 @@ export async function sendOutbound(input: { showingId: string; sender: Sender })
   if (oneLabelOnly()) throw new OutboundError("ONE_LABEL", "This graph holds everything at one label and shows no page outside itself.");
   const graph = publicGraph();
   return asOwner(async () => {
-    const [showing] = await rawQuery<{ id: string; send_as_released: boolean }>(`SELECT id, send_as_released FROM shown_showings WHERE id = $1 AND to_outside`, [input.showingId]);
+    const [showing] = await rawQuery<{ id: string; send_as_released: boolean; kind: string }>(`SELECT id, send_as_released, kind FROM shown_showings WHERE id = $1 AND to_outside`, [input.showingId]);
     if (!showing) throw new OutboundError("SHOWING_NOT_FOUND", "No showing outside has that id.");
+    // Anything but a node's page leaves by its own kind's way out (gate-outside.ts): a person sends what the gate let through.
+    if (showing.kind !== "page") {
+      const { sendThroughOutside } = await import("./gate-outside.js");
+      const through = await sendThroughOutside({ showingId: showing.id, sender: input.sender });
+      return {
+        proposals: [],
+        built: 0,
+        sent: through.items.map((i) => ({ package_id: i.item_id, node_id: i.item_id, sequence: 1, result: i.result === "sent" ? "admitted" : i.result, detail: i.detail })),
+      };
+    }
     if ("standing" in input.sender && !showing.send_as_released) {
       throw new OutboundError("NO_STANDING_CHOICE", "The gate to outside is set for a person to send each package, so nothing goes without one. An administrator changes that with the gate's send_as_released.");
     }
@@ -544,7 +561,7 @@ export async function followOutbound(): Promise<{ built: number; sent: number }>
   const built = await buildOutboundPackages();
   if (!config.publicGraphApiUrl || !config.publicGraphApiKey) return { built, sent: 0 };
   const standing = await asOwner(() =>
-    rawQuery<{ id: string }>(`SELECT id FROM shown_showings WHERE to_outside AND send_as_released ORDER BY asked_at`)
+    rawQuery<{ id: string }>(`SELECT id FROM shown_showings WHERE to_outside AND send_as_released AND kind = 'page' ORDER BY asked_at`)
   );
   let sent = 0;
   for (const s of standing) {

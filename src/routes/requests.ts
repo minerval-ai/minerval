@@ -129,6 +129,19 @@ export const REQUEST_SCHEMA = {
         },
       },
     },
+    // Where the request was addressed to a mandate another graph published here (published-mandate-service.ts): the
+    // mandate, its publisher, and where the request stands with it, read from this graph's own record. Absent otherwise.
+    addressed_to_mandate: {
+      type: "object",
+      properties: {
+        face_id: { type: "string", format: "uuid" },
+        name: { type: "string" },
+        publisher: { type: "object", properties: { account_id: { type: "string", format: "uuid" }, name: { type: "string" } } },
+        withdrawn: { type: "boolean" },
+        stands: { type: "string" },
+        in_words: { type: "string" },
+      },
+    },
     // Accounts that have said they are taking the request up, and what followed.
     taken_up: {
       type: "array",

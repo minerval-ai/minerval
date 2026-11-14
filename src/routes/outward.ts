@@ -6,14 +6,13 @@
  *   GET  /outside/account: the organization's account on the public graph:
  *     its public owls and its public mandates.
  *   GET  /outside/log: every act this deployment made on the public graph.
- *   GET  /outside/choices, PUT /outside/choices/:key: the standing choices
- *     about what goes out with nobody acting.
  *   GET  /outside/requests: the public graph's requests, from the mirror,
  *     with what this deployment has done about each.
  *   POST /outside/requests/:public_request_id/adopt: make one an ordinary
  *     request here. Says nothing outside.
- *   POST /outside/requests/adopted/:adoption_id/take-up, .../decline: say in
- *     public that the graph is taking it up; say later that it will not.
+ *   POST /outside/requests/adopted/:adoption_id/take-up, .../decline: offer
+ *     to the gate to outside that the graph is taking it up, or decline it
+ *     and offer that the work will not be done.
  *   POST /outside/mandates, POST /outside/mandates/conversations/:id/messages,
  *     GET /outside/mandates/conversations/:id: a new public mandate, in a
  *     person's own words to the public Grantmaker.
@@ -21,35 +20,28 @@
  *     /outside/mandates/:mandate_id/back: pay for one with public owls.
  *   POST /outside/nodes/:node_id/fund, .../raise: pay for the public
  *     assessment of a mirrored node, or ask a public mandate to.
- *   GET  /outside/keep-current, POST and DELETE /outside/keep-current/leave-out.
  *   GET  /outside/said-back: what the public said about published pages.
- *   GET  /outside/reports, POST /outside/reports/:sending_id/send, .../send-facts.
- *   POST /outside/work/:action_id/commission: pay for the reading of what
- *     the public said, or the redaction of a report.
+ *   GET  /outside/reports: agents' reports, and where each stands at the
+ *     gate to outside.
  *
  * Where the line is. Every write here that reaches the public graph shows
  * something outside, so each takes a person who holds the permission for
  * it: in a signed-in session, or pressing the card the Assistant shows for
  * an outward act (llm/tools/assistant-tools.ts, kind send_outside). A key
- * or a token alone does not act. Two kinds of write are narrower still and
- * take the signed-in session itself, so they are not tools: words a person
- * writes for the outside (a mandate's scope, a message to the public
- * Grantmaker), because a draft an agent wrote would be an agent's words
- * leaving without redaction; and a standing choice, because it decides
- * what leaves from then on with nobody acting.
+ * or a token alone does not act. Words a person writes for the outside (a
+ * mandate's scope, a message to the public Grantmaker) take the signed-in
+ * session itself, so they are not tools, because a draft an agent wrote
+ * would be an agent's words leaving without redaction. What leaves with
+ * nobody acting is decided by the gate to outside's settings (Gates).
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { actingAsAssistant } from "../llm/assistant-acting.js";
-import { rawQuery } from "../db/client.js";
 import { requirePermission } from "../server/require-permission.js";
-import { commissionAction } from "../services/commission-service.js";
 import { inboundOverview } from "../services/inbound-service.js";
-import { owlsToMicroUsd } from "../services/owl.js";
 import {
   FUND_NODE_TOLD,
   OutwardError,
   PUBLIC_MANDATE_TOLD,
-  STANDING_CHOICES,
   TAKE_UP_TOLD,
   adoptRequest,
   adoptRequestFromBelow,
@@ -57,8 +49,6 @@ import {
   declineInPublic,
   fundPublicMandate,
   fundPublicNode,
-  keepCurrentOverview,
-  leaveOut,
   openPublicMandate,
   outwardLog,
   publicAccount,
@@ -67,15 +57,10 @@ import {
   raisePublicNode,
   readPublicConversation,
   sayToPublicGrantmaker,
-  setStandingChoice,
-  standingChoices,
-  takeBackLeaveOut,
   takeUpInPublic,
-  type StandingChoiceKey,
 } from "../services/outward-acts-service.js";
-import { ReportSendingError, SEND_REPORT_TOLD, reportsOverview, sendFacts, sendReport } from "../services/report-sending-service.js";
+import { REPORT_AT_GATE_TOLD, ReportSendingError, reportsOverview } from "../services/report-sending-service.js";
 import { DECLINE_REASONS } from "../services/request-take-up-service.js";
-import { ownOrganizationParty } from "../services/showing-service.js";
 import { actorOf } from "./outbound.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
@@ -130,21 +115,11 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
       summary: "Every act this deployment made on the public graph besides sending pages: who did it, what was sent, and what the public graph answered",
       description:
         "Each act is a call to a route any account on the public graph could call, made under the organization's account. The entry holds exactly " +
-        "what was sent. An act that nobody made in person names the standing choice it went under.",
+        "what was sent. An act that nobody made in person says it was the gate to outside, under its setting; older ones name the standing choice they went under.",
       querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 200 } } },
     },
     preHandler: signedIn,
     handler: async (request, reply) => reply.send({ acts: await outwardLog({ limit: request.query.limit }) }),
-  });
-
-  app.get("/outside/choices", {
-    schema: {
-      tags: TAG,
-      summary: "The deployment's standing choices about what goes to the public graph with nobody acting, each with what it shows outside",
-      description: "Each choice is on or off, says in full what it shows outside, and names who set it and when.",
-    },
-    preHandler: signedIn,
-    handler: async (_request, reply) => reply.send({ choices: await standingChoices() }),
   });
 
   app.get<{ Querystring: { node_id?: string; limit?: number } }>("/outside/requests", {
@@ -176,26 +151,11 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => reply.send(await inboundOverview({ nodeId: request.query.node_id })),
   });
 
-  app.get("/outside/keep-current", {
-    schema: {
-      tags: TAG,
-      summary: "Keeping the public versions of nodes current: the setting as it stands, what has been asked of the public graph, and what was not, with why",
-      description:
-        "When a version of a public node changes here, the deployment can ask a public mandate the organization funds for a fresh public assessment " +
-        "of the node. This says whether that is on, whether anything pays for it, the changed versions at labels you read with what became of " +
-        "each, and the mandates and nodes left out.",
-    },
-    preHandler: signedIn,
-    handler: async (_request, reply) => reply.send(await keepCurrentOverview()),
-  });
-
   app.get<{ Querystring: { limit?: number } }>("/outside/reports", {
     schema: {
       tags: TAG,
-      summary: "The agents' reports of problems written at labels you read: what each is about, its facts, its words as written and as they would go to Minerval's maintainers, and what came back",
-      description:
-        "A report stays in this deployment unless a person sends it on. Audit's triage says whether it is about Minerval's machinery or about this " +
-        "deployment, and only the first kind is offered for sending, after a Redactor's pass over the agent's words.",
+      summary: "The agents' reports of problems written at labels you read: what each is about, its facts, its words as written, where it stands at the gate to outside, and what came back",
+      description: REPORT_AT_GATE_TOLD,
       querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 200 } } },
     },
     preHandler: signedIn,
@@ -211,57 +171,6 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: [app.authenticate, app.requireUser, requirePermission(acts)],
     handler: async (request, reply) => tried(reply, () => readPublicConversation(request.params.conversation_id)),
-  });
-
-  // ---- standing choices ----
-
-  app.put<{ Params: { key: string }; Body: { on: boolean; public_mandate_id?: string | null; delay_hours?: number; batch_hours?: number } }>("/outside/choices/:key", {
-    schema: {
-      tags: TAG,
-      summary: "Turn a standing choice on or off (from a signed-in session, by a person who could do each act it covers)",
-      description:
-        "What the choice shows outside is returned by GET /outside/choices and stored with the choice as it read when you made it. For " +
-        "keep_public_current, public_mandate_id names the public mandate that is asked, delay_hours waits that long after a version changes, and " +
-        "batch_hours sends what is due together at that interval.",
-      params: { type: "object", required: ["key"], properties: { key: { type: "string", enum: Object.keys(STANDING_CHOICES) } } },
-      body: {
-        type: "object",
-        required: ["on"],
-        properties: {
-          on: { type: "boolean" },
-          public_mandate_id: { type: "string", format: "uuid", nullable: true },
-          delay_hours: { type: "number", minimum: 0, maximum: 2160 },
-          batch_hours: { type: "number", minimum: 0, maximum: 2160 },
-        },
-      },
-    },
-    preHandler: [app.authenticate, app.requireSession, app.requireUser],
-    handler: async (request, reply) => {
-      const key = request.params.key as StandingChoiceKey;
-      const actor = await actorOf(request);
-      // Whoever sets a choice must be able to do each act it covers.
-      const own = key === "send_redacted_reports" ? await ownOrganizationParty() : null;
-      const may =
-        key === "send_redacted_reports"
-          ? own !== null && actor.releaseParties.includes(own.id)
-          : key === "send_failure_facts"
-            ? actor.direct
-            : actor.holding.includes(acts);
-      if (!may) {
-        return reply.code(403).send({
-          error:
-            key === "send_redacted_reports"
-              ? "This choice sends words written at a label without anyone reading them first, so it takes release for the organization's own material."
-              : key === "send_failure_facts"
-                ? "This choice takes the permission to direct the graph."
-                : `This choice takes the ${acts} permission, which is what acting on the public graph in the organization's name takes here.`,
-          code: "PERMISSION_REQUIRED",
-        });
-      }
-      return tried(reply, () =>
-        setStandingChoice({ key, on: request.body.on, publicMandateId: request.body.public_mandate_id, delayHours: request.body.delay_hours, batchHours: request.body.batch_hours, actor })
-      );
-    },
   });
 
   // ---- public requests ----
@@ -302,7 +211,7 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Params: { adoption_id: string } }>("/outside/requests/adopted/:adoption_id/take-up", {
     schema: {
       tags: TAG,
-      summary: "Say on the public graph, in the organization's name, that this graph is taking a request up",
+      summary: "Have it said on the public graph, in the organization's name, that this graph is taking a request up: offered to the gate to outside",
       description: TAKE_UP_TOLD,
       params: { type: "object", required: ["adoption_id"], properties: { adoption_id: UUID } },
     },
@@ -310,19 +219,22 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => tried(reply, async () => takeUpInPublic({ adoptionId: request.params.adoption_id, actor: await actorOf(request) })),
   });
 
-  app.post<{ Params: { adoption_id: string }; Body: { reason: string } }>("/outside/requests/adopted/:adoption_id/decline", {
+  app.post<{ Params: { adoption_id: string }; Body: { reason: string; note?: string } }>("/outside/requests/adopted/:adoption_id/decline", {
     schema: {
       tags: TAG,
-      summary: "Say on the public graph that this graph will not do work it said it was taking up, with a reason from a fixed list",
+      summary: "Decline a request taken up from the public graph, with a reason from a fixed list, and have that said on the public graph: offered to the gate to outside",
       description:
-        "A refusal is a complete answer to a request and stays on its public record beside the statement that it was taken up. The reason is one of: " +
+        "A refusal is a complete answer to a request and is part of its public record. The request here is closed as declined, and that the " +
+        "work will not be done goes to the gate to outside with the reason, which is one of: " +
         Object.entries(DECLINE_REASONS).map(([k, v]) => `${k} (${v})`).join("; ") +
-        ". It shows outside that the organization decided not to do this work, and the reason chosen.",
+        ". It goes under that gate's setting, like anything else from a label. It shows outside that the organization decided not to do this " +
+        "work, and the reason chosen. `note` is why, in your words, and stays in this deployment.",
       params: { type: "object", required: ["adoption_id"], properties: { adoption_id: UUID } },
-      body: { type: "object", required: ["reason"], properties: { reason: { type: "string", enum: Object.keys(DECLINE_REASONS) } } },
+      body: { type: "object", required: ["reason"], properties: { reason: { type: "string", enum: Object.keys(DECLINE_REASONS) }, note: { type: "string", maxLength: 2000 } } },
     },
     preHandler: byPerson,
-    handler: async (request, reply) => tried(reply, async () => declineInPublic({ adoptionId: request.params.adoption_id, reason: request.body.reason, actor: await actorOf(request) })),
+    handler: async (request, reply) =>
+      tried(reply, async () => declineInPublic({ adoptionId: request.params.adoption_id, reason: request.body.reason, note: request.body.note, actor: await actorOf(request) })),
   });
 
   // ---- public mandates and public owls ----
@@ -402,92 +314,7 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: byPerson,
     handler: async (request, reply) =>
-      tried(reply, async () => raisePublicNode({ nodeId: request.params.node_id, mandateId: request.body.mandate_id, by: { actor: await actorOf(request) } })),
+      tried(reply, async () => raisePublicNode({ nodeId: request.params.node_id, mandateId: request.body.mandate_id, actor: await actorOf(request) })),
   });
 
-  // ---- keeping the public version current: what is left out ----
-
-  app.post<{ Body: { mandate_id?: string; node_id?: string; label?: string } }>("/outside/keep-current/leave-out", {
-    schema: {
-      tags: TAG,
-      summary: "Leave a mandate's work, or one node, out of keeping public versions current (people who direct the graph, from a signed-in session)",
-      description:
-        "With mandate_id, nothing that mandate pays for is passed on to the public graph; with node_id as well, that node alone. With node_id " +
-        "alone, the node is left out whoever pays, and label says which label the record is kept at. Which nodes are left out says which are " +
-        "worked on, so the record is kept at the mandate's label or the one you name.",
-      body: { type: "object", properties: { mandate_id: UUID, node_id: UUID, label: { type: "string", minLength: 1, maxLength: 100 } } },
-    },
-    preHandler: inSession("direct"),
-    handler: async (request, reply) =>
-      tried(reply, async () => leaveOut({ grantId: request.body.mandate_id, nodeId: request.body.node_id, label: request.body.label, actor: await actorOf(request) }), true),
-  });
-
-  app.delete<{ Params: { id: string } }>("/outside/keep-current/leave-out/:id", {
-    schema: {
-      tags: TAG,
-      summary: "Take back a leaving-out (people who direct the graph, from a signed-in session)",
-      params: { type: "object", required: ["id"], properties: { id: UUID } },
-    },
-    preHandler: inSession("direct"),
-    handler: async (request, reply) => tried(reply, () => takeBackLeaveOut({ id: request.params.id })),
-  });
-
-  // ---- agents' reports ----
-
-  app.post<{ Params: { sending_id: string } }>("/outside/reports/:sending_id/send", {
-    schema: {
-      tags: TAG,
-      summary: "Send an agent's report, as redacted, to Minerval's maintainers",
-      description: SEND_REPORT_TOLD,
-      params: { type: "object", required: ["sending_id"], properties: { sending_id: UUID } },
-    },
-    preHandler: [app.authenticate, app.requireUser, requirePermission("release"), personPresent],
-    handler: async (request, reply) => tried(reply, async () => sendReport({ sendingId: request.params.sending_id, by: { actor: await actorOf(request) } })),
-  });
-
-  app.post<{ Params: { sending_id: string } }>("/outside/reports/:sending_id/send-facts", {
-    schema: {
-      tags: TAG,
-      summary: "Send the facts of a tool failure to Minerval's maintainers, without any of the agent's words",
-      description: STANDING_CHOICES.send_failure_facts.told.replace(/^When one of your graph's agents reports that a tool failed and Audit finds the report to be about Minerval's machinery, your graph sends/, "This sends"),
-      params: { type: "object", required: ["sending_id"], properties: { sending_id: UUID } },
-    },
-    preHandler: [app.authenticate, app.requireUser, requirePermission("direct"), personPresent],
-    handler: async (request, reply) => tried(reply, async () => sendFacts({ sendingId: request.params.sending_id, by: { actor: await actorOf(request) } })),
-  });
-
-  // ---- paying ----
-
-  app.post<{ Params: { action_id: string }; Body: { owls: number } }>("/outside/work/:action_id/commission", {
-    schema: {
-      tags: TAG,
-      summary: "Pay for the redaction of a report offered for sending",
-      description:
-        "It is a run on the ledger that happens when it is paid for. You set its budget in owls and pay it whole; what the run does not spend " +
-        "comes back. Paying buys the work, not what it finds or removes.",
-      params: { type: "object", required: ["action_id"], properties: { action_id: UUID } },
-      body: { type: "object", required: ["owls"], properties: { owls: { type: "number", exclusiveMinimum: 0 } } },
-    },
-    preHandler: [...signedIn, requirePermission("fund")],
-    handler: async (request, reply) => {
-      const [action] = await rawQuery<{ id: string; kind: string; status: string }>(`SELECT id, kind, status FROM actions WHERE id = $1 AND kind = 'redact_report'`, [
-        request.params.action_id,
-      ]);
-      if (!action) return reply.code(404).send({ error: "No such work is open at a label you read.", code: "NOT_FOUND" });
-      if (action.status !== "open") return reply.code(409).send({ error: "This work is not waiting to be paid for.", code: "NOTHING_OPEN" });
-      const result = await commissionAction({
-        payer: { kind: "user", userId: request.auth!.userId! },
-        actionId: action.id,
-        budgetMicroUsd: owlsToMicroUsd(request.body.owls),
-        reason: "A member commissioned it.",
-        commissionedBy: "person",
-      });
-      if (!result.ok) return reply.code(result.code === "INSUFFICIENT_OWLS" ? 402 : 400).send({ error: result.message, code: result.code });
-      return reply.send({
-        status: result.status,
-        work: "the redaction of the report",
-        ...(result.status === "already_commissioned" ? { note: "This work is already paid for; nothing was charged." } : {}),
-      });
-    },
-  });
 }

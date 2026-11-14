@@ -12,6 +12,7 @@
  * at the item's label, as their runs would call them.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { randomUUID } from "node:crypto";
 
 vi.mock("../../src/services/embedding-service.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/services/embedding-service.js")>()),
@@ -149,7 +150,7 @@ afterAll(async () => {
 
 describe("where a gate starts", () => {
   it("is the Redactor's decision for every kind, and open for the bare fact that a request was taken up and for a statement of the payer's own money", () => {
-    expect(STARTING_MODE).toEqual({ page: "redactor", answer: "redactor", taken_up: "open", funding: "redactor", mandate: "redactor", message: "redactor", petition: "redactor", statement: "open" });
+    expect(STARTING_MODE).toEqual({ page: "redactor", answer: "redactor", taken_up: "open", funding: "redactor", mandate: "redactor", message: "redactor", petition: "redactor", statement: "open", report: "person", proposal: "redactor" });
   });
 
   it("offers nothing where the destination already reads the label", async () => {
@@ -369,6 +370,33 @@ describe("a request asked at company and taken up at finance", () => {
     expect(await payersOfGateWork(third.item_id)).toEqual([]);
     expect((await atCompany(() => getRequest(id.asked!)))!.work.some((w) => w.summary.includes("A third statement settled it."))).toBe(true);
     await setGateMode({ boundaryId: id.gate!, kind: "answer", mode: "redactor", actor: admin });
+  });
+});
+
+describe("an answer that rests on another party's material", () => {
+  it("is that party's to release as well: its findings wait on the party's own setting, and its holder of release lets them through", async () => {
+    const [acme] = await everyRow<{ id: string }>(`INSERT INTO parties (name, is_own_organization) VALUES ($1, false) RETURNING id`, [`A supplier ${randomUUID().slice(0, 8)}`]);
+    const supplier: GateActor = { id: await seedUser(), holding: ["release for the supplier"], clearance: [FINANCE, COMPANY, "public"], releaseParties: [acme!.id], direct: false };
+    // The supplier's own setting for answers at this gate: a person decides as well.
+    const theirSetting = await setGateMode({ boundaryId: id.gate!, kind: "answer", partyId: acme!.id, mode: "person", actor: { ...supplier, administer: false } });
+    const asked = (await at(COMPANY, () => fileRequest({ ask: "What did the supplier's audit find?", why: "It bears on the reserve.", satisfiedBy: "The audit's finding.", claimIds: [id.node!], filer: { kind: "admin", agent: "claim_steward" } }))).id;
+    const above = (await at(FINANCE, () => takeUpFromBelow({ requestId: asked }, { filer: { kind: "admin", agent: "claim_steward" } }))).request_id;
+    // The request at finance bears on a document that is the supplier's.
+    const doc = await attachSource(id.node!, FINANCE, "The supplier's audit report.");
+    await everyRow(`UPDATE sources SET party_id = $2 WHERE id = $1`, [doc.source, acme!.id]);
+    await at(FINANCE, () => rawQuery(`INSERT INTO request_targets (request_id, source_id) VALUES ($1, $2)`, [above, doc.source]));
+    await at(FINANCE, () => recordWork({ requestId: above, byLabel: "Researcher", outcome: "met", summary: "The audit found two lapses.", fundedByJobId: id.mandateJob! }));
+    const offered = (await at(FINANCE, () => gateItemFor({ kind: "answer", subjectRef: above, toLabel: COMPANY })))!;
+    await finishAndPass(offered.item_id);
+    // What rests on the organization alone went with the Redactor's decision; the finding waits for the supplier's holder.
+    const theirs = (await gateQueue(supplier, { kind: "answer" })) as { items: any[] };
+    expect(theirs.items.filter((i) => i.item_id === offered.item_id).map((i) => i.kind)).toEqual(["a paragraph of what the work found"]);
+    const ours = (await gateQueue(orgHolder, { kind: "answer" })) as { items: any[] };
+    expect(ours.items.filter((i) => i.item_id === offered.item_id)).toEqual([]);
+    expect((await atCompany(() => getRequest(asked)))!.work.some((w) => w.summary.includes("The audit found two lapses."))).toBe(false);
+    await decideAtGate({ actor: supplier, partyId: acme!.id, items: [{ item_id: offered.item_id }], decision: "approve" });
+    expect((await atCompany(() => getRequest(asked)))!.work.some((w) => w.summary.includes("The audit found two lapses."))).toBe(true);
+    expect(await endGateSetting({ settingId: theirSetting.setting_id, actor: { ...supplier, administer: false } })).toEqual({ changed: true });
   });
 });
 

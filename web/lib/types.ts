@@ -983,6 +983,16 @@ export interface RequestItem {
     published_page_id: string | null;
     node_id: string | null;
   }[];
+  // Where the request was addressed to a mandate another graph published
+  // here: the mandate, its publisher, and where the request stands with it.
+  addressed_to_mandate?: {
+    face_id: string;
+    name: string;
+    publisher: { account_id: string; name: string };
+    withdrawn: boolean;
+    stands: string;
+    in_words: string;
+  };
 }
 
 export interface SearchResultItem {
