@@ -50,6 +50,7 @@ import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 const GRAPH_FEED_PER_RUN = 60;
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
+import { STANDING_ORDER_RETRY_MINUTES } from "../../services/standing-order-service.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -520,12 +521,23 @@ async function runLookoutImpl(input: {
       : "") +
     `### Your brief\n\n${lookout.brief}\n\n` +
     `### Your delegated bounds\n\n` +
+    `These are the figures your Grantmaker set when it posted you, and the ones you are held to. Where your ` +
+    `brief names a different figure (a daily allowance, another amount), these govern.\n\n` +
     (Number(lookout.commission_limit_micro_usd ?? 0) > 0
-      ? `- You may commission work yourself up to ${Number(lookout.commission_limit_micro_usd ?? 0) / 1_000_000} owls an item ` +
-        `(name budget_owls); anything above that, or without a budget, goes to the mandate's program officers.\n`
-      : `- Everything you raise goes to the mandate's program officers, who decide under its operating policy.\n`) +
+      ? `- You may commission work yourself up to ${Number(lookout.commission_limit_micro_usd ?? 0) / 1_000_000} owls for ` +
+        `each item (name budget_owls). This is a per-item limit, not a daily one: you have no allowance per day ` +
+        `of your own, and what you commission comes out of the mandate's pace like the rest of its work, so a ` +
+        `commission the pace or the escrow has no room for goes to the officers instead. Anything above the limit, or raised ` +
+        `without a budget, goes to the mandate's program officers, who weigh it against everything else the ` +
+        `mandate could buy; the limit exists so that larger calls on the funder's money get that weighing.\n`
+      : `- Your commission limit is 0: everything you raise goes to the mandate's program officers, who decide ` +
+        `under its operating policy. Your Grantmaker kept every spending decision for them.\n`) +
     `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
-    `- Heartbeat: ${lookout.heartbeat_hours > 0 ? `every ${lookout.heartbeat_hours}h` : "none (event-driven)"}; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
+    `- Heartbeat: ${
+      lookout.heartbeat_hours > 0
+        ? `every ${lookout.heartbeat_hours}h (a run opens within about ${STANDING_ORDER_RETRY_MINUTES} minutes of falling due)`
+        : "none (event-driven)"
+    }; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
     `### Inputs queued for this run\n\n${eventsText}\n\n` +
     (graphFeed
       ? `### What changed in your territory since your last run (${graphFeed.changes.length} entries)\n\n${graphFeedText}\n\n`

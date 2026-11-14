@@ -73,7 +73,7 @@ describe("entitlement & spend checks", () => {
     expect(e.owlBalance).toBe(5);
     expect(e.owlBalanceMicroUsd).toBe(5_000_000);
     expect(e.capsOwls.claim_proposal).toBe(2);
-    expect(e.capsOwls.source_ingest).toBe(0.1);
+    expect(e.capsOwls.source_ingest).toBe(10);
   });
 
   it("serializes the wire shape in owls", async () => {
@@ -85,7 +85,7 @@ describe("entitlement & spend checks", () => {
     expect(wire.owl_cost_micro_usd).toBe(1_000_000);
     expect(wire.caps_owls.assessment).toBe(2);
     expect(wire.credits_enabled).toBe(false);
-    expect(wire.signup_grant_owls).toBe(5);
+    expect(wire.signup_grant_owls).toBe(10);
     expect(wire.monthly_grant_owls).toBe(1);
   });
 
@@ -107,7 +107,9 @@ describe("entitlement & spend checks", () => {
   it("prices fractional ops against the same balance", async () => {
     mocks.getOwlBalanceMicroUsd.mockResolvedValue(400_000); // 0.1 owl
     const svc = await loadBillingService(undefined);
-    expect((await svc.checkSpend("u-1", "source_ingest")).allowed).toBe(true);
+    expect((await svc.checkSpend("u-1", "text_analysis")).allowed).toBe(true);
+    // A source's cap is a ceiling held from the balance while it is read.
+    expect((await svc.checkSpend("u-1", "source_ingest")).allowed).toBe(false);
     expect((await svc.checkSpend("u-1", "claim_proposal")).allowed).toBe(false);
   });
 });

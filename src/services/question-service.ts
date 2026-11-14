@@ -331,6 +331,8 @@ export interface QuestionAssessmentView {
   summary: string | null;
   reasoning_trace: string;
   model: string | null;
+  /** The run that wrote it (get_run). */
+  run_id: string | null;
   assessed_at: Date;
   favored_ids: string[];
 }
@@ -374,7 +376,7 @@ export async function getCurrentStanding(claimId: string): Promise<QuestionStand
 export async function getQuestionDetail(claimId: string): Promise<QuestionDetailView> {
   const [current, children, relations, dependedOnBy, instances] = await Promise.all([
     rawQuery<QuestionAssessmentView & { incomplete: string | null }>(
-      `SELECT id, standing, summary, reasoning_trace, model, assessed_at,
+      `SELECT id, standing, summary, reasoning_trace, model, run_id, assessed_at,
               favored_claim_ids::text[] AS favored_ids, incomplete
          FROM question_assessments_in_force WHERE claim_id = $1`,
       [claimId]
@@ -452,6 +454,7 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
           summary: cur.summary,
           reasoning_trace: cur.reasoning_trace,
           model: cur.model,
+          run_id: cur.run_id ?? null,
           assessed_at: cur.assessed_at,
           // An answer removed since the assessment no longer counts as favored.
           favored_ids: cur.favored_ids.filter((id) => answerSet.has(id)),

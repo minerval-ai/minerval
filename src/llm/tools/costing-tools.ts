@@ -22,7 +22,6 @@ import {
 import { CONSISTENCY_SWEEP_MIN_NODES, consistencySweepPrice } from "../../services/action-service.js";
 import { getEffectiveAllocationPolicy } from "../../services/allocation-policy-service.js";
 import { reviewCostEstimateMicroUsd } from "../../services/contribution-service.js";
-import { capMicroUsd } from "../../services/owl.js";
 import { modelForTier, RESEARCH_MODEL_TIERS } from "../../services/research-run-service.js";
 import { elicitConfigured } from "./elicit-tools.js";
 import { providerClearedHere } from "../provider-clearance.js";
@@ -69,7 +68,7 @@ async function ledgerPriorMicroUsd(kind: string, variant: string): Promise<numbe
       return variant === "strong" ? tiers.strongMicroUsd : tiers.standardMicroUsd;
     }
     case "ingest":
-      return capMicroUsd("source_ingest");
+      return estimateLedgerKindCostMicroUsd("ingest");
     case "formalize":
       return Math.round(policy.est_formalize_cost_owls * owl);
     case "attempt_proof":
@@ -243,9 +242,12 @@ const executeCostSheet: SkillToolExecutor = async () => {
     ledger_work: ledger,
     paid_tools: paidTools,
     note:
-      "USD of metered spend, one owl each. A research run's cost is mostly its model's calls; " +
-      "paid tools are charged on top, per call or per word. Price a budget from the steps at the " +
-      "ceiling figures, and add room for what you cannot foresee.",
+      "USD of metered spend, one owl each. Every figure is what past runs spent while held to the " +
+      "budgets they were given, so it trails what work needs: read ceiling_usd as a floor for a " +
+      "budget, not a target. A first pass on a node the graph holds no sources for, or on a story " +
+      "still unfolding, usually needs $3 to $5 at the standard tier. A research run's cost is mostly " +
+      "its model's calls; paid tools are charged on top, per call or per word. Price a budget from " +
+      "the steps, and add room for what you cannot foresee: what a run does not spend comes back.",
   });
 };
 

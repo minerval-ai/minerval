@@ -10,7 +10,7 @@
  * budget floor the job PAUSES with a progress checkpoint and waits for a
  * top-up — it never silently dies mid-run (src/workers/budget-job-pipeline.ts).
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, type BudgetJob } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
@@ -252,6 +252,23 @@ export async function getJobContributions(
     userId: r.user_id,
     heldMicroUsd: Number(r.held),
   }));
+}
+
+/**
+ * How many people have put owls behind each of these jobs: the length of
+ * getJobContributions for each, in one statement. A job no one has backed
+ * is absent from the map.
+ */
+export async function getJobContributorCounts(jobIds: string[]): Promise<Map<string, number>> {
+  if (jobIds.length === 0) return new Map();
+  const rows = await rawQuery<{ job_id: string; n: string | number }>(
+    `SELECT job_id, count(DISTINCT user_id) AS n
+       FROM owl_ledger
+      WHERE job_id = ANY($1::uuid[]) AND reason = 'escrow_hold'
+      GROUP BY job_id`,
+    [jobIds]
+  );
+  return new Map(rows.map((r) => [r.job_id, Number(r.n)]));
 }
 
 /** A job's budget less its metered spend, in micro-USD (0 for no such job). */
@@ -536,15 +553,20 @@ export async function cancelBudgetJob(input: {
 
 export async function listBudgetJobs(
   userId: string,
-  limit = 50
+  limit = 50,
+  opts: { offset?: number; kind?: string; status?: string } = {}
 ): Promise<BudgetJob[]> {
   const db = getDb();
+  const conditions = [eq(budgetJobs.userId, userId)];
+  if (opts.kind) conditions.push(eq(budgetJobs.kind, opts.kind));
+  if (opts.status) conditions.push(eq(budgetJobs.status, opts.status));
   return db
     .select()
     .from(budgetJobs)
-    .where(eq(budgetJobs.userId, userId))
+    .where(and(...conditions))
     .orderBy(desc(budgetJobs.createdAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, opts.offset ?? 0));
 }
 
 export async function getBudgetJob(jobId: string): Promise<BudgetJob | null> {

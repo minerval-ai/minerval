@@ -115,8 +115,9 @@ export async function recordEstimate(input: {
         input.trigger ?? null,
         input.triggerContext ?? null,
         input.marginalYield ?? null,
-        // The run that wrote it, and the label it writes at (src/labels.ts),
-        // both stamped from the usage context.
+        // The run that wrote it, as on assessments (a reader opens it on the
+        // run log), and the label it writes at (src/labels.ts), both stamped
+        // from the usage context.
         getUsageContext().runId ?? null,
         currentLabel(),
       ]
@@ -258,6 +259,8 @@ export interface QuantityAssessedView {
   summary: string | null;
   work: string;
   model: string | null;
+  /** The run that wrote it (get_run); null on estimates from before runs were recorded on them. */
+  run_id: string | null;
   assessed_at: Date;
 }
 
@@ -320,7 +323,7 @@ export async function getCurrentEstimate(
   claimId: string
 ): Promise<{ estimate: QuantityEstimate; assessed: QuantityAssessedView } | null> {
   const [row] = await rawQuery<{ estimate: QuantityEstimate } & QuantityAssessedView>(
-    `SELECT id, estimate, summary, work, model, assessed_at
+    `SELECT id, estimate, summary, work, model, run_id, assessed_at
        FROM quantity_estimates_in_force WHERE claim_id = $1`,
     [claimId]
   );

@@ -780,6 +780,15 @@ export interface GrantMandateView {
   expected_cost_owls: number;
   expected_cost_usd: number;
   notes: string | null;
+  /** What the funder must read before funding; funding is refused until they are acknowledged. */
+  warnings?: MandateWarningView[];
+}
+
+export interface MandateWarningView {
+  id: string;
+  about: string;
+  text: string;
+  raised_by: "grantmaker" | "platform";
 }
 
 export interface GrantConversationView {
@@ -836,13 +845,36 @@ export async function continueGrantConversation(
 export async function fundGrantConversation(
   externalId: string,
   conversationId: string,
-  budgetOwls: number
+  budgetOwls: number,
+  acknowledgeWarnings?: boolean | string[]
 ): Promise<{ grant_id: string; conversation: { id: string; status: string } }> {
   return accountFetch(`/grant-conversations/${pathSegment(conversationId)}/fund`, {
     method: "POST",
-    body: { budget_owls: budgetOwls },
+    body: {
+      budget_owls: budgetOwls,
+      ...(acknowledgeWarnings !== undefined ? { acknowledge_warnings: acknowledgeWarnings } : {}),
+    },
     actingUser: externalId,
   });
+}
+
+/** A granting conversation as a list shows it: no messages, its draft's title. */
+export interface GrantConversationSummary {
+  id: string;
+  status: GrantConversationView["status"];
+  title: string | null;
+  message_count: number;
+  turn: { state: "replying" | "idle" | "failed" };
+  grant_id: string | null;
+  updated_at: string;
+}
+
+/** The user's conversations with Grantmakers, newest first. */
+export async function listGrantConversations(externalId: string): Promise<GrantConversationSummary[]> {
+  const r = await accountFetch<{ conversations: GrantConversationSummary[] }>("/grant-conversations", {
+    actingUser: externalId,
+  });
+  return r.conversations;
 }
 
 export async function getGrantConversation(
@@ -882,6 +914,11 @@ export interface MandatePipelineRow {
   title: string | null;
   ingested_at: string | null;
   extraction_status: string | null;
+  /** queued (waiting its turn), extracting, done or failed; null with no extraction. */
+  extraction_stage?: "queued" | "extracting" | "done" | "failed" | null;
+  extraction_started_at?: string | null;
+  /** For a queued extraction, about how many are waiting ahead of it. */
+  extraction_queued_ahead?: number | null;
   claims_linked: number;
   claims_assessed: number;
   avg_importance: number | null;
@@ -992,6 +1029,9 @@ export interface MandateDetailView extends MandateSummaryView {
     /** sweep items: a topic tag's slug, or "residual". */
     partition?: string;
     rationale: string;
+    /** A standing order's tier and budget, when its author named them. */
+    variant?: "standard" | "strong" | "max";
+    budget_owls?: number;
     state: "done" | "current" | "queued" | "waiting" | "blocked" | "cancelled";
     /** The item's ledger standing; null before its first materialization. */
     ledger: {
@@ -1000,9 +1040,30 @@ export interface MandateDetailView extends MandateSummaryView {
       action_id?: string;
       exclusion_group?: string;
       checked_at: string;
+      /** The commission a standing order placed, once it has. */
+      order?: { budget_owls: number; tier: "standard" | "strong"; placed_at: string };
     } | null;
   }>;
   contributors: Array<{ name: string; owls: number; is_manager: boolean }>;
+  // Every kind of work the mandate has paid for, counted whole; absent from
+  // an older API, as are the five fields after it.
+  work_counts?: MandateWorkCounts | null;
+  findings?: Array<{ id: string; headline: string; importance: number; first_noted_at: string | null }>;
+  grantmaker?: GrantmakerStanding | null;
+  /** Its Grantmaker's latest sittings on the run log, newest first. */
+  sittings?: Array<{
+    run_id: string;
+    started_at: string;
+    finished_at: string | null;
+    outcome: string | null;
+    steps: number;
+    public: boolean;
+  }>;
+  updates_total?: number;
+  direction?: { text: string; at: string | null } | null;
+  platform_faults?: Array<{ reason: string; since: string; waiting_rows: number }>;
+  /** Set only for the manager: what its Grantmaker has asked of them, newest first. */
+  funder_notes?: Array<{ at: string; note: string }>;
   funded_assessments: Array<{
     claim_id: string;
     text: string;
@@ -1022,6 +1083,113 @@ export interface MandateDetailView extends MandateSummaryView {
   // mandate, and until the API serves them.
   prizes: MandatePrizesView | null;
   attempts: AttemptSummary[];
+}
+
+/** A mandate's completed work, counted whole by kind. */
+export interface MandateWorkCounts {
+  assessments: { nodes: number; claims: number; questions: number; quantities: number; passes: number };
+  sources: number;
+  requests: number;
+  research: number;
+  proposals: number;
+  findings: number;
+}
+
+/** Whether a mandate's Grantmaker is at work or waiting, and on what. */
+export interface GrantmakerStanding {
+  state: "working" | "waiting" | "none";
+  check_in_at: string | null;
+  runs_awaited: number;
+  nodes_watched: number;
+  spend_threshold: boolean;
+}
+
+export type MandateWorkKind = "assessments" | "sources" | "requests" | "research" | "proposals";
+
+export interface MandateAssessedNode {
+  claim_id: string;
+  node_kind: "claim" | "question" | "quantity";
+  text: string;
+  verdict: string | null;
+  confidence: number | null;
+  importance: number | null;
+  assessed_at: string | null;
+  passes: number;
+}
+export interface MandateRequestWork {
+  request_id: string;
+  ask: string;
+  state: string;
+  by: string;
+  outcome: string | null;
+  summary: string;
+  budget_owls: number | null;
+  at: string | null;
+  runs: number;
+}
+export interface MandateResearchRun {
+  id: string;
+  run_id: string | null;
+  claim_id: string | null;
+  request_id: string | null;
+  task: string;
+  status: string;
+  spent_owls: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+}
+export interface MandateProposalRow {
+  contribution_id: string;
+  claim_id: string | null;
+  type: string;
+  text: string;
+  review_status: string;
+  submitted_at: string | null;
+}
+export interface MandateWorkPage<T = unknown> {
+  kind: MandateWorkKind;
+  total: number;
+  items: T[];
+}
+
+/** One page of one kind of a mandate's completed work; null when it cannot be read. */
+export async function fetchMandateWork<T = unknown>(
+  mandateId: string,
+  opts: { kind: MandateWorkKind; node?: string; order?: string; offset?: number; limit?: number },
+  externalId?: string | null
+): Promise<MandateWorkPage<T> | null> {
+  const params = new URLSearchParams({ kind: opts.kind });
+  if (opts.node) params.set("node", opts.node);
+  if (opts.order) params.set("order", opts.order);
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  try {
+    return await accountFetch<MandateWorkPage<T>>(
+      `/mandates/${pathSegment(mandateId)}/work?${params}`,
+      externalId ? { actingUser: externalId } : {}
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** A mandate's Grantmaker's kept updates, newest first. */
+export async function fetchMandateUpdates(
+  mandateId: string,
+  opts: { offset?: number; limit?: number } = {},
+  externalId?: string | null
+): Promise<{ total: number; updates: Array<{ at: string; note: string }> }> {
+  const params = new URLSearchParams();
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  try {
+    return await accountFetch(
+      `/mandates/${pathSegment(mandateId)}/updates${params.size > 0 ? `?${params}` : ""}`,
+      externalId ? { actingUser: externalId } : {}
+    );
+  } catch {
+    return { total: 0, updates: [] };
+  }
 }
 
 // All derived and none stored (§8.1), in owls at cost: the escrow, what is
@@ -1049,16 +1217,57 @@ export interface MandatePrizesView {
 }
 
 export async function listMandates(): Promise<MandateSummaryView[]> {
-  const r = await accountFetch<{ mandates: MandateSummaryView[] }>("/mandates");
+  // Every field of each row: the API answers a short row by default.
+  const r = await accountFetch<{ mandates: MandateSummaryView[] }>("/mandates?detail=full");
   return r.mandates;
+}
+
+export type MandateScope = "all" | "platform" | "mine";
+export type MandateListState = "live" | "any" | "active" | "paused" | "finished" | "needs_you";
+export type MandateOrder = "budget" | "recent" | "newest" | "backers" | "needs_you";
+
+export interface MandateListRow extends MandateSummaryView {
+  budget_status: string;
+  updated_at: string | null;
+  assessments: number;
+  needs_you?: boolean;
+}
+
+export interface MandateListPage {
+  mandates: MandateListRow[];
+  total: number;
+  states: Record<MandateListState, number>;
+  scopes: { all: number; platform: number; mine: number | null };
+}
+
+/** One page of the list of mandates, with the counts its tabs and filters show. */
+export async function fetchMandatesPage(
+  opts: { scope?: MandateScope; state?: MandateListState; q?: string; order?: MandateOrder; offset?: number; limit?: number },
+  externalId?: string | null
+): Promise<MandateListPage> {
+  const params = new URLSearchParams();
+  if (opts.scope) params.set("scope", opts.scope);
+  if (opts.state) params.set("state", opts.state);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.order) params.set("order", opts.order);
+  if (opts.offset) params.set("offset", String(opts.offset));
+  if (opts.limit) params.set("limit", String(opts.limit));
+  // Every field of each row: the API answers a short row by default.
+  params.set("detail", "full");
+  return accountFetch<MandateListPage>(
+    `/mandates${params.size > 0 ? `?${params}` : ""}`,
+    externalId ? { actingUser: externalId } : {}
+  );
 }
 
 export async function fetchMandateView(
   mandateId: string,
   externalId?: string | null
 ): Promise<MandateDetailView> {
+  // The whole mandate, as the page renders it: the API answers a summary by
+  // default (the plan a page at a time, other lists cut short).
   const r = await accountFetch<{ mandate: MandateDetailView }>(
-    `/mandates/${pathSegment(mandateId)}`,
+    `/mandates/${pathSegment(mandateId)}?detail=full`,
     externalId ? { actingUser: externalId } : {}
   );
   return {

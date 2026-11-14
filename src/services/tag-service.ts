@@ -28,6 +28,7 @@ import { generateEmbedding } from "./embedding-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { layered, oneTagForSlugSql, taggedWithSql } from "./layer-service.js";
 import { overlaid } from "./overlay-service.js";
+import { currentTaggingLaneWait, type TaggingLaneWait } from "./tagging-lane.js";
 
 /**
  * Cosine similarity above which a proposed tag is the same topic as an
@@ -720,22 +721,34 @@ export async function resetClaimTagging(claimIds: string[]): Promise<number> {
   return rows.length;
 }
 
-/** Queue depth for /queue and the scheduler's log line. */
+/**
+ * The tagging lane for /queue and /monitors: its depth, and its wait when it
+ * is waiting. `waiting` is null unless the lane is holding off right now: on
+ * a platform fault (credits_fault, credentials_fault, provider_unavailable)
+ * or on the platform's spend breaker (spend_breaker), with since when and
+ * when it tries a claim next (services/tagging-lane.ts). Pending claims with
+ * `waiting` null are simply queued.
+ */
 export async function taggingQueueHealth(): Promise<{
   pending: number;
   parked: number;
   tagged: number;
+  waiting: TaggingLaneWait | null;
 }> {
-  const [row] = await rawQuery<{ pending: number; parked: number; tagged: number }>(
-    `SELECT
-       count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts < $1)::int AS pending,
-       count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts >= $1)::int AS parked,
-       count(*) FILTER (WHERE tagged_at IS NOT NULL)::int AS tagged
-       FROM claims
-      WHERE state = 'active' AND merged_into IS NULL AND embedding IS NOT NULL`,
-    [MAX_TAGGING_ATTEMPTS]
-  );
-  return row ?? { pending: 0, parked: 0, tagged: 0 };
+  const [[row], waiting] = await Promise.all([
+    rawQuery<{ pending: number; parked: number; tagged: number }>(
+      `SELECT
+         count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts < $1)::int AS pending,
+         count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts >= $1)::int AS parked,
+         count(*) FILTER (WHERE tagged_at IS NOT NULL)::int AS tagged
+         FROM claims
+        WHERE state = 'active' AND merged_into IS NULL AND embedding IS NOT NULL`,
+      [MAX_TAGGING_ATTEMPTS]
+    ),
+    // The depth is still worth serving when the wait cannot be read.
+    currentTaggingLaneWait().catch(() => null),
+  ]);
+  return { ...(row ?? { pending: 0, parked: 0, tagged: 0 }), waiting };
 }
 
 /** Genuine failures before a claim parks out of the tagging drain. */

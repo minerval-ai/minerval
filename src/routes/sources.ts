@@ -92,20 +92,39 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
   // each claim Steward's reading, in that claim's voice. The source page's
   // body. Instances whose text is not in the stored document are listed
   // apart rather than placed by guess.
-  app.get<{ Params: { source_id: string } }>("/:source_id/document", {
+  app.get<{
+    Params: { source_id: string };
+    Querystring: { detail?: "summary" | "full"; offset?: number; limit?: number; with_text?: boolean };
+  }>("/:source_id/document", {
     schema: {
       tags: ["sources"],
       summary: "A source as annotated text: its structure, and the claims anchored to each passage",
+      description:
+        "A document can run to hundreds of passages, so by default its segments come a page at a " +
+        "time (offset, limit; `segment_count` is how many there are) with their text, and " +
+        "with_text=false leaves the text out for a map of the structure and its claims. " +
+        "detail=full is the whole document, as the source page renders it.",
       params: {
         type: "object",
         properties: { source_id: { type: "string", format: "uuid" } },
+      },
+      querystring: {
+        type: "object",
+        properties: {
+          detail: { type: "string", enum: ["summary", "full"], default: "summary" },
+          offset: { type: "integer", minimum: 0, default: 0, description: "The segment to start from (by order)." },
+          limit: { type: "integer", minimum: 1, maximum: 500, default: 60, description: "How many segments." },
+          with_text: { type: "boolean", default: true, description: "false to leave each passage's text out." },
+        },
       },
     },
     handler: async (request, reply) => {
       // Opening a source's own text is a permission of its own in a
       // members-only deployment (src/raw-sources.ts).
+      const q = request.query;
       const doc = await getSourceDocument(request.params.source_id, {
         rawSourceLabels: rawSourceLabelsOf(request.auth),
+        ...(q.detail === "full" ? {} : { offset: q.offset ?? 0, limit: q.limit ?? 60, withText: q.with_text ?? true }),
       });
       if (!doc) {
         return reply.code(404).send({

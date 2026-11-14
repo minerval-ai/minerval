@@ -3,8 +3,8 @@
  *
  * Every piece of graph work is an agent run, and a run happens when someone
  * commissions it: decides it is worth doing, sets the budget it should have
- * to be done properly (at the high end of what the costing skill says such
- * work costs), and pays that budget in full. The row runs as soon as it has
+ * to be done properly (what the work needs, with the costing skill's
+ * figures read as a floor), and pays that budget in full. The row runs as soon as it has
  * the commission, its agent is told the budget, and whatever the run does not
  * spend goes back to whoever paid when it settles (action-service.ts,
  * completeAction).

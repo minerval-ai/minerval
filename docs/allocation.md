@@ -47,11 +47,22 @@ judgment its agents make, never a keyword filter's. Every decision is
 logged with its reason (`mandate_decisions`) and shown on the mandate's
 page.
 
-Budgets are set at the high end of what work of that kind costs (the
-costing skill), because a run that has what it needs finishes the work and
-gives back the rest. When the work turns out to need more, its agent
-**petitions** the mandate paying for the run and gets the answer in its
-session, carrying on meanwhile. Neither a budget nor a petition is ever a verdict input: what a
+Budgets are set at what the work needs to be done properly (the costing
+skill), because a run that has what it needs finishes the work and gives
+back the rest. cost_sheet's figures are what past runs spent while held to
+their budgets, so they are read as a floor: a run told its budget is "the
+high end of what work like this usually costs, so most runs finish well
+inside it" economized, and the next estimate was built from those
+economized runs, so budgets ratcheted down (a standard Steward pass was
+priced at $0.85 in Nov 2026, with a median spend of $0.34 and the passes on
+a breaking story stopping short; see the FAA ground-stop mandate). A run is
+now told its budget is for doing the work properly and to use what the
+work needs. When the work turns out to need more, its agent
+**petitions** the mandate paying for the run, as soon as it sees that, and
+gets the answer in its session, carrying on meanwhile. The spend line after
+each turn counts the turns left only from 70% of the budget on, and the
+notice that most of the budget is spent comes at 70%, with what is left and
+the invitation to petition. Neither a budget nor a petition is ever a verdict input: what a
 mandate chose to pay for orders work and selects effort, and appears
 nowhere in an assessment.
 
@@ -155,7 +166,11 @@ mission would need:
 
 Every pass is metered to a budget; the refusal duties that govern mandate
 design govern review passes equally; the pass ends with a note recorded
-on the mandate's public page. Known gap, deliberately next: a bulk
+on the mandate's public page. The mandate keeps its latest hundred notes
+(`grants.mandate.updates`, with the newest also at `last_review`; `GET
+/mandates/:id/updates`, MCP `list_mandate_updates`), so a reader can go
+back through how it got where it is; older ones are in the run log.
+Known gap, deliberately next: a bulk
 ingestion primitive ("ingest what this listing/feed points to") so a
 discovered index becomes a program of work in one plan item instead of an
 enumeration.
@@ -176,13 +191,40 @@ the conversation intact until something it asked to be told of arrives
   escalated to a mandate with no live session, `openReviewsForEscalations`
   (src/services/mandate-event-service.ts, on the executor's tick) opens
   one at once rather than waiting for the sweep.
+- **The first sitting does not wait for the sweep.** Funding a mandate
+  (`fundConversationMandate`, `createGrant`, a decomposition, a regrant's
+  spawn) or approving its plan opens its first sitting at once
+  (`openMandateFirstSitting` in src/services/action-service.ts): the
+  planning row of a mandate being planned, the first review row of an
+  active one. The executor's next tick funds it (`fundGrantSelfActions`).
+  The scheduler's tick between sweeps (`openFirstSittings`,
+  `STANDING_ORDER_RETRY_MINUTES` apart) catches any mandate that has never
+  had one. On 2026-11-13 a breaking-news mandate funded at 21:25 sat at
+  21:31 only because a deploy restarted the process; without it, its
+  first sitting would have waited for the six-hourly sweep, a cadence
+  nobody had told the Grantmaker or the funder of.
 - **What wakes it.** A fresh session holds two standing subscriptions:
   what its officers escalate (`escalated` events on its mandate) and what
   its funder writes (an `inbox_item` that is a funder note). Beyond those
   it subscribes to what matters to its mission (the runs it commissioned
   settling, nodes or subtrees moving, money committed past a figure) and
   sets check-ins. A turn that ends with no check-in held gets one
-  `DEFAULT_CHECK_IN_HOURS` (24) out, which the briefing states.
+  `DEFAULT_CHECK_IN_HOURS` (24) out, which the briefing states, with the
+  advice to set check-ins to the pace of the story: hours apart for a
+  mandate whose horizon is hours or days.
+- **The first wave.** When a mandate's first sitting ends with work in
+  flight, its session gets one more subscription (`firstWaveSubscription`
+  in src/llm/agents/mandate-review.ts): a `work_settled` condition that
+  wakes it once, when nothing the mandate commissioned is waiting to run
+  or running and no plan item waits for its ingests
+  (`mandateWorkInFlight`). One wake for the wave rather than a
+  `run_settled` delivery per run: each wake is a paid sitting that
+  re-reads the conversation, and run-by-run outcomes are already in the
+  mandate's inbox, which the next sitting reads. The FAA mandate of
+  2026-11-13 set its next check-in five hours out and subscribed to
+  nothing about its first wave while the story moved; this is the default
+  that case wanted. A Grantmaker can ask for the same at any time
+  (`subscribe` with `when_work_settled`).
 - **Each wake is a sitting.** Resuming commissions a `resume` row from the
   mandate (`commissioned_by` `session_resume`) at the review-pass figure
   (below), so a sitting works to the same budget as a fresh pass. It reads
@@ -259,9 +301,8 @@ The briefing's budget line states the figure, whose it is (the policy's,
 with its reason, or the platform's default and why), that it is held
 against the pace while the pass runs, that the opening turn is paid
 from it, and how to add to it (src/llm/prompts/pass-budget.ts). The line
-other agents get, that a budget is "set at the high end of what work like
-this usually costs", is true of a commission budgeted from the costing
-skill and was never true of these passes, so they do not get it.
+other agents get, that a budget is "for doing this work properly", gives
+way to that basis here, since the figure is the mandate's own.
 
 The opening turn itself is not made cheaper here. Sittings are usually
 further apart than the provider's prompt cache lasts, so each reads its
@@ -373,6 +414,18 @@ turns on" is one shape; "the retraction record behind the nutrition
 literature" or "new work on X" are others. Which happenings fall under
 the brief is the lookout's judgment, never a keyword filter's.
 
+**Limits are the stored fields, not the brief.** The heartbeat and the
+per-item commission limit a lookout is held to are the ones set on
+`spawn_lookout`/`update_lookout`. The tool's description and result say
+so, and each run's task message states them under "Your delegated bounds"
+as the figures that govern wherever the brief names another (a lookout of
+2026-11-13 was briefed "commission at most about 4 owls in a day on your
+own" while its stored limit was 1 owl an item, and it has no daily
+allowance at all: its commissions come out of the mandate's pace). The
+run is told why the limit exists: larger calls on the funder's money go
+to the program officers, who weigh them against everything else the
+mandate could buy.
+
 **Triggers.** A lookout is woken, never polling on its own: by its
 **heartbeat** (a cadence the Grantmaker sets, hours to a month; 0 for
 event-only), or by an **input event** queued for it — the daily
@@ -405,7 +458,11 @@ daily "Upkeep" that queries for stale important claims, open curation
 requests and unanswered messages.
 
 **Runs are ledger actions.** A due lookout (heartbeat passed, or an event
-waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
+waiting) gets a `lookout_run` row (`lookout:<id>`) on the scheduler's
+next tick (`openDueAgentRuns`, every `STANDING_ORDER_RETRY_MINUTES`, and
+at once when it is posted), never on the six-hourly sweep's cadence,
+which nobody tells it of; a Correspondent's run opens the same way. It is
+self-funded from the
 mandate's escrow within its pace like a review pass, outside the
 Grantmaker's reserve, with a budget per run
 (`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) that the
@@ -1199,6 +1256,41 @@ runs on the strong model where its payer judged the node contested and
 important, or a standard pass already failed to settle it. Paid orders
 (`POST /claims/:id/order`) always get the strong model.
 
+### A stewarding item can wait for the plan's ingests
+
+An ingest takes far longer than a pass: the extractions are read one
+after another, so a plan of many sources has rows that run for hours. A
+pass placed beside them runs first and judges its node without the
+sources the plan bought for it, and nothing re-reads the node when they
+land until a Grantmaker's later sitting asks. On 2026-11-13 the FAA
+mandate's assess and deepen items ran at 21:44, before any of its ingests
+had been read, and the next sitting was five hours away.
+
+An `assess`, `reassess` or `deepen` item may therefore name, in `after`,
+the urls of ingest items in the same plan (its own call's items or the
+plan's existing ones; `validatePlanItems` refuses a url that names none).
+The materializer (`ingestsGate` in src/services/action-service.ts) leaves
+such an item `waiting`, placing nothing and holding no money, until every
+ingest it names has been read: it has rows and none is open or running
+(done, or cancelled as unreadable). The item's standing names the unread
+ingests and the hour it waits until. The standing orders are looked at on
+every scheduler tick, so the pass is placed within minutes of the last
+ingest landing. It waits at most `AFTER_INGESTS_MAX_WAIT_HOURS` (12),
+counted from when it could first have been placed (`after_wait_from` on
+its standing): an extraction can queue for hours behind others, and a
+pass that waits for sources that never land is worse than one that reads
+without them, which a reassess item can correct. Money cannot serve as
+that bound, since nothing is spent while the item waits. Past it the pass
+is placed and its standing says which ingests it went without.
+
+Why this and not a message to the node's Steward when an ingest lands
+claims on it: the plan is where the Grantmaker states what it wants done
+and in what order, and an explicit dependency on that plan is visible,
+priced and amendable there. A message after the fact would buy a second
+pass the plan never asked for, whose cost nobody stated up front. The
+Grantmaker is told of `after` in its role prompt and in every plan tool's
+rules (`PLAN_KIND_RULES`, `PLAN_ITEM_SCHEMA`).
+
 ### A plan item is a standing order
 
 An `assess`, `reassess` or `deepen` item of a mandate's plan is an order
@@ -1333,6 +1425,32 @@ work. Only the Grantmaker's own passes may draw on its reserve, and only
 they start short (above); other upkeep waits for room. The estimates are
 live p80s of metered runs once enough exist (cost-estimate-service.ts),
 else policy priors.
+
+Before #991 the same pass placed this money with no commissioner, and a
+row needed only to be covered to run. Migration 0143 records those
+placements as the commissions they were: every allocation not yet
+released that a mandate pinned to a row of one of those six kinds, with
+no commissioner and no valuation of the row by that mandate, takes
+`commissioned_by` `mandate` and the pass's reason for the kind. Amounts,
+spend and release are not touched. Without it such a row could never run:
+the placement still counts as the row's coverage, so the pass places
+nothing new, and no executor picks a row without a commission (twelve
+funded consistency sweeps stood open that way on 2026-11-13). What the
+migration leaves without a commissioner is the allocator's old money
+(#855 removed it), placed on a group as a whole or on a row its mandate
+had valued, and a run's overspend, which is written already spent and
+released.
+
+An ingest row reads `running` from the moment the executor submits its
+source until the extraction is read, and extractions are read one after
+another, so a plan that names many sources at once has rows that read
+`running` for hours. The reconcile sweep returns a `running` row to open
+when its worker has died (60 minutes untouched; 24 hours for an ingest;
+3 for a solver attempt). It leaves an ingest row alone while the
+extraction job submitted for it is still pending or being read, however
+long that is, up to the four days the queue keeps a message: reopened
+earlier, the row would be submitted again and both extractions metered to
+the same funders.
 
 **Cadence** (#283) only makes candidates. An assessed claim is due a fresh
 look after `stalenessBaseDays / clamp(queue_priority, 0.25, 2)` days, where
@@ -1631,7 +1749,7 @@ Recording never fails the change it describes.
 
 **A subscription** (`subscriptions`, src/services/subscription-service.ts)
 is a standing interest held by a subscriber: a session, a mandate's inbox,
-a node's inbox or a lookout. It is one of three kinds:
+a node's inbox or a lookout. It is one of four kinds:
 
 - **an event**, by kinds and refs: runs by action id, nodes, everything
   under a node, the nodes over it (resting on it), tags, sources,
@@ -1641,7 +1759,10 @@ a node's inbox or a lookout. It is one of three kinds:
   subscriptions;
 - **a time**: a check-in at a set time;
 - **money**: once the mandate has committed a given amount since the
-  subscription was made.
+  subscription was made;
+- **work settled**: once nothing the mandate commissioned is waiting to
+  run or running and no plan item waits for its ingests
+  (`mandateWorkInFlight`), for one wake when a whole wave has landed.
 
 Delivery is `wake` (the default) or `queue`, and `once` ends a
 subscription at its first delivery; a check-in and a threshold always end
@@ -1675,12 +1796,25 @@ carries these tools ("The Grantmaker's session", above).
 
 Grants are created by talking to the **Grantmaker agent** — the best
 available model, running with the full constitution — in
-`/account/grants/new` (API: `/grant-conversations`). It behaves like a
+the Ask section (`/ask/mandates/new`; API: `/grant-conversations`). It behaves like a
 well-informed colleague in plan mode: surveys the scope, asks what it needs
 to, pushes back, quotes expected costs in owls from the live estimates, and
 drafts a concrete mandate. Nothing runs and nothing is charged until the
 funder funds the draft, which escrows the budget and starts the grant with
 the mandate as its plan.
+
+A grant and the mandate it funds are one row and, on the site, one thing
+with one name: a mandate. It has one page (`/mandates/:id`, where its
+manager also sees what waits on them) and one conversation, which sits in
+the Ask section beside the Assistant's and is listed there under
+Mandates: `/ask/mandates/new` to start one, and `/ask/mandates/:id` for
+the manager of a funded one, with the mandate at a glance beside it and
+the controls to approve the plan, top up and withdraw. The Assistant
+works for the user and a Grantmaker works for the graph, so the two are
+kept as two conversations and each says which it is. The older addresses
+(`/account/grants`, `/account/grants/new`, `/account/grants/:id`)
+redirect. The API and MCP names keep "grant" (`list_grants`,
+`top_up_grant`): they are what callers already use.
 
 Design principles, in force in the implementation:
 
@@ -1734,6 +1868,15 @@ Design principles, in force in the implementation:
   a proposal that has not been filed; one that has is a contribution on
   the public record like any other, and the node it became is the
   graph's.
+- **An ingest costs what ingests cost.** An ingest row is priced at the
+  live p80 of finished ingests' metered cost (an extraction and the
+  Matcher runs it makes), else the governing policy's prior,
+  `est_ingest_cost_owls` (1 owl), as curation and audit rows are. It is
+  not priced at `CAP_SOURCE_INGEST_OWLS`, which is the most a person
+  submitting a source is charged: a mandate holding that ceiling on every
+  ingest could fund few of them, and the old cap (0.1 owl) was a tenth of
+  a typical ingest, so mandates' plans and costing read ingests as nearly
+  free and the overrun was placed after the fact.
 - **An ingest can be scoped to one subject.** A mandate that wants one
   author's claims about one subject does not want every anecdote and aside
   those articles carry: extracting and matching them spends its escrow and
@@ -1854,6 +1997,12 @@ the mandate (`funder_named`, `funder_stake`) and on its public page.
 - A funder with a stake may stay anonymous only if the stake is disclosed
   in words a reader can weigh. One who will not disclose a stake they have
   is declined.
+- A tie a reader would weigh is a stake even when the funder says it gives
+  them no interest in the outcome (founding Minerval, making the product the
+  claims are about), and it is recorded as the tie. `funder_stake` is exactly
+  "none" or the stake itself, never "none" with a qualification: the page
+  prints it after "who declared a stake in its subject:", and
+  `validateMandate` refuses the mixed form.
 - Declarations are on the funder's word. A false one is bad faith, and it
   ends the mandate when it comes out.
 - A mandate a mandate spawns carries its source's declaration; the
@@ -1981,16 +2130,49 @@ A mandate is managed by one person but is a public thing (`/mandates`,
 API `GET /mandates`): anyone can read its dashboard and put their own owls
 behind it (`POST /mandates/:id/contribute`), with every contribution
 escrowed per user and unspent budget refunded to contributors pro rata.
-The discovery page gives pride of place to the largest mandates and above
-all to the platform's own standing mandates (Mathematics and AI Economics
-to start — `scripts/seed-platform-mandates.ts`).
+The list (`/mandates`) is in three tabs, each of which can hold hundreds:
+the reader's own (every mandate they fund, from its first draft, with what
+needs them first), the platform's own standing mandates (Mathematics and
+AI Economics to start, `scripts/seed-platform-mandates.ts`), and
+everyone's, largest budgets first. A tab is searched by title and
+objective, narrowed by state (active, paused on a spent budget, finished)
+and read a page at a time. `GET /mandates` (MCP `list_mandates`) serves
+the same: `scope`, `state`, `q`, `order`, `offset` and `limit`, with the
+count in each state and scope; with no parameters it lists the mandates
+open to backing, as it always has. Each row is short by default (the
+objective's first words, budget, spent and held, the page's link);
+`detail=full` gives every field, as the site asks for. A public scope
+holds only mandates that have started. `GET /mandates/:id` answers a
+summary by default in the same way: the plan's items a page at a time
+(`items_offset`, `items_limit`, `items_state`, each item with who added
+it and when), every other list cut to `list_limit`, and `collections`
+saying how long each is; `detail=full` is what the page renders.
 
-The public dashboard scales with the mandate's action mix. Every mandate
-shows budget, metered spend, contributors, plan progress, and the
-assessments it funded; mandates that ingest also show their pipeline: each
-source brought in, extraction status, where its claims went, and
+The mandate's page (`/mandates/:id`) sets the mandate itself (title,
+objective, strategy) as a document, and reports on it under it: what is
+happening now, its actions (the items of its plan), its agents, its
+spending, its completed work and its history. Text an agent wrote is on a sheet with a byline; everything else
+is the page's own. A mandate that has not started (still being drafted,
+or its plan awaiting approval) is readable by its funder alone, who sees
+on the same page what waits on them and the controls to approve the
+plan, top up and withdraw.
+
+Completed work is counted whole and listed a page at a time, by kind
+(`GET /mandates/:id/work`, MCP `get_mandate_work`;
+`mandate-work-service.ts`): assessments, which are the judgments of
+claims, questions and quantities alike, one row a node with the passes
+paid for on it; sources read, with where their claims went and
 importance and contestation statistics per source (`grant_sources` +
-`claim_instances`). The manager can keep talking to the Grantmaker on the
+`claim_instances`); requests worked on; research; nodes proposed; and
+the mandates it funded. The findings its agents noted stand beside them.
+"Now" shows its Grantmaker's current direction (the dated first section
+of the operating policy) and latest update, whether its Grantmaker is at
+work or waiting and what will wake it (counts and times only: a
+subscription's reason is its run's own words), its latest sittings as
+links to the run log (`/runs/:id` reads itself again every few seconds
+while a run is under way, so a sitting can be watched as it works; whether
+a transcript is public is the run log's rule), the work that is open,
+and any platform fault that is holding work up. The manager can keep talking to the Grantmaker on the
 same page at any time: after funding, the conversation runs in management
 mode, where the agent has analytics tools over exactly the data the
 dashboard shows (overview, funded assessments, ingestion report,

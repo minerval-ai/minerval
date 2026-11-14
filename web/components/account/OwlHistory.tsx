@@ -102,7 +102,7 @@ function describe(line: HistoryLine, names: Names): { what: ReactNode; detail: s
 
   if (line.reason === "escrow_hold" || line.reason === "escrow_refund") {
     const hold = line.reason === "escrow_hold";
-    const label = hold ? (job?.grant ? "Grant funded" : "Funded") : "Unspent escrow returned";
+    const label = hold ? (job?.grant ? "Mandate funded" : "Funded") : "Unspent escrow returned";
     return {
       what: job ? (
         <>

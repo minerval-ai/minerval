@@ -306,7 +306,7 @@ Importance is recorded as a per-claim value (0..1) that the steward sets and rev
 
 Importance says how much a claim is worth getting right; it does not by itself say when the system should spend its next unit of attention. Attention is spent through one mechanism, the same for every funder. Every piece of work on the graph is an agent's run, and a run happens when someone **commissions** it: decides the work is worth doing, sets the budget it should have to be done properly, and pays that budget whole. The run starts at once; its agent is told its budget and works to it; what it does not spend goes back to whoever paid. Cost is measured in dollars; one owl of spend covers one dollar of cost, whatever an owl sold for. The **ledger** records every piece of work the system could do (assess this claim, ingest that source, curate that region, audit that decision), who commissioned it, with what budget, what it spent and what came of it, and nothing else anywhere decides what runs. The ledger holds no formula and no valuation: whether work is worth its cost is a judgment, and judgments are made by agents and people who can be asked why.
 
-Budgets are set at the high end of what work of that kind costs, so that a run has what it needs to finish the job and most runs finish well inside it. When the work turns out to need more, its agent **petitions** the mandate paying for the run, without stopping its work, and says what it would do with the money, why its budget cannot cover it, and what it will conclude if the answer is no. The answer is a judgment about money, never about the conclusion, and no answer obliges an agent to conclude anything. Any agent with a budget may also commission another agent's run from it. A petition is routed along the chain of runs that led to the one asking, to the mandate whose money is behind it; the agent asking is never told which mandate that is, since its work serves the graph and not its funder.
+Budgets are set at what the work needs to be done properly, so that a run has what it needs to finish the job; a run uses what the work needs, since a pass that stops short to save money leaves the work to be paid for again, and what it does not spend goes back to whoever paid. When the work turns out to need more, its agent **petitions** the mandate paying for the run as soon as it sees that, without stopping its work, and says what it would do with the money, why its budget cannot cover it, and what it will conclude if the answer is no. The answer is a judgment about money, never about the conclusion, and no answer obliges an agent to conclude anything. Any agent with a budget may also commission another agent's run from it. A petition is routed along the chain of runs that led to the one asking, to the mandate whose money is behind it; the agent asking is never told which mandate that is, since its work serves the graph and not its funder.
 
 The judgment of what to pay for is each mandate's own, and it is an agent's judgment, not a filter's. A mandate's scope is defined in words, its mission, and which work falls under it is a call its Grantmaker makes with the discretion of any person entrusted with a budget and a mission. The Grantmaker writes the mandate's **operating policy** in prose: its mission in working terms, what comes first, how to budget each kind of work, how to answer petitions, and what to send to the Grantmaker. **Program officers**, on a cheaper model, work the mandate's inbox under it: petitions from the runs its money pays for, what its lookouts raise, and the work the system puts in front of it. Each officer decides up to a limit the policy states with its reason, and sends the rest to the Grantmaker, who decides it as the policy would and, where the policy did not settle it, changes the policy so the next one is settled. Every decision is logged with its reason. The graph's own work runs through the same machinery, not a privileged lane. Minerval maintains a standing General mandate for the graph's upkeep: its budget is the dollars the platform puts into keeping the graph sound, and its scope genuinely is everything. It buys the work whose value is spread across the whole graph, which no funder of one region would buy for its own: reading assessments against each other, merging, splitting and linking what the graph holds, auditing the graph's decisions, work someone is waiting on, and fresh passes where something a published verdict rests on has changed. It never pays for an audit of itself, and no mandate does. It does not buy coverage; what the graph comes to hold and assess is for the mandates and readers who care about it, except where a published verdict already rests on a claim no one has assessed. Work no one commissions remains on the ledger, open and visible with its age; that is an acceptable steady state, and there is no queue in the waiting-your-turn sense.
 
@@ -646,6 +646,17 @@ why. Then ask whether they want to be named on the mandate's page.
   as they gave it. Saying a stake is absent when it is present is bad
   faith, and it ends the mandate when it comes out.
 
+- A tie a reader would weigh is a stake even when the funder says it gives
+  them no interest in the outcome: founding or working for Minerval, owning
+  or making what the claims are about. Record the tie itself ("the founder
+  of Minerval, the platform that hosts this graph"); the funder may add
+  their own account of it after. When a funder answers "none" and then
+  mentions such a tie ("for completeness, I founded Minerval"), don't copy
+  both: tell them the tie is the stake, show them the line you will
+  record, and record it once they agree. funder_stake is either exactly
+  "none" or the stake, never "none" with a qualification: the page reads
+  "who declared a stake in its subject: " followed by what you write.
+
 Record both on the mandate (funder_named, funder_stake). They are shown on
 the mandate's public page and nowhere the graph's judging agents can see:
 a Steward never learns who paid, or that anyone did.
@@ -757,7 +768,16 @@ predates the record of such changes.
 - ingest: extract and match the claims of one source URL into the graph.
   "Ingest and assess everything in this article (or this publication's
   series)" is a normal mandate: list the URLs as ingest items and follow
-  with assessment coverage of the scope.
+  with assessment coverage of the scope. Mind the order of the work: an
+  ingest takes far longer than a pass (often hours, more when other
+  extractions queue ahead of it), so a pass placed beside it runs first
+  and judges without the sources you bought for it. Give a pass that
+  should read them `after`: the urls of those ingest items. It then
+  waits, holding no money, until they have been read, and is placed
+  within minutes of that; it waits at most a stated number of hours (the
+  plan tools give it), so a stuck extraction cannot hold it forever. A
+  pass that should run now regardless, or whose node the sources do not
+  bear on, needs no `after`.
 - sweep: one Consistency Checker sweep of a partition of the graph (a
   topic tag carrying enough live claims to be read on its own, or the
   residual bucket of claims no such tag covers). Each Steward reads its
@@ -807,10 +827,16 @@ mandate is live you run it in one long session, as a person managing a
 large project would: you commission work, carry on with what does not
 depend on it, and end your turn to wait for results rather than check for
 them. You decide what you are told of and when you look again
-(subscribe): the runs you commissioned settling, a branch moving, money
+(subscribe): the runs you commissioned settling, all of your mandate's
+commissioned work having landed (when_work_settled), a branch moving, money
 committed past a figure, a time. Often the right move when one result lands
 is to wait for the related ones before deciding, and sometimes it is to act
-at once; you judge which. In each sitting you read back what your money
+at once; you judge which. Set your check-ins to the pace of what the
+mandate follows: a mandate on a live story whose horizon is hours or days
+wants check-ins hours apart and a wake when its first wave lands (your
+first sitting gets one), not a look a day later; a slow literature can wait
+days. Each sitting is paid from the escrow, so match the cadence to how
+fast the story moves, not to habit. In each sitting you read back what your money
 did, keep your own durable workspace notes, revise the operating policy
 your program officers carry out (its current section is your direction for
 now), extend your own plan with the work you discovered, and hold money in
@@ -822,7 +848,12 @@ While you wait, lookouts (spawn_lookout) keep cheap standing watch:
 they follow the graph's change stream in their territory, query it, and
 commission what they find within the limit you give them, raising the rest
 to your officers; tighten or retire a watch whose commissions rarely move a
-verdict. A retraction watch over the sources behind your
+verdict. A lookout runs at its heartbeat (its first run at once, then
+within minutes of each falling due) and when its triggers fire. Its limits
+are the fields you set (heartbeat_hours, commission_limit_owls, the most it
+may commission alone for one item), and its every run is told those
+figures as the ones it is held to; a figure written into the brief binds
+nothing, so leave numbers out of the brief or repeat the fields exactly. A retraction watch over the sources behind your
 assessed claims is the first lookout most mandates should post. What a
 lookout raises enters the graph, so watch its brief for bias as you would a
 mandate's: where it looks decides what the graph comes to hold.
@@ -861,9 +892,18 @@ yours needs, the conversation it re-reads included; a sitting that needs
 more for once adds to its own budget (add_to_pass_budget), within the pace
 and the escrow.
 
-Set budgets at the high end of what the costing skill says such work costs:
-a run with what it needs finishes the work, and what it leaves comes back.
-An agent whose work turns out to need more may petition, and your officers
+Set each budget at what doing the work properly needs, not at what similar
+runs have spent. The price list (cost_sheet) is what past runs spent while
+held to their budgets, so it trails what the work needs: treat its figures
+as a floor. What a run does not spend comes straight back, so a generous
+budget costs the mandate nothing but the room it holds while the run works.
+As a rule, a first pass on a node the graph holds no sources for, or on a
+story still unfolding, needs $3 to $5 at the standard tier: its Steward has
+to search and read before it can judge. A question whose rival answers you
+want found and weighed needs that for the question and again for each
+answer you expect. A fresh look at a settled node can stay near the price
+list. A run with what it needs finishes the work, and what it
+leaves comes back. An agent whose work turns out to need more may petition, and your officers
 answer it, while the agent carries on; a recurring petition for the same
 kind of work means the budget for that kind is set too low.
 

@@ -156,7 +156,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /billing/ledger — owl history for the dashboard.
-  app.get<{ Querystring: { limit?: number } }>("/ledger", {
+  app.get<{ Querystring: { limit?: number; offset?: number; job_id?: string; since?: string; until?: string } }>("/ledger", {
     schema: {
       tags: ["billing"],
       summary: "List the authenticated user's owl ledger entries",
@@ -175,12 +175,26 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
             default: 50,
             description: "How many entries to return, newest first.",
           },
+          offset: { type: "integer", minimum: 0, default: 0, description: "Entries to skip, for the next page." },
+          job_id: {
+            type: "string",
+            format: "uuid",
+            description: "Only entries on one funded job: a mandate's budget_job_id, an order's job.",
+          },
+          since: { type: "string", format: "date-time", description: "Only entries at or after this time." },
+          until: { type: "string", format: "date-time", description: "Only entries at or before this time." },
         },
       },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const entries = await listOwlLedger(request.auth!.userId!, request.query.limit ?? 50);
+      const q = request.query;
+      const entries = await listOwlLedger(request.auth!.userId!, q.limit ?? 50, {
+        offset: q.offset,
+        jobId: q.job_id,
+        since: q.since ? new Date(q.since) : undefined,
+        until: q.until ? new Date(q.until) : undefined,
+      });
       return reply.send({
         entries: entries.map((e) => ({
           id: e.id,

@@ -25,6 +25,7 @@
  * against the escrow, and a pace bounds the spend. The refusal duties
  * that govern mandate design govern this pass equally.
  */
+import { recordMandateUpdate } from "../../services/mandate-work-service.js";
 import { openSession, executeSessionTool, getSessionToolDefinitions, type SessionResume } from "../tools/session-tools.js";
 import { executeSubscriptionTool, getSubscriptionToolDefinitions } from "../tools/subscription-tools.js";
 import { escalationDigest } from "./program-officer.js";
@@ -58,6 +59,7 @@ import { createGrantContributionTools } from "../tools/grant-contribution-tools.
 import { annotateOpenActions } from "../../services/open-actions-service.js";
 import {
   planProposalRefs,
+  planIngestUrls,
   validateMandate,
   executeManagementTool,
   type GrantMandate,
@@ -417,8 +419,9 @@ async function runMandateReviewImpl(input: {
       description:
         "What your mandate's ingestion has actually produced: each source " +
         "brought in (a plan item whose URL someone else had already " +
-        "ingested is listed too, with that extraction's status), extraction " +
-        "status, claims linked or minted, " +
+        "ingested is listed too, with that extraction's status), where its " +
+        "extraction is (extraction_stage: queued, with how many extractions " +
+        "are waiting ahead of it, extracting, done or failed), claims linked or minted, " +
         "importance and contestation statistics. Read this before " +
         "deciding what to ingest next.",
       input_schema: { type: "object" as const, properties: {}, required: [] },
@@ -572,7 +575,7 @@ async function runMandateReviewImpl(input: {
           .map(
             (l) =>
               `- "${l.title}" [${l.status}; ${l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-only"}` +
-              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; commissions up to ${l.commission_limit_owls} owls alone] ` +
+              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; commissions up to ${l.commission_limit_owls} owls an item alone] ` +
               `${l.runs} runs, ${l.flags} flags; precision ${l.precision.moved}/${l.precision.ran} passes moved a verdict ` +
               `(${l.precision.flagged} asked)${l.pending_events ? `; ${l.pending_events} inputs pending` : ""}` +
               `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}` +
@@ -664,8 +667,16 @@ async function runMandateReviewImpl(input: {
     `you and when your funder writes. Beyond that, subscribe to what matters to your mission: the runs you ` +
     `commissioned settling, nodes or subtrees moving, money committed past a figure, and a time to look ` +
     `again (subscribe; list_subscriptions shows what you hold). Waiting for several results before you ` +
-    `decide is often better than answering each one as it lands; queue what can wait for your next turn. ` +
-    `If you end a turn holding no check-in, you get one ${DEFAULT_CHECK_IN_HOURS} hours out. Each time your ` +
+    `decide is often better than answering each one as it lands; queue what can wait for your next turn, or ` +
+    `subscribe when_work_settled to be woken once when everything your mandate has commissioned has landed. ` +
+    (lastReviewAt
+      ? ``
+      : `This is your mandate's first sitting: when you end it with work in flight, you are woken once when ` +
+        `that first wave has all settled (unless you hold such a subscription already). `) +
+    `If you end a turn holding no check-in, you get one ${DEFAULT_CHECK_IN_HOURS} hours out: set your own to ` +
+    `the pace of what the mandate follows. A mandate on a live story whose horizon is hours or days wants ` +
+    `check-ins hours apart, not a day; a slow literature, days or weeks. Your lookouts run at their own ` +
+    `heartbeats between your sittings. Each time your ` +
     `session resumes it is a sitting paid from your escrow within the mandate's pace, at your review-pass ` +
     `budget, and it re-reads this conversation; when that has grown dear, fresh_start begins again from ` +
     `your workspace.\n\n` +
@@ -846,10 +857,10 @@ async function runMandateReviewImpl(input: {
           funder_named: true,
           funder_stake: "none",
         };
-        const problem = validateMandate(probe, await planProposalRefs(grant.id));
+        const problem = validateMandate(probe, await planProposalRefs(grant.id), await planIngestUrls(grant.id));
         if (problem) return JSON.stringify({ success: false, problem });
         // Stored in the one plan-item form every path writes (#684).
-        const stored = normalizePlanItems(newItems);
+        const stored = normalizePlanItems(newItems, { by: "grantmaker_review" });
         if (toolInput.preview === true) {
           const { previewPlanOrders } = await import("../../services/standing-order-service.js");
           return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grant.id, stored)) });
@@ -1073,6 +1084,9 @@ async function runMandateReviewImpl(input: {
         [sess.session.id]
       );
     } else {
+      // The first sitting of a mandate set its first wave going: it is told
+      // when that wave has landed, once, unless it already asked for that.
+      if (!resume && !lastReviewAt) await firstWaveSubscription(grant.id);
       await ensureCheckIn(sess.session.id);
     }
     await sess.close(model);
@@ -1085,16 +1099,9 @@ async function runMandateReviewImpl(input: {
   // Stated in the briefing; past it the note is cut, since it is a
   // summary line on the mandate's public page, not a report.
   const note = (result.content ?? "").trim().slice(0, REVIEW_NOTE_MAX_CHARS);
-  // The review note is part of the mandate's public record.
-  await rawQuery(
-    `UPDATE grants
-        SET mandate = jsonb_set(
-              COALESCE(mandate, '{}'::jsonb), '{last_review}',
-              jsonb_build_object('at', to_jsonb(now()), 'note', $2::text)),
-            updated_at = now()
-      WHERE id = $1`,
-    [grant.id, note || "(review completed without a note)"]
-  );
+  // The review note is part of the mandate's public record: the latest, and
+  // one of the updates the mandate keeps (mandate-work-service.ts).
+  await recordMandateUpdate(grant.id, note || "(review completed without a note)");
   if (!resume) await consumeMandateEvents(grant.id, inbox.events.map((e) => e.id)).catch(() => {});
   return { note, planItemsAdded, freshStart };
 }
@@ -1120,6 +1127,38 @@ async function standingSubscriptions(grantId: string): Promise<void> {
     subscriberRef: sessionId,
     filter: { kinds: ["inbox_item"], grant_ids: [grantId], refs: { item_kind: ["funder_note"] } },
     reason: "what your funder writes",
+    createdBy: "system",
+  });
+}
+
+/**
+ * After a mandate's first sitting: a subscription that wakes its Grantmaker
+ * once, when the first wave of work it set going (its plan's passes and
+ * ingests, its commissions, the items waiting for their ingests) has all
+ * settled. One wake for the whole wave, not one per run: each wake is a
+ * paid sitting, and the moment a breaking story's first sources and
+ * verdicts are all in is the one worth a sitting. What settled run by run
+ * is already in the mandate's inbox, which the next sitting reads. Made only
+ * when something is in flight (else it would fire at once, a sitting for
+ * nothing), and not when the Grantmaker already subscribed to the same.
+ */
+async function firstWaveSubscription(grantId: string): Promise<void> {
+  const { ensureSessionRow } = await import("../../services/session-service.js");
+  const { createSubscription, listSubscriptions } = await import("../../services/subscription-service.js");
+  const { mandateWorkInFlight } = await import("../../services/action-service.js");
+  const sessionId = await ensureSessionRow();
+  if (!sessionId) return;
+  const held = await listSubscriptions({ kind: "session", ref: sessionId });
+  if (held.some((s) => s.condition?.kind === "work_settled")) return;
+  if ((await mandateWorkInFlight(grantId)) === 0) return;
+  await createSubscription({
+    subscriberKind: "session",
+    subscriberRef: sessionId,
+    condition: { kind: "work_settled", grant_id: grantId, since: new Date().toISOString() },
+    once: true,
+    reason:
+      "your first wave settling: you are woken once, when every pass, ingest and commission your first sitting " +
+      "set going has landed and no plan item still waits for its ingests",
     createdBy: "system",
   });
 }

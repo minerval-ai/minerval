@@ -395,6 +395,23 @@ export function ProvenanceMap({ story }: { story: ProvenanceStory | null | undef
   );
   if (!story || story.nodes.length === 0) return null;
   const c = storyCounts(story);
+  // A story with no shape: no origin, nothing drawn on, no source tied to
+  // another. The map would be the instance cards below drawn a second time
+  // in a dashed box, each saying it is untraced, so the one fact it holds is
+  // given in a line instead.
+  const flat = story.nodes.every(
+    (n) => n.standing !== "origin" && !n.underlying && n.upstream.length === 0
+      && n.copy_of.length === 0 && n.downstream === 0,
+  );
+  if (flat) {
+    const n = c.sources;
+    return (
+      <p className={styles.flatNote}>
+        {n === 1 ? "Its one source has" : n === 2 ? "Neither source has" : `None of its ${n} sources has`}{" "}
+        been traced to an origin, or to one another.
+      </p>
+    );
+  }
   const tally = [
     `${c.sources} ${c.sources === 1 ? "source" : "sources"}`,
     c.origins ? `${c.origins} ${c.origins === 1 ? "origin" : "origins"}` : "no origin",

@@ -75,11 +75,11 @@ export function ContributeBox({
             owls
           </span>
           <button className="order-button" onClick={contribute} disabled={busy}>
-            {busy ? "escrowing…" : "Contribute to this mandate"}
+            {busy ? "escrowing…" : "Back this mandate"}
           </button>
           <span className="order-caption">
             Escrowed into the mandate&rsquo;s budget now; whatever the work
-            never spends returns to contributors in proportion.
+            never spends returns to its backers in proportion.
           </span>
         </>
       )}

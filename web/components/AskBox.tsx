@@ -10,7 +10,10 @@ export function AskBox({
   nodeId,
   placeholder = "Ask the Assistant…",
   label = "Ask",
+  about,
 }: {
+  /** What the page is about when it is not a node, added to the question in words. */
+  about?: string;
   /** The node whose page this box sits on, which the Assistant is told. */
   nodeId?: string;
   placeholder?: string;
@@ -24,7 +27,7 @@ export function AskBox({
       onSubmit={(e) => {
         e.preventDefault();
         const params = new URLSearchParams();
-        if (q.trim()) params.set("q", q.trim());
+        if (q.trim()) params.set("q", about ? `${q.trim()} (about ${about})` : q.trim());
         if (nodeId) params.set("node", nodeId);
         const query = params.toString();
         router.push(query ? `/ask?${query}` : "/ask");

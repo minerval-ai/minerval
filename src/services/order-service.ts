@@ -200,15 +200,21 @@ export async function cancelOrder(input: {
 
 export async function listOrders(
   userId: string,
-  limit = 50
+  limit = 50,
+  opts: { offset?: number; status?: string } = {}
 ): Promise<AssessmentOrder[]> {
   const db = getDb();
   return db
     .select()
     .from(assessmentOrders)
-    .where(eq(assessmentOrders.userId, userId))
+    .where(
+      opts.status
+        ? and(eq(assessmentOrders.userId, userId), eq(assessmentOrders.status, opts.status))
+        : eq(assessmentOrders.userId, userId)
+    )
     .orderBy(desc(assessmentOrders.createdAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, opts.offset ?? 0));
 }
 
 /** The user's open (pending/running) order for one claim, if any. */

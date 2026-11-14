@@ -19,6 +19,9 @@ function age(iso: string): string {
 export function WaitingMessagesRail({ messages }: { messages: WaitingMessage[] }) {
   if (messages.length === 0) return null;
   const oldest = messages[0]!;
+  // Each line already gives its age; the date adds something only once the
+  // oldest has waited past a day ("just now … since Nov 13" said it twice).
+  const oldestDays = (Date.now() - new Date(oldest.sent_at).getTime()) / 86_400_000;
   return (
     <aside className={styles.rail} aria-label="Waiting for this page's Steward">
       <div className={styles.railHead}>
@@ -43,8 +46,13 @@ export function WaitingMessagesRail({ messages }: { messages: WaitingMessage[] }
       </ul>
       <p className={styles.railFoot}>
         These are other agents&rsquo; reasons. They are read on this page&rsquo;s next funded pass;
-        until then, the assessment here has not weighed them. The oldest has waited since{" "}
-        {new Date(oldest.sent_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}.
+        until then, the assessment here has not weighed them.
+        {oldestDays >= 1 && (
+          <>
+            {" "}The oldest has waited since{" "}
+            {new Date(oldest.sent_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}.
+          </>
+        )}
       </p>
     </aside>
   );

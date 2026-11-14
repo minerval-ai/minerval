@@ -30,6 +30,15 @@ export function RequestState({ r }: { r: RequestItem }) {
 export function RequestsRail({ requests }: { requests: RequestItem[] }) {
   const live = requests.filter((r) => ["open", "addressed", "in_progress"].includes(r.state));
   const closed = requests.length - live.length;
+  // None on this page: one quiet line, not a heading, a zero and a sentence
+  // saying the zero again. The link stays, as the index's way in.
+  if (requests.length === 0) {
+    return (
+      <p className={styles.railFoot} style={{ marginTop: 0 }}>
+        No requests on this page · <Link href="/requests">all requests →</Link>
+      </p>
+    );
+  }
   return (
     <aside className={styles.rail} aria-label="Requests">
       <div className={styles.railHead}>
@@ -38,21 +47,17 @@ export function RequestsRail({ requests }: { requests: RequestItem[] }) {
           {live.length}<span className={styles.railCountUnit}>open</span>
         </span>
       </div>
-      {requests.length === 0 ? (
-        <p className={styles.empty}>Nothing has been asked for on this page yet.</p>
-      ) : (
-        <ul className={styles.railList}>
-          {[...live, ...requests.filter((r) => !live.includes(r))].map((r) => (
-            <li key={r.id}>
-              <Link href={`/requests/${r.id}`} className={styles.railAsk}>{r.ask}</Link>
-              <span className={styles.railMeta}>
-                <RequestState r={r} />
-                {r.addressed_to && <> · to {r.addressed_to}</>}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ul className={styles.railList}>
+        {[...live, ...requests.filter((r) => !live.includes(r))].map((r) => (
+          <li key={r.id}>
+            <Link href={`/requests/${r.id}`} className={styles.railAsk}>{r.ask}</Link>
+            <span className={styles.railMeta}>
+              <RequestState r={r} />
+              {r.addressed_to && <> · to {r.addressed_to}</>}
+            </span>
+          </li>
+        ))}
+      </ul>
       <p className={styles.railFoot}>
         {closed > 0 && <>{closed} met or closed · </>}
         <Link href="/requests">all requests →</Link>

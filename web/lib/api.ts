@@ -254,7 +254,8 @@ export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
     throw err;
   }
   const [document, examinations, context] = await Promise.all([
-    apiGet<SourceDocument>(`/sources/${seg}/document`).catch(() => null),
+    // The whole document: the API pages it by default.
+    apiGet<SourceDocument>(`/sources/${seg}/document?detail=full`).catch(() => null),
     apiGet<{ examinations: Examination[] }>(`/sources/${seg}/examinations`)
       .then((r) => r.examinations)
       .catch(() => [] as Examination[]),

@@ -349,7 +349,7 @@ const configSchema = z.object({
   // paidAssessmentBudgetOwls below, and the platform absorbs the gap.
   capClaimProposalOwls: z.coerce.number().default(2),
   capAssessmentOwls: z.coerce.number().default(2),
-  capSourceIngestOwls: z.coerce.number().default(0.1),
+  capSourceIngestOwls: z.coerce.number().default(10),
   // A page analysis's cap is also its run budget: the Extractor and every
   // Matcher on the page spend from it (withAgenticCharge's pass budget), and
   // the Extractor is told it in its task message with the cost of a match.
@@ -492,7 +492,7 @@ const configSchema = z.object({
   // get it assessed" hook — 5 owls covers two capped assessments, and the
   // unused part of each cap settles back after the run) plus a small monthly
   // trickle so returning users always have something. 0 disables either.
-  signupGrantOwls: z.coerce.number().default(5),
+  signupGrantOwls: z.coerce.number().default(10),
   monthlyGrantOwls: z.coerce.number().default(1),
   // Owls earned per kudos point of an accepted contribution (the old 1–5
   // scale from claim importance, paid in the spendable currency). OFF at
@@ -631,6 +631,21 @@ const configSchema = z.object({
   // SQS queues
   sqsUrlExtractionQueue: z.string().default(""),
   sqsClaimPipelineQueue: z.string().default(""),
+  // The queue pollers (workers/poller.ts; docs/infrastructure.md, "The
+  // extraction lane"). How many URL extractions one process reads at once:
+  // an extraction is an Extractor run and a Matcher run per claim, minutes
+  // of mostly waiting on a model, so the lane holds several. Every other
+  // queue keeps one at a time, as it always has.
+  urlExtractionConcurrency: z.coerce.number().int().min(1).default(3),
+  // How long a message's handler may go without progress (a model call
+  // finishing, a claim matched) before its poller gives up on it, frees its
+  // place and returns the message to the queue. Not a limit on the work:
+  // a long document reads for as long as it keeps moving. It exists because
+  // a call that never returns used to hold the whole lane (2026-11-13:
+  // nothing extracted for 20 hours behind one hung handler), and nothing
+  // spends while it hangs, so no budget can stop it.
+  urlExtractionStallMinutes: z.coerce.number().min(1).default(15),
+  queueStallMinutes: z.coerce.number().min(1).default(30),
 
   // Processing
   // The pipeline epoch every newly created claim is stamped with
@@ -1690,6 +1705,9 @@ export function loadConfig(): Config {
     llmDailyTokenLimit: process.env.LLM_DAILY_TOKEN_LIMIT,
     sqsUrlExtractionQueue: process.env.SQS_URL_EXTRACTION_QUEUE,
     sqsClaimPipelineQueue: process.env.SQS_CLAIM_PIPELINE_QUEUE,
+    urlExtractionConcurrency: process.env.URL_EXTRACTION_CONCURRENCY,
+    urlExtractionStallMinutes: process.env.URL_EXTRACTION_STALL_MINUTES,
+    queueStallMinutes: process.env.QUEUE_STALL_MINUTES,
     pipelineEpoch: process.env.PIPELINE_EPOCH,
     gitSha: process.env.GIT_SHA || undefined,
     promptCacheTtl: process.env.PROMPT_CACHE_TTL,

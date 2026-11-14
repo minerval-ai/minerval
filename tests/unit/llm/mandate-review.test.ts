@@ -78,6 +78,7 @@ vi.mock("../../../src/services/pace-service.js", () => ({
 vi.mock("../../../src/services/subscription-service.js", () => ({
   createSubscription: async () => ({ id: "s" }),
   nextDueAt: async () => null,
+  listSubscriptions: async () => [],
 }));
 vi.mock("../../../src/services/session-service.js", () => ({
   ensureSessionRow: async () => "gm-session",
@@ -124,6 +125,7 @@ vi.mock("../../../src/services/action-service.js", () => ({
   materializePlanItems: async () => [],
   materializeLivePlan: async () => {},
   grantmakerShareLeftMicroUsd: async () => null,
+  mandateWorkInFlight: async () => 0,
 }));
 vi.mock("../../../src/llm/client.js", () => ({
   toolUseLoop: vi.fn(async (opts: {
@@ -211,7 +213,8 @@ describe("runMandateReview", () => {
     expect(items.items.properties).toHaveProperty("focus");
     const append = state.updates.find((u) => u.sql.includes("plan->'items'"))!;
     expect(JSON.parse(append.params[1] as string)).toEqual([
-      { action: "ingest", url: "https://x.test/r", rationale: "r", focus: "grid prices" },
+      // Stamped with who added it (the review pass) and when.
+      { action: "ingest", url: "https://x.test/r", rationale: "r", focus: "grid prices", added_by: "grantmaker_review", added_at: expect.any(String) },
     ]);
   });
 

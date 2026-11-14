@@ -62,6 +62,7 @@ import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kin
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
 import { ownWorkSql } from "./mirrored-node-service.js";
+import { AFTER_INGESTS_MAX_WAIT_HOURS } from "./grant-service.js";
 import { retiredNodeRefusal } from "./claim-lifecycle-service.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
 export { allocationDayUseSql } from "./day-use.js";
@@ -204,6 +205,16 @@ const FORMALIZE_RETRY_HOURS = 24;
 
 /** A live attempt stamps updated_at every turn; only a dead worker trips this. */
 const ATTEMPT_REOPEN_HOURS = 3;
+
+/**
+ * An extraction job still unfinished after this many days has lost its queue
+ * message: the extraction queue keeps a message four days (SQS's default;
+ * infra/lib/queue-stack.ts sets none). The running ingest row behind it is
+ * then reopened like any row whose worker died. Until then an unfinished job
+ * means the extraction is queued or being read, and the row is left running
+ * (reconcileActions).
+ */
+const INGEST_JOB_LOST_DAYS = 4;
 
 /**
  * Whether a live commission pays for actions row `a` (SQL fragment). A
@@ -635,73 +646,7 @@ export async function reconcileActions(): Promise<{
                            AND f.status = 'published')`
   );
 
-  // Lookout runs: one open row per active lookout on an active mandate
-  // whose heartbeat has fallen due or that has an unconsumed event
-  // waiting. Due-ness is the lookout's own state (next_due_at, stamped by
-  // the executor after each run), so a closed row reopens exactly when the
-  // lookout says it is due and never on a fixed sweep cadence — an
-  // event-only lookout (heartbeat 0) opens nothing until something is
-  // queued for it. The funding side (fundGrantSelfActions) bounds runs
-  // per day; this only says what is wanted.
-  const lookoutCost = capMicroUsd("lookout_run");
-  const dueLookouts = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
-    `SELECT l.id, l.title, l.sensitivity_label
-       FROM lookouts l
-       JOIN grants g ON g.id = l.grant_id
-      WHERE l.status = 'active' AND g.status = 'active'
-        AND ((l.heartbeat_hours > 0 AND l.next_due_at <= now())
-             OR EXISTS (SELECT 1 FROM lookout_events e
-                         WHERE e.lookout_id = l.id AND e.consumed_at IS NULL))
-      LIMIT 200`
-  );
-  for (const l of dueLookouts) {
-    await rawQuery(
-      `INSERT INTO actions
-         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
-       VALUES ('lookout_run', $1, 'standard', $2, $3, $4, $5)
-       ON CONFLICT (exclusion_group, variant) DO UPDATE
-         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             ${LABEL_ON_REOPEN_SQL},
-             updated_at = now()
-         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      // A lookout decides for its work: its run is opened at its label.
-      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost, l.sensitivity_label]
-    );
-  }
-
-  // Correspondent runs (#563): the same rule as a lookout's. Due when its
-  // heartbeat has passed, when someone poked it, or when a change in its
-  // scope is waiting and its min_wake_hours have passed since the last run
-  // (that spacing is its audience's, set for their attention; a heartbeat
-  // and a poke are not held by it). What runs is the mandate's money.
-  const correspondentCost = capMicroUsd("correspondent_run");
-  const dueCorrespondents = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
-    `SELECT c.id, c.title, c.sensitivity_label
-       FROM correspondents c
-       JOIN grants g ON g.id = c.grant_id
-      WHERE c.status = 'active' AND g.status = 'active'
-        AND ((c.heartbeat_hours > 0 AND c.next_due_at <= now())
-             OR EXISTS (SELECT 1 FROM correspondent_events e
-                         WHERE e.correspondent_id = c.id AND e.consumed_at IS NULL
-                           AND (e.kind <> 'graph_change'
-                                OR c.last_run_at IS NULL
-                                OR c.last_run_at + make_interval(hours => c.min_wake_hours) <= now())))
-      LIMIT 200`
-  );
-  for (const c of dueCorrespondents) {
-    await rawQuery(
-      `INSERT INTO actions
-         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
-       VALUES ('correspondent_run', $1, 'standard', $2, $3, $4, $5)
-       ON CONFLICT (exclusion_group, variant) DO UPDATE
-         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             ${LABEL_ON_REOPEN_SQL},
-             updated_at = now()
-         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
-      // And so does a correspondent: its run is opened at its label.
-      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost, c.sensitivity_label]
-    );
-  }
+  await openDueAgentRuns();
 
   // Consistency sweeps (#330): an exclusive set of a standard and a strong
   // variant per partition due a sweep (#756). Off (and any open rows
@@ -782,24 +727,128 @@ export async function reconcileActions(): Promise<{
   // extraction charged to the same funders. A solver attempt stamps
   // updated_at every turn (§7.9), so three untouched hours means a dead
   // worker, not a long proof.
+  //
+  // An ingest whose extraction is still queued or being read is not dead,
+  // however long it has waited: the extractions are read one after another,
+  // so a mandate that plans twenty-five sources at once has rows that read
+  // `running` for hours with nothing wrong, and on 2026-11-13 a stopped
+  // drain left ten of them waiting twenty hours. Nothing stamps such a row
+  // while it queues, so the 24 hours alone would reopen it, the executor
+  // would submit the source a second time, and both extractions would be
+  // read and metered to the same funders. It is left running while its
+  // extraction job is unfinished (INGEST_JOB_LOST_DAYS says for how long).
   await rawQuery(
-    `UPDATE actions SET status = 'open', updated_at = now()
-      WHERE status = 'running'
-        AND ((kind NOT IN ('ingest', 'attempt_proof') AND updated_at < now() - interval '60 minutes')
-             OR (kind = 'ingest' AND updated_at < now() - interval '24 hours')
-             OR (kind = 'attempt_proof' AND updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
+    `UPDATE actions a SET status = 'open', updated_at = now()
+      WHERE a.status = 'running'
+        AND ((a.kind NOT IN ('ingest', 'attempt_proof') AND a.updated_at < now() - interval '60 minutes')
+             OR (a.kind = 'ingest' AND a.updated_at < now() - interval '24 hours'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM jobs j
+                    WHERE j.type = 'url_extraction' AND j.status IN ('pending', 'processing')
+                      AND j.input->>'url' = a.target_ref
+                      -- Submitted for this run of the row: the executor
+                      -- claims the row, then creates the job.
+                      AND j.created_at >= a.updated_at - interval '1 minute'
+                      AND j.created_at > now() - make_interval(days => ${INGEST_JOB_LOST_DAYS})))
+             OR (a.kind = 'attempt_proof' AND a.updated_at < now() - make_interval(hours => ${ATTEMPT_REOPEN_HOURS})))`
   );
 
   return { assessEnsured: pending.length, cancelled: cancelled.length, plansFailed };
 }
 
 /**
- * One live mandate's rows in the sweep: its planning row while it is being
- * planned, its review row on the review cadence, and its plan. Called at
- * the mandate's label. Returns false when the plan could not be
- * materialized (logged and reported).
+ * The rows of the standing agents a mandate funds that have fallen due: one
+ * open row per active lookout or Correspondent on an active mandate whose
+ * heartbeat has passed or that has an input waiting. Cheap (two indexed
+ * queries over small tables) and idempotent, so the scheduler calls it on
+ * every tick between sweeps as well as in the sweep
+ * (allocation-scheduler.ts): a lookout told it runs every 3 hours runs
+ * within a tick (STANDING_ORDER_RETRY_MINUTES) of falling due, never on
+ * the six-hourly sweep's cadence, which nobody told it of (2026-11-13: a
+ * breaking-news lookout posted at 21:33 and due at once had not run by
+ * 22:00 and would not have until the next sweep at 03:31). The rows are
+ * funded on the executor's tick by fundGrantSelfActions.
  */
-async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promise<boolean> {
+export async function openDueAgentRuns(): Promise<void> {
+  // Lookout runs: one open row per active lookout on an active mandate
+  // whose heartbeat has fallen due or that has an unconsumed event
+  // waiting. Due-ness is the lookout's own state (next_due_at, stamped by
+  // the executor after each run), so a closed row reopens exactly when the
+  // lookout says it is due and never on a fixed sweep cadence — an
+  // event-only lookout (heartbeat 0) opens nothing until something is
+  // queued for it. The funding side (fundGrantSelfActions) pays for each
+  // run out of the mandate's pace and escrow, with no count of runs; this
+  // only says what is wanted.
+  const lookoutCost = capMicroUsd("lookout_run");
+  const dueLookouts = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+    `SELECT l.id, l.title, l.sensitivity_label
+       FROM lookouts l
+       JOIN grants g ON g.id = l.grant_id
+      WHERE l.status = 'active' AND g.status = 'active'
+        AND ((l.heartbeat_hours > 0 AND l.next_due_at <= now())
+             OR EXISTS (SELECT 1 FROM lookout_events e
+                         WHERE e.lookout_id = l.id AND e.consumed_at IS NULL))
+      LIMIT 200`
+  );
+  for (const l of dueLookouts) {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('lookout_run', $1, 'standard', $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             ${LABEL_ON_REOPEN_SQL},
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
+      // A lookout decides for its work: its run is opened at its label.
+      [LOOKOUT_GROUP(l.id), l.id, `Lookout run: "${l.title}"`, lookoutCost, l.sensitivity_label]
+    );
+  }
+
+  // Correspondent runs (#563): the same rule as a lookout's. Due when its
+  // heartbeat has passed, when someone poked it, or when a change in its
+  // scope is waiting and its min_wake_hours have passed since the last run
+  // (that spacing is its audience's, set for their attention; a heartbeat
+  // and a poke are not held by it). What runs is the mandate's money.
+  const correspondentCost = capMicroUsd("correspondent_run");
+  const dueCorrespondents = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+    `SELECT c.id, c.title, c.sensitivity_label
+       FROM correspondents c
+       JOIN grants g ON g.id = c.grant_id
+      WHERE c.status = 'active' AND g.status = 'active'
+        AND ((c.heartbeat_hours > 0 AND c.next_due_at <= now())
+             OR EXISTS (SELECT 1 FROM correspondent_events e
+                         WHERE e.correspondent_id = c.id AND e.consumed_at IS NULL
+                           AND (e.kind <> 'graph_change'
+                                OR c.last_run_at IS NULL
+                                OR c.last_run_at + make_interval(hours => c.min_wake_hours) <= now())))
+      LIMIT 200`
+  );
+  for (const c of dueCorrespondents) {
+    await rawQuery(
+      `INSERT INTO actions
+         (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, sensitivity_label)
+       VALUES ('correspondent_run', $1, 'standard', $2, $3, $4, $5)
+       ON CONFLICT (exclusion_group, variant) DO UPDATE
+         SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
+             ${LABEL_ON_REOPEN_SQL},
+             updated_at = now()
+         WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
+      // And so does a correspondent: its run is opened at its label.
+      [CORRESPONDENT_GROUP(c.id), c.id, `Correspondent run: "${c.title}"`, correspondentCost, c.sensitivity_label]
+    );
+  }
+}
+
+/**
+ * A live mandate's sitting row: its planning row while it is being planned,
+ * or its Grantmaker's review row while it is active and no session of its
+ * Grantmaker is live. Idempotent (the conditional upserts below). Called at
+ * the mandate's label: by the sweep for every live mandate, and for a new
+ * one at funding and between sweeps (openFirstSittings), so a mandate's
+ * first sitting never waits for the six-hourly sweep.
+ */
+async function openMandateSittingRow(g: Pick<PlanGrantRow, "id" | "name" | "status" | "mandate">): Promise<void> {
   // A mandate whose Grantmaker passes have a share of the budget of their
   // own (a decomposition: claim-mandate-service.ts) budgets each pass from
   // what the share has left, and opens no review once it is spent.
@@ -868,6 +917,16 @@ async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promi
       ]
     );
   }
+}
+
+/**
+ * One live mandate's rows in the sweep: its planning row while it is being
+ * planned, its review row on the review cadence, and its plan. Called at
+ * the mandate's label. Returns false when the plan could not be
+ * materialized (logged and reported).
+ */
+async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promise<boolean> {
+  await openMandateSittingRow(g);
 
   // The plan itself: every item becomes a ledger row or carries a stated
   // reason why it cannot (materializeGrantPlan). One mandate's failure is
@@ -880,6 +939,93 @@ async function reconcileMandate(g: PlanGrantRow, ctx: MaterializeContext): Promi
     return false;
   }
   return true;
+}
+
+/**
+ * Open a new mandate's first sitting now: its planning row if it is being
+ * planned, its Grantmaker's first review row if it is active. Called where a
+ * mandate is funded or approved, so its Grantmaker sits within the
+ * executor's next tick, which funds the row from the mandate's escrow
+ * (fundGrantSelfActions), and not at the next six-hourly sweep: on
+ * 2026-11-13 a breaking-news mandate funded at 21:25 sat at 21:31 only
+ * because a deploy restarted the process. Idempotent, at the mandate's
+ * label. Never throws: the between-sweeps pass (openFirstSittings) and the
+ * sweep retry.
+ */
+export async function openMandateFirstSitting(grantId: string): Promise<void> {
+  try {
+    const [g] = await rawQuery<Pick<PlanGrantRow, "id" | "name" | "status" | "mandate">>(
+      `SELECT id, name, status, mandate FROM grants WHERE id = $1 AND status IN ('active', 'planning')`,
+      [grantId]
+    );
+    if (g) await runAtMandateLabelOutsideAnyRun(g.id, () => openMandateSittingRow(g));
+  } catch (err) {
+    console.error(
+      `[reconcile] first sitting of mandate ${grantId} not opened: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+}
+
+/**
+ * Between sweeps: the first sitting of every live mandate that has never had
+ * one (no planning row while it is planned, no review row once it is
+ * active). Only first sittings: a later one opens on what its Grantmaker
+ * subscribed to and the check-ins it set (mandate-review.ts), and the sweep
+ * reopens one for a mandate whose session ended. This catches every path
+ * that makes a mandate (funding, approval, a regrant's spawn, a
+ * decomposition) within one scheduler tick. Returns how many it opened.
+ */
+export async function openFirstSittings(): Promise<number> {
+  const fresh = await rawQuery<{ id: string }>(
+    `SELECT g.id FROM grants g
+      WHERE (g.status = 'planning'
+             AND NOT EXISTS (SELECT 1 FROM actions a
+                              WHERE a.exclusion_group = 'plan:' || g.id::text))
+         OR (g.status = 'active'
+             AND NOT EXISTS (SELECT 1 FROM actions a
+                              WHERE a.exclusion_group = 'review:' || g.id::text))
+      LIMIT 200`
+  );
+  for (const g of fresh) await openMandateFirstSitting(g.id);
+  return fresh.length;
+}
+
+/**
+ * How much of the work a mandate set going has not settled: rows waiting to
+ * run or running that hold an unreleased allocation of the mandate's (its
+ * standing orders, its own and its officers' and lookouts' commissions),
+ * open or running ingest rows its plan names, and plan items waiting for
+ * their ingests (`after`). The mandate's own upkeep (its Grantmaker's
+ * sittings, its lookouts' and Correspondents' runs) is not counted: it is
+ * not work the mandate is waiting on. What a `work_settled` subscription
+ * waits to see reach zero (subscription-router.ts).
+ */
+export async function mandateWorkInFlight(grantId: string): Promise<number> {
+  const [row] = await rawQuery<{ n: number }>(
+    `SELECT (
+       (SELECT count(*) FROM actions a
+         WHERE a.status IN ('open', 'running')
+           AND a.kind NOT IN ('grant_planning', 'mandate_review', 'lookout_run', 'correspondent_run', 'resume')
+           AND EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
+                        WHERE al.grant_id = $1 AND al.released_at IS NULL
+                          AND al.exclusion_group = a.exclusion_group
+                          AND (al.action_id IS NULL OR al.action_id = a.id)))
+       + (SELECT count(*) FROM actions a
+           WHERE a.status IN ('open', 'running') AND a.kind = 'ingest'
+             AND a.target_ref IN (
+               SELECT it->>'url' FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) it
+                WHERE g.id = $1 AND it->>'action' = 'ingest'))
+       + (SELECT count(*) FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) it
+           WHERE g.id = $1 AND it->'ledger'->>'status' = 'waiting'
+             AND it->'ledger' ? 'after_wait_from'
+             -- Past its most, an item no longer waits for its ingests (an
+             -- order that then waits for room is not work set going).
+             AND (it->'ledger'->>'after_wait_from')::timestamptz
+                   > now() - make_interval(hours => ${AFTER_INGESTS_MAX_WAIT_HOURS}))
+     )::int AS n`,
+    [grantId]
+  );
+  return Number(row?.n ?? 0);
 }
 
 /**
@@ -1240,6 +1386,12 @@ export interface PlanItemLedger {
    * node's own pass was seen finished.
    */
   ran_at?: string;
+  /**
+   * assess/reassess/deepen with `after`: when the item first waited for the
+   * ingests it names, which its wait is counted from
+   * (AFTER_INGESTS_MAX_WAIT_HOURS).
+   */
+  after_wait_from?: string;
 }
 
 /** The plan item shape the materializer reads (a loose PlanItem). */
@@ -1251,6 +1403,8 @@ export interface MaterializablePlanItem {
   rationale?: string;
   /** assess/reassess/deepen: the budget of each pass the item commissions; absent = the row's estimate. */
   budget_owls?: number;
+  /** assess/reassess/deepen: the plan's ingest urls its pass waits for (grant-service.ts, PlanItem.after). */
+  after?: string[];
   /** ingest only: read the document for this subject (ingest-focus-service.ts). */
   focus?: string;
   /** sweep only: a topic tag's slug, or "residual". */
@@ -1356,7 +1510,8 @@ export interface PlanItemOutcome {
 
 /** Per-sweep memo of the cost estimates the rows carry. */
 interface MaterializeContext {
-  ingestCostMicroUsd: number;
+  /** What an ingest row is priced at: the ledger's own figure for ingests (estimateLedgerKindCostMicroUsd). */
+  ingestCostMicroUsd: () => Promise<number>;
   formalizeCostMicroUsd: () => Promise<number>;
   /** The graph's sweep partitions, read once per sweep when a plan names one. */
   partitions: () => Promise<PartitionStatus[]>;
@@ -1367,10 +1522,11 @@ function newMaterializeContext(): MaterializeContext {
   // computed once per sweep and only when some plan asks for one.
   let strongPassMicroUsd: number | null = null;
   let partitions: Promise<PartitionStatus[]> | null = null;
+  let ingestMicroUsd: Promise<number> | null = null;
   return {
     partitions: () =>
       (partitions ??= listPartitions(loadConfig().consistencyMinTagClaims)),
-    ingestCostMicroUsd: capMicroUsd("source_ingest"),
+    ingestCostMicroUsd: () => (ingestMicroUsd ??= estimateLedgerKindCostMicroUsd("ingest")),
     formalizeCostMicroUsd: async () => {
       if (strongPassMicroUsd === null) {
         strongPassMicroUsd = (await stewardTierCostEstimates()).strongMicroUsd;
@@ -1696,6 +1852,56 @@ export async function materializeGrantPlan(
   return outcomes;
 }
 
+/**
+ * Whether a stewarding item that names ingests (`after`) waits for them:
+ * the waiting standing, naming each unread ingest and the hour it waits
+ * until, or none, with a note when the wait ran out. An ingest is read when
+ * it has rows and none of them is open or running (done, or cancelled as
+ * unreadable); one with no row yet has not been read. The wait counts from
+ * `since`, when the item first waited, and lasts at most
+ * AFTER_INGESTS_MAX_WAIT_HOURS (grant-service.ts says why).
+ */
+async function ingestsGate(
+  urls: readonly string[],
+  since: string | undefined
+): Promise<{ wait: PlanItemLedger | null; note: string | null; from?: string }> {
+  const unread = await rawQuery<{ url: string }>(
+    `SELECT u.url FROM unnest($1::text[]) u(url)
+      WHERE NOT EXISTS (SELECT 1 FROM actions a WHERE a.kind = 'ingest' AND a.target_ref = u.url)
+         OR EXISTS (SELECT 1 FROM actions a
+                     WHERE a.kind = 'ingest' AND a.target_ref = u.url AND a.status IN ('open', 'running'))`,
+    [[...urls]]
+  );
+  if (unread.length === 0) return { wait: null, note: null };
+  const from = since && Number.isFinite(new Date(since).getTime()) ? since : nowIso();
+  const until = new Date(new Date(from).getTime() + AFTER_INGESTS_MAX_WAIT_HOURS * 3_600_000);
+  const names = unread.map((r) => r.url).join(", ");
+  if (until.getTime() <= Date.now()) {
+    return {
+      wait: null,
+      from,
+      note:
+        `placed without waiting longer for ${unread.length} of the ingests it names (${names}): ` +
+        `an item waits at most ${AFTER_INGESTS_MAX_WAIT_HOURS} hours for its ingests; a reassess item ` +
+        `after they are read is the way to weigh them`,
+    };
+  }
+  return {
+    wait: {
+      status: "waiting",
+      reason:
+        `waiting for ${unread.length} of the ingests it names to be read before its pass is placed ` +
+        `(${names}); it is placed at the next look after they are, and at the latest at ` +
+        `${until.toISOString().slice(0, 16).replace("T", " ")} UTC, the most an item waits ` +
+        `(${AFTER_INGESTS_MAX_WAIT_HOURS} hours), so a stuck extraction cannot hold it forever. ` +
+        `It holds no money while it waits.`,
+      after_wait_from: from,
+      checked_at: nowIso(),
+    },
+    note: null,
+  };
+}
+
 function sameLedger(a: PlanItemLedger | undefined, b: PlanItemLedger): boolean {
   if (!a) return false;
   return (
@@ -1832,7 +2038,7 @@ async function materializePlanItem(
         group,
         item.url,
         focus ? `Ingest ${item.url} (focus: ${focus.slice(0, 120)})` : `Ingest ${item.url}`,
-        o.ctx.ingestCostMicroUsd,
+        await o.ctx.ingestCostMicroUsd(),
         currentLabel(),
       ]
     );
@@ -1944,6 +2150,19 @@ async function materializePlanItem(
     if (ran && kind !== "deepen") return ran;
     if (!o.active) return o.notActive;
 
+    // Order of work: an item that names the plan's ingests it should read
+    // (after) waits, placing nothing, until they have been read, so its
+    // pass weighs the sources the plan bought for it. Only before anything
+    // is placed: a pass already ordered or run is left alone.
+    let afterNote: string | null = null;
+    let afterFrom: string | undefined;
+    if (!ran && !item.ledger?.order && !item.ledger?.action_id && Array.isArray(item.after) && item.after.length > 0) {
+      const gate = await ingestsGate(item.after, item.ledger?.after_wait_from);
+      if (gate.wait) return gate.wait;
+      afterNote = gate.note;
+      afterFrom = gate.from;
+    }
+
     // The item is a standing order (#849): the mandate commissions the pass
     // whole, at the item's budget or the row's estimate, on the item's
     // tier. What the pace cannot cover yet waits and is asked for
@@ -2003,6 +2222,10 @@ async function materializePlanItem(
         }
       }
     }
+    if (afterNote && !own.reason) own = { ...own, reason: afterNote };
+    // A wait that ran out stays run out: an order that then waits for room
+    // keeps the time its wait began, so the next look does not start it again.
+    if (afterFrom && !own.order && !own.action_id) own = { ...own, after_wait_from: afterFrom };
     if (kind !== "deepen") return own;
 
     // deepen's second half: the node's deferred children are released
@@ -2696,9 +2919,11 @@ export async function claimAction(actionId: string, atLabel?: string): Promise<b
  * waits before the executors pick it again and says so: the fault's public
  * class, since when, and when it is tried next (deployment-fault.ts, which
  * also says why this is a wait and why money cannot pace it). The funded
- * rows of the same kind and tier wait with it. The wait doubles with each
+ * rows of the same kind and tier wait with it: those an executor would
+ * pick, which is those with a live commission. The wait doubles with each
  * consecutive fault on that kind of work, from 30 seconds to 10 minutes,
- * and ends as soon as one of the rows runs (completeAction). A deployment
+ * and ends as soon as a row of that kind and tier runs, whether or not that
+ * row had been waiting (completeAction). A deployment
  * fault is also recorded for maintainers (deployment-fault-service.ts).
  * Returns the fault's class, or null when the row is simply open again.
  *
@@ -2734,8 +2959,12 @@ export async function releaseAction(actionId: string, cause?: unknown): Promise<
     [actionId, reason, FAULT_RETRY_BASE_SECONDS, FAULT_RETRY_MAX_SECONDS]
   );
   if (released) {
-    // The funded rows of the same kind and tier wait with it (the same
-    // model serves them), and say so.
+    // The rows of the same kind and tier that an executor would pick wait
+    // with it (the same model serves them), and say so. The test is the
+    // executors' own (nextRunnableAction): money on the row and a live
+    // commission. A row with money and no commission is one no executor
+    // picks, so marking it would say it waits on the fault when it waits on
+    // a payer, and nothing would ever try it and clear the mark.
     await rawQuery(
       `UPDATE actions a
           SET fault_reason = t.fault_reason,
@@ -2745,7 +2974,8 @@ export async function releaseAction(actionId: string, cause?: unknown): Promise<
          FROM actions t
         WHERE t.id = $1 AND a.id <> t.id AND a.status = 'open'
           AND a.kind = t.kind AND a.variant = t.variant
-          AND ${COVERAGE_SQL} > 0`,
+          AND ${COVERAGE_SQL} > 0
+          AND ${COMMISSIONED_SQL}`,
       [actionId]
     );
   }
@@ -2796,25 +3026,41 @@ export async function joinFaultWait(actionId: string): Promise<FaultWait | null>
 }
 
 /**
- * A row that waited on a platform fault has just run, so the fault is over
- * for its kind of work: the rows of the same kind and tier stop waiting, and
- * rows of other kinds waiting on the same class are tried now rather than at
- * the end of their own wait (one whose provider is still down fails and
- * waits again, having cost one refused call).
+ * A row has just run, so whatever platform fault its kind of work was
+ * waiting on is over for that kind: the rows of the same kind and tier stop
+ * waiting, and rows of other kinds waiting on the same class are tried now
+ * rather than at the end of their own wait (one whose provider is still down
+ * fails and waits again, having cost one refused call).
+ *
+ * `waitedOn` is the class the row that ran had itself been waiting on, if
+ * any. The rows of its kind and tier are cleared whether or not it carried
+ * one (completeAction calls this for any run that metered spend): the row an executor picks when a wait ends is the one with the most
+ * backing, which is often a row commissioned after the fault and never
+ * marked, and when only a marked row's own run cleared the others, nine
+ * sweeps finished on 2026-11-13 and thirteen rows went on reading as waiting.
  */
-async function endFaultWaits(actionId: string, reason: string): Promise<void> {
-  await rawQuery(
-    `UPDATE actions a
+async function endFaultWaits(actionId: string, waitedOn: string | null): Promise<void> {
+  const cleared = await rawQuery<{ fault_reason: string }>(
+    `WITH waiting AS (
+       SELECT a.id, a.fault_reason
+         FROM actions t JOIN actions a ON a.kind = t.kind AND a.variant = t.variant
+        WHERE t.id = $1 AND a.id <> t.id AND a.status = 'open' AND a.fault_reason IS NOT NULL
+        FOR UPDATE OF a
+     )
+     UPDATE actions a
         SET fault_reason = NULL, fault_since = NULL, fault_attempts = 0, retry_after = NULL
-       FROM actions t
-      WHERE t.id = $1 AND a.status = 'open' AND a.fault_reason IS NOT NULL
-        AND a.kind = t.kind AND a.variant = t.variant`,
+       FROM waiting w
+      WHERE a.id = w.id
+      RETURNING w.fault_reason`,
     [actionId]
   );
+  const classes = new Set(cleared.map((r) => r.fault_reason));
+  if (waitedOn) classes.add(waitedOn);
+  if (classes.size === 0) return;
   await rawQuery(
     `UPDATE actions SET retry_after = now()
-      WHERE status = 'open' AND fault_reason = $1 AND retry_after > now()`,
-    [reason]
+      WHERE status = 'open' AND fault_reason = ANY($1::text[]) AND retry_after > now()`,
+    [[...classes]]
   );
 }
 
@@ -2843,9 +3089,11 @@ export async function completeAction(
   meteredMicroUsd: number,
   opts: { meteredJobId?: string | null } = {}
 ): Promise<number> {
-  // The platform fault this row had been waiting on, if any: a row that
-  // runs after such a wait ends the wait of the others (endFaultWaits).
+  // A row that runs ends the wait its kind and tier were in (endFaultWaits),
+  // whether or not it had been waiting itself; `waitedOn` is the platform
+  // fault it had been waiting on, if any.
   let waitedOn: string | null = null;
+  let closed = false;
   const consumed = await withTransaction(async (tx) => {
     // Guarded transition: only a live (running, or reconcile-reopened)
     // action completes; a done/superseded/cancelled row is already closed
@@ -2863,6 +3111,7 @@ export async function completeAction(
       [actionId, Math.round(meteredMicroUsd), opts.meteredJobId ?? null]
     );
     if (!action) return 0;
+    closed = true;
     waitedOn = action.waited_on;
 
     await tx.query(
@@ -3052,7 +3301,12 @@ export async function completeAction(
     }
     return consumed;
   });
-  if (waitedOn) {
+  // A run that metered spend was served by its provider. One that closed
+  // having spent nothing (work that turned out to have nothing to do) says
+  // nothing about the provider, and ending the wait on it would restart the
+  // doubling at 30 seconds through a long fault; such a row ends the wait
+  // only if it had been waiting itself, as it always has.
+  if (closed && (waitedOn || meteredMicroUsd > 0)) {
     await endFaultWaits(actionId, waitedOn).catch((err) =>
       console.warn(`[actions] ending fault waits failed: ${err instanceof Error ? err.message : err}`)
     );

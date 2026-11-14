@@ -182,7 +182,7 @@ describe("ensureFreeGrants", () => {
       idempotencyKey: string;
     }>;
     expect(signup.reason).toBe("signup_grant");
-    expect(signup.amountMicroUsd).toBe(5_000_000); // 5 owls
+    expect(signup.amountMicroUsd).toBe(10_000_000); // 10 owls
     expect(signup.idempotencyKey).toBe("signup:u-1");
     expect(monthly.reason).toBe("monthly_grant");
     expect(monthly.amountMicroUsd).toBe(1_000_000); // 1 owl

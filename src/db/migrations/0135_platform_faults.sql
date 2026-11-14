@@ -50,5 +50,5 @@ SELECT a.id AS action_id, a.kind, a.variant, a.claim_id AS target_node_id, a.tar
 -- A view in public_read made after enforcement is held by the step, or read-only
 -- SQL would read every label through it until the next start (added when this
 -- line of migrations met the private-deployment work; a database that had
--- already run this file is covered by the step in 0143).
+-- already run this file is covered by the step in 0148).
 SELECT minerval_enforcement_sync();

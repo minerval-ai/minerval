@@ -13,6 +13,8 @@ const { state } = vi.hoisted(() => ({
     enqueuedAt: [] as string[],
     reconciles: 0,
     orderLooks: 0,
+    firstSittingLooks: 0,
+    agentRunLooks: 0,
     tends: 0,
     priorityRuns: 0,
     selfFunds: 0,
@@ -47,6 +49,13 @@ vi.mock("../../../src/services/action-service.js", () => ({
   materializeStandingOrders: vi.fn(async () => {
     state.orderLooks++;
     return 0;
+  }),
+  openFirstSittings: vi.fn(async () => {
+    state.firstSittingLooks++;
+    return 0;
+  }),
+  openDueAgentRuns: vi.fn(async () => {
+    state.agentRunLooks++;
   }),
 }));
 
@@ -140,6 +149,8 @@ beforeEach(() => {
   state.dueClaims = [];
   state.reconciles = 0;
   state.orderLooks = 0;
+  state.firstSittingLooks = 0;
+  state.agentRunLooks = 0;
   state.tends = 0;
   state.priorityRuns = 0;
   state.selfFunds = 0;
@@ -218,6 +229,11 @@ describe("allocationSchedulerTick", () => {
     expect(state.orderLooks).toBe(1);
     expect(state.tends).toBe(2);
     expect(state.reconciles).toBe(1);
+    // And opens what runs on its own clock: a new mandate's first sitting,
+    // and the lookouts and Correspondents that have fallen due, never
+    // waiting for the six-hourly sweep.
+    expect(state.firstSittingLooks).toBe(1);
+    expect(state.agentRunLooks).toBe(1);
 
     const later = await allocationSchedulerTick(1_000_000 + 7 * 3_600_000);
     expect(later.prioritiesRefreshed).toBe(3);

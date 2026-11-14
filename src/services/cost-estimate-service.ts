@@ -192,19 +192,25 @@ export async function stewardTierCostEstimates(): Promise<{
 }
 
 /**
- * Expected cost of one `curate` or `audit` run (#363), or of a request's
- * scoping pass, in micro-USD: the live percentile of the metered cost the
- * ledger itself recorded on completed rows of the kind
- * (`actions.metered_cost_micro_usd`), once enough exist, else the governing
- * policy's prior (`est_curate_cost_owls`, `est_audit_cost_owls`,
- * `est_request_scope_cost_owls`).
+ * Expected cost of one `curate` or `audit` run (#363), a request's scoping
+ * pass, or an ingest (an extraction and the Matcher runs it makes), in
+ * micro-USD: the live percentile of the metered cost the ledger itself
+ * recorded on completed rows of the kind (`actions.metered_cost_micro_usd`),
+ * once enough exist, else the governing policy's prior
+ * (`est_curate_cost_owls`, `est_audit_cost_owls`,
+ * `est_request_scope_cost_owls`, `est_ingest_cost_owls`).
+ *
+ * An ingest is priced here, not at the source_ingest cap: the cap is the
+ * most a person submitting a source is charged, a ceiling, while a ledger
+ * row's estimate is what its payer holds while it waits, and a mandate
+ * holding the ceiling on every ingest could fund few of them.
  *
  * The ledger, not llm_usage, is the series here: one run of either kind is
  * one action, a Curator run's usage rows carry no claim id to group on, and
  * an audit has no claim at all.
  */
 export async function estimateLedgerKindCostMicroUsd(
-  kind: "curate" | "audit" | "request_scope" | "redact"
+  kind: "curate" | "audit" | "request_scope" | "redact" | "ingest"
 ): Promise<number> {
   const config = loadConfig();
   const windowDays = config.costEstimateWindowDays ?? 14;
@@ -247,7 +253,9 @@ export async function estimateLedgerKindCostMicroUsd(
           // one decision against the record: until the ledger has its own
           // series of redactions, the audit's prior stands for it.
           policy.est_audit_cost_owls
-        : policy.est_request_scope_cost_owls;
+        : kind === "ingest"
+          ? policy.est_ingest_cost_owls
+          : policy.est_request_scope_cost_owls;
   return Math.round(priorOwls * (config.owlCostMicroUsd ?? 1_000_000));
 }
 
