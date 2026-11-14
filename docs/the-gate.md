@@ -264,7 +264,11 @@ A request addressed to a published mandate arrives with the mirror
 its label (`deliverAddressedRequests`). Its Grantmaker decides under the
 mandate's terms, as it decides anything put in front of it: `fund_request`
 takes it up and pays for the work; `decline_asked_request` declines it
-with a reason from the fixed list. No person acts for each one. That it
+with a reason from the fixed list. No person acts for each one. The item
+goes to the Grantmaker directly, as an officer's escalation does, and not
+to officer sittings, which are off unless a deployment turns them on: a
+live Grantmaker session is woken, and a mandate with none is given a
+review pass. That it
 was taken up, or will not be worked, goes to the gate to outside like any
 `taken_up` or `answer`; the page of each node it bears on flows to the
 gate from the label that took it up, and from any label above that took

@@ -1174,6 +1174,12 @@ describe("asking an organization's graph from the public graph", () => {
     expect(raised!.label).toBe(A);
     expect(raised!.summary).toContain("Say whether the plant's emissions stayed within its permit");
     expect(raised!.summary).toContain("Whether to take it up is this mandate's to decide, under its terms.");
+    // It goes to the Grantmaker itself, which decides it, and is not left for officer sittings, which are off unless
+    // a deployment turns them on: in the second run with real models a request sat unread in the inbox while the
+    // mandate's review pass ran without it.
+    const [sent] = await system(() => rawQuery<{ escalated: boolean; note: string | null }>(`SELECT escalated_at IS NOT NULL AS escalated, escalation_note AS note FROM mandate_inbox WHERE grant_id = $1`, [id.inquiries]));
+    expect(sent).toMatchObject({ escalated: true });
+    expect(sent!.note).toContain("addressed to this mandate");
 
     const funded = await grantmaker(A, id.inquiries!, "fund_request", { request_id: id.r3, budget_usd: 2 });
     expect(funded.success, JSON.stringify(funded)).toBe(true);
