@@ -1448,6 +1448,9 @@ html { scroll-behavior: smooth; }
 .mandate-items { list-style: none; padding: 0; margin: 0.6rem 0; display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.82rem; }
 .mandate-target { font-family: var(--mono); font-size: 0.74rem; word-break: break-all; }
 .mandate-rationale { color: var(--muted); }
+.mandate-warnings { margin-top: 0.8rem; padding: 0.6rem 0.8rem; border-left: 3px solid var(--warn, #b45309); }
+.mandate-warnings ul { margin: 0.3rem 0 0.5rem 1.1rem; }
+.mandate-warnings label { display: flex; gap: 0.4rem; align-items: baseline; }
 .mandate-fund { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.8rem; }
 .mandate-budget { display: inline-flex; align-items: center; gap: 0.3rem; }
 .mandate-fund input[type="number"] {

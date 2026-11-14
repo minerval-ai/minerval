@@ -311,6 +311,10 @@ export interface SourceDocumentView {
   source_id: string;
   segmented: boolean;
   total_chars: number;
+  /** How many segments the document has; `segments` may be a page of them. */
+  segment_count: number;
+  /** The first segment returned, when a page was asked for. */
+  segment_offset?: number;
   segments: DocumentSegmentView[];
   /** Instances of claims on this source whose text was not found in it. */
   unanchored: DocumentInstanceView[];
@@ -327,7 +331,10 @@ export interface SourceDocumentView {
  * the claims that assert or engage it and each claim Steward's reading. The
  * source page's body. Anchors instances recorded since the last pass first.
  */
-export async function getSourceDocument(sourceId: string): Promise<SourceDocumentView | null> {
+export async function getSourceDocument(
+  sourceId: string,
+  page: { offset?: number; limit?: number; withText?: boolean } = {}
+): Promise<SourceDocumentView | null> {
   const [row] = await rawQuery<{ raw_content: string | null }>(`SELECT raw_content FROM sources WHERE id = $1`, [sourceId]);
   if (!row) return null;
   const text = htmlToText(row.raw_content ?? "");
@@ -388,11 +395,18 @@ export async function getSourceDocument(sourceId: string): Promise<SourceDocumen
     list.push(view(i));
     bySegment.set(i.segment_id, list);
   }
+  // A page of the segments, when one was asked for (the whole document
+  // otherwise, as the source page renders it).
+  const offset = Math.max(0, page.offset ?? 0);
+  const shown = page.limit !== undefined ? segments.slice(offset, offset + page.limit) : segments;
+  const withText = page.withText ?? true;
   return {
     source_id: sourceId,
     segmented: segments.length > 0,
     total_chars: text.length,
-    segments: segments.map((s) => ({
+    segment_count: segments.length,
+    ...(page.limit !== undefined ? { segment_offset: offset } : {}),
+    segments: shown.map((s) => ({
       id: s.id,
       parent_id: s.parent_id,
       ordinal: s.ordinal,
@@ -400,7 +414,7 @@ export async function getSourceDocument(sourceId: string): Promise<SourceDocumen
       label: s.label,
       char_start: s.char_start,
       char_end: s.char_end,
-      text: s.kind === "section" ? null : text.slice(s.char_start, s.char_end),
+      text: s.kind === "section" || !withText ? null : text.slice(s.char_start, s.char_end),
       instances: bySegment.get(s.id) ?? [],
     })),
     unanchored,

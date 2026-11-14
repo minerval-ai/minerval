@@ -10,6 +10,8 @@ export interface GrantTurn {
   error: string | null;
   /** The reply so far while the Grantmaker writes it. */
   partial?: string | null;
+  /** While it replies: how many tools it has called, and the latest in a line. */
+  progress?: { steps: number; note: string };
 }
 
 // The server saves the reply-so-far about once a second; reading at this

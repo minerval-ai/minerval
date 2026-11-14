@@ -24,7 +24,8 @@
  *     asking, for one conversation or for the account. An allowed call runs
  *     at once and is recorded here the same way, as a receipt.
  */
-import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { ACTIVITY_KEPT, aboutOf, type TurnStep } from "./turn-activity.js";
+import { and, desc, eq, getTableColumns, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { getDb, rawQuery } from "../db/client.js";
 import {
@@ -48,6 +49,7 @@ import {
 import { RUN_TURN_GUARD } from "../llm/prompts/turn-budget.js";
 import { getChatContextPrompt } from "../llm/prompts/extension-agent.js";
 import {
+  alwaysAsks,
   assistantAuth,
   HELD_KINDS,
   HELD_TOOL_LABELS,
@@ -113,24 +115,7 @@ export interface AssistantMessage {
 }
 
 /** One thing a running turn did: the tool, and what it was pointed at. */
-export interface AssistantActivity {
-  tool: string;
-  about: string | null;
-}
-
-const ACTIVITY_KEPT = 12;
-
-/** The argument that says what a call was about, cut short. */
-function aboutOf(input: Record<string, unknown>): string | null {
-  for (const key of ["query", "q", "title", "text", "claim", "task", "message", "url", "name", "slug", "sql"]) {
-    const value = input[key];
-    if (typeof value === "string" && value.trim()) {
-      const line = value.replace(/\s+/g, " ").trim();
-      return line.length > 90 ? `${line.slice(0, 90)}…` : line;
-    }
-  }
-  return null;
-}
+export type AssistantActivity = TurnStep;
 
 export interface AssistantUser {
   id: string;
@@ -552,7 +537,9 @@ async function runTurn(
 
   const cards: AssistantCard[] = [];
   const hold = async (tool: string, kind: HeldKind, input: Record<string, unknown>) => {
-    const allowed = (await allowedKinds(convo)).has(kind);
+    // A call that acknowledges a draft's warnings waits for the user's own
+    // press, whatever they allow (assistant-tools.ts, ALWAYS_ASKS).
+    const allowed = !alwaysAsks(tool, input) && (await allowedKinds(convo)).has(kind);
     const ran = allowed
       ? await account.call(tool, input).catch(
           (err): AccountToolResult => ({
@@ -880,16 +867,24 @@ export async function getAssistantConversation(
   return convo;
 }
 
+/**
+ * The user's conversations as a list shows them (serializeAssistantSummary),
+ * newest first. Their transcripts are not read: `messages` is empty on every
+ * row. Fifty whole transcripts were read for a list that shows titles, on
+ * every page of the Ask section.
+ */
 export async function listAssistantConversations(
   userId: string,
-  limit = 50
+  limit = 50,
+  offset = 0
 ): Promise<AssistantConversation[]> {
   return getDb()
-    .select()
+    .select({ ...getTableColumns(assistantConversations), messages: sql<unknown>`'[]'::jsonb` })
     .from(assistantConversations)
     .where(eq(assistantConversations.userId, userId))
     .orderBy(desc(assistantConversations.updatedAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, offset));
 }
 
 /** Ask the running turn to stop at its next step. True when one was running. */

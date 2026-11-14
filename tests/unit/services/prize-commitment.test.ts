@@ -76,7 +76,8 @@ describe("the statements that read it", () => {
     const total = await grantCommittedMicroUsd({ id: "g-1", budgetJobId: "job-1" });
     expect(total).toBe(1 + 2 + 3 + 4 + 5);
     const sql = state.statements.find((s) => s.includes("AS nonledger"))!;
-    expect(sql).toContain(`${prizeCommitmentSql("$1")} AS prizes`);
+    // One statement for one mandate or a list of them, correlated on each.
+    expect(sql).toContain(`${prizeCommitmentSql("ge.grant_id")} AS prizes`);
   });
 
   it("refundUnspentBudget's settlement statement carries the same fragment and excludes the term", async () => {

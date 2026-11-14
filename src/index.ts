@@ -57,6 +57,10 @@ function startWork(
   logger: WorkLogger
 ): Array<{ stop: () => void }> {
   const pollers: Array<{ stop: () => void }> = [];
+  // Every queue's handler is given up on after this long without progress
+  // (workers/poller.ts); the URL extraction lane has its own, and runs
+  // several at once (docs/infrastructure.md, "The extraction lane").
+  const stallMs = config.queueStallMinutes * 60_000;
 
   // Start queue pollers for configured queues
   if (config.sqsClaimPipelineQueue) {
@@ -65,6 +69,7 @@ function startWork(
     pollers.push(startPoller<QueuedClaimPipelineMessage>({
       queueUrl: config.sqsClaimPipelineQueue,
       handler: handleClaimPipeline,
+      stallMs,
       logger,
     }));
   }
@@ -73,6 +78,8 @@ function startWork(
     pollers.push(startPoller<UrlExtractionMessage>({
       queueUrl: config.sqsUrlExtractionQueue,
       handler: handleUrlExtraction,
+      concurrency: config.urlExtractionConcurrency,
+      stallMs: config.urlExtractionStallMinutes * 60_000,
       logger,
     }));
   }
@@ -81,6 +88,7 @@ function startWork(
     pollers.push(startPoller<ContributionMessage>({
       queueUrl: config.sqsContributionQueue,
       handler: handleContributionMessage,
+      stallMs,
       logger,
     }));
   }
@@ -89,6 +97,7 @@ function startWork(
     pollers.push(startPoller<ArbitrationMessage>({
       queueUrl: config.sqsArbitrationQueue,
       handler: handleArbitrationMessage,
+      stallMs,
       logger,
     }));
   }

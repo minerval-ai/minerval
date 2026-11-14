@@ -191,13 +191,40 @@ the conversation intact until something it asked to be told of arrives
   escalated to a mandate with no live session, `openReviewsForEscalations`
   (src/services/mandate-event-service.ts, on the executor's tick) opens
   one at once rather than waiting for the sweep.
+- **The first sitting does not wait for the sweep.** Funding a mandate
+  (`fundConversationMandate`, `createGrant`, a decomposition, a regrant's
+  spawn) or approving its plan opens its first sitting at once
+  (`openMandateFirstSitting` in src/services/action-service.ts): the
+  planning row of a mandate being planned, the first review row of an
+  active one. The executor's next tick funds it (`fundGrantSelfActions`).
+  The scheduler's tick between sweeps (`openFirstSittings`,
+  `STANDING_ORDER_RETRY_MINUTES` apart) catches any mandate that has never
+  had one. On 2026-11-13 a breaking-news mandate funded at 21:25 sat at
+  21:31 only because a deploy restarted the process; without it, its
+  first sitting would have waited for the six-hourly sweep, a cadence
+  nobody had told the Grantmaker or the funder of.
 - **What wakes it.** A fresh session holds two standing subscriptions:
   what its officers escalate (`escalated` events on its mandate) and what
   its funder writes (an `inbox_item` that is a funder note). Beyond those
   it subscribes to what matters to its mission (the runs it commissioned
   settling, nodes or subtrees moving, money committed past a figure) and
   sets check-ins. A turn that ends with no check-in held gets one
-  `DEFAULT_CHECK_IN_HOURS` (24) out, which the briefing states.
+  `DEFAULT_CHECK_IN_HOURS` (24) out, which the briefing states, with the
+  advice to set check-ins to the pace of the story: hours apart for a
+  mandate whose horizon is hours or days.
+- **The first wave.** When a mandate's first sitting ends with work in
+  flight, its session gets one more subscription (`firstWaveSubscription`
+  in src/llm/agents/mandate-review.ts): a `work_settled` condition that
+  wakes it once, when nothing the mandate commissioned is waiting to run
+  or running and no plan item waits for its ingests
+  (`mandateWorkInFlight`). One wake for the wave rather than a
+  `run_settled` delivery per run: each wake is a paid sitting that
+  re-reads the conversation, and run-by-run outcomes are already in the
+  mandate's inbox, which the next sitting reads. The FAA mandate of
+  2026-11-13 set its next check-in five hours out and subscribed to
+  nothing about its first wave while the story moved; this is the default
+  that case wanted. A Grantmaker can ask for the same at any time
+  (`subscribe` with `when_work_settled`).
 - **Each wake is a sitting.** Resuming commissions a `resume` row from the
   mandate (`commissioned_by` `session_resume`) at the review-pass figure
   (below), so a sitting works to the same budget as a fresh pass. It reads
@@ -346,6 +373,18 @@ turns on" is one shape; "the retraction record behind the nutrition
 literature" or "new work on X" are others. Which happenings fall under
 the brief is the lookout's judgment, never a keyword filter's.
 
+**Limits are the stored fields, not the brief.** The heartbeat and the
+per-item commission limit a lookout is held to are the ones set on
+`spawn_lookout`/`update_lookout`. The tool's description and result say
+so, and each run's task message states them under "Your delegated bounds"
+as the figures that govern wherever the brief names another (a lookout of
+2026-11-13 was briefed "commission at most about 4 owls in a day on your
+own" while its stored limit was 1 owl an item, and it has no daily
+allowance at all: its commissions come out of the mandate's pace). The
+run is told why the limit exists: larger calls on the funder's money go
+to the program officers, who weigh them against everything else the
+mandate could buy.
+
 **Triggers.** A lookout is woken, never polling on its own: by its
 **heartbeat** (a cadence the Grantmaker sets, hours to a month; 0 for
 event-only), or by an **input event** queued for it — the daily
@@ -378,7 +417,11 @@ daily "Upkeep" that queries for stale important claims, open curation
 requests and unanswered messages.
 
 **Runs are ledger actions.** A due lookout (heartbeat passed, or an event
-waiting) gets a `lookout_run` row (`lookout:<id>`), self-funded from the
+waiting) gets a `lookout_run` row (`lookout:<id>`) on the scheduler's
+next tick (`openDueAgentRuns`, every `STANDING_ORDER_RETRY_MINUTES`, and
+at once when it is posted), never on the six-hourly sweep's cadence,
+which nobody tells it of; a Correspondent's run opens the same way. It is
+self-funded from the
 mandate's escrow within its pace like a review pass, outside the
 Grantmaker's reserve, with a budget per run
 (`CAP_LOOKOUT_RUN_OWLS`, a small fraction of an assessment) that the
@@ -1157,6 +1200,41 @@ runs on the strong model where its payer judged the node contested and
 important, or a standard pass already failed to settle it. Paid orders
 (`POST /claims/:id/order`) always get the strong model.
 
+### A stewarding item can wait for the plan's ingests
+
+An ingest takes far longer than a pass: the extractions are read one
+after another, so a plan of many sources has rows that run for hours. A
+pass placed beside them runs first and judges its node without the
+sources the plan bought for it, and nothing re-reads the node when they
+land until a Grantmaker's later sitting asks. On 2026-11-13 the FAA
+mandate's assess and deepen items ran at 21:44, before any of its ingests
+had been read, and the next sitting was five hours away.
+
+An `assess`, `reassess` or `deepen` item may therefore name, in `after`,
+the urls of ingest items in the same plan (its own call's items or the
+plan's existing ones; `validatePlanItems` refuses a url that names none).
+The materializer (`ingestsGate` in src/services/action-service.ts) leaves
+such an item `waiting`, placing nothing and holding no money, until every
+ingest it names has been read: it has rows and none is open or running
+(done, or cancelled as unreadable). The item's standing names the unread
+ingests and the hour it waits until. The standing orders are looked at on
+every scheduler tick, so the pass is placed within minutes of the last
+ingest landing. It waits at most `AFTER_INGESTS_MAX_WAIT_HOURS` (12),
+counted from when it could first have been placed (`after_wait_from` on
+its standing): an extraction can queue for hours behind others, and a
+pass that waits for sources that never land is worse than one that reads
+without them, which a reassess item can correct. Money cannot serve as
+that bound, since nothing is spent while the item waits. Past it the pass
+is placed and its standing says which ingests it went without.
+
+Why this and not a message to the node's Steward when an ingest lands
+claims on it: the plan is where the Grantmaker states what it wants done
+and in what order, and an explicit dependency on that plan is visible,
+priced and amendable there. A message after the fact would buy a second
+pass the plan never asked for, whose cost nobody stated up front. The
+Grantmaker is told of `after` in its role prompt and in every plan tool's
+rules (`PLAN_KIND_RULES`, `PLAN_ITEM_SCHEMA`).
+
 ### A plan item is a standing order
 
 An `assess`, `reassess` or `deepen` item of a mandate's plan is an order
@@ -1611,7 +1689,7 @@ Recording never fails the change it describes.
 
 **A subscription** (`subscriptions`, src/services/subscription-service.ts)
 is a standing interest held by a subscriber: a session, a mandate's inbox,
-a node's inbox or a lookout. It is one of three kinds:
+a node's inbox or a lookout. It is one of four kinds:
 
 - **an event**, by kinds and refs: runs by action id, nodes, everything
   under a node, the nodes over it (resting on it), tags, sources,
@@ -1621,7 +1699,10 @@ a node's inbox or a lookout. It is one of three kinds:
   subscriptions;
 - **a time**: a check-in at a set time;
 - **money**: once the mandate has committed a given amount since the
-  subscription was made.
+  subscription was made;
+- **work settled**: once nothing the mandate commissioned is waiting to
+  run or running and no plan item waits for its ingests
+  (`mandateWorkInFlight`), for one wake when a whole wave has landed.
 
 Delivery is `wake` (the default) or `queue`, and `once` ends a
 subscription at its first delivery; a check-in and a threshold always end
@@ -1985,8 +2066,14 @@ objective, narrowed by state (active, paused on a spent budget, finished)
 and read a page at a time. `GET /mandates` (MCP `list_mandates`) serves
 the same: `scope`, `state`, `q`, `order`, `offset` and `limit`, with the
 count in each state and scope; with no parameters it lists the mandates
-open to backing, as it always has. A public scope holds only mandates that
-have started.
+open to backing, as it always has. Each row is short by default (the
+objective's first words, budget, spent and held, the page's link);
+`detail=full` gives every field, as the site asks for. A public scope
+holds only mandates that have started. `GET /mandates/:id` answers a
+summary by default in the same way: the plan's items a page at a time
+(`items_offset`, `items_limit`, `items_state`, each item with who added
+it and when), every other list cut to `list_limit`, and `collections`
+saying how long each is; `detail=full` is what the page renders.
 
 The mandate's page (`/mandates/:id`) sets the mandate itself (title,
 objective, strategy) as a document, and reports on it under it: what is

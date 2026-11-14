@@ -17,7 +17,7 @@
  * disclosed on the assessments they produce, and grant stakes feed queue
  * priority only (§19, "Allocating Attention and Paid Attention").
  */
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
@@ -25,13 +25,32 @@ import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import type { PlanItemLedger } from "./action-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
-import { grantEscrowBreakdown } from "./regrant-service.js";
+import { grantEscrowBreakdown, grantEscrowBreakdowns } from "./regrant-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
 import type { FeaturesConfig } from "../features.js";
+import { countStates, cutList, pagePlanItems, type DetailOptions } from "./read-detail.js";
+import { describePlanItems } from "./plan-state.js";
+import { mandateFunderUrl, mandatePageUrl } from "./mandate-urls.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
+
+/**
+ * The longest a stewarding plan item waits for the ingests it names in
+ * `after`, in hours, counted from when the item could first have been
+ * placed. Not a spending limit: a bound on a dependency. An extraction can
+ * queue for hours behind others (on 2026-11-13 a stopped drain left ingests
+ * waiting twenty hours), and a pass that waits for sources that never land
+ * is worse than one that reads without them, which a later pass can
+ * correct. Money cannot serve here: nothing is being spent while the item
+ * waits. Stated in the plan tools (PLAN_KIND_RULES, PLAN_ITEM_SCHEMA) and in
+ * the waiting item's reason.
+ */
+export const AFTER_INGESTS_MAX_WAIT_HOURS = 12;
+
+/** The most ingest URLs one item may wait for. */
+const AFTER_MAX_URLS = 20;
 
 /** The longest wording a proposal carries, at every door (contribution-service.ts). */
 export const PROPOSAL_TEXT_MAX_CHARS = 2000;
@@ -136,6 +155,14 @@ export interface PlanItem {
    * in owls. Absent = the row's estimate for the tier.
    */
   budget_owls?: number;
+  /**
+   * assess/reassess/deepen: the URLs of ingest items in the same plan that
+   * this pass should read. The item waits, unplaced, until each named
+   * ingest has been read (its rows done or cancelled), or for at most
+   * AFTER_INGESTS_MAX_WAIT_HOURS, so its pass weighs the sources the plan
+   * bought for it rather than running before they land.
+   */
+  after?: string[];
   is_calibration?: boolean;
   lifetime_cap_owls?: number;
   /**
@@ -145,6 +172,16 @@ export interface PlanItem {
   withdrawn?: { at: string; note?: string };
   /** assess/reassess/deepen: the last change of tier or budget (amend_plan_items). */
   amended?: { at: string; note?: string };
+  /**
+   * Who put the item in the plan, and when (PLAN_ITEM_AUTHORS): stamped by
+   * the path that wrote it, never by the plan's author, so a reader can tell
+   * the Grantmaker's own addition from one its funder asked for in the chat
+   * or one a planning pass drafted. With the run that wrote it, when one was
+   * open. Absent on items written before it was recorded.
+   */
+  added_by?: PlanItemAuthor;
+  added_at?: string;
+  added_run_id?: string;
   /**
    * The item's standing on the ledger, written by the plan-to-ledger
    * materializer (action-service.ts) on every sweep and on extend_plan:
@@ -231,6 +268,19 @@ export const PLAN_KIND_RULES =
   "So price a deepen item as the node's pass plus one per unassessed " +
   "child. It goes one level. If the Steward parks a node after repeated " +
   "failures, the item reads cancelled and its budget is back in your escrow. " +
+  "Order of work: ingests take far longer than passes (an extraction can " +
+  "take hours, more when others queue ahead of it), so a pass placed at " +
+  "once runs before the plan's sources are in the graph and judges without " +
+  "them. Give an assess, reassess or deepen item after: the urls of the " +
+  "plan's ingest items its node should be judged with. The item then waits, " +
+  "placing nothing and holding no money, until every ingest it names has " +
+  "been read, and is placed at the next look after (within minutes); its " +
+  "standing says which ingests it is waiting for and until when. It waits " +
+  `at most ${AFTER_INGESTS_MAX_WAIT_HOURS} hours from when it could first ` +
+  "have been placed, so a stuck extraction cannot hold it forever: past " +
+  "that its pass is placed without them, and a reassess item later is the " +
+  "way to weigh them. Leave after off a pass whose node the sources do not " +
+  "bear on, or that should run now regardless. " +
   "ingest: an http(s) url; executes in plan order from your escrow. An " +
   "optional focus scopes it: the extractor reads the whole document but " +
   "proposes only the claims bearing on the focus (premises those claims " +
@@ -329,6 +379,16 @@ export const PLAN_ITEM_SCHEMA = {
         "model, standard or strong; an item that names none is stored and " +
         "commissioned as standard.",
     },
+    after: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        "assess, reassess, deepen, optional: the urls of ingest items in " +
+        "this plan (this call's items or the plan's existing ones) that " +
+        "this pass should read. The item waits until each has been read, " +
+        `or for at most ${AFTER_INGESTS_MAX_WAIT_HOURS} hours, before its ` +
+        "pass is placed.",
+    },
     budget_owls: {
       type: "number",
       description:
@@ -388,9 +448,17 @@ const PARTITION_RE = /^[a-z0-9][a-z0-9-]*$/;
 export function validatePlanItems(
   items: readonly PlanItem[],
   knownRefs: readonly string[] = [],
-  config?: FeaturesConfig
+  config?: FeaturesConfig,
+  /** The ingest urls of the plan these items join, which `after` may name. */
+  knownIngestUrls: readonly string[] = []
 ): string | null {
   const refs = new Set(knownRefs);
+  const ingestUrls = new Set(knownIngestUrls);
+  for (const item of items) {
+    if (item && typeof item === "object" && item.action === "ingest" && typeof item.url === "string") {
+      ingestUrls.add(item.url);
+    }
+  }
   for (const item of items) {
     if (!item || typeof item !== "object" || item.action !== "propose" || item.ref == null) continue;
     if (typeof item.ref !== "string" || !REF_RE.test(item.ref)) {
@@ -453,6 +521,21 @@ export function validatePlanItems(
       ) {
         return `${item.action === "assess" ? "an" : "a"} ${item.action} item's budget_owls is a number of owls above zero (got: ${String(item.budget_owls)}); omit it for the pass's estimate`;
       }
+      if (item.after !== undefined && item.after !== null) {
+        if (!Array.isArray(item.after) || item.after.length > AFTER_MAX_URLS) {
+          return `an item's after is a list of at most ${AFTER_MAX_URLS} urls of ingest items in the plan`;
+        }
+        for (const url of item.after) {
+          if (typeof url !== "string" || !ingestUrls.has(url.trim())) {
+            return (
+              `${item.action === "assess" ? "an" : "a"} ${item.action} item's after names ${String(url)}, which is ` +
+              `not the url of an ingest item in this plan: after waits for the plan's own ingests, by their exact url`
+            );
+          }
+        }
+      }
+    } else if (item.after !== undefined && item.after !== null) {
+      return `after is for assess, reassess and deepen items: a ${item.action} item does not wait for ingests`;
     }
     if (item.action === "propose" || item.action === "ingest" || item.action === "sweep") {
       // Checked above.
@@ -482,7 +565,38 @@ export function validatePlanItems(
  * never dropped on one of them: an ingest's focus was, on two, and a scoped
  * ingest silently became a whole-document one. A blank focus is no focus.
  */
-export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
+/**
+ * Who adds items to a plan, by the path that wrote them:
+ *   grantmaker_draft     the Grantmaker's draft in the granting conversation
+ *                        (propose_mandate), funded as drafted
+ *   grantmaker_planning  the planning pass that drafts a plan for approval
+ *                        (submit_plan)
+ *   grantmaker_chat      the Grantmaker in the funder's management chat
+ *                        (adjust_plan), with the funder present
+ *   grantmaker_review    the Grantmaker's own review pass (extend_plan,
+ *                        adjust_plan), whatever woke it: a lookout's flag, a
+ *                        check-in, a settled run
+ */
+export const PLAN_ITEM_AUTHORS = [
+  "grantmaker_draft",
+  "grantmaker_planning",
+  "grantmaker_chat",
+  "grantmaker_review",
+] as const;
+export type PlanItemAuthor = (typeof PLAN_ITEM_AUTHORS)[number];
+
+/** Who wrote a set of items, when, and in which run (normalizePlanItems). */
+export interface PlanItemStamp {
+  by: PlanItemAuthor;
+  /** Defaults to now. */
+  at?: Date;
+  /** Defaults to the run open in the usage context, if any. */
+  runId?: string | null;
+}
+
+export function normalizePlanItems(items: readonly PlanItem[], stamp?: PlanItemStamp): PlanItem[] {
+  const at = stamp ? (stamp.at ?? new Date()).toISOString() : null;
+  const runId = stamp ? (stamp.runId !== undefined ? stamp.runId : getUsageContext().runId ?? null) : null;
   return items.map((it) => {
     const focus = it.action === "ingest" && typeof it.focus === "string" ? it.focus.trim() : "";
     const partition =
@@ -509,8 +623,13 @@ export function normalizePlanItems(items: readonly PlanItem[]): PlanItem[] {
       ...(["assess", "reassess", "deepen"].includes(it.action) && Number(it.budget_owls) > 0
         ? { budget_owls: Number(it.budget_owls) }
         : {}),
+      ...(["assess", "reassess", "deepen"].includes(it.action) && Array.isArray(it.after) && it.after.length > 0
+        ? { after: [...new Set(it.after.map((u) => String(u).trim()).filter(Boolean))] }
+        : {}),
       ...(it.is_calibration !== undefined ? { is_calibration: !!it.is_calibration } : {}),
       ...(it.lifetime_cap_owls !== undefined ? { lifetime_cap_owls: Number(it.lifetime_cap_owls) } : {}),
+      // The writer's stamp; whatever the author put in these fields is dropped.
+      ...(stamp ? { added_by: stamp.by, added_at: at!, ...(runId ? { added_run_id: runId } : {}) } : {}),
     };
   });
 }
@@ -616,6 +735,10 @@ export async function createGrant(input: {
       status: input.policy === "agent" ? "planning" : "active",
     })
     .returning();
+  // Its first sitting (the planning pass, or an active mandate's first
+  // review) opens now, not at the next sweep (never throws).
+  const { openMandateFirstSitting } = await import("./action-service.js");
+  await openMandateFirstSitting(grant!.id);
   return { ok: true, grant: grant! };
 }
 
@@ -650,8 +773,10 @@ export async function approveGrantPlan(input: {
     .returning();
   // The plan is live: its proposals are filed and its standing orders placed
   // now, not a sweep later (never throws; the sweep retries).
-  const { materializeLivePlan } = await import("./action-service.js");
+  const { materializeLivePlan, openMandateFirstSitting } = await import("./action-service.js");
   await materializeLivePlan(grant.id);
+  // And its Grantmaker's first sitting opens now, not at the next sweep.
+  await openMandateFirstSitting(grant.id);
   return { ok: true, grant: updated! };
 }
 
@@ -705,15 +830,23 @@ export async function cancelGrant(input: {
 
 export async function listGrants(
   funderUserId: string,
-  limit = 50
-): Promise<Grant[]> {
+  opts: { status?: string; offset?: number; limit?: number } = {}
+): Promise<{ rows: Grant[]; total: number }> {
   const db = getDb();
-  return db
-    .select()
-    .from(grants)
-    .where(eq(grants.funderUserId, funderUserId))
-    .orderBy(desc(grants.createdAt))
-    .limit(limit);
+  const where = opts.status
+    ? and(eq(grants.funderUserId, funderUserId), eq(grants.status, opts.status))
+    : eq(grants.funderUserId, funderUserId);
+  const [rows, counted] = await Promise.all([
+    db
+      .select()
+      .from(grants)
+      .where(where)
+      .orderBy(desc(grants.createdAt))
+      .limit(Math.min(100, Math.max(1, opts.limit ?? 50)))
+      .offset(Math.max(0, opts.offset ?? 0)),
+    db.select({ n: count() }).from(grants).where(where),
+  ]);
+  return { rows, total: Number(counted[0]?.n ?? 0) };
 }
 
 export async function getGrant(grantId: string): Promise<Grant | null> {
@@ -768,19 +901,89 @@ export async function getFundingLabelForJob(
   return null;
 }
 
-/** Dashboard payload: live spend, progress, and the claims this grant touched. */
-export async function serializeGrant(grant: Grant) {
+/**
+ * A grant's money as every mandate report counts it (grantEscrowBreakdown,
+ * #849): get_grant, get_mandate and get_mandate_allocation all read it from
+ * here, so the three cannot disagree. `held` is what running or waiting work
+ * has committed and not yet spent.
+ */
+async function grantMoney(grant: Grant): Promise<{ budget: number; spent: number; held: number; jobStatus: string | null }> {
   const db = getDb();
   const [job] = await db
     .select()
     .from(budgetJobs)
     .where(eq(budgetJobs.id, grant.budgetJobId))
     .limit(1);
-  // Spent as every mandate report counts it (grantEscrowBreakdown, #849).
-  const spent = job
-    ? (await grantEscrowBreakdown({ id: grant.id, budgetJobId: job.id })).spent
-    : 0;
-  const budget = job ? Number(job.budgetMicroUsd) : 0;
+  if (!job) return { budget: 0, spent: 0, held: 0, jobStatus: null };
+  const escrow = await grantEscrowBreakdown({ id: grant.id, budgetJobId: job.id });
+  return { budget: Number(job.budgetMicroUsd), spent: escrow.spent, held: escrow.held, jobStatus: job.status };
+}
+
+/**
+ * One grant in the funder's list: enough to choose it. get_grant has the
+ * plan and the assessments it bought.
+ */
+export async function serializeGrantRow(grant: Grant) {
+  return grantRow(grant, await grantMoney(grant));
+}
+
+function grantRow(grant: Grant, money: { budget: number; spent: number; held: number; jobStatus: string | null }) {
+  const items = ((grant.plan as { items?: unknown[] } | null)?.items ?? []).length;
+  return {
+    id: grant.id,
+    name: grant.name,
+    title: (grant.mandate as { title?: string } | null)?.title ?? grant.name,
+    policy: grant.policy,
+    status: grant.status,
+    budget_owls: microUsdToOwls(money.budget),
+    spent_owls: microUsdToOwls(Math.min(money.spent, money.budget)),
+    held_owls: microUsdToOwls(money.held),
+    budget_status: money.jobStatus,
+    budget_job_id: grant.budgetJobId,
+    plan_items: items,
+    page_url: mandatePageUrl(grant.id),
+    funder_url: mandateFunderUrl(grant.id),
+    created_at: grant.createdAt?.toISOString(),
+    updated_at: grant.updatedAt?.toISOString(),
+  };
+}
+
+/**
+ * serializeGrantRow for a list, in two statements whatever its length: the
+ * jobs and their escrows (grantEscrowBreakdowns). GET /grants used to read
+ * three statements per grant, and the Ask section's sidebar reads it on
+ * every page.
+ */
+export async function serializeGrantRows(list: Grant[]) {
+  if (list.length === 0) return [];
+  const [jobs, escrows] = await Promise.all([
+    getDb().select().from(budgetJobs).where(inArray(budgetJobs.id, list.map((g) => g.budgetJobId))),
+    // Spent as every mandate report counts it (grantEscrowBreakdown, #849).
+    grantEscrowBreakdowns(list.map((g) => ({ id: g.id, budgetJobId: g.budgetJobId }))),
+  ]);
+  const jobOf = new Map(jobs.map((j) => [j.id, j]));
+  return list.map((grant) => {
+    const job = jobOf.get(grant.budgetJobId);
+    const escrow = escrows.get(grant.id);
+    return grantRow(
+      grant,
+      job && escrow
+        ? { budget: Number(job.budgetMicroUsd), spent: escrow.spent, held: escrow.held, jobStatus: job.status }
+        : { budget: 0, spent: 0, held: 0, jobStatus: null }
+    );
+  });
+}
+
+/**
+ * Dashboard payload: live spend, progress, and the claims this grant
+ * touched. By default a summary (mandate-service.ts, shapeMandateDetail):
+ * the plan's items a page at a time, each with its index, state and who
+ * added it, and the funded assessments cut to list_limit, with
+ * `collections` giving each whole length; `detail: "full"` is everything.
+ */
+export async function serializeGrant(grant: Grant, opts: DetailOptions = {}) {
+  const money = await grantMoney(grant);
+  const { spent, budget } = money;
 
   // What the grant actually bought: assessments stamped with its job id.
   const funded = await rawQuery<{
@@ -797,6 +1000,12 @@ export async function serializeGrant(grant: Grant) {
     [grant.budgetJobId]
   );
 
+  const plan = grant.plan as { strategy?: string; items?: PlanItem[] } | null;
+  const described = describePlanItems(plan?.items ?? [], grant.planCursor);
+  const page = pagePlanItems(described, opts);
+  const assessments = cutList(funded, opts);
+  const detail = opts.detail ?? "summary";
+
   return {
     id: grant.id,
     name: grant.name,
@@ -805,17 +1014,32 @@ export async function serializeGrant(grant: Grant) {
     scope_claim_id: grant.scopeClaimId,
     scope_query: grant.scopeQuery,
     budget_owls: microUsdToOwls(budget),
+    // Counted as get_mandate and get_mandate_allocation count them.
     spent_owls: microUsdToOwls(Math.min(spent, budget)),
-    budget_status: job?.status ?? null,
+    held_owls: microUsdToOwls(money.held),
+    budget_status: money.jobStatus,
     budget_job_id: grant.budgetJobId,
-    plan: grant.plan ?? null,
+    page_url: mandatePageUrl(grant.id),
+    funder_url: mandateFunderUrl(grant.id),
+    plan: plan ? { ...plan, items: page.items } : null,
     plan_cursor: grant.planCursor,
-    funded_assessments: funded.map((f) => ({
+    plan_item_counts: countStates(described),
+    funded_assessments: assessments.list.map((f) => ({
       claim_id: f.claim_id,
       text: f.text,
       status: f.status,
       assessed_at: f.assessed_at?.toISOString(),
     })),
+    detail,
+    collections: { plan_items: page.size, funded_assessments: assessments.size },
+    ...(detail === "summary"
+      ? {
+          detail_note:
+            "Summary: the plan's items a page at a time (items_offset, items_limit, items_state), " +
+            "the funded assessments cut to list_limit; detail=full for everything. get_mandate " +
+            "and get_mandate_work read the same mandate in more ways.",
+        }
+      : {}),
     created_at: grant.createdAt?.toISOString(),
     updated_at: grant.updatedAt?.toISOString(),
   };

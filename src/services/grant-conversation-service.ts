@@ -40,6 +40,9 @@ import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import { PLATFORM_EXTERNAL_ID } from "./platform-account.js";
 import { loadConfig } from "../config.js";
 import { actingAsAssistant } from "../llm/assistant-acting.js";
+import { ACTIVITY_KEPT, aboutOf, type TurnStep } from "./turn-activity.js";
+import { draftWarnings, unacknowledged, type MandateWarning } from "./mandate-warnings.js";
+import { grantConversationUrl, mandateFunderUrl, mandatePageUrl } from "./mandate-urls.js";
 
 /** Hard ceilings on turns per conversation — a runaway/abuse backstop.
  * Funded conversations get more room: they manage a live mandate and stay
@@ -150,7 +153,14 @@ function transcriptOf(convo: GrantConversation): TranscriptMessage[] {
 type TurnFields = Pick<
   GrantConversation,
   "turnStartedAt" | "turnHeartbeatAt" | "turnError" | "turnPartial"
->;
+> &
+  Partial<Pick<GrantConversation, "turnActivity">>;
+
+/** What a running turn has done so far, as turn_activity holds it. */
+interface TurnActivity {
+  steps: number;
+  recent: Array<TurnStep & { at: string }>;
+}
 
 function turnRunning(convo: TurnFields, now = Date.now()): boolean {
   return (
@@ -193,6 +203,7 @@ async function claimTurn(
       turnHeartbeatAt: startedAt,
       turnError: null,
       turnPartial: null,
+      turnActivity: null,
       updatedAt: startedAt,
     })
     .where(
@@ -239,12 +250,17 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
   let partial = "";
   let partialTurn = -1;
   let flushed = "";
+  // The steps it has taken, the latest few kept: a turn can spend minutes
+  // in tools before it writes a word of its reply.
+  const activity: TurnActivity = { steps: 0, recent: [] };
+  let flushedSteps = 0;
   const flush = () => {
-    if (partial === flushed) return;
+    if (partial === flushed && activity.steps === flushedSteps) return;
     flushed = partial;
+    flushedSteps = activity.steps;
     void db
       .update(grantConversations)
-      .set({ turnPartial: partial })
+      .set({ turnPartial: partial, turnActivity: activity })
       .where(holdsTurn)
       .catch((err) => console.error(`[grantmaker] saving the partial reply on ${convo.id} failed:`, err));
   };
@@ -256,6 +272,11 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
       partial = "";
     }
     partial += delta;
+  };
+  const onTool = (tool: string, toolInput: Record<string, unknown>) => {
+    activity.steps += 1;
+    activity.recent.push({ tool, about: aboutOf(toolInput), at: new Date().toISOString() });
+    if (activity.recent.length > ACTIVITY_KEPT) activity.recent.shift();
   };
 
   try {
@@ -283,6 +304,7 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
           ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
           ...(platform ? { funder: "platform" as const } : {}),
           onText,
+          onTool,
         })
     );
     clearInterval(partialTimer);
@@ -311,6 +333,7 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
         turnStartedAt: null,
         turnHeartbeatAt: null,
         turnPartial: null,
+        turnActivity: null,
         updatedAt: new Date(),
       })
       .where(holdsTurn);
@@ -325,6 +348,7 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
         turnStartedAt: null,
         turnHeartbeatAt: null,
         turnPartial: null,
+        turnActivity: null,
         turnError: err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500),
         updatedAt: new Date(),
       })
@@ -430,6 +454,13 @@ export type FundResult =
         | "PLATFORM_FUNDS_BY_APPROVAL"
         | "TURN_IN_PROGRESS";
       message: string;
+    }
+  | {
+      ok: false;
+      code: "WARNINGS_UNACKNOWLEDGED";
+      message: string;
+      /** The draft's warnings not yet acknowledged, to show the funder. */
+      warnings: MandateWarning[];
     };
 
 /**
@@ -441,6 +472,11 @@ export async function fundConversationMandate(input: {
   conversationId: string;
   userId: string;
   budgetOwls: number;
+  /**
+   * The funder's acknowledgement of the draft's warnings: true for all of
+   * them, or the ids acknowledged. Required when the draft has any.
+   */
+  acknowledgeWarnings?: boolean | string[];
 }): Promise<FundResult> {
   const convo = await getConversation(input.conversationId, input.userId);
   if (!convo) {
@@ -474,6 +510,22 @@ export async function fundConversationMandate(input: {
       message:
         "The Grantmaker is still replying and may revise the draft; fund it " +
         "once the conversation's turn is idle",
+    };
+  }
+  // The warnings come before the money: a funder who has not seen them has
+  // not agreed to what they say (mandate-warnings.ts).
+  const warnings = draftWarnings(mandate);
+  const missing = unacknowledged(warnings, input.acknowledgeWarnings);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      code: "WARNINGS_UNACKNOWLEDGED",
+      message:
+        `The drafted mandate carries ${missing.length} warning${missing.length === 1 ? "" : "s"} ` +
+        `the funder must read before funding (below). Show ${missing.length === 1 ? "it" : "them"} ` +
+        `to the funder, and fund again with acknowledge_warnings: true (or the ids they accepted) ` +
+        `only once they have agreed. Nothing was escrowed.`,
+      warnings: missing,
     };
   }
   if (input.budgetOwls < mandate.expected_cost_owls) {
@@ -569,8 +621,12 @@ export async function fundConversationMandate(input: {
       status: "active",
       plan: mandate.plan,
       planCursor: 0,
-      // The public dashboard's text: the agent-authored mandate, verbatim.
-      mandate,
+      // The public dashboard's text: the agent-authored mandate, verbatim,
+      // with the warnings its funder acknowledged and when.
+      mandate:
+        warnings.length > 0
+          ? { ...mandate, warnings, warnings_acknowledged_at: new Date().toISOString() }
+          : mandate,
       // The domain skills the mandate's Grantmaker carries on its review
       // passes (docs/mathematics.md §3.4); proposed by the Grantmaker itself.
       skills: mandate.skills ?? [],
@@ -584,10 +640,11 @@ export async function fundConversationMandate(input: {
     .returning();
   // The plan is live: its proposals (#656) are filed and its standing orders
   // (#849) placed now, from the escrow just made, rather than a sweep later.
-  if (mandate.plan.items.length > 0) {
-    const { materializeLivePlan } = await import("./action-service.js");
-    await materializeLivePlan(grant!.id);
-  }
+  const { materializeLivePlan, openMandateFirstSitting } = await import("./action-service.js");
+  if (mandate.plan.items.length > 0) await materializeLivePlan(grant!.id);
+  // Its Grantmaker's first sitting is opened now too, and the executor's
+  // next tick funds it, rather than the next six-hourly sweep (never throws).
+  await openMandateFirstSitting(grant!.id);
   return { ok: true, conversation: updated!, grantId: grant!.id };
 }
 
@@ -616,13 +673,18 @@ export async function getConversation(
 
 export async function listConversations(
   userId: string,
-  limit = 50
+  limit = 50,
+  status?: string
 ): Promise<GrantConversation[]> {
   const db = getDb();
   return db
     .select()
     .from(grantConversations)
-    .where(eq(grantConversations.userId, userId))
+    .where(
+      status
+        ? and(eq(grantConversations.userId, userId), eq(grantConversations.status, status))
+        : eq(grantConversations.userId, userId)
+    )
     .orderBy(desc(grantConversations.createdAt))
     .limit(limit);
 }
@@ -637,13 +699,24 @@ export async function listConversations(
 export function serializeTurn(convo: TurnFields, now = Date.now()) {
   if (convo.turnStartedAt) {
     if (turnRunning(convo, now)) {
+      const activity = (convo.turnActivity ?? null) as TurnActivity | null;
+      const last = activity?.recent.at(-1) ?? null;
       return {
         state: "replying" as const,
         started_at: convo.turnStartedAt.toISOString(),
         error: null,
-        // What the Grantmaker has written of its reply so far; null until
-        // it starts writing.
+        // What the Grantmaker has written of the model turn it is on; null
+        // while it works in tools, which is most of a drafting turn.
         partial: convo.turnPartial || null,
+        // Which step it is on: how many tools it has called, and the
+        // latest few with what each was about.
+        progress: {
+          steps: activity?.steps ?? 0,
+          note: last
+            ? `Step ${activity!.steps}: ${last.tool}${last.about ? ` (${last.about})` : ""}`
+            : "Reading the conversation",
+          recent: activity?.recent ?? [],
+        },
       };
     }
     return {
@@ -658,6 +731,21 @@ export function serializeTurn(convo: TurnFields, now = Date.now()) {
   return convo.turnError
     ? { state: "failed" as const, started_at: null, error: convo.turnError, partial: null }
     : { state: "idle" as const, started_at: null, error: null, partial: null };
+}
+
+/**
+ * Where a conversation is read on the site, and once funded, its mandate:
+ * page_url is the conversation's page (the manager's page for the mandate
+ * once it is funded); mandate_page_url and funder_url are set once it is.
+ */
+function conversationUrls(convo: Pick<GrantConversation, "id" | "grantId">) {
+  return convo.grantId
+    ? {
+        page_url: mandateFunderUrl(convo.grantId),
+        mandate_page_url: mandatePageUrl(convo.grantId),
+        funder_url: mandateFunderUrl(convo.grantId),
+      }
+    : { page_url: grantConversationUrl(convo.id) };
 }
 
 /**
@@ -688,6 +776,9 @@ function serializeMandate(mandate: GrantMandate) {
     expected_cost_usd:
       Math.round(owlsToMicroUsd(mandate.expected_cost_owls) / 10_000) / 100,
     notes: mandate.notes ?? null,
+    // What the funder must read before funding; funding is refused until
+    // they are acknowledged (acknowledge_warnings).
+    warnings: draftWarnings(mandate),
   };
 }
 
@@ -719,6 +810,7 @@ export function serializeConversation(
     mandate_sha256: hash,
     turn: serializeTurn(convo),
     grant_id: convo.grantId,
+    ...conversationUrls(convo),
     created_at: convo.createdAt?.toISOString(),
     updated_at: convo.updatedAt?.toISOString(),
   };
@@ -742,6 +834,7 @@ export function serializeSentMessage(convo: GrantConversation) {
     mandate_sha256: draftHash(convo),
     turn: serializeTurn(convo),
     grant_id: convo.grantId,
+    ...conversationUrls(convo),
   };
 }
 
@@ -755,14 +848,26 @@ export function serializeConversationSummary(convo: GrantConversation) {
     message_count: ((convo.messages ?? []) as unknown[]).length,
     mandate_sha256: draftHash(convo),
     turn: serializeTurn(convo),
+    // How many warnings the draft carries; the conversation read lists them.
+    warnings: draftWarnings(mandate).length,
     grant_id: convo.grantId,
+    ...conversationUrls(convo),
     created_at: convo.createdAt?.toISOString(),
     updated_at: convo.updatedAt?.toISOString(),
   };
 }
 
-/** The longest a read may wait for a turn to end, in seconds. */
-export const MAX_TURN_WAIT_SECONDS = 25;
+/**
+ * The longest a read may wait for a turn to end, in seconds. A drafting turn
+ * takes a minute or two, so a cap of 25 had callers read three or four times
+ * for one reply. Two minutes stays well under the load balancer's idle
+ * timeout (300s, infra/lib/api-stack.ts); a caller whose own client gives a
+ * tool call less (many MCP clients allow about 60 seconds) asks for less,
+ * and the read ends early when the caller goes away.
+ */
+export const MAX_TURN_WAIT_SECONDS = 120;
+/** The wait the turn protocol suggests: inside the 60 seconds most MCP clients give a tool call. */
+export const SUGGESTED_TURN_WAIT_SECONDS = 50;
 /** How often a waiting read checks the turn. */
 const TURN_WAIT_POLL_MS = 1_000;
 

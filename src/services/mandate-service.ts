@@ -19,8 +19,9 @@ import { microUsdToOwls } from "./owl.js";
 import {
   contributeToBudgetJob,
   getJobContributions,
+  getJobContributorCounts,
 } from "./budget-job-service.js";
-import { grantEscrowBreakdown } from "./regrant-service.js";
+import { grantEscrowBreakdown, grantEscrowBreakdowns, type GrantEscrowBreakdown } from "./regrant-service.js";
 import { serializeAttemptSummary, type AttemptRow } from "./attempt-service.js";
 import { LIVE_BOUNTY_STATUSES } from "./bounty-service.js";
 import type { AttemptSummary } from "./claim-extras-types.js";
@@ -28,8 +29,11 @@ import type { GrantMandate } from "../llm/agents/grantmaker.js";
 import type { PlanItem } from "./grant-service.js";
 import type { PlanItemLedger } from "./action-service.js";
 import { describePlanItems, type PlanItemState } from "./plan-state.js";
+import type { MandateListDetail } from "./read-detail.js";
+export { DETAIL_QUERY_PROPERTIES, MANDATE_LIST_DETAILS, READ_DETAILS, shapeMandateDetail, type DetailOptions, type MandateListDetail, type ReadDetail } from "./read-detail.js";
 import { summarizeLookouts, type LookoutSummary } from "./lookout-service.js";
 import type { PlatformApproval } from "./platform-mandate-service.js";
+import { mandateFunderUrl, mandatePageUrl } from "./mandate-urls.js";
 
 export interface MandateSummary {
   id: string;
@@ -47,9 +51,13 @@ export interface MandateSummary {
   funder: { shown_as: string; named: boolean; declared: boolean; stake: string | null };
   budget_owls: number;
   spent_owls: number;
+  /** Budgets committed to work still running or waiting: not spent yet, not free either. */
+  held_owls: number;
   contributor_count: number;
   action_mix: Record<string, number>;
   created_at: string | null;
+  /** The mandate's page on the site, as a claim read carries its page_url. */
+  page_url: string;
 }
 
 interface GrantRow {
@@ -116,14 +124,14 @@ export function funderDisclosure(row: {
   return { shown_as, named, declared, stake };
 }
 
-async function summarize(row: GrantRow): Promise<MandateSummary> {
-  // A mandate's spend is its consumed allocation shares plus whatever its
-  // job metered that no share accounts for (grantEscrowBreakdown): every
-  // report of a mandate's money counts it the same way (#849).
-  const [escrow, contributions] = await Promise.all([
-    grantEscrowBreakdown({ id: row.id, budgetJobId: row.budget_job_id }),
-    getJobContributions(row.budget_job_id),
-  ]);
+/**
+ * A mandate as a list and its page show it, from its row and the two
+ * figures read beside it: its escrow's terms (grantEscrowBreakdown) and how
+ * many have backed it. A mandate's spend is its consumed allocation shares
+ * plus whatever its job metered that no share accounts for: every report of
+ * a mandate's money counts it the same way (#849).
+ */
+function summaryOf(row: GrantRow, escrow: GrantEscrowBreakdown, contributorCount: number): MandateSummary {
   const spent = escrow.spent;
   return {
     id: row.id,
@@ -137,10 +145,28 @@ async function summarize(row: GrantRow): Promise<MandateSummary> {
     spent_owls: microUsdToOwls(
       Math.min(spent, Number(row.budget_micro_usd))
     ),
-    contributor_count: contributions.length,
+    held_owls: microUsdToOwls(escrow.held),
+    contributor_count: contributorCount,
     action_mix: actionMix(row.plan),
     created_at: row.created_at?.toISOString() ?? null,
+    page_url: mandatePageUrl(row.id),
   };
+}
+
+/**
+ * Summaries of many mandates in two statements, whatever their number: a
+ * list of fifty used to read each one's escrow and backers in turn, a
+ * hundred round trips for one page.
+ */
+async function summarizeMany(rows: GrantRow[]): Promise<MandateSummary[]> {
+  if (rows.length === 0) return [];
+  const [escrows, backers] = await Promise.all([
+    grantEscrowBreakdowns(rows.map((r) => ({ id: r.id, budgetJobId: r.budget_job_id }))),
+    getJobContributorCounts(rows.map((r) => r.budget_job_id)),
+  ]);
+  return rows.map((row) =>
+    summaryOf(row, escrows.get(row.id)!, backers.get(row.budget_job_id) ?? 0)
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +200,72 @@ export interface MandateListQuery {
   order?: MandateOrder;
   limit?: number;
   offset?: number;
+  /** `compact` (the default): a short row each; `full`: every field a row has. */
+  detail?: MandateListDetail;
+}
+
+/** How much of an objective a compact row keeps. */
+export const OBJECTIVE_EXCERPT_CHARS = 200;
+
+/** A text on one line, its runs of whitespace made single spaces. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** The start of a text, cut at a word near `max` characters, with an ellipsis when cut. */
+export function excerpt(text: string | null, max = OBJECTIVE_EXCERPT_CHARS): string | null {
+  if (text == null) return null;
+  const flat = oneLine(text);
+  if (flat.length <= max) return flat;
+  const cut = flat.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.]+$/, "")}…`;
+}
+
+/** One mandate in a compact list: enough to choose it; get_mandate has the rest. */
+export interface MandateCompactRow {
+  id: string;
+  title: string;
+  /** The objective's first words; `objective_cut` says whether there is more. */
+  objective: string | null;
+  objective_cut: boolean;
+  status: string;
+  budget_status: string;
+  is_platform: boolean;
+  manager: string;
+  budget_owls: number;
+  spent_owls: number;
+  held_owls: number;
+  contributor_count: number;
+  assessments: number;
+  updated_at: string | null;
+  page_url: string;
+  needs_you?: boolean;
+  /** Set on the viewer's own: their page for it, with its Grantmaker. */
+  funder_url?: string;
+}
+
+export function compactMandateRow(row: MandateListRow, viewerIsFunder: boolean): MandateCompactRow {
+  const objective = excerpt(row.objective);
+  return {
+    id: row.id,
+    title: row.title,
+    objective,
+    objective_cut: objective !== null && objective !== oneLine(row.objective ?? ""),
+    status: row.status,
+    budget_status: row.budget_status,
+    is_platform: row.is_platform,
+    manager: row.manager,
+    budget_owls: row.budget_owls,
+    spent_owls: row.spent_owls,
+    held_owls: row.held_owls,
+    contributor_count: row.contributor_count,
+    assessments: row.assessments,
+    updated_at: row.updated_at,
+    page_url: row.page_url,
+    ...(row.needs_you !== undefined ? { needs_you: row.needs_you } : {}),
+    ...(viewerIsFunder ? { funder_url: mandateFunderUrl(row.id) } : {}),
+  };
 }
 
 export interface MandateListRow extends MandateSummary {
@@ -187,7 +279,9 @@ export interface MandateListRow extends MandateSummary {
 }
 
 export interface MandateListPage {
-  mandates: MandateListRow[];
+  mandates: Array<MandateListRow | MandateCompactRow>;
+  /** How much each row carries (the `detail` asked for). */
+  detail: MandateListDetail;
   /** How many match the scope, the state and the words. */
   total: number;
   /** In this scope and for these words, how many stand in each state. */
@@ -249,6 +343,7 @@ export async function listMandatesPage(query: MandateListQuery): Promise<Mandate
 
   const empty: MandateListPage = {
     mandates: [],
+    detail: query.detail ?? "compact",
     total: 0,
     states: { live: 0, any: 0, active: 0, paused: 0, finished: 0, needs_you: 0 },
     scopes: { all: 0, platform: 0, mine: viewer ? 0 : null },
@@ -285,41 +380,49 @@ export async function listMandatesPage(query: MandateListQuery): Promise<Mandate
   const stateCounts = counted
     ? (Object.fromEntries(MANDATE_LIST_STATES.map((st) => [st, Number(counted[st])])) as Record<MandateListState, number>)
     : empty.states;
-  const judged = rows.length
-    ? await rawQuery<{ job_id: string; n: string }>(
-        `SELECT job_id, count(DISTINCT claim_id) AS n FROM (
-           SELECT funded_by_job_id AS job_id, claim_id FROM assessments WHERE funded_by_job_id = ANY($1::uuid[])
-           UNION ALL
-           SELECT funded_by_job_id, claim_id FROM question_assessments WHERE funded_by_job_id = ANY($1::uuid[])
-           UNION ALL
-           SELECT funded_by_job_id, claim_id FROM quantity_estimates WHERE funded_by_job_id = ANY($1::uuid[])
-         ) j GROUP BY job_id`,
-        [rows.map((r) => r.budget_job_id)]
-      )
-    : [];
+  // Each row's judged nodes, and its money and backers, read side by side.
+  const [judged, summaries] = await Promise.all([
+    rows.length
+      ? rawQuery<{ job_id: string; n: string }>(
+          `SELECT job_id, count(DISTINCT claim_id) AS n FROM (
+             SELECT funded_by_job_id AS job_id, claim_id FROM assessments WHERE funded_by_job_id = ANY($1::uuid[])
+             UNION ALL
+             SELECT funded_by_job_id, claim_id FROM question_assessments WHERE funded_by_job_id = ANY($1::uuid[])
+             UNION ALL
+             SELECT funded_by_job_id, claim_id FROM quantity_estimates WHERE funded_by_job_id = ANY($1::uuid[])
+           ) j GROUP BY job_id`,
+          [rows.map((r) => r.budget_job_id)]
+        )
+      : Promise.resolve([]),
+    summarizeMany(rows),
+  ]);
   const judgedBy = new Map(judged.map((r) => [r.job_id, Number(r.n)]));
 
-  const mandates = await Promise.all(
-    rows.map(async (row): Promise<MandateListRow> => {
-      const mine = !!viewer && row.funder_user_id === viewer;
-      return {
-        ...(await summarize(row)),
-        budget_status: row.job_status,
-        updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : null,
-        assessments: judgedBy.get(row.budget_job_id) ?? 0,
-        ...(mine
-          ? {
-              needs_you:
-                row.status === "pending_approval" ||
-                (row.status === "active" && row.job_status === "paused_budget"),
-            }
-          : {}),
-      };
-    })
-  );
+  const mandates = rows.map((row, i): MandateListRow => {
+    const mine = !!viewer && row.funder_user_id === viewer;
+    return {
+      ...summaries[i]!,
+      budget_status: row.job_status,
+      updated_at: row.updated_at ? new Date(row.updated_at).toISOString() : null,
+      assessments: judgedBy.get(row.budget_job_id) ?? 0,
+      ...(mine
+        ? {
+            needs_you:
+              row.status === "pending_approval" ||
+              (row.status === "active" && row.job_status === "paused_budget"),
+          }
+        : {}),
+    };
+  });
 
+  const detail = query.detail ?? "compact";
+  const funds = new Set(rows.filter((r) => !!viewer && r.funder_user_id === viewer).map((r) => r.id));
   return {
-    mandates,
+    mandates:
+      detail === "full"
+        ? mandates.map((m) => (funds.has(m.id) ? { ...m, funder_url: mandateFunderUrl(m.id) } : m))
+        : mandates.map((m) => compactMandateRow(m, funds.has(m.id))),
+    detail,
     total: stateCounts[state],
     states: stateCounts,
     scopes: {
@@ -335,13 +438,39 @@ export interface SourcePipelineRow {
   url: string;
   title: string | null;
   ingested_at: string | null;
+  /** The extraction job's own status (pending, processing, completed, failed). */
   extraction_status: string | null;
+  /**
+   * Where the source's extraction is (extractionStage): queued (waiting its
+   * turn in the extraction queue), extracting (a worker is reading it),
+   * done, or failed. Null when no extraction is recorded.
+   */
+  extraction_stage: ExtractionStage | null;
+  /** When a worker took the extraction up; null while it is queued. */
+  extraction_started_at: string | null;
+  /**
+   * For a queued extraction, how many extractions submitted before it are
+   * still waiting: a count of earlier unstarted extraction jobs, so
+   * approximate, as the queue does not promise its order. Null otherwise.
+   */
+  extraction_queued_ahead: number | null;
   claims_linked: number;
   claims_assessed: number;
   avg_importance: number | null;
   max_importance: number | null;
   contested_claims: number;
   importance_histogram: number[];
+}
+
+export type ExtractionStage = "queued" | "extracting" | "done" | "failed";
+
+/** An extraction job's status, as a stage a reader can act on. */
+export function extractionStage(status: string | null): ExtractionStage | null {
+  if (status === "pending") return "queued";
+  if (status === "processing") return "extracting";
+  if (status === "completed") return "done";
+  if (status === "failed") return "failed";
+  return null;
 }
 
 /**
@@ -358,6 +487,8 @@ export async function getMandatePipeline(
     title: string | null;
     ingested_at: Date | null;
     extraction_status: string | null;
+    extraction_started_at: Date | null;
+    queued_ahead: number | null;
     claims_linked: number;
     claims_assessed: number;
     avg_importance: number | null;
@@ -370,6 +501,15 @@ export async function getMandatePipeline(
   }>(
     `SELECT gs.source_id, gs.url, s.title, gs.created_at AS ingested_at,
             j.status AS extraction_status,
+            j.started_at AS extraction_started_at,
+            -- The extractions submitted before this one and not yet taken
+            -- up (four days: how long the queue keeps a message).
+            CASE WHEN j.status = 'pending' THEN
+              (SELECT count(*)::int FROM jobs q
+                WHERE q.type = 'url_extraction' AND q.status = 'pending'
+                  AND q.created_at < j.created_at
+                  AND q.created_at > now() - interval '4 days')
+            END AS queued_ahead,
             COUNT(DISTINCT ci.claim_id)::int AS claims_linked,
             COUNT(DISTINCT ci.claim_id)
               FILTER (WHERE a.id IS NOT NULL)::int AS claims_assessed,
@@ -393,7 +533,7 @@ export async function getMandatePipeline(
        LEFT JOIN assessments_in_force a
          ON a.claim_id = ci.claim_id
       WHERE gs.grant_id = $1
-      GROUP BY gs.source_id, gs.url, s.title, gs.created_at, j.status
+      GROUP BY gs.source_id, gs.url, s.title, gs.created_at, j.status, j.started_at, j.created_at
       ORDER BY gs.created_at ASC`,
     [grantId]
   );
@@ -403,6 +543,10 @@ export async function getMandatePipeline(
     title: r.title,
     ingested_at: r.ingested_at?.toISOString() ?? null,
     extraction_status: r.extraction_status,
+    extraction_stage: extractionStage(r.extraction_status),
+    extraction_started_at:
+      r.extraction_status === "pending" ? null : (r.extraction_started_at?.toISOString() ?? null),
+    extraction_queued_ahead: r.queued_ahead == null ? null : Number(r.queued_ahead),
     claims_linked: r.claims_linked,
     claims_assessed: r.claims_assessed,
     avg_importance:
@@ -505,7 +649,11 @@ export interface MandateDetail extends MandateSummary {
   /** Set only for the manager: the conversation to keep talking in. */
   conversation_id?: string;
   is_manager?: boolean;
+  /** Set only for the manager: their page for it, the conversation with its Grantmaker beside it. */
+  funder_url?: string;
 }
+
+
 
 /**
  * A mandate a viewer may read, as the reads beside its page need it: its id
@@ -556,78 +704,93 @@ export async function getPublicMandate(
   const isManager = !!viewerUserId && viewerUserId === row.funder_user_id;
   if (!live && !isManager) return null;
 
-  const summary = await summarize(row);
-  const contributions = await getJobContributions(row.budget_job_id);
-  const contributorNames = await rawQuery<{ id: string; name: string }>(
-    `SELECT id, display_name AS name FROM contributors
-      WHERE id = ANY($1::uuid[])`,
-    [contributions.map((c) => c.userId)]
-  );
-  const nameOf = new Map(contributorNames.map((c) => [c.id, c.name]));
-
-  const funded = await rawQuery<{
-    claim_id: string;
-    text: string;
-    status: string;
-    assessed_at: Date | null;
-  }>(
-    `SELECT a.claim_id, c.text, a.status, a.assessed_at
-       FROM assessments a JOIN claims c ON c.id = a.claim_id
-      WHERE a.funded_by_job_id = $1
-      ORDER BY a.assessed_at DESC
-      LIMIT 100`,
-    [row.budget_job_id]
-  );
-
-  // Each item's standing on the ledger (plan-state.ts), not its position
-  // against the cursor: a blocked or waiting item says why (#416).
+  // Every read below is independent of the others, so they go out
+  // together: in turn, a dozen round trips to the database stood between a
+  // reader and the page.
   const items = describePlanItems(row.plan?.items ?? [], row.plan_cursor);
-
   const hasIngest = items.some((i) => i.action === "ingest");
-  const pipeline = hasIngest ? await getMandatePipeline(row.id) : [];
-  const lookouts = await summarizeLookouts(row.id).catch(() => []);
-  const correspondents = (await listCorrespondents(row.id).catch(() => [])).map(correspondentPublic);
-
-  let conversationId: string | undefined;
-  if (isManager) {
-    const [convo] = await rawQuery<{ id: string }>(
-      `SELECT id FROM grant_conversations WHERE grant_id = $1
-        ORDER BY created_at DESC LIMIT 1`,
-      [row.id]
-    );
-    conversationId = convo?.id;
-  }
-
-  // What it has done, kind by kind, counted whole; the findings its agents
-  // noted; where its Grantmaker stands; how many of its updates are kept.
-  // None of these may hide the page.
-  const work = await import("./mandate-work-service.js");
   const ref = { id: row.id, budgetJobId: row.budget_job_id };
-  const [workCounts, findings, grantmaker, updates, sittings] = await Promise.all([
-    work.mandateWorkCounts(ref).catch(() => null),
-    work.mandateFindings(ref).catch(() => []),
-    work.grantmakerStanding(row.id).catch(() => null),
-    work.listMandateUpdates(row.id, { limit: 1 }).catch(() => ({ total: 0, updates: [] })),
-    work.grantmakerSittings(ref).catch(() => []),
-  ]);
   const policy = (row.mandate as { operating_policy?: { current?: string; current_at?: string } } | null)
     ?.operating_policy;
   const direction = policy?.current?.trim()
     ? { text: policy.current.trim(), at: policy.current_at ?? null }
     : null;
-  const { openDeploymentFaults } = await import("./deployment-fault-service.js");
-  const faults = await openDeploymentFaults().catch(() => []);
   const funderNotes = isManager
     ? ((row.mandate as { funder_notes?: Array<{ at: string; note: string }> } | null)?.funder_notes ?? [])
     : [];
-
-  const { regrantEdges } = await import("./regrant-service.js");
-  const edges = await regrantEdges(row.id);
   const lastReview = (
     row.mandate as (GrantMandate & {
       last_review?: { at: string; note: string };
     }) | null
   )?.last_review;
+
+  const [work, { openDeploymentFaults }, { regrantEdges }] = await Promise.all([
+    import("./mandate-work-service.js"),
+    import("./deployment-fault-service.js"),
+    import("./regrant-service.js"),
+  ]);
+  const [
+    escrow,
+    { contributions, nameOf },
+    funded,
+    pipeline,
+    lookouts,
+    correspondents,
+    conversationId,
+    // What it has done, kind by kind, counted whole; the findings its agents
+    // noted; where its Grantmaker stands; how many of its updates are kept.
+    // None of these may hide the page.
+    workCounts,
+    findings,
+    grantmaker,
+    updates,
+    sittings,
+    faults,
+    edges,
+  ] = await Promise.all([
+    grantEscrowBreakdown(ref),
+    getJobContributions(row.budget_job_id).then(async (contributions) => {
+      const names = await rawQuery<{ id: string; name: string }>(
+        `SELECT id, display_name AS name FROM contributors
+          WHERE id = ANY($1::uuid[])`,
+        [contributions.map((c) => c.userId)]
+      );
+      return { contributions, nameOf: new Map(names.map((c) => [c.id, c.name])) };
+    }),
+    rawQuery<{
+      claim_id: string;
+      text: string;
+      status: string;
+      assessed_at: Date | null;
+    }>(
+      `SELECT a.claim_id, c.text, a.status, a.assessed_at
+         FROM assessments a JOIN claims c ON c.id = a.claim_id
+        WHERE a.funded_by_job_id = $1
+        ORDER BY a.assessed_at DESC
+        LIMIT 100`,
+      [row.budget_job_id]
+    ),
+    hasIngest ? getMandatePipeline(row.id) : Promise.resolve([]),
+    summarizeLookouts(row.id).catch(() => []),
+    listCorrespondents(row.id)
+      .then((list) => list.map(correspondentPublic))
+      .catch(() => []),
+    isManager
+      ? rawQuery<{ id: string }>(
+          `SELECT id FROM grant_conversations WHERE grant_id = $1
+            ORDER BY created_at DESC LIMIT 1`,
+          [row.id]
+        ).then(([convo]) => convo?.id as string | undefined)
+      : Promise.resolve(undefined),
+    work.mandateWorkCounts(ref).catch(() => null),
+    work.mandateFindings(ref).catch(() => []),
+    work.grantmakerStanding(row.id).catch(() => null),
+    work.listMandateUpdates(row.id, { limit: 1 }).catch(() => ({ total: 0, updates: [] })),
+    work.grantmakerSittings(ref).catch(() => []),
+    openDeploymentFaults().catch(() => []),
+    regrantEdges(row.id),
+  ]);
+  const summary = summaryOf(row, escrow, contributions.length);
 
   return {
     ...summary,
@@ -676,7 +839,7 @@ export async function getPublicMandate(
     })),
     ...(isManager ? { funder_notes: funderNotes.slice(-5).reverse() } : {}),
     ...(isManager
-      ? { is_manager: true, ...(conversationId ? { conversation_id: conversationId } : {}) }
+      ? { is_manager: true, funder_url: mandateFunderUrl(row.id), ...(conversationId ? { conversation_id: conversationId } : {}) }
       : {}),
   };
 }
@@ -822,6 +985,105 @@ export interface MandateAllocationView {
   petitions: { received: number; granted: number; refused: number; follow_up: number; escalated: number; pending: number };
   /** Items waiting for the officers in the mandate's inbox. */
   inbox_waiting: number;
+  /** What wakes its Grantmaker, and when it next checks in. */
+  watching: MandateWatching;
+}
+
+/** One standing interest of a mandate's Grantmaker or inbox (subscription-service.ts). */
+export interface MandateSubscriptionRow {
+  id: string;
+  /** grantmaker: its Grantmaker's session; mandate_inbox: the inbox its officers read. */
+  subscriber: "grantmaker" | "mandate_inbox";
+  /** The subscription in a line, as its holder's briefing shows it. */
+  describes: string;
+  filter: Record<string, unknown>;
+  condition: Record<string, unknown> | null;
+  /** Set on a scheduled check-in. */
+  due_at: string | null;
+  delivery: "wake" | "queue";
+  once: boolean;
+  reason: string;
+  created_by: string;
+  deliveries: number;
+  last_delivered_at: string | null;
+  created_at: string;
+}
+
+/**
+ * What a mandate's Grantmaker waits on: its session's state, its next
+ * scheduled check-in, and every standing interest its session and the
+ * mandate's inbox hold. Only subscriptions at the public label are shown, as
+ * the mandate itself is public; one made by a run at another label is left
+ * out, and so is the check-in it sets.
+ */
+export interface MandateWatching {
+  grantmaker_session: { id: string; status: string } | null;
+  next_check_in_at: string | null;
+  subscriptions: MandateSubscriptionRow[];
+}
+
+async function mandateWatching(grantId: string): Promise<MandateWatching> {
+  const { describeSubscription } = await import("./subscription-service.js");
+  const { PUBLIC_LABEL } = await import("../labels.js");
+  const [session] = await rawQuery<{ id: string; status: string }>(
+    `SELECT s.id, s.status FROM grants g JOIN agent_sessions s ON s.id = g.grantmaker_session_id
+      WHERE g.id = $1`,
+    [grantId]
+  );
+  const rows = await rawQuery<{
+    id: string;
+    subscriber_kind: "session" | "mandate_inbox";
+    filter: Record<string, unknown> | null;
+    condition: Record<string, unknown> | null;
+    due_at: string | null;
+    delivery: "wake" | "queue";
+    once: boolean;
+    reason: string;
+    created_by: string;
+    deliveries: number;
+    last_delivered_at: string | null;
+    created_at: string;
+  }>(
+    `SELECT id, subscriber_kind, filter, condition, due_at::text AS due_at, delivery, once, reason,
+            created_by, deliveries, last_delivered_at::text AS last_delivered_at, created_at::text AS created_at
+       FROM subscriptions
+      WHERE active AND sensitivity_label = $3
+        AND ((subscriber_kind = 'session' AND subscriber_ref = $2)
+             OR (subscriber_kind = 'mandate_inbox' AND subscriber_ref = $1))
+      ORDER BY due_at NULLS LAST, created_at`,
+    [grantId, session?.id ?? "", PUBLIC_LABEL]
+  );
+  const subscriptions = rows.map((r) => ({
+    id: r.id,
+    subscriber: r.subscriber_kind === "session" ? ("grantmaker" as const) : ("mandate_inbox" as const),
+    describes: describeSubscription({
+      id: r.id,
+      filter: (r.filter ?? {}) as never,
+      condition: r.condition as never,
+      due_at: r.due_at,
+      delivery: r.delivery,
+      once: r.once,
+      reason: r.reason,
+    }),
+    filter: r.filter ?? {},
+    condition: r.condition,
+    due_at: r.due_at,
+    delivery: r.delivery,
+    once: r.once,
+    reason: r.reason,
+    created_by: r.created_by,
+    deliveries: Number(r.deliveries),
+    last_delivered_at: r.last_delivered_at,
+    created_at: r.created_at,
+  }));
+  const due = subscriptions
+    .filter((s) => s.subscriber === "grantmaker" && s.due_at)
+    .map((s) => new Date(s.due_at!).getTime());
+  return {
+    grantmaker_session: session ? { id: session.id, status: session.status } : null,
+    next_check_in_at: due.length > 0 ? new Date(Math.min(...due)).toISOString() : null,
+    subscriptions,
+  };
 }
 
 const OPERATIONS_WINDOW_DAYS = 30;
@@ -853,15 +1115,6 @@ export async function getMandateAllocationView(
     "./operating-policy-service.js"
   );
   const { paceRoom } = await import("./pace-service.js");
-  const policy = await getOperatingPolicy(grantId);
-  const limit = officerLimit(policy);
-  const reviewPass = reviewPassBudget(policy);
-
-  const [money, pace] = await Promise.all([
-    grantEscrowBreakdown({ id: grantId, budgetJobId: grant.budget_job_id }),
-    paceRoom(grantId, "delegated"),
-  ]);
-
   const window = `now() - make_interval(days => ${OPERATIONS_WINDOW_DAYS})`;
   // Every allocation of the mandate's in the window, commissioned or
   // self-funded: the table used to show commissions alone, so a mandate's
@@ -871,100 +1124,110 @@ export async function getMandateAllocationView(
   // released in the same instant) adds to the spend of the run it belongs
   // to, and is not a run of its own. A fully spent allocation is settled,
   // though nothing stamps released_at on it.
-  const kinds = await rawQuery<{
-    kind: string;
-    commissioned: boolean;
-    runs: number;
-    running: number;
-    budget: string;
-    spent: string;
-  }>(
-    `SELECT kind, commissioned,
-            count(*) FILTER (WHERE NOT overage)::int AS runs,
-            count(*) FILTER (WHERE live)::int AS running,
-            COALESCE(SUM(amount), 0)::bigint AS budget,
-            COALESCE(SUM(spent), 0)::bigint AS spent
-       FROM (
-         SELECT a.kind, al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
-                (al.released_at IS NULL AND al.spent_micro_usd < al.amount_micro_usd) AS live,
-                (al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
-                 AND al.spent_micro_usd = al.amount_micro_usd) AS overage,
-                CASE WHEN al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
-                          AND al.spent_micro_usd = al.amount_micro_usd
-                     THEN COALESCE((SELECT p.commissioned_by IS NOT NULL AND p.commissioned_by <> 'mandate' FROM action_allocations p
-                                     WHERE p.grant_id = al.grant_id AND p.action_id = al.action_id
-                                       AND p.created_at < al.created_at
-                                     ORDER BY p.created_at DESC LIMIT 1), false)
-                     -- The mandate's own upkeep (commissioned_by 'mandate') is self-funded.
-                     ELSE al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate' END AS commissioned
-           FROM action_allocations al JOIN actions a ON a.id = al.action_id
-          WHERE al.grant_id = $1 AND al.created_at >= ${window}
-       ) x
-      GROUP BY kind, commissioned
-      ORDER BY SUM(spent) DESC, count(*) DESC, kind, commissioned`,
-    [grantId]
-  );
-
   const offset = Math.max(0, opts.offset ?? 0);
   const pageLimit = Math.min(50, Math.max(1, opts.limit ?? 10));
   const params: unknown[] = [grantId, pageLimit, offset];
   if (opts.kind) params.push(opts.kind);
-  const commissions = await rawQuery<{
-    action_id: string;
-    kind: string;
-    claim_id: string | null;
-    label: string;
-    commissioned_by: string;
-    amount: string;
-    spent: string;
-    released: boolean;
-    status: string;
-    reason: string | null;
-    created_at: string;
-    total: number;
-  }>(
-    `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by,
-            al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
-            (al.released_at IS NOT NULL OR al.spent_micro_usd >= al.amount_micro_usd) AS released, a.status, al.reason,
-            al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
-       FROM action_allocations al JOIN actions a ON a.id = al.action_id
-      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate'
-        AND al.created_at >= ${window}
-        ${opts.kind ? "AND a.kind = $4" : ""}
-      ORDER BY al.created_at DESC
-      LIMIT $2 OFFSET $3`,
-    params
-  );
+  // The view's reads do not depend on each other, so they go out together.
+  const [policy, money, pace, kinds, commissions, decisions, [pet], [inbox], watching] = await Promise.all([
+    getOperatingPolicy(grantId),
+    grantEscrowBreakdown({ id: grantId, budgetJobId: grant.budget_job_id }),
+    paceRoom(grantId, "delegated"),
+    rawQuery<{
+      kind: string;
+      commissioned: boolean;
+      runs: number;
+      running: number;
+      budget: string;
+      spent: string;
+    }>(
+      `SELECT kind, commissioned,
+              count(*) FILTER (WHERE NOT overage)::int AS runs,
+              count(*) FILTER (WHERE live)::int AS running,
+              COALESCE(SUM(amount), 0)::bigint AS budget,
+              COALESCE(SUM(spent), 0)::bigint AS spent
+         FROM (
+           SELECT a.kind, al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
+                  (al.released_at IS NULL AND al.spent_micro_usd < al.amount_micro_usd) AS live,
+                  (al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
+                   AND al.spent_micro_usd = al.amount_micro_usd) AS overage,
+                  CASE WHEN al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
+                            AND al.spent_micro_usd = al.amount_micro_usd
+                       THEN COALESCE((SELECT p.commissioned_by IS NOT NULL AND p.commissioned_by <> 'mandate' FROM action_allocations p
+                                       WHERE p.grant_id = al.grant_id AND p.action_id = al.action_id
+                                         AND p.created_at < al.created_at
+                                       ORDER BY p.created_at DESC LIMIT 1), false)
+                       -- The mandate's own upkeep (commissioned_by 'mandate') is self-funded.
+                       ELSE al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate' END AS commissioned
+             FROM action_allocations al JOIN actions a ON a.id = al.action_id
+            WHERE al.grant_id = $1 AND al.created_at >= ${window}
+         ) x
+        GROUP BY kind, commissioned
+        ORDER BY SUM(spent) DESC, count(*) DESC, kind, commissioned`,
+      [grantId]
+    ),
+    rawQuery<{
+      action_id: string;
+      kind: string;
+      claim_id: string | null;
+      label: string;
+      commissioned_by: string;
+      amount: string;
+      spent: string;
+      released: boolean;
+      status: string;
+      reason: string | null;
+      created_at: string;
+      total: number;
+    }>(
+      `SELECT a.id AS action_id, a.kind, a.claim_id, a.label, al.commissioned_by,
+              al.amount_micro_usd AS amount, al.spent_micro_usd AS spent,
+              (al.released_at IS NOT NULL OR al.spent_micro_usd >= al.amount_micro_usd) AS released, a.status, al.reason,
+              al.created_at::text AS created_at, COUNT(*) OVER ()::int AS total
+         FROM action_allocations al JOIN actions a ON a.id = al.action_id
+        WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate'
+          AND al.created_at >= ${window}
+          ${opts.kind ? "AND a.kind = $4" : ""}
+        ORDER BY al.created_at DESC
+        LIMIT $2 OFFSET $3`,
+      params
+    ),
+    rawQuery<{
+      decided_by: string;
+      item_kind: string;
+      decision: string;
+      target: string | null;
+      owls_micro_usd: string | null;
+      reason: string | null;
+      created_at: string;
+    }>(
+      `SELECT decided_by, item_kind, decision, target, owls_micro_usd, reason, created_at::text AS created_at
+         FROM mandate_decisions WHERE grant_id = $1
+        ORDER BY created_at DESC LIMIT 20`,
+      [grantId]
+    ),
+    rawQuery<Record<string, number>>(
+      `SELECT count(*)::int AS received,
+              count(*) FILTER (WHERE status = 'granted')::int AS granted,
+              count(*) FILTER (WHERE status = 'refused')::int AS refused,
+              count(*) FILTER (WHERE status = 'follow_up')::int AS follow_up,
+              count(*) FILTER (WHERE status = 'escalated')::int AS escalated,
+              count(*) FILTER (WHERE status = 'pending')::int AS pending
+         FROM petitions WHERE grant_id = $1 AND created_at >= ${window}`,
+      [grantId]
+    ),
+    rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM mandate_inbox WHERE grant_id = $1 AND handled_at IS NULL`,
+      [grantId]
+    ),
+    // A failure loses the section, never the view.
+    mandateWatching(grantId).catch(
+      (): MandateWatching => ({ grantmaker_session: null, next_check_in_at: null, subscriptions: [] })
+    ),
+  ]);
+  const limit = officerLimit(policy);
+  const reviewPass = reviewPassBudget(policy);
   const total = Number(commissions[0]?.total ?? 0);
-
-  const decisions = await rawQuery<{
-    decided_by: string;
-    item_kind: string;
-    decision: string;
-    target: string | null;
-    owls_micro_usd: string | null;
-    reason: string | null;
-    created_at: string;
-  }>(
-    `SELECT decided_by, item_kind, decision, target, owls_micro_usd, reason, created_at::text AS created_at
-       FROM mandate_decisions WHERE grant_id = $1
-      ORDER BY created_at DESC LIMIT 20`,
-    [grantId]
-  );
-  const [pet] = await rawQuery<Record<string, number>>(
-    `SELECT count(*)::int AS received,
-            count(*) FILTER (WHERE status = 'granted')::int AS granted,
-            count(*) FILTER (WHERE status = 'refused')::int AS refused,
-            count(*) FILTER (WHERE status = 'follow_up')::int AS follow_up,
-            count(*) FILTER (WHERE status = 'escalated')::int AS escalated,
-            count(*) FILTER (WHERE status = 'pending')::int AS pending
-       FROM petitions WHERE grant_id = $1 AND created_at >= ${window}`,
-    [grantId]
-  );
-  const [inbox] = await rawQuery<{ n: number }>(
-    `SELECT count(*)::int AS n FROM mandate_inbox WHERE grant_id = $1 AND handled_at IS NULL`,
-    [grantId]
-  );
 
   const escrow = Number(grant.budget_micro_usd);
   return {
@@ -1027,6 +1290,7 @@ export async function getMandateAllocationView(
       pending: Number(pet?.pending ?? 0),
     },
     inbox_waiting: Number(inbox?.n ?? 0),
+    watching,
   };
 }
 

@@ -1,4 +1,4 @@
-# Method skill: Sql (version 11)
+# Method skill: Sql (version 13)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -52,7 +52,14 @@ unknown.
   failed and is not cancelled: it stays funded, no attempt is charged, and
   the platform retries it on its own, so commissioning it again buys
   nothing. Its budget stays held meanwhile and counts against the
-  mandate's pace from when it was placed, as any held budget does
+  mandate's pace from when it was placed, as any held budget does.
+  extraction (null unless the row is a running ingest: queued, its source
+  is waiting its turn to be read; extracting, a worker is reading it),
+  extraction_started_at (when the current reading began; null while
+  queued), queued_ahead (for a queued ingest, about how many extractions
+  submitted before it are still waiting; the queue does not promise its
+  order). A running ingest is not necessarily being read: say queued when
+  it is
 - `commissions`: the money on each piece of work. commission_id, action_id,
   exclusion_group, payer_kind (mandate, person), payer_mandate_id,
   budget_owls, spent_owls, returned_owls, commissioned_by, brief, reason,
@@ -76,7 +83,10 @@ unknown.
   node_id, url, partition, variant, focus, rationale, ledger_status,
   ledger_reason, action_id (the ledger row it names), exclusion_group,
   ledger_checked_at, proposed_kind, proposed_text, proposal_ref, node_ref,
-  contribution_id. Join action_id to `ledger` to check a plan against
+  contribution_id, added_by (who put the item in the plan:
+  grantmaker_draft, grantmaker_planning, grantmaker_chat with the funder,
+  or grantmaker_review, its own pass whatever woke it), added_at and
+  added_run_id (null on items added before these were recorded). Join action_id to `ledger` to check a plan against
   what ran: a named row that is missing, or whose status disagrees with
   ledger_status, is a plan out of step with its ledger. A `propose` item
   is a node the plan asked the graph to take in: proposed_kind and

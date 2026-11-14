@@ -225,7 +225,10 @@ describe("runLookout", () => {
     const b = state.loop!.briefing;
     expect(b).toContain("Watch the retraction record behind the nutrition sources.");
     // What it raises goes to the officers unless its Grantmaker gave it a limit; no count of ingests (#695).
-    expect(b).toContain("Everything you raise goes to the mandate's program officers");
+    expect(b).toContain("everything you raise goes to the mandate's program officers");
+    // The stored bounds govern, whatever the brief says, and say why.
+    expect(b).toContain("these govern");
+    expect(b).toMatch(/Heartbeat: every \d+h \(a run opens within about 15 minutes of falling due\)|Heartbeat: none/);
     expect(b).not.toMatch(/ingests? this run/);
     expect(b).toContain("[retraction] 2026-09-10T08:00");
     expect(b).toContain("still waiting for its pass (repeated 2x)");

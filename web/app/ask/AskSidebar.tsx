@@ -66,6 +66,7 @@ export function AskSidebar({
   pages,
   mandates,
   drafts,
+  reading = false,
 }: {
   conversations: SidebarItem[];
   pages: SidebarItem[];
@@ -73,6 +74,8 @@ export function AskSidebar({
   mandates: SidebarItem[];
   /** Conversations with a Grantmaker not yet funded. */
   drafts: SidebarItem[];
+  /** While the lists are still being read: each says so instead of being empty. */
+  reading?: boolean;
 }) {
   // A mandate and a draft are both a conversation with a Grantmaker; the
   // list holds both, drafts first, each at its own address.
@@ -88,21 +91,21 @@ export function AskSidebar({
         items={conversations}
         href={(id) => `/ask/c/${id}`}
         active={path}
-        empty="None yet."
+        empty={reading ? "Reading…" : "None yet."}
       />
       <Section
         title="Pages"
         items={pages}
         href={(id) => `/ask/pages/${id}`}
         active={path}
-        empty="Pages the Assistant saves for you appear here."
+        empty={reading ? "Reading…" : "Pages the Assistant saves for you appear here."}
       />
       <Section
         title="Mandates"
         items={withGrantmakers}
         href={(id) => `/ask/mandates/${id}`}
         active={path}
-        empty="You have started no mandates."
+        empty={reading ? "Reading…" : "You have started no mandates."}
         more={{ href: "/ask/mandates/new", label: "Start a mandate" }}
       />
     </>

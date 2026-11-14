@@ -239,9 +239,7 @@ export async function CompletedWork({
                         <tr key={s.source_id}>
                           <td className="pipeline-source">
                             <Link href={`/sources/${s.source_id}`}>{s.title ?? s.url}</Link>
-                            {s.extraction_status && s.extraction_status !== "extracted" && (
-                              <span className="acct-detail">{words(s.extraction_status)}</span>
-                            )}
+                            {extractionNote(s) && <span className="acct-detail">{extractionNote(s)}</span>}
                           </td>
                           <td className="acct-num">{dateish(s.ingested_at, "·")}</td>
                           <td className="acct-num">{s.claims_linked}</td>
@@ -380,4 +378,22 @@ export async function CompletedWork({
       </div>
     </section>
   );
+}
+
+/**
+ * Where a source's extraction is, when it is not done: waiting its turn
+ * (with about how many are ahead of it), being read, or failed.
+ */
+function extractionNote(s: MandatePipelineRow): string | null {
+  const stage = s.extraction_stage;
+  if (stage === "queued") {
+    const ahead = s.extraction_queued_ahead;
+    return ahead && ahead > 0 ? `queued, about ${ahead} ahead` : "queued";
+  }
+  if (stage === "extracting") return "being read";
+  if (stage === "failed") return "extraction failed";
+  if (stage === undefined && s.extraction_status && s.extraction_status !== "completed") {
+    return words(s.extraction_status);
+  }
+  return null;
 }

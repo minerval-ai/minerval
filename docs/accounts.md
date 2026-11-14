@@ -461,14 +461,27 @@ returns at once with the message's place (`message.index`,
 `turn.state: "replying"`, not the transcript (#905); the reply lands in the
 conversation when the turn finishes (a drafting turn can take minutes,
 streamed so it has the model's full output for the plan). Callers read
-`GET /grant-conversations/:id?after=<message_count>&mandate_sha256=<hash>&wait=25`
+`GET /grant-conversations/:id?after=<message_count>&mandate_sha256=<hash>&wait=50`
 until the turn is `idle`, or `failed` with `turn.error` (the message stays
 saved; a short follow-up asks again). `after` returns only the messages
 after those the caller holds; `mandate_sha256` leaves the draft out
 (`mandate_unchanged: true`) while it still hashes the same; `wait` holds
-the read up to 25 seconds for the turn to end, well under the load
-balancer's idle timeout. With no parameters the read is the whole
-conversation. Funding returns the new `grant_id`, and the conversation list
+the read up to 120 seconds for the turn to end (a drafting turn takes a
+minute or two; 50 fits the 60 seconds most MCP clients give a tool call),
+well under the load balancer's idle timeout of 300. While the turn runs,
+`turn.progress` says which step the Grantmaker is on (how many tools it
+has called, and the latest few with what each was about) and
+`turn.partial` holds the reply as it writes it. With no parameters the
+read is the whole conversation. Every read carries `page_url` (the
+conversation's page, or once funded the manager's page for the mandate,
+with `mandate_page_url` and `funder_url`). A draft carries `warnings`:
+what the funder must read before paying, recorded by the Grantmaker or
+implied by the draft (a stake line on a mandate whose funder chose not to
+be named is public, and may identify them). Funding a draft with warnings
+is refused with `WARNINGS_UNACKNOWLEDGED` and the warnings until the call
+carries `acknowledge_warnings` (true, or the ids accepted); the site's
+fund card asks the funder to tick that they have read them, and the
+Assistant's call that acknowledges them always waits for the user's press. Funding returns the new `grant_id`, and the conversation list
 returns one summary per conversation (title, status, message count, turn),
 not transcripts.
 One turn runs at a time: a message sent meanwhile is refused with
@@ -500,7 +513,10 @@ Grantmaker's, neutral and faithful; the mandate's page says who funds it
 and any stake they declared (docs/allocation.md, "Who funds a mandate").
 Pause/top-up/refund semantics are the budget job's:
 `POST /grants/:id/topup`, `POST /grants/:id/cancel`, dashboards on
-`GET /grants/:id` (spend, plan, the assessments the grant bought).
+`GET /grants/:id` (spend, plan, the assessments the grant bought; a
+summary by default, its plan a page at a time, `detail=full` for all of
+it). `GET /grants` lists one short row per grant, with `page_url` and
+`funder_url`.
 
 **Free tier:** a one-time signup grant of 10 owls (`SIGNUP_GRANT_OWLS`) — "see
 a claim you care about, get it assessed": it covers a few capped

@@ -18,15 +18,20 @@ export default async function MandateConversationPage({ params }: { params: Prom
   if (!session?.externalId) redirect(`/signin?callbackUrl=${encodeURIComponent(`/ask/mandates/${id}`)}`);
   if (!accountApiConfigured()) notFound();
 
-  let mandate: MandateDetailView;
-  try {
-    mandate = await fetchMandateView(id, session.externalId);
-  } catch {
-    notFound();
-  }
+  // The mandate and its operations view are read together; the operations
+  // view answers only for an active mandate, and is dropped for any other.
+  const [read, allocationRead] = await Promise.all([
+    fetchMandateView(id, session.externalId).then(
+      (m) => ({ ok: true as const, mandate: m }),
+      () => ({ ok: false as const })
+    ),
+    fetchMandateAllocation(id),
+  ]);
+  if (!read.ok) notFound();
+  const mandate: MandateDetailView = read.mandate;
   if (!mandate.is_manager || !mandate.conversation_id) redirect(`/mandates/${id}`);
   const live = mandate.status === "active";
-  const allocation = live ? await fetchMandateAllocation(mandate.id) : null;
+  const allocation = live ? allocationRead : null;
   const pace = allocation?.budget.pace;
 
   return (

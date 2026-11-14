@@ -51,6 +51,13 @@ export async function meterLlmUsage(call: LlmCallUsage): Promise<void> {
   // the operation's work finishes, even if the durable insert below lags or
   // fails.
   if (ctx.meter) ctx.meter.billedMicroUsd += billedMicroUsd;
+  // A finished call is progress (the queue poller's stall timeout, the
+  // extraction's heartbeat).
+  try {
+    ctx.onProgress?.();
+  } catch {
+    // A progress listener never breaks the call it hears about.
+  }
   // Every LLM call is money, and money belongs to somebody: a paying user or a
   // funded job. Metering has never missed a call — the chokepoint sees them
   // all — but four worker pipelines established no identity at all, so their
@@ -124,6 +131,13 @@ export async function meterExternalUsage(usage: ExternalUsage): Promise<void> {
   const ctx = getUsageContext();
   const billedMicroUsd = Math.max(0, Math.round(usage.costMicroUsd));
   if (ctx.meter) ctx.meter.billedMicroUsd += billedMicroUsd;
+  // A finished call is progress (the queue poller's stall timeout, the
+  // extraction's heartbeat).
+  try {
+    ctx.onProgress?.();
+  } catch {
+    // A progress listener never breaks the call it hears about.
+  }
   if (!ctx.userId && !ctx.jobId && loadConfig().env === "production") {
     console.warn(
       `[usage] unattributed external usage from agent "${ctx.agent ?? "unknown"}" ` +

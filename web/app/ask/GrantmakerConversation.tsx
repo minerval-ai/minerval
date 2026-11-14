@@ -219,7 +219,11 @@ export function GrantmakerConversation({
                   <div className="convo-body">{convo.turn.partial}</div>
                 ) : (
                   <div className="convo-body convo-thinking">
-                    {managing ? "looking at the mandate…" : "surveying the graph…"}
+                    {convo?.turn?.progress?.steps
+                      ? `${convo.turn.progress.note}…`
+                      : managing
+                        ? "looking at the mandate…"
+                        : "surveying the graph…"}
                   </div>
                 )}
               </div>

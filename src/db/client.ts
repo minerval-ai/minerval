@@ -31,6 +31,16 @@ function getPool(): pg.Pool {
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
     ...(ssl && { ssl }),
+    // No JIT compilation on the app's connections. Postgres compiles a
+    // statement whose estimated cost passes jit_above_cost, and on the app's
+    // short reads that compilation is most of the time: a mandate's
+    // operations view took 610 ms with it and 85 ms without (seeded data,
+    // 200k actions), and a statement crosses the threshold as its tables
+    // grow, so pages slow down with no change to their code. Set at
+    // connection start, after whatever PGOPTIONS carries (setting `options`
+    // here replaces it otherwise). Read-only SQL (sql-service.ts) keeps its
+    // own connections and settings.
+    options: [process.env.PGOPTIONS, "-c jit=off"].filter(Boolean).join(" "),
   });
   return _pool;
 }

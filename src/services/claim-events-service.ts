@@ -724,7 +724,7 @@ export function composeClaimEvents(input: ClaimEventsInput): ClaimEvent[] {
 
 export async function getClaimEvents(
   claim: { id: string; createdBy: string; createdAt: Date },
-  options: { limit?: number; offset?: number } = {}
+  options: { limit?: number; offset?: number; kinds?: string[]; since?: Date; until?: Date } = {}
 ): Promise<{ events: ClaimEvent[]; total: number }> {
   const db = getDb();
   const { limit = 50, offset = 0 } = options;
@@ -793,7 +793,22 @@ export async function getClaimEvents(
     stateChanges: stateChangeRows,
   });
 
-  return { events: events.slice(offset, offset + limit), total: events.length };
+  // Narrowed after composing: the record is one node's, and composing it is
+  // the cost either way. `total` counts what the narrowing kept.
+  const kinds = options.kinds?.length ? new Set(options.kinds) : null;
+  const since = options.since?.getTime();
+  const until = options.until?.getTime();
+  const kept =
+    kinds || since !== undefined || until !== undefined
+      ? events.filter((e) => {
+          if (kinds && !kinds.has(e.kind)) return false;
+          const at = Date.parse(e.at);
+          if (since !== undefined && at < since) return false;
+          if (until !== undefined && at > until) return false;
+          return true;
+        })
+      : events;
+  return { events: kept.slice(offset, offset + limit), total: kept.length };
 }
 
 // ---------------------------------------------------------------------------

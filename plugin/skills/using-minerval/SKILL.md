@@ -23,6 +23,10 @@ description: >-
   Assistant has, for the user's own agent. Anything an account can do
   through the API it can do here. Suits work the site does not render
   or run: code, the user's own files, long agentic jobs, rich outputs.
+  Reads give the site's link for what they return (`page_url` on a node,
+  a mandate or a granting conversation; `funder_url` on a mandate for
+  its funder, their page with its Grantmaker): link those rather than
+  building paths from the table below.
 - **Browser extension** (Chrome Web Store, "Minerval"): marks claims on
   the page being read by what the graph holds, and its Chat tab is the
   Assistant, told which page it was opened from. Analysing a page and

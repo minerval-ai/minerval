@@ -97,3 +97,41 @@ describe("a stewarding item's budget and tier", () => {
     expect(floor.floor_owls).toBe(7.4);
   });
 });
+
+describe("a stewarding item that waits for the plan's ingests (after)", () => {
+  const URL = "https://example.org/faa-order";
+  const ingest = { action: "ingest", url: URL, rationale: "the order" } as PlanItem;
+
+  it("accepts the url of an ingest item in the same plan or the plan it joins", () => {
+    expect(validatePlanItems([ingest, item({ after: [URL] })])).toBeNull();
+    expect(validatePlanItems([item({ action: "deepen", after: [URL] })], [], undefined, [URL])).toBeNull();
+  });
+
+  it("refuses a url that names no ingest item, and after on any other kind", () => {
+    expect(validatePlanItems([item({ after: ["https://example.org/elsewhere"] })])).toMatch(
+      /not the url of an ingest item in this plan/
+    );
+    expect(validatePlanItems([item({ after: URL })])).toMatch(/after is a list of at most/);
+    expect(
+      validatePlanItems([ingest, { action: "ingest", url: "https://example.org/b", rationale: "r", after: [URL] } as PlanItem])
+    ).toMatch(/after is for assess, reassess and deepen items/);
+  });
+
+  it("keeps after in the stored form, deduplicated, on stewarding items only", () => {
+    const [, stored] = normalizePlanItems([ingest, item({ after: [URL, ` ${URL} `] })]);
+    expect(stored).toMatchObject({ action: "assess", after: [URL] });
+    const [plain] = normalizePlanItems([item({})]);
+    expect(plain).not.toHaveProperty("after");
+  });
+
+  it("tells the Grantmaker why and how long an item waits, in the tool text", async () => {
+    const { PLAN_KIND_RULES, PLAN_ITEM_SCHEMA, AFTER_INGESTS_MAX_WAIT_HOURS } = await import(
+      "../../../src/services/grant-service.js"
+    );
+    expect(PLAN_KIND_RULES).toMatch(/ingests take far longer than passes/);
+    expect(PLAN_KIND_RULES).toContain(`at most ${AFTER_INGESTS_MAX_WAIT_HOURS} hours`);
+    expect((PLAN_ITEM_SCHEMA.properties as Record<string, { description?: string }>).after!.description).toContain(
+      `${AFTER_INGESTS_MAX_WAIT_HOURS} hours`
+    );
+  });
+});

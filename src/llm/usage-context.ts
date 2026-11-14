@@ -78,6 +78,14 @@ export interface UsageContext {
    */
   meter?: { billedMicroUsd: number };
   /**
+   * Told each time a metered call finishes (meterLlmUsage,
+   * meterExternalUsage): the work in progress is moving. Set by the queue
+   * poller (workers/poller.ts), whose stall timeout counts from the last
+   * progress, and by the URL extraction, which stamps it on its job as a
+   * heartbeat for the recovery sweep. Never throws into the caller.
+   */
+  onProgress?: () => void;
+  /**
    * The agent session this run belongs to (session-service.ts): what it asks
    * for and waits on (research it commissions, a question to another node's
    * Steward) is answered into this session, which pauses when the run ends
@@ -339,6 +347,36 @@ export function untraced<T>(fn: () => T): T {
     { untraced: true, trace: undefined, runId: null },
     fn
   );
+}
+
+/**
+ * Run `fn` with `listener` told of its progress (UsageContext.onProgress),
+ * as well as whatever listener encloses it: a nested listener adds to the
+ * outer one, never shadows it.
+ */
+export function withProgressListener<T>(listener: () => void, fn: () => T): T {
+  const outer = getUsageContext().onProgress;
+  return runWithUsageContext(
+    {
+      onProgress: () => {
+        try {
+          listener();
+        } finally {
+          outer?.();
+        }
+      },
+    },
+    fn
+  );
+}
+
+/** Tell the enclosing listeners the work moved on. Never throws. */
+export function noteProgress(): void {
+  try {
+    getUsageContext().onProgress?.();
+  } catch {
+    // A listener never breaks the work it hears about.
+  }
 }
 
 /**
