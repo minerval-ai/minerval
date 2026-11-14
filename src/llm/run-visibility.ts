@@ -116,10 +116,6 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
 
 /** Every tool an agent can call, by what its output can carry. */
 export const TOOL_READS: Readonly<Record<string, Classification>> = {
-  finish_report_redaction: { reads: "private", why: "confirms the redaction of a report written at a label only some readers read" },
-  get_report_to_redact: { reads: "private", why: "an agent's report as written at a label only some readers read" },
-  redact_report: { reads: "private", why: "the report's text as it reads after a removal" },
-  restore_report: { reads: "private", why: "the report's text as it reads after a removal is taken back" },
   hold_part: { reads: "private", why: "confirms a hold on a part of a page held at a label only some readers read" },
   delay_part: { reads: "private", why: "confirms a delay on a part of a page held at a label only some readers read" },
   lift_hold: { reads: "private", why: "confirms that a hold or a delay on such a part was taken back" },
@@ -189,6 +185,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   flag_issue: { reads: "public", why: "confirms the run's own write; reputation and suspension state are public" },
   flag_reassessment: { reads: "public", why: "lookout records, public on the mandate's lookout route" },
   fund_request: { reads: "public", why: "confirms the run's own funding; a request's ledger is public on GET /requests/:id" },
+  decline_asked_request: { reads: "public", why: "confirms the run's own decision on a request asked of its mandate; it returns the id of the request at its own label and fixed words" },
   get_agent_reports: { reads: "private", why: "agent reports and triage notes, served only with the service key" },
   get_argument: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
   get_assessment_history: { reads: "public", why: "graph reads that unauthenticated routes also serve" },

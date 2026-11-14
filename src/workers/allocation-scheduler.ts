@@ -198,10 +198,14 @@ export async function allocationSchedulerTick(
   // package says what is now so. Contributions the mirror brought about a
   // page this deployment published are taken in and their reading opened on
   // the ledger; summaries already written are given to the node's Steward
-  // at the page's label. Changed versions of public nodes are noticed and,
-  // where the standing choice sends, the public mandate is asked. The
-  // standing choices about agents' reports are followed. None of it runs an
-  // agent here, and on a graph with one label none of it does anything.
+  // at the page's label. Requests on the public graph addressed to a
+  // mandate this deployment published are put in its inbox. Changed
+  // versions are offered to each gate that names a mandate to keep the other
+  // side current, agents' reports about Minerval's machinery are offered to
+  // the gate to outside, published mandates are restated where a setting
+  // changed, and what the gate to outside has let through is sent. None of
+  // it runs an agent here, and on a graph with one label none of it does
+  // anything.
   await followOutwardActs().catch((err: unknown) =>
     console.error(`[allocation-scheduler] following outward acts failed: ${err instanceof Error ? err.message : String(err)}`)
   );

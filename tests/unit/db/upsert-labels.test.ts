@@ -25,12 +25,8 @@ const OTHERWISE: Record<string, string> = {
   "src/services/mirror-feed-service.ts feed_contributions":
     "The public record as the mirror's feed carries it, on a graph that publishes: such a graph has one label, and the row is a copy of public columns of a contribution, which no run at another label can have written.",
   "src/services/mirror-feed-service.ts feed_requests": "As feed_contributions: a copy of a request's public columns, on a graph whose only label is `public`.",
-  "src/services/outward-acts-service.ts outward_settings":
-    "A standing choice, keyed by its name and always at `public`, written as the tables' owner once the route has checked the person: an on or off, ids and hours, and the fixed text the person was shown.",
-  "src/services/report-sending-service.ts actions":
-    "The ledger row for the redaction of one report, keyed by the report, which has one label: the update sets a time and nothing else.",
-  "src/services/report-sending-service.ts report_sendings":
-    "The sending of one report, keyed by the report and written at the report's own label by work at that label: on a conflict it sets the key to itself and nothing else, to return the row that is there.",
+  "src/services/gate-outside.ts report_sendings":
+    "The sending of one report, keyed by the report and written at the report's own label by work at that label: on a conflict it sets the time, the public graph's id for the report and a count, and no words.",
   "src/services/action-service.ts actions":
     "The ledger's rows. A row's label never changes, and work at each label has its own key for a subject several labels can work on (groupAtLabel), so the row an upsert lands on is at the writer's own label; the database refuses any other. A finished row that is reopened takes the new work's text and target (LABEL_ON_REOPEN_SQL).",
   "src/services/showing-service.ts actions":
@@ -99,7 +95,7 @@ describe("an upsert onto a labelled table", () => {
   const tables = labelledTables();
 
   it("writes its words only into a row at its writer's own label, or is listed here with why it writes none", () => {
-    expect(tables.sql.size).toBe(144);
+    expect(tables.sql.size).toBe(142);
     const unheld = new Set<string>();
     let held = 0;
     for (const path of sourceFiles(join(repo, "src"))) {

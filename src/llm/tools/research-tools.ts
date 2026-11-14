@@ -31,12 +31,15 @@ import {
 } from "../../services/research-run-service.js";
 import { type ResearcherInput, type ResearcherResult } from "../agents/researcher.js";
 import { allocateMandateToRequest } from "../../services/allocation-service.js";
+import { oneLabelOnly } from "../../services/judgment-version-service.js";
 
 export const GET_RESEARCH_RUN_TOOL_NAME = "get_research_run";
 export const FUND_REQUEST_TOOL_NAME = "fund_request";
+export const DECLINE_ASKED_REQUEST_TOOL_NAME = "decline_asked_request";
 export const RESEARCH_TOOL_NAMES: readonly string[] = [
   GET_RESEARCH_RUN_TOOL_NAME,
   FUND_REQUEST_TOOL_NAME,
+  DECLINE_ASKED_REQUEST_TOOL_NAME,
 ];
 
 export const EFFORT_LEVELS = ["medium", "high", "max"] as const;
@@ -98,6 +101,38 @@ export function getFundRequestToolDefinition(): Tool {
         budget_usd: { type: "number" },
       },
       required: ["request_id", "budget_usd"],
+      additionalProperties: false,
+    },
+  };
+}
+
+/**
+ * decline_asked_request (Part VIII, Requests): a mandate's Grantmaker
+ * declines a request that was asked of it from below its label, the public
+ * graph's among them. What becomes of a request, a refusal included, is
+ * part of its record, so the decline is recorded at the mandate's label
+ * and the asker is told through the gate. Offered only where a graph has
+ * more than one label: on a graph with one, nothing is asked from below.
+ */
+export function getDeclineAskedRequestToolDefinition(): Tool {
+  return {
+    name: DECLINE_ASKED_REQUEST_TOOL_NAME,
+    description:
+      "Decline a request that was put in front of your mandate from a label below yours, or from the public graph, " +
+      "and that you will not pay for. It is recorded at your label as declined, with your note, which stays at your " +
+      "label. Whoever asked is told, through the gate between your label and theirs, that the work will not be done " +
+      "and the reason, in the reason's fixed words: cannot_be_shown (what it asks for could not be shown to those " +
+      "who asked), not_held (this graph does not hold the evidence it asks about), asks_for_a_result (it asks for a " +
+      "particular result), moot (it no longer bears on anything), intrusion (it could be met only by intrusion), " +
+      "no_reason. A request you mean to pay for is taken up with fund_request instead.",
+    input_schema: {
+      type: "object",
+      properties: {
+        request_id: { type: "string", description: "The request's id where it was filed: at the label below, or on the public graph." },
+        reason: { type: "string", enum: ["cannot_be_shown", "not_held", "asks_for_a_result", "moot", "intrusion", "no_reason"] },
+        note: { type: "string", description: "Why, in your words. It stays at your label." },
+      },
+      required: ["request_id", "reason", "note"],
       additionalProperties: false,
     },
   };
@@ -314,8 +349,38 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   // A deployment with the researcher off offers nothing: a tool that only
   // refuses would cost every launcher's prompt and invite wasted calls.
   const definitions = config.researcherEnabled
-    ? [getResearchRunReadToolDefinition(), ...(fundsRequests ? [getFundRequestToolDefinition()] : [])]
+    ? [
+        getResearchRunReadToolDefinition(),
+        ...(fundsRequests ? [getFundRequestToolDefinition()] : []),
+        ...(fundsRequests && !oneLabelOnly() ? [getDeclineAskedRequestToolDefinition()] : []),
+      ]
     : [];
+
+  const decline = async (input: Record<string, unknown>): Promise<string> => {
+    if (!fundsRequests || !options.grantId) return refuse("Only a mandate's Grantmaker declines a request asked of its mandate.");
+    const requestId = str(input.request_id);
+    if (!UUID_RE.test(requestId)) return refuse(`"${requestId}" is not a request id.`);
+    const { declineFromBelow } = await import("../../services/request-adoption-service.js");
+    const { RequestError } = await import("../../services/request-service.js");
+    const [here] = await rawQuery<{ id: string }>(`SELECT id FROM requests WHERE id = $1`, [requestId]);
+    try {
+      const done = await declineFromBelow(here ? { requestId } : { publicRequestId: requestId }, {
+        reason: str(input.reason),
+        note: str(input.note),
+        filer: { kind: "mandate", grantId: options.grantId },
+      });
+      return JSON.stringify({
+        success: true,
+        request_id: done.request_id,
+        message: done.already
+          ? "That request was already closed at this label. Nothing changed."
+          : `Declined, and recorded at this label as request ${done.request_id}. Whoever asked is told through the gate that the work will not be done, with the reason in its fixed words. Your note stays here.`,
+      });
+    } catch (err) {
+      if (err instanceof RequestError) return refuse(err.message);
+      throw err;
+    }
+  };
 
   const fund = async (input: Record<string, unknown>): Promise<string> => {
     if (!fundsRequests) return refuse("Only a mandate's Grantmaker funds requests.");
@@ -371,6 +436,7 @@ export function createResearchTools(options: ResearchToolsOptions): ResearchTool
   const execute = async (name: string, input: Record<string, unknown>): Promise<string | null> => {
     if (name === GET_RESEARCH_RUN_TOOL_NAME) return get(input);
     if (name === FUND_REQUEST_TOOL_NAME) return fund(input);
+    if (name === DECLINE_ASKED_REQUEST_TOOL_NAME) return decline(input);
     return null;
   };
 

@@ -27,6 +27,7 @@
  * (answerableBelow).
  */
 import { rawQuery } from "../db/client.js";
+import { PUBLIC_LABEL } from "../labels.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fileRequest, RequestError, type RequestFiler } from "./request-service.js";
 
@@ -60,7 +61,12 @@ interface Words {
  */
 export async function takeUpFromBelow(
   from: RequestBelow,
-  by: { filer: RequestFiler; contributorId?: string | null }
+  by: {
+    filer: RequestFiler;
+    contributorId?: string | null;
+    /** Taken up only so that it can be declined on the record (declineFromBelow): the asker is not told it was taken up. */
+    toDecline?: boolean;
+  }
 ): Promise<TakenUpAbove | null> {
   const label = currentLabel();
   const isPublic = "publicRequestId" in from;
@@ -132,8 +138,16 @@ export async function takeUpFromBelow(
     `INSERT INTO adopted_requests (request_id, ${column}, adopted_by, sensitivity_label) VALUES ($1, $2, $3, $4) RETURNING id`,
     [filed.id, id, by.contributorId ?? null, label]
   );
-  // That it was taken up is told to the label that asked, through the gate between the two (gate-service.ts).
-  if (!isPublic) await offerDown("taken_up", filed.id);
+  if (by.toDecline) return { adoption_id: row!.id, request_id: filed.id, already: false };
+  // That it was taken up is told to whoever asked, through the gate between the two (gate-service.ts): the
+  // label below, or, for a request on the public graph that was addressed to a mandate this deployment
+  // published, the public graph. Any other public request was asked of nobody here, so nothing is said of it
+  // unless a person says so.
+  await offerDown("taken_up", filed.id);
+  // What the public asked for flows to the gate to outside when it is ready: the page of each node the request bears on.
+  await flowWhereThePublicAsked(filed.id, claimIds).catch((err: unknown) =>
+    console.error(`[gate] could not set the flow of pages for request ${filed.id}: ${err instanceof Error ? err.message : String(err)}`)
+  );
   return { adoption_id: row!.id, request_id: filed.id, already: false };
 }
 
@@ -144,6 +158,82 @@ export function takenUpAboveNote(below: { id: string; label: string }, here: { i
     `at \`${here.label}\` as request ${here.id}, linked to it, and that is the request this acted on. That it was taken up, and what the ` +
     `work finds, go to readers at \`${below.label}\` through the gate between the two labels, which may remove from it or hold it.`
   );
+}
+
+/** What an agent is told when a tool it called on a request of the public graph acted on this label's own request instead. */
+export function takenUpFromPublicNote(publicRequestId: string, here: { id: string; label: string }): string {
+  return (
+    `Request ${publicRequestId} is the public graph's, which this run reads through the mirror and does not change. It is taken up ` +
+    `at \`${here.label}\` as request ${here.id}, linked to it, and that is the request this acted on. Where it was addressed to a mandate this ` +
+    `graph published, that it was taken up is said on the public graph, and the page of each node it bears on goes to the gate to outside ` +
+    `as it is assessed here, where it may have passages removed or be held.`
+  );
+}
+
+/**
+ * The reasons a request from below is declined for, as its asker is told:
+ * the public graph's fixed list (request-take-up-service.ts,
+ * DECLINE_REASONS), used at every boundary so that a decline says the same
+ * thing wherever it is read.
+ */
+export const DECLINE_FROM_BELOW_REASONS = ["cannot_be_shown", "not_held", "asks_for_a_result", "moot", "intrusion", "no_reason"] as const;
+
+/**
+ * Decline, at this label, a request filed below it: the public graph's, or
+ * one at a label this work reads. The decision is this label's own record:
+ * the request is taken up here only to be closed as declined, with the
+ * reason from the fixed list and a note that stays at this label. The asker
+ * is told through the gate that the work will not be done and why, in the
+ * reason's fixed words, and is not told that it was taken up.
+ */
+export async function declineFromBelow(
+  from: RequestBelow,
+  input: { reason: string; note: string; filer: RequestFiler }
+): Promise<{ request_id: string; already: boolean }> {
+  if (!(DECLINE_FROM_BELOW_REASONS as readonly string[]).includes(input.reason)) {
+    throw new RequestError(`A reason is one of: ${DECLINE_FROM_BELOW_REASONS.join(", ")}.`);
+  }
+  if (!input.note.trim()) throw new RequestError("A request declined says why.");
+  const taken = await takeUpFromBelow(from, { filer: input.filer, toDecline: true });
+  if (!taken) throw new RequestError("That request is at this label already: its keeper closes it.");
+  const [state] = await rawQuery<{ state: string }>(`SELECT state FROM requests WHERE id = $1`, [taken.request_id]);
+  if (state && ["met", "declined", "withdrawn", "moot"].includes(state.state)) return { request_id: taken.request_id, already: true };
+  // The reason is on the record before the request closes, since closing is what offers the answer to the gate.
+  await rawQuery(`UPDATE adopted_requests SET decline_reason = $2 WHERE id = $1`, [taken.adoption_id, input.reason]);
+  const { setRequestState } = await import("./request-service.js");
+  await setRequestState({ requestId: taken.request_id, state: input.reason === "moot" ? "moot" : "declined", note: input.note });
+  return { request_id: taken.request_id, already: false };
+}
+
+/**
+ * Where a request taken up here goes back, by the links below it, to a
+ * request on the public graph that was addressed to a mandate this
+ * deployment published: set a standing flow, to the gate to outside, of
+ * the page of each node it bears on, from this label. It is what the
+ * public asked for, so it flows without anyone setting it, and each page
+ * then goes through the gate under its setting.
+ */
+async function flowWhereThePublicAsked(requestIdHere: string, claimIds: readonly string[]): Promise<void> {
+  if (claimIds.length === 0) return;
+  // A halting bound on the walk down the links; no chain of labels is this long.
+  let id = requestIdHere;
+  let publicRequestId: string | null = null;
+  for (let depth = 0; depth < 20 && !publicRequestId; depth++) {
+    const [link] = await rawQuery<{ public_request_id: string | null; from_request_id: string | null }>(
+      `SELECT public_request_id, from_request_id FROM adopted_requests WHERE request_id = $1`,
+      [id]
+    );
+    if (!link) return;
+    publicRequestId = link.public_request_id;
+    if (!link.from_request_id) break;
+    id = link.from_request_id;
+  }
+  if (!publicRequestId) return;
+  const gate = await import("./gate-service.js");
+  const mandate = await gate.publishedMandateAskedBy(publicRequestId);
+  if (!mandate) return;
+  const { flowForWhatWasAsked } = await import("./showing-service.js");
+  for (const nodeId of claimIds) await flowForWhatWasAsked({ nodeId, pageLabel: currentLabel(), toLabel: null, askedBy: publicRequestId });
 }
 
 /**
@@ -160,7 +250,17 @@ export async function requestToActOn(
 ): Promise<{ id: string; note: string | null }> {
   const label = currentLabel();
   const [req] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM requests WHERE id = $1`, [requestId]);
-  if (!req || req.label === label) return { id: requestId, note: null };
+  if (!req) {
+    // A request on the public graph, as the mirror brought it, is the layer below every label of a deployment.
+    // It is taken up at this label like any other, unless this label is `public`: work at `public` on what the
+    // public graph holds is the public graph's own.
+    const [mirrored] = label === PUBLIC_LABEL ? [] : await rawQuery<{ id: string }>(`SELECT id FROM feed_requests WHERE id = $1 AND origin = 'mirror'`, [requestId]).catch(() => []);
+    if (!mirrored) return { id: requestId, note: null };
+    const taken = await takeUpFromBelow({ publicRequestId: requestId }, { filer });
+    if (!taken) return { id: requestId, note: null };
+    return { id: taken.request_id, note: takenUpFromPublicNote(requestId, { id: taken.request_id, label }) };
+  }
+  if (req.label === label) return { id: requestId, note: null };
   // A request at a label this one does not read is not taken up, and the
   // caller goes on with the id it was given, as before there was a take-up.
   const taken = await takeUpFromBelow({ requestId }, { filer }).catch((err: unknown) => {

@@ -44,7 +44,6 @@ import {
   outboundOverview,
   packageFile,
   publisherIdentity,
-  releaseProposal,
   sendOutbound,
   signedRegistration,
   writeProposal,
@@ -171,8 +170,9 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
       summary: "Write or approve the words a node that exists only here is proposed to the public graph in (people who direct the graph, from a signed-in session)",
       description:
         "The public graph has no page for such a node's page to appear on until it holds the node, so the node is proposed there first, as anyone may " +
-        "propose one. Leave `text` out to propose the node's own wording. The words then wait for each party the node's wording rests on to release " +
-        "them, unless they are word for word a wording those parties already released at the gate. Nothing is sent by this.",
+        "propose one. Leave `text` out to propose the node's own wording. The words then go to the gate to outside as an item of the kind proposal, " +
+        "resting on the parties the node's wording rests on, unless they are word for word a wording that already went through it with the node's " +
+        "page. Nothing is sent by this.",
       body: {
         type: "object",
         required: ["showing_id", "node_id"],
@@ -183,24 +183,6 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       try {
         return reply.code(201).send(await writeProposal({ showingId: request.body.showing_id, nodeId: request.body.node_id, text: request.body.text, actor: await actorOf(request) }));
-      } catch (err) {
-        return refuse(reply, err);
-      }
-    },
-  });
-
-  app.post<{ Params: { proposal_id: string }; Body: { party_id: string } }>("/outbound/proposals/:proposal_id/release", {
-    schema: {
-      tags: ["showings"],
-      summary: "Release, for one party, the words a node is to be proposed to the public graph in (holders of release for that party, from a signed-in session)",
-      description: "A release is not taken back. Once every party the words rest on has released them, a person who directs the graph can send the proposal.",
-      params: { type: "object", required: ["proposal_id"], properties: { proposal_id: UUID } },
-      body: { type: "object", required: ["party_id"], properties: { party_id: UUID } },
-    },
-    preHandler: session("release"),
-    handler: async (request, reply) => {
-      try {
-        return reply.send(await releaseProposal({ proposalId: request.params.proposal_id, partyId: request.body.party_id, actor: await actorOf(request) }));
       } catch (err) {
         return refuse(reply, err);
       }

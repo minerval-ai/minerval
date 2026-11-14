@@ -81,6 +81,14 @@ export interface PackageVersion {
   of_parts?: number;
   held_kinds?: string;
   removals?: Record<string, number>;
+  /**
+   * How the publisher's gate to outside was set for this version when it
+   * was released, for each party it rests on: open, the Redactor's decision,
+   * or a person's decision as well, how wide the setting was and the day it
+   * was set. Stamped by the publishing deployment's gate, in its fixed
+   * words. Absent from a package built before the gate stamped it.
+   */
+  released_under?: Array<{ for_party: string; the_gate: "open" | "redactor" | "person"; in_words: string; from: string; set_on: string | null }>;
   fingerprint: string | null;
 }
 

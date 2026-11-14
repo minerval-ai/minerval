@@ -305,6 +305,58 @@ export async function askShowing(input: {
 }
 
 /**
+ * Set a standing flow of one node's page toward readers who asked for it:
+ * a request on their side was taken up at `pageLabel` and bears on the
+ * node. What was asked for goes to the gate when it is ready, without
+ * anyone setting it (gate-settings-service.ts, FLOW_WORDS), so no person's
+ * name is on this flow: its record says it was set for a request, and
+ * which. Each version then goes through the gate under its setting like
+ * any page. Where a standing flow of the node's page across the same
+ * boundary already stands, nothing is added.
+ */
+export async function flowForWhatWasAsked(input: { nodeId: string; pageLabel: string; toLabel: string | null; askedBy: string }): Promise<string | null> {
+  if (oneLabelOnly()) return null;
+  return bothSides(async () => {
+    if (!(await ownOrganizationParty())) return null;
+    const [node] = await rawQuery<{ id: string }>(
+      `SELECT c.id FROM claims c WHERE c.id = $1 AND c.state = 'active' AND c.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text]))`,
+      [input.nodeId, input.pageLabel]
+    );
+    if (!node) return null;
+    const boundary: Boundary = { from: input.pageLabel, to: input.toLabel };
+    const policy = await ensureBoundaryPolicy(boundary);
+    const destination = destinationLabel(boundary);
+    const gate = (await gateOf(policy.boundary_id))!;
+    const [standing] = await rawQuery<{ id: string }>(
+      `SELECT id FROM showings WHERE node_id = $1 AND boundary_id = $2 AND form = 'standing' AND kind = 'page' AND ended_at IS NULL LIMIT 1`,
+      [node.id, policy.boundary_id]
+    );
+    if (standing) return standing.id;
+    const showingId = await withTransaction(async (tx) => {
+      const [row] = await tx.query<{ id: string; asked_at: Date }>(
+        `INSERT INTO showings (node_id, reply_ref, to_label, to_outside, boundary_id, form, scope, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, 'standing', 'node', $6) RETURNING id, asked_at`,
+        [node.id, input.askedBy, input.toLabel, input.toLabel === null, policy.boundary_id, input.pageLabel]
+      );
+      await tx.query(
+        `INSERT INTO shown_showings (id, node_id, reply_ref, to_outside, boundary_id, form, scope, asked_at, send_as_released, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, 'standing', 'node', $6, $7, $8)`,
+        [row!.id, node.id, input.askedBy, input.toLabel === null, policy.boundary_id, row!.asked_at, input.toLabel === null && gate.send_as_released, destination]
+      );
+      // Asked for from the other side, by a request there: the act names no person, and `reason` says what set it.
+      await tx.query(`INSERT INTO showing_acts (showing_id, act, reason, at, sensitivity_label, by) VALUES ($1, 'asked', 'asked_for_by_a_request', $2, $3, 'setting')`, [
+        row!.id,
+        row!.asked_at,
+        destination,
+      ]);
+      return row!.id;
+    });
+    await followShowing(showingId, { first: true });
+    return showingId;
+  });
+}
+
+/**
  * End a standing showing. Later versions no longer follow. What was shown
  * stays shown, and the showing and its history stay on the record.
  */
@@ -338,6 +390,13 @@ export async function endShowing(input: { showingId: string; reason: EndReason; 
         [showing.id, input.actor.id, input.actor.holding, input.reason, at!.now, destination]
       );
     });
+    // A mandate that was offered outside stands on the public graph as something requests can be addressed to:
+    // the public graph is told that its offer has ended (gate-outside.ts).
+    if (showing.kind === "mandate" && showing.to_outside) {
+      await import("./gate-outside.js")
+        .then((out) => out.mandateWithdrawnOutside(showing.id, { actor: { ...input.actor, clearance: [], releaseParties: [], direct: true } }))
+        .catch((err: unknown) => console.error(`[gate] could not tell the public graph that mandate offer ${showing.id} ended: ${err instanceof Error ? err.message : String(err)}`));
+    }
   });
 }
 

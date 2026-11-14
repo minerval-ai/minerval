@@ -268,18 +268,25 @@ export async function refreshFeedRecords(db: MirrorDb): Promise<void> {
     `DELETE FROM feed_contributions f WHERE f.origin = 'local' AND NOT EXISTS (SELECT 1 FROM contributions c WHERE c.id = f.id AND c.claim_id IS NOT NULL)`
   );
   await db.query(
-    `INSERT INTO feed_requests (id, ask, why, satisfied_by, who_could, addressed_to, bears_on_text, state, state_note, filed_at, closed_at, sensitivity_label)
-     SELECT r.id, r.ask, r.why, r.satisfied_by, r.who_could, r.addressed_to, r.bears_on_text, r.state, r.state_note, r.created_at, r.closed_at, '${PUBLIC_LABEL}'
+    // `asked_of_face_id` travels where the request is addressed to a mandate another graph published here, so that
+    // the publisher's own deployment finds the requests addressed to it. A face that stands for a label of this
+    // graph is this graph's own business and does not travel.
+    `INSERT INTO feed_requests (id, ask, why, satisfied_by, who_could, addressed_to, bears_on_text, state, state_note, filed_at, closed_at, asked_of_face_id, sensitivity_label)
+     SELECT r.id, r.ask, r.why, r.satisfied_by, r.who_could, r.addressed_to, r.bears_on_text, r.state, r.state_note, r.created_at, r.closed_at,
+            (SELECT f.id FROM label_faces f WHERE f.id = r.asked_of_face_id AND f.publisher_account_id IS NOT NULL), '${PUBLIC_LABEL}'
        FROM requests r
      ON CONFLICT (id) DO UPDATE
        SET ask = EXCLUDED.ask, why = EXCLUDED.why, satisfied_by = EXCLUDED.satisfied_by, who_could = EXCLUDED.who_could,
            addressed_to = EXCLUDED.addressed_to, bears_on_text = EXCLUDED.bears_on_text, state = EXCLUDED.state,
-           state_note = EXCLUDED.state_note, filed_at = EXCLUDED.filed_at, closed_at = EXCLUDED.closed_at
+           state_note = EXCLUDED.state_note, filed_at = EXCLUDED.filed_at, closed_at = EXCLUDED.closed_at,
+           asked_of_face_id = EXCLUDED.asked_of_face_id
      WHERE (feed_requests.ask, feed_requests.why, feed_requests.satisfied_by, feed_requests.who_could, feed_requests.addressed_to,
-            feed_requests.bears_on_text, feed_requests.state, feed_requests.state_note, feed_requests.filed_at, feed_requests.closed_at)
+            feed_requests.bears_on_text, feed_requests.state, feed_requests.state_note, feed_requests.filed_at, feed_requests.closed_at,
+            feed_requests.asked_of_face_id)
            IS DISTINCT FROM
            (EXCLUDED.ask, EXCLUDED.why, EXCLUDED.satisfied_by, EXCLUDED.who_could, EXCLUDED.addressed_to,
-            EXCLUDED.bears_on_text, EXCLUDED.state, EXCLUDED.state_note, EXCLUDED.filed_at, EXCLUDED.closed_at)`
+            EXCLUDED.bears_on_text, EXCLUDED.state, EXCLUDED.state_note, EXCLUDED.filed_at, EXCLUDED.closed_at,
+            EXCLUDED.asked_of_face_id)`
   );
   await db.query(`DELETE FROM feed_requests f WHERE f.origin = 'local' AND NOT EXISTS (SELECT 1 FROM requests r WHERE r.id = f.id)`);
   await db.query(

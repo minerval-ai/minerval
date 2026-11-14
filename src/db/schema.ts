@@ -162,9 +162,17 @@ export const labelFaces = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     // The label whose work is asked for. It reads the row's own label.
-    forLabel: text("for_label")
-      .notNull()
-      .references(() => labels.name, { onDelete: "cascade" }),
+    forLabel: text("for_label").references(() => labels.name, { onDelete: "cascade" }),
+    // The boundary between a deployment and the public graph is the same
+    // boundary, so a face on the public graph stands for a graph outside
+    // it: a mandate an organization's own deployment published through its
+    // gate to outside (published_mandates), under the account that
+    // registered the deployment's key. `for_label` is then null: the work
+    // is done in another deployment, at a label this graph cannot name. Its
+    // name and line are the mandate's name and terms as that gate let them
+    // through, and a request here is addressed to it as a request inside a
+    // deployment is addressed to a label's face.
+    publisherAccountId: uuid("publisher_account_id").references((): AnyPgColumn => contributors.id),
     name: text("name").notNull(),
     canBeAsked: text("can_be_asked").notNull(),
     writtenBy: uuid("written_by"),
@@ -179,6 +187,8 @@ export const labelFaces = pgTable(
   (table) => [
     uniqueIndex("uq_label_faces_for_at").on(table.forLabel, table.sensitivityLabel),
     check("ck_label_faces_not_own", sql`${table.forLabel} <> ${table.sensitivityLabel}`),
+    check("ck_label_faces_stands_for", sql`(${table.forLabel} IS NULL) <> (${table.publisherAccountId} IS NULL)`),
+    index("idx_label_faces_publisher").on(table.publisherAccountId),
   ]
 );
 
@@ -7956,7 +7966,7 @@ export const showings = pgTable(
     check("ck_showings_destination", sql`(${table.toLabel} IS NULL) = ${table.toOutside}`),
     check("ck_showings_form", sql`${table.form} IN ('once', 'standing')`),
     check("ck_showings_scope", sql`${table.scope} IN ('node', 'under', 'mandate', 'boundary', 'item')`),
-    check("ck_showings_kind", sql`${table.kind} IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement')`),
+    check("ck_showings_kind", sql`${table.kind} IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement', 'report', 'proposal')`),
     check(
       "ck_showings_subject",
       sql`CASE WHEN ${table.scope} IN ('node', 'under') THEN ${table.nodeId} IS NOT NULL AND ${table.kind} = 'page'
@@ -8000,6 +8010,10 @@ export const showingPages = pgTable(
     // Set when the budget that pays for this item's redaction or check
     // could not pay; cleared when the work is paid for.
     fundsWantedAt: timestamp("funds_wanted_at", { withTimezone: true }),
+    // For a `funding` item that has come through: whether the mandate's
+    // money was placed on the pass at the other label, or the pass was
+    // opened there for that label's own funders because it could not be.
+    fundingPlaced: boolean("funding_placed"),
     judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
     openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
     // to_redact | to_check | at_gate | cannot_cross | overtaken
@@ -8204,6 +8218,17 @@ export const shownPages = pgTable(
     shownAt: timestamp("shown_at", { withTimezone: true }),
     // The source this page arrived as at the destination label, once shown.
     sourceId: uuid("source_id"),
+    // How the gate was set for the item when it was let through, for each
+    // party it rests on, in the gate's fixed vocabulary:
+    // [{ for_party, the_gate, scope, set_on }]. Stamped when it is shown
+    // and again when more of it is released. It names no node, mandate or
+    // request. A page shown outside carries it in its package.
+    releasedUnder: jsonb("released_under"),
+    // For an item that leaves the deployment by a call to the public graph
+    // and not in a page's package (gate-outside.ts): when the public graph
+    // took it, and the id it has there.
+    sentOutsideAt: timestamp("sent_outside_at", { withTimezone: true }),
+    outsideRef: text("outside_ref"),
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [index("idx_shown_pages_showing").on(table.showingId, table.nodeId)]
@@ -8315,6 +8340,17 @@ export const gates = pgTable(
     // For the boundary to outside: whether what is released is sent to the
     // public graph as it is released, with no person sending each package.
     sendAsReleased: boolean("send_as_released").notNull().default(true),
+    // Keeping the other side's version of a node current: when a version
+    // here changes on a node the other side holds, this mandate is asked to
+    // pay for a fresh assessment of the node there, as a `funding` item at
+    // this gate. Between two labels it is a mandate at the label things
+    // come from, and `keep_current_micro_usd` is what it pays each time.
+    // For the gate to outside it is a public mandate the organization funds
+    // on the public graph, which pays there in public owls. Null: nothing
+    // is asked. Versions made before `keep_current_since` are not noticed.
+    keepCurrentMandate: uuid("keep_current_mandate"),
+    keepCurrentMicroUsd: bigint("keep_current_micro_usd", { mode: "number" }).notNull().default(0),
+    keepCurrentSince: timestamp("keep_current_since", { withTimezone: true }),
     setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
     setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
     sensitivityLabel: sensitivityLabelColumn(),
@@ -8343,6 +8379,12 @@ export const gateSettings = pgTable(
     scopeRef: uuid("scope_ref"),
     partyId: uuid("party_id").references(() => parties.id),
     mode: text("mode").notNull(),
+    // A standing delay: what this setting covers is kept back this many
+    // hours from when it was produced, and then to the next multiple of
+    // `batch_hours`, so that items go together and when one was made is not
+    // told by when it arrived. Zero: no delay.
+    delayHours: integer("delay_hours").notNull().default(0),
+    batchHours: integer("batch_hours").notNull().default(0),
     setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
     setHolding: text("set_holding").array().notNull().default([]),
     setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
@@ -8356,7 +8398,8 @@ export const gateSettings = pgTable(
     index("idx_gate_settings_boundary").on(table.boundaryId),
     check("ck_gate_settings_mode", sql`${table.mode} IN ('open', 'redactor', 'person')`),
     check("ck_gate_settings_scope", sql`${table.scope} IN ('boundary', 'mandate', 'under', 'request') AND ((${table.scope} = 'boundary') = (${table.scopeRef} IS NULL))`),
-    check("ck_gate_settings_kind", sql`${table.kind} IN ('*', 'page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement')`),
+    check("ck_gate_settings_kind", sql`${table.kind} IN ('*', 'page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement', 'report', 'proposal')`),
+    check("ck_gate_settings_delay", sql`${table.delayHours} >= 0 AND ${table.batchHours} >= 0`),
   ]
 );
 
@@ -8571,6 +8614,37 @@ export const publishedPages = pgTable(
   ]
 );
 
+// A mandate a publisher's deployment let through its gate to outside: that
+// it exists, its name and terms, and how the publisher's gate is set for
+// its work. Each row is one signed package as received; nothing is
+// replaced, so a changed term or setting is a later, dated row. The face a
+// request is addressed to (label_faces, publisher_account_id) carries the
+// latest. `ref` is the publisher's own id for the offer.
+export const publishedMandates = pgTable(
+  "published_mandates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    faceId: uuid("face_id")
+      .notNull()
+      .references((): AnyPgColumn => labelFaces.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id),
+    keyId: text("key_id").notNull(),
+    ref: uuid("ref").notNull(),
+    sequence: integer("sequence").notNull(),
+    hash: text("hash").notNull(),
+    package: jsonb("package").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_published_mandates_sequence").on(table.keyId, table.ref, table.sequence),
+    uniqueIndex("uq_published_mandates_hash").on(table.hash),
+    index("idx_published_mandates_account").on(table.accountId),
+  ]
+);
+
 // Every package received, as signed. Nothing is replaced: a later package
 // is a later row.
 export const publishedPagePackages = pgTable(
@@ -8655,10 +8729,14 @@ export const feedRequests = pgTable(
     stateNote: text("state_note"),
     filedAt: timestamp("filed_at", { withTimezone: true }).notNull(),
     closedAt: timestamp("closed_at", { withTimezone: true }),
+    // The face the request is addressed to, where it is addressed to one
+    // (requests.asked_of_face_id). A deployment that mirrors this graph
+    // finds here the requests addressed to a mandate it published.
+    askedOfFaceId: uuid("asked_of_face_id"),
     sensitivityLabel: sensitivityLabelColumn(),
     origin: originColumn(),
   },
-  (table) => [originCheck("ck_feed_requests_origin", table.origin)]
+  (table) => [originCheck("ck_feed_requests_origin", table.origin), index("idx_feed_requests_asked_of").on(table.askedOfFaceId)]
 );
 
 export const feedRequestTargets = pgTable(
@@ -8694,11 +8772,12 @@ export const outwardActs = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     // 'take_up_request' | 'decline_request' | 'open_public_mandate' |
     // 'public_mandate_message' | 'fund_public_mandate' | 'back_public_mandate' |
-    // 'fund_public_node' | 'keep_current' | 'send_report' | 'send_failure_facts'.
+    // 'fund_public_node' | 'raise_public_node' | 'keep_current' | 'publish_mandate' | 'send_report' | 'send_failure_facts'.
     kind: text("kind").notNull(),
     actedBy: uuid("acted_by").references((): AnyPgColumn => contributors.id),
     holding: text("holding").array().notNull().default([]),
-    // The standing choice it went under, when nobody acted: its key in outward_settings.
+    // When nobody acted: "the gate" for what the gate to outside sent under its setting, or, on rows written
+    // before that, the key of the standing choice it went under.
     underStandingChoice: text("under_standing_choice"),
     // The public graph's id for what was acted on: a request, a node, a mandate, a conversation, a report.
     publicRef: text("public_ref"),
@@ -8714,23 +8793,6 @@ export const outwardActs = pgTable(
     check("ck_outward_acts_result", sql`${table.result} IN ('done', 'refused', 'failed')`),
   ]
 );
-
-// The deployment's standing choices about what goes out with nobody
-// acting. One row per choice, the latest; each change is also a row in
-// administrative_events with who made it. `told` is the text the person was
-// shown about what the choice shows outside, as they were shown it.
-//   keep_public_current: { on, public_mandate_id, delay_hours, batch_hours }
-//   send_failure_facts:  { on }
-//   send_redacted_reports: { on }
-export const outwardSettings = pgTable("outward_settings", {
-  key: text("key").primaryKey(),
-  value: jsonb("value").notNull(),
-  told: text("told").notNull(),
-  setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
-  holding: text("holding").array().notNull().default([]),
-  setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
-  sensitivityLabel: sensitivityLabelColumn(),
-});
 
 // A contribution made on the public graph through a page this deployment
 // published, as it came in with the mirror. The contribution's own text is
@@ -8814,61 +8876,11 @@ export const adoptedRequests = pgTable(
   ]
 );
 
-// Keeping the public version of a node current: one row each time a
-// version of a mirrored node at another label was replaced, at that
-// version's label, so that a member who does not read the label does not
-// learn from this table that the node was worked on. `due_at` is when the
-// public graph may be asked (the setting's delay and batching); a row that
-// is not sent says why in fixed words.
-export const keepCurrentQueue = pgTable(
-  "keep_current_queue",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    nodeId: uuid("node_id").notNull(),
-    // The version that changed, and the private mandate whose money paid for it, where one did.
-    versionAt: timestamp("version_at", { withTimezone: true }).notNull(),
-    paidByGrantId: uuid("paid_by_grant_id"),
-    noticedAt: timestamp("noticed_at", { withTimezone: true }).notNull().defaultNow(),
-    dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
-    // 'waiting' | 'sent' | 'not_sent'.
-    state: text("state").notNull().default("waiting"),
-    because: text("because"),
-    settledAt: timestamp("settled_at", { withTimezone: true }),
-    sensitivityLabel: sensitivityLabelColumn(),
-  },
-  (table) => [
-    uniqueIndex("uq_keep_current_queue_version").on(table.nodeId, table.versionAt, table.sensitivityLabel),
-    index("idx_keep_current_queue_due").on(table.state, table.dueAt),
-    check("ck_keep_current_queue_state", sql`${table.state} IN ('waiting', 'sent', 'not_sent')`),
-  ]
-);
-
-// Where keeping the public version current is left out: for everything a
-// mandate pays for (grant_id alone), or for one node under it (both), or
-// for one node whoever pays (node_id alone). At the label of the mandate
-// or of the person's request, since which nodes are left out says which
-// are worked on.
-export const keepCurrentExceptions = pgTable(
-  "keep_current_exceptions",
-  {
-    id: uuid("id").primaryKey().defaultRandom(),
-    grantId: uuid("grant_id"),
-    nodeId: uuid("node_id"),
-    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
-    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
-    liftedAt: timestamp("lifted_at", { withTimezone: true }),
-    sensitivityLabel: sensitivityLabelColumn(),
-  },
-  (table) => [index("idx_keep_current_exceptions").on(table.grantId, table.nodeId)]
-);
-
-// An agent's report on its way to Minerval's maintainers: the Redactor's
-// pass over the agent's words, at the report's label, and then the sending.
-// `title` and `body` are the report's words as they stood when the pass
-// began; `removals` are spans of them with the policy category each was
-// removed under. What goes is those words with each span replaced by its
-// mark, and nothing else of the report but facts in fixed vocabulary
-// (report-sending-service.ts, factsOf).
+// An agent's report that went to Minerval's maintainers: what became of it
+// there. The report leaves as an item at the gate to outside, like anything
+// else written at a label (gate-service.ts, kind `report`); this row is
+// made when the public graph has taken it, at the report's label, and keeps
+// the id it has there and what the maintainers' record of it says since.
 export const reportSendings = pgTable(
   "report_sendings",
   {
@@ -8876,35 +8888,15 @@ export const reportSendings = pgTable(
     reportId: uuid("report_id")
       .notNull()
       .references(() => agentReports.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    body: text("body").notNull(),
-    policyId: uuid("policy_id"),
-    // [{ id, field: 'title' | 'body', start, end, category, note }]
-    removals: jsonb("removals").notNull().default([]),
-    actionId: uuid("action_id"),
-    // 'to_redact' | 'redacted' | 'sent' | 'not_sent'.
-    state: text("state").notNull().default("to_redact"),
-    redactedAt: timestamp("redacted_at", { withTimezone: true }),
-    redactedByModel: text("redacted_by_model"),
-    sentBy: uuid("sent_by").references((): AnyPgColumn => contributors.id),
-    sentHolding: text("sent_holding").array().notNull().default([]),
-    sentUnderStandingChoice: boolean("sent_under_standing_choice").notNull().default(false),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     publicReportId: uuid("public_report_id"),
-    // What the maintainers' record of it said when last asked: { status, note, issue_url, asked_at }.
+    // How many times the report had been seen when it went.
+    seen: integer("seen"),
     cameBack: jsonb("came_back"),
-    // The facts of the failure, sent on their own under the standing choice
-    // or by a person: when, and how many sightings they then stated.
-    factsSentAt: timestamp("facts_sent_at", { withTimezone: true }),
-    factsSeen: integer("facts_seen"),
-    factsPublicReportId: uuid("facts_public_report_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [
-    uniqueIndex("uq_report_sendings_report").on(table.reportId),
-    check("ck_report_sendings_state", sql`${table.state} IN ('to_redact', 'redacted', 'sent', 'not_sent')`),
-  ]
+  (table) => [uniqueIndex("uq_report_sendings_report").on(table.reportId)]
 );
 
 // The addresses this deployment has been given from outside, at each label:

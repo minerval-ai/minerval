@@ -30,8 +30,8 @@ import { rawQuery, withTransaction } from "../db/client.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { verifyShownPage, type Mark, type Verification } from "./page-fingerprint.js";
 import { RemovalError, applyRemovals, countByCategory, heldWords, kindWords, locate, overlaps } from "./page-parts.js";
-import { GATE_ACTS, GATE_KINDS, HOLDERS, HOLD_REASONS, type GateKind, type HoldReason, type Holder } from "./gate-kinds.js";
-import { faceOfGate, gateOf, modesFor, type ModeFound } from "./gate-settings-service.js";
+import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES, HOLDERS, HOLD_REASONS, type GateKind, type HoldReason, type Holder } from "./gate-kinds.js";
+import { dueUnder, faceOfGate, gateOf, modesFor, type ModeFound } from "./gate-settings-service.js";
 import { VERDICT_DESCRIPTOR, pageRoot, partCommitment, type LeafRecord } from "./page-fingerprint.js";
 import {
   END_REASONS,
@@ -241,8 +241,24 @@ async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyRele
   // What the gate's setting lets through with nobody waiting on a person: every item that neither the Redactor nor a
   // person holds and that is not delayed, for each party whose setting is not "a person decides as well". A showing
   // that has ended lets nothing more through.
+  let modes: Map<string, ModeFound> | null = null;
   if (!showing!.ended_at) {
-    const modes = await modesOfPage(showing!, page, parts);
+    modes = await modesOfPage(showing!, page, parts);
+    // A setting's standing delay keeps the whole item back until its time, once, as a delay made by the setting.
+    // It shows on the other side and in the backlog as any delay does, and a person at the gate may lift it.
+    if (!acts.some((a) => a.act === "delayed" && a.by === "setting" && a.part_id === null)) {
+      const delayed = [...modes.values()].filter((m) => m.mode !== "person" && (m.delayHours > 0 || m.batchHours > 0));
+      const until = delayed.reduce<Date | null>((latest, m) => {
+        const due = dueUnder(m, page.judged_at);
+        return !latest || due > latest ? due : latest;
+      }, null);
+      if (until && until > new Date()) {
+        await withTransaction((tx) =>
+          insertAct(tx, { showingId: page.showing_id, pageId, act: "delayed", ruleId: delayed[0]!.settingId, by: "setting", until, label: destination })
+        );
+        acts = await actsOfPage(pageId);
+      }
+    }
     const through: Array<{ partId: string | null; party: string; setting: string | null }> = [];
     for (const item of [{ id: null as string | null, rests_on: page.rests_on }, ...parts]) {
       if (gateHold(acts, item.id) || delayOn(acts, item.id)) continue;
@@ -286,8 +302,41 @@ async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyRele
     );
     changed += now.length;
   }
-  if (changed > 0 && !showing!.to_outside) await arrive(pageId, showing!);
+  if (changed > 0) {
+    await stampReleasedUnder(pageId, showing!, page, parts, modes);
+    if (!showing!.to_outside) await arrive(pageId, showing!);
+    // A node's page leaves in its signed package (outbound-service.ts). Anything else that the gate to outside
+    // has let through leaves by its own kind's way out (gate-outside.ts), now or on the scheduler's next look.
+    else if (showing!.kind !== "page") {
+      await import("./gate-outside.js")
+        .then((out) => out.sendThroughOutside({ itemId: pageId }))
+        .catch((err: unknown) => console.error(`[gate] item ${pageId} is through the gate to outside and was not sent yet: ${err instanceof Error ? err.message : String(err)}`));
+    }
+  }
   return { shown: isShown, newlyReleased: changed };
+}
+
+/**
+ * Record, on the side the item is read from, how the gate was set for it
+ * when it went: for each party it rests on, the setting in the gate's fixed
+ * words, how wide the setting is, and the day it was set. It names no
+ * mandate, node or request. A page shown outside carries it in its package,
+ * so that a reader can see whether a person decided or the Redactor's work
+ * went as it stood.
+ */
+async function stampReleasedUnder(pageId: string, showing: ShowingRow, page: GatePage, parts: readonly GatePart[], known: Map<string, ModeFound> | null): Promise<void> {
+  const modes = known ?? (await modesOfPage(showing, page, parts));
+  const names = await partyNames([...modes.keys()]);
+  const stamp = [...modes.entries()]
+    .map(([party, m]) => ({
+      for_party: names.get(party) ?? "a party",
+      the_gate: m.mode,
+      in_words: GATE_MODES[m.mode],
+      from: m.scope ? `a setting for ${GATE_SCOPES[m.scope]}` : "where every gate starts for this kind of thing",
+      set_on: m.setAt ? m.setAt.toISOString().slice(0, 10) : null,
+    }))
+    .sort((a, b) => a.for_party.localeCompare(b.for_party));
+  await rawQuery(`UPDATE shown_pages SET released_under = $2::jsonb WHERE id = $1`, [pageId, JSON.stringify(stamp)]);
 }
 
 /** How the gate treats this item for each party it or a part of it rests on. */
@@ -338,9 +387,19 @@ interface ShownPageRow {
   audit_answer: FidelityAnswer | null;
   shown_at: Date | null;
   source_id: string | null;
+  released_under: ReleasedUnder[] | null;
 }
 
-const SHOWN_PAGE_COLUMNS = `id, showing_id, kind, node_id, judged_at, opened_at, waiting_for_funds, stage, round, root, roots, header_commitment, header, header_salt, needs, audit_answer, shown_at, source_id`;
+/** How the gate was set for an item when it went, for one party it rests on (stampReleasedUnder). */
+export interface ReleasedUnder {
+  for_party: string;
+  the_gate: "open" | "redactor" | "person";
+  in_words: string;
+  from: string;
+  set_on: string | null;
+}
+
+const SHOWN_PAGE_COLUMNS = `id, showing_id, kind, node_id, judged_at, opened_at, waiting_for_funds, stage, round, root, roots, header_commitment, header, header_salt, needs, audit_answer, shown_at, source_id, released_under`;
 
 interface ShownPartRow {
   id: string;
@@ -690,6 +749,53 @@ export function answerArrivedMessage(input: { released: number; parts: number; a
 }
 
 /**
+ * An item that is not a node's page, as the gate has let it through: what
+ * leaves the deployment when its destination is outside (gate-outside.ts).
+ * Released parts with their text, marks in place; held parts with who
+ * holds them and the reasons given. Called inside bothSides.
+ */
+export async function itemAsShown(itemId: string): Promise<{
+  kind: GateKind;
+  showing_id: string;
+  version_of: Date;
+  shown_at: Date;
+  header: Record<string, unknown>;
+  parts: Array<{ kind: string; text: string } | { kind: string; held: { by: string[]; because: string[] } }>;
+  policy: { version: number; hash: string } | null;
+  released_under: ReleasedUnder[];
+} | null> {
+  const [page] = await rawQuery<ShownPageRow>(`SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE id = $1`, [itemId]);
+  if (!page?.shown_at || !page.header) return null;
+  const parts = await shownPartsOf(itemId);
+  const acts = await actsOfPage(itemId);
+  const names = await partyNames(parts.flatMap((p) => p.needs));
+  const [policy] = await rawQuery<{ version: number; hash: string }>(
+    `SELECT p.version, p.hash FROM showing_pages sp JOIN redaction_policies p ON p.id = sp.policy_id WHERE sp.id = $1`,
+    [itemId]
+  );
+  return {
+    kind: page.kind,
+    showing_id: page.showing_id,
+    version_of: page.judged_at,
+    shown_at: page.shown_at,
+    header: JSON.parse(page.header) as Record<string, unknown>,
+    parts: parts.map((p) => {
+      if (p.released_at !== null) return { kind: p.kind, text: p.text! };
+      const holds = acts.filter((a) => a.part_id === p.id && a.act === "held");
+      return {
+        kind: p.kind,
+        held: {
+          by: holdersOf(acts, p, names),
+          because: [...new Set(holds.map((a) => HOLD_REASONS[(a.reason ?? "no_reason_given") as HoldReason] ?? "no reason given"))],
+        },
+      };
+    }),
+    policy: policy ?? null,
+    released_under: page.released_under ?? [],
+  };
+}
+
+/**
  * An answer is attached, as a source, to each node the asking request
  * bears on at the destination label, and a pass on that node is opened
  * there, so that the Steward that asked reads it on a later pass.
@@ -737,34 +843,63 @@ export const FUNDED_FROM_ABOVE_BRIEF =
   "A mandate at a label this one does not read asked for a fresh assessment of this node here, and its asking came through the gate. " +
   "It adds nothing to the brief: assess the node as you would on any pass, from what this label reads.";
 
+const REASON_FUNDING =
+  "A mandate's funding of a pass at a label that does not read the mandate's own is placed, once the gate has let it through, by a step that reads the mandate's budget at its label and writes the commission at the label of the pass.";
+
 /**
  * A mandate's funding of work on a node, once it is through the gate: a
  * pass on the node is commissioned at the destination label from that
- * mandate's budget. Where the mandate's money cannot be placed there, the
- * pass is opened for that label's own funders, with the same words.
+ * mandate's budget.
+ *
+ * The commission is a row at the label of the pass, naming a payer at a
+ * label that one does not read, as work asked for from below is a row
+ * above naming a payer below (ask-above-service.ts). The amount is what
+ * the gate let through. A payer's escrow is the sum of its allocations
+ * wherever they are, so the money counts against the mandate at once,
+ * spend settles against it, and what the pass does not spend stops
+ * counting when the pass ends. The step that places it writes at the
+ * destination label and reads as the tables' owner, since no label reads
+ * both the mandate's budget and the pass.
+ *
+ * Where the mandate's budget cannot pay (its escrow or its pace), or the
+ * offer carried no amount, the pass is opened for the destination label's
+ * own funders, with the same words.
  */
 async function placeFundingBelow(pageId: string, showing: ShowingRow, destination: string): Promise<void> {
   const [page] = await rawQuery<{ header: string }>(`SELECT header FROM showing_pages WHERE id = $1`, [pageId]);
   const amount = Number((JSON.parse(page!.header) as { amount_micro_usd?: number }).amount_micro_usd ?? 0);
   const nodeId = showing.subject_ref!;
+  const { withSystemClearance } = await import("../db/clearance.js");
   await runAtLabel(destination, `funding that came through the gate as item ${pageId}`, async () => {
     const { commissionNodePass } = await import("./commission-service.js");
     const placed =
       showing.payer_grant_id && amount > 0
-        ? await commissionNodePass({
-            payer: { kind: "grant", grantId: showing.payer_grant_id },
-            claimId: nodeId,
-            budgetMicroUsd: amount,
-            brief: FUNDED_FROM_ABOVE_BRIEF,
-            reason: "Funding from a mandate at another label, through the gate.",
-            commissionedBy: "gate",
-            message: { trigger: "funded_from_above", sender: { kind: "system", ref: `gate:${pageId}` } },
-          }).catch(() => null)
+        ? await withSystemClearance(REASON_FUNDING, () =>
+            commissionNodePass({
+              payer: { kind: "grant", grantId: showing.payer_grant_id! },
+              claimId: nodeId,
+              budgetMicroUsd: amount,
+              brief: FUNDED_FROM_ABOVE_BRIEF,
+              reason: "Funding from a mandate at another label, through the gate.",
+              commissionedBy: "gate",
+              message: { trigger: "funded_from_above", sender: { kind: "system", ref: `gate:${pageId}` } },
+            })
+          ).catch((err: unknown) => {
+            console.error(`[gate] the funding of item ${pageId} was not placed from its mandate: ${err instanceof Error ? err.message : String(err)}`);
+            return null;
+          })
         : null;
+    await bothSidesNote(pageId, placed?.ok ? "placed" : "opened");
     if (placed?.ok) return;
     const { enqueueSteward } = await import("./queue-service.js");
     await enqueueSteward({ claimId: nodeId, trigger: "funded_from_above", context: FUNDED_FROM_ABOVE_BRIEF, sender: { kind: "system", ref: `gate:${pageId}` } });
   }).catch((err: unknown) => console.error(`[gate] could not place the funding of item ${pageId}: ${err instanceof Error ? err.message : String(err)}`));
+}
+
+/** Record on the item, where the label it came from reads it, whether its money was placed or the pass was only opened. */
+async function bothSidesNote(pageId: string, how: "placed" | "opened"): Promise<void> {
+  const { withSystemClearance } = await import("../db/clearance.js");
+  await withSystemClearance(REASON_FUNDING, () => rawQuery(`UPDATE showing_pages SET funding_placed = $2 WHERE id = $1`, [pageId, how === "placed"])).catch(() => undefined);
 }
 
 // ---- reaching the gate ----------------------------------------------------------
@@ -1381,6 +1516,10 @@ const ACT_WORDS: Record<string, string> = {
   cannot_cross: "the Redactor found that the page cannot be shown under the policy",
 };
 
+/** What an act was, in words. A flow set because a request on the other side asked for the page says so. */
+const actWhat = (a: { act: string; reason: string | null }): string =>
+  a.act === "asked" && a.reason === "asked_for_by_a_request" ? "the page was asked for by a request made on the other side, which set the flow" : (ACT_WORDS[a.act] ?? a.act);
+
 function age(since: Date): string {
   const hours = Math.floor((Date.now() - since.getTime()) / 3_600_000);
   return hours < 48 ? `${hours} hour${hours === 1 ? "" : "s"}` : `${Math.floor(hours / 24)} days`;
@@ -1497,7 +1636,7 @@ export async function shownShowing(showingId: string): Promise<Record<string, un
     }),
     acts: acts.map((a) => ({
       at: a.at.toISOString(),
-      what: ACT_WORDS[a.act] ?? a.act,
+      what: actWhat(a),
       ...(a.page_id ? { page_id: a.page_id, on: a.part_id ? `part ${a.position ?? "?"}` : "the page" } : {}),
       ...(a.party ? { for_party: a.party } : {}),
       by: a.actor ?? (a.by === "redactor" ? "the Redactor" : a.by === "setting" ? "the gate's setting" : "the process"),
@@ -1726,6 +1865,8 @@ export async function outsideRecord(showingId: string, nodeId: string): Promise<
       ...(state === "held" || state === "not_redacted" ? { held_because: because, held_since: since } : { shown_at: page.shown_at!.toISOString() }),
       ...(state === "released_in_part" ? { parts_held: heldParts.length, held_kinds: heldByKind(heldParts) } : {}),
       ...(header ? { of_parts: parts.length, removals: (header.removals as Record<string, number>) ?? {} } : {}),
+      // How the publisher's gate was set for this version when it went, stamped by the gate (stampReleasedUnder).
+      ...(page.shown_at && page.released_under ? { released_under: page.released_under } : {}),
       fingerprint: page.root,
     });
     if (page.id === live[0]?.id) currentState = state as NodeState;
@@ -1810,7 +1951,7 @@ export async function outsideRecord(showingId: string, nodeId: string): Promise<
       .filter((a) => a.page_id === null || pageIds.has(a.page_id))
       .map((a) => ({
         at: a.at.toISOString(),
-        what: ACT_WORDS[a.act] ?? a.act,
+        what: actWhat(a),
         ...(a.page_id ? { page_id: a.page_id, on: a.part_id ? `part ${a.position ?? "?"}` : "the page" } : {}),
         ...(a.party ? { for_party: a.party } : {}),
         by: a.actor_id ? people.get(a.actor_id)! : a.by === "redactor" ? "the Redactor" : a.by === "setting" ? "the gate's setting" : "the process",

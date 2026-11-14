@@ -178,7 +178,7 @@ describe("the catalog, with a second label defined", () => {
     expect(facts.on).toBe(true);
     expect(facts.labels).toEqual(expect.arrayContaining(ALL));
     // The schema's ninety-nine (tests/db/label-columns.test.ts lists them).
-    expect(facts.labelledTables.length).toBe(144);
+    expect(facts.labelledTables.length).toBe(142);
     expect(facts.uncoveredTables).toEqual([]);
     expect(facts.viewsReadingAsOwner).toEqual([]);
     expect(facts.sqlViewsUnheld).toEqual([]);
@@ -431,7 +431,7 @@ describe("every labelled table", () => {
   it("can be given a row at each label by this test", () => {
     // A table here needs a value this test does not know how to make: teach valueFor.
     expect(unwritable).toEqual([]);
-    expect(written.size).toBe(144);
+    expect(written.size).toBe(142);
   });
 
   for (const reader of READERS) {

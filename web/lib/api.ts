@@ -849,11 +849,45 @@ export async function fetchPublisher(accountId: string): Promise<PublisherRecord
   }
 }
 
+export interface PublishedMandateSetting {
+  what: string;
+  kind: string;
+  the_gate: "open" | "redactor" | "person";
+  in_words: string;
+  from: string;
+  set_on: string | null;
+  in_a_line: string;
+}
+
+export interface PublishedMandate {
+  face_id: string;
+  publisher: { account_id: string; name: string };
+  name: string;
+  terms: string;
+  withdrawn_at: string | null;
+  first_published_at: string;
+  last_changed_at: string;
+  gate: null | {
+    settings: PublishedMandateSetting[];
+    for_requests_under: Array<{ public_node_id: string; kind: string; the_gate: string; in_words: string; set_on: string }>;
+    narrower_settings_not_listed: number;
+    pages_flow: string;
+    other_parties: string;
+    money: string;
+  };
+  as_released: { parts_held: number; removals: Record<string, number> };
+  history: Array<{ package: number; received_at: string; changes: string[] }>;
+  requests_addressed_to_it: number;
+  note: string;
+}
+
 export interface PublisherRecord {
   account_id: string;
   name: string;
   registrations: Array<{ key_id: string; public_key: string; runs_on: string; attested_by: string; declared_interest: string | null; registered_at: string; retired_at: string | null }>;
   published_pages: PublishedPageSummary[];
+  /** The mandates it published, which a request here can be addressed to (docs/published-pages.md, "A published mandate"). */
+  published_mandates?: PublishedMandate[];
   /** What this graph's own record holds of the publisher, as counts and dates in sentences (docs/outward-acts.md). */
   record?: { in_words: string[] };
   record_note?: string;

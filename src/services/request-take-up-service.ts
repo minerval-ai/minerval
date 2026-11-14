@@ -49,7 +49,15 @@ export type DeclineReason = keyof typeof DECLINE_REASONS;
 export const TAKEN_UP_SUMMARY =
   "Says it is taking this request up. That commits it to doing the work well, not to a result, and funds nothing.";
 
+/** What the record says where an account declines a request addressed to a mandate it published, without having taken it up. */
+export const DECLINED_UNTAKEN_SUMMARY = "Says it will not do the work this request asks for, which was addressed to a mandate it published.";
+
 const day = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
+const daysSince = (d: Date | string) => Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86_400_000));
+const ago = (d: Date | string) => {
+  const n = daysSince(d);
+  return n === 0 ? "the same day" : n === 1 ? "1 day on" : `${n} days on`;
+};
 
 export interface TakenUp {
   by: string;
@@ -108,7 +116,25 @@ export async function declineTakenUpRequest(input: { requestId: string; accountI
       WHERE request_id = $1 AND contributor_id = $2 AND taken_up AND outcome IS NULL RETURNING id`,
     [input.requestId, input.accountId, input.reason]
   );
-  if (!row) throw new TakeUpError("NOT_TAKEN_UP", "This account is not on the request's record as taking it up, or has already said it will not do the work.");
+  if (!row) {
+    // A request addressed to a mandate this account published can be declined without first being taken up: a
+    // refusal is a complete answer to a request put to someone, and is part of its record (Part VIII, "Requests").
+    const [addressed] = await rawQuery<{ id: string; by: string }>(
+      `SELECT r.id, c.display_name AS by FROM requests r JOIN label_faces f ON f.id = r.asked_of_face_id JOIN contributors c ON c.id = f.publisher_account_id
+        WHERE r.id = $1 AND f.publisher_account_id = $2
+          AND NOT EXISTS (SELECT 1 FROM request_work w WHERE w.request_id = r.id AND w.contributor_id = $2 AND w.taken_up)`,
+      [input.requestId, input.accountId]
+    );
+    if (!addressed) throw new TakeUpError("NOT_TAKEN_UP", "This account is not on the request's record as taking it up, or has already said it will not do the work.");
+    await rawQuery(
+      `INSERT INTO request_work (request_id, by_label, contributor_id, summary, taken_up, outcome, decline_reason, outcome_at, sensitivity_label)
+       VALUES ($1, $2, $3, $4, true, 'declined', $5, now(), $6)`,
+      [input.requestId, addressed.by, input.accountId, DECLINED_UNTAKEN_SUMMARY, input.reason, currentLabel()]
+    );
+    return {
+      in_words: `The request's record now says that this account, which it was addressed to, will not do the work, and why: ${DECLINE_REASONS[input.reason as DeclineReason]}.`,
+    };
+  }
   return {
     in_words: `The request's record now says that this account will not do the work, and why: ${DECLINE_REASONS[input.reason as DeclineReason]}. That it took the request up, and when, stays on the record.`,
   };
@@ -130,14 +156,15 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
     outcome: string | null;
     decline_reason: string | null;
     outcome_at: Date | null;
+    summary: string;
   }>(
-    `SELECT request_id, by_label, contributor_id, created_at, outcome, decline_reason, outcome_at
+    `SELECT request_id, by_label, contributor_id, created_at, outcome, decline_reason, outcome_at, summary
        FROM request_work WHERE request_id = ANY($1::uuid[]) AND taken_up AND contributor_id IS NOT NULL ORDER BY created_at`,
     [requestIds]
   );
   for (const r of rows) {
-    const [page] = await rawQuery<{ id: string; node_id: string; node: string | null; state: string; received_at: Date }>(
-      `SELECT p.id, p.node_id, n.text AS node, k.state, k.received_at
+    const [page] = await rawQuery<{ id: string; node_id: string; node: string | null; state: string; received_at: Date; held_since: string | null }>(
+      `SELECT p.id, p.node_id, n.text AS node, k.state, k.received_at, k.package->'page'->'held'->>'since' AS held_since
          FROM published_pages p
          JOIN request_targets t ON t.claim_id = p.node_id AND t.request_id = $1
          JOIN published_page_packages k ON k.published_page_id = p.id
@@ -147,7 +174,8 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
       [r.request_id, r.contributor_id, r.created_at]
     );
     const shown = page && (page.state === "released_whole" || page.state === "released_in_part");
-    const took = `${r.by_label} said on ${day(r.created_at)} that it is taking this request up.`;
+    const untaken = r.summary === DECLINED_UNTAKEN_SUMMARY;
+    const took = untaken ? "" : `${r.by_label} said on ${day(r.created_at)} that it is taking this request up.`;
     const pageOf = page ? (page.node ? `"${page.node}"` : "a node this request bears on") : "";
     let followed: TakenUp["followed"];
     let words: string;
@@ -155,7 +183,10 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
       // Its own statement stands as it made it. A page it published afterwards is said beside it, and whether that page meets the request is not this record's to say.
       followed = "declined";
       words =
-        `${took} On ${day(r.outcome_at ?? r.created_at)} it said it will not do the work: ${DECLINE_REASONS[(r.decline_reason ?? "no_reason") as DeclineReason] ?? DECLINE_REASONS.no_reason}. ` +
+        (untaken
+          ? `${r.by_label}, which this request was addressed to, said on ${day(r.outcome_at ?? r.created_at)} that it will not do the work: `
+          : `${took} On ${day(r.outcome_at ?? r.created_at)} it said it will not do the work: `) +
+        `${DECLINE_REASONS[(r.decline_reason ?? "no_reason") as DeclineReason] ?? DECLINE_REASONS.no_reason}. ` +
         `The reason is its own, chosen from a fixed list, and nobody checks it.` +
         (shown && r.outcome_at && page.received_at.getTime() > r.outcome_at.getTime() ? ` It has since published its graph's page of ${pageOf} (${day(page.received_at)}).` : "");
     } else if (shown) {
@@ -163,11 +194,13 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
       words = `${took} Since then it has published its graph's page of ${pageOf} (${day(page.received_at)}).`;
     } else if (page) {
       followed = "a_page_held";
-      words = `${took} Its graph's page of ${pageOf} is published as ${page.state === "not_yet_assessed" ? "not yet assessed" : "held"} (${day(page.received_at)}), with nothing of it shown.`;
+      const since = page.held_since ?? page.received_at;
+      words =
+        `${took} Its graph's page of ${pageOf} is published as ${page.state === "not_yet_assessed" ? "not yet assessed" : "held"}, with nothing of it shown` +
+        (page.state === "not_yet_assessed" ? ` (${day(page.received_at)}).` : `: held since ${day(since)}, ${ago(since)}.`);
     } else {
       followed = "nothing_yet";
-      const days = Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86_400_000));
-      words = `${took} Nothing has followed on this graph yet, ${days === 0 ? "the same day" : days === 1 ? "1 day on" : `${days} days on`}.`;
+      words = `${took} Nothing has followed on this graph yet, ${ago(r.created_at)}.`;
     }
     out.set(r.request_id, [
       ...(out.get(r.request_id) ?? []),

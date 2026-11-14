@@ -237,12 +237,8 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   ],
   "src/services/outward-acts-service.ts": [
     [
-      "The log of acts on the public graph and the deployment's standing choices are kept at `public`, where every member reads them, and are written once the route has checked the person.",
-      "Rows at `public` and nowhere else, each naming that label: one row for each act on the public graph, holding exactly what was sent there (ids the public graph already holds, amounts, a reason from a fixed list, or words a person wrote for the outside from a signed-in session), and the standing choices with the text the person was shown. It reads the standing choices, which are at `public`.",
-    ],
-    [
-      "Keeping public versions current looks, at every label, for versions of mirrored nodes that have been replaced, and records each at its own version's label.",
-      "Rows in keep_current_queue, each written at the label of the version it records and naming it: a mirrored node's id, the time of the version, the mandate that paid, and a state with a reason from a fixed list. Nothing a run wrote. What it sends to the public graph is the node's id, which the public graph already holds, and nothing else.",
+      "The log of acts on the public graph is kept at `public`, where every member reads it, and is written once the route has checked the person or the gate has let a thing through.",
+      "Rows at `public` and nowhere else, each naming that label: one row for each act on the public graph, holding exactly what was sent there (ids the public graph already holds, amounts, a reason from a fixed list, words a person wrote for the outside from a signed-in session, or an item as the gate to outside let it through).",
     ],
   ],
   "src/services/inbound-service.ts": [
@@ -250,17 +246,49 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A contribution made on the public graph about a published page is public text, read at `public`, and is delivered to the node's Steward at the label the page came from, which `public` does not read; and where that label's reassessment stands is copied back in fixed words for the outside.",
       "Upward: a message in the node's inbox at the page's label, whose words are the contribution as it was made on the public graph (its text, type, date, cited addresses and public id, all at `public`, which that label reads) inside fixed sentences. Downward, onto the `public` row of the contribution: the time it was given, one of three fixed words for where the reassessment at the page's label stands (not paid for, paid for, made) and a date. That a reassessment was paid for or made is what the published page's record says outside by design; no text written at the page's label is read or copied.",
     ],
+    [
+      "A request on the public graph is public text, read at `public`, and one addressed to a mandate this deployment published is put in front of that mandate, at the mandate's label, which `public` does not read.",
+      "Upward only: an item in the mandate's inbox at the mandate's label, whose words are the public request as it was filed on the public graph (at `public`, which that label reads) inside fixed sentences. It reads which mandates were offered outside and whether one is already in the inbox or taken up; nothing is written at `public`.",
+    ],
+  ],
+  "src/services/release-gate-service.ts": [
+    [
+      "A mandate's funding of a pass at a label that does not read the mandate's own is placed, once the gate has let it through, by a step that reads the mandate's budget at its label and writes the commission at the label of the pass.",
+      "One commission at the destination label, for the amount the gate let through, naming the mandate above as payer, made by commissionNodePass inside runAtLabel at the destination. It reads the mandate's escrow and pace. No text from above is written: the pass's brief is fixed words.",
+    ],
+    [
+      "A mandate's funding of a pass at a label that does not read the mandate's own is placed, once the gate has let it through, by a step that reads the mandate's budget at its label and writes the commission at the label of the pass.",
+      "One boolean on the item's row on the side it came from: whether the money was placed or the pass was only opened.",
+    ],
   ],
   "src/services/report-sending-service.ts": [
     [
-      "The standing choices about agents' reports are followed for reports at every label: each sending is read and marked at its own label, and what goes was fixed by the Redactor's pass and the fixed vocabulary of the facts.",
-      "It marks each sending as sent, at the sending's own label, and stores what the maintainers' record said of it there. What leaves is built by reportPayload and sendFacts and by nothing else: the report's words as the Redactor left them, sent only where a person chose that redacted reports go without asking, and facts in fixed vocabulary. Each send is logged at `public` with exactly what went.",
+      "Agents' reports about Minerval's machinery are offered to the gate to outside from every label, each at its own, and what the maintainers' record says of one that was sent is written back at its label.",
+      "It reads which reports Audit found to be about Minerval's machinery and have not been offered, and offers each to the gate at its own label (offerToGate composes the item inside runAtLabel there). It writes what the maintainers' record said of a report that was sent onto that report's sending row, at the report's own label. What leaves is decided by the gate, not here.",
     ],
   ],
   "src/services/outbound-service.ts": [
     [
       "A person's act on what leaves the deployment is recorded at `public`, where the released record of a showing outside is kept, once the route has checked the person.",
       "Rows at `public` and nowhere else, each naming that label: the words of a proposal a person wrote, a party's release of them, and the log of each send. It reads the destination-side rows of showings outside, which are at `public`. The package itself is not built here: it is built by work at `public` (runAtLabel), which leaves this clearance and can read no other label.",
+    ],
+  ],
+  "src/services/gate-face.ts": [
+    [
+      "A published mandate's stamp is read from the settings of the gates to outside, which are kept at the labels things come from.",
+      "Nothing: it reads the gates' setting rows for the organization's own party and the labels a mandate's work may come from, and returns the settings in the gate's fixed words, the scope's name, the day each was set, and the ids of public nodes the mandate's settings are scoped under. No label, mandate, request or private node is named in what it returns. It also lists the mandates offered to the gate to outside and offers each again, which offerToGate composes at the mandate's own label.",
+    ],
+  ],
+  "src/services/gate-outside.ts": [
+    [
+      "What the gate to outside has let through is read where it was released, at `public`, and the row that records its sending is at the label of the work it came from.",
+      "It reads items the gate to outside has released, at `public`, as the gate released them, and sends each to the public graph. It marks each item sent at `public`, and records that a request was said to be taken up or declined, or that a report was sent, on the row at the label of the work it came from, inside runAtLabel there. Every send is logged at `public` with exactly what went. When a published mandate is withdrawn it sends a package saying so, built from the last item released.",
+    ],
+  ],
+  "src/services/keep-current.ts": [
+    [
+      "Keeping the other side current looks, at each label a gate's things come from, for versions that have been replaced, and offers each to that gate at its own label.",
+      "Nothing directly: it reads, for each gate that names a mandate, the versions made at the gate's label since then of nodes the other side holds, and offers each to the gate, which composes the item in fixed words (a node id the other side holds and an amount) at that label. It also counts the gates to outside that name a public mandate, for the setup checklist.",
     ],
   ],
   "src/services/gate-settings-service.ts": [

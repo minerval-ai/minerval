@@ -35,7 +35,7 @@ outside is to read it, at the moment it was built
 | `policy` | The version the page was redacted under, in full |
 | `record.made` | The prompt-set hash, the model that assessed and the model that redacted, any addition to a role's prompt, the seal of the assessing run's log with whether its chain checked out, and how the assessment was paid for |
 | `record.acts` | Everything a person, a rule or the process did on the showing, each with the permissions the person held. People are numbered; no name crosses |
-| `record.versions` | Every version made while the showing stood, held ones as held |
+| `record.versions` | Every version made while the showing stood, held ones as held; for each version released, `released_under`: for each party it rests on, how the publisher's gate was set when it went (open, the Redactor's decision, or a person's as well), how wide the setting was and the day it was set |
 | `hash`, `signature` | sha256 over the canonical JSON of everything above; Ed25519 over the hash |
 
 The record is facts the system stamps. Nobody writes a word of it.
@@ -270,6 +270,28 @@ it. One line near the top says what was taken out. "How this page was
 published" is closed to one line at the foot and opens to the record, the
 history of versions and the release check, where "Check this page" fetches
 the signed package and runs the check in the reader's browser.
+
+## A published mandate
+
+An organization can publish a mandate of its own graph on the public graph
+as its face there ([the-gate.md](the-gate.md), "A published mandate"). It
+arrives in a package of the same kind as a page's, signed with the same
+registered key (`format` `minerval-published-mandate/1`;
+`src/services/published-mandate-service.ts`): the mandate's name and terms
+as the gate let them through, held parts named in place, and `face`, the
+gate's settings for the mandate's work as the publishing deployment stamped
+them, with the same words about money on every one. Packages of one
+mandate are numbered and chained as a page's are, and each is kept as
+received, so `GET /published-mandates` shows every change with its date.
+A package is checked before anything is kept: its form, its hash, the
+signature against the registered key, the account, and its place after the
+one before. It is the publisher's own statement on its own record and is
+not reviewed as a contribution is, and nothing checks that the publisher's
+gate is set as stated: each page it publishes says which setting it was
+released under, and the two can be read side by side. A request on the
+public graph is addressed to it by giving its `face_id` as the request's
+addressee; the request's record (`addressed_to_mandate`) then shows what
+the publisher did about it.
 
 ## What this does not do
 

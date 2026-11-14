@@ -213,7 +213,6 @@ export async function processNextEngineAction(
       "curate",
       "audit",
       "redact",
-      "redact_report",
       "ingest",
       "formalize",
       ...(researcherOn ? (["request", "research"] as const) : []),
@@ -255,7 +254,6 @@ async function runEngineAction(action: RunnableAction, opts: { model?: string })
     if (action.kind === "curate") return runCurateAction(action);
     if (action.kind === "audit") return runAuditAction(action);
     if (action.kind === "redact") return runRedactAction(action);
-    if (action.kind === "redact_report") return runRedactReportAction(action);
     if (action.kind === "request") return runRequestAction(action);
     if (action.kind === "research") return runResearchAction(action);
     if (action.kind === "resume") return runResumeAction(action);
@@ -1081,73 +1079,6 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
     ok: !failure && !!report,
     ...(failure ? { error: failure instanceof Error ? failure.message : String(failure) } : {}),
   };
-}
-
-/**
- * redact_report (services/report-sending-service.ts): one run on the row's target, at the
- * row's label, under its largest funder and to the budget its allocations
- * give it. `stillOpen` says, after the run, whether the work is left
- * undone, in which case the row is opened again so that it can be paid for
- * again.
- */
-async function runOutwardAction(
-  action: RunnableAction,
-  kind: "redact_report",
-  what: string,
-  run: () => Promise<void>,
-  stillOpen: () => Promise<boolean>,
-  after: () => Promise<void>
-): Promise<EngineProcessResult> {
-  const context = await funderContext(action);
-  const close = (billedMicroUsd: number) =>
-    completeAction(action.id, billedMicroUsd, { meteredJobId: context.jobId }).catch((err) =>
-      console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
-    );
-  try {
-    const { billedMicroUsd } = await runWithUsageContext({ userId: context.userId, jobId: context.jobId }, () =>
-      withPassBudget(actionBudget(action, what), run)
-    );
-    await close(billedMicroUsd);
-    const open = await stillOpen();
-    if (open) {
-      await rawQuery(`UPDATE actions SET status = 'open', updated_at = now() WHERE id = $1 AND status IN ('done', 'superseded', 'cancelled')`, [action.id]);
-    }
-    await after();
-    return { status: "processed", actionId: action.id, kind, grantId: context.grantId, ok: !open };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (err instanceof LlmBudgetExceededError) {
-      await releaseAction(action.id).catch(() => {});
-      return { status: "budget", actionId: action.id, error: msg };
-    }
-    if (isTransientApiError(err)) {
-      await releaseAction(action.id).catch(() => {});
-      return { status: "transient", actionId: action.id, kind, grantId: context.grantId, error: msg };
-    }
-    await close(0);
-    return { status: "processed", actionId: action.id, kind, grantId: context.grantId, ok: false, error: msg };
-  }
-}
-
-
-async function runRedactReportAction(action: RunnableAction): Promise<EngineProcessResult> {
-  const reportId = action.target_ref ?? "";
-  const waiting = async () =>
-    (await rawQuery<{ id: string }>(`SELECT id FROM report_sendings WHERE report_id = $1 AND state = 'to_redact'`, [reportId]))[0]?.id ?? null;
-  const sendingId = reportId ? await waiting() : null;
-  if (!sendingId) {
-    await cancelGroup(action.exclusion_group);
-    return { status: "empty" };
-  }
-  const { runReportRedactor } = await import("../llm/agents/report-redactor.js");
-  return runOutwardAction(
-    action,
-    "redact_report",
-    "the allocations funding this redaction",
-    () => runReportRedactor({ sendingId }),
-    async () => (await waiting()) !== null,
-    async () => undefined
-  );
 }
 
 /**

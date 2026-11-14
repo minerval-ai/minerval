@@ -361,8 +361,9 @@ export async function setupChecklist(): Promise<SetupChecklist> {
 
 /** Where keeping public versions current stands, for the checklist. */
 async function publicGraphState(config: { publicGraphApiUrl?: string; publicGraphApiKey?: string }): Promise<SetupChecklist["public_graph"]> {
-  const { keepCurrentState } = await import("./outward-acts-service.js");
-  const state = await keepCurrentState();
+  const { keepsPublicCurrent } = await import("./keep-current.js");
+  const kept = await keepsPublicCurrent();
+  const state = { setting: kept.asks ? ("on" as const) : ("off" as const), sends: kept.asks, in_words: kept.in_words };
   const [last] = await rawQuery<{ said: string | null }>(
     `SELECT a.public_graph_said AS said FROM outward_acts a
       WHERE a.kind = 'keep_current'

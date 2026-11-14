@@ -2883,7 +2883,7 @@ The node's page marks a row only where its label is not the node's own.
 An overlay follows the row below it. When the layer below removes or
 retypes the edge, retires or removes the argument, or merges or withdraws
 the node, the database ends the overlay in the same transaction, with what
-was done (`minerval_overlay_follows_below`, migration 0162), and the
+was done (`minerval_overlay_follows_below`, migration 0163), and the
 Steward at the overlay's label is told in the note of what the layer below
 changed (`src/llm/agents/changes-below-note.ts`). An evaluation at a label
 of an argument the layer below then retires is kept as written, on an

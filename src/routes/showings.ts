@@ -56,7 +56,7 @@ import { owlsToMicroUsd } from "../services/owl.js";
 import { listParties } from "../services/party-service.js";
 import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES } from "../services/gate-kinds.js";
 import { fundBelow, offerToGate } from "../services/gate-service.js";
-import { FLOW_WORDS, GateError, endGateSetting, gatesFor, setGate, setGateMode } from "../services/gate-settings-service.js";
+import { FLOW_WORDS, GateError, endGateSetting, gatesFor, keepCurrentWords, setGate, setGateMode } from "../services/gate-settings-service.js";
 import { policyById, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
 import {
   HOLD_REASONS,
@@ -83,6 +83,12 @@ import {
 } from "../services/showing-service.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
+
+/** What a person is told before they offer a mandate to the gate to outside. */
+export const OFFERING_OUTSIDE_SHOWS =
+  "It shows outside that your organization runs a graph that takes such requests, the mandate's name and terms as the gate lets them " +
+  "through, and how the gate to outside is set for its work, which is restated there, with its date, whenever a setting changes. What is " +
+  "asked of it is paid for from the mandate's own budget here: owls on the public graph do not pay for work in this deployment.";
 
 const STATUS: Record<string, number> = {
   NODE_NOT_FOUND: 404,
@@ -414,19 +420,34 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
       reply.send({ gates: await gatesFor(await actorOf(request)), modes: GATE_MODES, kinds: GATE_KINDS, scopes: GATE_SCOPES, flows: FLOW_WORDS, acts: GATE_ACTS }),
   });
 
-  app.put<{ Params: { gate_id: string }; Body: { flow?: "asked" | "everything"; backlog_shown?: boolean; send_as_released?: boolean } }>("/gates/:gate_id", {
+  app.put<{
+    Params: { gate_id: string };
+    Body: { flow?: "asked" | "everything"; backlog_shown?: boolean; send_as_released?: boolean; keep_current_mandate?: string | null; keep_current_owls?: number };
+  }>("/gates/:gate_id", {
     schema: {
       tags: ["gate"],
-      summary: "Set what holds for a gate as a whole: what flows to it, whether its backlog is shown, and whether what is released outside is sent (administrators)",
+      summary: "Set what holds for a gate as a whole: what flows to it, whether its backlog is shown, whether what is released outside is sent, and which mandate is asked to keep the other side current (administrators)",
       description:
         "`flow` is `asked` (" + FLOW_WORDS.asked + ") or `everything` (" + FLOW_WORDS.everything + ") " +
         "`backlog_shown` says whether readers on the other side see how much waits and on whom; it starts true. " +
         "For the gate to outside, `send_as_released` says whether what is released is sent to the public graph as it is released, " +
-        "with no person sending each package; it starts true. Send only what you are changing. Sending what already stands changes nothing.",
+        "with no person sending each package; it starts true. `keep_current_mandate` names the mandate that is asked to pay for a fresh " +
+        "assessment on the other side each time a version here changes on a node the other side holds, or null to ask nothing, which is " +
+        "where a gate starts. Between two labels it is a mandate at the label things come from, and `keep_current_owls` is what it pays for " +
+        "each pass. For the gate to outside it is a public mandate your organization funds on the public graph, which pays there in public " +
+        "owls. Each asking is an item at this gate of the kind `funding`, so it goes under the gate's setting for that kind, with any delay " +
+        "or batches the setting has, and shows the other side which nodes are worked on here and when. Versions made before a mandate was " +
+        "named are not asked about. Send only what you are changing. Sending what already stands changes nothing.",
       params: { type: "object", required: ["gate_id"], properties: { gate_id: UUID } },
       body: {
         type: "object",
-        properties: { flow: { type: "string", enum: ["asked", "everything"] }, backlog_shown: { type: "boolean" }, send_as_released: { type: "boolean" } },
+        properties: {
+          flow: { type: "string", enum: ["asked", "everything"] },
+          backlog_shown: { type: "boolean" },
+          send_as_released: { type: "boolean" },
+          keep_current_mandate: { type: "string", format: "uuid", nullable: true },
+          keep_current_owls: { type: "number", minimum: 0 },
+        },
       },
     },
     preHandler: holder("administer"),
@@ -438,6 +459,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           flow: request.body.flow,
           backlogShown: request.body.backlog_shown,
           sendAsReleased: request.body.send_as_released,
+          keepCurrentMandate: request.body.keep_current_mandate,
+          keepCurrentOwls: request.body.keep_current_owls,
           actor,
         });
         // "Everything" is a standing flow of every page at the label, set under this administrator's name; "asked" ends it.
@@ -459,6 +482,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           flow_in_words: FLOW_WORDS[gate.flow],
           backlog_shown_to_the_other_side: gate.backlog_shown,
           ...(gate.to_outside ? { send_as_released: gate.send_as_released } : {}),
+          keeps_the_other_side_current: keepCurrentWords(gate),
+          keep_current_mandate: gate.keep_current_mandate,
         });
       } catch (err) {
         return refuse(reply, err);
@@ -466,7 +491,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.put<{ Params: { gate_id: string }; Body: { mode: string; kind?: string; scope?: string; scope_ref?: string; party_id?: string } }>("/gates/:gate_id/settings", {
+  app.put<{ Params: { gate_id: string }; Body: { mode: string; kind?: string; scope?: string; scope_ref?: string; party_id?: string; delay_hours?: number; batch_hours?: number } }>("/gates/:gate_id/settings", {
     schema: {
       tags: ["gate"],
       summary: "Set how a gate treats a kind of thing in a scope: open, the Redactor decides, or a person decides as well",
@@ -477,6 +502,10 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "With `party_id` the setting is for that party's material and is set by someone who holds release for the party; without it the " +
         "setting is for every party that has not said, and is an administrator's. A party's own setting is taken before the gate's, the " +
         "narrowest scope that covers an item before a wider one, and a setting for the item's kind before one for every kind. " +
+        "`delay_hours` keeps what the setting lets through back that long from when it was produced, and `batch_hours` then sends it at the " +
+        "next multiple of that interval, so that items go together and when one was made is not told by when it arrived; left out, neither. " +
+        "For the gate to outside, a setting is part of what each mandate the organization has published says of itself on the public graph, " +
+        "so changing one is shown there with its date. " +
         "It applies from now to everything not yet released. Setting what already stands changes nothing.",
       params: { type: "object", required: ["gate_id"], properties: { gate_id: UUID } },
       body: {
@@ -488,6 +517,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           scope: { type: "string", enum: Object.keys(GATE_SCOPES) },
           scope_ref: UUID,
           party_id: UUID,
+          delay_hours: { type: "integer", minimum: 0, maximum: 2160 },
+          batch_hours: { type: "integer", minimum: 0, maximum: 2160 },
         },
       },
     },
@@ -501,6 +532,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           scopeRef: request.body.scope_ref ?? null,
           partyId: request.body.party_id ?? null,
           mode: request.body.mode,
+          delayHours: request.body.delay_hours,
+          batchHours: request.body.batch_hours,
           actor: await actorOf(request),
         });
         // A loosened setting lets through what was waiting on it.
@@ -644,21 +677,28 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => reply.send({ items: await shownItems({ kind: request.query.kind, replyRef: request.query.answers }) }),
   });
 
-  app.post<{ Body: { kind: "mandate" | "funding"; mandate_id: string; to_label: string; node_id?: string; owls?: number } }>("/gate/offers", {
+  app.post<{ Body: { kind: "mandate" | "funding"; mandate_id: string; to_label?: string; outside?: boolean; node_id?: string; owls?: number } }>("/gate/offers", {
     schema: {
       tags: ["gate"],
       summary: "Offer to a gate that a mandate exists, with its terms, or a mandate's funding of a fresh assessment of a node on the other side (people who direct the graph)",
       description:
         "`mandate`: the mandate's name, terms and budget are offered to readers at `to_label`, who do not read the mandate's label. " +
-        "`funding`: the mandate pays `owls` for a pass on `node_id` at `to_label`; the pass is placed when the offer is through the gate. " +
-        "Either goes through the gate under its setting. Offering the same thing again returns the item already there.",
+        "With `outside` in place of `to_label`, the mandate is offered to the gate to outside: once through, it stands on the organization's " +
+        "record on the public graph, with how that gate is set for the mandate's work, and requests on the public graph can be addressed " +
+        "to it. Its Grantmaker decides which of those to take up, under the mandate's terms, with no person acting each time; that one was " +
+        "taken up or declined, and the page of each node it bears on, then go to the gate to outside as they are ready. " + OFFERING_OUTSIDE_SHOWS + " " +
+        "`funding`: the mandate pays `owls` for a pass on `node_id` at `to_label`; the pass is commissioned there from the mandate's budget " +
+        "when the offer is through the gate. " +
+        "Either goes through the gate under its setting. Offering the same thing again returns the item already there. Ending the offer " +
+        "(POST /showings/:showing_id/end, with the offer's id) withdraws a mandate that was offered outside.",
       body: {
         type: "object",
-        required: ["kind", "mandate_id", "to_label"],
+        required: ["kind", "mandate_id"],
         properties: {
           kind: { type: "string", enum: ["mandate", "funding"] },
           mandate_id: UUID,
           to_label: { type: "string", minLength: 1 },
+          outside: { type: "boolean" },
           node_id: UUID,
           owls: { type: "number", minimum: 0 },
         },
@@ -666,7 +706,13 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: holder("direct"),
     handler: async (request, reply) => {
-      const { kind, mandate_id, to_label, node_id, owls } = request.body;
+      const { kind, mandate_id, node_id, owls } = request.body;
+      const outside = request.body.outside === true;
+      const to_label = request.body.to_label ?? "";
+      if (outside === (to_label !== "")) return reply.code(400).send({ error: "Say where it goes: `to_label`, or `outside`.", code: "NO_DESTINATION" });
+      if (outside && kind !== "mandate") {
+        return reply.code(400).send({ error: "A fresh public assessment is asked of a public mandate by naming it on the gate to outside (keep_current_mandate), or by a person from the node's page.", code: "NOT_OUTSIDE" });
+      }
       const [grant] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM grants WHERE id = $1`, [mandate_id]);
       if (!grant) return reply.code(404).send({ error: "No mandate with that id is at a label you read.", code: "MANDATE_NOT_FOUND" });
       if (kind === "funding" && !node_id) return reply.code(400).send({ error: "Say which node the funding is for.", code: "NO_NODE" });
@@ -674,9 +720,18 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         const offered =
           kind === "funding"
             ? await fundBelow({ grantId: mandate_id, nodeId: node_id!, toLabel: to_label, amountMicroUsd: owlsToMicroUsd(owls ?? 0) })
-            : await offerToGate({ kind: "mandate", fromLabel: grant.label, toLabel: to_label, subject: { grantId: mandate_id } });
+            : await offerToGate({ kind: "mandate", fromLabel: grant.label, toLabel: outside ? null : to_label, subject: { grantId: mandate_id } });
         if (!offered) {
-          return reply.code(409).send({ error: `Readers at "${to_label}" already read the mandate's label, or there is nothing to offer.`, code: "NOTHING_TO_OFFER" });
+          return reply.code(409).send({
+            error: outside
+              ? "There is nothing to offer: this deployment has not said which party is the organization itself, or holds one label only."
+              : `Readers at "${to_label}" already read the mandate's label, or there is nothing to offer.`,
+            code: "NOTHING_TO_OFFER",
+          });
+        }
+        if (outside) {
+          const [offer] = await rawQuery<{ showing_id: string }>(`SELECT showing_id FROM shown_pages WHERE id = $1`, [offered.item_id]);
+          return reply.code(201).send({ ...offered, offer_id: offer?.showing_id ?? null, addressed_on_the_public_graph_as: offer?.showing_id ?? null, what_it_shows_outside: OFFERING_OUTSIDE_SHOWS });
         }
         return reply.code(201).send(offered);
       } catch (err) {

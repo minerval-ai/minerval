@@ -53,6 +53,10 @@ export interface GateRow {
   flow: "asked" | "everything";
   backlog_shown: boolean;
   send_as_released: boolean;
+  /** The mandate asked to pay for a fresh assessment on the other side when a version here changes; null where nothing is asked. */
+  keep_current_mandate: string | null;
+  keep_current_micro_usd: number;
+  keep_current_since: Date | null;
 }
 
 /** The label the destination side's rows are kept at. */
@@ -75,11 +79,15 @@ export async function gateOf(boundaryId: string): Promise<GateRow | null> {
       `INSERT INTO gates (boundary_id, sensitivity_label) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [boundaryId, destination]
     );
-    const [row] = await rawQuery<{ flow: "asked" | "everything"; backlog_shown: boolean; send_as_released: boolean }>(
-      `SELECT flow, backlog_shown, send_as_released FROM gates WHERE boundary_id = $1 AND sensitivity_label = $2`,
+    const [row] = await rawQuery<{
+      flow: "asked" | "everything"; backlog_shown: boolean; send_as_released: boolean;
+      keep_current_mandate: string | null; keep_current_micro_usd: string; keep_current_since: Date | null;
+    }>(
+      `SELECT flow, backlog_shown, send_as_released, keep_current_mandate, keep_current_micro_usd, keep_current_since
+         FROM gates WHERE boundary_id = $1 AND sensitivity_label = $2`,
       [boundaryId, destination]
     );
-    return { boundary_id: boundaryId, ...pair, ...row! };
+    return { boundary_id: boundaryId, ...pair, ...row!, keep_current_micro_usd: Number(row!.keep_current_micro_usd) };
   });
 }
 
@@ -108,13 +116,15 @@ export interface SettingRow {
   scope_ref: string | null;
   party_id: string | null;
   mode: GateMode;
+  delay_hours: number;
+  batch_hours: number;
   set_by: string | null;
   set_holding: string[];
   set_at: Date;
   from_rule: string | null;
 }
 
-const SETTING_COLUMNS = `id, boundary_id, kind, scope, scope_ref, party_id, mode, set_by, set_holding, set_at, from_rule`;
+const SETTING_COLUMNS = `id, boundary_id, kind, scope, scope_ref, party_id, mode, delay_hours, batch_hours, set_by, set_holding, set_at, from_rule`;
 
 export const liveSettings = (boundaryId: string): Promise<SettingRow[]> =>
   asOwner(() =>
@@ -172,6 +182,26 @@ export interface ModeFound {
   mode: GateMode;
   /** The setting it came from; null where it is the gate's starting position. */
   settingId: string | null;
+  /** How wide that setting is, and when it was set. */
+  scope: GateScope | null;
+  setAt: Date | null;
+  /** The setting's standing delay: hours kept back from when the item was produced, and the batch it then goes with. */
+  delayHours: number;
+  batchHours: number;
+}
+
+/**
+ * When an item produced at `at` may go under a setting's standing delay:
+ * after the delay, and then at the next multiple of the batch, so that
+ * items go together.
+ */
+export function dueUnder(found: Pick<ModeFound, "delayHours" | "batchHours">, at: Date): Date {
+  let due = at.getTime() + found.delayHours * 3_600_000;
+  if (found.batchHours > 0) {
+    const span = found.batchHours * 3_600_000;
+    due = Math.ceil(due / span) * span;
+  }
+  return new Date(due);
 }
 
 /**
@@ -202,7 +232,12 @@ export async function modesFor(item: ItemScope, partyIds: readonly string[]): Pr
     for (const party of new Set(partyIds)) {
       const own = best(covering.filter((c) => c.party_id === party));
       const pick = own ?? whole;
-      out.set(party, pick ? { mode: pick.mode, settingId: pick.id } : { mode: STARTING_MODE[item.kind], settingId: null });
+      out.set(
+        party,
+        pick
+          ? { mode: pick.mode, settingId: pick.id, scope: pick.scope, setAt: pick.set_at, delayHours: pick.delay_hours, batchHours: pick.batch_hours }
+          : { mode: STARTING_MODE[item.kind], settingId: null, scope: null, setAt: null, delayHours: 0, batchHours: 0 }
+      );
     }
     return out;
   });
@@ -225,6 +260,8 @@ const settingView = (r: SettingRow, names: Map<string, string>, setters: Map<str
   party: r.party_id ? { id: r.party_id, name: names.get(r.party_id) ?? "" } : null,
   mode: r.mode,
   in_words: GATE_MODES[r.mode],
+  ...(r.delay_hours > 0 ? { delay_hours: r.delay_hours } : {}),
+  ...(r.batch_hours > 0 ? { batch_hours: r.batch_hours } : {}),
   set_by: r.set_by ? (setters.get(r.set_by) ?? null) : null,
   set_holding: r.set_holding,
   set_at: r.set_at.toISOString(),
@@ -245,6 +282,9 @@ export async function setGateMode(input: {
   scopeRef?: string | null;
   partyId?: string | null;
   mode: string;
+  /** A standing delay, in hours, and the batch what is delayed then goes with. Left out: none. */
+  delayHours?: number;
+  batchHours?: number;
   actor: GateAuthority;
 }): Promise<{ setting_id: string; changed: boolean; applies: string }> {
   const kind = input.kind ?? "*";
@@ -275,25 +315,46 @@ export async function setGateMode(input: {
     );
     const applies =
       "It applies to everything at the gate that has not been released, from now. What has been released stays released.";
-    if (live.length === 1 && live[0]!.mode === input.mode) return { setting_id: live[0]!.id, changed: false, applies };
+    // A delay is whole hours, and at most ninety days: a halting bound on a number a person types, which decides nothing.
+    const hours = (n: number | undefined) => Math.min(24 * 90, Math.max(0, Math.round(Number(n ?? 0)) || 0));
+    const delay = hours(input.delayHours);
+    const batch = hours(input.batchHours);
+    if (live.length === 1 && live[0]!.mode === input.mode && live[0]!.delay_hours === delay && live[0]!.batch_hours === batch) {
+      return { setting_id: live[0]!.id, changed: false, applies };
+    }
     await rawQuery(`UPDATE gate_settings SET ended_at = now(), ended_by = $2 WHERE id = ANY($1::uuid[])`, [live.map((l) => l.id), input.actor.id]);
     const [row] = await rawQuery<{ id: string }>(
-      `INSERT INTO gate_settings (boundary_id, kind, scope, scope_ref, party_id, mode, set_by, set_holding, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [input.boundaryId, kind, scope, input.scopeRef ?? null, partyId, input.mode, input.actor.id, input.actor.holding, gate.from_label]
+      `INSERT INTO gate_settings (boundary_id, kind, scope, scope_ref, party_id, mode, delay_hours, batch_hours, set_by, set_holding, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $10, $11, $7, $8, $9) RETURNING id`,
+      [input.boundaryId, kind, scope, input.scopeRef ?? null, partyId, input.mode, input.actor.id, input.actor.holding, gate.from_label, delay, batch]
     );
+    await restampWhereOutside(gate);
     return { setting_id: row!.id, changed: true, applies };
   });
+}
+
+/**
+ * A setting of the gate to outside is part of what a published mandate
+ * says of itself (gate-face.ts), so changing one offers those mandates
+ * again, and the public graph then shows the change with its date.
+ */
+async function restampWhereOutside(gate: Pick<GateRow, "to_outside">): Promise<void> {
+  if (!gate.to_outside) return;
+  await import("./gate-face.js")
+    .then((face) => face.restampPublishedMandates())
+    .catch((err: unknown) => console.error(`[gate] could not state a changed setting on the published mandates: ${err instanceof Error ? err.message : String(err)}`));
 }
 
 /** End a setting: the item falls back to the next widest one, or to the starting position. */
 export async function endGateSetting(input: { settingId: string; actor: GateAuthority }): Promise<{ changed: boolean }> {
   return asOwner(async () => {
-    const [row] = await rawQuery<{ party_id: string | null; ended_at: Date | null }>(`SELECT party_id, ended_at FROM gate_settings WHERE id = $1`, [input.settingId]);
+    const [row] = await rawQuery<{ party_id: string | null; ended_at: Date | null; boundary_id: string }>(`SELECT party_id, ended_at, boundary_id FROM gate_settings WHERE id = $1`, [input.settingId]);
     const mine = row && (row.party_id === null ? input.actor.administer : input.actor.releaseParties.includes(row.party_id));
     if (!row || !mine) throw new GateError("SETTING_NOT_FOUND", "No setting you may change has that id.");
     if (row.ended_at) return { changed: false };
     await rawQuery(`UPDATE gate_settings SET ended_at = now(), ended_by = $2 WHERE id = $1`, [input.settingId, input.actor.id]);
+    const gate = await gateOf(row.boundary_id);
+    if (gate) await restampWhereOutside(gate);
     return { changed: true };
   });
 }
@@ -304,6 +365,15 @@ export async function setGate(input: {
   flow?: string;
   backlogShown?: boolean;
   sendAsReleased?: boolean;
+  /**
+   * The mandate asked to pay for a fresh assessment on the other side when
+   * a version here changes on a node the other side holds; null to ask
+   * nothing. Between two labels, a mandate at the label things come from,
+   * with what it pays each time. For the gate to outside, a public mandate
+   * the organization funds on the public graph.
+   */
+  keepCurrentMandate?: string | null;
+  keepCurrentOwls?: number;
   actor: GateAuthority;
 }): Promise<GateRow> {
   if (!input.actor.administer) throw new GateError("NOT_YOURS_TO_SET", "What holds for the gate as a whole is an administrator's to set.");
@@ -312,6 +382,10 @@ export async function setGate(input: {
   }
   const gate = await gateOf(input.boundaryId);
   if (!gate) throw new GateError("GATE_NOT_FOUND", "No gate has that id.");
+  if (input.keepCurrentMandate && !gate.to_outside) {
+    const [grant] = await asOwner(() => rawQuery(`SELECT 1 FROM grants WHERE id = $1 AND sensitivity_label = $2`, [input.keepCurrentMandate, gate.from_label]));
+    if (!grant) throw new GateError("MANDATE_NOT_FOUND", `No mandate with that id works at the label this gate's things come from.`);
+  }
   await asOwner(async () => {
     await rawQuery(
       `UPDATE gates SET flow = COALESCE($2, flow), backlog_shown = COALESCE($3, backlog_shown),
@@ -319,6 +393,17 @@ export async function setGate(input: {
         WHERE boundary_id = $1`,
       [input.boundaryId, input.flow ?? null, input.backlogShown ?? null, input.sendAsReleased ?? null, input.actor.id]
     );
+    if (input.keepCurrentMandate !== undefined || input.keepCurrentOwls !== undefined) {
+      const mandate = input.keepCurrentMandate === undefined ? gate.keep_current_mandate : input.keepCurrentMandate;
+      const pays = input.keepCurrentOwls === undefined ? gate.keep_current_micro_usd : Math.max(0, Math.round(input.keepCurrentOwls * 1_000_000));
+      // Versions made before a mandate was named are not asked about afterwards: `keep_current_since` is when it was.
+      await rawQuery(
+        `UPDATE gates SET keep_current_mandate = $2, keep_current_micro_usd = $3,
+                keep_current_since = CASE WHEN $2::uuid IS NULL THEN NULL WHEN keep_current_mandate IS DISTINCT FROM $2::uuid THEN now() ELSE keep_current_since END
+          WHERE boundary_id = $1`,
+        [input.boundaryId, mandate, pays]
+      );
+    }
     // A showing outside carries the gate's choice, which is what the sender reads (outbound-service.ts).
     if (input.sendAsReleased !== undefined && gate.to_outside) {
       await rawQuery(`UPDATE shown_showings SET send_as_released = $2 WHERE boundary_id = $1`, [input.boundaryId, input.sendAsReleased]);
@@ -361,6 +446,9 @@ export async function gatesFor(actor: GateAuthority & { clearance: readonly stri
         flow_in_words: FLOW_WORDS[gate.flow],
         backlog_shown_to_the_other_side: gate.backlog_shown,
         ...(gate.to_outside ? { send_as_released: gate.send_as_released } : {}),
+        keeps_the_other_side_current: keepCurrentWords(gate),
+        keep_current_mandate: gate.keep_current_mandate,
+        ...(gate.to_outside ? {} : { keep_current_owls: gate.keep_current_micro_usd / 1_000_000 }),
         starting_positions: STARTING_MODE,
         settings: settings.map((s) => settingView(s, names, setters)),
         you_may_set: {
@@ -379,3 +467,15 @@ export const FLOW_WORDS = {
   everything:
     "Every page at this label goes to the gate as each version is finished, and each mandate here is offered with its terms. Each page's redaction and check are paid from the budget of the work that produced it.",
 } as const;
+
+/** Whether a gate asks for fresh assessments on the other side, in words. */
+export function keepCurrentWords(gate: Pick<GateRow, "to_outside" | "keep_current_mandate" | "keep_current_micro_usd">): string {
+  if (!gate.keep_current_mandate) {
+    return gate.to_outside
+      ? "Nothing is asked of the public graph when a version here changes: no public mandate is named to pay for a fresh public assessment."
+      : "Nothing is asked of the other side when a version here changes: no mandate is named to pay for a fresh assessment there.";
+  }
+  return gate.to_outside
+    ? "When a version here changes on a node the public graph holds, the public mandate named is asked for a fresh public assessment of the node. The asking is an item at this gate, of the kind funding, and shows outside which public nodes are worked on here and when."
+    : `When a version here changes on a node the other side has assessed, the mandate named pays ${(gate.keep_current_micro_usd / 1_000_000).toFixed(2)} owls for a fresh assessment of the node there. The asking is an item at this gate, of the kind funding.`;
+}

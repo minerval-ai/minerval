@@ -104,6 +104,20 @@ export async function fileRequest(input: {
   const keeperClaimId = claimIds.length === 1 && sourceIds.length === 0 ? claimIds[0]! : null;
   const budgetMicroUsd = budgetMicro(input.budgetUsd);
   const filer = input.filer;
+  // A request may be addressed to a mandate another graph published here, by the mandate's id
+  // (published-mandate-service.ts): the mandate is then the request's address, as a label's face is the
+  // address of work asked of a label above. The request stays an ordinary one, open to anyone to fund or meet,
+  // and its record shows what the mandate's publisher did about it. Its work is not paid for from here: the
+  // publisher's graph pays for what it takes up, in its own owls.
+  let addressedTo = input.addressedTo?.trim() || null;
+  let publishedFaceId: string | null = null;
+  if (!input.askedOf && addressedTo && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(addressedTo)) {
+    const { publishedFace, NO_SUCH_PUBLISHED_MANDATE } = await import("./published-mandate-service.js");
+    const face = await publishedFace(addressedTo);
+    if (!face) throw new RequestError(NO_SUCH_PUBLISHED_MANDATE);
+    publishedFaceId = face.id;
+    addressedTo = `${face.publisher}: ${face.name}`;
+  }
   // Embedded before the transaction, so no row lock waits on the network.
   const embedding = await embedRequest(input.ask, input.why);
   const filed = await withTransaction(async (tx) => {
@@ -128,7 +142,7 @@ export async function fileRequest(input: {
         input.why.trim(),
         input.satisfiedBy.trim(),
         input.whoCould?.trim() || null,
-        input.addressedTo?.trim() || null,
+        addressedTo,
         input.bearsOnText?.trim() || null,
         filer.kind,
         filer.kind === "admin" ? filer.agent : null,
@@ -137,11 +151,11 @@ export async function fileRequest(input: {
         filer.kind === "contributor" ? null : (filer.runId ?? null),
         keeperClaimId ? "steward" : "curator",
         keeperClaimId,
-        input.addressedTo?.trim() ? "addressed" : "open",
+        addressedTo ? "addressed" : "open",
         embedding,
         budgetMicroUsd,
         currentLabel(),
-        input.askedOf?.faceId ?? null,
+        input.askedOf?.faceId ?? publishedFaceId,
         input.askedOf?.as ?? null,
         input.askedOf?.budgetMicroUsd ?? null,
       ]
@@ -581,6 +595,14 @@ export interface RequestView {
    */
   asked_of?: { face_id: string; name: string; as: "work" | "mandate"; budget_usd: number };
   /**
+   * On a request addressed to a mandate another graph published here
+   * (published-mandate-service.ts): the mandate, its publisher, and where
+   * the request stands with that publisher, read from this graph's own
+   * record: taken up, declined with its reason, a page published on a node
+   * the request bears on, or nothing yet, each with how long.
+   */
+  addressed_to_mandate?: { face_id: string; name: string; publisher: { account_id: string; name: string }; withdrawn: boolean; stands: string; in_words: string };
+  /**
    * On a request taken up from one that paid for work here from a label
    * below: that label. The run that does the work is told (requestBrief).
    */
@@ -605,6 +627,9 @@ interface RequestRowJoined {
   created_at: Date;
   budget_micro_usd: string | null;
   asked_of_face_id: string | null;
+  asked_publisher_id: string | null;
+  asked_publisher_name: string | null;
+  asked_face_withdrawn_at: Date | null;
   asked_as: "work" | "mandate" | null;
   asked_budget_micro_usd: string | null;
   asked_face_name: string | null;
@@ -640,11 +665,32 @@ const REQUEST_SELECT = `
   SELECT r.id, r.ask, r.why, r.satisfied_by, r.who_could, r.addressed_to, r.bears_on_text,
          r.filer_kind, r.filer_agent, fc.display_name AS contributor_name,
          r.keeper_kind, kc.kind AS keeper_node_kind, r.state, r.state_note, r.created_at,
-         r.budget_micro_usd, r.asked_of_face_id, r.asked_as, r.asked_budget_micro_usd, lf.name AS asked_face_name
+         r.budget_micro_usd, r.asked_of_face_id, r.asked_as, r.asked_budget_micro_usd, lf.name AS asked_face_name,
+         lf.publisher_account_id AS asked_publisher_id, pc.display_name AS asked_publisher_name, lf.withdrawn_at AS asked_face_withdrawn_at
     FROM requests r
     LEFT JOIN label_faces lf ON lf.id = r.asked_of_face_id
+    LEFT JOIN contributors pc ON pc.id = lf.publisher_account_id
     LEFT JOIN contributors fc ON fc.id = r.filer_contributor_id
     LEFT JOIN claims kc ON kc.id = r.keeper_claim_id`;
+
+/** Where a request addressed to a published mandate stands with the mandate's publisher, from this graph's own record. */
+function addressedToMandate(r: RequestRowJoined, taken: TakenUp | null): NonNullable<RequestView["addressed_to_mandate"]> {
+  const days = Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86_400_000));
+  const since = days === 0 ? "the same day" : days === 1 ? "1 day on" : `${days} days on`;
+  const publisher = r.asked_publisher_name ?? "its publisher";
+  const addressed = `Addressed on ${new Date(r.created_at).toISOString().slice(0, 10)} to "${r.asked_face_name ?? ""}", a mandate ${publisher} published here.`;
+  return {
+    face_id: r.asked_of_face_id!,
+    name: r.asked_face_name ?? "",
+    publisher: { account_id: r.asked_publisher_id!, name: publisher },
+    withdrawn: r.asked_face_withdrawn_at !== null,
+    stands: taken ? taken.followed : "not_taken_up_yet",
+    in_words: taken
+      ? `${addressed} ${taken.in_words}`
+      : `${addressed} ${publisher} has not said whether it takes this request up, ${since}.` +
+        (r.asked_face_withdrawn_at ? " The mandate has since been withdrawn." : ""),
+  };
+}
 
 async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
   if (rows.length === 0) return [];
@@ -800,6 +846,9 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
                 budget_usd: usd(r.asked_budget_micro_usd ?? 0),
               },
             }
+          : {}),
+        ...(r.asked_of_face_id && r.asked_publisher_id
+          ? { addressed_to_mandate: addressedToMandate(r, (takenUp.get(r.id) ?? []).find((t) => t.account_id === r.asked_publisher_id) ?? null) }
           : {}),
         ...(from?.from_paid && from.from_label ? { paid_from_below: { label: from.from_label } } : {}),
       };

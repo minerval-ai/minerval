@@ -6,6 +6,7 @@ import { Notice, viewer, when } from "@/components/admin/access";
 import { WorkNav } from "@/components/inside/nav";
 import { fetchGateBacklog, fetchGates, type BacklogLine, type Gate } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
+import { british } from "@/lib/outside-api";
 import { endGateSettingAction, setGateAction, setGateModeAction } from "../showings/actions";
 
 export const metadata: Metadata = { title: "Gates · Minerval" };
@@ -63,7 +64,8 @@ function Settings({ gate, modes, kinds, scopes }: { gate: Gate; modes: Record<st
     <>
       <p className="acct-prose acct-measure">
         Where nothing is set, a gate starts from the Redactor&rsquo;s decision for everything except the bare fact that a request was
-        taken up, which starts open. A setting for one party&rsquo;s material is taken before one for the gate as a whole, the narrowest
+        taken up and a statement of what was spent, which start open, and an agent&rsquo;s report to Minerval&rsquo;s maintainers, which
+        starts with a person deciding as well. A setting for one party&rsquo;s material is taken before one for the gate as a whole, the narrowest
         scope that covers an item before a wider one, and a setting for one kind of thing before one for every kind.
       </p>
       {gate.settings.length === 0 ? (
@@ -90,7 +92,11 @@ function Settings({ gate, modes, kinds, scopes }: { gate: Gate; modes: Record<st
                     </span>
                     <span className="acct-detail">{s.party ? `${s.party.name}'s material` : "every party that has not said"}</span>
                   </td>
-                  <td>{s.in_words}</td>
+                  <td>
+                    {s.in_words}
+                    {(s.delay_hours ?? 0) > 0 && <span className="acct-detail">kept back {s.delay_hours} hours</span>}
+                    {(s.batch_hours ?? 0) > 0 && <span className="acct-detail">sent in batches every {s.batch_hours} hours</span>}
+                  </td>
                   <td>
                     {when(s.set_at)}
                     <span className="acct-detail">
@@ -164,6 +170,25 @@ function Settings({ gate, modes, kinds, scopes }: { gate: Gate; modes: Record<st
                 <input type="text" name="scope_ref" placeholder="not needed for the whole boundary" />
               </label>
             </div>
+            <div className="admin-form-row">
+              <label>
+                Keep back, in hours
+                <input type="number" name="delay_hours" min="0" max="2160" step="1" placeholder="0" />
+              </label>
+              <label>
+                Then send in batches every, in hours
+                <input type="number" name="batch_hours" min="0" max="2160" step="1" placeholder="0" />
+                <small>So that when a thing was made is not told by when it arrives. Left empty, neither.</small>
+              </label>
+            </div>
+            {gate.to_outside && (
+              <p className="admin-kept">
+                <small>
+                  A setting of this gate is part of what each mandate your organisation has published says of itself on the public graph, so a
+                  change is shown there with its date.
+                </small>
+              </p>
+            )}
           </ActionForm>
         </details>
       )}
@@ -205,6 +230,21 @@ function Settings({ gate, modes, kinds, scopes }: { gate: Gate; modes: Record<st
               <label className="admin-check">
                 <input type="checkbox" name="send_as_released" defaultChecked={gate.send_as_released === true} />
                 <span>Send what is released to the public graph as it is released, with no person sending each package.</span>
+              </label>
+            )}
+            <label>
+              {gate.to_outside ? "The public mandate asked to keep the public version current, by its id" : "The mandate asked to keep the other side current, by its id"}
+              <input type="text" name="keep_current_mandate" defaultValue={gate.keep_current_mandate ?? ""} placeholder="none: nothing is asked" />
+              <small>
+                {gate.to_outside
+                  ? "When a version here changes on a node the public graph holds, this public mandate, which your organisation funds there, is asked for a fresh public assessment of the node. Each asking goes through this gate as funding, and shows outside which public nodes are worked on here and when."
+                  : `When a version here changes on a node the other side has assessed, this mandate at ${gate.from} pays for a fresh assessment of the node there. Each asking goes through this gate as funding.`}
+              </small>
+            </label>
+            {!gate.to_outside && (
+              <label>
+                What it pays for each, in owls
+                <input type="number" name="keep_current_owls" min="0" step="0.01" defaultValue={gate.keep_current_owls ?? 0} />
               </label>
             )}
           </ActionForm>
@@ -254,6 +294,7 @@ export default async function GatesPage() {
               What the Redactor removes is decided by <Link href="/redaction-policies">this gate&rsquo;s redaction policy</Link>, which is
               where a gate is mostly tightened or loosened.
             </p>
+            <p className="acct-prose acct-measure">{british(gate.keeps_the_other_side_current)}</p>
             <h3 className="sc">Waiting</h3>
             <Backlog lines={waiting?.waiting ?? []} />
             <h3 className="sc">Settings</h3>

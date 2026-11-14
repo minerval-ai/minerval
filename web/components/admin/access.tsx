@@ -55,7 +55,6 @@ const PAGES: Array<{ href: string; name: string }> = [
   // What passes between this deployment and the public graph besides pages (docs/outward-acts.md).
   { href: "/admin/outside", name: "The public graph" },
   { href: "/admin/outside/requests", name: "Public requests" },
-  { href: "/admin/outside/keep-current", name: "Keeping public versions current" },
   { href: "/admin/outside/said-back", name: "What readers said back" },
   { href: "/admin/outside/reports", name: "Agents' reports" },
   // Read by every member; an administrator who reads the label the pages are written at saves a version.

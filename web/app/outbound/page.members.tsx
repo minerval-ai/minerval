@@ -5,7 +5,7 @@ import { ActionForm } from "@/components/admin/ActionForm";
 import { can, viewer, when } from "@/components/admin/access";
 import { WorkNav, day } from "@/components/inside/nav";
 import { fetchOutbound, type OutboundNode, type OutboundPackage } from "@/lib/inside-api";
-import { releaseProposalAction, sendOutsideAction, writeProposalAction } from "../showings/actions";
+import { sendOutsideAction, writeProposalAction } from "../showings/actions";
 
 export const metadata: Metadata = { title: "Pages sent outside · Minerval" };
 export const dynamic = "force-dynamic";
@@ -25,7 +25,7 @@ const STATE_WORDS: Record<string, string> = {
 };
 
 const PROPOSAL_STATE: Record<string, string> = {
-  waiting_for_release: "written, and waiting to be released",
+  waiting_for_release: "written, and at the gate to outside",
   ready: "written and released, and waiting to be sent",
   sent: "sent, and under review on the public graph",
   on_the_public_graph: "admitted: the public graph holds the node",
@@ -93,7 +93,6 @@ export default async function OutboundPage() {
   if (!who) return null;
   const overview = await fetchOutbound(who.externalId);
   const mayDirect = can(who, "direct");
-  const releaseFor = new Set(who.mine.grants.filter((g) => g.permission === "release" && g.party).map((g) => g.party!.id));
   const showings = [...new Set(overview.nodes.map((n) => n.showing_id))];
 
   return (
@@ -186,17 +185,14 @@ export default async function OutboundPage() {
                       The words it is proposed in, written {day(node.proposal.written_at)} ({PROPOSAL_STATE[node.proposal.state] ?? node.proposal.state}):
                     </p>
                     <blockquote>{node.proposal.text}</blockquote>
-                    {node.proposal.waits_on
-                      .filter((p) => releaseFor.has(p.id))
-                      .map((p) => (
-                        <ActionForm key={p.id} action={releaseProposalAction} submit={`Release these words for ${p.name}`}>
-                          <input type="hidden" name="proposal_id" value={node.proposal!.proposal_id} />
-                          <input type="hidden" name="party_id" value={p.id} />
-                          <p className="admin-kept">
-                            <small>These words become public when they are sent, as a proposal anyone can read. A release is not taken back.</small>
-                          </p>
-                        </ActionForm>
-                      ))}
+                    {node.proposal.state === "waiting_for_release" && (
+                      <p className="admin-kept">
+                        <small>
+                          These words are at the gate to outside, as an item of their own, and go under its setting for proposals. Where a
+                          person decides as well, they are approved on the gate&rsquo;s page.
+                        </small>
+                      </p>
+                    )}
                   </div>
                 )}
                 {!node.public_node_id && mayDirect && node.proposal?.state !== "sent" && node.proposal?.state !== "on_the_public_graph" && (
@@ -210,9 +206,9 @@ export default async function OutboundPage() {
                         <textarea name="text" rows={3} />
                         <small>
                           Left blank, the node&rsquo;s own wording is used. These words are yours, and are public once sent: they go to the
-                          public graph as a proposal under the organisation&rsquo;s account, which is reviewed there like anyone&rsquo;s. Each
-                          party the node&rsquo;s wording rests on releases them first, unless they are word for word a wording those parties
-                          already released.
+                          public graph as a proposal under the organisation&rsquo;s account, which is reviewed there like anyone&rsquo;s. They go
+                          through the gate to outside first, resting on the parties the node&rsquo;s wording rests on, unless they are word for
+                          word a wording that already went through it with the node&rsquo;s page.
                         </small>
                       </label>
                     </ActionForm>

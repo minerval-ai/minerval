@@ -26,7 +26,7 @@ The one list is `src/services/mirror-manifest.ts`. Twenty-two tables, parents fi
 | `assessments`, `quantity_estimates`, `question_assessments`, `argument_evaluations` | Judgments, current and past |
 | `source_interests` | A source's recorded stake |
 | `judgment_inputs` | What each judgment was made against |
-| `feed_contributions`, `feed_requests`, `feed_request_targets` | The public record that is not rows of the graph: what each contribution on a node said, of what type, about which published page and where its review stands; and each request with the nodes it bears on. Filled on the publisher before each cut from its `contributions` and `requests`, with no account ([outward-acts.md](outward-acts.md)) |
+| `feed_contributions`, `feed_requests`, `feed_request_targets` | The public record that is not rows of the graph: what each contribution on a node said, of what type, about which published page and where its review stands; and each request with the nodes it bears on, and the published mandate it is addressed to where it is addressed to one, so that the mandate's publisher finds it. Filled on the publisher before each cut from its `contributions` and `requests`, with no account ([outward-acts.md](outward-acts.md)) |
 
 Every column of these tables travels unless the manifest names it with a reason:
 

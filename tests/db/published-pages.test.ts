@@ -40,7 +40,6 @@ import {
   followOutbound,
   outboundOverview,
   packageFile,
-  releaseProposal,
   sendOutbound,
   signedRegistration,
   writeProposal,
@@ -280,7 +279,9 @@ afterAll(async () => {
   server?.kill("SIGTERM");
   Object.assign(loadConfig(), { publishSigningKey: "", deploymentHosting: "", publicGraphApiUrl: "", publicGraphApiKey: "" });
   await system(async () => {
-    const showings = [id.showing, id.privateShowing, id.standingChoice].filter(Boolean);
+    // The words a node was proposed in went through the gate to outside as an item of their own.
+    const proposals = await rawQuery<{ id: string }>(`SELECT id FROM showings WHERE kind = 'proposal'`);
+    const showings = [id.showing, id.privateShowing, id.standingChoice, ...proposals.map((p) => p.id)].filter(Boolean);
     for (const showingId of showings) {
       const [showing] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_showings WHERE id = $1`, [showingId]);
       await rawQuery(`DELETE FROM outbound_sends WHERE package_id IN (SELECT id FROM outbound_packages WHERE showing_id = $1) OR proposal_id IN (SELECT id FROM outbound_proposals WHERE showing_id = $1)`, [showingId]);
@@ -332,11 +333,11 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(first.previous_hash).toBe(packages[0]!.package.hash);
     expect(first.node.public_id).toBe(id.p);
     expect(first.state).toBe("released_in_part");
-    // Keeping public versions current is on where nobody has turned it off, and nothing pays for it here, which the package says.
+    // The gate to outside names no public mandate to keep public versions current, so it asks nothing, which the package says.
     expect(first.deployment).toEqual({
       hosting: "own_machines",
       attested_by: "nothing",
-      keeps_public_versions_current: { setting: "on", a_public_mandate_pays_for_it: false },
+      keeps_public_versions_current: { setting: "off", a_public_mandate_pays_for_it: false },
     });
     expect(first.showing).toMatchObject({ form: "standing", scope: "node", send: "by_a_person_each_time", ended: null });
     expect(first.node.showing_began).toBe("after the node was first assessed");
@@ -727,8 +728,16 @@ describe("a node that exists only in the deployment", () => {
     expect(written.state).toBe("waiting_for_release");
     await expect(sendAs(id.privateShowing!)).resolves.toMatchObject({ sent: [], built: 0 });
     expect(await pubRows(`SELECT 1 FROM contributions WHERE contribution_type = 'propose_claim'`)).toEqual([]);
-    await expect(releaseProposal({ proposalId: written.proposal_id, partyId: id.org!, actor: actor.acme! })).rejects.toThrow(/do not hold the permission/);
-    expect((await releaseProposal({ proposalId: written.proposal_id, partyId: id.org!, actor: actor.org! })).state).toBe("ready");
+    // The words are an item at the gate to outside, of the kind proposal: redacted, checked, and, since this gate is set for a person,
+    // approved by a holder of release for the party they rest on. Nobody else can.
+    const [item] = await system(() =>
+      rawQuery<{ id: string }>(`SELECT p.id FROM showings s JOIN showing_pages p ON p.showing_id = s.id WHERE s.kind = 'proposal' AND s.subject_ref = $1`, [written.proposal_id])
+    );
+    await redactAndCheck(item!.id);
+    await expect(decideAtGate({ actor: actor.acme!, partyId: id.org!, items: [{ page_id: item!.id }], decision: "approve" })).rejects.toThrow(/do not hold the permission/);
+    expect((await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: item!.id }], decision: "approve" })).decided).toBeGreaterThan(0);
+    const [ready] = await system(() => rawQuery<{ state: string }>(`SELECT state FROM outbound_proposals WHERE id = $1`, [written.proposal_id]));
+    expect(ready!.state).toBe("ready");
 
     // Sent: an ordinary proposal on the public graph, under the organization's account.
     await sendAs(id.privateShowing!);

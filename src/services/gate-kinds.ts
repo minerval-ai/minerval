@@ -23,6 +23,8 @@ export const GATE_KINDS = {
   message: "an answer to a message",
   petition: "a run's petition to the mandate that pays for it",
   statement: "a statement of what was spent and what was returned",
+  report: "an agent's report of a fault in Minerval's machinery, for its maintainers",
+  proposal: "the words a node is proposed to the public graph in",
 } as const;
 export type GateKind = keyof typeof GATE_KINDS;
 export const isGateKind = (k: unknown): k is GateKind => typeof k === "string" && k in GATE_KINDS;
@@ -66,6 +68,12 @@ export const STARTING_MODE: Record<GateKind, GateMode> = {
   // A statement is figures in fixed words about the payer's own money, which the payer's own account
   // already shows as it moves. It starts open: holding it would hide nothing the payer cannot see.
   statement: "open",
+  // An agent's report was not asked for by its readers, and its words were written about the agent's own work
+  // with no thought of leaving the label. It is the one kind that starts with a person. A gate's authorities
+  // leave it to the Redactor where they are content to.
+  report: "person",
+  // A proposal's words were written for the outside by a person who directs the graph.
+  proposal: "redactor",
 };
 
 /** What a setting can be narrowed to. A narrower scope is taken before a wider one. */
@@ -132,4 +140,7 @@ export const ITEM_PART_WORDS: Record<string, [one: string, several: string]> = {
   amount: ["an amount of funding", "amounts of funding"],
   reply: ["a paragraph of an answer to a message", "paragraphs of answers to messages"],
   ask: ["a paragraph of what a run asks its payer for", "paragraphs of what a run asks its payer for"],
+  title: ["a report's title", "reports' titles"],
+  words: ["a paragraph of an agent's report", "paragraphs of agents' reports"],
+  proposed: ["the words a node is proposed in", "wordings nodes are proposed in"],
 };

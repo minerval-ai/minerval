@@ -475,7 +475,7 @@ function owlsItem(c: SetupChecklist): ChecklistItem {
 function publicGraphItem(c: SetupChecklist): ChecklistItem | null {
   const p = c.public_graph;
   if (!p) return null;
-  const base = { key: "public_graph", title: "Keeping public versions current", href: "/admin/outside/keep-current", link: "Keeping public versions current" };
+  const base = { key: "public_graph", title: "Keeping public versions current", href: "/gates", link: "Gates" };
   const facts = [p.keep_public_current.in_words.replace(/\borganization/g, "organisation")];
   if (p.last_not_taken) {
     return {

@@ -422,7 +422,16 @@ describe.each([
     ]);
     const note = await stewardAt(top, () => loadChangesBelowNote(node, "claim"));
     const today = new Date().toISOString().slice(0, 10);
-    expect(note.split("\n")[0]).toBe(`What work at \`${label}\` has changed, since the version at \`${top}\` was recorded on ${today}:`);
+    // The version above was backdated an hour in the setup, so the day it
+    // was recorded on is read from it: between midnight and one it is
+    // yesterday.
+    const recordedOn = (await system(() =>
+      rawQuery<{ on: string }>(
+        `SELECT to_char(assessed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS on FROM assessments WHERE claim_id = $1 AND sensitivity_label = $2 AND is_current`,
+        [node, top]
+      )
+    ))[0]!.on;
+    expect(note.split("\n")[0]).toBe(`What work at \`${label}\` has changed, since the version at \`${top}\` was recorded on ${recordedOn}:`);
     expect(note).toContain(
       `Arguments on this node (2):\n- ${argument} "From the gauge readings" was added, ${today}\n` +
         `- ${argument} "From the gauge readings" was retired (RETIRED-BELOW: superseded), ${today}`

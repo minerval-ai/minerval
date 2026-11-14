@@ -12,7 +12,6 @@ import {
   endShowing,
   holdShownPage,
   payForShowingWork,
-  releaseProposal,
   savePolicy,
   sendOutside,
   setGate,
@@ -188,6 +187,12 @@ export async function decideAction(_previous: FormState, form: FormData): Promis
 
 // --- setting a gate ----------------------------------------------------------------
 
+/** Whole hours from a form field, or 0 where it is empty or not a number. */
+function hoursOf(form: FormData, name: string): number {
+  const n = Math.round(Number(text(form, name)));
+  return Number.isFinite(n) && n > 0 ? Math.min(2160, n) : 0;
+}
+
 export async function setGateModeAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
@@ -203,6 +208,8 @@ export async function setGateModeAction(_previous: FormState, form: FormData): P
       scope,
       ...(scope !== "boundary" ? { scope_ref: scopeRef } : {}),
       ...(text(form, "party_id") ? { party_id: text(form, "party_id") } : {}),
+      ...(hoursOf(form, "delay_hours") ? { delay_hours: hoursOf(form, "delay_hours") } : {}),
+      ...(hoursOf(form, "batch_hours") ? { batch_hours: hoursOf(form, "batch_hours") } : {}),
     });
     revalidatePath("/gates");
     revalidatePath("/gate");
@@ -233,11 +240,16 @@ export async function setGateAction(_previous: FormState, form: FormData): Promi
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   const flow = text(form, "flow");
+  const mandate = text(form, "keep_current_mandate");
+  if (mandate && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mandate)) return { error: "Give the mandate by its id." };
+  const owls = Number(text(form, "keep_current_owls"));
   try {
     await setGate(user, text(form, "gate_id"), {
       ...(flow ? { flow } : {}),
       backlog_shown: form.get("backlog_shown") === "on",
       ...(form.has("outside") ? { send_as_released: form.get("send_as_released") === "on" } : {}),
+      ...(form.has("keep_current_mandate") ? { keep_current_mandate: mandate || null } : {}),
+      ...(form.has("keep_current_owls") && Number.isFinite(owls) && owls >= 0 ? { keep_current_owls: owls } : {}),
     });
   } catch (err) {
     return refused(err);
@@ -312,16 +324,4 @@ export async function writeProposalAction(_previous: FormState, form: FormData):
   } catch (err) {
     return refused(err);
   }
-}
-
-export async function releaseProposalAction(_previous: FormState, form: FormData): Promise<FormState> {
-  const user = await actingUser();
-  if (!user) return NOT_SIGNED_IN;
-  try {
-    await releaseProposal(user, text(form, "proposal_id"), text(form, "party_id"));
-  } catch (err) {
-    return refused(err);
-  }
-  revalidatePath("/outbound");
-  return { notice: "Released. A release is not taken back." };
 }

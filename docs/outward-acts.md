@@ -18,20 +18,22 @@ Four things hold for every part.
   graph gained", below). Nothing on the public graph knows what a private
   graph is.
 - **Every outward act shows something**, at least where the organization's
-  attention is. So each is the act of a signed-in person who holds the
-  permission for it, or follows from a standing choice such a person made
-  after being shown, in words stored with the choice, what it shows
-  outside. A person is present in a signed-in session, or by pressing the
+  attention is. What follows from work at a label (that a request was
+  taken up or will not be worked, a mandate's terms, a request for a fresh
+  public assessment, an agent's report, a node's proposal) is an item at
+  the gate to outside and goes under that gate's settings, which its
+  authorities set ([the-gate.md](the-gate.md), "Outside"). The rest,
+  spending public owls and writing to the public Grantmaker, is the act of
+  a signed-in person who holds the permission for it. A person is present in a signed-in session, or by pressing the
   card the Assistant shows for an outward act
   ([accounts.md](accounts.md), "The Assistant"; kind `send_outside`). A key
   or a token alone does not act. Each act is a row in `outward_acts` with
-  who, holding what, exactly what was sent, and what the public graph
-  answered (`GET /outside/log`).
+  who, holding what (or "the gate" where its setting sent it), exactly
+  what was sent, and what the public graph answered (`GET /outside/log`).
 - **Nothing private crosses except through showing a page.** A call here
   carries ids the public graph already holds, amounts, a reason from a
   fixed list, or words a person wrote for the outside from a signed-in
-  session. Words an agent wrote leave only after a Redactor's pass and a
-  release. `tests/db/outward-acts.test.ts` tries to make something private
+  session. Words written at a label leave only through the gate. `tests/db/outward-acts.test.ts` tries to make something private
   cross by each route and fails.
 - **Nothing reads the live public graph in a way that follows the
   deployment's attention.** What it needs to know of the public record
@@ -49,21 +51,18 @@ everywhere, as all its routes are.
 
 `PUBLIC_ACTS_BY` names the permission whose holders may act on the public
 graph in the organization's name: `direct` unless set (`fund` and
-`administer` are the others). Sending an agent's report takes `release`
-for the organization's own material instead, because it releases words
-written at a label.
+`administer` are the others). What goes through the gate to outside is
+decided there, by its settings and, where they say so, by holders of
+`release` for the parties it rests on.
 
 | Act | Takes | A person present | A tool |
 | --- | --- | --- | --- |
 | Adopt a public request (says nothing outside) | `direct` | session | no |
-| Say in public that the graph is taking a request up; say later that it will not do the work | `PUBLIC_ACTS_BY` | session or card | yes |
+| Offer to the gate to outside that the graph is taking a request up, or decline it | `PUBLIC_ACTS_BY` | session or card | yes |
 | Open a public mandate; write to the public Grantmaker | `PUBLIC_ACTS_BY` | session | no: the words are a person's |
 | Fund a drafted public mandate; add public owls to one; fund a mirrored node; ask a public mandate about a node | `PUBLIC_ACTS_BY` | session or card | yes |
-| Set a standing choice | whoever could do each act it covers | session | no |
-| Leave a mandate or a node out of keeping public versions current | `direct` | session | no |
-| Send a redacted report to Minerval's maintainers | `release` for the organization itself, and reading the report's label | session or card | yes |
-| Send the facts of a tool failure | `direct` | session or card | yes |
-| Pay for the redaction of a report | `fund` | any credential | yes |
+| Name the mandate that keeps public versions current; set the gate to outside | `administer` (a party's own setting: `release` for it) | any credential | yes |
+| Approve, hold or remove at the gate to outside where a person decides | `release` for the parties an item rests on | any credential | yes |
 
 ## 1. What the public says back
 
@@ -129,15 +128,31 @@ act one layer up and uses the same table and the same code
 ([architecture.md](architecture.md), "Word from the layer below";
 `POST /requests/:request_id/adopt`).
 
-**Taking up in public.** A person who may act there says, in the
-organization's name, that the graph is taking it up. The public graph
-records that on the request (a `request_work` row marked `taken_up`, in
-fixed words, with the account and the date). It commits the account to
-doing the work well, not to a result; it funds nothing and does not move
-the request's state. The request's page then shows what followed, read
-from the record and not from the account: a page the account published on
-a node the request bears on, its own statement that it will not do the
-work with a reason from a fixed list, or nothing yet, with how long.
+**Taking up in public.** That the graph is taking a request up is said on
+the public graph, in the organization's name, as an item of the kind
+`taken_up` at the gate to outside ([the-gate.md](the-gate.md), "Outside"),
+which starts open. The public graph records it on the request (a
+`request_work` row marked `taken_up`, in fixed words, with the account and
+the date). It commits the account to doing the work well, not to a result;
+it funds nothing and does not move the request's state. For a request
+addressed to a mandate this deployment published, the item is offered when
+the mandate's Grantmaker takes the request up, with no person acting. For
+any other public request, nobody outside asked this graph, so it is offered
+only where a person who may act on the public graph says so
+(`POST /outside/requests/adopted/:adoption_id/take-up`). Declining
+(`.../decline`, a reason from the fixed list) closes the request here as
+declined and offers that the work will not be done, with the reason, as an
+`answer`. The request's page then shows what followed, read from the
+record and not from the account: a page the account published on a node
+the request bears on, its own statement that it will not do the work with
+a reason from a fixed list, a page held with since when, or nothing yet,
+with how long.
+
+**Addressed to a published mandate.** A request on the public graph can be
+addressed to a mandate an organization published there (see
+[the-gate.md](the-gate.md), "A published mandate"). It stays an ordinary
+request: anyone may fund or meet it. A publisher may decline one it never
+took up; that refusal is part of the request's record.
 
 ## 3. Public mandates and public owls
 
@@ -167,50 +182,40 @@ assessment of the node, on public evidence. No private content moves: the
 request is the node's id. What shows is which public nodes the
 organization works on, and when.
 
-- **The setting** is `keep_public_current` among the standing choices
-  (`GET /outside/choices`, `PUT /outside/choices/keep_public_current`). It
-  is on unless someone turns it off. It names the public mandate that is
-  asked, a delay in hours, and an interval for sending in batches.
-- **On, with nothing behind it, sends nothing.** Until a person has named a
-  public mandate, on the screen that says what the setting shows outside,
-  no version is noticed and nothing is sent, and no version made before
-  then is sent afterwards. The setting's page, the setup checklist and
-  `GET /outside/keep-current` say so in words.
-- **How it asks.** `POST /mandates/:id/raise` on the public graph puts the
-  node in front of the mandate's officers in fixed words, as one of its
-  funders. It asks and does not command: the officers decide under the
-  mandate's operating policy.
-- **Left out.** A mandate's work, one node under it, or one node whoever
-  pays, can be left out (`POST /outside/keep-current/leave-out`), recorded
-  at the mandate's label or one the person names.
-- **Stamped on every page shown outside.** A package's
-  `deployment.keeps_public_versions_current` says whether the setting is on
-  and whether a public mandate pays for it. Turning it off builds a new
-  package for every node shown.
+This is a setting of the gate to outside, not a choice of its own
+([the-gate.md](the-gate.md), "Keeping public versions current"): an
+administrator names the public mandate on the gate
+(`PUT /gates/:gate_id`, `keep_current_mandate`), and each asking is an
+item of the kind `funding` under that gate's setting for the kind, with
+its scope (a mandate's work, a node and what sits under it), its delay and
+its batches. No mandate is named where a gate starts, so nothing is asked.
+`POST /mandates/:id/raise` on the public graph puts the node in front of
+the mandate's officers in fixed words, as one of its funders; the officers
+decide. A package's `deployment.keeps_public_versions_current` says
+whether the gate the page left by names a public mandate.
 
 ## 5. An agent's report, sent to Minerval's maintainers
 
 In a deployment that keeps things inside, an agent's report stays inside,
-at the run's label. So that Minerval still hears when its tools fail:
+at the run's label. So that Minerval still hears when its tools fail, a
+report Audit's triage finds to be about Minerval's machinery (`about` on
+`triage_report`) is offered to the gate to outside as an item of the kind
+`report`:
 
-- **Two parts.** The facts (`factsOf`,
+- **What is always shown of it**: the facts in fixed words (`factsOf`,
   `src/services/report-sending-service.ts`): which tool, only if it is one
-  of Minerval's own by its name in the code; the kind of report and its
-  severity, from the two fixed lists; the migration and prompt set the
-  deployment runs; how often, and the first and last day. And the agent's
-  words: the title and the body.
-- **Audit's triage** says what a report is about (`about` on
-  `triage_report`, offered only where reports stay inside): Minerval's
-  machinery, or this deployment. Only the first kind is offered.
-- **The Redactor's pass is done ahead** (action kind `redact_report`, at
-  the report's label, under the policy for what leaves that label). The
-  page shows the words as they would go.
-- **One act sends them** (`POST /outside/reports/:sending_id/send`), to the
-  public graph's `POST /reports` under the organization's account, marked
-  `private`, which keeps the report out of anything the public can read.
-- **Two standing choices, both off until turned on**: send the facts of
-  tool failures with nobody acting; send redacted reports with nobody
-  reading them first.
+  of Minerval's own by its name in the code; the kind and the severity
+  from the two fixed lists; the migration and prompt set the deployment
+  runs. **Its parts**: the agent's title and each paragraph of its body.
+- **The gate decides.** The Redactor works on it under the policy for what
+  leaves its label, Audit checks the work, and the gate's setting says
+  whether a person decides as well. A report is the one kind whose gate
+  starts with a person deciding, since nobody outside asked for it; an
+  administrator can leave it to the Redactor. A person at the gate can let
+  the facts go and hold the words.
+- **What leaves**: the public graph's `POST /reports` under the
+  organization's account, marked `private`, with the parts as released
+  (`src/services/gate-outside.ts`).
 - **What came back** (`GET /reports/mine/:id`: status and the maintainers'
   note) is shown on the report, to people. No agent is given it.
 
@@ -248,8 +253,8 @@ requests, with no account.
 | --- | --- |
 | `PUBLIC_ACTS_BY` | The permission whose holders act on the public graph in the organization's name: `direct` (the starting value), `fund` or `administer` |
 
-The three standing choices are set in the app and stored in
-`outward_settings`.
+What used to be three standing choices are settings of the gate to
+outside (`gate_settings`, `gates`), set on Gates.
 
 ## What this does not do
 
