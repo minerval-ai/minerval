@@ -102,6 +102,7 @@ import { getSharedAnalysis } from "../services/shared-analysis-service.js";
 import { REPORT_FIELD_GUIDANCE } from "../llm/tools/report-tools.js";
 import {
   CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_LAYERS_DESCRIPTION,
   CLAIM_VIEW_INCLUDE_DESCRIPTION,
   CLAIM_VIEW_INCLUDES,
   DEFAULT_DEPENDENTS_PAGE,
@@ -126,6 +127,7 @@ import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
 import { getCurrentEstimate } from "../services/quantity-service.js";
 import { getCurrentStanding } from "../services/question-service.js";
 import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment-fault.js";
+import { overlaid } from "../services/overlay-service.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -544,7 +546,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       title: "Get claim",
       // One description and one view for MCP and the graph's own agents
       // (#774): src/services/claim-view-service.ts.
-      description: CLAIM_VIEW_DESCRIPTION,
+      description: CLAIM_VIEW_DESCRIPTION + (overlaid() ? CLAIM_VIEW_LAYERS_DESCRIPTION : ""),
       inputSchema: {
         claim_id: z.guid(),
         include: z

@@ -42,6 +42,8 @@ import {
 } from "./claim/PublishedPage";
 import { sourceHref } from "@/lib/source-address";
 import { ShownIntro, ShownRecord } from "./claim/InsideVersions";
+import { importanceInEffect } from "@/lib/layers";
+import type { ValueByLabel } from "@/lib/types";
 
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
@@ -189,6 +191,11 @@ export function ClaimView({
     : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
+  // Inside a deployment with more than one label: the node's own label, so
+  // that a row another label added can say so, and whose importance the
+  // page shows where a label holds its own (lib/layers.ts).
+  const nodeLabel = (claim as { label?: string }).label ?? null;
+  const importanceHeld = importanceInEffect((claim as { importance_by_label?: ValueByLabel[] }).importance_by_label);
   // Canonical text for [[claim:<id>]] references in assessment prose (#203):
   // assessments cite subclaims, and subclaims live in the tree already held.
   const linkTexts = buildClaimTextMap(tree);
@@ -217,6 +224,12 @@ export function ClaimView({
             {typeof claim.importance === "number" && (
               <span style={{ marginLeft: "auto" }}>
                 <Importance value={claim.importance} />
+                {/* Where a label the reader reads holds its own importance for the node: whose this is, and what the others hold. */}
+                {importanceHeld && (
+                  <span className="layer-mark" title={importanceHeld.title}>
+                    {importanceHeld.at}
+                  </span>
+                )}
               </span>
             )}
           </>
@@ -540,7 +553,7 @@ export function ClaimView({
                 ? "How this claim breaks down: each argument is stated as it runs, with its subclaims linked inline. ↗\uFE0E opens a subclaim; the map shows how they fit together."
                 : "The claims this one rests on directly. ↗\uFE0E opens a subclaim; the map shows how they fit together."}
             </p>
-            <DecompositionTree tree={tree!} argumentChecks={argumentChecks} />
+            <DecompositionTree tree={tree!} argumentChecks={argumentChecks} nodeLabel={nodeLabel} />
           </>
         ) : (
           <p style={{ color: "var(--muted)", fontStyle: "italic" }}>

@@ -12,8 +12,10 @@ import { loadConfig } from "../config.js";
 import { ASSESS_GROUP_SQL } from "./action-service.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { contestationSql, importanceSql } from "./overlay-service.js";
 
 /** The ordering for one claims row `c` (SQL fragment). */
+// The node's own value: this stamps the node's own row, for work at its own label.
 const ORDER_SQL = `COALESCE(c.importance, 0)`;
 
 /** Restamp one claim's place in the list. Returns it. */
@@ -66,7 +68,7 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
     assessed_at: Date | null;
     created_by: string;
   }>(
-    `SELECT c.queue_priority, c.importance, c.contestation, c.created_by,
+    `SELECT c.queue_priority, ${importanceSql("c")} AS importance, ${contestationSql("c")} AS contestation, c.created_by,
             (SELECT a.marginal_yield FROM assessments_in_force a
               WHERE a.claim_id = c.id
               ORDER BY a.assessed_at DESC LIMIT 1) AS marginal_yield,

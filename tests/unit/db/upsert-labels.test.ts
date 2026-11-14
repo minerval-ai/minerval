@@ -99,7 +99,7 @@ describe("an upsert onto a labelled table", () => {
   const tables = labelledTables();
 
   it("writes its words only into a row at its writer's own label, or is listed here with why it writes none", () => {
-    expect(tables.sql.size).toBe(143);
+    expect(tables.sql.size).toBe(144);
     const unheld = new Set<string>();
     let held = 0;
     for (const path of sourceFiles(join(repo, "src"))) {

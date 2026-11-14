@@ -18,6 +18,7 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { EVALUATION_STALE_SQL, getArgument, hasWrittenForm, parseClaimLinks } from "./argument-service.js";
 import { listArgumentInstances } from "./argument-instance-service.js";
+import { withLayer, withSetAside } from "./overlay-service.js";
 
 export const ARGUMENT_VIEW_INCLUDES = ["evaluation", "premises", "instances"] as const;
 export type ArgumentViewInclude = (typeof ARGUMENT_VIEW_INCLUDES)[number];
@@ -73,9 +74,15 @@ export async function getArgumentView(
     [argument.claimId]
   );
 
+  // On a graph with more than one label: the label the argument is at,
+  // and where a label the reader reads has set it aside, that it has.
+  const [placed] = await withSetAside("arguments", await withLayer("arguments", [{ id: argument.id }], (a) => a.id), (a) => a.id);
+
   const payload: Record<string, unknown> = {
     argument: {
       id: argument.id,
+      ...(placed?.label ? { label: placed.label } : {}),
+      ...(placed?.set_aside ? { set_aside: placed.set_aside } : {}),
       // The argument's own page (#541), a permanent URL as a claim's is.
       page_url: `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/arguments/${argument.id}`,
       conclusion: conclusion
@@ -217,8 +224,9 @@ export async function getArgumentView(
           limit: opts.instancesLimit ?? DEFAULT_INSTANCES_PAGE,
           offset: opts.instancesOffset ?? 0,
         });
-        payload.instances = items.map((i) => ({
+        payload.instances = (await withLayer("argument_instances", items, (i) => i.id)).map((i) => ({
           id: i.id,
+          ...(i.label ? { label: i.label } : {}),
           source: { id: i.source_id, url: i.source_url, title: i.source_title },
           verbatim_text: i.verbatim_text,
           context: i.context,

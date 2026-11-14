@@ -581,10 +581,12 @@ describe("a row read from a source or written about one", () => {
     );
     const [event] = await rawQuery<{ notice_url: string }>(`SELECT notice_url FROM source_events WHERE source_id = $1`, [ids.source]);
     const [upstream] = await rawQuery<{ url: string }>(`SELECT url FROM sources WHERE id = $1`, [ids.upstream]);
-    // Five of them carry the run's own words (a note, a reasoning, a basis,
-    // a summary). A run at another label does not write those into a row
-    // the first label's readers read (db/clearance.ts, sameLabelOnly): it
-    // is refused, and told why.
+    // Four of them carry the run's own words (a reasoning, a basis, a
+    // summary). A run at another label does not write those into a row the
+    // first label's readers read (db/clearance.ts, sameLabelOnly): it is
+    // refused, and told why. A reading of the passage is the other label's
+    // own judgment of it, and is recorded as a row of its own beside the
+    // first (services/overlay-service.ts).
     const refused = async (write: () => Promise<unknown>) => {
       const err = await write().then(
         () => null,
@@ -594,7 +596,7 @@ describe("a row read from a source or written about one", () => {
       expect((err as Error).message).toMatch(/already exists at another label than this work's/);
     };
     await inRunAt(INTERNAL, async () => {
-      await refused(() => executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward));
+      ok(await executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward));
       await refused(() =>
         executeRecordEdge(
           {
@@ -616,7 +618,8 @@ describe("a row read from a source or written about one", () => {
       expect(await recordSourceEvent({ sourceId: ids.source, kind: "correction", noticeUrl: event!.notice_url, detectedBy: "crossref_poll" }))
         .toEqual({ recorded: false });
       expect(ok(await executeRecordCoverage({ segment_ids: [covered!.segment_id], facet: "data" }, researcher)).recorded).toBe(0);
-      expect(ok(await executeCiteFindings({ instance_id: ids.instance, finding_ids: [ids.finding] }, steward)).cited).toBe(0);
+      // The citation goes on this label's own reading of the passage, recorded above.
+      expect(ok(await executeCiteFindings({ instance_id: ids.instance, finding_ids: [ids.finding] }, steward)).cited).toBe(1);
       await recordGrantSource(ids.grantId, ids.source, ids.url, null);
       // The feed is polled again and holds what it held.
       stage.pages.set(`${ids.lookout.site}/feed`, rss(ids.lookout.site, ["a", "b"]));
@@ -625,11 +628,13 @@ describe("a row read from a source or written about one", () => {
       expect(await shareIfPublic(ids.analyzed, analysis("a later reading"), { fetchText: async () => ANALYZED_PAGE }))
         .toMatchObject({ shared: true });
     });
-    expect(await read()).toEqual(Object.fromEntries(kept.map((t) => [t, [PUBLIC_LABEL]])));
+    expect(await read()).toEqual(
+      Object.fromEntries(kept.map((t) => [t, t === "claim_instance_readings" || t === "reading_citations" ? [PUBLIC_LABEL, INTERNAL].sort() : [PUBLIC_LABEL]]))
+    );
     // Nothing the second run said is in a row the first label's readers read.
     const [reading] = await rawQuery<{ support: string; note: string | null }>(
-      `SELECT support, note FROM claim_instance_readings WHERE instance_id = $1`,
-      [ids.instance]
+      `SELECT support, note FROM claim_instance_readings WHERE instance_id = $1 AND sensitivity_label = $2`,
+      [ids.instance, PUBLIC_LABEL]
     );
     expect(reading!.support).toBe("supports");
     expect(reading!.note ?? "").not.toContain("Read again.");
@@ -649,6 +654,8 @@ describe("a row read from a source or written about one", () => {
     );
     expect(log).toEqual([
       { support: "supports", sensitivity_label: PUBLIC_LABEL },
+      // The other label's own reading, recorded beside the first.
+      { support: "overstates", sensitivity_label: INTERNAL },
       { support: "overstates", sensitivity_label: PUBLIC_LABEL },
     ]);
   });

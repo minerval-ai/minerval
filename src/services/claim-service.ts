@@ -1,5 +1,5 @@
 import { markSeveralInForce } from "./judgment-version-service.js";
-import { and, desc, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import {
   claims,
@@ -19,6 +19,8 @@ import { LIVE_BOUNTY_STATUSES, checkedKindSql } from "./formalization-service.js
 import { listOrderedClaimInstances } from "./claim-instance-service.js";
 import { kindFields } from "./search-service.js";
 import type { NodeKind } from "../schemas/kinds.js";
+import { importanceSql, nodeValueOverlays } from "./overlay-service.js";
+import { layered } from "./layer-service.js";
 
 /**
  * Create a new claim, generate its embedding, and enqueue it for processing.
@@ -126,14 +128,19 @@ export async function listClaims(opts: {
   if (opts.assessed === "assessed") filters.push(hasVerdict);
   else if (opts.assessed === "unassessed") filters.push(sql`NOT ${hasVerdict}`);
   if (opts.minImportance && opts.minImportance > 0) {
-    filters.push(gte(claims.importance, opts.minImportance));
+    filters.push(sql`${sql.raw(importanceSql("claims"))} >= ${opts.minImportance}`);
   }
   if (opts.withPrizes) filters.push(isNotNull(bounties.id));
   if (opts.claimType) filters.push(eq(claims.claimType, opts.claimType));
   if (opts.kind) filters.push(eq(claims.kind, opts.kind));
   if (opts.tagId) {
     filters.push(
-      sql`EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
+      // The same slug held at two layers is two tag rows (layer-service.ts): a node tagged under either carries the tag.
+      layered()
+        ? sql`EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim' AND tg.subject_id = ${claims.id}
+                       AND tg.tag_id IN (SELECT same_slug.id FROM tags named_tag JOIN tags same_slug ON same_slug.slug = named_tag.slug
+                                          WHERE named_tag.id = ${opts.tagId}::uuid))`
+        : sql`EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
                    AND tg.subject_id = ${claims.id} AND tg.tag_id = ${opts.tagId}::uuid)`
     );
   }
@@ -155,7 +162,7 @@ export async function listClaims(opts: {
       text: claims.text,
       claim_type: claims.claimType,
       state: claims.state,
-      importance: claims.importance,
+      importance: sql<number>`${sql.raw(importanceSql("claims"))}`.as("importance"),
       updated_at: claims.updatedAt,
       standing: questionAssessmentsInForce.standing,
       estimate: quantityEstimatesInForce.estimate,
@@ -208,8 +215,39 @@ export async function getClaimById(claimId: string) {
     .from(claims)
     .where(eq(claims.id, claimId))
     .limit(1);
-  return claim ?? null;
+  if (!claim) return null;
+  // Where a label the reader reads holds its own importance or
+  // contestation for the node (overlay-service.ts), the reader goes by
+  // that: the node is given with the values in effect for them, and
+  // `valuesByLabel` lists each label's beside the node's own. Nothing is
+  // asked on a graph with one label.
+  const held = await nodeValueOverlays(claim.id, { importance: claim.importance, contestation: claim.contestation }).catch(() => null);
+  if (!held) return claim;
+  return {
+    ...claim,
+    importance: held.importance,
+    contestation: held.contestation,
+    valuesByLabel: {
+      ...(held.held.importance
+        ? {
+            importance_by_label: [
+              ...held.held.importance.map((o) => ({ label: o.label, value: o.value, in_effect: o.in_effect })),
+              { label: claim.sensitivityLabel, value: held.below.importance, in_effect: false },
+            ],
+          }
+        : {}),
+      ...(held.held.contestation
+        ? {
+            contestation_by_label: [
+              ...held.held.contestation.map((o) => ({ label: o.label, value: o.value, in_effect: o.in_effect })),
+              { label: claim.sensitivityLabel, value: held.below.contestation, in_effect: false },
+            ],
+          }
+        : {}),
+    },
+  };
 }
+
 
 /**
  * Source instances of a claim: where in the corpus it was asserted. The MCP

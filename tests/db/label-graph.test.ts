@@ -599,10 +599,9 @@ describe("a row of the graph's content", () => {
       const link = await linkClaims({ claimId: parent, otherClaimId: child, kind: "related", reasoning: "A restricted reasoning.", createdBy: "curator" });
       expect({ edge: edge.id, link: link.id }).toEqual({ edge: first.edge, link: first.link });
       await setSubjectTags({ kind: "claim", subjectId: parent, source: "steward", assignments: [{ name }] });
-      // The three that would change the row (a cut's direction and number,
-      // a quantity's definition, an answer's reasoning) are refused, and say why.
+      // The two that would change the row (a quantity's definition, an
+      // answer's reasoning) are refused, and say why.
       for (const write of [
-        () => recordCut({ claimId: parent, quantityId: quantity, direction: "below", value: 3, createdBy: "claim_steward" }),
         () => defineQuantity({ claimId: quantity, definition: { ...DEFINITION, measures: "A restricted definition." }, createdBy: "claim_steward" }),
         () => addAnswer({ questionId: question, answerId: child, basis: "quality", reasoning: "A restricted reasoning.", createdBy: "question_steward" }),
       ]) {
@@ -615,6 +614,12 @@ describe("a row of the graph's content", () => {
       }
     });
     expect(await read(first)).toEqual(asWritten);
+    // A cut is the label's own judgment of where the claim cuts the
+    // quantity: one recorded at another label is a row of its own beside
+    // the first, which stays as written (services/overlay-service.ts).
+    await inRunAt(INTERNAL, () => recordCut({ claimId: parent, quantityId: quantity, direction: "below", value: 4, createdBy: "claim_steward" }));
+    expect((await labelsWhere("quantity_cuts", "claim_id = $1", [parent])).sort()).toEqual([PUBLIC_LABEL, INTERNAL].sort());
+    expect((await rawQuery<{ value: number }>(`SELECT value FROM quantity_cuts WHERE claim_id = $1 AND sensitivity_label = $2`, [parent, PUBLIC_LABEL]))[0]!.value).toBe(3);
     const words = await rawQuery<{ text: string }>(
       `SELECT measures AS text FROM quantity_definitions WHERE claim_id = $1
        UNION ALL SELECT reasoning FROM claim_relationships WHERE id = ANY($2::uuid[])

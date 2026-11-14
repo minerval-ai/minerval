@@ -50,6 +50,7 @@ import {
   type PolicySection,
 } from "../../services/operating-policy-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
+import { contestationSql, importanceSql } from "../../services/overlay-service.js";
 
 type Tool = Anthropic.Tool;
 type Role = "officer" | "grantmaker";
@@ -350,7 +351,7 @@ async function petitionsFor(grantId: string, role: Role): Promise<PetitionRow[]>
 async function itemsFor(grantId: string, role: Role): Promise<InboxItem[]> {
   return rawQuery<InboxItem>(
     `SELECT i.id, i.kind, i.target_node_id, i.target_ref, i.source, i.summary, i.detail,
-            i.created_at, i.escalation_note, c.text AS node_text, c.importance, c.contestation
+            i.created_at, i.escalation_note, c.text AS node_text, ${importanceSql("c")} AS importance, ${contestationSql("c")} AS contestation
        FROM mandate_inbox i LEFT JOIN claims c ON c.id = i.target_node_id
       WHERE i.grant_id = $1 AND i.handled_at IS NULL AND i.held_until IS NULL
         AND (i.escalated_at IS ${role === "officer" ? "NULL" : "NOT NULL"})
@@ -364,7 +365,7 @@ async function itemsFor(grantId: string, role: Role): Promise<InboxItem[]> {
 async function describePetition(p: PetitionRow, label: string): Promise<string> {
   const [node] = p.requester_node_id
     ? await rawQuery<{ text: string; importance: number | null; contestation: number | null }>(
-        `SELECT text, importance, contestation FROM claims WHERE id = $1`,
+        `SELECT c.text, ${importanceSql("c")} AS importance, ${contestationSql("c")} AS contestation FROM claims c WHERE c.id = $1`,
         [p.requester_node_id]
       )
     : [];
@@ -539,7 +540,7 @@ async function buildBrief(
     [grant.id, items.length]
   );
   const openWork = await rawQuery<{ id: string; kind: string; claim_id: string; text: string; importance: number | null; est: number }>(
-    `SELECT DISTINCT ON (a.claim_id) a.id, a.kind, a.claim_id, left(c.text, 80) AS text, c.importance,
+    `SELECT DISTINCT ON (a.claim_id) a.id, a.kind, a.claim_id, left(c.text, 80) AS text, ${importanceSql("c")} AS importance,
             a.cost_est_micro_usd AS est
        FROM actions a JOIN claims c ON c.id = a.claim_id
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
@@ -549,7 +550,7 @@ async function buildBrief(
                                                           WHERE al.grant_id = $1 AND al.claim_id IS NOT NULL))
         AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money x WHERE x.exclusion_group = a.exclusion_group
                          AND x.released_at IS NULL AND x.commissioned_by IS NOT NULL)
-      ORDER BY a.claim_id, c.importance DESC NULLS LAST
+      ORDER BY a.claim_id, ${importanceSql("c")} DESC NULLS LAST
       LIMIT 30`,
     [grant.id]
   ).then((rows) => rows.sort((x, y) => Number(y.importance ?? 0) - Number(x.importance ?? 0)).slice(0, 8));

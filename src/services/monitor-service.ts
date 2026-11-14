@@ -24,6 +24,7 @@
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { importanceSql } from "./overlay-service.js";
 import { markSeveralInForce } from "./judgment-version-service.js";
 import {
   STEWARD_ERROR_REASON_LABELS,
@@ -377,6 +378,18 @@ export interface PerformedSettlingReport {
 }
 
 /**
+ * A detector's statement as the sweep at a label reads it: where a label it
+ * reads holds its own importance for a node (overlay-service.ts), the
+ * candidates are read and ordered by that. On a graph with one label it is
+ * the statement in docs/monitors.md, word for word.
+ */
+function atThisLabel(statement: string): string {
+  // The node's importance is read once, where the statement reads it from
+  // `claims`; the rest of the statement reads that column by name.
+  return statement.replace("c.importance, a.status", `${importanceSql("c")} AS importance, a.status`);
+}
+
+/**
  * Performed settling (#289): a claim whose assessment reads as settled
  * (verified/contradicted, confidence ≥ threshold) while its own record
  * shows live disagreement — instances on both stances from ≥ N sources, an
@@ -390,7 +403,7 @@ export async function performedSettling(t: MonitorThresholds = defaultThresholds
     id: string; text: string; importance: number; status: string; confidence: number;
     claim_credence: number | null; assessed_at: Date; affirms: number; denies: number; sources: number;
     last_accepted_challenge_at: Date | null; inconclusive_requires_children: number;
-  }>(MONITOR_SQL.performed_settling, [
+  }>(atThisLabel(MONITOR_SQL.performed_settling), [
     [...t.settledStatuses], t.settledConfidence, t.recentChallengeDays, t.minDisagreeingSources, t.limit,
   ]);
   const report: PerformedSettlingReport = {
@@ -469,7 +482,7 @@ export async function emptyChairs(t: MonitorThresholds = defaultThresholds()): P
     id: string; text: string; importance: number; status: string; confidence: number;
     claim_credence: number | null; assessed_at: Date; instances: number; instance_stance: string | null;
     arguments: number; argument_stance: string | null;
-  }>(MONITOR_SQL.empty_chairs, [t.emptyChairMinInstances, t.limit]);
+  }>(atThisLabel(MONITOR_SQL.empty_chairs), [t.emptyChairMinInstances, t.limit]);
   const report: EmptyChairsReport = {
     signal: "empty_chairs",
     description:

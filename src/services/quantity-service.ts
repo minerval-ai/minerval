@@ -23,7 +23,8 @@ import {
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { markSeveralInForce, recordMadeBeside } from "./judgment-version-service.js";
-import { oneCutForClaimSql, oneDefinitionForQuantitySql, refuseWhereHeldBelow } from "./layer-service.js";
+import { overlaid } from "./overlay-service.js";
+import { byLayer, oneCutForClaimSql, oneDefinitionForQuantitySql, refuseWhereHeldBelow } from "./layer-service.js";
 import { mirroredNode, mirroredRowMessage, publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, requireKind } from "./node-kind.js";
 
@@ -219,17 +220,11 @@ export async function recordCut(input: {
     await requireKind(tx, input.claimId, "claim");
     await requireKind(tx, input.quantityId, "quantity");
     // A cut a layer below already holds for the claim (the public graph,
-    // or a label this work reads) is the claim's cut: it is not this
-    // work's to revise, and one of its own beside it would say twice where
-    // the claim cuts (layer-service.ts). Nothing is asked on a graph with
-    // one layer.
-    await refuseWhereHeldBelow(
-      tx.query.bind(tx),
-      "quantity_cuts",
-      { claim_id: input.claimId },
-      "this claim's cut of the quantity",
-      (message) => new KindError(message)
-    );
+    // or a label this work reads) stays that layer's, untouched. Where
+    // this work judges that the claim cuts elsewhere, the cut it records
+    // is its own label's row under the same key: its label's divergence,
+    // which its readers and its sweeps go by and which a read shows beside
+    // the one below (layer-service.ts, byLayer).
     const written = await tx.query<{ claim_id: string }>(
       `INSERT INTO quantity_cuts (claim_id, quantity_id, direction, value, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -293,6 +288,8 @@ export interface QuantityCutView {
   value: number;
   status: string | null;
   credence: number | null;
+  /** On a graph with more than one layer: the label the cut is recorded at. */
+  label?: string;
 }
 
 export interface QuantityDetailView {
@@ -359,7 +356,7 @@ export async function getQuantityDetail(claimId: string): Promise<QuantityDetail
       [claimId]
     ),
     rawQuery<QuantityCutView>(
-      `SELECT c.id, c.text, qc.direction, qc.value, a.status, a.claim_credence AS credence
+      `SELECT c.id, c.text, qc.direction, qc.value, a.status, a.claim_credence AS credence${overlaid() ? ", qc.sensitivity_label AS label" : ""}
          FROM quantity_cuts qc
          JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
          LEFT JOIN assessments_in_force a ON a.claim_id = c.id
@@ -399,20 +396,36 @@ export interface ThresholdOfView {
   estimate: QuantityEstimate | null;
   direction: "above" | "below";
   value: number;
+  /** On a graph with more than one layer: the label this cut is recorded at. */
+  label?: string;
+  /** Where a label below the one above also holds a cut for the claim: each, nearest first. The one above is its divergence from these. */
+  below?: { label: string; quantity_id: string; direction: "above" | "below"; value: number }[];
 }
 
 /** For a claim that cuts a quantity: the quantity, and where. */
 export async function getThresholdOf(claimId: string): Promise<ThresholdOfView | null> {
-  const [row] = await rawQuery<{ quantity_id: string; quantity_text: string; direction: "above" | "below"; value: number }>(
-    `SELECT qc.quantity_id, q.text AS quantity_text, qc.direction, qc.value
-       FROM quantity_cuts qc JOIN claims q ON q.id = qc.quantity_id
-      WHERE qc.claim_id = $1${oneCutForClaimSql("qc")}`,
-    [claimId]
+  // Every layer's cut for the claim, nearest first: the first is the one
+  // the reader goes by, and the rest are what the layers below hold.
+  const layers = await byLayer<{ quantity_id: string; quantity_text: string; direction: "above" | "below"; value: number }>(
+    rawQuery,
+    "quantity_cuts",
+    { claim_id: claimId },
+    `held.quantity_id, (SELECT q.text FROM claims q WHERE q.id = held.quantity_id) AS quantity_text, held.direction, held.value`
   );
-  if (!row) return null;
+  const [first, ...below] = layers;
+  if (!first) return null;
+  const { label, ...row } = first;
   const [definition, current] = await Promise.all([
     getQuantityDefinition(row.quantity_id),
     getCurrentEstimate(row.quantity_id),
   ]);
-  return { ...row, definition, estimate: current?.estimate ?? null };
+  return {
+    ...row,
+    definition,
+    estimate: current?.estimate ?? null,
+    ...(overlaid() ? { label } : {}),
+    ...(below.length > 0
+      ? { below: below.map((b) => ({ label: b.label, quantity_id: b.quantity_id, direction: b.direction, value: b.value })) }
+      : {}),
+  };
 }

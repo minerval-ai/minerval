@@ -62,6 +62,7 @@ import { RESOLVED_FROM_SCHEMA } from "../services/claim-alias-service.js";
 import { requirePermission } from "../server/require-permission.js";
 import { MIRRORED_SCHEMA, mirroredFacts, refusePublicWorkOnMirroredNode } from "../services/mirrored-node-service.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
+import { valuesByLabelOf, withLayer, withSetAside } from "../services/overlay-service.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -872,7 +873,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const mirrored = await mirroredFacts(claim.id);
 
         const response: Record<string, unknown> = {
-          claim: labelled ? { ...formatClaim(claim), label: labelled.label } : formatClaim(claim),
+          claim: labelled ? { ...formatClaim(claim), ...valuesByLabelOf(claim), label: labelled.label } : formatClaim(claim),
           ...(labelled ? { versions: labelled.versions } : {}),
           // Where a label the reader reads examined the node and left the
           // judgment it reads standing, and where one has not examined it.
@@ -904,6 +905,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             description: t.description,
             source: t.source,
             confidence: t.confidence,
+            ...(t.label ? { label: t.label } : {}),
           })),
         };
 
@@ -953,7 +955,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
 
         // Lateral links, at every depth: cheap, and the see-also belongs on
         // the page whatever else was asked for.
-        response.related = (await listRelatedClaims(claim_id)).map((r) => ({
+        response.related = (await withLayer("claim_links", await listRelatedClaims(claim_id), (r) => r.link_id)).map((r) => ({
+          ...(r.label ? { label: r.label } : {}),
           link_id: r.link_id,
           kind: r.kind,
           reasoning: r.reasoning,
@@ -993,7 +996,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             );
             return new Map();
           });
-          response.arguments = args.map((a) => ({
+          const listedArguments = args.map((a) => ({
             id: a.id,
             name: a.name,
             description: a.description,
@@ -1007,6 +1010,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             shows: a.shows ?? null,
             lean_check: checkByArgument.get(a.id) ?? null,
           }));
+          // Which layer each argument is at, and which a label the reader
+          // reads has set aside (services/overlay-service.ts). Nothing is
+          // added on a graph with one label.
+          response.arguments = await withSetAside("arguments", await withLayer("arguments", listedArguments, (a) => a.id), (a) => a.id);
           // Retired arguments keep their pages (§7: retiring preserves the
           // name, page and record); the claim page lists them apart.
           const retired = await getRetiredArgumentsForClaim(claim_id);
@@ -1033,10 +1040,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             );
             return null;
           });
-          response.instances = instances.map((inst) => ({
-            ...inst,
-            reading: sourceMap?.readings[inst.id] ?? null,
-          }));
+          response.instances = await withLayer(
+            "claim_instances",
+            instances.map((inst) => ({
+              ...inst,
+              reading: sourceMap?.readings[inst.id] ?? null,
+            })),
+            (inst) => inst.id
+          );
           response.source_map = sourceMap?.map ?? null;
           response.provenance_edges = sourceMap?.edges ?? [];
           response.source_relationships = sourceMap?.source_relationships ?? [];

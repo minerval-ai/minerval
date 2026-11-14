@@ -74,6 +74,12 @@ import {
 } from "../../services/consistency-service.js";
 
 /** A flag as the agent proposed it (recorded in a dry run instead of written). */
+/** What compare_assessments says where a node carries a judgment at more than one label the sweep reads. */
+export const ALSO_JUDGED_NOTE =
+  "`also_judged_at` lists a node's current judgments at the other labels this sweep reads; the fields beside it " +
+  "are the judgment in force at this sweep's label. A judgment made on more owes the one made on less " +
+  "coherence, and where the two differ its reasoning says why (§29).";
+
 export interface ProposedFlag {
   kind: string;
   primary_claim_id: string;
@@ -418,7 +424,9 @@ async function runConsistencyCheckerImpl(input: {
         });
       }
       if (name === "compare_assessments") {
-        return JSON.stringify(await compareAssessments(toolInput.claim_ids));
+        const compared = await compareAssessments(toolInput.claim_ids);
+        // Said only where a node here carries a judgment at more than one label the sweep reads.
+        return JSON.stringify(compared.claims.some((c) => c.also_judged_at) ? { ...compared, note: ALSO_JUDGED_NOTE } : compared);
       }
       if (name === "list_figure_and_answer_checks") {
         return JSON.stringify(await figureAndAnswerChecks(input.scope));

@@ -3,7 +3,7 @@
 import { SeveralAssessments } from "./SeveralAssessments";
 import { useState } from "react";
 import Link from "next/link";
-import type { LeanCheckSummary, TreeNode, Stance } from "@/lib/types";
+import type { LeanCheckSummary, SetAside, TreeNode, Stance } from "@/lib/types";
 import {
   RELATION, STANCE_LABEL, STANCE_GLOSS, argumentVerdictMeta, showsMark,
   DECISIVE, premiseSummary,
@@ -131,11 +131,40 @@ function SeedSwatch({ node }: { node: TreeNode }) {
 // chip and no nested tree — the reading-first center leaves deeper structure to
 // each subclaim's own page and to the map (#204). Its edge reasoning stays one
 // click away, since a basis has no prose to explain why the subclaim belongs.
-function BasisNode({ node }: { node: TreeNode }) {
+/**
+ * Which label a row was recorded at, inside a deployment with more than one
+ * label. Shown only on a row at another label than the node's own, so a
+ * reader sees what a label added to a node without every row carrying a
+ * mark. Nothing on the public graph, where the API serves no label.
+ */
+export function LayerMark({ label, nodeLabel }: { label?: string; nodeLabel?: string | null }) {
+  if (!label || !nodeLabel || label === nodeLabel) return null;
+  return (
+    <span className="layer-mark" title={`Recorded at ${label}. Readers who do not read ${label} do not see it.`}>
+      {label}
+    </span>
+  );
+}
+
+/** That a label has set an edge or an argument aside for its own readers, and why. */
+export function SetAsideNote({ setAside, what }: { setAside?: SetAside; what: "edge" | "argument" }) {
+  if (!setAside) return null;
+  return (
+    <p className="set-aside-note">
+      <span className="sc">Set aside at {setAside.at}</span>
+      {setAside.reason ? ` ${setAside.reason}` : ""}{" "}
+      <span className="set-aside-what">
+        The {what} stays as the label below recorded it, and the assessment at {setAside.at} does not rest on it.
+      </span>
+    </p>
+  );
+}
+
+function BasisNode({ node, nodeLabel }: { node: TreeNode; nodeLabel?: string | null }) {
   const [showReason, setShowReason] = useState(false);
   const rel = node.relation_type ? RELATION[node.relation_type] : null;
   return (
-    <li className="basis-item">
+    <li className={`basis-item${node.set_aside ? " set-aside" : ""}`}>
       <div className="basis-row">
         {node.node_kind === "quantity" && node.estimate && node.unit ? (
           <span className="qty-chip" title="This premise is a quantity; its estimate stands where a status would.">
@@ -162,6 +191,7 @@ function BasisNode({ node }: { node: TreeNode }) {
           {node.text}
         </span>{" "}
         <Link className="plain" href={`/claims/${node.id}`} title="open this claim" style={{ color: "var(--faint)" }}>↗&#xFE0E;</Link>
+        <LayerMark label={node.label} nodeLabel={nodeLabel} />
         {node.judgments_in_force ? <> <SeveralAssessments id={node.id} n={node.judgments_in_force} /></> : null}
         {node.subtree_collapsed && (
           <span
@@ -177,6 +207,7 @@ function BasisNode({ node }: { node: TreeNode }) {
           </span>
         )}
       </div>
+      <SetAsideNote setAside={node.set_aside} what="edge" />
       {showReason && node.reasoning && (
         <div className="node-reasoning">
           <span className="sc">Why this edge</span>
@@ -222,8 +253,10 @@ function CheckRecord({ check }: { check: LeanCheckSummary }) {
 // form, instead shows its subclaims as a quiet list, since it has no prose.
 // data-arg-anchor is the scroll target for the left rail's jump-list (#204).
 export function ArgumentBlock({
-  group, texts, check, published,
+  group, texts, check, published, nodeLabel,
 }: {
+  /** The label of the node the argument is on, inside a deployment with more than one label. */
+  nodeLabel?: string | null;
   group: ArgumentGroup;
   texts?: Map<string, string>;
   check: LeanCheckSummary | null;
@@ -238,7 +271,7 @@ export function ArgumentBlock({
   const written = group.content && (published || hasClaimLinks(group.content)) ? group.content : null;
   const categories = published?.categories;
   return (
-    <section className="argblock" data-arg-anchor={argKey(group)}>
+    <section className={`argblock${group.setAside ? " set-aside" : ""}`} data-arg-anchor={argKey(group)}>
       {isBasis ? (
         <div className="arghead basis-head">
           <span className="argname">{BASIS.label}</span>
@@ -255,6 +288,7 @@ export function ArgumentBlock({
           )}
           {group.stance && <StanceTag stance={group.stance} />}
           <DecisiveTag decisive={group.decisive} />
+          <LayerMark label={group.label} nodeLabel={nodeLabel} />
           {group.shows && (
             <span className="arg-shows" title="What this argument shows about the quantity's value (constitution §7).">
               <span className="sc">shows</span>
@@ -264,6 +298,7 @@ export function ArgumentBlock({
         </div>
       )}
       {isBasis && <p className="basis-note">{BASIS.gloss}</p>}
+      <SetAsideNote setAside={group.setAside} what="argument" />
 
       {written ? (
         <>
@@ -281,7 +316,7 @@ export function ArgumentBlock({
       ) : (
         <ul className="basis-list">
           {group.nodes.map((s) => (
-            <BasisNode node={s.node} key={s.node.id} />
+            <BasisNode node={s.node} nodeLabel={nodeLabel} key={s.node.id} />
           ))}
         </ul>
       )}
@@ -290,8 +325,10 @@ export function ArgumentBlock({
 }
 
 export function DecompositionTree({
-  tree, argumentChecks,
+  tree, argumentChecks, nodeLabel,
 }: {
+  /** The node's own label, inside a deployment with more than one: rows at another label say so. */
+  nodeLabel?: string | null;
   tree: TreeNode;
   // Checker records by argument id, from the deep payload's arguments, for
   // when the tree edges do not carry them themselves.
@@ -314,7 +351,7 @@ export function DecompositionTree({
   return (
     <div className="tree">
       {groups.map((g) => (
-        <ArgumentBlock
+        <ArgumentBlock nodeLabel={nodeLabel}
           group={g}
           texts={texts}
           check={g.leanCheck ?? (g.id ? argumentChecks?.get(g.id) ?? null : null)}

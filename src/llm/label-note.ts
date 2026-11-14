@@ -146,8 +146,8 @@ export function labelNote(
   const othersRows =
     others.length === 0
       ? ""
-      : ` What carries another label is not this run's to change, and a tool that would change or remove ` +
-        `it refuses. The reason is that this run has read material at ${own}, and what a run at ${own} ` +
+      : ` What carries another label is not this run's to change, and no tool changes or removes it. ` +
+        `The reason is that this run has read material at ${own}, and what a run at ${own} ` +
         `writes reaches readers who are not cleared for ${own} only as a page shown to them, with what was ` +
         `removed marked. What ${own} has to say about such a thing is recorded as something new, at ${own}.`;
   // A report is filed for Minerval's maintainers on the public graph, and
@@ -249,8 +249,10 @@ function judgmentsForAWriter(label: string, others: readonly string[], mirror: M
     opening,
     `Yours does not replace the judgments you read at ${listed(others, "or")}: readers at those labels go ` +
       `on reading them, and each is reassessed on its own inputs. A node that carries another label keeps ` +
-      `its wording, its importance and its structure, which belong to the Steward at that label; what you ` +
-      `add to it (an argument, a subclaim, a source) is recorded at ${own}.` +
+      `its wording, which is its own Steward's. What you add to it (an argument, a subclaim, a source) is ` +
+      `recorded at ${own}, and so is what you hold differently for readers at ${own}: on a row at a label ` +
+      `below, set_claim_importance records your importance for the node, and remove_subclaim_edge, ` +
+      `set_edge_relation and retire_argument set the edge or argument aside, at ${own} only.` +
       (mirrored ? ` ${MIRROR_PUBLIC_JUDGMENT}` : ""),
     `On a node that carries another label you record your own judgment at ${own}, or you may leave the ` +
       `judgment you read standing (leave_judgment_standing). Leaving it standing is a complete outcome: ` +
@@ -259,7 +261,7 @@ function judgmentsForAWriter(label: string, others: readonly string[], mirror: M
     `Where you read a judgment at another label, read its reasoning as you would a colleague's. Yours is ` +
       `your own assessment of everything you read, and owes the other coherence, not deference (§21). ` +
       `The Steward at the other label does not read what is written at ${own}, ` +
-      `so a point against its judgment is recorded as a request (file_request), which the people who ` +
+      `so a point against its judgment or its structure is recorded as a request (file_request), which the people who ` +
       `direct this graph can act on.` +
       (mirrored ? ` ${MIRROR_REQUEST_AFTER_REQUEST}` : ""),
     `Your judgment records the judgment it was made beside at each label ${own} reads. When one of those ` +

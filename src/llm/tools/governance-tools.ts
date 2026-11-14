@@ -30,6 +30,7 @@ import { executeGraphReadTool, getClaimToolDefinition } from "./graph-read-tools
 import { MANDATE_LABEL } from "../../services/contribution-service.js";
 import { STATED_VIEW_CONTRIBUTION_TYPE } from "../../schemas/common.js";
 import { statedViewForContribution } from "../../services/stated-view-service.js";
+import { importanceSql } from "../../services/overlay-service.js";
 
 const HISTORY_DEFAULT = 10;
 const HISTORY_MAX = 30;
@@ -667,7 +668,7 @@ async function getClaimDependents(claimId: string) {
        JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
        LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE qc.quantity_id = $1${oneCutForClaimSql("qc")}
-      ORDER BY c.importance DESC, c.id`,
+      ORDER BY ${importanceSql("c")} DESC, c.id`,
     [claimId]
   );
 

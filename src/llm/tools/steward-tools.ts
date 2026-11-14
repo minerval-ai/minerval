@@ -5,6 +5,7 @@
  * add decomposition edges, log decisions, and notify dependent stewards.
  */
 import { refusalForCaller } from "../../db/clearance.js";
+import { placementOf, recordOverlay, setAsideFor } from "../../services/overlay-service.js";
 import {
   mirroredNode,
   mirroredRefusalForAgent,
@@ -216,6 +217,29 @@ async function wrongKindForAssessment(claimId: string): Promise<string | null> {
 }
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
+/**
+ * What a Steward is told when it sets the importance of a node that is at
+ * a layer below its run's label: its label's own value, held over the node.
+ */
+export function importanceAtALabelMessage(
+  nodeId: string,
+  own: string,
+  below: string,
+  importance: number,
+  contestation: number | undefined,
+  was: { importance: number; contestation: number | null } | undefined
+): string {
+  const lower = below === "the public graph" ? below : `\`${below}\``;
+  return (
+    `Importance of ${nodeId} is ${importance} at \`${own}\`.` +
+    (contestation !== undefined ? ` Contestation is ${contestation} at \`${own}\`.` : "") +
+    ` The node is at ${lower}, which keeps its own value (importance ${was?.importance ?? "?"}` +
+    `${was && was.contestation != null ? `, contestation ${was.contestation}` : ""}) for its readers and its work. ` +
+    `What reads importance at \`${own}\` goes by yours: the order work waits in, what a mandate is shown, ` +
+    `and the sweeps. restore_below takes this back.`
+  );
+}
+
 function clampUnit(value: unknown): number | undefined {
   if (value === undefined || value === null) return undefined;
   const n = Number(value);
@@ -2246,15 +2270,6 @@ export async function executeStewardTool(
 
       case "set_claim_importance": {
         const claimId = input.claim_id as string;
-        // A node that carries another label is that label's Steward's to
-        // change (judgment-version-service.ts): refused, with the reason.
-        if (await mirroredNode(claimId)) {
-          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's importance and contestation") });
-        }
-        const notOurs = await anotherLabelsNode(claimId);
-        if (notOurs) {
-          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "importance and contestation") });
-        }
         const importance = clampUnit(input.importance);
         if (importance === undefined) {
           return JSON.stringify({
@@ -2266,6 +2281,50 @@ export async function executeStewardTool(
         // it (#172 phase 1); absent means "leave the stored judgment as is",
         // never "reset to unjudged".
         const contestation = clampUnit(input.contestation);
+
+        // A node at a layer below this run's label keeps the importance its
+        // own label gave it, for that label's readers and work. What this
+        // label holds it to be is a row of its own over the node
+        // (services/overlay-service.ts), and everything at this label that
+        // reads importance goes by it.
+        const nodeAt = await placementOf("claims", claimId);
+        if (nodeAt?.below) {
+          const [below] = await rawQuery<{ importance: number; contestation: number | null }>(
+            `SELECT importance, contestation FROM claims WHERE id = $1`,
+            [claimId]
+          );
+          const recorded = await recordOverlay({
+            table: "claims",
+            id: claimId,
+            kind: "importance",
+            value: importance,
+            reason: typeof input.reasoning === "string" ? input.reasoning : null,
+            createdBy: "claim_steward",
+          });
+          if (contestation !== undefined) {
+            await recordOverlay({
+              table: "claims",
+              id: claimId,
+              kind: "contestation",
+              value: contestation,
+              reason: typeof input.reasoning === "string" ? input.reasoning : null,
+              createdBy: "claim_steward",
+            });
+          }
+          return JSON.stringify({
+            success: true,
+            message: importanceAtALabelMessage(claimId, recorded.label, recorded.below, importance, contestation, below),
+          });
+        }
+        // A node at a label this run does not work at and does not lie
+        // above (a mirrored node read at `public`) is not its to change.
+        if (await mirroredNode(claimId)) {
+          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's importance and contestation") });
+        }
+        const notOurs = await anotherLabelsNode(claimId);
+        if (notOurs) {
+          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "importance and contestation") });
+        }
 
         const db = getDb();
         await db
@@ -2697,6 +2756,7 @@ export async function executeStewardTool(
         const argumentLabel = argument
           ? `argument "${argument.name ?? argumentId}"`
           : null;
+        const standing = edge.created ? null : await setAsideFor("claim_relationships", edge.id);
         const message =
           (edge.created
             ? `Linked existing claim ${childId} as a subclaim of ${parentId} (${relation}).`
@@ -2707,6 +2767,11 @@ export async function executeStewardTool(
             ? grouped
               ? ` Grouped it under ${argumentLabel}.`
               : ` It was already grouped under ${argumentLabel}.`
+            : "") +
+          // An edge the layer below holds, which a label this run reads set aside.
+          (standing?.set_aside
+            ? ` It is set aside at \`${standing.label}\`${standing.reason ? ` ("${standing.reason}")` : ""}, so the ` +
+              `judgment there does not rest on it; restore_below counts it again at this run's label.`
             : "");
 
         return JSON.stringify({

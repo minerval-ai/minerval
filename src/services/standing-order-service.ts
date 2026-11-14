@@ -50,6 +50,7 @@ import { enqueueSteward } from "./queue-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { describePace, paceRoom, parsePace } from "./pace-service.js";
 import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
+import { importanceSql } from "./overlay-service.js";
 
 /** Who placed it, on the allocation and in the mandate's commission list. */
 export const PLAN_ORDER_COMMISSIONER = "plan";
@@ -347,7 +348,7 @@ export async function deepenChildren(parentId: string, already: readonly string[
       WHERE c.state = 'active' AND ${slotColumnSql("steward_state", "c")} IN ('pending', 'deferred')
         AND c.id IN (SELECT child_claim_id FROM claim_relationships WHERE parent_claim_id = $1)
         AND NOT (c.id = ANY($2::uuid[]))
-      ORDER BY c.importance DESC NULLS LAST, c.created_at ASC`,
+      ORDER BY ${importanceSql("c")} DESC NULLS LAST, c.created_at ASC`,
     [parentId, [...already]]
   );
   return {

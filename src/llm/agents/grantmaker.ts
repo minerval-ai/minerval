@@ -85,6 +85,7 @@ import {
   executeCorrespondentManagementTool,
   getCorrespondentManagementToolDefinitions,
 } from "../tools/correspondent-management-tools.js";
+import { contestationSql, importanceSql } from "../../services/overlay-service.js";
 
 export interface GrantMandate {
   /** Agent-written public title: on the mandate's page and, with the work it pays for, on claim pages. */
@@ -1155,8 +1156,8 @@ export async function executeManagementTool(
         ? toolInput.status
         : null;
     const rows = await rawQuery(
-      `SELECT a.claim_id, c.text, a.status, a.claim_credence, c.importance,
-              c.contestation, a.assessed_at
+      `SELECT a.claim_id, c.text, a.status, a.claim_credence, ${importanceSql("c")} AS importance,
+              ${contestationSql("c")} AS contestation, a.assessed_at
          FROM assessments a
          JOIN grants g ON g.id = $1
          JOIN claims c ON c.id = a.claim_id
@@ -1187,7 +1188,7 @@ export async function executeManagementTool(
     const page = (lim: number, off: number) =>
       rawQuery<Record<string, unknown> & { total: number }>(
         `WITH linked AS (
-         SELECT ci.claim_id, cl.kind, cl.text, cl.importance, cl.contestation,
+         SELECT ci.claim_id, cl.kind, cl.text, ${importanceSql("cl")} AS importance, ${contestationSql("cl")} AS contestation,
                 cl.steward_state, ci.stance,
                 a.status AS assessment_status,
                 -- Each kind keeps its current assessment in its own table.
@@ -1236,7 +1237,7 @@ export async function executeManagementTool(
   if (name === "importance_distribution") {
     const [row] = await rawQuery<Record<string, unknown>>(
       `WITH touched AS (
-         SELECT DISTINCT cl.id, cl.importance, cl.contestation,
+         SELECT DISTINCT cl.id, ${importanceSql("cl")} AS importance, ${contestationSql("cl")} AS contestation,
                 a.status AS assessment_status
            FROM grants g
            LEFT JOIN assessments fa ON fa.funded_by_job_id = g.budget_job_id

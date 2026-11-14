@@ -27,9 +27,14 @@
  *    what hangs from it by id (a grouping, an instance, a tagging) is
  *    where it was. A read that lists the thing lists the lowest layer's
  *    row once, with what the higher layer wrote beside it (lowerRowSql);
- *    a read that takes one row for a key takes the reader's own layer's
- *    where it has one, else the lowest (oneForKeySql and the two reads
- *    written with it).
+ *    a read that takes one row for a key takes the nearest layer's, the
+ *    reader's own first (oneForKeySql and the reads written with it), and
+ *    a read that shows the thing gives the rows of the layers below
+ *    beside it, nearest first (byLayer). So where a higher label holds a
+ *    cut or a reading of its own, the lower layer's row is the thing as
+ *    the layer below has it, and the higher label's is its divergence
+ *    from it, which its readers go by: the rule a judgment in force and
+ *    an overlay follow (overlay-service.ts).
  *  - Two labels that do not read each other may each hold the key. A
  *    reader of both is given both where the thing is listed. A label
  *    defined later that reads both is in the same position: neither row is
@@ -151,21 +156,20 @@ const OWN_LABEL_SQL = "minerval_write_label()";
 
 /**
  * How a read that takes one row for a key ranks the row of `table` aliased
- * `alias`, as SQL: the reader's own layer's row first (what its label
- * wrote), then the lowest layer.
+ * `alias`, as SQL: the nearest layer first. For a run that is its own
+ * label's row, then each label below in turn, the public graph's last; for
+ * a reader, the row at the label that reads the most among those they
+ * read. It is the rule a judgment in force goes by, and an overlay
+ * (overlay-service.ts): what a higher label holds for the key is its
+ * divergence from the row below, and is what its readers go by.
  */
 function rankSql(table: string, alias: string): string {
-  const origin = originSql(table, alias);
-  return (
-    `(CASE WHEN ${origin} = 'local' AND ${alias}.sensitivity_label = ${OWN_LABEL_SQL} THEN -1 ` +
-    `ELSE minerval_layer_depth(${alias}.sensitivity_label, ${origin}) END)`
-  );
+  return `(-minerval_layer_depth(${alias}.sensitivity_label, ${originSql(table, alias)}))`;
 }
 
 /**
  * SQL condition for a read of `table` aliased `alias` that wants one row
- * for each key (`keyColumns`): the row of the reader's own layer where it
- * has one, else the lowest layer's. Two rows at one depth (two labels that
+ * for each key (`keyColumns`): the nearest layer's (rankSql). Two rows at one depth (two labels that
  * do not read each other, read by someone who holds both) are told apart
  * by label, so the read still takes one. Empty on a graph with one layer,
  * where a key has one row and the statement is what it was.
@@ -181,8 +185,8 @@ export function oneForKeySql(table: string, alias: string, keyColumns: readonly 
 
 /**
  * One cut for a claim, for a read of `quantity_cuts` aliased `alias`: the
- * cut recorded at the reader's own label, else the lowest layer's (the
- * public graph's where it holds one).
+ * nearest layer's, which is the reader's own label's where it holds one.
+ * A read that shows the cut gives the lower layers' beside it (byLayer).
  */
 export function oneCutForClaimSql(alias: string): string {
   return oneForKeySql("quantity_cuts", alias, ["claim_id"]);
@@ -198,8 +202,8 @@ export function oneDefinitionForQuantitySql(alias: string): string {
 
 /**
  * One reading for an instance, for a read of `claim_instance_readings`
- * aliased `alias`, by the same rule: the reader's own label's reading of
- * the passage where it has one, else the lowest layer's.
+ * aliased `alias`, by the same rule: the nearest layer's reading of the
+ * passage.
  */
 export function oneReadingForInstanceSql(alias: string): string {
   return oneForKeySql("claim_instance_readings", alias, ["instance_id"]);
@@ -208,9 +212,9 @@ export function oneReadingForInstanceSql(alias: string): string {
 /**
  * The end of a read of `sources` by address that wants one row. The same
  * address recorded at two layers is two rows (db/schema.ts, "The layer").
- * The one taken is the row at the label of the work in progress (what that
- * label wrote: its fetched text, its readings), else the lowest layer's:
- * the public graph's where it holds one, then a label the work reads.
+ * The one taken is the nearest layer's: the row at the label of the work
+ * in progress (what that label wrote: its fetched text, its readings),
+ * else the row of each label below in turn, the public graph's last.
  * Empty on a graph with one layer, where an address has one row and the
  * statement is what it always was. `alias` is the table's alias in the
  * statement, where it has one.
@@ -220,7 +224,7 @@ export function oneSourceForAddressSql(alias?: string): string {
   const c = (name: string) => (alias ? `${named(alias)}.${name}` : name);
   return (
     ` ORDER BY (${c("origin")} = 'local' AND ${c("sensitivity_label")} = ${OWN_LABEL_SQL}) DESC, ` +
-    `minerval_layer_depth(${c("sensitivity_label")}, ${c("origin")}), ${c("retrieved_at")}, ${c("id")} LIMIT 1`
+    `minerval_layer_depth(${c("sensitivity_label")}, ${c("origin")}) DESC, ${c("retrieved_at")}, ${c("id")} LIMIT 1`
   );
 }
 
@@ -282,5 +286,54 @@ export function unlessHeldBelowSql(table: string, match: string): string {
   return (
     ` WHERE NOT EXISTS (SELECT 1 FROM ${t} held WHERE ${match} ` +
     `AND minerval_layer_below(held.sensitivity_label, ${originSql(t, "held")}, ${OWN_LABEL_SQL}, 'local'))`
+  );
+}
+
+/**
+ * SQL condition for a read of `taggings` aliased `tg` that wants the
+ * subjects of one tag (`tagSql`, the tag's id). The same slug recorded at
+ * two layers is two tag rows, and a subject tagged under either carries
+ * the tag: the read takes the taggings of every row of that slug the
+ * reader reads. `tg.tag_id = <tag>` on a graph with one layer.
+ */
+export function taggedWithSql(tg: string, tagSql: string): string {
+  const a = named(tg);
+  if (!layered()) return `${a}.tag_id = ${tagSql}`;
+  return (
+    `${a}.tag_id IN (SELECT same_slug.id FROM tags named_tag JOIN tags same_slug ON same_slug.slug = named_tag.slug ` +
+    `WHERE named_tag.id = ${tagSql})`
+  );
+}
+
+/**
+ * SQL condition for a read that lists tags aliased `t` once each: where a
+ * layer below holds the slug, that row is the tag and this one is left
+ * out. Empty on a graph with one layer.
+ */
+export function oneTagForSlugSql(t: string): string {
+  if (!layered()) return "";
+  return ` AND ${lowerRowSql("tags", t, ["slug"])} IS NULL`;
+}
+
+/**
+ * Every layer's row for one key of `table`, nearest first, for a read that
+ * shows the thing with what the layers below hold beside it. `columns` is
+ * what to read of each (written against the alias `held`); each row also
+ * carries `label`, the label it is at. On a graph with one layer it is the
+ * one row, read as it always was.
+ */
+export async function byLayer<T extends object>(
+  query: Query,
+  table: string,
+  key: Record<string, unknown>,
+  columns: string
+): Promise<(T & { label: string })[]> {
+  const t = named(table);
+  const names = Object.keys(key).map(named);
+  const where = names.map((c, i) => `held.${c} = $${i + 1}`).join(" AND ");
+  return query<T & { label: string }>(
+    `SELECT ${columns}, held.sensitivity_label AS label FROM ${t} held WHERE ${where}` +
+      (layered() ? ` ORDER BY minerval_layer_depth(held.sensitivity_label, ${originSql(t, "held")}) DESC, held.sensitivity_label` : ""),
+    Object.values(key)
   );
 }

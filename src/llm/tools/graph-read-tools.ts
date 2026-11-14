@@ -19,6 +19,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import {
   CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_LAYERS_DESCRIPTION,
   CLAIM_VIEW_INCLUDE_DESCRIPTION,
   CLAIM_VIEW_INCLUDES,
   DEFAULT_DEPENDENTS_PAGE,
@@ -36,6 +37,7 @@ import {
 } from "../../services/argument-view-service.js";
 import { describeIdShape } from "../seen-ids.js";
 import { repairRead, type IdTarget } from "./id-repair.js";
+import { overlaid } from "../../services/overlay-service.js";
 
 export const GRAPH_READ_TOOL_NAMES = [
   "search_claims",
@@ -53,7 +55,7 @@ export const GRAPH_READ_TOOL_NAMES = [
 export function getClaimToolDefinition(): Tool {
   return {
     name: "get_claim",
-    description: CLAIM_VIEW_DESCRIPTION + ID_REPAIR_NOTE,
+    description: CLAIM_VIEW_DESCRIPTION + (overlaid() ? CLAIM_VIEW_LAYERS_DESCRIPTION : "") + ID_REPAIR_NOTE,
     input_schema: {
       type: "object" as const,
       properties: {

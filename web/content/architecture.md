@@ -2785,11 +2785,13 @@ held. One rule then covers every such table and the mirror alike
   (`heldBelow`). Where the write only finds the thing (an edge, a link, a
   grouping, a source, a tag, a tagging, a feed item), it is handed the
   lower row and records nothing. Where it would revise the thing in its own
-  words (an answer's reasoning, a cut, a definition, a reading, a
-  provenance edge), it is refused with the reason
-  (`refuseWhereHeldBelow`): a second row beside the lower one would say the
-  thing twice, and work at one label does not write into another's row.
-  This is what a run was already given against the mirror.
+  words (an answer's reasoning, a definition, a provenance edge), it is
+  refused with the reason (`refuseWhereHeldBelow`): a second row beside the
+  lower one would say the thing twice, and work at one label does not write
+  into another's row. This is what a run was already given against the
+  mirror. A cut and a reading are the exception, because each is the
+  label's own judgment of a thing: work at a label records its own beside
+  the one below (see "A label's overlay on the structure below").
 - Where the higher label recorded the thing first and the lower one records
   it later, both rows stay. Nothing is moved or deleted, so what hangs from
   the higher row by its id (an argument's grouping of an edge, an instance
@@ -2797,12 +2799,17 @@ held. One rule then covers every such table and the mirror alike
   once, by the lowest layer's row, with what the higher layer wrote beside
   it (`also_recorded_here`), and an argument's premises count it once. A
   read that takes one row for a key (a source by its address, a claim's
-  cut, a quantity's definition, a passage's reading, a node's source map,
-  a page's shared analysis) takes the
-  reader's own label's where it has one, which is the row its work wrote
-  and may change, else the lowest layer's. A read of a source names the row
-  a label below holds for the same address (`same_address_source_id`). A
-  tag's slug names the lowest layer's tag.
+  cut, a quantity's definition, a passage's reading, an answer relation, a
+  node's source map, a page's shared analysis) takes the nearest layer's:
+  the reader's own label's where it has one, which is the row its work
+  wrote and may change, else the row of each label below in turn, the
+  public graph's last. A read that shows a cut or a reading gives the lower
+  layers' rows beside it (`below`), so the higher label's is seen as what
+  it is, its divergence from the row below. A read of a source names the
+  row a label below holds for the same address
+  (`same_address_source_id`). A tag's slug names the lowest layer's tag,
+  a listing of tags gives a slug once, and a node tagged under either row
+  carries the tag. A link is listed once, by the lowest layer's row.
 - Two labels that do not read each other may each hold the thing, and a
   reader of both is given both. A label defined later that reads both is in
   the same position: neither row is below the other, both are listed, and
@@ -2826,6 +2833,66 @@ is found when the batch arrives.
 The keys that are still one for the whole deployment are listed, each with
 its reason, in `tests/db/layer-identity-keys.test.ts`, which fails on a
 unique key of a labelled table that neither holds the label nor is listed.
+
+**A label's overlay on the structure below.** A label's own rows are of two
+kinds. What it adds is a row in the table the thing lives in: a node, an
+edge, an argument, an instance. What it says about a row of a layer below,
+where it judges differently for its own readers, is a row at its own label
+keyed by the row below, which is never touched. A judgment at each label
+is the first case. The others are built the same way
+(`src/services/overlay-service.ts`, `tests/db/overlay.test.ts`):
+
+- **Importance and contestation.** A Steward at a label sets the importance
+  of a node below with the tool it uses on a node of its own
+  (`set_claim_importance`). The value is a row of `overlays` at its label.
+  Everything at that label that reads importance goes by it
+  (`importanceSql`, `contestationSql`): the order work waits in, what a
+  mandate and its officers are shown, the sweep's partitions and candidate
+  order, the monitor's candidates for audit, the cadence at which a
+  judgment at the label is checked for staleness, search and its filter, a
+  node's read. The node's own row, and what
+  work at its own label reads, are as they were.
+- **An edge or an argument set aside.** `remove_subclaim_edge` and
+  `retire_argument`, used on a row at a label below, record that the label
+  sets it aside, with the Steward's reason. The row stays. Readers at the
+  label see it marked (`set_aside`: the label, the reason, since when). The
+  judgment at the label does not rest on it: the record of what a judgment
+  was made against leaves it out, and a coherence sweep at the label reads
+  no commitment from it. `set_edge_relation` on an edge below records the
+  label's own edge with the relation it means and sets the one below aside.
+- **A cut or a reading of its own.** Each layer has its own row under the
+  key, so the label's own row is its overlay. A quantity's definition is
+  not one of these: it is the quantity's canonical form (constitution §3),
+  and a label that needs another definition needs another node (§6).
+
+One rule composes all of them, the rule that says which judgment is in
+force: a reader, or work at a label, goes by the live row of the nearest
+layer among those it reads, its own first, and by the row below where none
+of them holds one. So a label that reads another sees that label's overlays
+and may lay its own over them (a desk inside finance counts an edge finance
+set aside, as a row of its own), and two labels that do not read each other
+never see each other's. `restore_below` takes back what the run's label
+holds. Wording, kind and definition stay with the node's own Steward.
+
+Every read that returns structure says which layer each row is at: on a
+deployment with more than one label an argument, a subclaim edge, an
+instance, a link, a tagging, a cut, a reading and an answer carry `label`,
+the label the row is recorded at, which is always one the reader reads.
+The node's page marks a row only where its label is not the node's own.
+
+An overlay follows the row below it. When the layer below removes or
+retypes the edge, retires or removes the argument, or merges or withdraws
+the node, the database ends the overlay in the same transaction, with what
+was done (`minerval_overlay_follows_below`, migration 0162), and the
+Steward at the overlay's label is told in the note of what the layer below
+changed (`src/llm/agents/changes-below-note.ts`). An evaluation at a label
+of an argument the layer below then retires is kept as written, on an
+argument that is now in the node's history.
+
+A Curator at a label merges away only a node of its own label, and a merge
+that would retire a node below is refused whole. A sweep at a label is
+given, for a node judged at more than one label it reads, the judgment in
+force and the others beside it (`also_judged_at`).
 
 **Work at each label.** Work on a node at a label other than the node's own
 (an internal assessment of a public claim) is keyed by that label
@@ -3163,18 +3230,15 @@ where reads are held.
   first used it, and is not readable by a run at a label that does not
   read that one.
 - Where a higher label recorded a thing before a lower one did, a read
-  that lists the thing by the route above gives it once. Reads that reach
-  an edge, a link, an answer relation or a tag row by row were not changed
-  and give both rows: a link and an answer relation are listed twice where
-  links and answer relations are listed, as they are against the mirror,
-  and a tag recorded at two labels is two rows in a listing of tags. The
-  undo of a kind change rewrites every definition of the quantity that it
-  reads, and is refused where one of them is another label's.
-- A cut, a definition or a reading that a higher label recorded first can
-  no longer be revised by it once a label it reads records its own: the
-  higher label goes on reading the one it wrote. Recording its own beside
-  a lower one that is already there is refused the same way. A label
-  setting a lower row aside for its own readers is not built.
+  that lists the thing by the route above gives it once. A few reads that
+  reach an edge row by row were not changed and give both rows (the
+  citation record, the dependents of a node, the map's edges). The undo of
+  a kind change rewrites every definition of the quantity that it reads,
+  and is refused where one of them is another label's.
+- A definition that a higher label recorded first is still the one it
+  reads once a label below records its own, and it can no longer revise
+  it. A label does not hold its own domains for a node below, and the
+  points a contribution earns are reckoned from the node's own importance.
 - The money views show every label's amounts, ledger keys, ids and who
   commissioned, without the text, and let any cleared connection change the
   money columns of any label's row, which is what settlement does. A ledger

@@ -145,6 +145,7 @@ afterAll(async () => {
     await rawQuery(`DELETE FROM action_allocations WHERE claim_id = ANY($1::uuid[])`, [made.claims]);
     await rawQuery(`DELETE FROM assessment_orders WHERE claim_id = ANY($1::uuid[])`, [made.claims]);
     await rawQuery(`DELETE FROM actions WHERE claim_id = ANY($1::uuid[])`, [made.claims]);
+    await rawQuery(`DELETE FROM overlays WHERE claim_id = ANY($1::uuid[])`, [made.claims]);
     await rawQuery(`DELETE FROM claims WHERE id = ANY($1::uuid[])`, [made.claims]);
     await rawQuery(`DELETE FROM sources WHERE id = ANY($1::uuid[])`, [made.sources]);
     await rawQuery(`DELETE FROM contributors WHERE id = ANY($1::uuid[])`, [made.users]);
@@ -307,8 +308,14 @@ describe("a run and the rows of another label", () => {
     expect(reworded.message).toContain(
       "What this would change (the node's wording and type) is for the Steward that works at the node's own label to change"
     );
+    // Importance is one a label may hold for itself: it is recorded at a,
+    // over the node, and the node's own value stays (services/overlay-service.ts).
     const ranked = JSON.parse(await runAt(A, () => executeStewardTool("set_claim_importance", { claim_id: node, importance: 0.9, reasoning: "It matters to us." })));
-    expect(ranked.success).toBe(false);
+    expect(ranked.success).toBe(true);
+    expect(ranked.message).toContain(`Importance of ${node} is 0.9 at \`${A}\`.`);
+    expect(
+      await system(() => rawQuery<{ l: string }>(`SELECT sensitivity_label AS l FROM overlays WHERE target_id = $1 AND kind = 'importance'`, [node]))
+    ).toEqual([{ l: A }]);
     // The database holds the same line for any write: a change or a delete of a row at another label is refused.
     for (const statement of [
       `UPDATE claims SET text = 'Changed from a' WHERE id = $1`,

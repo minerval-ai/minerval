@@ -32,7 +32,7 @@
  * valuation, and it moves no money.
  */
 import { oneLabelOnly } from "./judgment-version-service.js";
-import { oneCutForClaimSql } from "./layer-service.js";
+import { layered, lowerRowSql, oneCutForClaimSql } from "./layer-service.js";
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
 import { slotColumnSql } from "./steward-lease.js";
@@ -43,6 +43,7 @@ import { getGeneralMandate } from "./allocation-policy-service.js";
 import { credenceGap, impliedProbability } from "./quantity-math.js";
 import type { QuantityEstimate } from "../schemas/kinds.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { importanceSql, notSetAsideSql, overlaid } from "./overlay-service.js";
 
 /**
  * What kind of incoherence a flag names. A label for the record and the
@@ -220,7 +221,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
     changed_at_own_label: number;
   }>(
     `WITH live AS (
-       SELECT id, importance FROM claims WHERE state = 'active' AND merged_into IS NULL
+       SELECT id, ${importanceSql("claims")} AS importance FROM claims WHERE state = 'active' AND merged_into IS NULL
      ),
      tagged AS (
        SELECT tg.tag_id, l.id AS claim_id, l.importance
@@ -521,7 +522,7 @@ export async function partitionClaims(
        UNION
        SELECT unnest($2::uuid[])
      )
-     SELECT c.id AS claim_id, c.kind, c.text, c.importance, ${RECORD_STATUS} AS status,
+     SELECT c.id AS claim_id, c.kind, c.text, ${importanceSql("c")} AS importance, ${RECORD_STATUS} AS status,
             a.claim_credence AS credence, a.confidence, qe.estimate,
             ${FAVORED} AS favored_answer_ids,
             ${RECORD_AT} AS assessed_at, COALESCE(a.summary, qe.summary, qa.summary) AS summary,
@@ -541,7 +542,7 @@ export async function partitionClaims(
       WHERE c.state = 'active' AND c.merged_into IS NULL
         AND ${RECORD_ID} IS NOT NULL
         AND (($1::uuid IS NULL AND $2::uuid[] IS NULL) OR c.id IN (SELECT claim_id FROM scoped))
-      ORDER BY changed DESC, c.importance DESC, c.id
+      ORDER BY changed DESC, ${importanceSql("c")} DESC, c.id
       LIMIT $4 OFFSET $5`,
     [scope.tagId ?? null, scope.claimIds ?? null, opts.since ?? null, limit, offset]
   );
@@ -585,6 +586,12 @@ export interface ComparedClaim {
   model: string | null;
   summary: string | null;
   /**
+   * On a graph with more than one label: the node's current judgments at
+   * the other labels the sweep reads, where it has any. The fields above
+   * are the judgment in force for the sweep.
+   */
+  also_judged_at?: JudgedBeside[];
+  /**
    * The head of the reasoning trace (a quantity's work): where the verdict
    * is argued, at most TRACE_EXCERPT_CHARS.
    */
@@ -592,6 +599,43 @@ export interface ComparedClaim {
   /** The whole trace's length, so a cut excerpt says how much was not shown. */
   trace_chars: number;
   trace_truncated: boolean;
+}
+
+/** A current judgment of a node at a label the reader reads, other than the one in force for it. */
+export interface JudgedBeside {
+  label: string;
+  status: string | null;
+  credence: number | null;
+  confidence: number | null;
+  estimate: unknown | null;
+  summary: string | null;
+  assessed_at: string | null;
+}
+
+/**
+ * For each of `ids` that carries a current judgment the reader may read
+ * besides the one in force for it: those judgments, by label. Empty on a
+ * graph with one label, where a node has one.
+ */
+async function judgedBeside(ids: string[]): Promise<Map<string, JudgedBeside[]>> {
+  const out = new Map<string, JudgedBeside[]>();
+  if (!overlaid() || ids.length === 0) return out;
+  const rows = await rawQuery<JudgedBeside & { claim_id: string; at: Date | null }>(
+    `SELECT claim_id, sensitivity_label AS label, status, claim_credence AS credence, confidence, NULL::jsonb AS estimate, summary, assessed_at AS at
+       FROM assessments_versions WHERE claim_id = ANY($1::uuid[]) AND NOT in_force
+     UNION ALL
+     SELECT claim_id, sensitivity_label, NULL, NULL, NULL, estimate, summary, assessed_at
+       FROM quantity_estimates_versions WHERE claim_id = ANY($1::uuid[]) AND NOT in_force
+     UNION ALL
+     SELECT claim_id, sensitivity_label, standing, NULL, confidence, NULL, summary, assessed_at
+       FROM question_assessments_versions WHERE claim_id = ANY($1::uuid[]) AND NOT in_force
+     ORDER BY 1, 2`,
+    [ids]
+  );
+  for (const { claim_id, at, ...r } of rows) {
+    out.set(claim_id, [...(out.get(claim_id) ?? []), { ...r, assessed_at: at ? new Date(at).toISOString() : null }]);
+  }
+  return out;
 }
 
 export interface ComparedRelation {
@@ -638,7 +682,7 @@ export async function compareAssessments(
     summary: string | null;
     reasoning_trace: string | null;
   }>(
-    `SELECT c.id, c.kind, c.text, c.importance, ${RECORD_STATUS} AS status, a.claim_credence,
+    `SELECT c.id, c.kind, c.text, ${importanceSql("c")} AS importance, ${RECORD_STATUS} AS status, a.claim_credence,
             a.confidence, qe.estimate, ${FAVORED} AS favored_answer_ids,
             ${RECORD_AT} AS assessed_at, COALESCE(a.model, qe.model, qa.model) AS model,
             COALESCE(a.summary, qe.summary, qa.summary) AS summary,
@@ -676,11 +720,26 @@ export async function compareAssessments(
     });
   }
   const known = claims.map((c) => c.claim_id);
+  // Where a node carries a judgment at more than one label the sweep reads,
+  // the one given above is the one in force for it, and the others are
+  // given beside it: a judgment made on more owes the one made on less
+  // coherence (§29), so a sweep at a label reads the two against each other.
+  const beside = await judgedBeside(known).catch(() => new Map<string, JudgedBeside[]>());
+  for (const c of claims) {
+    const others = beside.get(c.claim_id);
+    if (others) c.also_judged_at = others;
+  }
   const [edges, links] = await Promise.all([
     rawQuery<{ parent_claim_id: string; child_claim_id: string; relation_type: string; reasoning: string }>(
+      // The edges as the sweep's label has them: one held at two layers
+      // once, and none that the label (or a label it reads) has set aside,
+      // since the judgment at the label does not rest on such an edge and
+      // owes it no commitment (overlay-service.ts).
       `SELECT parent_claim_id, child_claim_id, relation_type, reasoning
-         FROM claim_relationships
-        WHERE parent_claim_id = ANY($1::uuid[]) AND child_claim_id = ANY($1::uuid[])`,
+         FROM claim_relationships r
+        WHERE parent_claim_id = ANY($1::uuid[]) AND child_claim_id = ANY($1::uuid[])${
+          layered() ? ` AND ${lowerRowSql("claim_relationships", "r", ["parent_claim_id", "child_claim_id", "relation_type"])} IS NULL` : ""
+        }${notSetAsideSql("claim_relationships", "r.id")}`,
       [known]
     ),
     rawQuery<{ claim_a_id: string; claim_b_id: string; kind: string; reasoning: string }>(

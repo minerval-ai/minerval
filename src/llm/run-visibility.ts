@@ -311,6 +311,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   resolve_finding: { reads: "public", why: "confirms the run's own write; reputation and suspension state are public" },
   resolve_identifier: { reads: "public", why: "the address a fixed resolver has for the identifier the run passed; nothing is read" },
   retire_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
+  restore_below: { reads: "public", why: "confirms the run's own write to public graph records" },
   reverse_reconciliation: { reads: "public", why: "confirms the run's own write to public graph records" },
   revise_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
   revise_request: { reads: "public", why: "confirms the run's own write to public graph records" },

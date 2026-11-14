@@ -151,7 +151,12 @@ export function changesSinceJudgedNote(
 export async function loadChangesSinceJudgedNote(claimId: string, kind: NodeKind): Promise<string> {
   try {
     const view = await getJudgmentInputs(claimId);
-    if (!view?.judgment) return loadVersionsNote(claimId, kind);
+    if (!view?.judgment) {
+      // No judgment yet: the versions, and anything this label held over a
+      // row below that has ended since (changes-below-note.ts).
+      const parts = [await loadChangesBelowNote(claimId, kind), await loadVersionsNote(claimId, kind)];
+      return parts.filter((part) => part.length > 0).join("\n\n");
+    }
     // What the layer below (the public graph through the mirror, a label
     // this one reads) overwrote in place since this label's version, which
     // the record below cannot show (changes-below-note.ts). Empty where

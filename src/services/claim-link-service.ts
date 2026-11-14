@@ -9,7 +9,10 @@
  * same from either side. Writers report a duplicate as `created: false`;
  * every other failure propagates.
  */
-import { heldBelow } from "./layer-service.js";
+import { heldBelow, layered, lowerRowSql } from "./layer-service.js";
+
+/** A link held at two layers is listed once, by the lowest layer's row (layer-service.ts). Empty on a graph with one layer. */
+const oneLinkSql = (l: string) => (layered() ? ` AND ${lowerRowSql("claim_links", l, ["claim_a_id", "claim_b_id", "kind"])} IS NULL` : "");
 import { rawQuery } from "../db/client.js";
 import { markSeveralInForce } from "./judgment-version-service.js";
 import { currentLabel } from "../llm/usage-context.js";
@@ -120,7 +123,7 @@ export async function listRelatedClaims(claimId: string): Promise<RelatedClaim[]
          ON c.id = CASE WHEN l.claim_a_id = $1 THEN l.claim_b_id ELSE l.claim_a_id END
        LEFT JOIN assessments_in_force a ON a.claim_id = c.id
       WHERE (l.claim_a_id = $1 OR l.claim_b_id = $1)
-        AND c.state = 'active'
+        AND c.state = 'active'${oneLinkSql("l")}
       ORDER BY l.created_at, l.id`,
     [claimId]
   );

@@ -48,6 +48,7 @@ import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { slotColumnSql } from "../services/steward-lease.js";
+import { importanceSql } from "../services/overlay-service.js";
 import { followShowings, retryGatePayments } from "../services/showing-service.js";
 import { settleWaiting } from "../services/release-gate-service.js";
 import { offerMandatesWhereEverythingFlows } from "../services/gate-service.js";
@@ -267,7 +268,9 @@ export async function allocationSchedulerTick(
         WHERE c.state = 'active'
           AND ${slotColumnSql("steward_state", "c", "a.sensitivity_label")} = 'done'
           AND a.assessed_at < now() - make_interval(days =>
-                ($1::real / GREATEST(0.25, LEAST(2.0, c.queue_priority)))::int)
+                ($1::real / GREATEST(0.25, LEAST(2.0,
+                  CASE WHEN a.sensitivity_label = c.sensitivity_label THEN c.queue_priority
+                       ELSE COALESCE(${importanceSql("c", "a.sensitivity_label")}, 0) END)))::int)
         ORDER BY a.assessed_at ASC`,
       [policy.staleness_base_days]
     );

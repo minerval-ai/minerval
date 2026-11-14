@@ -742,18 +742,37 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
     await runAt(A, async () => {
       // What would change the node itself.
       expectRefused("update_canonical_form", await tool("update_canonical_form", { claim_id: id.parent, new_text: "A wording from a.", reasoning: "It reads better." }), "the node's wording and type");
-      expectRefused("set_claim_importance", await tool("set_claim_importance", { claim_id: id.parent, importance: 0.9, reasoning: "It matters to us." }), "the node's importance and contestation");
       expectRefused("set_claim_domains", await tool("set_claim_domains", { claim_id: id.parent, domains: ["earth-science"], reasoning: "Its field." }), "the node's domains");
       // What would change a row recorded on it by the public graph.
       expectRefused("write_argument", await tool("write_argument", { argument_id: id.argument, content: `A rewriting from a: because [[claim:${id.child}]], the stock grows.` }));
       expectRefused("revise_argument", await tool("revise_argument", { argument_id: id.argument, name: "A name from a", reasoning: "Clearer." }));
-      expectRefused("retire_argument", await tool("retire_argument", { argument_id: id.argument, reasoning: "It no longer belongs." }));
       expectRefused("update_claim_instance", await tool("update_claim_instance", { claim_id: id.parent, instance_id: id.instance, stance: "denies", reasoning: "It reads otherwise." }));
       expectRefused("detach_claim_instance", await tool("detach_claim_instance", { claim_id: id.parent, instance_id: id.instance, reason: "Not about this." }));
-      expectRefused("remove_subclaim_edge", await tool("remove_subclaim_edge", { parent_id: id.parent, child_id: id.child, relation: "requires", reasoning: "It no longer bears." }));
-      expectRefused("set_edge_relation", await tool("set_edge_relation", { parent_id: id.parent, child_id: id.child, relation: "supports", from_relation: "requires", reasoning: "It supports, no more." }));
       expectRefused("ungroup_subclaim", await tool("ungroup_subclaim", { argument_id: id.argument, child_id: id.child, reasoning: "It is not a premise of it." }));
       expectRefused("set_instance_order", await tool("set_instance_order", { claim_id: id.parent, instance_ids: [id.instance], reasoning: "The page should lead with it." }));
+
+      // What the label holds differently for its own readers is a row of its own over the public graph's row
+      // (services/overlay-service.ts): its importance for the node, and an argument or an edge it sets aside.
+      // The mirrored rows are untouched, which the comparison below holds to the byte.
+      const importance = await tool("set_claim_importance", { claim_id: id.parent, importance: 0.9, reasoning: "It matters to us." });
+      expectWritten("set_claim_importance", importance);
+      expect(importance.message).toContain(`Importance of ${id.parent} is 0.9 at \`${A}\`.`);
+      expect(importance.message).toContain("The node is at the public graph, which keeps its own value");
+      const retired = await tool("retire_argument", { argument_id: id.argument, reasoning: "It no longer belongs." });
+      expectWritten("retire_argument", retired);
+      expect(retired.message).toContain(`Set aside at \`${A}\`: argument`);
+      expect(retired.message).toContain("It is at the public graph, which this run reads and does not change");
+      const removed = await tool("remove_subclaim_edge", { parent_id: id.parent, child_id: id.child, relation: "requires", reasoning: "It no longer bears." });
+      expectWritten("remove_subclaim_edge", removed);
+      expect(removed.message).toContain(`Set aside at \`${A}\`: the requires edge`);
+      const retyped = await tool("set_edge_relation", { parent_id: id.parent, child_id: id.child, relation: "supports", from_relation: "requires", reasoning: "It supports, no more." });
+      expectWritten("set_edge_relation", retyped);
+      expect(retyped.message).toContain(`At \`${A}\` the edge from ${id.parent} to ${id.child} is now supports, a row of its own.`);
+      // Each is taken back, so the cases after this one meet the node as the public graph has it.
+      expectWritten("remove_subclaim_edge (its own)", await tool("remove_subclaim_edge", { parent_id: id.parent, child_id: id.child, relation: "supports", reasoning: "On reflection." }));
+      for (const input of [{ claim_id: id.parent }, { claim_id: id.parent, child_id: id.child, relation: "requires" }, { claim_id: id.parent, argument_id: id.argument }]) {
+        expectWritten("restore_below", await tool("restore_below", { ...input, reasoning: "The public graph has it right." }));
+      }
 
       // What adds a row of the run's own.
       // The run was given the address it records a source at (given-addresses.ts).
@@ -811,17 +830,19 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
     ).toEqual([{ l: A }]);
     expect(outcome).toEqual({
       update_canonical_form: "refused",
-      set_claim_importance: "refused",
       set_claim_domains: "refused",
       write_argument: "refused",
       revise_argument: "refused",
-      retire_argument: "refused",
       update_claim_instance: "refused",
       detach_claim_instance: "refused",
-      remove_subclaim_edge: "refused",
-      set_edge_relation: "refused",
       ungroup_subclaim: "refused",
       set_instance_order: "refused",
+      set_claim_importance: "at the run's label",
+      retire_argument: "at the run's label",
+      remove_subclaim_edge: "at the run's label",
+      set_edge_relation: "at the run's label",
+      "remove_subclaim_edge (its own)": "at the run's label",
+      restore_below: "at the run's label",
       record_claim_instance: "at the run's label",
       add_argument: "at the run's label",
       add_relationship_edge: "at the run's label",
@@ -954,11 +975,16 @@ describe("the Steward's tools on a mirrored node, for a run at a", () => {
     expect(await person([PUBLIC_LABEL], cutsRead)).toEqual({ listed: [0.25], of: 0.25 });
     expect(await runAt(B, cutsRead)).toEqual({ listed: [0.25], of: 0.25 });
 
-    // Once the public graph holds the claim's cut, a second cut here is refused.
+    // The label's cut is its own row beside the public graph's, and stays its own to revise: its readers go by
+    // it, and a read gives the public graph's beside it as what it diverges from.
     const again = await kind("record_cut", { ...cutInput, value: 3 });
-    expect(again.success).toBe(false);
-    expect(again.message).toContain("belongs to the public graph and is read here through the mirror");
-    expect(await rows()).toHaveLength(2);
+    expect(again.success, again.message).toBe(true);
+    expect(await rows()).toEqual([
+      { origin: "local", l: A, value: 3 },
+      { origin: "mirror", l: PUBLIC_LABEL, value: 0.25 },
+    ]);
+    expect(await runAt(A, () => getThresholdOf(id.other))).toMatchObject({ value: 3, label: A, below: [{ label: PUBLIC_LABEL, value: 0.25 }] });
+    expect(await runAt(B, cutsRead)).toEqual({ listed: [0.25], of: 0.25 });
   });
 
   it("leaves no key on a replicated table that a row at a private label could hold against a mirrored row", async () => {
@@ -1262,7 +1288,7 @@ describe("what a run is told", () => {
         `deployment, because readers would take it for the public graph's; a fresh one is funded on the public graph.`
     );
     expect(steward).toContain(
-      `so a point against its judgment is recorded as a request (file_request), which the people who direct this ` +
+      `so a point against its judgment or its structure is recorded as a request (file_request), which the people who direct this ` +
         `graph can act on. That holds for a mirrored node you judge the public graph has wrong, in its wording, its ` +
         `structure or its assessment: the request stays in this deployment, since raising it on the public graph ` +
         `would show what this deployment is working on, which is for the people who direct it to decide.`
