@@ -99,6 +99,7 @@ import {
   closeResearchRun,
   latestRequestRun,
   modelForTier,
+  requestWorkTier,
   openResearchRun,
   getResearchRun,
   readResearcherPaused,
@@ -846,8 +847,12 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   const ceiling = actionBudgetMicroUsd(action);
   const tier = scoping ? "standard" : "strong";
   // The tier and effort the full work runs on, which a scoping run prices
-  // (#732): fixed here, so the quote is for the run it funds.
-  const fullWork = { tier: "strong", model: modelForTier("strong"), effort: "high" } as const;
+  // (#732): fixed here, so the quote is for the run it funds. The strong
+  // tier where this deployment can send this label's text to its provider,
+  // and the standard tier where it cannot (requestWorkTier), so that work
+  // asked of a label never needs a provider the deployment has not set up.
+  const fullTier = requestWorkTier(action.sensitivity_label);
+  const fullWork = { tier: fullTier, model: modelForTier(fullTier), effort: "high" } as const;
   // What the full work was priced at, the row's cost (the scoping quote or
   // its keeper's figure), beside the budget this run was given (#885). A
   // commission's budget is its payer's choice and may be below it; the run
