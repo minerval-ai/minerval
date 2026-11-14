@@ -603,7 +603,8 @@ export function getAuditToolDefinitions(): Tool[] {
       description:
         "For a redaction_fidelity audit: " + "what the readers on the other side of this boundary can already read: the labels they read, the file sets held there by name with their paths, "
         + "and the connections held there by name. Given text (a phrase, a figure, a file name), also the sources there whose title, stored text or "
-        + "quoted passages contain it and the nodes there whose wording or definition does. It returns names and ids, not text.",
+        + "quoted passages contain it and the nodes there whose wording or definition does. Outside this deployment, also the name "
+        + "everything is published under, which its readers see on every package. It returns names and ids, not text.",
       input_schema: {
         type: "object" as const,
         properties: {

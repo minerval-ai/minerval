@@ -1463,8 +1463,20 @@ export async function whatTheDestinationHolds(pageId: string, text?: string): Pr
         ).map((c) => ({ node_id: c.id, kind: c.kind, text: c.text, label: c.label })),
       }
     : {};
+  // Everything that goes outside is published under the organization's own account, so its readers have that
+  // name on every package: a name they hold is not protected by removing it.
+  const publisher = showing.to_outside ? await ownOrganizationParty() : null;
   return {
     destination: showing.to_outside ? "outside this deployment: the public graph" : destination,
+    ...(publisher
+      ? {
+          published_as: {
+            name: publisher.name,
+            note: `What goes outside is published under this organization's own account on the public graph, as ${publisher.name}: its readers see that name on every package.`,
+          },
+          ...(needle ? { the_publishers_name_contains_it: publisher.name.toLowerCase().includes(needle.toLowerCase()) } : {}),
+        }
+      : {}),
     readers_there_read: reads,
     ...(reach?.this_run_reads_all === false
       ? { note: "This run does not read every label the readers there read, so what is found here is only what both read." }

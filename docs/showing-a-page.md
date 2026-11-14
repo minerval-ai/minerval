@@ -198,7 +198,10 @@ tools:
   the labels the destination reads, the file sets and connections held
   there by name (with a set's paths), and, given words or a figure, the
   sources whose title, stored text or quoted passages contain them and the
-  nodes whose wording or definition does. Names and ids only, no text
+  nodes whose wording or definition does. Outside the deployment it also
+  gives the name everything is published under, the organization's own
+  party, which the public graph's readers see on every package, and says
+  whether the words looked for are in it. Names and ids only, no text
   (`whatTheDestinationHolds`). The policy protects what those readers do
   not already have, and the task message says so in one sentence; whether
   something found there makes a passage safe to leave is the Redactor's

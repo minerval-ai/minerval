@@ -320,6 +320,13 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect((await verifyPublishedPage(waiting!.package)).ok).toBe(true);
 
     pageId = await latestPageOf(id.showing!, id.p!);
+    // Everything outside goes under the organization's own name, so its readers already have that name. In the
+    // second run with real models a Redactor that was not told so held a whole page for naming the organization.
+    const look = await tool(pageId, "look_at_destination", { text: id.orgName!.slice(0, 6) });
+    expect(look.published_as).toMatchObject({ name: id.orgName });
+    expect(look.published_as.note).toContain("every package");
+    expect(look.the_publishers_name_contains_it).toBe(true);
+    expect((await tool(pageId, "look_at_destination", { text: "not the publisher" })).the_publishers_name_contains_it).toBe(false);
     await redactAndCheck(pageId);
     // The organization holds an argument against; Acme holds its own name and the words of its interest.
     await releaseAllBut(pageId, ["an argument against", "a source's supplier and recorded interest, by name"]);
