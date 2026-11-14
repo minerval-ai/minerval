@@ -6549,6 +6549,10 @@ export const quantityEstimates = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
     // Which graph the row belongs to (the origin column, above).
     origin: originColumn(),
+    // The agent run that wrote it, as on assessments.run_id: a page of the
+    // quantity shown across a boundary carries that run's log seal. Last, so
+    // that the views that list every column gain it at their end.
+    runId: uuid("run_id"),
   },
   (table) => [
     originCheck("ck_quantity_estimates_origin", table.origin),

@@ -946,8 +946,8 @@ describe("a quantity's page and a question's page", () => {
       await rawQuery(`UPDATE sources SET party_id = $2 WHERE id = $1`, [meter.source, id.acme]);
       await rawQuery(`INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, sensitivity_label) VALUES ($1, $2, 'Acme', 'Acme is paid by output.', 'steward', $3)`, [meter.source, quantity, C]);
       await rawQuery(
-        `INSERT INTO quantity_estimates (claim_id, estimate, summary, work, model, is_current, sensitivity_label)
-         VALUES ($1, $2::jsonb, 'About thirteen thousand units.', $3, 'a-model', true, $4)`,
+        `INSERT INTO quantity_estimates (claim_id, estimate, summary, work, model, is_current, sensitivity_label, run_id)
+         VALUES ($1, $2::jsonb, 'About thirteen thousand units.', $3, 'a-model', true, $4, gen_random_uuid())`,
         [quantity, JSON.stringify({ central: 13200, low: 12800, high: 13600, unit: "units" }), "Three monthly meter totals were added.\n\nThe September total was corrected for a stoppage.", C]
       );
     });
@@ -959,6 +959,8 @@ describe("a quantity's page and a question's page", () => {
     expect(page.always_shown.node_kind).toBe("quantity");
     expect(page.always_shown.verdict).toEqual({ estimate: { central: 13200, low: 12800, high: 13600, unit: "units" } });
     expect(page.always_shown.sources).toEqual([{ source: 1, kind: "unknown", fingerprint: null, supplied_by: "an_outside_party", interest_recorded: true }]);
+    // The estimate names its run, so the page says what is known of that run's log (here: none was recorded).
+    expect(page.always_shown.made.run_log).toEqual({ sealed: false, seal: null, steps: null, chain_verifies: null });
     await throughTheCheck(pageId, { answer: "supports" });
 
     // A holder of release who reads neither the page's label nor the node is shown the node's wording as the page would show it.
