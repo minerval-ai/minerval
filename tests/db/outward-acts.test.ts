@@ -653,6 +653,11 @@ describe("what the public says back about a published page", () => {
         `It is to be heard as any challenge or proposal is: weigh what it says against what you hold, and say in your reasoning what you did with it. ` +
         `The contribution's public record says that it was received here, and will say whether a version made since is published or held.`
     );
+    // The message names the contribution by its id there, and a Steward that looks it up finds it, as the mirror holds it.
+    const { executeGovernanceTool } = await import("../../src/llm/tools/governance-tools.js");
+    const looked = JSON.parse(await at(A, "steward", () => executeGovernanceTool("get_contribution_details", { contribution_id: challenge }))) as Record<string, any>;
+    expect(looked.error).toBeUndefined();
+    expect(looked).toMatchObject({ on_the_public_graph: true, contribution: { id: challenge, contribution_type: "challenge", content: CHALLENGE, review_status: "accepted" } });
     // A pass on the node is waiting at `a`, and nowhere else.
     const slots = await system(() => rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM steward_slots WHERE claim_id = $1`, [id.p]));
     expect(slots.map((s) => s.label)).toEqual([A]);
