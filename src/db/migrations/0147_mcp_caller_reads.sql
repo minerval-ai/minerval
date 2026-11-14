@@ -42,3 +42,9 @@ SELECT g.id AS mandate_id,
        NULLIF(i.item->>'added_run_id', '')::uuid AS added_run_id
   FROM grants g,
        jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) WITH ORDINALITY AS i(item, ord);
+--> statement-breakpoint
+-- A view in public_read made after enforcement is held by the step, or read-only
+-- SQL would read every label through it until the next start (added when this
+-- line of migrations met the private-deployment work; a database that had
+-- already run this file is covered by the step in 0148).
+SELECT minerval_enforcement_sync();

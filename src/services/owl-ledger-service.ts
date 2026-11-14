@@ -35,6 +35,12 @@ export const OWL_REASONS = {
   escrowRefund: "escrow_refund",
   adminAdjust: "admin_adjust",
   /**
+   * Owls an administrator created, in a deployment that creates its own
+   * (owl-creation-service.ts): into an account's balance, or into the
+   * deployment's own account on their way into a mandate's budget.
+   */
+  owlCreated: "owl_created",
+  /**
    * A prize paid in owls (docs/mathematics.md §8.7): promotional credit
    * granted at one owl per dollar, net of withholding, never expiring and
    * never convertible to cash. Kept apart from contribution_award so the

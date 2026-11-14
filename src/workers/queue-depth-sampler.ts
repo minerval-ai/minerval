@@ -13,6 +13,7 @@ import { getDb, rawQuery } from "../db/client.js";
 import { queueDepthSnapshots } from "../db/schema.js";
 import { loadConfig } from "../config.js";
 import { stewardQueueHealth } from "./steward-pipeline.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export interface QueueDepthSampleResult {
   sampled: boolean;
@@ -68,7 +69,10 @@ export function startQueueDepthSampler(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await queueDepthSamplerTick();
+      const result = await withSystemClearance(
+        "The sampler counts waiting work at every label. It stores counts and no content.",
+        () => queueDepthSamplerTick()
+      );
       if (result.sampled) {
         options.logger.info("Queue-depth sampler: recorded snapshot");
       }

@@ -16,8 +16,7 @@
  * policy (program-officer.ts). Money never touches claims.importance or any
  * judgment of a claim; it buys attention, never conclusions.
  */
-import { currentLabel } from "../llm/usage-context.js";
-import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
+import { labelInContext } from "../llm/usage-context.js";
 import { rawQuery } from "../db/client.js";
 import { windowRoomSql } from "./pace-service.js";
 import { loadConfig } from "../config.js";
@@ -255,7 +254,7 @@ export async function grantAllocationExposureMicroUsd(
     `SELECT COALESCE(SUM(spent_micro_usd), 0)::bigint AS spent,
             COALESCE(SUM(amount_micro_usd - spent_micro_usd)
               FILTER (WHERE released_at IS NULL), 0)::bigint AS outstanding
-       FROM action_allocations WHERE grant_id = $1`,
+       FROM minerval_whole.allocation_money WHERE grant_id = $1`,
     [grantId]
   );
   return {
@@ -420,7 +419,7 @@ export async function fundGrantSelfActions(): Promise<number> {
             -- row). A sibling variant's allocation is not this row's (#756).
             GREATEST(0, a.cost_est_micro_usd -
               COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                          FROM action_allocations al
+                          FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL
                            AND (al.action_id IS NULL OR al.action_id = a.id)), 0))::bigint AS needed,
@@ -435,20 +434,20 @@ export async function fundGrantSelfActions(): Promise<number> {
             -- reserve; prize-commitment.ts).
             (j.budget_micro_usd
               - COALESCE((SELECT SUM(al.spent_micro_usd)
-                            FROM action_allocations al
+                            FROM minerval_whole.allocation_money al
                            WHERE al.grant_id = g.id), 0)
               - COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                            FROM action_allocations al
+                            FROM minerval_whole.allocation_money al
                            WHERE al.grant_id = g.id
                              AND al.released_at IS NULL), 0)
               - GREATEST(0,
                   COALESCE((SELECT SUM(u.cost_micro_usd) FROM llm_usage u
                              WHERE u.job_id = g.budget_job_id), 0)
                   - COALESCE((SELECT SUM(al.spent_micro_usd)
-                                FROM action_allocations al
+                                FROM minerval_whole.allocation_money al
                                WHERE al.grant_id = g.id), 0))
               - COALESCE((SELECT SUM(r.amount_micro_usd - r.refunded_micro_usd)
-                            FROM regrants r
+                            FROM minerval_whole.regrant_money r
                            WHERE r.from_grant_id = g.id), 0)
               - ${prizeCommitmentSql("g.id")})::bigint
               AS headroom,
@@ -481,6 +480,11 @@ export async function fundGrantSelfActions(): Promise<number> {
              AND g.id = (
               SELECT gg.id FROM grants gg
                WHERE gg.is_platform = true AND gg.policy = 'general' AND gg.status = 'active'
+                 -- The General mandate at the sweep's own label: a label's
+                 -- upkeep is paid by its own (allocation-policy-service.ts,
+                 -- getGeneralMandate), and a label without one is not swept
+                 -- on another label's money.
+                 AND gg.sensitivity_label = a.sensitivity_label
                ORDER BY gg.created_at ASC LIMIT 1))
          -- A mandate's own sweep item (#831): the row the item opened,
          -- while the item waits for its sweep, at the variant it named or,
@@ -531,7 +535,7 @@ export async function fundGrantSelfActions(): Promise<number> {
         -- on every pass, so enough covered rows starved a new one (#838).
         AND a.cost_est_micro_usd >
             COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-                        FROM action_allocations al
+                        FROM minerval_whole.allocation_money al
                        WHERE al.exclusion_group = a.exclusion_group
                          AND al.released_at IS NULL
                          AND (al.action_id IS NULL OR al.action_id = a.id)), 0)
@@ -542,7 +546,7 @@ export async function fundGrantSelfActions(): Promise<number> {
         AND NOT EXISTS (SELECT 1 FROM actions sib
                          WHERE sib.exclusion_group = a.exclusion_group AND sib.id <> a.id
                            AND (sib.status = 'running'
-                                OR EXISTS (SELECT 1 FROM action_allocations al
+                                OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                                             WHERE al.action_id = sib.id
                                               AND al.released_at IS NULL
                                               AND al.spent_micro_usd < al.amount_micro_usd)))
@@ -609,19 +613,16 @@ export async function fundGrantSelfActions(): Promise<number> {
     if (amount === null) continue;
     // A commission like any other: whole, from one payer, with the reason
     // on the mandate's record. The mandate's own upkeep is commissioned by
-    // the mandate itself, at the row's estimate. Placing a mandate's money
-    // on its own row is the mandate's work, so where a sweep does it the
-    // placement is at the mandate's label (src/labels.ts); inside a run it
-    // keeps the run's.
-    const inserted = await runAtMandateLabelOutsideAnyRun(row.grant_id, () =>
-      rawQuery<{ id: string }>(
-        `INSERT INTO action_allocations
-           (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
-         VALUES ($1, $2, $3, $4, $5, 'mandate', $6, $7)
-         ON CONFLICT DO NOTHING
-         RETURNING id`,
-        [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, SELF_REASON[row.kind] ?? "The mandate's own upkeep.", currentLabel()]
-      )
+    // the mandate itself, at the row's estimate.
+    const inserted = await rawQuery<{ id: string }>(
+      // A mandate's money on its own row, placed by the sweep: at the
+      // label of the row it pays for, where no run is in progress.
+      `INSERT INTO action_allocations
+         (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, 'mandate', $6, COALESCE($7, (SELECT sensitivity_label FROM actions WHERE id = $2)))
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [row.exclusion_group, row.action_id, row.claim_id, row.grant_id, amount, SELF_REASON[row.kind] ?? "The mandate's own upkeep.", labelInContext()]
     );
     if (inserted.length === 0) continue;
     if (amount < needed) {

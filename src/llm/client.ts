@@ -25,6 +25,7 @@
  * request-building, wire format, and response parsing for each backend live in
  * src/llm/providers/ — see providers/routing.ts for how a model id picks one.
  */
+import { postureNote } from "../label-posture.js";
 import type Anthropic from "@anthropic-ai/sdk";
 
 type MessageParam = Anthropic.MessageParam;
@@ -48,6 +49,20 @@ import { withRunDate } from "./run-date.js";
 import { featuresOffNote, withLeadingNote } from "./features-off-note.js";
 import { unclearedServicesNote, withoutUnclearedTools } from "./uncleared-services-note.js";
 import { assertProviderCleared } from "./provider-clearance.js";
+import {
+  LABEL_NOTE_HEADING,
+  MIRROR_NOTE_HEADING,
+  ROLES_THAT_WRITE_JUDGMENTS,
+  labelNote,
+  mirrorNote,
+  withLabelNote,
+  type MirrorBrief,
+} from "./label-note.js";
+import { holdsMirror, publicGraphAsOf as readPublicGraphAsOf } from "../services/mirrored-node-service.js";
+import { currentReadClearance } from "../db/client.js";
+import { enforcementLastKnown } from "../db/clearance.js";
+import { toldOfAddressRule, underAddressRule } from "./address-rule.js";
+import { fetchRuleNote, FETCH_RULE_NOTE_HEADING } from "./fetch-rule-note.js";
 import { stampErrorProvider } from "./errors.js";
 import { deploymentFaultOf } from "../services/deployment-fault.js";
 import { noteDeploymentFault } from "../services/deployment-fault-service.js";
@@ -83,13 +98,17 @@ const LONG_RUN_MAX_TOKENS = 128_000;
 /**
  * What the seam adds to the first task message of an agent run: the note
  * that says which features this deployment has switched off
- * (features-off-note.ts), and the note that says which outside services
- * are not cleared for the label the run works at
- * (uncleared-services-note.ts). Nothing when every feature is on and every
- * service is cleared, which is how the public deployment runs. The role
- * prompts cannot say either, because they are the same text in every
- * deployment, and an agent is told the limits it works under, with the
- * reason.
+ * (features-off-note.ts); the note that says which outside services are
+ * not cleared for the label the run works at
+ * (uncleared-services-note.ts); and, on a graph with more than one label,
+ * the note that says which label the run works at and what it reads and
+ * writes (label-note.ts), which on a deployment that mirrors the public
+ * graph also says what a run may and may not do to a mirrored node.
+ * Nothing when every feature is on, every service is cleared, `public` is
+ * the only label and nothing is mirrored, which is how the public
+ * deployment runs. The role prompts cannot say any of it, because they are
+ * the same text in every deployment, and an agent is told the limits it
+ * works under, with the reason.
  *
  * An agent run is a call with an agent on the usage context, which withAgent
  * sets and every agent's entry point passes through; a run that is not
@@ -101,10 +120,82 @@ const LONG_RUN_MAX_TOKENS = 128_000;
  * `model` is the run's: whether web search is a service of its own or the
  * model provider's server tool depends on it.
  */
-function withRunBrief(messages: MessageParam[], model: string): MessageParam[] {
+async function withRunBrief(
+  messages: MessageParam[],
+  model: string,
+  tools?: readonly object[]
+): Promise<MessageParam[]> {
   if (!getUsageContext().agent) return messages;
   const brief = [featuresOffNote(), unclearedServicesNote(model)].filter((note) => note.length > 0);
-  return withLeadingNote(messages, brief.join("\n\n"));
+  // A run that reads material that is not public and has a tool that takes
+  // an address is told which addresses its tools take (fetch-rule-note.ts).
+  // It is added before the label note, which then stands ahead of it.
+  const addressed = (await toldOfAddressRule(tools))
+    ? withLabelNote(messages, fetchRuleNote(), FETCH_RULE_NOTE_HEADING)
+    : messages;
+  return withLeadingNote(await withRunLabel(addressed), brief.join("\n\n"));
+}
+
+/**
+ * The label note, where this deployment has more than one label. A process
+ * that knows `public` is the only label asks nothing and adds nothing. One
+ * that has not yet asked the database asks now, and a failure there (no
+ * database at all, as when the client is driven alone) leaves the messages
+ * as given. Once the process knows reads are held, a run is not started
+ * without being told: a failure to work out what it reads fails the call.
+ */
+async function withRunLabel(messages: MessageParam[]): Promise<MessageParam[]> {
+  const known = enforcementLastKnown();
+  if (known === false) return withMirrorAlone(messages);
+  let reads: string[] | null;
+  try {
+    // Null where `public` is the only label: nothing is held and nothing is said.
+    reads = await currentReadClearance();
+  } catch (err) {
+    if (known === true) throw err;
+    return messages;
+  }
+  if (!reads) return withMirrorAlone(messages);
+  const writesJudgments = ROLES_THAT_WRITE_JUDGMENTS.has(getUsageContext().agent ?? "");
+  // On a deployment that mirrors the public graph, what a run is told of
+  // mirrored nodes is part of the same note (label-note.ts).
+  const mirror = await mirrorBrief();
+  // What this label sets for its own runs, and what can be asked of labels
+  // above it: each is said only where there is something to say. Like the
+  // mirror's time, the list of what can be asked is as it stood when the
+  // run started, so the run is told once.
+  const posture = postureNote(currentLabel());
+  const { askableFaces, askableNote } = await import("../services/ask-above-service.js");
+  const askable = askableNote(await askableFaces().catch(() => []));
+  return withLabelNote(
+    messages,
+    labelNote(currentLabel(), reads, { writesJudgments, mirror, posture, askable }),
+    mirror || askable ? LABEL_NOTE_HEADING : undefined
+  );
+}
+
+/**
+ * What a run is told of the mirror, on a deployment that keeps one and has
+ * applied a batch: null everywhere else, with nothing asked of the database
+ * where no mirror is held. A failure to read it says nothing, which costs
+ * the run a sentence and not the call: the tools still refuse what the
+ * passage would have said they refuse, and say why.
+ */
+async function mirrorBrief(): Promise<MirrorBrief | null> {
+  if (!holdsMirror()) return null;
+  try {
+    const publicGraphAsOf = await readPublicGraphAsOf();
+    return publicGraphAsOf ? { publicGraphAsOf } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The passage about mirrored nodes on its own, where `public` is the only label and there is no label note. */
+async function withMirrorAlone(messages: MessageParam[]): Promise<MessageParam[]> {
+  const mirror = await mirrorBrief();
+  if (!mirror) return messages;
+  return withLabelNote(messages, mirrorNote(mirror), MIRROR_NOTE_HEADING);
 }
 
 /**
@@ -172,7 +263,7 @@ export async function complete(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages, model),
+    messages: await withRunBrief(options.messages, model),
     ...(options.tools ? { tools: withoutUnclearedTools(options.tools) } : {}),
   };
   // Sonnet 5.5 runs adaptive thinking by default and thinking spend counts
@@ -362,7 +453,9 @@ export async function completeWithTools(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages, model),
+    // The loop that calls this turn by turn passes the toolset it was
+    // briefed with, so the first message is found already briefed.
+    messages: await withRunBrief(options.messages, model, options.tools),
     tools: withoutUnclearedTools(options.tools),
   };
   return adapter.completeWithTools({
@@ -398,7 +491,7 @@ export async function completeStructured<T>(options: {
   options = {
     ...options,
     system: withRunDate(options.system),
-    messages: withRunBrief(options.messages, model),
+    messages: await withRunBrief(options.messages, model),
   };
   const result = await adapter.completeStructured<T>({
     ...options,
@@ -642,11 +735,17 @@ export async function toolUseLoop(options: {
   // The toolset is fixed here too, without the tools of an outside service
   // that is not cleared for the run's label, so the prompt step records
   // what the model was offered.
+  // Where the run reads material that is not public, every tool call is
+  // held to addresses the deployment was given, and resolve_identifier is
+  // offered beside the tools that take one (address-rule.ts). The same
+  // toolset and executor come back everywhere else.
+  const addressRule = await underAddressRule(withoutUnclearedTools(options.tools), options.executeTool);
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: withRunBrief(options.initialMessages, streamModel),
-    tools: withoutUnclearedTools(options.tools),
+    initialMessages: await withRunBrief(options.initialMessages, streamModel, addressRule.tools),
+    tools: addressRule.tools,
+    executeTool: addressRule.executeTool,
   };
   const messages = [...options.initialMessages];
   const observed = observeRun(options.initialMessages, options.seenIds);
@@ -736,6 +835,7 @@ export async function toolUseLoop(options: {
 
     lastResult = result;
     if (result.container) containerId = result.container;
+    await addressRule.afterTurn(result.rawContent);
     if (offersSandbox && turnUsedCodeExecution(result)) {
       await meterCodeExecution((Date.now() - turnStartedAt) / 1000);
     }
@@ -834,9 +934,16 @@ export async function toolUseLoop(options: {
       return finish(result);
     }
 
+    // Where the run is held to addresses it was given, each call's
+    // addresses are put as they were given, and a call with one that was
+    // not given is neither taken as final nor run: its result is the
+    // refusal (address-rule.ts). Empty everywhere else.
+    const heldCalls = await addressRule.hold(result.toolUses, result.rawContent);
+
     // Check for final tool
     if (options.onFinalTool) {
       for (const tu of result.toolUses) {
+        if (heldCalls.has(tu.id)) continue;
         const finalResult = options.onFinalTool(tu.name, tu.input);
         if (finalResult !== null && finalResult !== undefined) {
           return finish(result);
@@ -849,6 +956,7 @@ export async function toolUseLoop(options: {
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
       const output =
+        heldCalls.get(tu.id) ??
         malformedToolArguments(tu.input) ??
         (await observed.call(() => options.executeTool(tu.name, tu.input)));
       toolResults.push({
@@ -1025,11 +1133,15 @@ export async function longRunToolLoop(options: {
   // Dated once for the whole run, so every turn sends the same prompt, and
   // briefed once, in the first message. The toolset is fixed here, as in
   // toolUseLoop.
+  // Held to given addresses where the run reads material that is not
+  // public, as in toolUseLoop (address-rule.ts).
+  const addressRule = await underAddressRule(withoutUnclearedTools(options.tools), options.executeTool);
   options = {
     ...options,
     system: withRunDate(options.system),
-    initialMessages: withRunBrief(options.initialMessages, model),
-    tools: withoutUnclearedTools(options.tools),
+    initialMessages: await withRunBrief(options.initialMessages, model, addressRule.tools),
+    tools: addressRule.tools,
+    executeTool: addressRule.executeTool,
   };
   const streaming = adapter.completeWithToolsStreaming;
   if (!streaming) {
@@ -1118,6 +1230,7 @@ export async function longRunToolLoop(options: {
     usage.cacheReadTokens += result.usage.cacheReadTokens ?? 0;
     usage.cacheCreationTokens += result.usage.cacheCreationTokens ?? 0;
     if (result.container) containerId = result.container;
+    await addressRule.afterTurn(result.rawContent);
 
     if (trace) {
       recordAgentStep(trace, "assistant", {
@@ -1143,8 +1256,12 @@ export async function longRunToolLoop(options: {
       return finish("end_turn");
     }
 
+    // Held to given addresses before anything is done with the calls, as in toolUseLoop.
+    const heldCalls = await addressRule.hold(result.toolUses, result.rawContent);
+
     if (options.onFinalTool) {
       for (const tu of result.toolUses) {
+        if (heldCalls.has(tu.id)) continue;
         const finalResult = options.onFinalTool(tu.name, tu.input);
         if (finalResult !== null && finalResult !== undefined) {
           await after(result);
@@ -1159,6 +1276,7 @@ export async function longRunToolLoop(options: {
     const executedTools: Array<{ name: string; input: unknown; output: string }> = [];
     for (const tu of result.toolUses) {
       const output =
+        heldCalls.get(tu.id) ??
         malformedToolArguments(tu.input) ??
         (await observed.call(() => options.executeTool(tu.name, tu.input)));
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: toolResultContent(output) });

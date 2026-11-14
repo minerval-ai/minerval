@@ -25,8 +25,9 @@
  *
  * Two columns are handled once for every table and so are named in none:
  * `origin` (the applier writes 'mirror') and `sensitivity_label` (only rows
- * at the public label are published, and a mirrored row takes the column's
- * default, which is that label).
+ * at the public label are published, and the applier writes that label on
+ * every mirrored row: where a deployment has more than one label, a row is
+ * never public by omission).
  *
  * Adding a column to a replicated table means deciding here whether it
  * travels (tests/unit/services/mirror-manifest.test.ts fails until it is
@@ -50,6 +51,9 @@ import {
   claimLinks,
   claimRelationships,
   claims,
+  feedContributions,
+  feedRequestTargets,
+  feedRequests,
   judgmentInputs,
   quantityCuts,
   quantityDefinitions,
@@ -88,17 +92,23 @@ interface TableEntry {
   removeBeforeWrite?: boolean;
   /**
    * The order rows are written in, as an ORDER BY over the table's columns.
-   * The judgment tables allow one current row per node, so the row that
-   * stopped being current is written before the one that became it.
+   * The judgment tables allow one current row for a node at a label, so the
+   * row that stopped being current is written before the one that became it.
    */
   writeOrder?: string;
   /**
    * What the applier does to a mirrored row the public graph has withdrawn
    * while rows of this deployment's own still point to it, as an SQL
-   * assignment. Without one the row is deleted and those rows follow their
-   * foreign keys. Claims have one: a claim is the hub local work hangs off
-   * (edges, instances, judgments), and 'deprecated' is the state that
-   * already means "gone, but still referenced".
+   * assignment that marks it as gone (empty where the table has no such
+   * mark). Without one the row is deleted and those rows follow their
+   * foreign keys. The tables that have one are those a deployment's own
+   * work hangs off: a claim (edges, instances, judgments at any label; the
+   * state 'deprecated' already means "gone, but still referenced"), an
+   * argument (a label's evaluation of it, the passages recorded as making
+   * it), an instance (a label's reading of it) and a source (a label's
+   * instances from it). So a batch deletes nothing a deployment recorded
+   * on them. A row is also kept while a kept row points to it: a withdrawn
+   * argument that is kept keeps its claim.
    */
   keepWhenReferenced?: string;
   /**
@@ -116,8 +126,10 @@ const MONEY =
   "Names a budget job in the publisher's ledger. Money is not mirrored, so the id would resolve to nothing here.";
 
 /**
- * A current judgment is unique per node, so within a batch the rows that
- * are no longer current go first.
+ * A current judgment is unique for a node, or for a node and a label where
+ * the deployment has more than one (db/schema.ts, idx_assessments_current).
+ * Every mirrored judgment is at the one label, so either way the rows of a
+ * batch that are no longer current go first.
  */
 const NOT_CURRENT_FIRST = "is_current ASC, id ASC";
 
@@ -162,6 +174,8 @@ const ENTRIES: readonly TableEntry[] = [
   { table: answerRelations, removeBeforeWrite: true },
   {
     table: sources,
+    // A document has no state to mark: it is kept as it was last sent.
+    keepWhenReferenced: "",
     leftOut: {
       party_id: {
         kind: "withheld",
@@ -173,6 +187,7 @@ const ENTRIES: readonly TableEntry[] = [
   { table: sourceSegments, removeBeforeWrite: true },
   {
     table: arguments_,
+    keepWhenReferenced: `retired_at = COALESCE(retired_at, now()), retired_reason = COALESCE(retired_reason, 'Withdrawn by the public graph.')`,
     leftOut: {
       lean_check_id: {
         kind: "withheld",
@@ -182,7 +197,10 @@ const ENTRIES: readonly TableEntry[] = [
     },
   },
   { table: argumentSubclaims, removeBeforeWrite: true },
-  { table: claimInstances },
+  {
+    table: claimInstances,
+    keepWhenReferenced: `detached_at = COALESCE(detached_at, now()), detached_reason = COALESCE(detached_reason, 'Withdrawn by the public graph.')`,
+  },
   { table: argumentInstances },
   { table: quantityReadings },
   {
@@ -204,6 +222,13 @@ const ENTRIES: readonly TableEntry[] = [
   { table: sourceInterests },
   {
     table: judgmentInputs,
+    leftOut: {
+      input_label: {
+        kind: "withheld",
+        reason:
+          "Points to labels, which is not mirrored. It is set only on a row that says which version at another label a judgment was made beside, and a graph that publishes has one label and so has no such row.",
+      },
+    },
     parentByKind: {
       kindColumn: "judgment_kind",
       idColumn: "judgment_id",
@@ -214,6 +239,17 @@ const ENTRIES: readonly TableEntry[] = [
       },
     },
   },
+  // The public record that is not rows of the graph: contributions on
+  // nodes, and requests with the nodes they bear on. The publisher fills
+  // these from its own `contributions` and `requests` before each cut
+  // (mirror-feed-service.ts, refreshFeedRecords), with their public
+  // columns and no account, and they travel like any table here. A
+  // deployment that shows pages outside finds in them what the public said
+  // back (inbound-service.ts), and any deployment finds the requests it
+  // may take up (request-adoption-service.ts).
+  { table: feedContributions },
+  { table: feedRequests },
+  { table: feedRequestTargets, removeBeforeWrite: true },
 ];
 
 /**
@@ -231,7 +267,7 @@ export const NOT_MIRRORED: Record<string, string> = {
   "jobs, enqueue_events, queue_depth_snapshots, agent_sessions, node_messages":
     "Working state of the publisher's own queues and inboxes.",
   "contributions, contribution_reviews, appeals, arbitration_results, reputation_events":
-    "The public graph's contribution record, which names accounts.",
+    "The public graph's contribution record names accounts and is its own working state. What a contribution on a node said, of what type, about which published page and where its review stands travels in feed_contributions, without the account. The review's reasoning does not travel yet.",
   "tags, taggings":
     "The topical vocabulary is not in the feed yet. A mirrored claim arrives marked as tagged, so it is not sent to this deployment's tagger, and carries no tags.",
   "source_events":
@@ -239,7 +275,7 @@ export const NOT_MIRRORED: Record<string, string> = {
   "claim_provenance_edges, claim_provenance_roots, claim_source_maps, claim_instance_readings, claim_instance_reading_log, source_relationships, examinations, examination_*, reading_citations, audit_notes":
     "The provenance story and examinations of sources: left for a later feed version.",
   "requests, request_targets, request_work":
-    "Public requests are meant to enter with the mirror (design plan, inbound membrane); they are left for a later feed version.",
+    "The public graph's own working state. A request's words, where it stands and the nodes it bears on travel in feed_requests and feed_request_targets. The work done on a request, and a request's bearing on a source, do not travel yet.",
   "claim_formalizations, lean_checks, proof_attempts, attachments":
     "The mathematics feature's tables.",
   "agent_findings, agent_reports, audit_*, consistency_*, curation_requests, reconciliation_events":
@@ -256,8 +292,28 @@ export interface ReplicatedParent {
 export interface ReplicatedTable {
   /** The table's SQL name. */
   name: string;
-  /** Primary key columns, in order. */
+  /**
+   * The columns that say which row of the public graph this is, in order:
+   * the primary key, without `origin` and without `sensitivity_label`,
+   * which say which layer a row is in and not which row it is.
+   */
   key: readonly string[];
+  /**
+   * The primary key as the table has it, in order: the key, and where the
+   * key names other rows, the label and the origin that let each layer
+   * hold its own row for it (db/schema.ts, "The layer"). A mirrored row is
+   * always `public` and `mirror`, so this is the applier's conflict target.
+   */
+  primaryKey: readonly string[];
+  /**
+   * The key is not an id of its own but names other rows (an argument and
+   * an edge), so this deployment can hold a row of its own with the same
+   * key, and the table's primary key ends with `origin` to let the two
+   * stand side by side (db/schema.ts, the origin column). The applier's
+   * conflict target is then the key and the origin, and a local row with
+   * the key is no collision.
+   */
+  keyPerGraph: boolean;
   /** Replicated columns in the table's own order, key included. */
   columns: readonly string[];
   leftOut: Readonly<Record<string, LeftOut>>;
@@ -287,9 +343,10 @@ function build(): ReplicatedTable[] {
   return ENTRIES.map((entry) => {
     const config = getTableConfig(entry.table);
     const leftOut = entry.leftOut ?? {};
-    const key = config.primaryKeys[0]
+    const primaryKey = config.primaryKeys[0]
       ? config.primaryKeys[0].columns.map((c) => c.name)
       : config.columns.filter((c) => c.primary).map((c) => c.name);
+    const key = primaryKey.filter((c) => !EVERY_TABLE.has(c));
     const replicated = config.columns.filter((c) => !EVERY_TABLE.has(c.name) && !(c.name in leftOut));
     const columns = replicated.map((c) => c.name);
     const parents: ReplicatedParent[] = [];
@@ -309,6 +366,8 @@ function build(): ReplicatedTable[] {
     return {
       name: config.name,
       key,
+      primaryKey,
+      keyPerGraph: primaryKey.includes("origin"),
       columns,
       leftOut,
       localColumns: kinds("local"),

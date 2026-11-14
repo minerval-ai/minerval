@@ -12,6 +12,7 @@
  * and every other failure (a missing claim, a foreign-key violation, an
  * outage) propagates instead of being swallowed as success.
  */
+import { heldBelow, layered } from "./layer-service.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { RELATION_TYPES } from "../schemas/common.js";
@@ -27,6 +28,20 @@ export class UnknownRelationError extends Error {
     super(`Unknown relation "${relation}". Use one of: ${RELATION_TYPES.join(", ")}.`);
     this.name = "UnknownRelationError";
   }
+}
+
+/**
+ * Where an edge was recorded at one layer and a layer below later recorded
+ * the same one, a read by the edge's identity finds more than one row
+ * (db/schema.ts, "The layer"). It takes the row at this work's own label,
+ * which is the one its work wrote and may change, else the nearest layer
+ * below, with the public graph's last.
+ */
+function oneEdge(): string {
+  return layered()
+    ? ` ORDER BY (origin = 'local' AND sensitivity_label = minerval_write_label()) DESC, ` +
+        `minerval_layer_depth(sensitivity_label, origin) DESC LIMIT 1`
+    : ` ORDER BY (origin = 'local') DESC LIMIT 1`;
 }
 
 export interface InsertEdgeInput {
@@ -63,11 +78,20 @@ export async function insertRelationshipEdge(
   if (!EDGE_RELATION_TYPES.includes(relationType)) {
     throw new UnknownRelationError(input.relationType);
   }
+  // An edge a layer below already holds is the edge (identity is per
+  // layer, layer-service.ts): the public graph's, or one recorded at a
+  // label this work reads. Nothing is recorded beside it.
+  const below = await heldBelow(run.query.bind(run), "claim_relationships", {
+    parent_claim_id: input.parentId,
+    child_claim_id: input.childId,
+    relation_type: relationType,
+  });
+  if (below) return { id: below.id, created: false };
   const inserted = await run.query<{ id: string }>(
     `INSERT INTO claim_relationships
        (parent_claim_id, child_claim_id, relation_type, reasoning, confidence, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO NOTHING
+     ON CONFLICT (parent_claim_id, child_claim_id, relation_type, sensitivity_label, origin) DO NOTHING
      RETURNING id`,
     [
       input.parentId,
@@ -85,7 +109,7 @@ export async function insertRelationshipEdge(
 
   const [existing] = await run.query<{ id: string }>(
     `SELECT id FROM claim_relationships
-      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3`,
+      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3${oneEdge()}`,
     [input.parentId, input.childId, relationType]
   );
   if (!existing) {
@@ -107,7 +131,7 @@ export async function findRelationshipEdge(
   const [row] = await rawQuery<EdgeIdentity>(
     `SELECT id, parent_claim_id, child_claim_id, relation_type
        FROM claim_relationships
-      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3`,
+      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3${oneEdge()}`,
     [parentId, childId, relationType.toLowerCase()]
   );
   return row ?? null;
@@ -156,6 +180,10 @@ export async function attachEdgeToArgument(
         `but the edge's parent is ${check.edge_parent_id}; an argument groups ` +
         `only edges of its own claim`
     );
+  }
+  // A grouping a layer below already holds is the grouping (layer-service.ts).
+  if (await heldBelow(run.query.bind(run), "argument_subclaims", { argument_id: argumentId, relationship_id: relationshipId }, "held.argument_id AS id")) {
+    return { grouped: false };
   }
   const rows = await run.query<{ argument_id: string }>(
     `INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label)
@@ -290,9 +318,12 @@ export async function retypeEdge(
     [edgeId]
   );
   if (!edge) throw new Error(`Relationship edge not found: ${edgeId}`);
+  // Where the relation is already recorded for the pair, the edge is
+  // folded into that row: the one at this work's own label where there is
+  // one (the index would refuse a second), else a lower layer's.
   const [existing] = await run.query<{ id: string }>(
     `SELECT id FROM claim_relationships
-      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3`,
+      WHERE parent_claim_id = $1 AND child_claim_id = $2 AND relation_type = $3${oneEdge()}`,
     [edge.parent_claim_id, edge.child_claim_id, relation]
   );
   if (!existing) {

@@ -33,19 +33,41 @@
  * columns and nothing else (mirror-manifest.ts): a claim's queue state and
  * the other local columns are set once, when the row first arrives, and
  * never touched again. It writes and removes only rows whose origin is
- * 'mirror'. A row in a batch that has the id of a local row stops the batch.
+ * 'mirror', and every row it writes carries the label `public`. A row in a
+ * batch that has the id of a local row stops the batch.
+ *
+ * Nothing this deployment holds of its own stops a batch otherwise, at any
+ * label. The applier works at system clearance, on the tables' owner's
+ * connection (db/clearance.ts), because it has to see a row at any label
+ * that points to a row it removes, and its own rows are the public graph's
+ * and belong to no run. A key a deployment's row can share with a mirrored
+ * one (an address, an edge's two nodes) is unique within a graph and not
+ * across the two (db/schema.ts, the origin column), so both stand. The one
+ * thing of the deployment's own a batch changes is a judgment recorded
+ * here at a mirrored node's own label, which nothing should have recorded
+ * (services/mirrored-node-service.ts): it is retired, not deleted, so that
+ * the public graph's judgment is the one in force, and the batch's notes
+ * say so.
+ *
+ * What a batch changed on a node that leaves no other trace (its wording,
+ * an argument, a merge, a withdrawal) is written to node_changes in
+ * the same transaction, and the result names the nodes whose public
+ * judgment moved, for the upkeep that follows (services/mirror-upkeep.ts).
  *
  * What the public graph withdraws (a deletion, a retraction, a row absent
- * from a snapshot) is removed here too, with one exception stated in the
- * manifest: a mirrored claim that this deployment's own rows still point to
- * is kept, as deprecated, so that local edges, instances and judgments are
- * not swept away with it. Other mirrored rows are deleted and local rows
- * that pointed to them follow their foreign keys, as they would on the
- * public graph; what went that way is written in the batch's notes. A merge
+ * from a snapshot) is removed here too, with the exceptions the manifest
+ * states (keepWhenReferenced): a mirrored claim, argument, instance or
+ * source that this deployment's own rows still point to is kept, marked as
+ * gone where the table has a mark, so that what the deployment recorded on
+ * it is not swept away with it. Other mirrored rows are deleted and the
+ * local link rows that pointed to them (a grouping of an edge) follow their
+ * foreign keys; what was kept and what went is in the batch's notes. A merge
  * needs no handling: the absorbed claim arrives with its state and
  * merged_into, references to it still resolve, and local rows that hang off
- * it are left as they are and listed in the notes for whoever decides what
- * they should now point to.
+ * it are left as they are and listed in the notes. Nothing of the
+ * deployment's own at a private label is deleted or moved by a batch: what
+ * such rows should now point to is a judgment, and the upkeep opens it for
+ * the Steward at each label concerned.
  *
  * Applying a batch runs no agent and funds nothing. Mirrored claims arrive
  * deferred and marked as tagged, so they are in neither drain.
@@ -54,6 +76,9 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { KeyObject } from "node:crypto";
 import { loadConfig } from "../config.js";
+import { withSystemClearance } from "../db/clearance.js";
+import { PUBLIC_LABEL } from "../labels.js";
+import { noteMirrorApplied } from "./mirrored-node-service.js";
 import { migrationHead, type MigrationHead } from "../db/migration-head.js";
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./embedding-model.js";
 import {
@@ -81,6 +106,10 @@ export class MirrorConfigError extends Error {
 
 const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
 
+/** Why the applier works at system clearance (tests/unit/db/system-clearance.test.ts lists it). */
+const APPLIER_REASON =
+  "The mirror's applier writes the public graph's rows, which belong to no run, and must see a row at any label that points to one it removes.";
+
 /** The session setting the guard triggers read; set for the applier's transaction only. */
 const APPLIER_SETTING = "minerval.mirror_applier";
 
@@ -102,8 +131,31 @@ export interface ApplyNotes {
   merged_with_local_rows?: { count: number; claims: Array<{ claim_id: string; merged_into: string; local_rows: LocalRows[] }> };
   /** Mirrored claims the public graph withdrew, kept as deprecated because local rows point to them. */
   kept_claims?: { count: number; claims: Array<{ claim_id: string; reason: WithdrawalReason; local_rows: LocalRows[] }> };
+  /**
+   * Other mirrored rows the public graph withdrew and this deployment kept,
+   * marked as gone where the table has a mark, because local rows point to
+   * them: arguments, instances and sources.
+   */
+  kept_rows?: Array<{ table: string; reason: WithdrawalReason; count: number; keys: string[] }>;
   /** Local rows that pointed to a mirrored row this batch removed, and so were deleted or unlinked with it. */
   local_rows_followed?: Array<{ table: string; reason: WithdrawalReason; local_rows: LocalRows[] }>;
+  /**
+   * Judgments this deployment had recorded at a mirrored node's own label,
+   * retired (not deleted) so that the public graph's is the one in force.
+   */
+  local_judgments_retired?: Array<{ table: string; count: number; ids: string[] }>;
+}
+
+/** The nodes a batch touched in a way something of this deployment's own may rest on. */
+export interface TouchedNodes {
+  /** Nodes whose public judgment was written or removed: a verdict, an estimate, an answer, an argument's evaluation. */
+  judged: string[];
+  /** Mirrored nodes this batch brought for the first time. */
+  arrived: string[];
+  /** Nodes the public graph merged into another, with the node each was merged into. */
+  merged: Array<{ claim_id: string; merged_into: string }>;
+  /** Nodes the public graph withdrew: no longer active there, or gone and kept here because local rows point to them. */
+  withdrawn: string[];
 }
 
 export interface TableCounts {
@@ -135,6 +187,8 @@ export interface ApplyResult {
    * against an earlier version of a public one, when that is built).
    */
   changed: Record<string, ChangedKeys>;
+  /** The nodes those rows belong to, for the upkeep that follows a batch (services/mirror-upkeep.ts). Not stored. */
+  nodes: TouchedNodes;
   notes: ApplyNotes;
 }
 
@@ -227,6 +281,34 @@ async function localReferences(
   return found;
 }
 
+/**
+ * Which of `keys` in `table` a mirrored row still points to, from a table
+ * whose withdrawn rows are kept when this deployment's own point to them.
+ * The public graph removes what hangs off a row with the row, in the same
+ * cut and before it here, so a mirrored row that still points to one being
+ * removed is one that was kept.
+ */
+async function heldByKeptRows(
+  tx: MirrorQuery,
+  fks: readonly ForeignKey[],
+  table: ReplicatedTable,
+  keys: readonly string[]
+): Promise<Set<string>> {
+  const held = new Set<string>();
+  if (table.key.length !== 1 || keys.length === 0) return held;
+  for (const fk of fks) {
+    if (fk.to_table !== table.name || !fk.has_origin || fk.from_table === table.name) continue;
+    if (replicatedTable(fk.from_table)?.keepWhenReferenced === undefined) continue;
+    const rows = await tx.query<{ key: string }>(
+      `SELECT DISTINCT r.${q(fk.from_column)}::text AS key FROM ${fk.from_table} r
+        WHERE r.${q(fk.from_column)} = ANY($1::uuid[]) AND r.origin = 'mirror'`,
+      [keys]
+    );
+    for (const r of rows) held.add(r.key);
+  }
+  return held;
+}
+
 function sumLocalRows(lists: Iterable<LocalRows[]>): LocalRows[] {
   const total = new Map<string, LocalRows>();
   for (const list of lists) {
@@ -244,8 +326,16 @@ function sumLocalRows(lists: Iterable<LocalRows[]>): LocalRows[] {
 
 function upsertSql(table: ReplicatedTable): string {
   const rest = table.columns.filter((c) => !table.key.includes(c));
-  const insertColumns = [...table.columns, "origin", ...Object.keys(table.onInsert)];
-  const values = [...table.columns.map((c) => `r.${q(c)}`), "'mirror'", ...Object.values(table.onInsert)];
+  // The label is named: where a deployment has more than one, an insert
+  // that names none on the owner's connection is refused
+  // (minerval_default_label), and a mirrored row is public by what it is.
+  const insertColumns = [...table.columns, "origin", "sensitivity_label", ...Object.keys(table.onInsert)];
+  const values = [
+    ...table.columns.map((c) => `r.${q(c)}`),
+    "'mirror'",
+    `'${PUBLIC_LABEL}'`,
+    ...Object.values(table.onInsert),
+  ];
   const sets = rest.map((c) => `${q(c)} = EXCLUDED.${q(c)}`);
   if (table.touchOnWrite) sets.push(`${q(table.touchOnWrite)} = now()`);
   // Written only where a replicated column differs, so that a row a
@@ -261,7 +351,7 @@ function upsertSql(table: ReplicatedTable): string {
           SELECT ${values.join(", ")}
             FROM jsonb_populate_recordset(null::${q(table.name)}, $1::jsonb) r
            ORDER BY ${table.writeOrder.split(",").map((part) => `r.${part.trim()}`).join(", ")}
-          ON CONFLICT (${table.key.map(q).join(", ")}) ${onConflict}
+          ON CONFLICT (${table.primaryKey.map(q).join(", ")}) ${onConflict}
           RETURNING ${keyText(table, "t")} AS row_key, (t.xmax = 0) AS inserted`;
 }
 
@@ -276,6 +366,44 @@ interface Working {
   changed: Record<string, ChangedKeys>;
   notes: ApplyNotes;
   fks: ForeignKey[] | null;
+  /** The nodes whose public judgment this batch wrote or removed. */
+  judged: Set<string>;
+  /** Mirrored claims first written by this batch. */
+  arrived: Set<string>;
+  merged: Map<string, string>;
+  withdrawn: Set<string>;
+}
+
+/** The node a judgment is of, as SQL over the judgment's row aliased `alias`. */
+const JUDGED_NODE: Record<string, (alias: string) => string> = {
+  assessments: (alias) => `${alias}.claim_id`,
+  quantity_estimates: (alias) => `${alias}.claim_id`,
+  question_assessments: (alias) => `${alias}.claim_id`,
+  argument_evaluations: (alias) => `(SELECT a.claim_id FROM arguments a WHERE a.id = ${alias}.argument_id)`,
+};
+
+/** The column that names what a judgment is of: its node, or for an evaluation its argument. */
+const JUDGED_COLUMN: Record<string, string> = {
+  assessments: "claim_id",
+  quantity_estimates: "claim_id",
+  question_assessments: "claim_id",
+  argument_evaluations: "argument_id",
+};
+
+type NodeChange = "reworded" | "argument_added" | "argument_rewritten" | "argument_retired" | "argument_removed" | "merged" | "withdrawn";
+
+/** Record what this batch changed on a mirrored node (db/schema.ts, node_changes). */
+async function recordNodeChanges(
+  w: Working,
+  changes: Array<{ claim_id: string; change: NodeChange; detail: Record<string, unknown> }>
+): Promise<void> {
+  if (changes.length === 0) return;
+  await w.tx.query(
+    `INSERT INTO node_changes (claim_id, sequence, cut_at, change, detail, sensitivity_label)
+     SELECT c.claim_id, $2, $3, c.change, c.detail, '${PUBLIC_LABEL}'
+       FROM jsonb_to_recordset($1::jsonb) AS c(claim_id uuid, change text, detail jsonb)`,
+    [JSON.stringify(changes), w.batch.sequence, w.batch.cut_at]
+  );
 }
 
 function countsFor(w: Working, table: string): TableCounts {
@@ -294,44 +422,115 @@ async function fksOf(w: Working): Promise<ForeignKey[]> {
 async function removeRows(w: Working, table: ReplicatedTable, keys: readonly string[], reason: WithdrawalReason): Promise<void> {
   if (keys.length === 0) return;
   const counts = countsFor(w, table.name);
-  const refs = await localReferences(w.tx, await fksOf(w), table, keys);
+  const fks = await fksOf(w);
+  const refs = await localReferences(w.tx, fks, table, keys);
+  // A row a kept row points to is kept with it: deleting it would take the
+  // kept row, and what this deployment recorded on that, by the foreign key.
+  const held = table.keepWhenReferenced === undefined ? new Set<string>() : await heldByKeptRows(w.tx, fks, table, keys);
+  const isKept = (k: string) => refs.has(k) || held.has(k);
   let toDelete = [...keys];
-  if (table.keepWhenReferenced && refs.size > 0) {
-    const kept = keys.filter((k) => refs.has(k));
-    toDelete = keys.filter((k) => !refs.has(k));
-    await w.tx.query(
-      `UPDATE ${q(table.name)} x SET ${table.keepWhenReferenced}${table.touchOnWrite ? `, ${q(table.touchOnWrite)} = now()` : ""}
-        WHERE ${keyAmong(table, "x", 1)} AND x.origin = 'mirror'`,
-      [kept]
+  if (table.keepWhenReferenced !== undefined && keys.some(isKept)) {
+    const kept = keys.filter(isKept);
+    toDelete = keys.filter((k) => !isKept(k));
+    // A row kept at an earlier batch is met again by every later snapshot,
+    // which does not hold it either. What is recorded and told below is for
+    // the rows this batch is the first to keep.
+    const firstKept = new Set(
+      table.name === "claims" || table.name === "arguments"
+        ? (
+            await w.tx.query<{ id: string }>(
+              `SELECT id::text FROM ${q(table.name)} x WHERE x.id = ANY($1::uuid[])
+                  AND ${table.name === "claims" ? "x.state <> 'deprecated'" : "x.retired_at IS NULL"}`,
+              [kept]
+            )
+          ).map((r) => r.id)
+        : kept
     );
+    const marks = [table.keepWhenReferenced, table.touchOnWrite ? `${q(table.touchOnWrite)} = now()` : ""].filter((m) => m !== "");
+    if (marks.length > 0) {
+      await w.tx.query(
+        `UPDATE ${q(table.name)} x SET ${marks.join(", ")} WHERE ${keyAmong(table, "x", 1)} AND x.origin = 'mirror'`,
+        [kept]
+      );
+    }
     counts.kept += kept.length;
     changedFor(w, table.name).kept.push(...kept);
-    const note = (w.notes.kept_claims ??= { count: 0, claims: [] });
-    note.count += kept.length;
-    for (const key of kept) {
-      if (note.claims.length < NOTE_LIMIT) note.claims.push({ claim_id: key, reason, local_rows: refs.get(key)! });
+    if (table.name !== "claims") {
+      (w.notes.kept_rows ??= []).push({ table: table.name, reason, count: kept.length, keys: kept.slice(0, NOTE_LIMIT) });
+    }
+    if (table.name === "arguments") {
+      const of = await w.tx.query<{ id: string; claim_id: string; name: string }>(
+        `SELECT id::text, claim_id::text, name FROM arguments WHERE id = ANY($1::uuid[])`,
+        [kept]
+      );
+      await recordNodeChanges(
+        w,
+        of
+          .filter((a) => firstKept.has(a.id))
+          .map((a) => ({ claim_id: a.claim_id, change: "argument_removed" as const, detail: { argument_id: a.id, name: a.name } }))
+      );
+    }
+    if (table.name === "claims") {
+      const fresh = kept.filter((key) => firstKept.has(key));
+      for (const key of fresh) w.withdrawn.add(key);
+      await recordNodeChanges(
+        w,
+        fresh.map((claim_id) => ({ claim_id, change: "withdrawn" as const, detail: { how: reason } }))
+      );
+    }
+    if (table.name === "claims") {
+      const note = (w.notes.kept_claims ??= { count: 0, claims: [] });
+      note.count += kept.length;
+      for (const key of kept) {
+        if (note.claims.length < NOTE_LIMIT) note.claims.push({ claim_id: key, reason, local_rows: refs.get(key) ?? [] });
+      }
     }
   } else if (refs.size > 0) {
     (w.notes.local_rows_followed ??= []).push({ table: table.name, reason, local_rows: sumLocalRows(refs.values()) });
   }
   if (toDelete.length === 0) return;
-  const removed = await w.tx.query<{ row_key: string }>(
+  // The node a removed judgment was of, and a removed argument's node and
+  // name, are read as the row goes: afterwards nothing says.
+  const node = JUDGED_NODE[table.name];
+  const returning =
+    table.name === "arguments" ? `, x.claim_id::text AS node, x.name` : node ? `, ${node("x")}::text AS node` : "";
+  const removed = await w.tx.query<{ row_key: string; node?: string | null; name?: string }>(
     `DELETE FROM ${q(table.name)} x WHERE ${keyAmong(table, "x", 1)} AND x.origin = 'mirror'
-     RETURNING ${keyText(table, "x")} AS row_key`,
+     RETURNING ${keyText(table, "x")} AS row_key${returning}`,
     [toDelete]
   );
   counts.removed += removed.length;
   changedFor(w, table.name).removed.push(...removed.map((r) => r.row_key));
+  if (node) for (const r of removed) if (r.node) w.judged.add(r.node);
+  if (table.name === "arguments") {
+    // An argument that goes with its node says nothing the node's own
+    // removal does not.
+    const [still] = await w.tx.query<{ ids: string[] }>(
+      `SELECT COALESCE(array_agg(id::text), '{}') AS ids FROM claims WHERE id = ANY($1::uuid[])`,
+      [removed.map((r) => r.node)]
+    );
+    const there = new Set(still?.ids ?? []);
+    await recordNodeChanges(
+      w,
+      removed
+        .filter((r) => r.node && there.has(r.node))
+        .map((r) => ({ claim_id: r.node!, change: "argument_removed" as const, detail: { argument_id: r.row_key, name: r.name } }))
+    );
+  }
 }
 
 async function writeRows(w: Working, table: ReplicatedTable, rows: Array<Record<string, unknown>>): Promise<void> {
   if (rows.length === 0) return;
   const keys = rows.map((row) => keyOfRow(table, row));
-  const collisions = await w.tx.query<{ row_key: string }>(
-    `SELECT ${keyText(table, "x")} AS row_key FROM ${q(table.name)} x
-      WHERE ${keyAmong(table, "x", 1)} AND x.origin = 'local' LIMIT 5`,
-    [keys]
-  );
+  // A table whose key names other rows may hold a row of this deployment's
+  // own with the same key; it stands beside the mirrored one (keyPerGraph).
+  const collisions = table.keyPerGraph
+    ? []
+    : await w.tx.query<{ row_key: string }>(
+        `SELECT ${keyText(table, "x")} AS row_key FROM ${q(table.name)} x
+          WHERE ${keyAmong(table, "x", 1)} AND x.origin = 'local' LIMIT 5`,
+        [keys]
+      );
   if (collisions.length > 0) {
     throw new MirrorRefusal(
       "id_collision",
@@ -343,6 +542,9 @@ async function writeRows(w: Working, table: ReplicatedTable, rows: Array<Record<
       { sequence: w.batch.sequence, hash: w.batch.hash }
     );
   }
+  const judgedColumn = JUDGED_COLUMN[table.name];
+  if (judgedColumn) await retireLocalJudgmentsInTheWay(w, table, judgedColumn, rows);
+  const before = await nodeFactsBefore(w, table, keys);
   const written = await w.tx.query<{ row_key: string; inserted: boolean }>(upsertSql(table), [JSON.stringify(rows)]);
   const counts = countsFor(w, table.name);
   for (const row of written) {
@@ -350,6 +552,7 @@ async function writeRows(w: Working, table: ReplicatedTable, rows: Array<Record<
     else counts.updated++;
   }
   if (written.length > 0) changedFor(w, table.name).written.push(...written.map((r) => r.row_key));
+  await noteWhatMoved(w, table, rows, written, before);
   if (w.batch.kind === "snapshot") {
     await w.tx.query(
       `INSERT INTO mirror_snapshot_rows (table_name, row_key)
@@ -357,6 +560,124 @@ async function writeRows(w: Working, table: ReplicatedTable, rows: Array<Record<
       [table.name, keys]
     );
   }
+}
+
+/**
+ * A judgment this deployment recorded at a mirrored node's own label stands
+ * where the public graph's must: one current judgment for a node at a
+ * label. Nothing should have recorded one (mirrored-node-service.ts), and
+ * the public graph's is the one a reader is owed, so the local one is
+ * retired to history before the mirrored current row is written. It is the
+ * only row of the deployment's own that a batch changes, and it is at the
+ * label everyone reads.
+ */
+async function retireLocalJudgmentsInTheWay(
+  w: Working,
+  table: ReplicatedTable,
+  judgedColumn: string,
+  rows: Array<Record<string, unknown>>
+): Promise<void> {
+  const of = [...new Set(rows.filter((r) => r.is_current === true).map((r) => String(r[judgedColumn])))];
+  if (of.length === 0) return;
+  const retired = await w.tx.query<{ id: string }>(
+    `UPDATE ${q(table.name)} x SET is_current = false
+      WHERE x.${q(judgedColumn)} = ANY($1::uuid[]) AND x.is_current AND x.origin = 'local'
+        AND x.sensitivity_label = '${PUBLIC_LABEL}'
+      RETURNING x.id`,
+    [of]
+  );
+  if (retired.length === 0) return;
+  (w.notes.local_judgments_retired ??= []).push({
+    table: table.name,
+    count: retired.length,
+    ids: retired.slice(0, NOTE_LIMIT).map((r) => r.id),
+  });
+}
+
+interface NodeFactsBefore {
+  claims: Map<string, { text: string; state: string; merged_into: string | null }>;
+  arguments: Map<string, { content: string | null; retired: boolean }>;
+}
+
+/** What the mirrored rows about to be written say now, where a change to it is worth recording. */
+async function nodeFactsBefore(w: Working, table: ReplicatedTable, keys: readonly string[]): Promise<NodeFactsBefore> {
+  const before: NodeFactsBefore = { claims: new Map(), arguments: new Map() };
+  if (table.name === "claims") {
+    const rows = await w.tx.query<{ id: string; text: string; state: string; merged_into: string | null }>(
+      `SELECT id::text, text, state, merged_into::text FROM claims WHERE id = ANY($1::uuid[]) AND origin = 'mirror'`,
+      [keys]
+    );
+    for (const r of rows) before.claims.set(r.id, r);
+  } else if (table.name === "arguments") {
+    const rows = await w.tx.query<{ id: string; content: string | null; retired: boolean }>(
+      `SELECT id::text, content, retired_at IS NOT NULL AS retired FROM arguments
+        WHERE id = ANY($1::uuid[]) AND origin = 'mirror'`,
+      [keys]
+    );
+    for (const r of rows) before.arguments.set(r.id, r);
+  }
+  return before;
+}
+
+/**
+ * After a table's rows are written: which nodes' public judgment moved, and
+ * what changed on a node that nothing else records (a wording, an
+ * argument, a merge, a withdrawal).
+ */
+async function noteWhatMoved(
+  w: Working,
+  table: ReplicatedTable,
+  rows: Array<Record<string, unknown>>,
+  written: Array<{ row_key: string; inserted: boolean }>,
+  before: NodeFactsBefore
+): Promise<void> {
+  if (written.length === 0) return;
+  const moved = new Set(written.map((r) => r.row_key));
+  const node = JUDGED_NODE[table.name];
+  if (node) {
+    const of = await w.tx.query<{ node: string | null }>(
+      `SELECT DISTINCT ${node("x")}::text AS node FROM ${q(table.name)} x WHERE ${keyAmong(table, "x", 1)}`,
+      [[...moved]]
+    );
+    for (const r of of) if (r.node) w.judged.add(r.node);
+    return;
+  }
+  const changes: Array<{ claim_id: string; change: NodeChange; detail: Record<string, unknown> }> = [];
+  if (table.name === "claims") {
+    for (const r of written) if (r.inserted) w.arrived.add(r.row_key);
+    for (const row of rows) {
+      const id = String(row.id);
+      const was = before.claims.get(id);
+      if (!was || !moved.has(id)) continue;
+      if (typeof row.text === "string" && row.text !== was.text) {
+        changes.push({ claim_id: id, change: "reworded", detail: { was: was.text, now: row.text } });
+      }
+      if (row.state === "merged" && typeof row.merged_into === "string" && was.merged_into !== row.merged_into) {
+        w.merged.set(id, row.merged_into);
+        changes.push({ claim_id: id, change: "merged", detail: { merged_into: row.merged_into } });
+      } else if (was.state === "active" && typeof row.state === "string" && row.state !== "active" && row.state !== "merged") {
+        w.withdrawn.add(id);
+        changes.push({ claim_id: id, change: "withdrawn", detail: { how: "state", state: row.state } });
+      }
+    }
+  } else if (table.name === "arguments") {
+    for (const row of rows) {
+      const id = String(row.id);
+      if (!moved.has(id)) continue;
+      const claim = String(row.claim_id);
+      const was = before.arguments.get(id);
+      const detail = { argument_id: id, name: row.name };
+      if (!was) {
+        // An argument that arrives with its node is part of the node as it arrived.
+        if (!w.arrived.has(claim)) changes.push({ claim_id: claim, change: "argument_added", detail });
+      } else if (!was.retired && row.retired_at != null) {
+        changes.push({ claim_id: claim, change: "argument_retired", detail: { ...detail, reason: row.retired_reason ?? null } });
+      } else if ((row.content ?? null) !== was.content) {
+        changes.push({ claim_id: claim, change: "argument_rewritten", detail });
+      }
+    }
+  }
+  await recordNodeChanges(w, changes);
 }
 
 /** Every mirrored row's key in a table, or only those a finished snapshot did not hold. */
@@ -410,7 +731,17 @@ async function applyVerified(tx: MirrorQuery, batch: MirrorBatch, options: Apply
         [batch.sequence]
       );
       if (prior?.batch_hash === batch.hash) {
-        return { status: "already_applied", sequence: batch.sequence, kind: batch.kind, hash: batch.hash, cut_at: prior.cut_at, counts: {}, changed: {}, notes: {} };
+        return {
+          status: "already_applied",
+          sequence: batch.sequence,
+          kind: batch.kind,
+          hash: batch.hash,
+          cut_at: prior.cut_at,
+          counts: {},
+          changed: {},
+          nodes: { judged: [], arrived: [], merged: [], withdrawn: [] },
+          notes: {},
+        };
       }
       if (prior) {
         throw refuse(
@@ -494,7 +825,18 @@ async function applyVerified(tx: MirrorQuery, batch: MirrorBatch, options: Apply
   // From here on this transaction is the applier: the guard on mirrored
   // rows lets it write them, until the transaction ends.
   await tx.query(`SELECT set_config('${APPLIER_SETTING}', 'on', true)`);
-  const w: Working = { tx, batch, counts: {}, changed: {}, notes: {}, fks: null };
+  const w: Working = {
+    tx,
+    batch,
+    counts: {},
+    changed: {},
+    notes: {},
+    fks: null,
+    judged: new Set(),
+    arrived: new Set(),
+    merged: new Map(),
+    withdrawn: new Set(),
+  };
   const childrenFirst = [...tables].reverse();
 
   const jumped = head !== undefined && batch.sequence !== headSequence + 1;
@@ -574,6 +916,12 @@ async function applyVerified(tx: MirrorQuery, batch: MirrorBatch, options: Apply
     cut_at: batch.cut_at,
     counts: w.counts,
     changed: w.changed,
+    nodes: {
+      judged: [...w.judged],
+      arrived: [...w.arrived],
+      merged: [...w.merged].map(([claim_id, merged_into]) => ({ claim_id, merged_into })),
+      withdrawn: [...w.withdrawn],
+    },
     notes: w.notes,
   };
 }
@@ -629,7 +977,12 @@ export async function applyBatch(input: unknown, options: ApplyOptions = {}): Pr
     batch = readBatch(input);
     verifyBatch(batch, options.trustedKeys ?? configuredTrustedKeys());
     const verified = batch;
-    return await db.transaction((tx) => applyVerified(tx, verified, options));
+    const result = await withSystemClearance(APPLIER_REASON, () =>
+      db.transaction((tx) => applyVerified(tx, verified, options))
+    );
+    // From here on this process knows it holds a mirror (mirrored-node-service.ts).
+    if (db === appDb) noteMirrorApplied();
+    return result;
   } catch (err) {
     const refusal = err instanceof MirrorRefusal ? err : batch ? rowRefused(err, batch) : null;
     if (!refusal) throw err;
@@ -667,7 +1020,18 @@ export interface MirrorStatus {
   last_refusal: { sequence: number | null; code: string; message: string; refused_at: string } | null;
 }
 
-export async function mirrorStatus(db: MirrorDb = appDb): Promise<MirrorStatus> {
+/**
+ * What a member is told of a batch the database refused. The full message
+ * names a row this deployment holds, which may be one at a label the reader
+ * does not hold, so only the operator's script reads it (`detail`).
+ */
+export const ROW_REFUSAL_FOR_MEMBERS =
+  "A batch from the public graph was not applied because a row in it could not be written here. " +
+  "Nothing of it was written, and the mirror waits at the batch before it. " +
+  "The operator of this deployment can read the reason with `npx tsx scripts/mirror.ts status`.";
+const REFUSALS_NAMING_A_ROW = new Set<string>(["id_collision", "row_refused"]);
+
+export async function mirrorStatus(db: MirrorDb = appDb, options: { detail?: boolean } = {}): Promise<MirrorStatus> {
   const iso = (column: string) => `to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
   const [head] = await db.query<{
     sequence: string;
@@ -707,7 +1071,7 @@ export async function mirrorStatus(db: MirrorDb = appDb): Promise<MirrorStatus> 
       ? {
           sequence: refusal.sequence === null ? null : Number(refusal.sequence),
           code: refusal.code,
-          message: refusal.message,
+          message: REFUSALS_NAMING_A_ROW.has(refusal.code) && !options.detail ? ROW_REFUSAL_FOR_MEMBERS : refusal.message,
           refused_at: refusal.refused_at,
         }
       : null,

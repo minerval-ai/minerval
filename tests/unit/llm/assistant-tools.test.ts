@@ -59,8 +59,30 @@ describe("the Assistant's tools", () => {
 
   it("classify only tools that exist, each once", () => {
     const names = new Set(account.definitions.map((d) => d.name));
+    // A tool whose route only a members-only deployment mounts is not among
+    // this app's tools, and is classified all the same.
+    const membersOnly = new Set([
+      "fund_showing_work",
+      "set_gate",
+      "set_gate_mode",
+      "end_gate_setting",
+      "decide_at_gate",
+      "offer_to_gate",
+      "set_page_flow",
+      "end_page_flow",
+      "hold_gate_item",
+      "save_redaction_policy",
+      "send_pages_outside",
+      "take_up_public_request",
+      "decline_public_request",
+      "fund_public_mandate",
+      "back_public_mandate",
+      "fund_public_node",
+      "ask_public_mandate_for_assessment",
+    ]);
+    for (const name of membersOnly) expect(Object.values(ROUTE_TOOLS).map((t) => t.name)).toContain(name);
     const stale = [...Object.keys(HELD_TOOLS), ...Object.keys(RUNS_WITHOUT_ASKING)].filter(
-      (name) => !names.has(name)
+      (name) => !names.has(name) && !membersOnly.has(name)
     );
     expect(stale).toEqual([]);
     expect(Object.keys(HELD_TOOLS).filter((name) => name in RUNS_WITHOUT_ASKING)).toEqual([]);

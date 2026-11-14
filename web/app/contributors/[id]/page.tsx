@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { fetchPublisher } from "@/lib/api";
+import { PublisherRecordSection } from "@/components/claim/PublisherRecord";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchContributorProfile } from "../../../lib/api";
 import { loadFeatures } from "../../../lib/data";
@@ -56,6 +58,9 @@ export default async function ContributorPage({
 
   const profile = await fetchContributorProfile(id);
   if (!profile) notFound();
+  // An account that publishes pages from a deployment of its own
+  // (docs/published-pages.md): its registration is a public record.
+  const publisher = await fetchPublisher(id);
 
   const c = profile.contributor;
   // The prize owls figure is shown only where this deployment has prizes.
@@ -186,6 +191,7 @@ export default async function ContributorPage({
           </table>
         </section>
       )}
+      {publisher && <PublisherRecordSection record={publisher} />}
     </div>
   );
 }

@@ -29,12 +29,17 @@ export async function raiseToMandate(input: {
   const actionId = typeof input.detail?.action_id === "string" ? input.detail.action_id : null;
   if (actionId) {
     const [existing] = await rawQuery<{ id: string }>(
+      // Folded only into an item at this work's own label: the summary is
+      // this work's words, and an item at another label is read by that
+      // label's readers (db/clearance.ts, sameLabelOnly). Where the item
+      // waiting is at another label, this one is added beside it.
       `UPDATE mandate_inbox SET summary = summary || E'\\n' || $3
         WHERE id = (SELECT id FROM mandate_inbox
                      WHERE grant_id = $1 AND handled_at IS NULL AND detail->>'action_id' = $2
+                       AND sensitivity_label = $4
                      ORDER BY created_at DESC LIMIT 1)
         RETURNING id`,
-      [input.grantId, actionId, input.summary.slice(0, 2000)]
+      [input.grantId, actionId, input.summary.slice(0, 2000), currentLabel()]
     );
     if (existing) return { id: existing.id, folded: true };
   }

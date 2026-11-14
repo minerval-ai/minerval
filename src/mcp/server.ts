@@ -23,6 +23,7 @@
  *     so MCP keeps parity with the REST API.
  */
 import { z } from "zod";
+import { publicContributionRefusal } from "../services/mirrored-node-service.js";
 import { mergedAliasRefusal, resolveClaimId } from "../services/claim-alias-service.js";
 import type { FastifyInstance } from "fastify";
 import {
@@ -65,6 +66,7 @@ import { sanitizeDomains } from "../llm/agents/skill-selection.js";
 import {
   createContribution,
   formatContribution,
+  checkAboutPublishedPage,
   checkArgumentTarget,
   getContributionById,
   getReviewForContribution,
@@ -90,12 +92,17 @@ import {
 } from "../services/report-service.js";
 import { registerRouteTools, withheldRouteTools } from "./route-tools.js";
 import { permissionsNote } from "../llm/permissions-note.js";
+import { membersOnly } from "../permissions.js";
+import { enforcementLastKnown } from "../db/clearance.js";
+import { REQUEST_LABELS } from "../server/request-labels.js";
+import { decideRequestLabel } from "../server/plugins/request-label.js";
 import { normalizePageUrl, pageUrlHash } from "../services/page-url.js";
 import { getRecordedPage } from "../services/recorded-page-service.js";
 import { getSharedAnalysis } from "../services/shared-analysis-service.js";
 import { REPORT_FIELD_GUIDANCE } from "../llm/tools/report-tools.js";
 import {
   CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_LAYERS_DESCRIPTION,
   CLAIM_VIEW_INCLUDE_DESCRIPTION,
   CLAIM_VIEW_INCLUDES,
   DEFAULT_DEPENDENTS_PAGE,
@@ -120,6 +127,7 @@ import { nodeKindEnum, type NodeKind } from "../schemas/kinds.js";
 import { getCurrentEstimate } from "../services/quantity-service.js";
 import { getCurrentStanding } from "../services/question-service.js";
 import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "../services/deployment-fault.js";
+import { overlaid } from "../services/overlay-service.js";
 
 export interface McpRequestContext {
   auth: RequestAuth;
@@ -396,9 +404,34 @@ async function matchAssertion(
 
 // ---- server -----------------------------------------------------------------
 
+/**
+ * What a caller is told about the one label its key or token works at
+ * (server/request-labels.ts), where the deployment holds material at more
+ * than one: a limit it works under, stated up front with the reason. The
+ * Assistant is told the same in its run's brief (llm/label-note.ts).
+ */
+export function connectionLabelNote(label: string): string {
+  return (
+    `This deployment holds material that only some of its readers may see, and everything in it ` +
+    `carries a label saying who may read it. This connection works at one label, fixed by your ` +
+    `user when its key or token was made: \`${label}\`. You read what that label reads. Everything ` +
+    `you add is filed at \`${label}\`, and you can act only on things that carry it: a call about ` +
+    `something at another label is refused and says so. You cannot choose or change the label, so ` +
+    `that nothing you read can be filed where more people would see it. get_my_labels says who ` +
+    `reads \`${label}\`.`
+  );
+}
+
 function withPermissions(instructions: string, ctx: McpRequestContext): string {
-  const note = ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "";
-  return note ? `${instructions}\n\n${note}` : instructions;
+  const notes = [
+    ctx.app ? permissionsNote(withheldRouteTools(ctx.app, ctx.auth)) : "",
+    // The members-only hook asked whether labels are held before this
+    // request got here, so what this process last learned is current.
+    membersOnly() && ctx.auth.fixedLabel && enforcementLastKnown() === true
+      ? connectionLabelNote(ctx.auth.fixedLabel.label)
+      : "",
+  ].filter((note) => note.length > 0);
+  return notes.length > 0 ? `${instructions}\n\n${notes.join("\n\n")}` : instructions;
 }
 
 export function buildMcpServer(ctx: McpRequestContext): McpServer {
@@ -513,7 +546,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
       title: "Get claim",
       // One description and one view for MCP and the graph's own agents
       // (#774): src/services/claim-view-service.ts.
-      description: CLAIM_VIEW_DESCRIPTION,
+      description: CLAIM_VIEW_DESCRIPTION + (overlaid() ? CLAIM_VIEW_LAYERS_DESCRIPTION : ""),
       inputSchema: {
         claim_id: z.guid(),
         include: z
@@ -921,6 +954,12 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           .guid()
           .optional()
           .describe("propose_merge of two arguments on the node: the other argument."),
+        about_published_page_id: z
+          .guid()
+          .optional()
+          .describe(
+            "A published page on this node (get_published_page, or the second tab of the node's page), when the contribution is made through it: a challenge to what the page says or to how it was made, or a proposal about what the node rests on. It is reviewed as any contribution on the node is, and the graph that published the page learns of it from the public record."
+          ),
         proposed_canonical_form: z.string().max(2000).optional(),
         request_id: z
           .guid()
@@ -952,6 +991,18 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         const claim = await getClaimById(input.claim_id);
         if (!claim) return errorResult("NOT_FOUND", "Claim not found");
       }
+      // The label the contribution is filed at, by the rule of the route
+      // this tool stands in for (server/request-labels.ts): this
+      // connection's one label, and a node at another label is refused.
+      // Decided only in a members-only deployment, as for the route.
+      if (membersOnly()) {
+        const decided = await decideRequestLabel(REQUEST_LABELS["POST /contributions"]!, {
+          auth: ctx.auth,
+          params: {},
+          body: input,
+        });
+        if ("refusal" in decided) return errorResult(decided.refusal.code, decided.refusal.error);
+      }
       // A contribution addressed to a merged node is refused and told the
       // survivor (#884), as POST /contributions refuses it.
       for (const id of [input.claim_id, input.merge_target_claim_id]) {
@@ -960,6 +1011,10 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
           return errorResult("CLAIM_MERGED", merged.message, { merged_into: merged.survivorId });
         }
       }
+      // A mirrored node at its own label takes no contribution here, as
+      // POST /contributions refuses it (services/mirrored-node-service.ts).
+      const notTaken = await publicContributionRefusal(input.claim_id);
+      if (notTaken) return errorResult("PUBLIC_GRAPH_NODE", notTaken);
 
       const answered = await withAnsweredRequest({
         contributionType: input.contribution_type,
@@ -977,6 +1032,9 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         mergeTargetClaimId: input.merge_target_claim_id,
       });
       if (!argumentTarget.ok) return errorResult("ARGUMENT_TARGET", argumentTarget.message);
+
+      const aboutPage = await checkAboutPublishedPage(input.claim_id ?? null, input.about_published_page_id);
+      if (!aboutPage.ok) return errorResult("PUBLISHED_PAGE", aboutPage.message);
 
       const contributor = await getOrCreateContributor({
         externalId,
@@ -1023,6 +1081,7 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         argumentId: argumentTarget.argumentId,
         mergeTargetArgumentId: argumentTarget.mergeTargetArgumentId,
         proposedCanonicalForm: input.proposed_canonical_form,
+        aboutPublishedPageId: aboutPage.publishedPageId,
       });
       await enqueueContribution({ contributionId: contribution.id });
 

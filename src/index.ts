@@ -8,6 +8,8 @@ import { featureOn } from "./features.js";
 import { assertSkillToolsRegistered } from "./llm/tools/skill-tools.js";
 import { getDb, closeDb, rawQuery } from "./db/client.js";
 import { ensureSqlRoles, hasSqlRoleCredentials } from "./db/sql-roles.js";
+import { withSystemClearance } from "./db/clearance.js";
+import { enforcementFacts, enforcementProblems, ensureEnforcement } from "./db/enforcement.js";
 import { startPoller } from "./workers/poller.js";
 import { startLocalRunner } from "./workers/local-runner.js";
 import { startAuditScheduler } from "./workers/audit-scheduler.js";
@@ -15,6 +17,8 @@ import { startMonitorScheduler } from "./workers/monitor-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
+import { startUsageReports } from "./workers/usage-reports.js";
+import { usageReporting } from "./services/usage-report-service.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
 import { startLookoutTriggers } from "./workers/lookout-triggers.js";
@@ -165,7 +169,10 @@ function startWork(
   // Only the extension's lookups read the hash, so the fill does not run
   // while the extension feature is off (src/features.ts).
   if (featureOn("extension", config)) {
-    void fillSourcePageHashes()
+    void withSystemClearance(
+      "The page-hash fill writes a hash into every source's own row, whatever its label.",
+      () => fillSourcePageHashes()
+    )
       .then((n) => n > 0 && app.log.info(`Filled page hashes for ${n} sources`))
       .catch((err) => app.log.error({ err }, "filling source page hashes failed"));
   }
@@ -191,6 +198,12 @@ function startWork(
   const mirror = mirrorRoles(config);
   if (mirror.publisher) pollers.push(startMirrorPublisher({ logger }));
   if (mirror.applier) pollers.push(startMirrorApplier({ logger }));
+  // The usage report (docs/usage-report.md): a members-only deployment on
+  // the metered price reports the owls its runs spent each closed UTC day,
+  // one total. Not started on the public graph, which reports to no one,
+  // or on the flat price. Preparing takes a database lock and a report is
+  // recorded once, so every task may run it.
+  if (usageReporting(config)) pollers.push(startUsageReports({ logger }));
 
   return pollers;
 }
@@ -211,11 +224,18 @@ async function main() {
 
   if (config.env === "production") {
     console.log("Running database migrations...");
-    const db = getDb();
-    await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`);
-    await migrate(db, {
-      migrationsFolder: join(process.cwd(), "drizzle-migrations"),
-    });
+    // As the tables' owner, seeing every row: a migration that updates rows
+    // must reach all of them, whatever their labels.
+    await withSystemClearance(
+      "Migrations change tables, which only their owner may do, and a migration that updates rows must see every one.",
+      async () => {
+        const db = getDb();
+        await db.execute(sql`CREATE EXTENSION IF NOT EXISTS vector`);
+        await migrate(db, {
+          migrationsFolder: join(process.cwd(), "drizzle-migrations"),
+        });
+      }
+    );
     console.log("Migrations complete.");
 
     // Read-only SQL's login roles live in the database, not in the stack, so
@@ -232,13 +252,47 @@ async function main() {
     };
     if (hasSqlRoleCredentials(roles)) {
       try {
-        for (const line of await ensureSqlRoles((text, params) => rawQuery(text, params), roles)) {
-          console.log(`[sql] ${line}`);
-        }
+        const lines = await withSystemClearance(
+          "Creating and updating read-only SQL's login roles is the owner's to do.",
+          () => ensureSqlRoles((text, params) => rawQuery(text, params), roles)
+        );
+        for (const line of lines) console.log(`[sql] ${line}`);
       } catch (err) {
         console.error("[sql] could not ensure the read-only SQL roles; SQL will answer UNAVAILABLE:", err);
       }
     }
+  }
+
+  // Where the deployment has more than one label, the database holds every
+  // read and write to a clearance (db/clearance.ts). The step that covers
+  // each labelled table runs here, after migrations, so a table a migration
+  // just added is covered before anything is served. On the public graph it
+  // finds nothing to do. A failure stops the start where a second label
+  // exists, since a table could be left uncovered; where `public` is the
+  // only label there is nothing to hold, and the API starts.
+  try {
+    const { on, changes } = await ensureEnforcement();
+    for (const line of changes) console.log(`[labels] ${line}`);
+    if (on) {
+      // The step has run; now look at what is really there, a live cleared
+      // connection included. Anything wrong (a table without its policy, a
+      // view that reads as the owner, a materialized view, a cleared role
+      // nothing binds) stops the start: the catch below lets a failure pass
+      // only where `public` is the only label, and here it is not.
+      const problems = enforcementProblems(await enforcementFacts());
+      for (const problem of problems) console.error(`[labels] ${problem}`);
+      if (problems.length > 0) {
+        throw new Error(`The database is not holding reads to a clearance as it should: ${problems.length} problem(s), listed above.`);
+      }
+      console.log("[labels] reads and writes are held to a clearance in the database");
+    }
+  } catch (err) {
+    const others = await withSystemClearance(
+      "Deciding whether a failed enforcement check may be passed over reads the label table as the owner.",
+      () => rawQuery(`SELECT 1 FROM labels WHERE name <> 'public' LIMIT 1`)
+    ).catch(() => null);
+    if (others === null || others.length > 0) throw err;
+    console.error("[labels] the enforcement step failed; public is the only label, so nothing is held:", err);
   }
 
   const app = await buildApp();
@@ -268,7 +322,10 @@ async function main() {
       app.close(),
       new Promise((r) => setTimeout(r, 20_000).unref()),
     ]);
-    const abandoned = await abandonStewardLeases().catch((err) => {
+    const abandoned = await withSystemClearance(
+      "Shutdown hands back every claim this process holds a lease on, whatever its label.",
+      () => abandonStewardLeases()
+    ).catch((err) => {
       app.log.error(err, "Releasing in-flight Steward claims failed");
       return 0;
     });

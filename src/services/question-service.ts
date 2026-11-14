@@ -6,6 +6,7 @@
  * pair in answer_relations, and how well answered the question is lives in
  * question_assessments as a standing.
  */
+import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import {
@@ -20,6 +21,10 @@ import {
   type QuestionStanding,
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
+import { markSeveralInForce, recordMadeBeside } from "./judgment-version-service.js";
+import { layered, lowerRowSql, oneDefinitionForQuantitySql, oneForKeySql, refuseWhereHeldBelow } from "./layer-service.js";
+import { overlaid } from "./overlay-service.js";
+import { publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
 
@@ -68,20 +73,40 @@ export async function addAnswer(
     await requireQuestion(tx, input.questionId);
     const kind = await lockNodeKind(tx, input.answerId);
     if (kind === "question") throw new KindError("A question answers no question; add it as a subquestion");
+    await refuseWhereALayerBelowHoldsIt(
+      tx,
+      "claim_relationships",
+      { parent_claim_id: input.questionId, child_claim_id: input.answerId, relation_type: "answers" },
+      "the edge between this question and this answer"
+    );
     // A new edge takes this run's label; one already there is revised and
     // keeps the label it has (src/labels.ts).
-    const [row] = await tx.query<{ id: string }>(
+    const [row] = writtenAtOwnLabel(
+      await tx.query<{ id: string }>(
       `INSERT INTO claim_relationships
          (parent_claim_id, child_claim_id, relation_type, answer_basis, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, 'answers', $3, $4, $5, $6)
-       ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO UPDATE
+       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, sensitivity_label, origin) DO UPDATE
          SET answer_basis = EXCLUDED.answer_basis, reasoning = EXCLUDED.reasoning
+       ${sameLabelOnly("claim_relationships")}
        RETURNING id`,
       [input.questionId, input.answerId, input.basis, input.reasoning, input.createdBy, currentLabel()]
+    ),
+      "the edge between this question and this answer"
     );
     return { id: row!.id };
   });
 }
+
+/**
+ * These writes revise a row that is already there. Where a layer below
+ * holds that row (the public graph, or a label this work reads) it is not
+ * this work's to revise, and recording a second one beside it would say
+ * the same thing twice: refused, with the reason (layer-service.ts).
+ * Nothing is asked on a graph with one layer.
+ */
+const refuseWhereALayerBelowHoldsIt = (tx: TxQuery, table: string, key: Record<string, unknown>, what: string) =>
+  refuseWhereHeldBelow(tx.query.bind(tx), table, key, what, (message) => new KindError(message));
 
 /** Add a subquestion: a question whose answer is part of this one's. `outer` as for addAnswer. */
 export async function addSubquestion(
@@ -96,14 +121,24 @@ export async function addSubquestion(
   return inTransaction(outer, async (tx) => {
     await requireQuestion(tx, input.questionId);
     await requireQuestion(tx, input.subquestionId);
-    const [row] = await tx.query<{ id: string }>(
+    await refuseWhereALayerBelowHoldsIt(
+      tx,
+      "claim_relationships",
+      { parent_claim_id: input.questionId, child_claim_id: input.subquestionId, relation_type: "part_of" },
+      "the edge between this question and its subquestion"
+    );
+    const [row] = writtenAtOwnLabel(
+      await tx.query<{ id: string }>(
       `INSERT INTO claim_relationships
          (parent_claim_id, child_claim_id, relation_type, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, 'part_of', $3, $4, $5)
-       ON CONFLICT (parent_claim_id, child_claim_id, relation_type) DO UPDATE
+       ON CONFLICT (parent_claim_id, child_claim_id, relation_type, sensitivity_label, origin) DO UPDATE
          SET reasoning = EXCLUDED.reasoning
+       ${sameLabelOnly("claim_relationships")}
        RETURNING id`,
       [input.questionId, input.subquestionId, input.reasoning, input.createdBy, currentLabel()]
+    ),
+      "the edge between this question and its subquestion"
     );
     return { id: row!.id };
   });
@@ -129,13 +164,23 @@ export async function setAnswerRelation(input: {
     for (const id of [a, b]) {
       if (!answers.has(id)) throw new KindError(`Node ${id} is not an answer to ${input.questionId}`);
     }
-    const [row] = await tx.query<{ id: string }>(
+    await refuseWhereALayerBelowHoldsIt(
+      tx,
+      "answer_relations",
+      { question_id: input.questionId, claim_a_id: a, claim_b_id: b },
+      "the relation between these two answers"
+    );
+    const [row] = writtenAtOwnLabel(
+      await tx.query<{ id: string }>(
       `INSERT INTO answer_relations (question_id, claim_a_id, claim_b_id, relation, reasoning, created_by, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (question_id, claim_a_id, claim_b_id) DO UPDATE
+       ON CONFLICT (question_id, claim_a_id, claim_b_id, sensitivity_label, origin) DO UPDATE
          SET relation = EXCLUDED.relation, reasoning = EXCLUDED.reasoning
+       ${sameLabelOnly("answer_relations")}
        RETURNING id`,
       [input.questionId, a, b, input.relation, input.reasoning ?? null, input.createdBy, currentLabel()]
+    ),
+      "the relation between these two answers"
     );
     return { id: row!.id };
   });
@@ -175,15 +220,21 @@ export async function recordQuestionAssessment(input: {
   if (!["answered", "leaning"].includes(input.standing) && favored.length > 0) {
     throw new KindError(`A question that is ${input.standing} favors no answer`);
   }
+  // A mirrored question's assessment at its own label is the public graph's
+  // (mirrored-node-service.ts).
+  if (await publicGraphJudges(input.claimId)) throw new KindError(publicJudgmentMessage("An assessment of it"));
   return withTransaction(async (tx) => {
     await requireQuestion(tx, input.claimId);
     const answers = await answerIds(tx, input.claimId);
     for (const id of favored) {
       if (!answers.has(id)) throw new KindError(`Node ${id} is not an answer to ${input.claimId}`);
     }
+    // This label's current assessment is retired, and no other label's
+    // (db/schema.ts, "a version at each label").
     await tx.query(
-      `UPDATE question_assessments SET is_current = false WHERE claim_id = $1 AND is_current = true`,
-      [input.claimId]
+      `UPDATE question_assessments SET is_current = false
+        WHERE claim_id = $1 AND is_current = true AND sensitivity_label = $2`,
+      [input.claimId, currentLabel()]
     );
     const [row] = await tx.query<{ id: string }>(
       `INSERT INTO question_assessments
@@ -212,6 +263,7 @@ export async function recordQuestionAssessment(input: {
     );
     // What the assessment was made against, in the same transaction (#566).
     await recordJudgmentInputs(tx.query, "question_assessment", row!.id, input.claimId);
+    await recordMadeBeside(tx.query, "question_assessments", "question_assessment", row!.id, input.claimId);
     return { id: row!.id };
   });
 }
@@ -252,6 +304,9 @@ export interface QuestionNodeRefView {
   kind: NodeKind;
   status: string | null;
   standing: QuestionStanding | null;
+  /** Present only where more than one judgment of the node is in force for the asker (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
 }
 
 export interface QuestionAnswerView {
@@ -259,6 +314,9 @@ export interface QuestionAnswerView {
   text: string;
   kind: NodeKind;
   status: string | null;
+  /** Present only where more than one judgment of the answer is in force for the asker. */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
   credence: number | null;
   estimate: QuantityEstimate | null;
   unit: QuantityUnit | null;
@@ -330,23 +388,30 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
         credence: number | null;
         estimate: QuantityEstimate | null;
         unit: QuantityUnit | null;
+        label?: string;
       }
     >(
+      // An edge held at two layers is listed once, by the lowest layer's
+      // row (layer-service.ts); each row says which label it is at.
       `SELECT ${NODE_REF_COLUMNS}, r.relation_type, r.answer_basis,
-              a.claim_credence AS credence, qe.estimate, qd.unit
+              a.claim_credence AS credence, qe.estimate, qd.unit${overlaid() ? ", r.sensitivity_label AS label" : ""}
          FROM claim_relationships r
          JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
          ${NODE_REF_JOINS}
          LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
-         LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+         LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
         WHERE r.parent_claim_id = $1
-          AND r.relation_type IN ('answers', 'part_of', 'assumes', 'requires')
+          AND r.relation_type IN ('answers', 'part_of', 'assumes', 'requires')${
+            layered() ? ` AND ${lowerRowSql("claim_relationships", "r", ["parent_claim_id", "child_claim_id", "relation_type"])} IS NULL` : ""
+          }
         ORDER BY r.created_at, r.id`,
       [claimId]
     ),
     rawQuery<{ a: string; b: string; relation: AnswerRelationKind }>(
-      `SELECT claim_a_id AS a, claim_b_id AS b, relation
-         FROM answer_relations WHERE question_id = $1 ORDER BY created_at, id`,
+      // One relation for a pair of answers: the nearest layer's (layer-service.ts).
+      `SELECT claim_a_id AS a, claim_b_id AS b, relation${overlaid() ? ", sensitivity_label AS label" : ""}
+         FROM answer_relations ar WHERE question_id = $1${oneForKeySql("answer_relations", "ar", ["question_id", "claim_a_id", "claim_b_id"])}
+        ORDER BY created_at, id`,
       [claimId]
     ),
     rawQuery<QuestionNodeRefView>(
@@ -370,16 +435,17 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
   ]);
   const cur = current[0] ?? null;
   const favored = new Set(cur?.favored_ids ?? []);
-  const ref = (r: QuestionNodeRefView): QuestionNodeRefView => ({
+  const ref = (r: QuestionNodeRefView & { label?: string }): QuestionNodeRefView => ({
     id: r.id,
     text: r.text,
     kind: r.kind,
     status: r.status,
     standing: r.standing,
+    ...(r.label ? { label: r.label } : {}),
   });
   const answers = children.filter((r) => r.relation_type === "answers");
   const answerSet = new Set(answers.map((r) => r.id));
-  return {
+  const detail: QuestionDetailView = {
     standing: cur?.standing ?? null,
     assessment: cur
       ? {
@@ -409,9 +475,17 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
       unit: r.unit,
       favored: favored.has(r.id),
       basis: r.answer_basis,
+      ...(r.label ? { label: r.label } : {}),
     })),
     relations: relations.filter((r) => answerSet.has(r.a) && answerSet.has(r.b)),
     depended_on_by: dependedOnBy.map(ref),
     instances,
   };
+  // Every node this page gives a status or a standing for: where more than
+  // one judgment of one is in force for the asker, its entry says so.
+  await markSeveralInForce(
+    [...detail.presuppositions, ...detail.subquestions, ...detail.answers, ...detail.depended_on_by],
+    (n) => n.id
+  );
+  return detail;
 }

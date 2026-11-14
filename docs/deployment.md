@@ -68,6 +68,11 @@ of the variable to use. The secrets are:
 | `ELICIT_API_KEY`, `PANGRAM_API_KEY` | The two paid research services. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Payments. |
 | `GITHUB_APP_PRIVATE_KEY`, `GITHUB_TOKEN` | The credential for filing reports as GitHub issues. |
+| `PUBLISH_SIGNING_KEY` | The Ed25519 private key, in PEM form, that signs packages of pages shown outside ([published-pages.md](published-pages.md)). |
+| `PUBLIC_GRAPH_API_KEY` | The organization's own account key on the public graph, for everything the deployment sends or does there ([outward-acts.md](outward-acts.md)). |
+| `USAGE_REPORT_API_KEY` | The key usage reports are sent to the public graph with ([usage-report.md](usage-report.md)). |
+| `SANDBOX_TOKEN` | The secret the API and the sandbox service share ([file-sets.md](file-sets.md)). |
+| `CONNECTION_...` | Each connection's credential, in a variable the connection names ([connections.md](connections.md)). There may be any number, so a file is refused for any name that begins this way. |
 
 **A file that cannot be used stops the server**, and says everything that is
 wrong with it at once: a group or setting it does not have (with the nearest
@@ -122,6 +127,7 @@ declares under `[[model_providers.endpoints]]`, below.
 | `researcher_strong`, `researcher_standard`, `researcher_cheap` | The researcher's three tiers. | `RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`, `RESEARCHER_CHEAP_MODEL` |
 | `solver` | The solver's proof attempts. | `SOLVER_MODEL` |
 | `judge` | The judge that grades evaluation runs. | `JUDGE_MODEL` |
+| `redactor` | The Redactor, where a page is shown to readers who do not read its label. `""` runs it on `steward`. | `REDACTOR_MODEL` |
 
 #### `[model_providers]`
 
@@ -241,6 +247,8 @@ on when its key is set, which is how it worked before the file existed.
 | Name | What it sets | Environment variable |
 |---|---|---|
 | `host`, `port`, `name`, `user` | Where the database is and who connects. Used when `DATABASE_URL` is not set. The database must have the pgvector extension. | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME` |
+| `tls` | `"off"`: connections to the database are not encrypted, which is right only where it is on a network of the deployment's own that nothing else can reach (the packaged Compose file sets this). Left out, production verifies the server's certificate and other environments use no TLS. | `DATABASE_TLS` |
+| `ca_file` | The path of the certificate authority a database that is not on RDS is verified against, in any environment. Not beside `tls`: the server does not start with both. | `DATABASE_CA_FILE` |
 
 #### `[pricing]`
 
@@ -251,6 +259,77 @@ on when its key is set, which is how it worked before the file existed.
 | `owl_packs` | What is sold, as a list of `"owls:cents:name"`. An empty list sells nothing. | `OWL_PACKS` |
 | `signup_grant_owls`, `monthly_grant_owls` | Owls given to a new account, and each month. | `SIGNUP_GRANT_OWLS`, `MONTHLY_GRANT_OWLS` |
 | `cap_claim_proposal_owls`, `cap_assessment_owls`, `cap_source_ingest_owls`, `cap_extension_analysis_owls`, `cap_text_analysis_owls` | The most each paid operation can cost its buyer. | `CAP_CLAIM_PROPOSAL_OWLS`, `CAP_ASSESSMENT_OWLS`, `CAP_SOURCE_INGEST_OWLS`, `CAP_EXTENSION_ANALYSIS_OWLS`, `CAP_TEXT_ANALYSIS_OWLS` |
+| `owls` | `"sold"`, the starting value, or `"created"`: the deployment's administrators create the owls that budget its agents' work, each act logged, and nothing is sold ([accounts.md](accounts.md), "Owls a deployment creates for itself"). `"created"` needs a members-only deployment, no Stripe key and no free grants. | `OWLS` |
+
+#### `[[pricing.model_prices]]`
+
+A price the deployment states for a model, for one the rate table does not
+know or in place of the table's ([accounts.md](accounts.md), "Owls a
+deployment creates for itself"). Each model is one group, and the groups
+together are the setting whose environment variable is `MODEL_PRICES` (the
+same list as JSON). Where owls are created, a run on a model with no price
+is refused.
+
+```toml
+[[pricing.model_prices]]
+model = "gpt-oss-120b"
+input_usd_per_mtok = 0.5
+output_usd_per_mtok = 1.5
+```
+
+| Name | What it sets | In `MODEL_PRICES` |
+|---|---|---|
+| `model` | A model id, or the start of one; the longest match wins. | `model` |
+| `input_usd_per_mtok`, `output_usd_per_mtok` | What a call costs, in US dollars per million tokens. Both are required; `0` for a model the deployment counts as free. | `inputUsdPerMtok`, `outputUsdPerMtok` |
+| `cache_read_multiplier`, `cache_write_multiplier` | Optional: what a cached read and a cache write cost, as a multiple of the input price. | `cacheReadMultiplier`, `cacheWriteMultiplier` |
+
+#### `[private_runs]`
+
+| Name | What it sets | Environment variable |
+|---|---|---|
+| `fetches` | Which addresses the tools of a run that reads a private label take. `"any"`, the starting value: any address, as on the public graph. `"given"`: only an address the deployment was given from outside (a search result, an address in a page the run read, a recorded source, a resolved identifier), used as it was given. That guards against text a run read telling it to fetch an address with private material written into it. It narrows that way out and does not close it, and it costs research: a run cannot write the address for something it knows of, or page through results by editing one ([architecture.md](architecture.md), "The addresses a tool takes"). | `PRIVATE_RUN_FETCHES` |
+
+#### Each label's own posture
+
+`LABEL_POSTURE` (an environment variable; it has no group in the config file yet) gives a label its own value for settings that are otherwise one for the deployment, as a JSON object from a label's name to its settings: `{"evidence-room": {"fetches": "given", "sandbox": false, "features_off": ["mathematics"]}}`. `fetches` is `private_runs.fetches` for runs at that label. `sandbox: false` offers runs at that label no command over a set of files. `features_off` switches features off for runs at that label, on top of `features.off`. A label that is not named works under the deployment's settings. Which providers and outside services a label's runs use is `[provider_labels]`. A run is told its label's own settings in its brief.
+
+#### `[publishing]`
+
+| Name | What it sets | Environment variable |
+|---|---|---|
+| `hosting` | Where the deployment runs: `"own_machines"`, `"minerval"` or `"third_party"`. It is stated in every package of a page shown outside, and no package is built until it is set ([published-pages.md](published-pages.md)). | `DEPLOYMENT_HOSTING` |
+
+The signing key is a secret (above).
+
+#### `[public_graph]`
+
+| Name | What it sets | Environment variable |
+|---|---|---|
+| `api_url` | The public graph's API, for sending packages and for acting there in the organization's name. Left out, packages are carried as files and nothing is done there from here. | `PUBLIC_GRAPH_API_URL` |
+| `acts_by` | The permission whose holders may act on the public graph in the organization's name: `"direct"`, the starting value, `"fund"` or `"administer"` ([outward-acts.md](outward-acts.md)). | `PUBLIC_ACTS_BY` |
+| `price` | How a members-only deployment pays toward the public graph it reads: `"metered"`, the starting value, on the owl usage it reports, or `"flat"`, a flat price for the feed with nothing reported ([usage-report.md](usage-report.md)). | `PUBLIC_GRAPH_PRICE` |
+
+#### `[usage_report]`
+
+| Name | What it sets | Environment variable |
+|---|---|---|
+| `url` | The address a metered deployment's usage reports are sent to. | `USAGE_REPORT_URL` |
+| `dir` | A directory the reports are written to as files instead, to be handed over. One of the two, never both; with neither, reports are prepared and kept. | `USAGE_REPORT_DIR` |
+| `from` | The first day reported, as `"YYYY-MM-DD"`. Left out, it is the first day anything was metered. | `USAGE_REPORT_FROM` |
+
+#### `[file_sets]`
+
+| Name | What it sets | Environment variable |
+|---|---|---|
+| `store_dir` | Where uploaded sets of files are kept. Left out, sets cannot be uploaded ([file-sets.md](file-sets.md)). | `FILE_SET_STORE_DIR` |
+| `directory_root` | The directory that directories already on the deployment's disk are registered from. It carries no label: the administrator who registers a directory under it says which label its files get. | `FILE_SET_DIRECTORY_ROOT` |
+
+#### `[sandbox]`
+
+| Name | What it sets | Environment variable |
+|---|---|---|
+| `url` | The address of the sandbox service agents run commands over file sets in. Left out, sets can be added and not explored. | `SANDBOX_URL` |
+| `hour_cost_micro_usd` | What an hour of sandbox time is charged to a run, in millionths of a dollar. `0` charges nothing, and each run is told so. | `SANDBOX_HOUR_COST_MICRO_USD` |
 
 ### What is not in the file
 
@@ -372,6 +451,30 @@ at that label does not run at all.
 | `reports_stay_inside` | Where private material is held, no issue repository is configured. | yes |
 | `features` | Which features are off. Where private material is held and the run log is best-effort, it fails if the browser extension is on: a best-effort log leaves out its page analysis and chat. In record mode they are logged, and it passes. | no |
 | `work_outside_the_run_log` | Where private material is held and the run log is best-effort, it fails: a best-effort log leaves out the MCP tools `match_claim`, `extract_claims` and `assess_text`, and the naming of an Assistant conversation, and they have no switch. In record mode they are logged runs, and it passes. | no |
+| `database_tls` | How the connection to the database is secured. `tls = "off"` passes and says when that is right. A `ca_file` must be readable and hold a certificate. In production, a database that is not on RDS with neither set, and which cannot be reached, fails naming the two settings. | no |
+| `database_owner` | Where a label besides `public` is defined, the role in `DATABASE_URL` is not a superuser: row-level security does not bind one. | no |
+| `owls` | The settings about owls agree (`OWLS=created` needs a members-only deployment, no Stripe key and no free grants). A members-only deployment that sells owls with payments off fails: no account could get one. | no |
+| `model_prices` | Where owls are created, every model a role is set to has a price, from the rate table or `[[pricing.model_prices]]`. It fails naming each setting and model, because a run on a model with no price is refused there. | yes |
+| `usage_report` | On the metered price: the report's destination is an address with its key or a directory that can be written, not both. With neither it passes and says reports are kept. Not applicable on the flat price or on a deployment anyone may read. | no |
+| `standing_mandates` | In a members-only deployment, a General mandate is set up, and at every label that holds material of the deployment's own. It names the labels that have none. | no |
+| `own_organization` | In a members-only deployment, a party is marked as the organization itself. Without one a request to show a page is refused. | no |
+| `publishing` | Where a page is shown outside or hosting is set: `PUBLISH_SIGNING_KEY` is an Ed25519 private key and `publishing.hosting` is set. Not applicable where nothing is shown outside. The key is never printed. | no |
+| `public_graph` | `public_graph.api_url` is an https address and `PUBLIC_GRAPH_API_KEY` is set with it. With a signing key and no address it passes and says packages are carried as files. The public graph is not called. | no |
+| `public_acts` | Which permission's holders may act on the public graph in the organization's name, and how many grants of it are live. With none it passes and says nobody can act there. | no |
+| `private_run_fetches` | Whether runs that read a private label fetch any address or only addresses the deployment was given, with what the second guards against and what it costs. It passes either way: it is the organization's choice. | no |
+| `connections` | For the connections that are on, how many name a credential variable that is not set, by label. It calls no server: whether each answers is on the connections page. | no |
+| `file_sets` | `file_sets.store_dir` exists and can be written, and `file_sets.directory_root` exists and can be read, where each is set. It says the registered root carries no label. | no |
+| `sandbox` | With `sandbox.url` set: `SANDBOX_TOKEN` is set and the service answers, with its version and image. File sets with no sandbox pass, saying they cannot be explored. | no |
+| `sandbox_confinement` | The sandbox's own probe, check by check: a command is held to its run's file sets, the sets cannot be written, and an attempt to connect out fails. Not applicable with no sandbox or one that does not answer. | yes |
+
+Some of these are about rows at every label: showings, mandates, connections
+and file sets. The preflight is read by whoever holds the operator key and,
+through the setup checklist, by administrators, and neither reads every
+label. So those facts are read as the tables' owner and reported as counts
+and the names of labels, never a row's text
+(`src/preflight-deployment.ts`). The sandbox is the one thing a check asks:
+it is the deployment's own service, and whether a command in it is confined
+is a fact about the running container and not about any setting.
 
 The run log's test uses the writer every agent run uses. It opens a run
 under the agent name `preflight`, writes two steps, seals it, recomputes its
@@ -390,8 +493,8 @@ in one place (`src/workers/agent-work-gate.ts`), behind the gate:
 - A deployment that holds only public material is asked one question (is
   `public` the only label?) and its work starts. No check runs.
 - A deployment that holds private material starts no agent work until
-  `database`, `run_log`, `provider_labels` and `reports_stay_inside` all
-  pass. The server logs
+  `database`, `run_log`, `provider_labels`, `reports_stay_inside`,
+  `model_prices` and `sandbox_confinement` all pass. The server logs
   one line naming each failed check with its sentence. The API still starts
   and serves, so `GET /setup/preflight` can be read.
 - The gate is looked at again every minute. Work that was refused starts
@@ -419,3 +522,54 @@ that need it, loudly, and a run whose model's provider is not cleared for
 its label is refused before anything is sent), or because, like
 `features` and `work_outside_the_run_log`, what they check runs in the API,
 which the gate does not hold.
+
+## The setup checklist
+
+Once a deployment has administrators, they are who sets it up, and they work
+in the web app. `GET /setup/checklist` (`src/routes/setup-checklist.ts`,
+`src/services/setup-checklist-service.ts`; `get_setup_checklist` on MCP) is
+one read of what a members-only deployment can see about its own setup, for
+holders of the permission to administer:
+
+| Part | What it says |
+|---|---|
+| `preflight` | The preflight's report, above: each check with pass, fail or not applicable and a sentence saying why, and whether agent work may start. |
+| `permissions` | How many accounts and groups hold each permission now, by label and by party where the permission is granted at one. |
+| `labels` | Every label besides `public`, with the model providers and outside services cleared for it (`PROVIDER_LABELS`) and the roles whose model's provider is not cleared, whose runs at that label are refused. |
+| `undefined_labels_in_provider_setting` | Labels `PROVIDER_LABELS` names that are not defined. While there is one, every call to a provider is refused. |
+| `standing_mandates` | The General mandate, with its budget once set up ([accounts.md](accounts.md), "The standing mandates, set up in the app"). Where the deployment holds material at more than one label, `by_label` has each label the administrator reads with the mandate set up there or none. |
+| `owls` | Whether the deployment creates its own owls, how many were created and spent, and the configured models with no price. |
+| `usage_report` | Whether usage is reported, where to, and how many reports wait to be sent ([usage-report.md](usage-report.md)). |
+| `connections` | The connections at labels the administrator reads: how many there are, and which need a look (not answering, a credential not set, a tool withdrawn), from what was last recorded ([connections.md](connections.md)). `not_shown` counts the connections at labels the administrator does not read. |
+| `material` | The sources recorded in the whole deployment, by the party each belongs to, the submitted sources waiting for review, and the nodes the graph holds. |
+
+It holds no list of steps and decides nothing: every part is a fact, and
+nothing is marked done because a person said so. Most parts are read through
+the service that serves the same thing to its own route, so the checklist
+and those routes cannot disagree.
+
+**What an administrator is shown is held to what they read.** Administering
+does not by that alone let a person read at a label
+([architecture.md](architecture.md), "Labels and clearance"), so the
+connections and the standing mandates in the checklist are the ones at
+labels the administrator reads, and the checklist says how many connections
+it leaves out. Two things are counted past that, under system clearance,
+because the question is about the whole deployment and the answer is a
+number: how much material is in at all, by the party it belongs to, and how
+many connections there are. No row's label is returned.
+
+**The deployment's own checks.** The `preflight` part is the same report
+`GET /setup/preflight` gives the operator, asked for in one place
+(`src/services/deployment-checks.ts`), so the two cannot disagree. What it
+says of rows at a label is a count and the label's name ("The checks",
+above), so it shows an administrator nothing they do not read. The roles
+the checklist lists for a label are the rows of the config file's
+`[models]` group, the Redactor's among them.
+
+The page that shows it is `/admin` in a members-only build of the web app
+([accounts.md](accounts.md), "The web app"). It is the same page on a
+deployment's first day and on every day after: what needs someone now, then
+every item as it stands, each with what to do next, who can do it, and where.
+
+The checklist only reads. What it finds wrong in a setting is put right by
+whoever runs the deployment.

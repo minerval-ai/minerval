@@ -51,6 +51,9 @@ describe("the mirror manifest", () => {
       "argument_evaluations",
       "source_interests",
       "judgment_inputs",
+      "feed_contributions",
+      "feed_requests",
+      "feed_request_targets",
     ]);
     for (const table of tables) {
       const at = names.indexOf(table.name);
@@ -113,6 +116,40 @@ describe("the mirror manifest", () => {
       expect(table.key, table.name).toEqual(["id"]);
       expect(table.shape.find((c) => c.name === "id")!.type).toBe("uuid");
     }
+  });
+
+  it("keys no table by origin, and knows which key a deployment's own row can share", () => {
+    // A table's key says which row of the public graph a row is, so `origin`
+    // is never part of it, though it ends the primary key of a table whose
+    // key names other rows: there a deployment can hold a row of its own
+    // with the same key, beside the mirrored one.
+    for (const table of tables) expect(table.key, table.name).not.toContain("origin");
+    expect(tables.filter((t) => t.keyPerGraph).map((t) => t.name).sort()).toEqual(["argument_subclaims", "quantity_cuts", "quantity_definitions"]);
+    expect(tables.find((t) => t.name === "quantity_cuts")!.key).toEqual(["claim_id"]);
+    expect(tables.find((t) => t.name === "argument_subclaims")!.key).toEqual(["argument_id", "relationship_id"]);
+    // Every other key besides an id that a replicated table has is unique
+    // within a layer: its index holds the label, and ends with the origin
+    // column. A document's segments are derived from the document and
+    // carry its label, so theirs holds the origin alone.
+    for (const table of tables) expect(table.key, table.name).not.toContain("sensitivity_label");
+    expect(tables.find((t) => t.name === "quantity_cuts")!.primaryKey).toEqual(["claim_id", "sensitivity_label", "origin"]);
+    expect(tables.find((t) => t.name === "claims")!.primaryKey).toEqual(["id"]);
+    const perGraph: Record<string, string[]> = {};
+    for (const config of declared.values()) {
+      if (!names.includes(config.name)) continue;
+      for (const index of config.indexes) {
+        if (!index.config.unique || index.config.where) continue;
+        const columns = index.config.columns.map((c) => (c as { name: string }).name);
+        (perGraph[config.name] ??= []).push(columns.join(","));
+      }
+    }
+    expect(perGraph).toEqual({
+      answer_relations: ["question_id,claim_a_id,claim_b_id,sensitivity_label,origin"],
+      claim_links: ["claim_a_id,claim_b_id,kind,sensitivity_label,origin"],
+      claim_relationships: ["parent_claim_id,child_claim_id,relation_type,sensitivity_label,origin"],
+      source_segments: ["source_id,ordinal,origin"],
+      sources: ["url,sensitivity_label,origin"],
+    });
   });
 
   it("leaves a claim's queue state to the deployment, and sets it once so the claim joins no drain", () => {

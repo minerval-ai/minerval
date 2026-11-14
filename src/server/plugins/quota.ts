@@ -37,10 +37,16 @@ import {
 } from "../../services/billing-service.js";
 import {
   chargeOwls,
+  ensureFreeGrants,
   refundOwls,
   settleMeteredCharge,
 } from "../../services/owl-ledger-service.js";
-import { capOwls, capMicroUsd, type PricedOp } from "../../services/owl.js";
+import {
+  ASK_AN_ADMINISTRATOR_FOR_OWLS,
+  capOwls,
+  capMicroUsd,
+  type PricedOp,
+} from "../../services/owl.js";
 import { withPassBudget } from "../../llm/usage-context.js";
 
 // callerKey → timestamps (ms) of requests within the last hour
@@ -95,11 +101,13 @@ function insufficientOwls(
       `This operation (${op}) costs up to ${price} owl${price === 1 ? "" : "s"} ` +
       `(you pay the metered cost, never more than the cap) ` +
       `and your balance is ${entitlement.owlBalance}. ` +
-      (entitlement.creditsEnabled
-        ? `Buy owls from your account page (${config.publicWebBaseUrl}/account); ` +
-          `the free monthly owl also lands at the start of each month.`
-        : `Purchasing owls is not enabled on this deployment; the free ` +
-          `monthly owl lands at the start of each month.`),
+      (entitlement.owlsCreatedHere
+        ? ASK_AN_ADMINISTRATOR_FOR_OWLS
+        : entitlement.creditsEnabled
+          ? `Buy owls from your account page (${config.publicWebBaseUrl}/account); ` +
+            `the free monthly owl also lands at the start of each month.`
+          : `Purchasing owls is not enabled on this deployment; the free ` +
+            `monthly owl lands at the start of each month.`),
     entitlement: serializeEntitlement(entitlement),
     packs: serializeOwlPacks(),
     capOwls: price,
@@ -155,6 +163,9 @@ export async function chargeAgenticOp(
   refs: { claimId?: string | null; contributionId?: string | null } = {}
 ): Promise<QuotaDecision & { entryId?: string | null }> {
   if (!auth?.userId) return { allowed: true };
+  // The free grants land on the first read of a balance (getEntitlement). A route that charges without
+  // checking first would otherwise charge an account that has never been read against an empty ledger.
+  await ensureFreeGrants(auth.userId);
   const { charged, entryId } = await chargeOwls({
     userId: auth.userId,
     priceOwls: capOwls(op),

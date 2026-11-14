@@ -15,9 +15,25 @@
  * An answer to another node's Steward reaches that node's inbox as a reply
  * (trigger `message_reply`). A reply is information for the sender and opens
  * no work of its own: it is read on whatever pass the sender's node next gets.
+ *
+ * Word from the layer below. A message is a row at its sender's label, and
+ * a pass at a label that reads it is given it as well, marked with the
+ * label it was said at: what is said about a node below is a reason to
+ * look for the work above, which reads everything the sender read and more
+ * (docs/architecture.md, "Word from the layer below"). Nothing is written
+ * to the message from above. That a pass at another label read it, and
+ * what it answered, is a row of that pass's own (node_message_reads), so
+ * the message stays unread, and unanswered, for the pass at its own label
+ * exactly as if nobody above had looked. The answer from above is not sent
+ * to the sender: it was made on material the sender may not read, and
+ * anything that goes down goes through the gate (showing-service.ts).
+ * Nothing is opened above when a message arrives below. It is read on the
+ * next pass at each label that reads it; a mandate above is told how many
+ * wait on the nodes it pays for (mandate-reflection-service.ts).
  */
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
 
 export type MessageSenderKind =
   | "steward"
@@ -125,9 +141,39 @@ interface MessageRow {
   created_at: string;
   /** How the sender's node is joined to this one: 'above' (it depends on this one), 'beneath', or null. */
   joined: "above" | "beneath" | null;
+  /** The label it was sent at. */
+  said_at: string;
+  /** What the pass at its own label answered, where it has. */
+  outcome: string | null;
+  outcome_note: string | null;
 }
 
-async function unreadMessages(nodeId: string): Promise<MessageRow[]> {
+/**
+ * Which messages wait for a pass at the label `$n`: those sent at it that
+ * no pass has read, and those sent at a label it reads that no pass at it
+ * has read. "A label it reads" is the one notion of the layer below
+ * (services/layer-service.ts, minerval_layer_below), asked of the database
+ * and not left to the connection's clearance: a sweep that sees every
+ * label asks the same question, and a message sent above is never one a
+ * pass below is given. A reply sent at another label answers that label's
+ * Steward and is not for this one.
+ */
+export const waitsForPassAt = (m: string, param: string) =>
+  `((${m}.sensitivity_label = ${param} AND ${m}.read_at IS NULL)
+    OR (${m}.trigger <> 'message_reply'
+        AND minerval_layer_below(${m}.sensitivity_label, 'local', ${param}, 'local')
+        AND NOT EXISTS (SELECT 1 FROM node_message_reads mr
+                         WHERE mr.message_id = ${m}.id AND mr.sensitivity_label = ${param})))`;
+
+/**
+ * A node's unread messages. A pass (`forPass`) reads the ones that wait for
+ * a pass at its label: what was sent at its own label, and what was sent
+ * at the labels it reads and no pass at its label has yet been given. A
+ * page lists every one its reader may read that its own Steward has not.
+ * Where `public` is the only label the two are the same statement.
+ */
+async function unreadMessages(nodeId: string, forPass = false): Promise<MessageRow[]> {
+  const own = forPass && !oneLabelOnly();
   return rawQuery<MessageRow>(
     `SELECT m.id, m.trigger, m.sender_kind, m.sender_node_id, m.sender_ref,
             s.text AS sender_text, m.body, m.paid, m.created_at,
@@ -139,12 +185,13 @@ async function unreadMessages(nodeId: string): Promise<MessageRow[]> {
                             WHERE r.child_claim_id = m.sender_node_id
                               AND r.parent_claim_id = m.node_id) THEN 'beneath'
               ELSE NULL
-            END AS joined
+            END AS joined,
+            m.sensitivity_label AS said_at, m.outcome, m.outcome_note
        FROM node_messages m
        LEFT JOIN claims s ON s.id = m.sender_node_id
-      WHERE m.node_id = $1 AND m.read_at IS NULL
+      WHERE m.node_id = $1 AND ${own ? waitsForPassAt("m", "$2") : "m.read_at IS NULL"}
       ORDER BY m.created_at, m.id`,
-    [nodeId]
+    own ? [nodeId, currentLabel()] : [nodeId]
   );
 }
 
@@ -162,8 +209,15 @@ function quoteHead(text: string | null, max = 120): string {
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 
-/** Who sent a message, in the receiving Steward's terms. */
-export function describeSender(m: Pick<MessageRow, "sender_kind" | "sender_node_id" | "sender_ref" | "sender_text" | "joined">): string {
+/**
+ * Who sent a message, in the receiving Steward's terms. `paidAt` is the
+ * label of a message sent at another label than the pass reading it: what
+ * its sender paid for was a pass there.
+ */
+export function describeSender(
+  m: Pick<MessageRow, "sender_kind" | "sender_node_id" | "sender_ref" | "sender_text" | "joined">,
+  paidAt: string | null = null
+): string {
   switch (m.sender_kind) {
     case "steward": {
       const who = m.sender_node_id
@@ -192,7 +246,7 @@ export function describeSender(m: Pick<MessageRow, "sender_kind" | "sender_node_
     case "mandate":
       return "a mandate's plan";
     case "user":
-      return "a user who paid for this pass";
+      return paidAt ? `a user who paid for a pass at \`${paidAt}\`` : "a user who paid for this pass";
     case "researcher":
       return m.sender_ref ? `the Researcher, reporting on research run ${m.sender_ref} commissioned from this node` : "the Researcher";
     default:
@@ -215,7 +269,7 @@ export interface OpenedInbox {
  * the newest are given in full and the oldest listed without text.
  */
 export async function openInbox(nodeId: string, now: number = Date.now()): Promise<OpenedInbox> {
-  const rows = await unreadMessages(nodeId);
+  const rows = await unreadMessages(nodeId, true);
   const labels = new Map<string, string>();
   if (rows.length === 0) return { brief: "", labels, ids: [] };
 
@@ -231,13 +285,26 @@ export async function openInbox(nodeId: string, now: number = Date.now()): Promi
 
   const shown: string[] = [];
   const listed: string[] = [];
+  const here = currentLabel();
+  const saidBelow = new Set<string>();
   rows.forEach((m, i) => {
     const label = `m${i + 1}`;
     labels.set(label, m.id);
+    // A message sent at another label is marked with it. What it paid for
+    // was a pass there, and what that pass answered, if it has, is given
+    // with it.
+    const below = m.said_at !== here;
+    if (below) saidBelow.add(m.said_at);
     const head =
-      `[${label}] ${m.trigger} · ${age(m.created_at, now)} · from ${describeSender(m)}` +
-      (m.paid ? " · paid for this pass" : "");
-    if (full.has(m.id)) shown.push(`${head}\n${m.body}`);
+      `[${label}] ${m.trigger} · ${age(m.created_at, now)} · from ${describeSender(m, below ? m.said_at : null)}` +
+      (below ? ` · said at \`${m.said_at}\`` : "") +
+      (m.paid ? (below ? ` · paid for a pass at \`${m.said_at}\`` : " · paid for this pass") : "");
+    const answered =
+      below && m.outcome && m.outcome in OUTCOME_WORDS
+        ? `\nThe pass at \`${m.said_at}\` answered: ${OUTCOME_WORDS[m.outcome as MessageOutcome]}.` +
+          (m.outcome_note ? ` ${m.outcome_note}` : "")
+        : "";
+    if (full.has(m.id)) shown.push(`${head}\n${m.body}${answered}`);
     else listed.push(head);
   });
 
@@ -249,6 +316,7 @@ export async function openInbox(nodeId: string, now: number = Date.now()): Promi
       "agreement. Before you finish, answer each with answer_messages so its " +
       "sender learns what it did.",
   ];
+  if (saidBelow.size > 0) parts.push(saidBelowNote(here));
   if (listed.length > 0) {
     parts.push(
       `${listed.length} older message${listed.length === 1 ? " is" : "s are"} listed ` +
@@ -260,12 +328,46 @@ export async function openInbox(nodeId: string, now: number = Date.now()): Promi
   return { brief: parts.join("\n\n"), labels, ids: rows.map((r) => r.id) };
 }
 
-/** Mark the messages a pass was shown as read. */
+/**
+ * What a pass is told, once, when its inbox holds a message sent at another
+ * label: whose it is, and where its own answer goes and why.
+ */
+export function saidBelowNote(label: string): string {
+  return (
+    `A message marked "said at" another label was sent at that label, which this run reads. The ` +
+    `Steward at that label reads and answers it there. An answer you give to it is recorded at ` +
+    `\`${label}\`. Its sender may not read \`${label}\`, so the answer goes to them through the gate between the two labels, ` +
+    `which may remove from it or hold it.`
+  );
+}
+
+/**
+ * Mark the messages a pass was shown as read. One sent at the pass's own
+ * label is marked on its row. One sent at another label is not this pass's
+ * row to change, and is still unread for the pass at its own label: that
+ * this label read it is a row at this label (node_message_reads).
+ */
 export async function markMessagesRead(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
+  if (oneLabelOnly()) {
+    await rawQuery(
+      `UPDATE node_messages SET read_at = now() WHERE id = ANY($1::uuid[]) AND read_at IS NULL`,
+      [ids]
+    );
+    return;
+  }
+  const here = currentLabel();
   await rawQuery(
-    `UPDATE node_messages SET read_at = now() WHERE id = ANY($1::uuid[]) AND read_at IS NULL`,
-    [ids]
+    `UPDATE node_messages SET read_at = now()
+      WHERE id = ANY($1::uuid[]) AND read_at IS NULL AND sensitivity_label = $2`,
+    [ids, here]
+  );
+  await rawQuery(
+    `INSERT INTO node_message_reads (message_id, sensitivity_label)
+     SELECT m.id, $2 FROM node_messages m
+      WHERE m.id = ANY($1::uuid[]) AND m.sensitivity_label <> $2
+     ON CONFLICT (message_id, sensitivity_label) DO NOTHING`,
+    [ids, here]
   );
 }
 
@@ -282,19 +384,29 @@ export async function readMessage(
   }
   const [m] = await rawQuery<MessageRow>(
     `SELECT m.id, m.trigger, m.sender_kind, m.sender_node_id, m.sender_ref,
-            s.text AS sender_text, m.body, m.paid, m.created_at, NULL AS joined
+            s.text AS sender_text, m.body, m.paid, m.created_at, NULL AS joined,
+            m.sensitivity_label AS said_at, m.outcome, m.outcome_note
        FROM node_messages m LEFT JOIN claims s ON s.id = m.sender_node_id
       WHERE m.id = $1`,
     [id]
   );
   if (!m) return JSON.stringify({ success: false, message: `Message ${label} is no longer in the inbox.` });
+  const below = !oneLabelOnly() && m.said_at !== currentLabel();
   return JSON.stringify({
     success: true,
     label,
     trigger: m.trigger,
-    from: describeSender(m),
+    from: describeSender(m, below ? m.said_at : null),
     sent_at: m.created_at,
     paid: m.paid,
+    ...(below
+      ? {
+          said_at: m.said_at,
+          ...(m.outcome && m.outcome in OUTCOME_WORDS
+            ? { answered_there: `${OUTCOME_WORDS[m.outcome as MessageOutcome]}.${m.outcome_note ? ` ${m.outcome_note}` : ""}` }
+            : {}),
+        }
+      : {}),
     body: m.body,
   });
 }
@@ -323,6 +435,17 @@ export async function answerMessages(
   const recorded: string[] = [];
   const refused: Array<{ message: string; reason: string }> = [];
   let replies = 0;
+  // The messages in the brief that were sent at another label, with that label.
+  const here = currentLabel();
+  const below = new Map<string, string>();
+  let keptHere = 0;
+  if (!oneLabelOnly() && labels.size > 0) {
+    const rows = await rawQuery<{ id: string; said_at: string }>(
+      `SELECT id, sensitivity_label AS said_at FROM node_messages WHERE id = ANY($1::uuid[]) AND sensitivity_label <> $2`,
+      [[...labels.values()], here]
+    );
+    for (const r of rows) below.set(r.id, r.said_at);
+  }
   for (const a of answers) {
     const label = String(a.message ?? "").trim();
     const id = labels.get(label);
@@ -336,6 +459,43 @@ export async function answerMessages(
       continue;
     }
     const note = String(a.note ?? "").trim();
+    if (below.has(id)) {
+      // A message sent at another label: the answer is this label's own
+      // row, the message is not written to, and nothing is sent to its
+      // sender (see the header).
+      const [kept] = await rawQuery<{ sender_kind: string; sender_node_id: string | null; body: string }>(
+        `WITH answered AS (
+           INSERT INTO node_message_reads (message_id, outcome, outcome_note, answered_at, sensitivity_label)
+           SELECT m.id, $2, $3, now(), $5 FROM node_messages m WHERE m.id = $1 AND m.node_id = $4
+           ON CONFLICT (message_id, sensitivity_label) DO UPDATE
+             SET outcome = EXCLUDED.outcome, outcome_note = EXCLUDED.outcome_note, answered_at = EXCLUDED.answered_at
+           RETURNING message_id)
+         SELECT m.sender_kind, m.sender_node_id, m.body FROM node_messages m JOIN answered a ON a.message_id = m.id`,
+        [id, outcome, note || null, nodeId, here]
+      );
+      if (!kept) {
+        refused.push({ message: label, reason: "That message is not on this node." });
+        continue;
+      }
+      recorded.push(label);
+      keptHere++;
+      const { recordEvent } = await import("./event-service.js");
+      await recordEvent({
+        kind: "message_answered",
+        nodeId,
+        refs: { message: id, sender_kind: kept.sender_kind, sender_node: kept.sender_node_id },
+        summary:
+          `The Steward of ${nodeId} at \`${here}\` answered a message sent at \`${below.get(id)}\` from ${kept.sender_kind} ` +
+          `("${quoteHead(kept.body)}"): ${OUTCOME_WORDS[outcome]}.` + (note ? ` ${note}` : ""),
+        payload: { outcome },
+      });
+      // The answer is information going down: it is offered to the gate between this label and the sender's,
+      // and reaches the sender when it is through (gate-service.ts).
+      await import("./gate-service.js")
+        .then((gate) => gate.offerToGate({ kind: "message", fromLabel: here, toLabel: below.get(id)!, subject: { messageId: id }, replyTo: { messageId: id } }))
+        .catch((err: unknown) => console.error(`[gate] could not offer the answer to message ${id}: ${err instanceof Error ? err.message : String(err)}`));
+      continue;
+    }
     const [m] = await rawQuery<{ sender_kind: string; sender_node_id: string | null; body: string; created_at: string; reply_to_session: string | null }>(
       `UPDATE node_messages
           SET outcome = $2, outcome_note = $3, answered_at = now()
@@ -409,7 +569,10 @@ export async function answerMessages(
     success: recorded.length > 0,
     message:
       recorded.length > 0
-        ? `Recorded ${recorded.length} answer(s); ${replies} reached their senders as replies.`
+        ? `Recorded ${recorded.length} answer(s); ${replies} reached their senders as replies.` +
+          (keptHere > 0
+            ? ` ${keptHere} answered a message sent at another label: recorded at \`${here}\`, and sent to the sender through the gate between the two labels.`
+            : "")
         : "No answer was recorded.",
     ...(refused.length > 0 ? { refused } : {}),
   });

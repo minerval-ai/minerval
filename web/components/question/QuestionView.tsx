@@ -1,3 +1,4 @@
+import { SeveralAssessments, SeveralCounted, severalAmong } from "@/components/SeveralAssessments";
 import Link from "next/link";
 import type { ClaimDetail, QuestionAnswer, QuestionDetail } from "@/lib/types";
 import { DEFINED_IN, QUESTION_STANDING, isStanding, statusMeta, isStatus } from "@/lib/ontology";
@@ -14,6 +15,7 @@ import { CiteClaim } from "@/components/claim/CiteClaim";
 import { EmbedClaim } from "@/components/claim/EmbedClaim";
 import styles from "./question.module.css";
 import { PageHead } from "@/components/PageHead";
+import { sourceHref } from "@/lib/source-address";
 
 // A question's page (constitution §7a): first-class, like a claim's. It
 // leads with how well the question is answered and the Steward's best
@@ -40,7 +42,12 @@ function AnswerMark({ a }: { a: QuestionAnswer }) {
   if (a.kind === "quantity" && a.estimate && a.unit) {
     return <span className="qty-chip">{describeEstimate(a.estimate, a.unit).lead}</span>;
   }
-  return a.status ? <StatusBadge status={a.status} /> : <Unassessed />;
+  return (
+    <>
+      {a.status ? <StatusBadge status={a.status} /> : <Unassessed />}
+      <SeveralAssessments id={a.id} n={a.judgments_in_force} />
+    </>
+  );
 }
 
 function Answers({ q }: { q: QuestionDetail }) {
@@ -155,6 +162,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
               <li key={p.id}>
                 {p.status ? <Swatch status={p.status} /> : <span className="swatch st-unassessed" />}{" "}
                 <Link href={`/claims/${p.id}`}>{p.text}</Link>
+                <SeveralAssessments id={p.id} n={p.judgments_in_force} />
                 {p.status && isStatus(p.status) && (
                   <span className={styles.presStatus}> · {statusMeta(p.status).label.toLowerCase()}</span>
                 )}
@@ -231,7 +239,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
                 <div className="instance" key={i.id}>
                   {i.verbatim_text && <blockquote>{i.verbatim_text}</blockquote>}
                   <div className="instance-cite">
-                    {i.source_url ? <a href={i.source_url}>{i.source_title}</a> : <span>{i.source_title}</span>}
+                    {sourceHref(i.source_url) ? <a href={sourceHref(i.source_url)!}>{i.source_title}</a> : <span>{i.source_title}</span>}
                     {i.source_type && <span className="tag">{i.source_type.replace(/_/g, " ")}</span>}
                   </div>
                 </div>
@@ -244,7 +252,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
               <ul className={styles.answeredBy}>
                 {answers.map((i) => (
                   <li key={i.id}>
-                    {i.source_url ? <a href={i.source_url}>{i.source_title}</a> : <span>{i.source_title}</span>}
+                    {sourceHref(i.source_url) ? <a href={sourceHref(i.source_url)!}>{i.source_title}</a> : <span>{i.source_title}</span>}
                     {i.answer_id && (
                       <span className={styles.answeredWith}>
                         {" "}answers <Link href={`/claims/${i.answer_id}`}>{answerText.get(i.answer_id) ?? "an answer"}</Link>
@@ -310,6 +318,7 @@ export function QuestionRail({ detail }: { detail: ClaimDetail }) {
           </li>
         ))}
       </ul>
+      <SeveralCounted n={severalAmong([...q.answers, ...q.subquestions, ...q.presuppositions])} of="nodes" />
     </aside>
   );
 }

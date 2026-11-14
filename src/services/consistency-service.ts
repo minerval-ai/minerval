@@ -31,8 +31,11 @@
  * conclusion: it writes no assessment, no edge, no importance and no
  * valuation, and it moves no money.
  */
+import { oneLabelOnly } from "./judgment-version-service.js";
+import { layered, lowerRowSql, oneCutForClaimSql } from "./layer-service.js";
 import { rawQuery } from "../db/client.js";
 import { ensureAssessActions, ASSESS_GROUP } from "./action-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { enqueueSteward } from "./queue-service.js";
 import { refreshQueuePriority } from "./priority-service.js";
 import { raiseToMandate } from "./mandate-inbox-service.js";
@@ -40,6 +43,7 @@ import { getGeneralMandate } from "./allocation-policy-service.js";
 import { credenceGap, impliedProbability } from "./quantity-math.js";
 import type { QuantityEstimate } from "../schemas/kinds.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { importanceSql, notSetAsideSql, overlaid } from "./overlay-service.js";
 
 /**
  * What kind of incoherence a flag names. A label for the record and the
@@ -141,6 +145,12 @@ function normalizeClaimIds(primary: string, raw: unknown): string[] {
  * id is what a flag snapshots (assessment_id_at_flag carries no foreign
  * key, so it holds any of the three).
  */
+/**
+ * SQL condition: a sweep's row is at the label of the work in progress.
+ * Empty where `public` is the only label, and the statement is what it was.
+ */
+const OWN_LABEL_ONLY = () => (oneLabelOnly() ? "" : ` AND sensitivity_label = minerval_write_label()`);
+
 const CURRENT_RECORD_JOINS = `
   LEFT JOIN assessments_in_force a ON a.claim_id = c.id AND c.kind = 'claim'
   LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id AND c.kind = 'quantity'
@@ -177,6 +187,13 @@ export interface PartitionStatus {
   last_swept_at: Date | null;
   /** Verdicts, estimates and standings written in the partition since its last sweep. */
   changed_since: number;
+  /**
+   * Of those, the ones recorded at the label of the work in progress. Where
+   * a deployment has more than one label a partition is swept at each
+   * label that has judgments of its own in it (reconcileConsistencySweeps
+   * in action-service.ts); with one label this is changed_since.
+   */
+  changed_at_own_label: number;
 }
 
 /**
@@ -185,6 +202,11 @@ export interface PartitionStatus {
  * claims no such tag covers. A two-claim tag cannot hold a cross-claim
  * tension worth a sweep of its own, so the long tail of small tags is
  * swept through the bucket instead.
+ *
+ * It lists what the work in progress reads: the nodes, tags and judgments
+ * of its label and the labels that reads. A partition's last sweep is the
+ * last one at the work's own label, since a sweep at another label did not
+ * read this label's judgments. With one label that is every sweep.
  */
 export async function listPartitions(minTagClaims: number): Promise<PartitionStatus[]> {
   const rows = await rawQuery<{
@@ -196,9 +218,10 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
     importance_mass: number;
     last_swept_at: Date | null;
     changed_since: number;
+    changed_at_own_label: number;
   }>(
     `WITH live AS (
-       SELECT id, importance FROM claims WHERE state = 'active' AND merged_into IS NULL
+       SELECT id, ${importanceSql("claims")} AS importance FROM claims WHERE state = 'active' AND merged_into IS NULL
      ),
      tagged AS (
        SELECT tg.tag_id, l.id AS claim_id, l.importance
@@ -221,7 +244,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
      ),
      last_sweep AS (
        SELECT tag_id, partition, MAX(started_at) AS at
-         FROM consistency_sweeps WHERE status = 'done'
+         FROM consistency_sweeps WHERE status = 'done'${OWN_LABEL_ONLY()}
         GROUP BY tag_id, partition
      ),
      keyed AS (
@@ -232,12 +255,13 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
                AND ls.partition = CASE WHEN m.tag_id IS NULL THEN 'residual' ELSE 'tag' END
      ),
      records AS (
-       SELECT claim_id, assessed_at FROM assessments
-       UNION ALL SELECT claim_id, assessed_at FROM quantity_estimates
-       UNION ALL SELECT claim_id, assessed_at FROM question_assessments
+       SELECT claim_id, assessed_at, sensitivity_label FROM assessments
+       UNION ALL SELECT claim_id, assessed_at, sensitivity_label FROM quantity_estimates
+       UNION ALL SELECT claim_id, assessed_at, sensitivity_label FROM question_assessments
      ),
      changed AS (
-       SELECT k.tag_id, COUNT(*)::int AS n
+       SELECT k.tag_id, COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE r.sensitivity_label = minerval_write_label())::int AS own
          FROM keyed k
          JOIN records r ON r.claim_id = k.claim_id
                        AND (k.at IS NULL OR r.assessed_at > k.at)
@@ -252,7 +276,8 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
                WHERE c.id = k.claim_id AND ${RECORD_ID} IS NOT NULL))::int AS assessed,
             COALESCE(SUM(k.importance), 0)::real AS importance_mass,
             k.at AS last_swept_at,
-            COALESCE(MAX(ch.n), 0)::int AS changed_since
+            COALESCE(MAX(ch.n), 0)::int AS changed_since,
+            COALESCE(MAX(ch.own), 0)::int AS changed_at_own_label
        FROM keyed k
        LEFT JOIN tags t ON t.id = k.tag_id
        LEFT JOIN changed ch ON ch.tag_id IS NOT DISTINCT FROM k.tag_id
@@ -265,6 +290,7 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
     assessed: Number(r.assessed),
     importance_mass: Number(r.importance_mass),
     changed_since: Number(r.changed_since),
+    changed_at_own_label: Number(r.changed_at_own_label),
   }));
 }
 
@@ -285,8 +311,8 @@ export async function duePartitions(minTagClaims: number): Promise<DuePartition[
     // day's cap by looking never-swept).
     rawQuery<{ tag_id: string | null; partition: string }>(
       `SELECT tag_id, partition FROM consistency_sweeps
-        WHERE (status = 'running' AND started_at > now() - make_interval(hours => $1))
-           OR (status = 'error' AND started_at > now() - make_interval(hours => $2))`,
+        WHERE ((status = 'running' AND started_at > now() - make_interval(hours => $1))
+           OR (status = 'error' AND started_at > now() - make_interval(hours => $2)))${OWN_LABEL_ONLY()}`,
       [CONSISTENCY_BOUNDS.reclaimHours, CONSISTENCY_BOUNDS.resweepHours]
     ),
   ]);
@@ -307,11 +333,11 @@ export async function duePartitions(minTagClaims: number): Promise<DuePartition[
       if (a.changed_since !== b.changed_since) return b.changed_since - a.changed_since;
       return b.importance_mass - a.importance_mass;
     });
-  return due.map((p) => ({ ...toSweepPartition(p), assessed: p.assessed }));
+  return due.map((p) => ({ ...toSweepPartition(p), assessed: p.assessed, changedAtOwnLabel: p.changed_at_own_label }));
 }
 
-/** A partition due a sweep, with the size its sweep is priced by (#756). */
-export type DuePartition = SweepPartition & { assessed: number };
+/** A partition due a sweep, with the size its sweep is priced by (#756) and how much of what changed is this label's own. */
+export type DuePartition = SweepPartition & { assessed: number; changedAtOwnLabel: number };
 
 function toSweepPartition(p: PartitionStatus): SweepPartition {
   return p.partition === "tag"
@@ -496,7 +522,7 @@ export async function partitionClaims(
        UNION
        SELECT unnest($2::uuid[])
      )
-     SELECT c.id AS claim_id, c.kind, c.text, c.importance, ${RECORD_STATUS} AS status,
+     SELECT c.id AS claim_id, c.kind, c.text, ${importanceSql("c")} AS importance, ${RECORD_STATUS} AS status,
             a.claim_credence AS credence, a.confidence, qe.estimate,
             ${FAVORED} AS favored_answer_ids,
             ${RECORD_AT} AS assessed_at, COALESCE(a.summary, qe.summary, qa.summary) AS summary,
@@ -510,13 +536,13 @@ export async function partitionClaims(
             EXISTS (SELECT 1 FROM consistency_flags f JOIN actions x ON x.id = f.action_id
                      WHERE f.primary_claim_id = c.id AND x.status IN ('open', 'running')
                        AND f.assessment_id_at_flag = ${RECORD_ID}) AS flag_open,
-            (c.steward_state IN ('pending', 'running')) AS steward_pending,
+            (${slotColumnSql("steward_state", "c")} IN ('pending', 'running')) AS steward_pending,
             COUNT(*) OVER ()::int AS total
        FROM claims c ${CURRENT_RECORD_JOINS}
       WHERE c.state = 'active' AND c.merged_into IS NULL
         AND ${RECORD_ID} IS NOT NULL
         AND (($1::uuid IS NULL AND $2::uuid[] IS NULL) OR c.id IN (SELECT claim_id FROM scoped))
-      ORDER BY changed DESC, c.importance DESC, c.id
+      ORDER BY changed DESC, ${importanceSql("c")} DESC, c.id
       LIMIT $4 OFFSET $5`,
     [scope.tagId ?? null, scope.claimIds ?? null, opts.since ?? null, limit, offset]
   );
@@ -560,6 +586,12 @@ export interface ComparedClaim {
   model: string | null;
   summary: string | null;
   /**
+   * On a graph with more than one label: the node's current judgments at
+   * the other labels the sweep reads, where it has any. The fields above
+   * are the judgment in force for the sweep.
+   */
+  also_judged_at?: JudgedBeside[];
+  /**
    * The head of the reasoning trace (a quantity's work): where the verdict
    * is argued, at most TRACE_EXCERPT_CHARS.
    */
@@ -567,6 +599,43 @@ export interface ComparedClaim {
   /** The whole trace's length, so a cut excerpt says how much was not shown. */
   trace_chars: number;
   trace_truncated: boolean;
+}
+
+/** A current judgment of a node at a label the reader reads, other than the one in force for it. */
+export interface JudgedBeside {
+  label: string;
+  status: string | null;
+  credence: number | null;
+  confidence: number | null;
+  estimate: unknown | null;
+  summary: string | null;
+  assessed_at: string | null;
+}
+
+/**
+ * For each of `ids` that carries a current judgment the reader may read
+ * besides the one in force for it: those judgments, by label. Empty on a
+ * graph with one label, where a node has one.
+ */
+async function judgedBeside(ids: string[]): Promise<Map<string, JudgedBeside[]>> {
+  const out = new Map<string, JudgedBeside[]>();
+  if (!overlaid() || ids.length === 0) return out;
+  const rows = await rawQuery<JudgedBeside & { claim_id: string; at: Date | null }>(
+    `SELECT claim_id, sensitivity_label AS label, status, claim_credence AS credence, confidence, NULL::jsonb AS estimate, summary, assessed_at AS at
+       FROM assessments_versions WHERE claim_id = ANY($1::uuid[]) AND NOT in_force
+     UNION ALL
+     SELECT claim_id, sensitivity_label, NULL, NULL, NULL, estimate, summary, assessed_at
+       FROM quantity_estimates_versions WHERE claim_id = ANY($1::uuid[]) AND NOT in_force
+     UNION ALL
+     SELECT claim_id, sensitivity_label, standing, NULL, confidence, NULL, summary, assessed_at
+       FROM question_assessments_versions WHERE claim_id = ANY($1::uuid[]) AND NOT in_force
+     ORDER BY 1, 2`,
+    [ids]
+  );
+  for (const { claim_id, at, ...r } of rows) {
+    out.set(claim_id, [...(out.get(claim_id) ?? []), { ...r, assessed_at: at ? new Date(at).toISOString() : null }]);
+  }
+  return out;
 }
 
 export interface ComparedRelation {
@@ -613,7 +682,7 @@ export async function compareAssessments(
     summary: string | null;
     reasoning_trace: string | null;
   }>(
-    `SELECT c.id, c.kind, c.text, c.importance, ${RECORD_STATUS} AS status, a.claim_credence,
+    `SELECT c.id, c.kind, c.text, ${importanceSql("c")} AS importance, ${RECORD_STATUS} AS status, a.claim_credence,
             a.confidence, qe.estimate, ${FAVORED} AS favored_answer_ids,
             ${RECORD_AT} AS assessed_at, COALESCE(a.model, qe.model, qa.model) AS model,
             COALESCE(a.summary, qe.summary, qa.summary) AS summary,
@@ -651,11 +720,26 @@ export async function compareAssessments(
     });
   }
   const known = claims.map((c) => c.claim_id);
+  // Where a node carries a judgment at more than one label the sweep reads,
+  // the one given above is the one in force for it, and the others are
+  // given beside it: a judgment made on more owes the one made on less
+  // coherence (§29), so a sweep at a label reads the two against each other.
+  const beside = await judgedBeside(known).catch(() => new Map<string, JudgedBeside[]>());
+  for (const c of claims) {
+    const others = beside.get(c.claim_id);
+    if (others) c.also_judged_at = others;
+  }
   const [edges, links] = await Promise.all([
     rawQuery<{ parent_claim_id: string; child_claim_id: string; relation_type: string; reasoning: string }>(
+      // The edges as the sweep's label has them: one held at two layers
+      // once, and none that the label (or a label it reads) has set aside,
+      // since the judgment at the label does not rest on such an edge and
+      // owes it no commitment (overlay-service.ts).
       `SELECT parent_claim_id, child_claim_id, relation_type, reasoning
-         FROM claim_relationships
-        WHERE parent_claim_id = ANY($1::uuid[]) AND child_claim_id = ANY($1::uuid[])`,
+         FROM claim_relationships r
+        WHERE parent_claim_id = ANY($1::uuid[]) AND child_claim_id = ANY($1::uuid[])${
+          layered() ? ` AND ${lowerRowSql("claim_relationships", "r", ["parent_claim_id", "child_claim_id", "relation_type"])} IS NULL` : ""
+        }${notSetAsideSql("claim_relationships", "r.id")}`,
       [known]
     ),
     rawQuery<{ claim_a_id: string; claim_b_id: string; kind: string; reasoning: string }>(
@@ -802,7 +886,7 @@ async function revalue(claimId: string, input?: { rationale?: string; expectedGa
   const general = await getGeneralMandate();
   const [row] = await rawQuery<{ id: string }>(
     `SELECT id FROM actions WHERE exclusion_group = $1 AND variant = 'standard' AND status = 'open' LIMIT 1`,
-    [`assess:${claimId}`]
+    [ASSESS_GROUP(claimId)]
   );
   if (general && row) {
     await raiseToMandate({
@@ -1301,7 +1385,7 @@ export async function figureAndAnswerChecks(
        JOIN claims q ON q.id = qc.quantity_id AND q.state = 'active'
        JOIN assessments_in_force a ON a.claim_id = qc.claim_id AND a.claim_credence IS NOT NULL
        JOIN quantity_estimates_in_force qe ON qe.claim_id = qc.quantity_id
-      WHERE ${inScope.replaceAll("{{node}}", "qc.claim_id")} OR ${inScope.replaceAll("{{node}}", "qc.quantity_id")}`,
+      WHERE (${inScope.replaceAll("{{node}}", "qc.claim_id")} OR ${inScope.replaceAll("{{node}}", "qc.quantity_id")})${oneCutForClaimSql("qc")}`,
     params
   );
   const cuts: CutCheck[] = [];

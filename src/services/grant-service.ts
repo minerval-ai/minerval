@@ -825,6 +825,7 @@ export async function cancelGrant(input: {
       budgetMicroUsd: Number(job.budgetMicroUsd),
     });
   }
+  await (await import("./gate-handoff.js")).offerMandateBelow(grant.id);
   return { ok: true, refundedMicroUsd: refunded };
 }
 

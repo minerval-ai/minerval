@@ -75,6 +75,7 @@ opposes, addresses). So the export has two layers:
 | Source | `SourceDocument` | Named by its document URL where it has one (as MIRA's sample data does), otherwise by its page here. |
 | Request bearing on the node | `Request` | `title` is the ask, `description` the why, `request_target` the claims it bears on. A question or source it bears on, what would satisfy it, its state, keeper, and work are on its `mv:RequestRecord` and `mv:RequestWork`. MIRA's `request_for` (a Study) has no counterpart yet. |
 | Assessment: status, confidence, credence, summary, reasoning | `mv:NodeRecord` | With `mv:assessmentId` and `mv:assessmentVersion`, the reproducible reference. A question's standing, favored answers, and incompleteness note likewise. |
+| More than one assessment in force for the caller | `mv:Assessment`, one for each | Only inside a private deployment, for a reader who holds two labels that do not read each other. The export carries each whole and does not choose; the node record's own status is the most recently made. A neighbour in the same position carries `mv:judgmentsInForce`. |
 | Who made it | `creator` (`UserAccount`) | Minerval on every node; a request also names its filer: an administrator role, a contributor's display name, or "a funded mandate", which names no party (§12/§19). |
 
 Neighbouring nodes (premises, answers, subquestions, presuppositions, the

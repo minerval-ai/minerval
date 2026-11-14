@@ -8,11 +8,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requestAudit: vi.fn(async (_input: unknown): Promise<string | null> => "run-1"),
-  /** The claim whose label each audit was asked for at, in order (src/labels.ts). */
-  atClaimLabel: [] as string[],
-  /** The claim whose label is in the air while requestAudit runs. */
+  /** The labels the deployment has (services/label-service.ts, everyLabel). */
+  labels: ["public"] as string[],
+  /** Whether `public` is the only label, as the process knows it. */
+  oneLabel: true,
+  /** The label in the air while the detectors and requestAudit run. */
   open: null as string | null,
-  asked: [] as Array<{ dedupeKey: unknown; atLabelOf: string | null }>,
+  /** The label each detector read at, in order. */
+  readAt: [] as Array<string | null>,
+  asked: [] as Array<{ dedupeKey: unknown; at: string | null; context: string }>,
+  /** For a deployment with more labels: the claims whose judgment in force is at the label asked. */
+  judgedAt: {} as Record<string, string[]>,
   performedSettling: vi.fn(async (): Promise<unknown> => ({ candidates: [] })),
   emptyChairs: vi.fn(async (): Promise<unknown> => ({ candidates: [] })),
   config: {
@@ -24,15 +30,25 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../../src/services/queue-service.js", () => ({ requestAudit: mocks.requestAudit }));
 vi.mock("../../../src/services/label-service.js", () => ({
-  runAtClaimLabel: async (claimId: string, fn: () => Promise<unknown>) => {
-    mocks.atClaimLabel.push(claimId);
-    mocks.open = claimId;
+  everyLabel: async () => mocks.labels,
+  keyAtLabel: (key: string, label: string) => (label === "public" ? key : `${key} @${label}`),
+}));
+vi.mock("../../../src/llm/usage-context.js", () => ({
+  runAtLabel: async (label: string, _why: string, fn: () => Promise<unknown>) => {
+    const before = mocks.open;
+    mocks.open = label;
     try {
       return await fn();
     } finally {
-      mocks.open = null;
+      mocks.open = before;
     }
   },
+}));
+vi.mock("../../../src/services/judgment-version-service.js", () => ({ oneLabelOnly: () => mocks.oneLabel }));
+vi.mock("../../../src/services/mirrored-node-service.js", () => ({ holdsMirror: () => false }));
+vi.mock("../../../src/db/client.js", () => ({
+  rawQuery: async (_sql: string, params: unknown[]) =>
+    (mocks.judgedAt[String(params[1])] ?? []).filter((id) => (params[0] as string[]).includes(id)).map((id) => ({ id })),
 }));
 vi.mock("../../../src/services/monitor-service.js", () => ({
   defaultThresholds: (o: Record<string, unknown>) => ({ limit: 25, ...o }),
@@ -124,25 +140,48 @@ describe("flagMonitorCandidates", () => {
     expect(String(first.context)).toContain("s1");
   });
 
-  it("asks for each audit at the label of the claim it is about", async () => {
-    // The sweep is a timer, outside any run. Each audit is about one claim,
-    // so the request is made inside that claim's label (src/labels.ts).
-    mocks.performedSettling.mockResolvedValue({ candidates: [settling("s1", 0.9)] });
-    mocks.emptyChairs.mockResolvedValue({ candidates: [chair("e1", 0.6)] });
-    mocks.atClaimLabel.length = 0;
+  it("works label by label: the detectors read inside each label, and a label asks only about the judgments recorded at it", async () => {
+    // A context states a verdict and counts of instances, so it is worded
+    // from what the label it is written at reads (review 3, finding 1).
+    mocks.labels = ["public", "internal"];
+    mocks.oneLabel = false;
+    // Inside `internal` the same public node reads as settled, by internal's
+    // own version; inside `public` it is not a candidate at all.
+    mocks.performedSettling.mockImplementation(async () => {
+      mocks.readAt.push(mocks.open);
+      return { candidates: mocks.open === "internal" ? [settling("s1", 0.9), settling("p1", 0.5)] : [settling("p1", 0.5)] };
+    });
+    mocks.emptyChairs.mockImplementation(async () => {
+      mocks.readAt.push(mocks.open);
+      return { candidates: [] };
+    });
+    // p1's judgment in force is the public one for both; s1's is internal's own.
+    mocks.judgedAt = { public: ["p1"], internal: ["s1"] };
+    mocks.readAt.length = 0;
     mocks.asked.length = 0;
     mocks.requestAudit.mockImplementation(async (input: unknown) => {
-      mocks.asked.push({ dedupeKey: (input as { dedupeKey: unknown }).dedupeKey, atLabelOf: mocks.open });
+      const i = input as { dedupeKey: unknown; context: string };
+      mocks.asked.push({ dedupeKey: i.dedupeKey, at: mocks.open, context: i.context });
       return "run-1";
     });
     try {
-      await flagMonitorCandidates({ now: NOW });
+      const r = await flagMonitorCandidates({ now: NOW });
+      expect(r.candidates).toBe(2);
     } finally {
       mocks.requestAudit.mockImplementation(async () => "run-1");
+      mocks.performedSettling.mockImplementation(async () => ({ candidates: [] }));
+      mocks.emptyChairs.mockImplementation(async () => ({ candidates: [] }));
+      mocks.labels = ["public"];
+      mocks.oneLabel = true;
+      mocks.judgedAt = {};
     }
-    expect(mocks.atClaimLabel).toEqual(["s1", "e1"]);
-    expect(mocks.asked.map((a) => a.atLabelOf)).toEqual(["s1", "e1"]);
-    expect(String(mocks.asked[0]!.dedupeKey)).toContain(":s1:");
+    // Never read with no label, and never outside the label it is asked at.
+    expect(mocks.readAt).toEqual(["public", "public", "internal", "internal"]);
+    const bucket = reflagBucket(NOW, 14);
+    expect(mocks.asked.map((a) => [a.at, a.dedupeKey])).toEqual([
+      ["internal", `monitor:performed_settling:s1:${bucket} @internal`],
+      ["public", `monitor:performed_settling:p1:${bucket}`],
+    ]);
   });
 
   it("caps flags per sweep and passes the cap as the detectors' limit", async () => {

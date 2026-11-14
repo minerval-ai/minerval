@@ -10,11 +10,11 @@ One codebase serves both sides. A deployment publishes the feed, applies one, do
 
 Mirrored rows live in the same tables as a deployment's own, because edges and judgments reference `claims.id`. Each replicated table has an `origin` column: `mirror` for a row the applier wrote from the feed, `local` for every other row (which is every row on the public graph).
 
-A mirrored row is the public graph's. Nothing in the deployment edits it. A local view of a public claim is a judgment of the deployment's own, recorded beside the mirrored one, never an edit of it.
+A mirrored row is the public graph's. Nothing in the deployment edits it. A local view of a public claim is a judgment of the deployment's own, recorded beside the mirrored one, never an edit of it ("Beside a deployment's own rows", below).
 
 ## What travels
 
-The one list is `src/services/mirror-manifest.ts`. Nineteen tables, parents first:
+The one list is `src/services/mirror-manifest.ts`. Twenty-two tables, parents first:
 
 | Table | What it is |
 | --- | --- |
@@ -26,15 +26,17 @@ The one list is `src/services/mirror-manifest.ts`. Nineteen tables, parents firs
 | `assessments`, `quantity_estimates`, `question_assessments`, `argument_evaluations` | Judgments, current and past |
 | `source_interests` | A source's recorded stake |
 | `judgment_inputs` | What each judgment was made against |
+| `feed_contributions`, `feed_requests`, `feed_request_targets` | The public record that is not rows of the graph: what each contribution on a node said, of what type, about which published page and where its review stands; and each request with the nodes it bears on, and the published mandate it is addressed to where it is addressed to one, so that the mandate's publisher finds it. Filled on the publisher before each cut from its `contributions` and `requests`, with no account ([outward-acts.md](outward-acts.md)) |
 
 Every column of these tables travels unless the manifest names it with a reason:
 
 - **Local working state** stays local: a claim's place in the Steward's queue (`steward_*`, `queue_priority`), its tagging lease (`tagged_at`, `tagging_*`), and `updated_at`. The deployment writes these on a mirrored claim; the feed never does.
 - **Money** does not travel: `funded_by_job_id` on a judgment names a budget job in the publisher's ledger.
 - **What points outside the list** does not travel: `arguments.lean_check_id`.
-- `origin` and `sensitivity_label` are handled for every table at once. Only rows at the `public` label are published, and a mirrored row is `public`.
+- `origin` and `sensitivity_label` are handled for every table at once. Only rows at the `public` label are published, and the applier writes `public` on every mirrored row.
+- `judgment_inputs.input_label` points to `labels`, which is not mirrored. It is set only on a row that says which version at another label a judgment was made beside, and a graph that publishes has one label and no such row.
 
-Not mirrored at all: run transcripts, accounts and keys, the ledger and mandates, queues and inboxes, the contribution record, tags, source events, the provenance tables, requests, and the mathematics tables. The manifest's `NOT_MIRRORED` gives the reason for each.
+Not mirrored at all: run transcripts, accounts and keys, the ledger and mandates, queues and inboxes, the contribution record's reviews and its accounts, the work done on requests, tags, source events, the provenance tables, and the mathematics tables. The manifest's `NOT_MIRRORED` gives the reason for each.
 
 **A mirrored judgment's run.** `run_id` on a mirrored assessment is the id of a run on the public graph. It has no foreign key and resolves to nothing locally. The transcript is read on the public graph; each batch states the public graph's web address (`publisher.web_base_url`), and `GET /mirror/status` passes it on.
 
@@ -110,7 +112,7 @@ A batch is applied only when all of this holds. Otherwise nothing of it is writt
 2. It is the next batch of the feed this mirror follows, naming the last applied batch's hash. A batch already applied is recognized by its hash and changes nothing. The one way past a batch is the first batch of a later snapshot.
 3. The mirrored tables had, where it was cut, exactly the shape this deployment's code writes, and its vectors come from this deployment's embedding model.
 
-Each batch is applied in one transaction. The applier writes replicated columns only, and only rows whose origin is `mirror`. A row in a batch with the id of a local row stops the batch.
+Each batch is applied in one transaction. The applier writes replicated columns only, and only rows whose origin is `mirror`. A row in a batch with the id of a local row stops the batch: ids are random, so that means the database was loaded with rows copied from the public graph. No other row of the deployment's own stops one ("Beside a deployment's own rows").
 
 ### Schema compatibility
 
@@ -124,9 +126,12 @@ A migration that rewrites the values of a mirrored column without changing any c
 
 ### Deletions, retractions and merges
 
-- A **deletion** or **retraction** removes the mirrored row. Local rows that pointed to it follow their foreign keys, as they would on the public graph, and the batch's notes say what went.
-- The exception is a **claim** that local rows point to. It is kept, as `deprecated`, so that local edges, instances and judgments are not swept away with it.
+- A **deletion** or **retraction** removes the mirrored row.
+- The exception is a row that the deployment's own work hangs off, while local rows point to it: a **claim** (kept as `deprecated`, with the local edges, instances and judgments on it), an **argument** (kept as retired, with a label's evaluation of it), an **instance** (kept as detached, with a label's reading of it) and a **source** (kept as it was last sent, with the local instances from it). A row is also kept while a kept row points to it, so a kept argument keeps its claim. The batch's notes list what was kept (`kept_claims`, `kept_rows`).
+- A link row with nothing of its own to say goes with what it links: a local grouping of a mirrored edge that the public graph removes follows the edge, and the notes say what went (`local_rows_followed`).
 - A **merge** arrives as the absorbed claim's `state` and `merged_into`. References to it still resolve. Local rows that hang off it are left as they are and listed in the batch's notes.
+
+Nothing of the deployment's own at a private label is deleted or moved by a batch. What follows a merge or a withdrawal for the deployment's own work is under "Beside a deployment's own rows".
 
 Notes are in `mirror_applied_batches.notes`.
 
@@ -138,7 +143,87 @@ The applier identifies itself with a setting that lasts for its transaction. Tha
 
 ### How current the mirror is
 
-`GET /mirror/status` (`get_mirror_status` on MCP), mounted only on a deployment that mirrors: `public_graph_as_of`, the sequence and hash of the newest batch, when it was applied, whether a snapshot is only partly applied, how many mirrored claims a search can find, and the last refusal since.
+`GET /mirror/status` (`get_mirror_status` on MCP), mounted only on a deployment that mirrors: `public_graph_as_of`, the sequence and hash of the newest batch, when it was applied, whether a snapshot is only partly applied, how many mirrored claims a search can find, and the last refusal since. A refusal that names a row this deployment holds (`id_collision`, `row_refused`) is served with a message that says only that a row could not be written, because the row may be at a label the reader does not hold; `npx tsx scripts/mirror.ts status` prints the full reason for the operator.
+
+## Beside a deployment's own rows
+
+A private deployment holds the public graph's rows and its own in the same tables: a version of a judgment at a private label beside the public assessment, a private node with a public premise, a private source at an address the public graph also holds. This section is how the two live together. None of it runs on a deployment that does not mirror (`holdsMirror` in `src/services/mirrored-node-service.ts`): no query is made and no statement changes.
+
+### The applier and the wall
+
+Where a deployment has more than one label, the database holds every connection to a clearance ([architecture.md](architecture.md), "Labels and clearance"). The applier works at system clearance, on the tables' owner's connection (`withSystemClearance`; `tests/unit/db/system-clearance.test.ts` has its reason). It has to see a row at any label that points to a row it removes, and the rows it writes belong to no run. Everything it writes is `public` and `mirror`, and it names both: on such a deployment a row is never public by omission.
+
+It changes one thing of the deployment's own. A judgment recorded here at a mirrored node's own label stands where the public graph's must (one current judgment for a node at a label). Nothing in the application records one, and a row that got there some other way is retired to history, not deleted, before the mirrored current row is written. The batch's notes say so (`local_judgments_retired`).
+
+### Identity is per graph
+
+A deployment's row and a mirrored row can say the same thing: a source at one address, an edge between the same two public claims. Before this, such a pair collided on a unique key and the batch was refused. Now every key a replicated table has besides its id ends with `origin`, after the row's label, so both stand and the mirrored row always applies. On the public graph every row is `local` and each index holds what it held.
+
+| Table | Key | What a read does with a pair |
+| --- | --- | --- |
+| `sources` | address | A read by address takes one row: the deployment's own where it is at the label of the work in progress (what that label wrote), else the public graph's, else a row of the deployment's own at a label the work reads, the lowest first (`oneSourceForAddressSql`). A read of either says how it stands to the other (`public_graph_source_id`, or `mirrored`). |
+| `claim_relationships` | parent, child, relation | A node's read lists the edge once: the public graph's row, with what the deployment wrote for its own beside it (`also_recorded_here`). |
+| `claim_links` | the pair and the kind | Both rows are listed. |
+| `answer_relations` | question and the pair | Both rows are listed. |
+| `argument_subclaims` | argument and edge (the primary key, which ends with the label and `origin`) | One premise where an argument's premises are listed. |
+| `quantity_cuts` | the claim (the primary key, which ends with the label and `origin`) | A read takes one cut for a claim by the rule a source's address has (`oneCutForClaimSql`). `record_cut` is refused once the public graph holds a cut for the claim. |
+| `quantity_definitions` | the quantity (the primary key, which ends with the label and `origin`) | No pair arises: a mirrored node's kind and definition are the public graph's, and defining it here is refused. |
+| `source_segments` | document and position | No pair arises: a mirrored document is not segmented here, and work at a label anchors its instances to the segments that came with the mirror. |
+| the four judgment tables | node, and label where there is more than one | No pair: the judgment of a mirrored node at its own label is the mirrored row. |
+
+A pair arises only when the deployment recorded the thing first. A run that records an edge or a link the public graph already holds is given the public graph's. Tags are not mirrored, so there is nothing to collide with.
+
+None of this is special to the mirror. The mirror is the lowest layer of a deployment's graph, and the same holds between a label and a label it reads: each key above also holds `sensitivity_label`, a write goes by the row a layer below already holds, and a read gives one row or lists the thing once by the rule in the table ([architecture.md](architecture.md), "Each layer keeps its own identity"; `src/services/layer-service.ts`). What this section calls "the deployment's own" row is, between labels, the higher label's, and "the public graph's" is the row of the label it reads.
+
+### What a run can and cannot do to a mirrored node
+
+Three rules, each with its reason.
+
+- **Nothing here changes a mirrored row.** The next batch would overwrite the change, and until then readers would take it for the public graph's own. The database refuses it whatever the label (`mirror_row_guard`, and for a run at a private label `minerval_own_label_guard` would refuse too). An agent is told one thing whichever would have fired (`mirroredRowMessage`), with what it can do instead.
+- **The judgment of a mirrored node at the node's own label is the mirrored row.** No run records an assessment, an estimate, an answer or an argument's evaluation at `public` on a mirrored node, and no work on the node at `public` is opened, funded or run: no ledger row, no slot, no order, no commission, no note to its Steward, no request to the Curator anchored on it. A second public assessment made here would be the deployment's own, on the same public evidence, shown to readers as the public graph's. A fresh public assessment is funded on the public graph.
+- **What a run adds is a row of its own, at its own label.** An argument, an edge, a source, and at a label other than the node's a version of the judgment, or the record that the public one was examined at that label and left standing ([architecture.md](architecture.md), "A judgment at each label").
+
+The Steward's tools against a mirrored node, for a run at a private label that reads `public`. `tests/db/private-on-mirror.test.ts` drives each of them but four: `add_decomposition_edge` and `add_parent_claim`, which call the Matcher and so a model, and `update_question_assessment` and `set_argument_shows`, which go through the same seams as the tools beside them.
+
+| Tool | On a mirrored node |
+| --- | --- |
+| `update_claim_assessment`, `update_quantity_estimate`, `update_question_assessment`, `evaluate_argument` | Records the run's own version at its label. At the node's own label: refused, with the reason. |
+| `leave_judgment_standing` | Records that the run's label examined the node and left the public judgment standing for its readers. At the node's own label: refused, with the reason. |
+| `record_claim_instance`, `record_argument_instance`, `add_argument`, `add_relationship_edge`, `add_related_claim`, `add_decomposition_edge`, `add_parent_claim` | Adds a row at the run's label. An edge or a link the public graph already holds is not recorded again. |
+| `log_stewardship_decision`, `escalate_to_curator`, `notify_steward`, `file_request` | Works at the run's label. A note to a mirrored node's Steward at the node's own label is refused: nobody here runs that pass. |
+| `update_canonical_form`, `set_claim_importance`, `set_claim_domains`, `set_quantity_definition` | Refused with the one message. |
+| `record_cut` | Records the run's cut at its label, beside any the public graph later records for the claim. Refused with the one message once the public graph holds the claim's cut. |
+| `write_argument`, `revise_argument`, `retire_argument`, `update_claim_instance`, `detach_claim_instance`, `set_instance_order`, `remove_subclaim_edge`, `set_edge_relation`, `ungroup_subclaim`, on a row the public graph recorded | Refused with the one message. On a row the run's own label recorded, they work as anywhere. |
+
+The tools are offered as on any node. A tool is refused when it is used on what the public graph holds, and the run's brief says so beforehand.
+
+A member who orders, funds or asks for a decomposition of a mirrored node without naming a label is refused (409, `PUBLIC_GRAPH_NODE`) and told why and what to do: fund the public assessment on the public graph, at the address the feed gives, or name a label that reads `public` to have the node assessed on the deployment's own material. A contribution to a mirrored node is filed at the node's own label, so it is refused the same way (`POST /contributions` and `submit_contribution`, before anything is counted against the contributor): its review, and what the node's Steward would do with it, are work at `public` on a node the public graph judges. The member is told to contribute on the public graph, and that the deployment's own material is weighed by an assessment at a label that reads `public`.
+
+### Kept current
+
+After a sync the applier's worker, and `scripts/mirror.ts`, call `afterMirrorApplied` (`src/services/mirror-upkeep.ts`) with what the batches returned (`ApplyResult.nodes`). It looks at those nodes and no others, and everything it does opens work on the ledger or raises a request. Nothing runs that is not funded.
+
+- **A node's public judgment was replaced.** Each version at another label records the versions it was made beside. Its read now shows it as made against an earlier one, from the record, and its reassessment is opened at its own label and nowhere else (`version-upkeep.ts`, for the nodes the batch names). Where a label had examined the node and left the public judgment standing, the read and the page now say the question is open again at that label, and a reassessment is opened there the same way.
+- **A node was reworded, or an argument on it was added, rewritten, retired or removed.** The mirror overwrites these in place, so the applier writes what it replaced to `node_changes` in the batch's own transaction. The Steward's note of what has changed since its version reads it at its next pass, for the node itself and for the mirrored nodes under it (`src/llm/agents/changes-below-note.ts`). The same table and the same note carry what work at one label of the deployment changes on a node to the Stewards at the labels that read it ([architecture.md](architecture.md), "Word from the layer below"): the public graph is the bottom layer of that, and the applier is its writer. Edges, sources and judgments under a node are compared as before, from the record a judgment keeps of its inputs.
+- **A node was merged into another.** What the deployment recorded on the merged node stays there. Whether a judgment of one wording holds for another is a judgment, and a merge with a denial reverses every stance, so nothing is moved mechanically: a batch says that a node was merged and not whether it was merged with its denial. (A merge made by this deployment's own Curator knows which, and moves every label's rows; [architecture.md](architecture.md), "A merge under more than one label".) A pass is opened, at each label that had something of its own on the merged node, on the node it was merged into, with a message that says what was recorded and where. The Steward of each node that had the merged node under it by an edge of the deployment's own is told the same way.
+- **A node was withdrawn**: deleted upstream, or no longer active there. It is kept here, not active, with what the deployment recorded on it, and a read of it says so (`mirrored.withdrawn_as_of`). No work is opened on a node that is not active, on this graph as on the public one, so a version on it stands as it is and reads as made beside a judgment that is gone. The Steward of each node that has it as a premise by an edge of the deployment's own is told, and a pass opened.
+
+### Convergence
+
+The Matcher's searches read the mirror and the deployment's own nodes together, at the run's clearance, so a private question about a public claim links to the public node. When the public graph later mints a claim that a node of the deployment's own already states, the batch that brings it pairs each of the deployment's nodes with the nearest node that arrived, and asks the Curator about a pair above the reconcile scan's similarity floor, at the deployment's node's label (`scanArrivedPublicNodes`, which raises it through `raiseConvergence`, the one act for a node and a node a layer below it; between two labels the reconcile-candidate scan raises the same request at the label that reads both). If the Curator judges them one, its ordinary `merge_claims` with the public node as the survivor folds the deployment's node into it: its sources, arguments and edges move to the public node, each row at the label it has, the mirrored rows are untouched, and the label's Steward then records its version on the public node. A mirrored node is never the one merged away: `merge_claims` refuses and says to merge the other way.
+
+### What a run and a reader are told
+
+A run is told in its brief, and nowhere else (`src/llm/label-note.ts`): which of what it reads is the public graph's and as of when, that no run changes it and why, that the judgment of a mirrored node at its own label is the public graph's, and that a mirrored node it thinks is wrong is a request, which stays in the deployment. These are sentences inside the note about the run's label, beside the sentences they qualify. A deployment that mirrors and has one label gets them as a short passage of their own.
+
+A read of a node says that it is mirrored and as of when (`mirrored.public_graph_as_of`, with the node's address on the public graph where the feed gives one), beside its `label` and the `versions` of its judgment.
+
+### What this does not do
+
+- A link or an answer relation the deployment recorded and the public graph then recorded too is listed twice where links and answer relations are listed. The Steward at that label can remove its own.
+- `node_changes` is not pruned.
+- A deployment that stops mirroring by unsetting its feed keeps its mirrored rows and the database's guard on them, but the application then asks nothing about them: it no longer says what is mirrored.
+- A request the deployment's own agents record about a mirrored node goes no further than the deployment until someone raises it on the public graph. The public graph's own requests do come in with the feed, and can be adopted ([outward-acts.md](outward-acts.md)).
 
 ## Configuration
 
@@ -170,8 +255,6 @@ npx tsx scripts/mirror.ts status               # how current the mirror is
 
 ## Not built yet
 
-- Private judgments of mirrored claims, and marking them stale when the mirror moves.
 - A price for the feed.
 - Recomputing mirrored vectors for a deployment with its own embedding model.
-- Tags, requests, provenance and mathematics in the feed.
-- A source that a deployment recorded itself and the public graph later holds at the same address. `sources.url` is unique across the table, so the batch that carries the public row is refused until the local row is dealt with. Giving sources an identity per graph removes the collision.
+- Tags, provenance, mathematics, the reasoning of contribution reviews and the work done on requests in the feed.

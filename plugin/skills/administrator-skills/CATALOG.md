@@ -89,6 +89,10 @@ The Lookout's counterpart and the most flexible agent a mandate can fund: any ag
 
 The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.
 
+### Redactor (`roles/redactor.md`)
+
+Works at the gate where something written at one label goes to readers who may not read that label: a node's page, an answer, a mandate's terms or funding. Under the policy for that boundary it removes the passages a category covers and marks each removal in place, and may hold or delay a part. Its tools change no word. What it lets through goes once Audit has checked its work, unless the gate is set for a person to decide as well.
+
 ### Solver (`roles/math-solver.md`)
 
 The platform's own prover, an instrument rather than an administrator: it receives no constitution, owns nothing, and writes nothing to the graph. One bounded attempt on one published formal statement, with Lean, a computer-algebra sandbox, and a notebook; its report goes to the claim's Steward, who decides what it means.

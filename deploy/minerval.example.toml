@@ -48,6 +48,9 @@ researcher_standard = "claude-sonnet-5-5"
 researcher_cheap = "openai/gpt-6-luna"
 solver = "claude-fable-5-2"
 judge = "claude-sonnet-5-5"
+# The Redactor, where a page is shown to readers who do not read its label.
+# Left empty, it runs on the steward's model.
+# redactor = ""
 
 # How the model providers are called. Their keys are secrets and stay in the
 # environment: ANTHROPIC_API_KEY, OPENAI_API_KEY (which also makes the
@@ -153,6 +156,10 @@ name = "episteme"
 # host = "db.internal"
 # port = 5432
 # user = "minerval"
+# "off" where the database is on a network of the deployment's own; or the
+# authority a database that is not on RDS is verified against. Never both.
+# tls = "off"
+# ca_file = "/etc/minerval/database-ca.pem"
 
 # What an owl costs to buy and what it covers, in millionths of a dollar;
 # what is given away; and the most each paid operation can cost, in owls.
@@ -173,3 +180,51 @@ cap_assessment_owls = 2
 cap_source_ingest_owls = 10
 cap_extension_analysis_owls = 1
 cap_text_analysis_owls = 0.1
+# "sold", or "created" where the deployment's administrators create its owls.
+# owls = "sold"
+
+# A price this deployment states for a model, in US dollars per million
+# tokens: for a model the rate table does not know, or in place of the
+# table's. Where owls are created, a run on a model with no price is refused.
+# [[pricing.model_prices]]
+# model = "gpt-oss-120b"
+# input_usd_per_mtok = 0.5
+# output_usd_per_mtok = 1.5
+
+# Runs that read a private label. fetches is "any" (a tool takes any address,
+# as on the public graph) or "given": a tool takes only an address the
+# deployment was given from outside. See PRIVATE_RUN_FETCHES in deploy/env.example.
+# [private_runs]
+# fetches = "any"
+
+# Showing pages outside. hosting says where this deployment runs
+# (own_machines, minerval or third_party) and is stated in every package.
+# The signing key is PUBLISH_SIGNING_KEY.
+# [publishing]
+# hosting = "own_machines"
+
+# The public graph as this deployment reaches it: its API, which permission's
+# holders may act there in the organization's name, and how the deployment
+# pays toward it (metered or flat). The account key is PUBLIC_GRAPH_API_KEY.
+# [public_graph]
+# api_url = "https://api.minerval.ai"
+# acts_by = "direct"
+# price = "metered"
+
+# Where a metered deployment's usage reports go: an address (with
+# USAGE_REPORT_API_KEY) or a directory, never both.
+# [usage_report]
+# url = "https://api.minerval.ai/usage-reports"
+# dir = "/var/lib/minerval/usage-reports"
+# from = "2026-11-01"
+
+# Where uploaded sets of files are kept, and the directory that directories
+# are registered from.
+# [file_sets]
+# store_dir = "/var/lib/minerval/file-sets"
+# directory_root = "/srv/registered"
+
+# The sandbox agents run commands over file sets in. Its token is SANDBOX_TOKEN.
+# [sandbox]
+# url = "http://sandbox:8080"
+# hour_cost_micro_usd = 50000

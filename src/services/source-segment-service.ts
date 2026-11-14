@@ -16,8 +16,12 @@
  * other block is a passage. A heuristic, written down and testable, never
  * a model: the same document always divides the same way.
  */
+import { oneReadingForInstanceSql } from "./layer-service.js";
 import { createHash, randomUUID } from "node:crypto";
 import { rawQuery } from "../db/client.js";
+import { judgmentsInForce, severalInForceNote } from "./judgment-version-service.js";
+import { currentLabel, runAtLabel } from "../llm/usage-context.js";
+import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { htmlToText } from "./source-map-service.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
@@ -181,16 +185,32 @@ const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
  * the document shares (src/labels.ts).
  */
 export async function segmentSource(sourceId: string): Promise<{ segments: number; anchored: number }> {
-  const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string }>(
-    `SELECT raw_content, sensitivity_label FROM sources WHERE id = $1`,
+  const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string; origin: string }>(
+    `SELECT raw_content, sensitivity_label, origin FROM sources WHERE id = $1`,
     [sourceId]
   );
   if (!row?.raw_content?.trim()) return { segments: 0, anchored: 0 };
   const text = htmlToText(row.raw_content);
+  // A mirrored document's segments are the public graph's and arrive with
+  // the mirror (docs/mirror.md). They are not replaced here: this label's
+  // instances are anchored to them as they stand.
+  if (row.origin === "mirror") {
+    const [have] = await rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM source_segments WHERE source_id = $1`,
+      [sourceId]
+    );
+    return { segments: have?.n ?? 0, anchored: await anchorInstances(sourceId, text) };
+  }
   const drafts = segmentText(text);
 
-  await rawQuery(`UPDATE claim_instances SET segment_id = NULL WHERE source_id = $1`, [sourceId]);
-  await rawQuery(`DELETE FROM source_segments WHERE source_id = $1`, [sourceId]);
+  // An instance's anchor is a column of the instance, which is changed only
+  // by work at the instance's own label (db/clearance.ts). An instance at
+  // another label is anchored when work at its label next records or
+  // segments, and reads unanchored until then.
+  await rawQuery(`UPDATE claim_instances SET segment_id = NULL WHERE source_id = $1 AND sensitivity_label = $2`, [
+    sourceId,
+    currentLabel(),
+  ]);
   // The source's label, not the label of whatever is segmenting. The
   // column is not `label`, which is a segment's heading.
   const sensitivityLabel = row.sensitivity_label;
@@ -199,31 +219,37 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
   // keys point at rows already inserted or inserted in the same statement.
   const ids = drafts.map(() => randomUUID());
   const BATCH = 500;
-  for (let i = 0; i < drafts.length; i += BATCH) {
-    const values: unknown[] = [];
-    const rows = drafts.slice(i, i + BATCH).map((d, j) => {
-      const base = j * 10;
-      values.push(
-        ids[i + j],
-        sourceId,
-        d.parent === null ? null : ids[d.parent],
-        i + j,
-        d.label,
-        d.kind,
-        d.start,
-        d.end,
-        sha256(text.slice(d.start, d.end)),
-        sensitivityLabel
+  // The segments are replaced at the source's label, and so on a connection
+  // at that label: the database lets a connection add a row only at its own
+  // (db/clearance.ts), and these rows are the document's, not the reader's.
+  await runAtLabel(sensitivityLabel, `the segments of source ${sourceId}`, async () => {
+    await rawQuery(`DELETE FROM source_segments WHERE source_id = $1`, [sourceId]);
+    for (let i = 0; i < drafts.length; i += BATCH) {
+      const values: unknown[] = [];
+      const rows = drafts.slice(i, i + BATCH).map((d, j) => {
+        const base = j * 10;
+        values.push(
+          ids[i + j],
+          sourceId,
+          d.parent === null ? null : ids[d.parent],
+          i + j,
+          d.label,
+          d.kind,
+          d.start,
+          d.end,
+          sha256(text.slice(d.start, d.end)),
+          sensitivityLabel
+        );
+        return `($${base + 1}::uuid, $${base + 2}::uuid, $${base + 3}::uuid, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
+      });
+      await rawQuery(
+        `INSERT INTO source_segments
+           (id, source_id, parent_id, ordinal, label, kind, char_start, char_end, text_hash, sensitivity_label)
+         VALUES ${rows.join(", ")}`,
+        values
       );
-      return `($${base + 1}::uuid, $${base + 2}::uuid, $${base + 3}::uuid, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10})`;
-    });
-    await rawQuery(
-      `INSERT INTO source_segments
-         (id, source_id, parent_id, ordinal, label, kind, char_start, char_end, text_hash, sensitivity_label)
-       VALUES ${rows.join(", ")}`,
-      values
-    );
-  }
+    }
+  });
   const anchored = await anchorInstances(sourceId, text);
   return { segments: drafts.length, anchored };
 }
@@ -235,8 +261,9 @@ export async function segmentSource(sourceId: string): Promise<{ segments: numbe
  */
 export async function anchorInstances(sourceId: string, knownText?: string): Promise<number> {
   const instances = await rawQuery<{ id: string; verbatim_text: string }>(
-    `SELECT id, verbatim_text FROM claim_instances WHERE source_id = $1 AND segment_id IS NULL`,
-    [sourceId]
+    `SELECT id, verbatim_text FROM claim_instances
+      WHERE source_id = $1 AND segment_id IS NULL AND sensitivity_label = $2`,
+    [sourceId, currentLabel()]
   );
   if (instances.length === 0) return 0;
   const segments = await rawQuery<{ id: string; kind: string; start: number; end: number }>(
@@ -287,7 +314,8 @@ export async function segmentSourceOnce(sourceId: string): Promise<void> {
 
 export interface DocumentInstanceView {
   instance_id: string;
-  claim: { id: string; text: string; status: string | null };
+  /** `judgments_in_force` is present only where more than one judgment of the claim is in force for the asker; `status` is then the most recently made (judgment-version-service.ts). */
+  claim: { id: string; text: string; status: string | null; judgments_in_force?: number; judgments_in_force_note?: string };
   stance: string;
   verbatim_text: string;
   /** The claim Steward's reading of this appearance, in that claim's voice. */
@@ -302,7 +330,11 @@ export interface DocumentSegmentView {
   label: string | null;
   char_start: number;
   char_end: number;
-  /** Leaves carry their text; a section's text is its children's. */
+  /**
+   * Leaves carry their text; a section's text is its children's. Null too,
+   * with `label`, on every segment of a document whose text is withheld
+   * from this reader (text_withheld on the document says so).
+   */
   text: string | null;
   instances: DocumentInstanceView[];
 }
@@ -324,19 +356,43 @@ export interface SourceDocumentView {
    * before extractions were recorded.
    */
   extractions: ExtractionRecord[];
+  /**
+   * Present when the reader may read this source and may not open it
+   * (src/raw-sources.ts): the segments then come without their text and
+   * headings, and this says so and which permission opens them. What the
+   * agents recorded from the document is shown either way.
+   */
+  text_withheld?: WithheldSourceText;
 }
 
 /**
  * The document as annotated text: its segments in order, each passage with
  * the claims that assert or engage it and each claim Steward's reading. The
  * source page's body. Anchors instances recorded since the last pass first.
+ *
+ * `rawSourceLabels` is the labels whose raw sources the reader may open, or
+ * null where nothing is held (the public graph, and work that is not a
+ * person's read). A reader who may not open this source's label gets its
+ * structure and what the agents recorded, with the text withheld and said
+ * to be. `offset` and `limit` ask for a page of the segments (the whole
+ * document otherwise), and `withText` false leaves every passage's text out.
  */
 export async function getSourceDocument(
   sourceId: string,
-  page: { offset?: number; limit?: number; withText?: boolean } = {}
+  opts: {
+    rawSourceLabels?: readonly string[] | null;
+    offset?: number;
+    limit?: number;
+    withText?: boolean;
+  } = {}
 ): Promise<SourceDocumentView | null> {
-  const [row] = await rawQuery<{ raw_content: string | null }>(`SELECT raw_content FROM sources WHERE id = $1`, [sourceId]);
+  const page = opts;
+  const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string }>(
+    `SELECT raw_content, sensitivity_label FROM sources WHERE id = $1`,
+    [sourceId]
+  );
   if (!row) return null;
+  const open = mayOpenRawSources(opts.rawSourceLabels ?? null, row.sensitivity_label);
   const text = htmlToText(row.raw_content ?? "");
   await anchorInstances(sourceId, text).catch(() => 0);
   const [segments, instances] = await Promise.all([
@@ -371,15 +427,20 @@ export async function getSourceDocument(
               ci.stance, ci.verbatim_text, r.support, r.note, r.source_read
          FROM claim_instances ci
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
-         LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id
+         LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id${oneReadingForInstanceSql("r")}
         WHERE ci.source_id = $1 AND ci.detached_at IS NULL
         ORDER BY ci.created_at`,
       [sourceId]
     ),
   ]);
+  const several = await judgmentsInForce(instances.map((i) => i.claim_id)).catch(() => new Map<string, number>());
+  const severalOf = (claimId: string) => {
+    const n = several.get(claimId.toLowerCase());
+    return n ? { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) } : {};
+  };
   const view = (i: (typeof instances)[number]): DocumentInstanceView => ({
     instance_id: i.id,
-    claim: { id: i.claim_id, text: i.claim_text, status: i.status },
+    claim: { id: i.claim_id, text: i.claim_text, status: i.status, ...severalOf(i.claim_id) },
     stance: i.stance,
     verbatim_text: i.verbatim_text,
     reading: i.support ? { support: i.support, note: i.note, source_read: i.source_read === true } : null,
@@ -411,13 +472,15 @@ export async function getSourceDocument(
       parent_id: s.parent_id,
       ordinal: s.ordinal,
       kind: s.kind,
-      label: s.label,
+      // A heading is the document's own words, like the passage under it.
+      label: open ? s.label : null,
       char_start: s.char_start,
       char_end: s.char_end,
-      text: s.kind === "section" || !withText ? null : text.slice(s.char_start, s.char_end),
+      text: !open || s.kind === "section" || !withText ? null : text.slice(s.char_start, s.char_end),
       instances: bySegment.get(s.id) ?? [],
     })),
     unanchored,
     extractions: await sourceExtractions(sourceId),
+    ...(open ? {} : { text_withheld: withheldSourceText(row.sensitivity_label) }),
   };
 }

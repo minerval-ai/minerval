@@ -50,7 +50,11 @@ describe("source kinds", () => {
   it("every primary and generic kind is on the list, and an agent states any kind but unknown", () => {
     for (const k of [...PRIMARY_SOURCE_KINDS, ...GENERIC_SOURCE_KINDS]) expect(SOURCE_KINDS).toContain(k);
     expect(STATABLE_SOURCE_KINDS).not.toContain("unknown");
-    expect(STATABLE_SOURCE_KINDS).toHaveLength(SOURCE_KINDS.length - 1);
+    // Nor shown_page, which only the showing of a page records.
+    expect(STATABLE_SOURCE_KINDS).not.toContain("shown_page");
+    // Nor published_page, which only the admission of a signed package records.
+    expect(STATABLE_SOURCE_KINDS).not.toContain("published_page");
+    expect(STATABLE_SOURCE_KINDS).toHaveLength(SOURCE_KINDS.length - 3);
     expect(statedSourceKind(" court_record ")).toBe("court_record");
     expect(statedSourceKind("unknown")).toBeNull();
     expect(statedSourceKind("peer_reviewed")).toBeNull();

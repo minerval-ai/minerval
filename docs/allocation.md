@@ -351,6 +351,47 @@ practice the Grantmaker's chat with the funder) is in `spent` and in no
 kind's row, so the view states it on its own, `outside_ledger_owls`: it
 draws on the escrow and is not held to the pace.
 
+### Across labels, upward
+
+In a deployment with more than one label a mandate works at its label, and
+cannot read the labels that read it. Where one of those has been given a
+face at the mandate's label ([architecture.md](architecture.md), "Work
+asked for from below"), the mandate can create a mandate there
+(`spawn_mandate` with `ask_of`) and add to it later (`regrant` with
+`to_asked_request_id`). Both are ordinary regrants recorded at the label
+above. They count against the source's escrow as any regrant does, and what
+the mandate above does not spend returns when it closes. The source is
+given the id of a request at its own label that records what it asked, and
+nothing else: the mandate above, its plan and what it finds reach the
+source's label only through that label's gate. A run above that is paid by
+money from below petitions as any run does; where the mandate paying for it
+is below, the petition is recorded at the run's label and nothing waits on
+it, since it is that label's words going down.
+
+### Across labels, downward
+
+A mandate pays for a pass on a node at a label that does not read its own
+by offering it to the gate between them (`funding`; `fundBelow`, or a gate
+named to keep the other side current). Once the gate lets the asking
+through, the pass is commissioned at the lower label with the mandate as
+payer, for the amount the gate let through: one row at the lower label
+naming a payer above, as work asked for from below is a row above naming a
+payer below. The mandate's escrow counts it at once, spend settles against
+it, and what the pass does not spend stops counting when it ends. Where
+the mandate's escrow or pace cannot pay, the pass is opened for that
+label's own funders with the same words, and the item records which.
+
+### The public graph
+
+Owls inside a deployment and public owls do not convert. A mandate an
+organization publishes on the public graph, which public requests can be
+addressed to, pays for the work it takes up from its own budget inside;
+the requester pays nothing there. A member of the public who wants to push
+a question funds the public side: the public graph's own assessment of a
+node the request bears on, which weighs the organization's published page
+when it arrives. Asking a public mandate for a fresh public assessment is
+paid on the public graph from the public owls the organization put into it.
+
 ## Lookouts: cheap standing watch
 
 The Grantmaker's session is judgment at mandate scale: it wakes on what it
@@ -663,6 +704,13 @@ One currency, deliberately: accepted contributions EARN spendable owls
 (importance-scaled, docs/accounts.md), so the people who improve the graph
 accumulate real say over what it assesses next. Recognition stays
 ungameable by purchase: the leaderboard ranks lifetime owls *earned*.
+
+A deployment that pays its own model providers does not sell owls: it
+creates them (`OWLS=created`; docs/accounts.md, "Owls a deployment creates
+for itself"). The unit is the same, one owl for one dollar of metered cost
+at the prices the deployment is configured with, and there is no purchase
+price and no margin in it. Its owls never convert to or from the public
+graph's.
 
 ## Caps, not prices
 
@@ -1048,7 +1096,11 @@ the request, or finds it cannot or should not be met, records that
 outcome instead. A quote prices only work a Researcher has the means to
 do: a request that needs a GPU, a model API, a lab or new data is
 reported `cannot_be_met` with who could do it, or quoted for its desk part
-alone. One variant is open at a time.
+alone. One variant is open at a time. The full work runs on the
+Researcher's strong tier where the deployment has a key for that tier's
+provider and has cleared it for the label the work is at, and on its
+standard tier where not (`requestWorkTier`), so work asked of a label
+never needs a provider the deployment has not set up.
 
 **Who pays.** Whether a request is worth its budget is a judgment, made by
 whoever pays. A fresh request row is put in front of the General mandate's
@@ -1181,6 +1233,10 @@ A commission on a node's standard pass is the node's commission, and a
 second payer asking for the strong one is told so and charged nothing; so
 with a sweep's two readers, and so for a mandate's self-funding, which
 does not commission a variant whose sibling is already paid for or running.
+Where a deployment has more than one label, a group is one label's: work
+on a node at each label has its own group, with that label in its key, so
+a commission at one label neither joins nor waits on another's
+([architecture.md](architecture.md), "Work at each label").
 The check is made again behind a lock on the group as the money is
 placed, so payers who look at the same moment do not both pay (#849: one
 node carried a mandate's budget on both its variants, which counted twice
@@ -1554,7 +1610,11 @@ characters, and `read_message` reads any in full); it answers them with
 `answer_messages` (changed, no change, or disagree, with a reason), and the
 messages it was shown are marked read when it finishes. An answer to
 another node's Steward reaches that node's inbox as a `message_reply`,
-information that opens no work of its own. The claim page lists the
+information that opens no work of its own. Where a deployment has more
+than one label, a pass is also given the messages sent at the labels its
+own label reads, each marked with the label it was said at, and what it
+does with them is recorded at its own label
+([architecture.md](architecture.md), "Word from the layer below"). The claim page lists the
 messages waiting on a node (`waiting_messages`).
 
 A message costs its sender nothing and waits for the node's next pass: a
@@ -2048,6 +2108,13 @@ and lookout briefs over the live ones, through the versioned path, for
 when the platform as funder changes what the mandate is for; the
 Grantmaker revises from there. Re-founding them through a conversation
 is a follow-up.
+
+A members-only deployment sets its own General mandate
+up through routes, with no script and no operator key
+(`POST /standing-mandates/:name`; docs/accounts.md, "The standing mandates,
+set up in the app"). The definition is shared with the seed
+(`src/services/standing-mandates.ts`): the same policy and lookouts, with
+the sentences that say whose mandate it is worded for the deployment.
 
 **General is a maintenance mandate.** Its money is the platform's, and
 it buys what no topical funder would: consistency sweeps, curation,

@@ -42,7 +42,20 @@ const { state } = vi.hoisted(() => ({
     mandateToolOpts: null as null | Record<string, unknown>,
     retractionPage: { total: 0, offset: 0, next_offset: null, rows: [] } as unknown,
     scopeSourcesInput: null as null | Record<string, unknown>,
+    connectionOpts: null as null | Record<string, unknown>,
+    connections: null as null | {
+      definitions: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>;
+      note: string;
+      execute: (name: string, input: Record<string, unknown>) => Promise<string | null>;
+    },
   },
+}));
+
+vi.mock("../../../src/llm/tools/connection-tools.js", () => ({
+  createConnectionTools: vi.fn(async (opts: Record<string, unknown>) => {
+    state.connectionOpts = opts;
+    return state.connections ?? { definitions: [], note: "", execute: async () => null };
+  }),
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -211,6 +224,43 @@ beforeEach(() => {
   state.mandateToolOpts = null;
   state.retractionPage = { total: 0, offset: 0, next_offset: null, rows: [] };
   state.scopeSourcesInput = null;
+  state.connectionOpts = null;
+  state.connections = null;
+});
+
+describe("a lookout and the organization's systems", () => {
+  it("asks for the connections at its label in the form that looks and does not keep", async () => {
+    await runLookout({ lookoutId: LOOKOUT });
+    expect(state.connectionOpts).toMatchObject({ keeps: false });
+    // With no connection it is offered nothing and told nothing of them.
+    expect(state.loop!.briefing).not.toContain("Systems you can read");
+    expect(state.loop!.tools.map((t) => t.name)).not.toContain("open_reading");
+  });
+
+  it("is offered a connection's tools, told of them in its briefing, and calls them through the bundle", async () => {
+    const called: Array<[string, Record<string, unknown>]> = [];
+    state.connections = {
+      definitions: [
+        { name: "warehouse__run_query", description: "Runs a query.", input_schema: { type: "object", properties: {} } },
+        { name: "open_reading", description: "Reads on.", input_schema: { type: "object", properties: {} } },
+      ],
+      note: "This deployment's administrators have connected it to systems where an organization's data lives.",
+      execute: async (name, input) => {
+        if (name !== "warehouse__run_query" && name !== "open_reading") return null;
+        called.push([name, input]);
+        return JSON.stringify({ success: true, reading: "r-1" });
+      },
+    };
+    state.script = [{ name: "warehouse__run_query", input: { sql: "select count(*) from refunds" } }];
+    await runLookout({ lookoutId: LOOKOUT });
+    const names = state.loop!.tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["warehouse__run_query", "open_reading", "flag_reassessment", "leave_note"]));
+    expect(names).not.toContain("keep_reading");
+    expect(state.loop!.briefing).toContain(
+      "### Systems you can read\n\nThis deployment's administrators have connected it to systems where an organization's data lives.\n\n### Your recent flags"
+    );
+    expect(called).toEqual([["warehouse__run_query", { sql: "select count(*) from refunds" }]]);
+  });
 });
 
 describe("runLookout", () => {

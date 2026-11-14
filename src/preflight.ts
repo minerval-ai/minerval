@@ -13,11 +13,12 @@
  * taken back. On a deployment that holds only public material every check is
  * information, nothing is refused, and the gate asks one question and opens.
  *
- * "Holds private material" has one definition for now: the deployment has
- * defined a label other than `public` (publicIsTheOnlyLabel,
- * services/label-service.ts). Reads are not yet held to labels, so there is
- * nothing finer to ask. A deployment that defines its second label has said
- * it means to hold something that is not for everyone.
+ * "Holds private material" has one definition: the deployment has defined
+ * a label other than `public` (publicIsTheOnlyLabel,
+ * services/label-service.ts), which is also what makes the database hold
+ * every read to a clearance (src/db/clearance.ts). A deployment that
+ * defines its second label has said it means to hold something that is not
+ * for everyone.
  *
  * The checks are plain functions of the facts gathered first
  * (PreflightFacts), so each can be tested with its facts made up, and the
@@ -35,12 +36,26 @@
  * the outside services pass either way and say what a label goes without:
  * leaving one uncleared sends nothing out, and which outside party may read
  * private text is the deployment's to choose, not a state to be corrected.
+ *
+ * The checks of what a private deployment adds (the key a shown page is
+ * signed with, owls it creates, the usage report, the General mandate at
+ * each label, connections, file sets, the sandbox) are in
+ * src/preflight-deployment.ts, with what they read past the labels and why.
+ * The preflight is read by people who do not read every label (whoever
+ * holds the operator key, an administrator through the setup checklist), so
+ * what it says of rows at a label is a count and the label's name.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig, type Config } from "./config.js";
 import { appliedConfigFile, CONFIG_FILE_KEYS, type AppliedConfigFile } from "./config-file.js";
 import { rawQuery } from "./db/client.js";
+import { withSystemClearance } from "./db/clearance.js";
+import {
+  DEPLOYMENT_CHECKS,
+  gatherDeploymentFacts,
+  type DeploymentFacts,
+} from "./preflight-deployment.js";
 import { featureOn, offFeatures, type FeatureName } from "./features.js";
 import { PUBLIC_LABEL } from "./labels.js";
 import { ENDPOINT_ID_PREFIX, parseEndpointModelId, resolveProvider } from "./llm/providers/routing.js";
@@ -110,6 +125,8 @@ export interface PreflightFacts {
   endpointKeysMissing: string[];
   database: DatabaseFacts;
   runLog: RunLogSelfTest;
+  /** What a private deployment's settings need looked at (src/preflight-deployment.ts). */
+  deployment: DeploymentFacts;
 }
 
 type Outcome = { status: PreflightStatus; message: string };
@@ -788,6 +805,8 @@ export const PREFLIGHT_CHECKS: readonly PreflightCheck[] = [
   { name: "reports_stay_inside", blocking: true, run: checkReportsStayInside },
   { name: "features", blocking: false, run: checkFeatures },
   { name: "work_outside_the_run_log", blocking: false, run: checkWorkOutsideTheRunLog },
+  // What a private deployment adds (src/preflight-deployment.ts).
+  ...DEPLOYMENT_CHECKS,
 ];
 
 /** Run every check over facts already gathered. */
@@ -851,20 +870,28 @@ export function readFolderMigrations(folder: string | null): FolderMigration[] |
  * journal date in drizzle.__drizzle_migrations.created_at and decides what
  * to run by that date alone, so the same date is what is compared here.
  */
+/** Why the migrator's record is read as the tables' owner (tests/unit/db/system-clearance.test.ts). */
+const MIGRATOR_RECORD_REASON =
+  "The preflight reads the migrator's own record of what has been applied, which belongs to the tables' owner and holds no row of the graph.";
+
 export async function readDatabaseFacts(folder: string | null = migrationsFolder()): Promise<DatabaseFacts> {
   try {
     await rawQuery("SELECT 1");
     const [extension] = await rawQuery<{ n: number }>(
       `SELECT count(*)::int AS n FROM pg_extension WHERE extname = 'vector'`
     );
-    const [table] = await rawQuery<{ name: string | null }>(
-      `SELECT to_regclass('drizzle.__drizzle_migrations')::text AS name`
-    );
-    const applied = table?.name
-      ? (await rawQuery<{ created_at: string | number }>(`SELECT created_at FROM drizzle.__drizzle_migrations`)).map(
-          (row) => Number(row.created_at)
-        )
-      : [];
+    // The migrator's record is the tables' owner's: a connection held to a
+    // clearance has no right to read it, and it holds no row of the graph.
+    const applied = await withSystemClearance(MIGRATOR_RECORD_REASON, async () => {
+      const [table] = await rawQuery<{ name: string | null }>(
+        `SELECT to_regclass('drizzle.__drizzle_migrations')::text AS name`
+      );
+      return table?.name
+        ? (await rawQuery<{ created_at: string | number }>(`SELECT created_at FROM drizzle.__drizzle_migrations`)).map(
+            (row) => Number(row.created_at)
+          )
+        : [];
+    });
     return { reachable: true, pgvector: (extension?.n ?? 0) > 0, folder: readFolderMigrations(folder), applied };
   } catch (err) {
     return { reachable: false, error: errorText(err) };
@@ -943,6 +970,7 @@ export async function gatherPreflightFacts(): Promise<PreflightFacts> {
     endpointKeysMissing,
     database,
     runLog,
+    deployment: await gatherDeploymentFacts(config, database.reachable),
   };
 }
 

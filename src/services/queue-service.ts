@@ -7,6 +7,8 @@ import { recordEnqueueEvent } from "./enqueue-events-service.js";
 import { postMessage, type MessageSender } from "./inbox-service.js";
 import { activeSuccessors } from "./claim-lifecycle-service.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { stewardSlot } from "./steward-lease.js";
+import { mirroredNode } from "./mirrored-node-service.js";
 
 let _sqsClient: SQSClient | null = null;
 
@@ -97,6 +99,38 @@ export interface StewardMessage {
     // Steward may need to unwind a change, not integrate one.
     | "arbitration_outcome"
     | "staleness_check"
+    // A node carries a version of its judgment at more than one label, and a
+    // version this label's was made beside has been replaced, retired or
+    // first recorded (version-upkeep.ts). The context names the labels and
+    // nothing else; whether it matters is the Steward's judgment.
+    | "version_beside_changed"
+    // A Steward at this label examined the node and left the judgment it
+    // reads at another label standing, and that judgment has since been
+    // replaced (version-upkeep.ts). The context says so in fixed words.
+    | "left_standing_changed"
+    // A page of this node written at a label this one does not read has
+    // been shown at this label and is now among the node's sources
+    // (release-gate-service.ts). The context is counts and fixed words.
+    | "page_shown"
+    // A mandate at a label this one does not read paid for, or asked for, a
+    // pass on the node here, and its asking came through the gate
+    // (release-gate-service.ts). The context is fixed words.
+    | "funded_from_above"
+    // A reader of a page this graph published of the node made a
+    // contribution on the public graph through it (inbound-service.ts). The
+    // context is the contribution as it was made, public text from the
+    // public graph's own record, said to be written outside the deployment.
+    | "public_contribution"
+    // The public graph merged or withdrew a node that work at this label
+    // rests on, and the batch of the mirror that says so is in
+    // (mirror-upkeep.ts). The context says what happened and what of this
+    // label's is where; what to make of it is the Steward's judgment.
+    | "public_graph_changed"
+    // A merge made at another label moved what this label had recorded on
+    // the merged node onto this one, or its undo moved it back
+    // (reconciliation-service.ts, carryMergeToOtherLabels). The context is
+    // composed at this label: what moved, and this label's own version.
+    | "merge_carried"
     // A mandate's plan asked for a pass on this claim (an assess, reassess
     // or deepen item, materialized by the reconcile sweep or by the
     // Grantmaker's extend_plan in the same turn, #416). The context names
@@ -190,7 +224,10 @@ export interface AuditMessage {
     | "contributor_review"
     | "anomaly_investigation"
     // Triage of the agents' own reports (#366): cluster, rank, set status.
-    | "report_triage";
+    | "report_triage"
+    // The check of a Redactor's work on a page that is to be shown below its
+    // label (showing-service.ts): once for each round of redaction.
+    | "redaction_fidelity";
   context: string;
   // The audit_runs row this message executes (#180): findings attach to it,
   // and completion is recorded on it. Absent only for hand-crafted messages.
@@ -341,8 +378,18 @@ export async function enqueueSteward(
   // are one open slot that new messages coalesce into.
   const queued = `(steward_state = 'pending'
                    OR (steward_state = 'running' AND steward_requeued))`;
+  // The slot is the node's own row for a message at the node's label, and
+  // this label's row in steward_slots for a message at another label that
+  // reads the node (steward-lease.ts): the message waits for a pass at its
+  // own label, and work at one label does not mark another's as pending.
+  const slot = await stewardSlot(message.claimId, { ensure: true });
+  // A mirrored node's Steward at the node's own label is the public
+  // graph's, and no pass at that label is opened here
+  // (mirrored-node-service.ts): nothing is queued and no message is kept,
+  // as for a node that is not active.
+  if (slot.own && (await mirroredNode(message.claimId))) return;
   const rows = await rawQuery<{ prev_state: string; prev_requeued: boolean; new_state: string }>(
-    `UPDATE claims
+    `UPDATE ${slot.rel}
         SET steward_state = CASE
               WHEN steward_state = 'running' THEN 'running'
               WHEN steward_state = 'error' AND NOT $3::boolean THEN 'error'
@@ -357,14 +404,14 @@ export async function enqueueSteward(
               ELSE $2
             END,
             updated_at = now()
-       FROM (SELECT id, steward_state AS prev_state,
+       FROM (SELECT ${slot.key} AS id, steward_state AS prev_state,
                     steward_requeued AS prev_requeued
-               FROM claims WHERE id = $1 FOR UPDATE) prev
-      WHERE claims.id = prev.id
-        AND state = 'active'
+               FROM ${slot.rel} WHERE ${slot.is("$1")} FOR UPDATE) prev
+      WHERE ${slot.is("prev.id", slot.rel)}
+        AND ${slot.active(slot.own ? undefined : slot.rel)}
       RETURNING prev.prev_state AS prev_state,
                 prev.prev_requeued AS prev_requeued,
-                claims.steward_state AS new_state`,
+                ${slot.rel}.steward_state AS new_state`,
     [message.claimId, message.trigger, message.paid === true || message.unpark === true]
   );
   // Still parked: the message is kept below, but the node is not a candidate,
@@ -407,7 +454,10 @@ export async function enqueueSteward(
   // by the allocation scheduler's sweep while it waits.) Best-effort: a
   // priority hiccup must not lose the enqueue itself.
   try {
-    await refreshQueuePriority(message.claimId);
+    // The priority is a column of the node's own row and orders the drain
+    // of its own slot. A pass at another label runs when its ledger row is
+    // funded, and writes nothing to a row its label does not own.
+    if (slot.own) await refreshQueuePriority(message.claimId);
   } catch (err) {
     console.warn(
       `[queue] priority refresh failed for ${message.claimId}:`,
@@ -506,7 +556,10 @@ export async function requestAudit(input: {
     | "prize_check_error"
     // The Extractor reported text addressed to the agents rather than to a
     // source's readers (#740): deduped per source.
-    | "injected_source";
+    | "injected_source"
+    // A Redactor finished a page that is to be shown below its label
+    // (showing-service.ts): deduped per page and round.
+    | "redaction_finished";
   dedupeKey?: string;
   /** The mandate the audit examines, if any: it may not fund its own audit. */
   subjectGrantId?: string | null;

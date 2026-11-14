@@ -1,3 +1,7 @@
+import { sourceLabel } from "../services/judgment-version-service.js";
+import { sourceMirrorFacts } from "../services/mirrored-node-service.js";
+import { sourceHeldAtALabelBelow } from "../services/layer-service.js";
+import { rawQuery } from "../db/client.js";
 import type { FastifyInstance } from "fastify";
 import { sourceSubmitBody } from "../schemas/source.js";
 import { submitSource } from "../services/source-service.js";
@@ -11,6 +15,7 @@ import { getSourceDocument } from "../services/source-segment-service.js";
 import { listExaminations } from "../services/examination-service.js";
 import { getSourceContext } from "../services/source-context-service.js";
 import { requirePermission } from "../server/require-permission.js";
+import { rawSourceLabelsOf } from "../raw-sources.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
 // POST /contributions.
@@ -71,7 +76,13 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     handler: async (request, reply) => {
-      return reply.send({ examinations: await listExaminations([request.params.source_id]) });
+      // A finding's heading is the document's own text: withheld like the
+      // document from a reader who may not open it (src/raw-sources.ts).
+      return reply.send({
+        examinations: await listExaminations([request.params.source_id], {
+          rawSourceLabels: rawSourceLabelsOf(request.auth),
+        }),
+      });
     },
   });
 
@@ -108,13 +119,13 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
       },
     },
     handler: async (request, reply) => {
+      // Opening a source's own text is a permission of its own in a
+      // members-only deployment (src/raw-sources.ts).
       const q = request.query;
-      const doc = await getSourceDocument(
-        request.params.source_id,
-        q.detail === "full"
-          ? {}
-          : { offset: q.offset ?? 0, limit: q.limit ?? 60, withText: q.with_text ?? true }
-      );
+      const doc = await getSourceDocument(request.params.source_id, {
+        rawSourceLabels: rawSourceLabelsOf(request.auth),
+        ...(q.detail === "full" ? {} : { offset: q.offset ?? 0, limit: q.limit ?? 60, withText: q.with_text ?? true }),
+      });
       if (!doc) {
         return reply.code(404).send({
           error: { code: "NOT_FOUND", message: "Source not found", request_id: request.id },
@@ -148,7 +159,17 @@ export async function sourceRoutes(app: FastifyInstance): Promise<void> {
           error: { code: "NOT_FOUND", message: "Source not found", request_id: request.id },
         });
       }
-      return reply.send(facts);
+      // Who may read the source, on a deployment with more than one label.
+      const label = await sourceLabel(request.params.source_id);
+      // On a deployment that mirrors: that the source is the public
+      // graph's and as of when, or, for one of the deployment's own, the
+      // public graph's row for the same address (mirrored-node-service.ts).
+      const mirror = await sourceMirrorFacts(request.params.source_id);
+      // Where a label below the source's own holds the same address: that
+      // row, so the two are read as one document recorded twice
+      // (layer-service.ts).
+      const below = await sourceHeldAtALabelBelow(rawQuery, request.params.source_id);
+      return reply.send({ ...facts, ...(label ? { label } : {}), ...(mirror ?? {}), ...(below ?? {}) });
     },
   });
 

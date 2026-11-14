@@ -360,6 +360,28 @@ export function describeEstimate(est: QuantityEstimate, unit: QuantityUnit, digi
   return { ...w, words: `${w.words}, with a ${pct} chance that ${out.meaning}` };
 }
 
+const ESTIMATE_FORMS: ReadonlySet<string> = new Set(Object.keys(FORM_LABEL));
+
+/**
+ * An estimate as a shown or published page records it, in words. The page
+ * carries the estimate and not the quantity's unit, so figures are given as
+ * recorded, with no unit. Anything that is not an estimate this can read is
+ * given as it was recorded.
+ */
+export function estimateAsRecorded(est: unknown): string {
+  if (est === null || est === undefined) return "not recorded";
+  const e = est as QuantityEstimate;
+  if (typeof e !== "object" || !ESTIMATE_FORMS.has(String(e.form))) return JSON.stringify(est);
+  try {
+    if (e.form === "none") return e.reason ? `No figure: ${e.reason}` : "No figure";
+    // A bound is one figure, and rounding it would move the bound: it keeps three figures.
+    const words = describeEstimate(e, { kind: "measure" }, e.form === "bound" ? 3 : undefined).words;
+    return words.charAt(0).toUpperCase() + words.slice(1);
+  } catch {
+    return JSON.stringify(est);
+  }
+}
+
 // `exact` keeps a source's own precision: a figure a source states is
 // reported as it was stated, not rounded to the interval's width.
 function describeValues(est: QuantityEstimate, unit: QuantityUnit, exact?: number): EstimateWords {

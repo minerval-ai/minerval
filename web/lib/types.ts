@@ -41,10 +41,34 @@ export type SourceKind =
   | "dataset" | "official_statistics" | "transcript" | "treaty" | "court_record" | "legislation"
   | "journal_article" | "preprint" | "conference_paper" | "book" | "book_chapter" | "thesis"
   | "report" | "standard" | "news_article" | "opinion" | "press_release" | "blog_post"
-  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "unknown";
+  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "shown_page" | "published_page" | "unknown";
+
+/** A label that has set an edge or an argument aside for its own readers, with its reason. */
+export interface SetAside {
+  at: string;
+  reason: string | null;
+}
+
+/** One label's importance or contestation for a node, where labels the reader reads hold their own. */
+export interface ValueByLabel {
+  label: string;
+  value: number | null;
+  in_effect: boolean;
+}
 
 export interface TreeNode {
   id: string;
+  // Inside a deployment with more than one label: the label the edge into
+  // this node is recorded at, and its argument's; and where a label the
+  // reader reads has set either aside, which label and why.
+  label?: string;
+  argument_label?: string;
+  set_aside?: SetAside;
+  argument_set_aside?: SetAside;
+  // Only where more than one judgment of the node, or evaluation of the
+  // argument it sits under, is in force for the reader: how many.
+  judgments_in_force?: number;
+  argument_evaluations_in_force?: number;
   text: string;
   claim_type: ClaimType;
   state: ClaimState;
@@ -390,12 +414,16 @@ export interface RelatedClaim {
   text: string;
   claim_type: ClaimType;
   assessment_status: AssessmentStatus | null;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   assessment_confidence: number | null;
   assessment_credence: number | null;
 }
 
 export interface DependentClaim {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   claim_type: ClaimType;
   relation_type: RelationType;
@@ -528,10 +556,67 @@ export interface CoverageRow {
   on?: string[];
 }
 
+/**
+ * One current version of a node's judgment, where a deployment holds
+ * material at more than one label (docs/architecture.md, "A judgment at
+ * each label"): the label it was made at, the judgment itself in the fields
+ * its kind has, whether it is in force for this reader, and what it was
+ * made beside. The public graph serves none.
+ */
+/** A label's record that it examined a node and left the judgment it reads standing. Not a judgment. */
+export interface LeftStanding {
+  label: string;
+  examined_at: string;
+  run_id: string | null;
+  reasoning: string;
+  judgments: Array<{ label: string; replaced: boolean }>;
+  /** One of them has been replaced, or a label it reads has a judgment made since. */
+  open_again: boolean;
+}
+
+export interface NodeVersion {
+  id: string;
+  label: string;
+  in_force: boolean;
+  assessed_at: string;
+  made_beside: Array<{ label: string; replaced: boolean }>;
+  versions_since: string[];
+  made_against_earlier: boolean;
+  // What this judgment was made on, said to the reader, and what has changed beneath it since.
+  coverage?: Coverage | null;
+  since_assessed?: SinceAssessed | null;
+  model?: string | null;
+  run_id?: string | null;
+  // A claim's assessment.
+  status?: AssessmentStatus;
+  confidence?: number | null;
+  claim_credence?: number | null;
+  summary?: string | null;
+  reasoning_trace?: string | null;
+  // A quantity's estimate.
+  estimate?: unknown;
+  work?: string | null;
+  // A question's assessment.
+  standing?: string;
+  favored_answer_ids?: string[];
+  incomplete?: string | null;
+}
+
 export interface ClaimDetail {
   // Present when the id asked for was merged into this claim (#884).
   resolved_from?: ResolvedFrom | null;
   claim: ClaimCore;
+  // Only where the deployment holds material at more than one label: the
+  // versions of the node's judgment this reader may read, those in force
+  // first. Absent on the public graph.
+  versions?: NodeVersion[];
+  // Where a label the reader reads examined the node and left another
+  // label's judgment standing, and the labels the reader reads at which the
+  // node has been neither judged nor examined. Absent where there are none.
+  left_standing?: LeftStanding[];
+  not_examined_at?: string[];
+  // Only where the node is the public graph's, read through a mirror.
+  mirrored?: { public_graph_as_of: string | null; public_page_url: string | null } | null;
   assessment: Assessment | null;
   // Beside the judgment and present where there is none; absent when the API
   // predates the field.
@@ -783,6 +868,8 @@ export type QuestionStanding = "answered" | "leaning" | "open" | "ill_posed" | "
 /** A candidate answer: a claim or a quantity (§7a). */
 export interface QuestionAnswer {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   kind: NodeKind;
   status: AssessmentStatus | null;
@@ -804,6 +891,8 @@ export interface AnswerRelation {
 
 export interface QuestionNodeRef {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   status?: AssessmentStatus | null;
   standing?: QuestionStanding | null;
@@ -910,10 +999,33 @@ export interface RequestItem {
     backing_usd: number;
   } | null;
   work?: RequestWork[];
+  // Accounts that have said, on the request's record, that they are taking
+  // it up, each with what followed as the record shows it (docs/outward-acts.md).
+  taken_up?: {
+    by: string;
+    account_id: string;
+    at: string;
+    followed: string;
+    in_words: string;
+    published_page_id: string | null;
+    node_id: string | null;
+  }[];
+  // Where the request was addressed to a mandate another graph published
+  // here: the mandate, its publisher, and where the request stands with it.
+  addressed_to_mandate?: {
+    face_id: string;
+    name: string;
+    publisher: { account_id: string; name: string };
+    withdrawn: boolean;
+    stands: string;
+    in_words: string;
+  };
 }
 
 export interface SearchResultItem {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   // A claim, a quantity or a question (constitution §2, §7a); absent from an
   // API older than kinds, which listed claims only.
   kind?: NodeKind;
@@ -1214,6 +1326,10 @@ export interface ContributionDetail {
     // landed on. Optional so an older API reads as "not yet".
     became_claim_id?: string | null;
     page_url?: string | null;
+    // Where it was made through a published page on its node: the page, and
+    // what the graph that published it has said became of the contribution.
+    about_published_page_id?: string | null;
+    through_published_page?: { published_page_id: string; publisher: string; node_id: string; state: string; in_words: string } | null;
   };
   review: {
     id: string;
@@ -1817,6 +1933,9 @@ export interface ArgumentPage {
     merged_into: string | null;
   };
   evaluation: ArgumentEvaluationEntry | null;
+  // Only where more than one evaluation is in force for the reader: how many, and each.
+  evaluations_in_force?: number;
+  evaluations?: ArgumentEvaluationEntry[];
   evaluation_history: ArgumentEvaluationEntry[];
   premises: ArgumentPremise[];
   instances: ArgumentInstanceItem[];

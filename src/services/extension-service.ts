@@ -58,6 +58,8 @@ import {
   type QuantityDefinitionView,
 } from "./quantity-service.js";
 import { rawQuery } from "../db/client.js";
+import { judgmentsInForce, severalInForceNote } from "./judgment-version-service.js";
+import { readerKey } from "../db/clearance.js";
 import { untraced } from "../llm/usage-context.js";
 
 /** Verdict the client can filter on; "unknown" = claim not in the graph. */
@@ -95,6 +97,9 @@ export interface PageAnnotation {
     status_confidence: number;
     subclaim_count: number;
     url: string;
+    /** Present only where more than one judgment of the node is in force for the asker: what is given is the most recently made (judgment-version-service.ts). */
+    judgments_in_force?: number;
+    judgments_in_force_note?: string;
   } | null;
 }
 
@@ -164,7 +169,12 @@ const CACHE_MAX_ENTRIES = 500;
 // fresh POST retries quickly rather than replaying a stale error.
 const FAILURE_TTL_MS = 2 * 60 * 1000;
 
+// An analysis names the nodes its asker could read, so each of the three
+// below is kept per reader (slotOf): a second reader of the same page, with
+// another clearance, gets a run of their own.
 const cache = new AnalysisCache<PageAnalysis>(CACHE_TTL_MS, CACHE_MAX_ENTRIES);
+/** Where a page's analysis is kept for the reader asking now. */
+const slotOf = (contentHash: string): string => `${readerKey()}:${contentHash}`;
 // Concurrent requests for the same page share one pipeline run instead of
 // each paying for extraction + matching.
 const inFlight = new Map<string, Promise<PageAnalysis>>();
@@ -225,6 +235,7 @@ export function buildAnnotations(input: {
       statusConfidence: number;
       subclaimCount: number;
       claimUrl: string;
+      judgmentsInForce?: number;
     } | null;
   }>;
   /** Verdicts keyed by claim index; missing/matched-less indices degrade. */
@@ -268,6 +279,7 @@ export function buildAnnotations(input: {
         status_confidence: c.matched.statusConfidence,
         subclaim_count: c.matched.subclaimCount,
         url: c.matched.claimUrl,
+        ...(c.matched.judgmentsInForce ? severalOnAnnotation(c.matched.judgmentsInForce) : {}),
       },
     };
   });
@@ -296,6 +308,18 @@ export interface MatchedClaim {
   standing: QuestionStanding | null;
   subclaimCount: number;
   claimUrl: string;
+  /**
+   * Set only where more than one judgment of the node is in force for the
+   * asker (two labels that do not read each other): how many. The status,
+   * estimate or standing above is then the most recently made of them, and
+   * every annotation and the assessor are told so.
+   */
+  judgmentsInForce?: number;
+}
+
+/** What an annotation's claim carries where more than one judgment of it is in force for the asker. */
+export function severalOnAnnotation(n: number): { judgments_in_force: number; judgments_in_force_note: string } {
+  return { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) };
 }
 
 /** The trace's opening, for a record written before summaries existed. */
@@ -364,6 +388,8 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
     matched.assessed = !!row;
     matched.summary = readerSummary(row?.summary, row?.reasoning_trace);
   }
+  const several = (await judgmentsInForce([claimId]).catch(() => new Map<string, number>())).get(claimId.toLowerCase());
+  if (several) matched.judgmentsInForce = several;
   return matched;
 }
 
@@ -430,17 +456,18 @@ function launchRun(
 ): Promise<PageAnalysis> {
   // Page text is transient: no agent run in this pipeline leaves a trace
   // (in record mode each is logged, privately; see the module comment).
+  const slot = slotOf(key);
   const run = untraced(() => analyzePageUncached(input, key))
     .then((analysis) => {
-      cache.set(key, analysis);
+      cache.set(slot, analysis);
       return analysis;
     })
     .catch((err) => {
-      failedRuns.set(key, errorMessage(err));
+      failedRuns.set(slot, errorMessage(err));
       throw err;
     })
-    .finally(() => inFlight.delete(key));
-  inFlight.set(key, run);
+    .finally(() => inFlight.delete(slot));
+  inFlight.set(slot, run);
   // A detached run's rejection is reported via the failure cache; without
   // this no-op handler it would also crash the process as unhandled.
   run.catch(() => {});
@@ -453,9 +480,9 @@ function launchRun(
  * act on a finished analysis after its own request has been answered 202.
  */
 export async function whenAnalysisSettles(key: string): Promise<PageAnalysis | null> {
-  const hit = cache.get(key);
+  const hit = cache.get(slotOf(key));
   if (hit) return hit;
-  const run = inFlight.get(key);
+  const run = inFlight.get(slotOf(key));
   if (!run) return null;
   return run.catch(() => null);
 }
@@ -466,10 +493,10 @@ export async function startAnalysis(
 ): Promise<Exclude<AnalysisState, { state: "unknown" }>> {
   const key = pageCacheKey(input.url, input.content);
 
-  const hit = cache.get(key);
+  const hit = cache.get(slotOf(key));
   if (hit) return { state: "ready", analysis: hit, cached: true };
 
-  const existing = inFlight.get(key);
+  const existing = inFlight.get(slotOf(key));
   const run = existing ?? launchRun(input, key);
 
   const settled = await settleWithin(run, opts.graceMs ?? ANALYZE_GRACE_MS);
@@ -482,12 +509,13 @@ export async function startAnalysis(
 
 /** Poll a previously started run by its content hash. */
 export function getAnalysisByHash(contentHash: string): AnalysisState {
-  const hit = cache.get(contentHash);
+  const slot = slotOf(contentHash);
+  const hit = cache.get(slot);
   if (hit) return { state: "ready", analysis: hit, cached: true };
-  if (inFlight.has(contentHash)) {
+  if (inFlight.has(slot)) {
     return { state: "running", content_hash: contentHash };
   }
-  const failure = failedRuns.get(contentHash);
+  const failure = failedRuns.get(slot);
   if (failure !== null) {
     return { state: "failed", content_hash: contentHash, error: failure };
   }
@@ -573,6 +601,7 @@ async function analyzePageUncached(
           ? { definition: s.matched.definition, estimate: s.matched.estimate }
           : {}),
         ...(s.matched.kind === "question" ? { standing: s.matched.standing } : {}),
+        ...(s.matched.judgmentsInForce ? { several_judgments: severalInForceNote(s.matched.judgmentsInForce) } : {}),
         subclaim_count: s.matched.subclaimCount,
       },
     });

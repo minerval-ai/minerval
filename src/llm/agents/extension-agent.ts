@@ -65,6 +65,12 @@ export interface ClaimForAssessment {
     estimate?: QuantityEstimate | null;
     /** A question's current standing. */
     standing?: QuestionStanding | null;
+    /**
+     * Set only where more than one judgment of the node is in force for the
+     * asker: one sentence saying how many, and that what is given above is
+     * the most recently made (judgment-version-service.ts).
+     */
+    several_judgments?: string;
     subclaim_count: number;
   };
 }

@@ -17,9 +17,9 @@
  * a feature off (src/features.ts) does not mount that feature's routes, so
  * their generated tools are absent there: registerRouteTools walks the
  * catalog of mounted routes. The hand-written tools of a feature are gated
- * in server.ts. The routes for permissions, parties and labels are mounted
- * only by a members-only deployment (src/permissions.ts), so their tools
- * exist only there.
+ * in server.ts. The routes for permissions, parties, labels, connections and
+ * file sets are mounted only by a members-only deployment
+ * (src/permissions.ts), so their tools exist only there.
  *
  * In a members-only deployment a route may ask for a permission
  * (server/require-permission.ts). A caller who does not hold it is not
@@ -57,6 +57,11 @@ const SPENDS_OWLS =
   "Spends owls from your balance; get_account shows the balance and the cap on each operation.";
 const ESCROWS_OWLS =
   "Escrows owls from your balance now; unspent owls refund on completion or cancellation.";
+
+/** What every act at a gate says of itself. */
+const GATE_ACT =
+  "An act at a gate: it decides what goes to readers who do not read a label, and what has gone is not taken back. " +
+  "It takes the account's own permission and is recorded under the account. The Assistant shows its user a card.";
 
 export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // ---- claims ----
@@ -266,6 +271,115 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /permissions/accounts": { name: "list_accounts" },
   "GET /parties": { name: "list_parties" },
   "GET /labels": { name: "list_labels" },
+  "GET /labels/faces": { name: "list_label_faces" },
+  "GET /asks/askable": { name: "list_askable" },
+  "GET /labels/mine": {
+    name: "get_my_labels",
+    note:
+      "Free. works_at is the one label this connection works at where the deployment holds " +
+      "material at more than one: everything you add is filed there, and you act only on what " +
+      "carries it.",
+  },
+
+  // ---- the gate: members-only deployments only (docs/the-gate.md) ----
+  // Every route is a tool. An act at a gate takes the account's permission
+  // (release for a party, direct, administer), from a session or through a
+  // key or token of the account: the person a gate's authorities put there
+  // may act through their own agent or a script. The Assistant holds each
+  // act for its user (llm/tools/assistant-tools.ts).
+  "GET /showings": { name: "list_showings" },
+  "GET /showings/:showing_id": {
+    name: "get_showing",
+    note:
+      "Free. Report a node's state as given: a page that is held, or released in part, is a fact about the " +
+      "showing and says nothing about what the held text contains.",
+  },
+  "GET /showings/:showing_id/pages/:page_id": { name: "get_shown_page" },
+  "GET /redaction-policies": { name: "list_redaction_policies" },
+  "GET /redaction-policies/:policy_id": { name: "get_redaction_policy" },
+  "GET /gates": { name: "list_gates" },
+  "GET /gate/backlog": {
+    name: "get_gate_backlog",
+    note: "Free. Counts and fixed words only: it says how much waits and on whom, and nothing about what any item contains.",
+  },
+  "GET /gate/queue": { name: "get_gate_queue" },
+  "GET /gate/items": { name: "list_gate_items" },
+  "PUT /gates/:gate_id": { name: "set_gate", note: GATE_ACT },
+  "PUT /gates/:gate_id/settings": { name: "set_gate_mode", note: GATE_ACT },
+  "DELETE /gates/settings/:setting_id": { name: "end_gate_setting", note: GATE_ACT },
+  "POST /gate/decisions": { name: "decide_at_gate", note: GATE_ACT },
+  "POST /gate/offers": { name: "offer_to_gate", note: GATE_ACT },
+  "POST /showings": { name: "set_page_flow", note: GATE_ACT },
+  "POST /showings/:showing_id/end": { name: "end_page_flow", note: GATE_ACT },
+  "POST /showings/:showing_id/pages/:page_id/hold": { name: "hold_gate_item", note: GATE_ACT },
+  "PUT /redaction-policies": { name: "save_redaction_policy", note: GATE_ACT },
+  "POST /showings/:showing_id/pages/:page_id/commission": { name: "fund_showing_work", note: ESCROWS_OWLS },
+  // A shown page leaves the deployment (docs/published-pages.md). Reading
+  // where it stands, and sending, which takes a person: the Assistant
+  // holds it for its user, and a key or a token alone is refused.
+  "GET /outbound": { name: "list_pages_going_outside" },
+  "POST /outbound/send": {
+    name: "send_pages_outside",
+    note:
+      "This is an outward act: it submits released pages to the public graph under the organization's account, and " +
+      "shows outside that this graph assessed the node and when. It runs only for a person: the Assistant shows its " +
+      "user a card, and a key or a token alone is refused.",
+  },
+
+  // ---- published pages: on a graph anyone may read ----
+  "POST /publishers": {
+    name: "register_publisher_key",
+    note: "Free. The registration is public under your account's name.",
+  },
+  "GET /publishers/:account_id": { name: "get_publisher" },
+  "POST /published-pages": {
+    name: "submit_published_page",
+    note:
+      "The submission is reviewed before the page is attached to its node; track it with get_contribution_status. " +
+      SPENDS_OWLS +
+      " Only a publication's first package is charged.",
+  },
+  "GET /published-pages": { name: "list_published_pages" },
+  "GET /published-pages/:published_page_id": {
+    name: "get_published_page",
+    note:
+      "Free. A published page is another graph's assessment, made on evidence that is not public. Report it as that " +
+      "graph's, with its publisher and what its record says, and keep it apart from this graph's own assessment of the node.",
+  },
+  "GET /published-pages/:published_page_id/package": { name: "get_published_page_package" },
+  // A mandate another graph published here, which a request can be addressed to (published-mandate-service.ts).
+  "POST /published-mandates": {
+    name: "submit_published_mandate",
+    note: "Free. The mandate stands on your publisher's record under your account's name, and requests here can be addressed to it.",
+  },
+  "GET /published-mandates": { name: "list_published_mandates" },
+  "GET /published-mandates/:face_id/package": { name: "get_published_mandate_package" },
+  // Connections to an organization's systems (src/connections.ts), in the
+  // same deployments. The reads; the writes are excluded below.
+  "GET /connections": { name: "list_connections" },
+  "GET /connections/:connection_id": { name: "get_connection" },
+  "GET /connections/:connection_id/calls": { name: "list_connection_calls" },
+  // Sets of files the deployment holds for its agents (src/file-sets.ts),
+  // in the same deployments. The reads; the writes are excluded below.
+  "GET /file-sets": { name: "list_file_sets" },
+  "GET /file-sets/:file_set_id": { name: "get_file_set" },
+  "GET /file-sets/:file_set_id/files": { name: "list_file_set_files" },
+  "GET /file-sets/:file_set_id/commands": { name: "list_file_set_commands" },
+  // ---- the deployment's own mandates, owls and usage report: members-only deployments only ----
+  "GET /standing-mandates": { name: "list_standing_mandates" },
+  // Mounted only where the deployment creates its own owls (OWLS=created).
+  "GET /owls/created": {
+    name: "get_created_owls",
+    note:
+      "Free. Owls here are the organization's own unit for budgeting its agents' work, " +
+      "created by its administrators and not bought.",
+  },
+  "GET /usage-reports/outgoing": { name: "list_usage_reports" },
+  // How far the deployment's setup has got, for its administrators.
+  "GET /setup/checklist": {
+    name: "get_setup_checklist",
+    note: "Free. Each call runs the preflight's checks afresh, which takes a few seconds.",
+  },
 
   // ---- tags, findings, platform health ----
   "GET /tags/:slug": { name: "get_tag" },
@@ -292,6 +406,53 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   },
   "GET /prize-claims/:id": { name: "get_prize_claim" },
   "POST /prize-claims/:id/challenge": { name: "challenge_prize_claim" },
+
+  // ---- requests taken up, a funder's ask of a mandate, an account's own report (docs/outward-acts.md) ----
+  "POST /requests/:request_id/take-up": {
+    name: "take_up_request",
+    note: "Public at once under your account's name, and it stays on the request's record. Free. Ask your user first.",
+  },
+  "POST /requests/:request_id/take-up/decline": {
+    name: "decline_taken_up_request",
+    note: "Public at once under your account's name. Free. Ask your user first.",
+  },
+  "POST /mandates/:id/raise": {
+    name: "ask_mandate_for_assessment",
+    note: "Free, and only for an account with money in the mandate. It asks; the mandate's officers decide.",
+  },
+  "GET /reports/mine/:id": { name: "get_my_report", note: "Free." },
+
+  // ---- from inside a private deployment: the public graph (members-only deployments only) ----
+  "GET /outside/account": { name: "get_public_graph_account", note: "Free." },
+  "GET /outside/log": { name: "list_acts_on_public_graph", note: "Free." },
+  "GET /outside/requests": { name: "list_public_requests", note: "Free. Read from the mirror, so it tells the public graph nothing." },
+  "GET /outside/said-back": { name: "list_public_contributions_received", note: "Free." },
+  "GET /outside/reports": { name: "list_agents_reports", note: "Free." },
+  "GET /outside/mandates/conversations/:conversation_id": { name: "get_public_mandate_conversation", note: "Free." },
+  "POST /outside/requests/adopted/:adoption_id/take-up": {
+    name: "take_up_public_request",
+    note: "An act on the public graph in the organization's name: it shows outside what this graph is working on. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/requests/adopted/:adoption_id/decline": {
+    name: "decline_public_request",
+    note: "An act on the public graph in the organization's name. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/mandates/conversations/:conversation_id/fund": {
+    name: "fund_public_mandate",
+    note: "Spends the organization's public owls and makes a mandate public under its name. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/mandates/:mandate_id/back": {
+    name: "back_public_mandate",
+    note: "Spends the organization's public owls, publicly. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/nodes/:node_id/fund": {
+    name: "fund_public_node",
+    note: "Spends the organization's public owls, and shows outside that the organization wanted this node assessed. It takes a person, so your user is shown a card.",
+  },
+  "POST /outside/nodes/:node_id/raise": {
+    name: "ask_public_mandate_for_assessment",
+    note: "Shows on a public mandate's page that the organization asked about this node. It takes a person, so your user is shown a card.",
+  },
 };
 
 /** Routes a hand-written tool in server.ts already covers. */
@@ -307,6 +468,8 @@ export const NATIVE_TOOL_ROUTES: Record<string, string[]> = {
   // The change stream (#562), defined once with the Correspondents' read.
   "GET /changes": ["list_graph_changes"],
   "POST /contributions": ["submit_contribution"],
+  // The same report, for a caller that speaks REST (routes/reports.ts).
+  "POST /reports": ["raise_issue"],
   "GET /contributions/:id": ["get_contribution_status"],
   // The URL hash is the only thing in the way: the native tool takes the
   // page's URL and hashes it on the server (#752).
@@ -350,18 +513,91 @@ const ADMINISTRATION_SESSION =
   "access token, or an agent following text it read can then never widen anyone's access. " +
   "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
 
+const OUTBOUND_SESSION =
+  "Decides what leaves the deployment or who speaks for it outside: the words a node is proposed to the public " +
+  "graph in, a party's release of those words, a package handed to a person as a file, and the signed statement " +
+  "that registers the deployment's key to an account. Each is recorded with the person who did it and takes a " +
+  "signed-in dashboard session, as asking for a showing does. Reading where things stand " +
+  "(list_pages_going_outside) and sending what has been released (send_pages_outside) are tools.";
+
+const CONNECTION_SESSION =
+  "Changes which of an organization's systems agents may read, and which tools they are offered " +
+  "there, so it takes a signed-in dashboard session as well as the permission to administer: a " +
+  "leaked key, an access token, or an agent following text it read can then never point the " +
+  "deployment at a server or widen what agents are offered. The matching reads " +
+  "(list_connections, get_connection, list_connection_calls) are tools.";
+
+const FILE_SET_SESSION =
+  "Changes which files the graph's agents may read, so it takes a signed-in dashboard session as " +
+  "well as the permission to direct: a leaked key, an access token, or an agent following text it " +
+  "read can then never place files in front of agents or move them to another label. The matching " +
+  "reads (list_file_sets, get_file_set, list_file_set_files, list_file_set_commands) are tools.";
+
+const FILE_SET_REGISTER_SESSION =
+  "Decides what label files already on the deployment's disk get, and so which agents may read " +
+  "them, so it takes a signed-in dashboard session as well as the permission to administer: a " +
+  "leaked key, an access token, or an agent following text it read can then never put a directory " +
+  "in front of agents. The matching reads (list_file_sets, get_file_set, list_file_set_files, " +
+  "list_file_set_commands) are tools.";
+
+const BUDGET_SESSION =
+  "Creates a budget in a members-only deployment: owls for an account or a mandate, or one " +
+  "of the deployment's standing mandates. It takes a signed-in dashboard session as well as " +
+  "the permission to administer, so that a leaked key, an access token, or an agent following " +
+  "text it read can never create a budget for itself. The matching reads (get_created_owls, " +
+  "list_standing_mandates) are tools.";
+
+const OUTWARD_WORDS =
+  "Words a person writes for the outside: the scope of a public mandate, or a message to the public Grantmaker. It takes a signed-in " +
+  "session and is not a tool, because words an agent drafted would be an agent's words leaving the deployment without redaction or " +
+  "release. Paying for the mandate once it is drafted (fund_public_mandate) is a tool, and waits for the user.";
+const OUTWARD_SESSION =
+  "Decides what leaves the deployment from then on with nobody acting, or which label work is recorded at. It takes a signed-in session " +
+  "as well as the permission, so that a leaked key, an access token, or an agent following text it read can do neither. The matching " +
+  "reads are tools.";
+
 /** Routes deliberately not on MCP, each with its reason. */
 export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
+  "POST /outside/mandates": OUTWARD_WORDS,
+  "POST /outside/mandates/conversations/:conversation_id/messages": OUTWARD_WORDS,
+  "POST /outside/requests/:public_request_id/adopt": OUTWARD_SESSION,
+  "POST /requests/:request_id/adopt": OUTWARD_SESSION,
+  "POST /asks": OUTWARD_SESSION,
+  "POST /outbound/proposals": OUTBOUND_SESSION,
+  "POST /outbound/packages/:package_id/file": OUTBOUND_SESSION,
+  "POST /outbound/registration": OUTBOUND_SESSION,
+  "POST /file-sets/register": FILE_SET_REGISTER_SESSION,
+  "POST /file-sets/:file_set_id/rehash": FILE_SET_REGISTER_SESSION,
+  "POST /file-sets": FILE_SET_SESSION,
+  "PUT /file-sets/:file_set_id/files/*": FILE_SET_SESSION,
+  "POST /file-sets/:file_set_id/close": FILE_SET_SESSION,
+  "PATCH /file-sets/:file_set_id": FILE_SET_SESSION,
+  "POST /connections": CONNECTION_SESSION,
+  "PATCH /connections/:connection_id": CONNECTION_SESSION,
+  "POST /connections/:connection_id/look": CONNECTION_SESSION,
+  "PUT /connections/:connection_id/tools": CONNECTION_SESSION,
   "POST /permissions/grants": ADMINISTRATION_SESSION,
   "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
   "POST /parties": ADMINISTRATION_SESSION,
   "PUT /sources/:source_id/party": ADMINISTRATION_SESSION,
   "POST /labels": ADMINISTRATION_SESSION,
   "POST /labels/:label/reads": ADMINISTRATION_SESSION,
+  "PUT /labels/:label/face": ADMINISTRATION_SESSION,
+  "DELETE /labels/:label/face/:at": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
   "POST /operator/administrators":
     "The way back in for a deployment whose administrators cannot sign in: requires the " +
     "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",
+  "POST /owls/created": BUDGET_SESSION,
+  "POST /standing-mandates/:name": BUDGET_SESSION,
+  "POST /usage-reports/outgoing/send":
+    "Sends this deployment's usage reports to the public graph now instead of at the worker's " +
+    "next pass. It is an administrator's act from a signed-in dashboard session, like every " +
+    "administrative write; list_usage_reports is the tool that reads what was and will be sent.",
+  "POST /usage-reports":
+    "Machine to machine: a private deployment's own worker reports its day's owl spend to the " +
+    "public graph under the organization's API key (docs/usage-report.md). An agent has no " +
+    "report of its own to send, and a tool here would let one file a figure in an account's name.",
 
   "GET /health": "A load-balancer liveness probe, not an affordance.",
   "GET /mirror/feed/:sequence":
@@ -609,9 +845,16 @@ function toolResult(statusCode: number, contentType: string, raw: string): CallT
  * no route's permission binds.
  */
 function missingPermission(route: CatalogRoute, auth: RequestAuth): PermissionName | null {
-  if (!route.permissions || route.permissions.length === 0 || !membersOnly()) return null;
+  if (!membersOnly()) return null;
   const standing = standingOf(auth);
-  return route.permissions.find((p) => !holdsPermission(standing, p)) ?? null;
+  const missing = (route.permissions ?? []).find((p) => !holdsPermission(standing, p));
+  if (missing) return missing;
+  // A route that any one of several permissions opens: the first of them is
+  // the one named to a caller who holds none.
+  for (const group of route.anyPermissions ?? []) {
+    if (!group.some((p) => holdsPermission(standing, p))) return group[0] ?? null;
+  }
+  return null;
 }
 
 /**

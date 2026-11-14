@@ -155,22 +155,23 @@ code decides who should hold which.
 
 | permission | held | lets its holder | never lets anyone |
 |---|---|---|---|
-| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources | edit an assessment or a run's log |
-| `release` | for one party | release or hold what would leave the deployment of that party's material (publishing outward is not built; the grant records who holds the gate) | edit what the agents wrote, or release another party's material |
+| `direct` | | open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources, among them sets of files they upload, state the organization's own view on a node, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown ([showing-a-page.md](showing-a-page.md)), send what a showing outside has released to the public graph and write the words a node is proposed there in ([published-pages.md](published-pages.md)), adopt a public request, and, unless the deployment names another permission for it (`PUBLIC_ACTS_BY`), act on the public graph in the organization's name ([outward-acts.md](outward-acts.md)) | edit an assessment or a run's log |
+| `release` | for one party | act at a gate on what rests on that party's material: approve, release, remove a passage from, hold or delay each part of a page or other item going to readers who do not read its label, and set the gate for that party's material ([the-gate.md](the-gate.md)), release the words a node is proposed to the public graph in, and, for the organization's own material, send an agent's report as redacted to Minerval's maintainers ([outward-acts.md](outward-acts.md)) | edit what the agents wrote, or release another party's material |
 | `fund` | | put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a mandate, order or fund work on a node or a request | decide what the work concludes |
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
-| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files, set up the General mandate, create owls where the deployment creates its own, read and send the usage reports | act under a permission they have not also been granted, or change who may do what without a log entry |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
 sign-in carried), and its **clearance**, the labels it may read: `public`,
 each label a `read` grant names, and every label those read, following
 `label_reads` to the end. The clearance is on the request's async context
-(`currentClearance()` in `src/llm/usage-context.ts`). Nothing holds a read
-to it yet: that is the database's work and comes separately. Until it does,
-`read` and `read_sources` grants are recorded and resolved and change
-nothing a member is served.
+(`currentClearance()` in `src/llm/usage-context.ts`), and where the
+deployment holds material at more than one label the database holds every
+read of the request to it ([architecture.md](architecture.md), "Labels and
+clearance"). A `read_sources` grant opens the sources themselves at its
+label ("Opening raw sources", below).
 
 The routes a permission guards, in each mode (`requirePermission` in
 `src/server/require-permission.ts`; the list is asserted in
@@ -180,9 +181,13 @@ The routes a permission guards, in each mode (`requirePermission` in
 |---|---|---|
 | `POST /grant-conversations`, `POST /grant-conversations/:id/messages`, `POST /grants/:id/approve`, `POST /correspondents/:id/poke` | an account | `direct` |
 | `POST /sources` | any valid key, and the owl charge | `direct` |
+| `POST /claims/:claim_id/stated-views` | an account that may contribute | `direct`: stating the organization's own view on a node is part of directing the graph |
 | `POST /grant-conversations/:id/fund`, `POST /grants/:id/topup`, `POST /mandates/:id/contribute`, `POST /claims/:claim_id/order`, `POST /claims/:claim_id/contribute`, `POST /claims/:claim_id/decompose`, `POST /requests/:request_id/contribute`, `POST /budget-jobs/:id/topup` | an account, and the owls | `fund` |
 | `POST /grants` | a direct service caller | `direct` and `fund` |
 | the routes for permissions, parties and labels (below) | not mounted | `administer`, and a signed-in session for every write |
+| the routes for connections ([connections.md](connections.md)) | not mounted | `administer`, and a signed-in session for every write |
+| the routes for file sets ([file-sets.md](file-sets.md)) | not mounted | `direct` for the reads and for uploading a set; `administer` for registering a directory, which decides what label files already on the deployment's disk get; a set's label within the caller's clearance, and a signed-in session for every write |
+| `POST /standing-mandates/:name`, `POST /owls/created`, `GET /usage-reports/outgoing`, `POST /usage-reports/outgoing/send` (below, "Owls a deployment creates for itself") | not mounted | `administer`, and a signed-in session for every write |
 
 Taking money back asks for no permission in either mode: withdrawing from a
 mandate, cancelling a grant, a job or an order. A funder may take back
@@ -195,6 +200,142 @@ account lacks, and is told which and why: the Assistant in its brief
 (`src/llm/permissions-note.ts`), an outside client in the server's
 instructions.
 
+### The label a request works at
+
+Reading is held to a clearance, a set of labels. Writing needs one label:
+the database lets a request add a row only at the label it works at. Where
+a deployment has one label, `public`, nothing below is asked and nothing
+changes. Where it has more, every request that writes is given its label
+in one of two ways (`src/server/request-labels.ts` has the rule for each
+route, with the reason, and a test fails for a writing route that has
+none). No agent chooses a label, and a label that is missing is never read
+as `public`.
+
+- **From what the request is about.** A contribution, an appeal, an order,
+  funding, a message in a conversation that already exists: each is about a
+  row that already carries a label, and everything the request writes,
+  however far down, carries that label. A person who may not read the row
+  is told it does not exist.
+- **From the person, when they start something new.** A source, a proposed
+  node, a granting conversation, a conversation with the Assistant, a page,
+  an API key: the request names the label in a `label` field, among the
+  labels the person may read. There is no default and nothing is
+  preselected. A request that names none answers `400 LABEL_REQUIRED` with
+  the labels it may name; one that names a label the person may not read
+  answers `403 LABEL_NOT_READABLE`, in the same words whether or not a
+  label of that name exists.
+- **Work on a node, at a label that reads it.** A node can carry a judgment
+  at each label ([architecture.md](architecture.md), "A judgment at each
+  label"), so the three routes that start work on a node that is already
+  there (`POST /claims/:claim_id/order`, `/contribute` and `/decompose`)
+  take an optional `label`. Left out, the work is at the node's own label.
+  A signed-in person may instead name a label they hold that reads the
+  node's label, and the work is then at that label: an internal assessment
+  of a public claim. Its order, its ledger row, its messages and the
+  version it records are at the label named and are read only there; the
+  node's own judgment and the work at its own label are untouched and do
+  not wait on it. A label the person holds that does not read the node's
+  answers `400 LABEL_DOES_NOT_READ` with the ones that do.
+- **A view stated on a node, the same way.** `POST /claims/:claim_id/stated-views`
+  takes the same optional `label`: what an organization holds about a public
+  node is its own material, so the statement, its review, the instance it
+  becomes and its reasons to the Steward are at the label it was stated at,
+  and are read only there. On a node the mirror brought, a view at the
+  node's own label is not taken (`409 PUBLIC_GRAPH_NODE`), as a contribution
+  is not: name a label that reads it, or state the view on the public graph.
+
+`GET /labels/mine` returns what a page needs to offer the choice: the
+labels the person may read, each with its description, what else its
+readers read, and who reads it (`who_reads`, in words). A label that reads
+one of theirs and that they may not read is counted and not named.
+
+The mandate drafted in a granting conversation takes the conversation's
+label, and its Grantmaker runs there. A conversation with the Assistant
+runs every turn at its label. Each says which label it is in what the API
+returns for it (`label`), and a held action's card says which label it will
+write at (`writes_at`). A conversation or a mandate at a label its owner
+may no longer read is not served to them.
+
+What a request writes at a label it then reads at that label: while it
+runs, it reads what its label and the person's clearance both read. A
+request about a `public` node does not read the person's private labels
+while it writes the public rows.
+
+**API keys and access tokens** work the other way round, because an agent
+holds them. A key works at one label, named by the person when they mint it
+(`POST /api-keys` takes `label`, required where there is more than one),
+and never changed. An access token works at the label the person named when
+they approved the client on the consent page
+(`POST /oauth/requests/:request_id/approve` takes `label`), through every
+refresh. Every request made with one:
+
+- reads what that label reads, within what the person may read, and not
+  the rest of the person's clearance;
+- files what it starts new at that label, with no parameter. The MCP tools
+  have no `label` input, and a REST request that names another label is
+  refused (`400 LABEL_FIXED`);
+- changes an existing row only where the row carries that same label. A
+  row it can read at another label is refused with `409 LABEL_MISMATCH`
+  and the reason;
+- may start work on a node its label reads, at its own label: an order,
+  funding or a decomposition made with a key at `internal` on a `public`
+  node is an internal assessment of that node, written at `internal` and
+  nowhere else. It names no label, and what it starts is never at the
+  node's label unless that is its own.
+
+So an agent holding a key cannot choose where something is filed, and
+cannot read at one label and write into a row at another, whatever text
+it has read. The Assistant in one conversation is held the same way, to the
+conversation's label. Within a turn it reads with the clearance its user held
+when the turn began: the user's standing is resolved once for the turn
+(`openAccountTools` in `src/llm/tools/assistant-tools.ts`), so a grant
+removed while a turn is running takes effect from the user's next message
+and not inside the turn. A turn ends with its reply or when the user stops
+it (`POST /assistant/conversations/:id/stop`). A key minted before the deployment had a second label
+works at `public`: it reads and writes public material only, and its holder
+mints a new key to work at another label (`GET /api-keys` shows each key's
+label and says this). A key or a token whose label the person may no longer
+read is refused (`403 CREDENTIAL_LABEL_NOT_READABLE`). The MCP endpoint
+itself takes a key or a token: a signed-in session has no label of its own
+and is refused there.
+
+The operator key names no person and carries no clearance. The routes it
+guards read and write `public` alone.
+
+### Opening raw sources
+
+`read` at a label covers what the agents wrote there: a node, its
+assessment, each instance with the passage it quotes, a reading, an
+examination's findings. `read_sources` at a label opens the sources
+themselves, and is granted separately, label by label: a grant at one
+label does not open the sources of a label it reads. `public` sources are
+open to every member.
+
+The database cannot hold the two apart, since a source's stored text is a
+column of the source's own row. The permission is held at each place the
+text is returned to a person (`src/raw-sources.ts`):
+
+| where | without the permission |
+|---|---|
+| `GET /sources/:source_id/document` (MCP: `get_source_document`, and the Assistant's tool) | every segment comes without its text and its heading, and `text_withheld` says so and names the permission and the label. The structure, the length, and every instance the agents recorded from the document are served |
+| `GET /sources/:source_id/examinations` (MCP: `get_source_examinations`) | each finding comes without `segment_label`, the heading of the segment it is anchored to, and `headings_withheld` on the examination says so. The finding itself, which the agent wrote, is served |
+| `GET /runs/:run_id/steps`, `GET /runs/:run_id/steps/:seq` | the parts of a step that hold a source's text are replaced by the same kind of notice: the opening message of an agent that is handed a document (the Extractor), and the output of a tool that returns one (`provenance_read_source`, `examination_outline`, `get_contribution_details`, a connection's tools, `open_reading`, `run_command`, `open_output`, the Redactor's `get_page_to_redact`). The rest of the step and its hash are served. Which runs a member is served at all is in [run-log.md](run-log.md), "Who reads a log" |
+
+A run's log says what its run could have opened, not which source each
+step read. So a reader of a run at a label needs `read_sources` at that
+label and at each label it reads; a run at `public` read only public
+sources.
+
+Read-only SQL returns no source text: no view selects it, and a test fails
+if one comes to.
+
+What this does not protect. A passage an agent quoted from a source is text
+from the source, and reading at the label shows it. A person without
+`read_sources` cannot open a document; they can read every passage the
+agents chose to record from it, and what the agents said about it. An
+agent's own run is not held to the permission: it reads what its label
+reads, sources included.
+
 ### Granting, and the log
 
 Mounted only where `READS=members`:
@@ -203,12 +344,15 @@ Mounted only where `READS=members`:
 |---|---|---|
 | `GET /permissions` | a member | what each permission covers |
 | `GET /permissions/mine` | any signed-in account | what the account holds, its clearance and groups |
-| `GET /permissions/log` | a member | every grant, removal and administrative change, newest first |
-| `GET /permissions/grants`, `GET /permissions/accounts`, `GET /parties`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the parties; the labels |
+| `GET /labels/mine` | a member | the labels the caller may file new material at, and who reads each; for a key or a token, the one label it works at |
+| `GET /permissions/log` | a member | every grant, removal and administrative change, newest first, owls created and standing mandates set up included |
+| `GET /permissions/grants`, `GET /permissions/accounts`, `GET /labels` | `administer` | who holds what now; the accounts with their groups; the labels |
+| `GET /parties` | `administer` or `direct` | the parties: in full for an administrator; for a person who directs, each party's id and name and whether it is the organization itself, since adding a source or a set of files says whose material it is |
 | `POST /permissions/grants`, `DELETE /permissions/grants/:grant_id` | `administer`, from a signed-in session | grant; remove |
 | `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
 | `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
 | `POST /operator/administrators` | the operator key | grant `administer` to an account, by its sign-in identity |
+| `GET /setup/checklist` | `administer` | what the deployment's setup has done and what is still to do, with the deployment's own checks where the build has them ([deployment.md](deployment.md), "The setup checklist") |
 
 Every write takes a signed-in session, as minting an API key does, so a
 leaked key, an access token, or an agent following text it read can never
@@ -218,7 +362,10 @@ not MCP tools; the reads are.
 `permission_grants` is state and log in one. A row is a grant; removing it
 marks the same row with who removed it and when; no row is deleted. The
 other administrative acts (a label defined, a pair of labels added or
-removed, a party added, a source's party set) each write a row to
+removed, a party added, a source's party set, every change to a
+connection or to the tools it offers, and a file set added, closed or
+switched off, whoever's act it was, owls created, a standing
+mandate set up) each write a row to
 `administrative_events` in the same transaction as the change. The last
 live grant of `administer` cannot be removed.
 
@@ -227,7 +374,9 @@ part of what its readers weigh. People appear by display name. The name of
 a label the reader is not cleared for, or of a party that is neither the
 organization itself nor one the reader holds `release` for, is replaced by
 `{"withheld": true}`: a deployment may hold material from parties who are
-not to learn of each other. That an act happened, who did it, to whom and
+not to learn of each other. A connection's name and its tools' names are
+withheld the same way from a reader not cleared for the connection's label,
+and so is a file set's name. That an act happened, who did it, to whom and
 when is always shown.
 
 ### The first administrator
@@ -240,6 +389,16 @@ administrator, they are granted every permission: `direct`, `fund` and
 `public`, and `release` for each party that exists. The grants are rows
 like any other, marked as made by the setting. From then on they hand
 permissions out, to themselves included when they define a new label.
+
+The organization itself is a party from that moment. If the deployment has
+none, one is made then under the name "This organization", and the first
+administrator holds `release` for it: a part of a shown page that rests on
+no outside party's material is the organization's to release
+([showing-a-page.md](showing-a-page.md)). Adding a party as the organization
+itself (`POST /parties` with `is_own_organization`) while it still has that
+name gives it its name. A deployment whose first administrator was
+established before this existed has no such party until an administrator
+adds one, and is told so when a page is first asked to be shown.
 
 The setting works once. Once any administrator has existed, removed ones
 included, it does nothing whatever it says, so a person the administrators
@@ -288,17 +447,318 @@ prepared at build time would otherwise be served without a sign-in
 (`web/instrumentation.ts`). Whatever the web app believes, a read the API
 refuses as members-only is never answered from a fixture.
 
-The gate stands in for every page until the visitor is a signed-in member,
-and each page is still rendered behind it: what a visitor who is not signed
-in receives carries the page's empty frame, with no read behind it
-answered. Stopping the render itself needs the web app's pages to sit under
-a layout that can turn a visitor away, which comes with the private web
-shell.
+Two things keep a page from anyone who is not a signed-in member, and only
+a members-only build has either:
+
+- **The proxy** (`web/proxy.members.ts`, with its decision in
+  `web/lib/gate.ts`) runs before any page or route handler is chosen. A
+  request from a signed-in member goes through. Any other request for a page
+  is answered with an empty page (`/members-gate`) at the address that was
+  asked for, and any other request (a route handler called by a script, an
+  image, a feed) with `401`. So the page a visitor asked for is never
+  rendered for them. A layout could not do this: Next renders a page's
+  content whatever the layout around it shows, and a reader moving between
+  pages fetches a page's content without its layout being asked again.
+- **The gate** (`web/components/MembersGate.tsx`, in the root layout) stands
+  in for whatever page is shown until the visitor is a member, and says why:
+  sign in, or signed in and holding nothing, with the identity an
+  administrator will know the person by.
+
+**Files only a members-only build has.** `web/next.config.mjs` adds
+`members.tsx` and `members.ts` to the page extensions when the build is made
+with `READS=members`. A file named `page.members.tsx` is then a page, and
+`proxy.members.ts` the proxy; in any other build Next does not see them. So
+the public site has none of a private deployment's pages, compiles none of
+their code, and runs no proxy in front of its requests
+(`tests/unit/web/members-gate.test.ts`). What a private deployment adds to
+the site is named this way.
+
+**The pages a members-only build adds.** A line above each page, placed by
+the gate for a member (`web/components/MembersBand.tsx`), links the ones a
+person's permissions open: "Showings" for a member who reads at a label
+besides `public` or who directs or releases, "At the gate" for holders of
+`release`, "File sets" for holders of `direct` or `administer`, "Add a
+source" for holders of `direct`, "Administration" for holders of
+`administer`. The administration pages link to one another down the left
+side of the page, and in a line above it at a phone's width
+(`AdminNav` in `web/components/admin/access.tsx`). A person who lacks a
+permission is not shown a control that needs it, and a page reached directly
+says which permission it needs.
+
+Where the deployment holds material at more than one label, a page that
+starts something new asks which label it is for (`LabelChoice`, from
+`GET /labels/mine`): nothing is preselected, and each label the person may
+choose is listed with who reads it. A page lists what the person reads, and
+says so where an administrator's list leaves rows out.
+
+| page | who | what it is |
+|---|---|---|
+| `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` ([deployment.md](deployment.md), "The setup checklist"). Its words are in `web/lib/admin-words.ts` |
+| `/admin/people` | every member; controls for `administer` | What each permission covers, what the reader holds, and the log, with a withheld name shown as withheld. For administrators: who holds what by person and by group, granting and removing, and the accounts that have signed in and hold nothing |
+| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form, and that defining the first label takes about ten seconds; what each label is cleared to be sent to; the parties, with the organization's own named here; whose material a source is |
+| `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection at a label the administrator reads, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls the administrator reads with which were kept. A connection's label is shown and not offered for change |
+| `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup, one for each label the reader reads where there is more than one |
+| `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
+| `/admin/outside` and the four pages under it | every member; controls by permission | docs/outward-acts.md: the organization's account on the public graph with its public owls and public mandates, and the log of every act there; public requests adopted and taken up; the setting that keeps public versions current, with what it shows outside; what readers said back about published pages; and the agents' reports, with sending one on to Minerval's maintainers |
+| `/sources/new` | `direct` | Add a document or an address (`POST /sources`), at a label the person chooses where there is more than one |
+| `/claims/:id` | every member | The ordinary page of a node. Where the node carries a judgment at more than one label the reader reads (`versions` on `GET /claims/:id`), a tab for each, opening on the one in force; a reader for whom two are in force, at labels that do not read each other, is shown both in full and neither is chosen. Under the tabs: what the assessment was made on, what it was made beside, and whether that has since been replaced; where a label the reader reads examined the node and left another label's assessment standing, that it did, on what date, with the Steward's reasons, and whether that assessment has since been replaced (`left_standing`); and the labels the reader holds at which the node has not been examined at all (`not_examined_at`). A page of the node shown to a label the reader reads, or outside, is a further tab drawn by the components of the public site's second tab (`web/lib/inside-node.ts`, `web/components/claim/InsideVersions.tsx`) |
+| `/showings`, `/showings/:id`, `/showings/:id/pages/:page_id` | every member, as far as their labels reach; controls by permission | docs/showing-a-page.md: the showings a reader may see from either side; one showing with each node's state, every version, every act, and for a reader of the page's label paying for the redaction or its check (`fund`), holding a page and ending a standing showing (`direct`); one version as shown, part by part, with who released or held each, the fingerprint, and a check that runs in the reader's browser |
+| `/showings/new` | `direct` | Ask for a node's page to be shown (`POST /showings`), from the node's page. Nothing is preselected, and each choice says what it shows and to whom |
+| `/gates` | every member; settings for `administer` and for `release` | docs/the-gate.md: how much waits at each gate toward a label the reader reads, by kind, for how long and on whom, in counts (`GET /gate/backlog`); for a person with a say over a gate, its settings by kind of thing, scope and party, what flows to it, whether its backlog is shown and, outside, whether what is released is sent (`GET /gates`, `PUT /gates/:gate_id`, `PUT /gates/:gate_id/settings`) |
+| `/gate` | `release` | What waits on the person at a gate (`GET /gate/queue`): each waiting part as it would be shown, with what is always shown of its item and what the Redactor proposes; for a holder who reads at the item's label, the Redactor's removals struck through in front of their marks and its notes, and for one who does not, the marks alone, except in a part that rests only on the material of an outside party they release for; approve, release, hold, delay, lift, or remove a passage, for many items at once (`POST /gate/decisions`) |
+| `/redaction-policies`, `/redaction-policies/:id` | every member; saving for `administer` | Each boundary's policy in full; an administrator who reads the label the pages are written at saves the next version (`PUT /redaction-policies`), with a refusal shown beside the form |
+| `/outbound` | every member; controls for `direct` and `release` | Pages sent outside. docs/published-pages.md, "Inside the deployment": what a send shows outside, each package with its sends and the public graph's answers, sending, taking a package as a file, and the words a node that exists only here is proposed in |
+| `/file-sets`, `/file-sets/:id` | `direct` or `administer` | docs/file-sets.md: the sets at labels the reader reads, adding one by upload (`direct`) or from a directory (`administer`), uploading with each file's progress and hash, a set's files and the commands run against it, switching it off |
+
+These pages link to one another down the left side, as the administration
+pages do (`WorkNav` in `web/components/inside/nav.tsx`), each link shown to
+whoever can use the page. Their words that are not the API's own are in the
+pages; the two fixed lists of reasons are the API's, served with
+`GET /showings` and `GET /gate/queue`. `/outbound` is for pages; what
+else passes between the deployment and the public graph is on
+`/admin/outside` (docs/outward-acts.md), and each page points to the other.
+
+What the pages still cannot be given, because the API does not serve it:
+
+- **The text of a part, to a holder of `release` who does not read the
+  label the page was written at.** The queue says so on each item.
+- **Earlier versions of a policy.** `GET /redaction-policies` serves the
+  newest version of each boundary; an earlier one is read by its id, which
+  a showing's record gives.
+- **Labels a person does not read.** A showing, a rule or a policy can
+  name a label its author does not read, and the API takes it; no read
+  names such a label, so the pages offer the labels the person reads.
+- **A receipt for a package carried by hand.** Taking a file is logged;
+  nothing records what the public graph then answered.
+- **What a redaction or its check is expected to cost.**
+
+**Where more than one judgment is in force for one reader.** A reader who
+holds two labels that do not read each other, each with a judgment of a
+node, has two in force, and so has a run at a label that reads both. A read
+that gives a node one judgment gives the most recently made
+(`<table>_in_force`), and says how many there are: `judgments_in_force`,
+with one sentence beside it (`judgments_in_force_note`), present only where
+it is more than one (`judgmentsInForce` and `markSeveralInForce` in
+`src/services/judgment-version-service.ts`). It is on a row of the list and
+of a search, a card, a row of a tree and of a node's premises, and a read
+of the node, which also lists each judgment under `versions` with its own
+`coverage` and `since_assessed`. An argument's evaluation is said the same
+way (`argument_evaluations_in_force` on a tree's row; `evaluations_in_force`
+and `evaluations` on the argument's own read). The web app shows "N
+assessments" on such a row, linking to the node.
+
+**Where a label left a judgment standing.** A Steward at a label, on a
+node at a label it reads, records its own judgment or leaves the one it
+reads standing ([architecture.md](architecture.md), "A judgment at each
+label"). The record that it left one standing is not a judgment. It
+changes no view, puts nothing in force and is counted by none of the reads
+above: every read that gives a node one judgment, every count of judgments
+in force, and every export gives exactly what it would have given without
+it. A reader who holds two labels that do not read each other, where one
+judged the node and the other left the public judgment standing, has the
+first label's judgment in force and no second one, as before. The record
+is served where a node's judgments are listed, on a read of the node
+(`GET /claims/:id` and `get_claim`), as `left_standing`: for each label the
+reader reads that has one, when the node was examined there, by which
+run, the Steward's reasoning, the judgments left standing and whether one
+has since been replaced (`open_again`). `not_examined_at` lists the labels
+the reader reads at which the node has neither a judgment nor such a
+record. The Steward at a label is told the same in the note of its node's
+versions. Lists, trees, searches and exports do not carry either field.
+
+The other reads that give a node's status, and what each does for such a
+reader. For a reader with one judgment in force each is what it was.
+
+| Read | What it does |
+| --- | --- |
+| Dependents (`GET /claims/:id/dependents`, and the node's own read) | The count and the sentence on each dependent's row |
+| Claim links (a node's `related`) | The same, on each counterpart |
+| A question's presuppositions, subquestions, listed answers and what depends on it | The same, on each entry |
+| A quantity's bases: the claims its readings bear through, and the claims that cut it | The same, on each claim |
+| A source's segments (`GET /sources/:id/document`) | The same, on the claim each instance is of |
+| Bounties (`GET /prizes`) | The same, on each listing |
+| Monitors: performed settling and empty chairs | The same, on each candidate. The candidate is still picked by the most recently made judgment, and now says so |
+| The extension's lookups | `judgments_in_force` and the sentence on an annotation's `claim`; the assessor that compares the page with the graph is given the sentence too |
+| A session's snapshot (what a paused run is told when it resumes) | One more sentence beside the status: "N judgments of this node are in force for this run, made at labels that do not read each other. The status given here is that of the most recently made, and none replaces another." |
+| Citations (`GET /claims/:id/citation`) | Not a count alone. The evidence record carries every assessment in force, whole, under `assessments_in_force` (most recently made first; `assessment` is the first), because a record is read away from the graph and its reader cannot come back for the others. The citation names one assessment by id and version and says how many there are. A premise's status carries the count |
+| The nanopublication | The assertion states the pinned assessment; the publication info names every one in force (`mv:assessmentInForce`) |
+| The MIRA export | Every assessment in force is a node of its own (`mv:Assessment`, for a claim and for a question), with its label, verdict and reasoning. A neighbour whose status is one of several carries `mv:judgmentsInForce` |
+| Findings | No count: one judgment is not chosen at all. A filter by the claim's status finds a finding under the status of either judgment in force, the counts beside the filter count it under each, and a cited assessment is `current` while it is its own label's current one (a judgment at another label does not make it old). `cited_assessments` carries the count |
+| Read-only SQL's `assessments` view | One row for each judgment: `is_current` is true for every judgment in force for the session (migration 0159), so a join on it returns a row for each and nothing is chosen by date. The note on the result says so to a reader of more than one label besides `public` |
+
+On the web, the rails (what depends on a node, see also, a question's
+rail), the compass and the map count each node once, by the one status its
+row carries. Each row that has more than one says "N assessments", and a
+summary drawn over several nodes says how many of them have more than one
+and that each is counted by the most recently made.
+
+Not reached: the overturn-rate and evidence-monotonicity monitors read a
+node's whole history of assessments in order of time, so on a node judged
+at two labels they read a change of label as a change of mind. A quantity's
+or a question's own page gives the one estimate or answer its read names
+and lists the others under `versions`. An analysis of a page that the
+extension stored is shared between readers, and its stored verdicts were
+made against one judgment.
+
+The account page shows no way to buy owls where `entitlement.owls_created_here`
+is true, gives what an owl is there in the API's words
+(`entitlement.owls_statement`), and says what the person holds.
 
 To run one locally: set `READS=members` and an `API_KEYS` entry on the API
 (there is no dev bypass), the same key and `READS=members` on the web app,
 and sign in with the development login, whose identities read
 `dev:<username>`.
+
+### Owls a deployment creates for itself
+
+On the public graph owls are bought (below, "Buying owls"). A deployment
+that pays its own model providers has nobody to buy them from, so it creates
+them: `OWLS=created`.
+
+**What they are.** The organization's own unit for budgeting its agents'
+work. One owl covers one dollar of metered cost, at the prices the
+deployment is configured with. They are created by its administrators, not
+bought, and they never convert to or from owls on the public graph. The one
+sentence every surface uses is `CREATED_OWLS_STATEMENT` in
+`src/services/owl.ts`.
+
+**The setting.** `OWLS` is `sold` (the starting value: the public graph) or
+`created`. It says more than payments being off. Payments off leaves a
+deployment with no way to get owls at all; `created` gives it one. So
+`created`:
+
+- needs `READS=members`, because creating owls is an administrator's act
+  and only a members-only deployment has administrators;
+- refuses to load beside a Stripe key (`STRIPE_SECRET_KEY`): an owl an
+  administrator created and an owl someone paid for would be one balance;
+- does not mount `GET /billing/packs`, `POST /billing/checkout` or
+  `POST /billing/webhook`, so the `list_owl_packs` tool does not exist
+  there. `GET /billing/ledger`, an account's own history, stays.
+
+**Creating.** `POST /owls/created` (`src/routes/owls.ts`,
+`src/services/owl-creation-service.ts`), from a signed-in session by a
+holder of `administer`, into one of:
+
+- an account's balance (`account_id`): a person who holds `fund` then puts
+  the owls behind mandates exactly as on the public graph;
+- a mandate's budget (`mandate_id`): the budget grows at once. These owls
+  are held in the name of the deployment's own account, the one account
+  nobody signs in to, which carries the organization's name. If the mandate
+  closes with money unspent, that share returns to this account, as any
+  funder's share returns to them. The mandate is one at a label the
+  administrator reads, and the request works at the mandate's label
+  ("The label a request works at", above): one at another label answers as
+  not found.
+
+The ledger reason is `owl_created`. Each act writes a row to
+`administrative_events` (`owls_created`) in the same transaction, with the
+amount, the recipient and the administrator's note, and appears in
+`GET /permissions/log`.
+
+**There is no cap.** It is the organization's own budget, spent at its own
+model providers, and a ceiling here would be a number nobody chose. What
+stands in its place is visibility: `GET /owls/created` (`get_created_owls`
+on MCP), open to every member, says how much has been created, by which
+administrator, into accounts and into mandates, how much the deployment's
+runs have spent, and lists the acts. The spend is one total over every run,
+whatever its label, taken under system clearance
+([architecture.md](architecture.md), "System work"): a member who reads one
+label is still told what the whole deployment has spent. A mandate at a
+label the reader does not read is named in the list by its id alone.
+
+**No free grants.** The signup grant and the monthly owl are the public
+graph's offer to a reader who has just arrived. In any members-only
+deployment (`READS=members`, whatever `OWLS` says) neither is given unless
+the deployment sets it: `SIGNUP_GRANT_OWLS` and `MONTHLY_GRANT_OWLS` have no
+default there. Where owls are created (`OWLS=created`) neither can be set:
+the deployment refuses to load with either above zero, because every owl
+there enters a balance by an administrator's logged act, and a grant by
+setting would create owls that no act records.
+
+**The price of an owl.** Cost is metered as everywhere (below, "The
+per-token meter"). Three things can price a call: the rate table in
+`src/llm/pricing.ts`; a provider that reports the cost of each call itself
+(OpenRouter, and an endpoint a deployment declares with its prices); and a
+price the deployment states, `MODEL_PRICES`:
+
+```
+MODEL_PRICES=[{"model":"gpt-oss-120b","inputUsdPerMtok":0.5,"outputUsdPerMtok":1.5}]
+```
+
+US dollars per million input and output tokens, for a model the table does
+not know, or in place of the table's price for one it does (a negotiated
+rate). `model` is a model ID or the start of one; the longest match wins,
+and a stated price wins over the table. `cacheReadMultiplier` and
+`cacheWriteMultiplier` are optional.
+
+On the public graph a model with no price meters at a conservative fallback
+rate. Where owls are created that rate would be a number nobody chose, so a
+call to a model with no price is refused before anything is sent, with a
+message that says how to state one (`ModelNotPricedError`). `GET
+/owls/created` lists the models the deployment is configured to run that
+have no price, so the gap can be closed before a run meets it.
+
+### Asking a label you do not read
+
+A label's administrators may give it a face at a label it reads: a name and
+a line saying what can be asked of it (`PUT /labels/:label/face`, with `at`,
+`name` and `can_be_asked`; `GET /labels/faces` lists them, `DELETE
+/labels/:label/face/:at` withdraws one). `GET /asks/askable` lists the
+faces of labels you do not read, with the label of yours each is shown at.
+A person who may fund asks with `POST /asks`: the face, whether it is one
+piece of work or a mandate, the ask in their own words, and a budget in
+owls. The ask is recorded as a request at the label the face is shown at,
+which is the asker's record and is read there like any request; the work is
+done at the label asked. Whether it was taken up, what it found and what it
+cost reach the asker only through that label's gate. What is not spent
+returns to the asker's balance.
+
+A label that holds only work asked for this way needs no General mandate:
+each piece of its work was paid for by whoever asked.
+
+### The standing mandates, set up in the app
+
+Every deployment needs a General mandate, which pays for upkeep and, since
+the Governance mandate was folded into it, for audits: no agent work runs
+except by allocation (docs/allocation.md, "Platform mandates"). On the
+public graph a seed script creates it with the database's credentials. In a
+members-only deployment an administrator does, from a signed-in session:
+
+| route | who | |
+|---|---|---|
+| `GET /standing-mandates` | a member | the General mandate, and whether it has been set up |
+| `POST /standing-mandates/:name` (`general`) | `administer`, from a signed-in session | set it up, with `budget_owls` and `daily_owls`, which sets its pace: at most that many owls committed in any rolling day, or `0` for as needed |
+
+The mandate is the one the seed creates (the same starting operating policy
+and lookouts, from one definition in `src/services/standing-mandates.ts`),
+worded as the deployment's own and never Minerval's. Where the deployment
+creates its own owls, `budget_owls` is created with the mandate and logged.
+Where owls are sold, a budget cannot be created: the mandate is set up with
+none and funded from a balance like any mandate. More budget is added like
+any mandate's: created into it, or contributed.
+
+**One at each label.** A mandate's work runs at its label
+([architecture.md](architecture.md), "Labels and clearance"): its
+Grantmaker reads what that label reads, and what it pays for is work at
+that label. So where a deployment holds material at more than one label,
+the request that sets a standing mandate up names the label it is for
+(`label`, among the labels the administrator reads), and each label whose
+upkeep and audits are to be paid for has its own General mandate. Setting one up at a label says nothing about another label, and
+is refused only where that label already has one. `GET /standing-mandates`
+then carries `by_label`: for each label the caller reads, the mandate set
+up there or none. A label with no General mandate has nobody paying for
+its upkeep, which the list shows as that. The lookup is by label
+(`getGeneralMandate` in `src/services/allocation-policy-service.ts`):
+upkeep wanted at a label is raised to the General mandate at that label,
+whose officers work what is raised at it, and a sweep at a label is paid
+by that label's General mandate. It is never put in front of the General
+mandate of a label it reads.
+
+### What a deployment reports
+
+A members-only deployment on the metered price reports the owls its runs
+spent each day to the public graph: one total, and never which claims the
+work was for. docs/usage-report.md.
 
 ## The per-token meter
 
@@ -574,7 +1034,9 @@ card; `POST /assistant/conversations/:id/held/:action_id` with
 `decision: "run"` performs the same call as the user, and `"decline"`
 records the refusal. The Assistant is told the outcome in its next reply.
 The user may allow kinds of action (`propose`, `submit`, `assess`, `fund`,
-`cancel`) to run without a card, for one conversation or for the account
+`cancel`, and in a private deployment `send_outside`, which covers every
+act on the public graph in the organization's name: docs/outward-acts.md)
+to run without a card, for one conversation or for the account
 (`PUT /assistant/allowance`); an allowed call runs at once and leaves the
 same row as a receipt. Releasing an action and changing the allowance need
 the signed-in session and are not MCP tools, so nothing the Assistant holds
@@ -684,8 +1146,9 @@ balance = SUM(owl_ledger.amount_micro_usd)
 Reasons: `purchase`, `signup_grant`, `monthly_grant`, `contribution_award`,
 `charge`, `meter_settlement` (the unused fraction of a charged cap,
 returned after the meter ran), `refund`, `escrow_hold`/`escrow_refund`
-(budgeted jobs), `admin_adjust`, and `prize_award` (a prize paid in owls,
-below). Charges carry the operation (`op`) and
+(budgeted jobs), `admin_adjust`, `prize_award` (a prize paid in owls,
+below), and `owl_created` (owls an administrator created, in a deployment
+that creates its own; above). Charges carry the operation (`op`) and
 link to the claim or contribution they paid for, so the account history
 reads as "up to 2 owls held for the assessment of claim X, 0.4 returned".
 Charges, escrow holds, and allocations are balance-guarded inserts taken
@@ -775,6 +1238,9 @@ owl is backed by escrow paid for before the offer was made.
   purchase pack (Parliament, $1,000) sits under the same figure.
 
 ## Buying owls (Stripe)
+
+Not in a deployment that creates its own owls (`OWLS=created`, above):
+there these routes are not mounted.
 
 Purchases are enabled when `STRIPE_SECRET_KEY` looks real (`sk_…` or a
 restricted `rk_…` — `stripeConfigured()`); a placeholder keeps the deployment

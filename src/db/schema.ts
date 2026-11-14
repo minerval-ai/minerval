@@ -19,7 +19,7 @@ import {
   primaryKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 
 // Custom pgvector type
 const vector = customType<{ data: number[]; driverParam: string }>({
@@ -89,7 +89,8 @@ const bytea = customType<{ data: Buffer; driverParam: Buffer }>({
 // switches and counters, and the two tables here. One kind of row takes
 // its label from neither a run nor a request: what is derived mechanically
 // from a document (its segments, the notices against it) carries the
-// document's label. No reader is held to a clearance yet.
+// document's label. Where a second label exists, every read and write is
+// held to a clearance by row-level security on these tables (db/clearance.ts).
 // ---------------------------------------------------------------------------
 export const labels = pgTable(
   "labels",
@@ -102,10 +103,10 @@ export const labels = pgTable(
   },
   (table) => [
     // A label's name is written into a connection's settings (the clearance
-    // a connection reads with, where the database holds reads to one), so
-    // the table holds it to a plain word: lower-case letters, digits,
-    // hyphens and underscores, starting with a letter. Nothing in a name
-    // can end the setting it is written in.
+    // a connection reads with, db/clearance.ts), so the table holds it to
+    // the plain word the administrator's route already requires
+    // (services/label-admin-service.ts): nothing in a name can end the
+    // setting it is written in.
     // And not the word null, which in the array a connection's clearance
     // is written as is no label at all.
     check("labels_name_plain", sql`${table.name} ~ '^[a-z][a-z0-9_-]{0,62}$' AND ${table.name} <> 'null'`),
@@ -135,19 +136,61 @@ export const labelReads = pgTable(
 //
 // The default is for an insert that does not say its label, and it is the
 // label of the connection the insert arrives on (minerval_default_label(),
-// defined in the migration that set it: the connection's minerval.label
-// setting). A connection opened for a run at a label will carry that
-// label, so a write that forgot its stamp inside the run lands where the
-// stamp would have put it. Where the connection carries no label, which
-// is every connection today, the default is 'public' while 'public' is the
-// one label the deployment has: every write on the public graph, as
-// before. Where a second label exists and nothing says which one the row
-// is for, the insert is refused: a row is never public by omission.
+// defined in the migration that set it; db/clearance.ts says how a
+// connection gets its label). So a write that forgot its stamp inside a
+// run lands at the run's label, which is what the stamp would have said.
+// Where the connection carries no label the default is 'public' only while
+// 'public' is the one label the deployment has, which is every write on the
+// public graph. Where a second label exists and nothing says which one the
+// row is for, the insert is refused: a row is never public by omission.
 const sensitivityLabelColumn = () =>
   text("sensitivity_label")
     .notNull()
     .default(sql`minerval_default_label()`)
     .references(() => labels.name);
+
+// A label's public face (src/labels.ts, "Work asked for from below"). A
+// label cannot be read, or named, from the labels it reads. That it can be
+// asked for work is something its administrators choose to show: a name
+// and a line saying what can be asked of it. The face is a row at the
+// label it is shown at, so it is read by the ordinary rule (that label and
+// every label that reads it), and work is addressed to the face, never to
+// the label. A label with no face at a label cannot be asked from there.
+// One face for each label at each label it is shown at.
+export const labelFaces = pgTable(
+  "label_faces",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The label whose work is asked for. It reads the row's own label.
+    forLabel: text("for_label").references(() => labels.name, { onDelete: "cascade" }),
+    // The boundary between a deployment and the public graph is the same
+    // boundary, so a face on the public graph stands for a graph outside
+    // it: a mandate an organization's own deployment published through its
+    // gate to outside (published_mandates), under the account that
+    // registered the deployment's key. `for_label` is then null: the work
+    // is done in another deployment, at a label this graph cannot name. Its
+    // name and line are the mandate's name and terms as that gate let them
+    // through, and a request here is addressed to it as a request inside a
+    // deployment is addressed to a label's face.
+    publisherAccountId: uuid("publisher_account_id").references((): AnyPgColumn => contributors.id),
+    name: text("name").notNull(),
+    canBeAsked: text("can_be_asked").notNull(),
+    writtenBy: uuid("written_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // Withdrawn faces stay as rows: a request addressed to one keeps saying
+    // what it was addressed to. Nothing new can be asked of a withdrawn face.
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+    // The label the face is shown at.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_label_faces_for_at").on(table.forLabel, table.sensitivityLabel),
+    check("ck_label_faces_not_own", sql`${table.forLabel} <> ${table.sensitivityLabel}`),
+    check("ck_label_faces_stands_for", sql`(${table.forLabel} IS NULL) <> (${table.publisherAccountId} IS NULL)`),
+    index("idx_label_faces_publisher").on(table.publisherAccountId),
+  ]
+);
 
 // The one label a credential works at (src/server/request-labels.ts): an API
 // key's, and an access token's. It is `work_label` and not sensitivity_label
@@ -161,32 +204,6 @@ const workLabelColumn = () =>
     .notNull()
     .default("public")
     .references(() => labels.name);
-
-// ---------------------------------------------------------------------------
-// origin: which graph a row belongs to
-//
-// A private deployment holds a mirror of the public graph in the same tables
-// as its own rows, because edges and judgments reference claims.id. A row
-// that the mirror's applier wrote from the public graph's signed feed is
-// 'mirror'; every other row is 'local', which is every row on the public
-// graph. The tables that carry the column are the replicated ones
-// (services/mirror-manifest.ts).
-//
-// A mirrored row is the public graph's, so nothing local may change what was
-// replicated: the mirror_row_guard triggers (the migration that added the
-// column) refuse an insert, update or delete of a 'mirror' row from any
-// session but the applier's, apart from the columns that are this
-// deployment's own working state on a claim (its queue state and the like).
-// The triggers fire only for rows whose origin is 'mirror', so they do
-// nothing where there are none.
-// ---------------------------------------------------------------------------
-export const ROW_ORIGINS = ["local", "mirror"] as const;
-export type RowOrigin = (typeof ROW_ORIGINS)[number];
-
-const originColumn = () => text("origin").notNull().default("local");
-
-const originCheck = (name: string, column: AnyPgColumn) =>
-  check(name, sql`${column} IN ('local', 'mirror')`);
 
 // ---------------------------------------------------------------------------
 // parties: whose material a source is (src/permissions.ts)
@@ -354,8 +371,9 @@ export const accountGroups = pgTable(
 // `detail`.
 //
 // `action` is a name the code gives the act ('label_defined',
-// 'label_read_added', 'label_read_removed', 'party_added',
-// 'source_party_set'). It is not held to a list here, so that a later kind
+// 'label_read_added', 'label_read_removed', 'party_added', 'own_organization_named',
+// 'source_party_set', 'owls_created', 'standing_mandate_created'). It is not
+// held to a list here, so that a later kind
 // of administrative act is a new name and not a migration. actor_id is the
 // administrator who did it; null only for a change no person made.
 // ---------------------------------------------------------------------------
@@ -372,6 +390,56 @@ export const administrativeEvents = pgTable(
   },
   (table) => [index("idx_administrative_events_time").on(table.createdAt)]
 );
+
+// ---------------------------------------------------------------------------
+// origin: which graph a row belongs to
+//
+// A private deployment holds a mirror of the public graph in the same tables
+// as its own rows, because edges and judgments reference claims.id. A row
+// that the mirror's applier wrote from the public graph's signed feed is
+// 'mirror'; every other row is 'local', which is every row on the public
+// graph. The tables that carry the column are the replicated ones
+// (services/mirror-manifest.ts).
+//
+// A mirrored row is the public graph's, so nothing local may change what was
+// replicated: the mirror_row_guard triggers (the migration that added the
+// column) refuse an insert, update or delete of a 'mirror' row from any
+// session but the applier's, apart from the columns that are this
+// deployment's own working state on a claim (its queue state and the like).
+// The triggers fire only for rows whose origin is 'mirror', so they do
+// nothing where there are none.
+//
+// Identity is per graph. Where a replicated table has a key besides its id
+// (a source's address, an edge's two nodes and relation, a link's pair, a
+// question's pair of answers, a document's segment order, an argument's
+// grouping of an edge, a quantity's definition, a claim's cut of a
+// quantity), the unique index ends with `origin`. So a row this
+// deployment made and the public graph's row for the same thing are two
+// rows, the mirrored one always applies, and nothing this deployment holds
+// can stop its mirror. On the public graph, where every row is 'local',
+// the index holds exactly what it held before.
+//
+// The layer. A graph at a label is that label's own rows over the graph of
+// the labels it reads, down to the public graph's rows, which a deployment
+// holds through its mirror. A row's layer is its label and its origin, and
+// identity is per layer: a key a labelled table has besides its id holds
+// `sensitivity_label` (before `origin` where the table is replicated). So
+// a row at one label and a row for the same thing at another are two rows,
+// work at a label is never stopped by, or told of, a row at a label it
+// does not read, and on a graph with one label each index holds exactly
+// what it held before. What a reader of both rows is given, and what a
+// write does where a layer below already holds the thing, is one rule for
+// every table (services/layer-service.ts). The keys left as they were are
+// listed, each with its reason, in tests/db/layer-identity-keys.test.ts,
+// which fails on a unique key of a labelled table that is neither.
+// ---------------------------------------------------------------------------
+export const ROW_ORIGINS = ["local", "mirror"] as const;
+export type RowOrigin = (typeof ROW_ORIGINS)[number];
+
+const originColumn = () => text("origin").notNull().default("local");
+
+const originCheck = (name: string, column: AnyPgColumn) =>
+  check(name, sql`${column} IN ('local', 'mirror')`);
 
 // ---------------------------------------------------------------------------
 // claims
@@ -607,7 +675,8 @@ export const tags = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("uq_tags_slug").on(table.slug),
+    // One tag for a slug at each label (the layer, above).
+    uniqueIndex("uq_tags_slug").on(table.slug, table.sensitivityLabel),
     index("idx_tags_status").on(table.status),
     check("ck_tags_status", sql`${table.status} IN ('active', 'merged')`),
   ]
@@ -655,7 +724,8 @@ export const taggings = pgTable(
     uniqueIndex("uq_taggings_tag_subject").on(
       table.tagId,
       table.subjectKind,
-      table.subjectId
+      table.subjectId,
+      table.sensitivityLabel
     ),
     index("idx_taggings_subject").on(table.subjectKind, table.subjectId),
     index("idx_taggings_tag").on(table.tagId, table.subjectKind),
@@ -702,10 +772,15 @@ export const claimRelationships = pgTable(
   },
   (table) => [
     originCheck("ck_claim_relationships_origin", table.origin),
+    // One edge for a parent, a child and a relation, in each layer: at
+    // each label, and in each graph (the layer and the origin column,
+    // above).
     uniqueIndex("idx_cr_unique").on(
       table.parentClaimId,
       table.childClaimId,
-      table.relationType
+      table.relationType,
+      table.sensitivityLabel,
+      table.origin
     ),
     index("idx_cr_parent").on(table.parentClaimId),
     index("idx_cr_child").on(table.childClaimId),
@@ -757,7 +832,9 @@ export const claimLinks = pgTable(
     uniqueIndex("idx_claim_links_unique").on(
       table.claimAId,
       table.claimBId,
-      table.kind
+      table.kind,
+      table.sensitivityLabel,
+      table.origin
     ),
     index("idx_claim_links_b").on(table.claimBId),
     check("ck_claim_links_ordered", sql`${table.claimAId} < ${table.claimBId}`),
@@ -856,11 +933,24 @@ export const assessments = pgTable(
   },
   (table) => [
     originCheck("ck_assessments_origin", table.origin),
-    // One current verdict per claim, whatever its label. It becomes one per
-    // claim and label only when the reads can choose a judgment by the
-    // reader's clearance: until then two current rows for one claim is a
-    // state no read can handle. The same holds for the current-row indexes
-    // on argument_evaluations, quantity_estimates and question_assessments.
+    // One current verdict per claim, where the deployment has one label,
+    // which is how the public graph runs: this is the index it has always
+    // had, and it is what tells the planner that a claim has at most one
+    // current row, which the plans of every read of the judgment in force
+    // rest on.
+    //
+    // Where a deployment has more than one label a node may carry a version
+    // at each, written by work at that label and replaced only by it
+    // (src/labels.ts, "A judgment at each label"), and this index cannot
+    // hold. The step that turns enforcement on (minerval_enforcement_sync)
+    // drops it there and creates idx_assessments_current_at_label in its
+    // place, unique on the claim and the label, and puts this one back when
+    // the last other label goes. So the database, not this file, says which
+    // of the two exists, and a later migration must not name either (a test
+    // holds that). The same holds for the current-row indexes on
+    // argument_evaluations, quantity_estimates and question_assessments.
+    // Which version a reader goes by is the *_in_force views' to say, at
+    // the end of this file.
     uniqueIndex("idx_assessments_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -956,7 +1046,7 @@ export const argumentEvidenceBacklog = pgTable(
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("idx_argument_evidence_backlog_url").on(table.argumentId, table.url)]
+  (table) => [uniqueIndex("idx_argument_evidence_backlog_url").on(table.argumentId, table.url, table.sensitivityLabel)]
 );
 
 // ---------------------------------------------------------------------------
@@ -1075,7 +1165,10 @@ export const argumentSubclaims = pgTable(
   },
   (table) => [
     originCheck("ck_argument_subclaims_origin", table.origin),
-    primaryKey({ columns: [table.argumentId, table.relationshipId] }),
+    // In each layer (the layer and the origin column, above): a grouping
+    // one label recorded and another's, or the public graph's own, of the
+    // same edge are two rows.
+    primaryKey({ columns: [table.argumentId, table.relationshipId, table.sensitivityLabel, table.origin] }),
     index("idx_argument_subclaims_relationship").on(table.relationshipId),
   ]
 );
@@ -1139,6 +1232,9 @@ export const argumentEvaluations = pgTable(
   (table) => [
     originCheck("ck_argument_evaluations_origin", table.origin),
     index("idx_argument_evaluations_argument").on(table.argumentId),
+    // One for each node where the deployment has one label, and one for
+    // each node and label (idx_argument_evaluations_current_at_label) where it has more:
+    // see idx_assessments_current.
     uniqueIndex("idx_argument_evaluations_current")
       .on(table.argumentId)
       .where(sql`${table.isCurrent} = true`),
@@ -1150,7 +1246,8 @@ export const argumentEvaluations = pgTable(
 // ---------------------------------------------------------------------------
 export const sources = pgTable("sources", {
   id: uuid("id").primaryKey().defaultRandom(),
-  url: text("url").unique(),
+  // One row for an address in each graph (uq_sources_url_origin, below).
+  url: text("url"),
   title: text("title").notNull(),
   // SHA-256 of raw_content, written when the text is first stored
   // (services/source-content.ts). Not unique: one document can be held at
@@ -1198,6 +1295,12 @@ export const sources = pgTable("sources", {
   partyId: uuid("party_id").references(() => parties.id),
 }, (table) => [
   originCheck("ck_sources_origin", table.origin),
+  // One row for an address in each layer: a document recorded at one
+  // label, the same address recorded at another, and the public graph's
+  // row for it are separate rows (the layer and the origin column, above).
+  // A read by address takes one of them (services/layer-service.ts,
+  // oneSourceForAddressSql).
+  uniqueIndex("uq_sources_url_origin").on(table.url, table.sensitivityLabel, table.origin),
   index("idx_sources_doi").on(table.doi),
   index("idx_sources_content_hash").on(table.contentHash),
   index("idx_sources_page_url_hash").on(table.pageUrlHash),
@@ -1206,7 +1309,7 @@ export const sources = pgTable("sources", {
   // two together).
   check(
     "ck_sources_source_type",
-    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'unknown')`
+    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'shown_page', 'published_page', 'unknown')`
   ),
 ]);
 
@@ -1301,7 +1404,7 @@ export const sourceSegments = pgTable(
   },
   (table) => [
     originCheck("ck_source_segments_origin", table.origin),
-    uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal),
+    uniqueIndex("idx_source_segments_order").on(table.sourceId, table.ordinal, table.origin),
     index("idx_source_segments_parent").on(table.parentId),
     check(
       "ck_source_segments_kind",
@@ -1390,7 +1493,12 @@ export const examinationCoverage = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("idx_examination_coverage_unique").on(table.examinationId, table.segmentId, table.facet),
+    uniqueIndex("idx_examination_coverage_unique").on(
+      table.examinationId,
+      table.segmentId,
+      table.facet,
+      table.sensitivityLabel
+    ),
   ]
 );
 
@@ -1440,7 +1548,7 @@ export const readingCitations = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("idx_reading_citations_unique").on(table.readingId, table.findingId),
+    uniqueIndex("idx_reading_citations_unique").on(table.readingId, table.findingId, table.sensitivityLabel),
     index("idx_reading_citations_finding").on(table.findingId),
   ]
 );
@@ -1663,7 +1771,8 @@ export const claimProvenanceEdges = pgTable(
     uniqueIndex("idx_cpe_unique").on(
       table.fromInstanceId,
       table.toSourceId,
-      table.relationType
+      table.relationType,
+      table.sensitivityLabel
     ),
     index("idx_cpe_to_source").on(table.toSourceId),
   ]
@@ -1706,7 +1815,8 @@ export const sourceRelationships = pgTable(
     uniqueIndex("idx_sr_unique").on(
       table.parentSourceId,
       table.childSourceId,
-      table.relationType
+      table.relationType,
+      table.sensitivityLabel
     ),
     index("idx_sr_parent").on(table.parentSourceId),
     index("idx_sr_child").on(table.childSourceId),
@@ -1774,9 +1884,10 @@ export const claimInstanceReadings = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    // One current reading per instance; a re-map overwrites in place. The
-    // edges and the map summary carry the durable record.
-    uniqueIndex("idx_cir_instance").on(table.instanceId),
+    // One current reading per instance at each label (the layer, above); a
+    // re-map overwrites in place. The edges and the map summary carry the
+    // durable record.
+    uniqueIndex("idx_cir_instance").on(table.instanceId, table.sensitivityLabel),
   ]
 );
 
@@ -1848,7 +1959,7 @@ export const claimSourceMaps = pgTable(
     // when it is written.
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("idx_csm_claim").on(table.claimId)]
+  (table) => [uniqueIndex("idx_csm_claim").on(table.claimId, table.sensitivityLabel)]
 );
 
 // ---------------------------------------------------------------------------
@@ -1900,7 +2011,7 @@ export const claimProvenanceRoots = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("idx_cpr_claim_source").on(table.claimId, table.sourceId),
+    uniqueIndex("idx_cpr_claim_source").on(table.claimId, table.sourceId, table.sensitivityLabel),
     check("ck_cpr_status", sql`${table.status} IN ('origin', 'untraced')`),
   ]
 );
@@ -2970,7 +3081,8 @@ export const owlLedger = pgTable(
     // llm_usage.cost_micro_usd so cost/price arithmetic never converts units.
     amountMicroUsd: bigint("amount_micro_usd", { mode: "number" }).notNull(),
     // purchase | signup_grant | monthly_grant | contribution_award | charge |
-    // refund | escrow_hold | escrow_refund | admin_adjust
+    // refund | escrow_hold | escrow_refund | admin_adjust | owl_created
+    // (OWL_REASONS in src/services/owl-ledger-service.ts has them all)
     reason: text("reason").notNull().default("purchase"),
     // For charges/refunds: the priced operation (claim_proposal,
     // source_ingest, extension_analysis, …) — see src/services/owl.ts.
@@ -3156,10 +3268,12 @@ export const assessmentOrders = pgTable(
       .where(sql`status = 'pending'`),
     index("idx_orders_user_time").on(table.userId, table.createdAt),
     index("idx_orders_claim").on(table.claimId),
-    // One OPEN order per user per claim, enforced: two racing clicks (or a
-    // network retry) must join one order, not charge twice.
+    // One OPEN order per user per claim and label, enforced: two racing
+    // clicks (or a network retry) must join one order, not charge twice. An
+    // order is for a pass at its label (src/labels.ts), so one person may
+    // have one open at each label they may start work at.
     uniqueIndex("uq_orders_open_per_claim")
-      .on(table.userId, table.claimId)
+      .on(table.userId, table.claimId, table.sensitivityLabel)
       .where(sql`status IN ('pending', 'running')`),
   ]
 );
@@ -3377,9 +3491,9 @@ export const actionAllocations = pgTable(
     }),
     // The label of the work that placed the money, which is the label its
     // brief and reason are read at (src/labels.ts). The money itself is
-    // read and settled whole, whatever the label, through the view
-    // minerval_whole.allocation_money: what a run costs is split across
-    // every allocation that covers it.
+    // read and settled whole, whatever the label, through
+    // minerval_whole.allocation_money (db/money.ts): what a run costs is
+    // split across every allocation that covers it.
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
@@ -3635,8 +3749,8 @@ export const regrants = pgTable(
       .notNull()
       .defaultNow(),
     // The label of the work that moved the money, which is the label its
-    // note is read at. The amounts are read whole through the view
-    // minerval_whole.regrant_money.
+    // note is read at. The amounts are read whole through
+    // minerval_whole.regrant_money (db/money.ts).
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
@@ -4118,7 +4232,7 @@ export const lookoutFeedItems = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("uq_lookout_feed_items_key").on(table.feedId, table.itemKey),
+    uniqueIndex("uq_lookout_feed_items_key").on(table.feedId, table.itemKey, table.sensitivityLabel),
     index("idx_lookout_feed_items_inbox")
       .on(table.lookoutId, table.firstSeenAt)
       .where(sql`status IN ('new', 'deferred')`),
@@ -4838,6 +4952,16 @@ export const contributions = pgTable(
       (): any => prizeClaims.id,
       { onDelete: "set null" }
     ),
+    // A contribution made through a published page on its node
+    // (docs/outward-acts.md, "What the public says back"): a challenge to
+    // the page, or a proposal to the node made from it. Which page it
+    // names. It is reviewed as any contribution on the node is. The graph
+    // that published the page learns of it from the mirror's feed. SET NULL
+    // so the contribution outlives a publication.
+    aboutPublishedPageId: uuid("about_published_page_id").references(
+      (): any => publishedPages.id,
+      { onDelete: "set null" }
+    ),
     // Crash-safe processing claim, mirroring the Steward's stewarded_at
     // reclaim (#218): the pipeline handler atomically stamps this before
     // running, so duplicate messages (recovery-sweep re-enqueues, SQS
@@ -5132,7 +5256,8 @@ export const curationRequests = pgTable(
       .on(
         table.anchorClaimId,
         sql`COALESCE(${table.otherClaimId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
-        table.source
+        table.source,
+        table.sensitivityLabel
       )
       .where(sql`consumed_at IS NULL`),
     index("idx_curation_requests_anchor_live")
@@ -5250,6 +5375,11 @@ export const auditLog = pgTable(
       .defaultNow(),
     // The label of the run or request that made the entry (src/labels.ts).
     sensitivityLabel: sensitivityLabelColumn(),
+    // The run that made the entry, where one did and said so. Recorded for a
+    // judgment left standing (action 'left_standing'; services/
+    // left-standing-service.ts), so that a reader can open the run that
+    // examined the node. No foreign key, like llm_usage.run_id.
+    runId: uuid("run_id"),
   },
   (table) => [index("idx_audit_log_claim_time").on(table.claimId, table.createdAt)]
 );
@@ -5460,10 +5590,11 @@ export const claimFormalizations = pgTable(
   (table) => [
     unique("uq_claim_formalizations_claim_version").on(
       table.claimId,
-      table.version
+      table.version,
+      table.sensitivityLabel
     ),
     uniqueIndex("uq_formalization_published")
-      .on(table.claimId)
+      .on(table.claimId, table.sensitivityLabel)
       .where(sql`status = 'published'`),
     index("idx_claim_formalizations_claim").on(table.claimId),
   ]
@@ -5527,7 +5658,8 @@ export const leanChecks = pgTable(
       table.formalizationId,
       table.submissionSha256,
       table.checkerVersion,
-      table.mode
+      table.mode,
+      table.sensitivityLabel
     ),
     index("idx_lean_checks_formalization").on(table.formalizationId),
     index("idx_lean_checks_submission_sha256").on(table.submissionSha256),
@@ -5784,7 +5916,7 @@ export const bounties = pgTable(
     index("idx_bounties_formalization").on(table.formalizationId),
     check("ck_bounties_amount", sql`amount_micro_usd > 0`),
     uniqueIndex("uq_bounty_live_per_claim")
-      .on(table.claimId)
+      .on(table.claimId, table.sensitivityLabel)
       .where(
         sql`status IN ('requested', 'confirm_pending', 'open', 'claim_pending', 'house_result_pending', 'rebinding')`
       ),
@@ -6059,6 +6191,13 @@ export const agentReports = pgTable(
     // regression and moves it back to new; withdrawn is the reporter's own
     // reversal through update_issue.
     status: text("status").notNull().default("new"),
+    // In a deployment that keeps its agents' reports inside
+    // (docs/outward-acts.md, "An agent's report, sent to Minerval's
+    // maintainers"): what Audit's triage found the report to be about.
+    // 'minerval' is the machinery every deployment runs, and only such a
+    // report is offered for sending; 'deployment' is this deployment's own
+    // setup, data or connections. NULL until triage says.
+    about: text("about"),
     triageNote: text("triage_note"),
     // Who moved the status last: an audit run id, a service caller, a name.
     triagedBy: text("triaged_by"),
@@ -6275,7 +6414,7 @@ export const agentFindingSightings = pgTable(
 export const sharedPageAnalyses = pgTable(
   "shared_page_analyses",
   {
-    urlHash: text("url_hash").primaryKey(),
+    urlHash: text("url_hash").notNull(),
     url: text("url").notNull(),
     // [{ verbatim_text, stance, verdict, why, confidence, claim_id,
     //    proposed_canonical_form }] — see StoredAnnotation.
@@ -6289,9 +6428,11 @@ export const sharedPageAnalyses = pgTable(
     // analysis first entered the page. A later analysis replaces the entry
     // in place and leaves this as it was.
     sensitivityLabel: sensitivityLabelColumn(),
-  }
-  // Lookups ask for every hash sharing a short prefix: a range scan on the
-  // primary key (url_hash >= 'abcd' AND url_hash < 'abcdg'), no index of its own.
+  },
+  // One entry for a page at each label (the layer, above). Lookups ask for
+  // every hash sharing a short prefix: a range scan on the primary key
+  // (url_hash >= 'abcd' AND url_hash < 'abcdg'), no index of its own.
+  (table) => [primaryKey({ columns: [table.urlHash, table.sensitivityLabel] })]
 );
 
 // Type exports
@@ -6390,7 +6531,7 @@ export type NewTagging = typeof taggings.$inferInsert;
 // ---------------------------------------------------------------------------
 export const quantityDefinitions = pgTable("quantity_definitions", {
   claimId: uuid("claim_id")
-    .primaryKey()
+    .notNull()
     .references(() => claims.id, { onDelete: "cascade" }),
   measures: text("measures").notNull(),
   population: text("population"),
@@ -6407,6 +6548,11 @@ export const quantityDefinitions = pgTable("quantity_definitions", {
   origin: originColumn(),
 }, (table) => [
   originCheck("ck_quantity_definitions_origin", table.origin),
+  // One definition for a quantity in each layer (the layer and the origin
+  // column, above), as every other key a replicated table has besides an
+  // id: the public graph's row always applies, whatever this deployment
+  // holds.
+  primaryKey({ columns: [table.claimId, table.sensitivityLabel, table.origin] }),
 ]);
 
 export const quantityEstimates = pgTable(
@@ -6429,10 +6575,6 @@ export const quantityEstimates = pgTable(
     marginalYield: real("marginal_yield"),
     model: text("model"),
     fundedByJobId: uuid("funded_by_job_id"),
-    // The agent run that wrote it, as on assessments.run_id: what a reader
-    // opens on the run log to see how the estimate was reached. Null on
-    // estimates written before it was recorded.
-    runId: uuid("run_id"),
     // Whether what this judgment was made against was recorded with it
     // (judgment_inputs, #566). False on judgments from before that record,
     // which therefore cannot be said to be stale or fresh by it.
@@ -6445,9 +6587,18 @@ export const quantityEstimates = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
     // Which graph the row belongs to (the origin column, above).
     origin: originColumn(),
+    // The agent run that wrote it, as on assessments.run_id: what a reader
+    // opens on the run log to see how the estimate was reached, and a page of
+    // the quantity shown across a boundary carries that run's log seal. Null
+    // on estimates written before it was recorded. Last, so that the views
+    // that list every column gain it at their end.
+    runId: uuid("run_id"),
   },
   (table) => [
     originCheck("ck_quantity_estimates_origin", table.origin),
+    // One for each node where the deployment has one label, and one for
+    // each node and label (idx_quantity_estimates_current_at_label) where it has more:
+    // see idx_assessments_current.
     uniqueIndex("idx_quantity_estimates_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -6499,7 +6650,7 @@ export const quantityCuts = pgTable(
   "quantity_cuts",
   {
     claimId: uuid("claim_id")
-      .primaryKey()
+      .notNull()
       .references(() => claims.id, { onDelete: "cascade" }),
     quantityId: uuid("quantity_id")
       .notNull()
@@ -6516,6 +6667,11 @@ export const quantityCuts = pgTable(
   },
   (table) => [
     originCheck("ck_quantity_cuts_origin", table.origin),
+    // One cut for a claim in each layer (the layer and the origin column,
+    // above): a cut recorded at one label, one recorded at another and the
+    // public graph's own for the same claim are separate rows, and a read
+    // takes one (oneCutForClaimSql in services/layer-service.ts).
+    primaryKey({ columns: [table.claimId, table.sensitivityLabel, table.origin] }),
     index("idx_quantity_cuts_quantity").on(table.quantityId),
     check("ck_quantity_cuts_direction", sql`${table.direction} IN ('above', 'below')`),
     check("ck_quantity_cuts_self", sql`${table.claimId} != ${table.quantityId}`),
@@ -6572,6 +6728,9 @@ export const questionAssessments = pgTable(
   },
   (table) => [
     originCheck("ck_question_assessments_origin", table.origin),
+    // One for each node where the deployment has one label, and one for
+    // each node and label (idx_question_assessments_current_at_label) where it has more:
+    // see idx_assessments_current.
     uniqueIndex("idx_question_assessments_current")
       .on(table.claimId)
       .where(sql`${table.isCurrent} = true`),
@@ -6614,7 +6773,13 @@ export const answerRelations = pgTable(
   },
   (table) => [
     originCheck("ck_answer_relations_origin", table.origin),
-    uniqueIndex("idx_answer_relations_pair").on(table.questionId, table.claimAId, table.claimBId),
+    uniqueIndex("idx_answer_relations_pair").on(
+      table.questionId,
+      table.claimAId,
+      table.claimBId,
+      table.sensitivityLabel,
+      table.origin
+    ),
     check("ck_answer_relations_ordered", sql`${table.claimAId} < ${table.claimBId}`),
     check("ck_answer_relations_relation", sql`${table.relation} IN ('excludes', 'compatible')`),
   ]
@@ -6685,11 +6850,22 @@ export const requests = pgTable(
         || setweight(to_tsvector('english', ${requests.satisfiedBy}), 'C')
         || setweight(to_tsvector('english', coalesce(${requests.bearsOnText}, '')), 'C')`
     ),
+    // Work asked for from below (services/ask-above-service.ts): the face
+    // of a label above that this request was addressed to, whether it asked
+    // for one piece of work or for a mandate, and the budget its asker paid
+    // with it. Set when it is filed and never after: this is the asker's
+    // own record of what was asked. The work is done at that label, so no
+    // ledger row is opened for it at this one, and nothing of what happens
+    // there is written here.
+    askedOfFaceId: uuid("asked_of_face_id").references((): AnyPgColumn => labelFaces.id),
+    askedAs: text("asked_as"),
+    askedBudgetMicroUsd: bigint("asked_budget_micro_usd", { mode: "number" }),
     // The label of the run or request that filed it (src/labels.ts). The
     // ledger rows for its work are opened at it.
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
+    check("ck_requests_asked_as", sql`${table.askedAs} IS NULL OR ${table.askedAs} IN ('work', 'mandate')`),
     index("idx_requests_state").on(table.state, table.createdAt),
     index("idx_requests_text_search").using("gin", table.textSearch),
     index("idx_requests_keeper").on(table.keeperClaimId),
@@ -6763,11 +6939,23 @@ export const requestWork = pgTable(
     budgetMicroUsd: bigint("budget_micro_usd", { mode: "number" }),
     quoteMicroUsd: bigint("quote_micro_usd", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // An account's own statement that it is taking the request up
+    // (docs/outward-acts.md, "Taking up a request in public"), as distinct
+    // from work a run recorded. It commits the account to doing the work
+    // well, not to a result, and funds nothing. `outcome` stays NULL until
+    // the account says it will not do the work ('declined', with a reason
+    // from a fixed list in decline_reason) or takes the statement back
+    // (withdrawn_at). What else followed is read from the record: a page
+    // the account published on a node the request bears on.
+    takenUp: boolean("taken_up").notNull().default(false),
+    declineReason: text("decline_reason"),
+    outcomeAt: timestamp("outcome_at", { withTimezone: true }),
     // The label of the run that recorded the work (src/labels.ts).
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
     index("idx_request_work_request").on(table.requestId),
+    uniqueIndex("uq_request_work_taken_up").on(table.requestId, table.contributorId).where(sql`taken_up`),
     index("idx_request_work_funded_by_job").on(table.fundedByJobId).where(sql`funded_by_job_id IS NOT NULL`),
     check(
       "ck_request_work_outcome",
@@ -6831,6 +7019,36 @@ export const nodeMessages = pgTable(
     index("idx_node_messages_sender").on(table.senderNodeId),
     check(
       "node_messages_outcome_check",
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('changed', 'no_change', 'disagree')`
+    ),
+  ]
+);
+
+// A message read at a label above the one it was sent at (src/labels.ts,
+// "Word from the layer below"). A message is one row at its sender's label,
+// and its own read_at, outcome and answer are those of the pass at that
+// label. A pass at a label that reads it is given it too, and what that
+// pass did with it is this row, at the pass's label: that it was read, and
+// the answer if one was given. Nothing is written to the message, so its
+// own Steward's inbox, and what readers of its label see, are as they were.
+// One row for each message and label.
+export const nodeMessageReads = pgTable(
+  "node_message_reads",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => nodeMessages.id, { onDelete: "cascade" }),
+    readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+    outcome: text("outcome"),
+    outcomeNote: text("outcome_note"),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
+    // The label of the pass that read it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.messageId, table.sensitivityLabel] }),
+    check(
+      "ck_node_message_reads_outcome",
       sql`${table.outcome} IS NULL OR ${table.outcome} IN ('changed', 'no_change', 'disagree')`
     ),
   ]
@@ -7156,16 +7374,31 @@ export const eventRouterState = pgTable("event_router_state", {
 //   - 'source': a source attached to this node by a live instance, with the
 //     source's content hash when it had one.
 //
+//   - 'beside': another label's version of this same node that was current
+//     when this one was written, at a label this one's label reads, with
+//     that label (input_label). A node may carry a version at each label
+//     (src/labels.ts), and each is made beside the ones its label reads. An
+//     argument's evaluation records the same, and nothing else.
+//
 // Staleness then follows from versions instead of from someone remembering
 // to say so: a judgment is out of date when a premise has been judged again,
 // when a premise or a source has been added or removed, or when one of its
-// sources has had a correction or a retraction since
+// sources has had a correction or a retraction since, and it was made
+// against an earlier version when one it was made beside has been replaced
 // (services/judgment-inputs-service.ts).
 //
-// judgment_id points at one of three tables by judgment_kind, so it carries
+// judgment_id points at one of four tables by judgment_kind, so it carries
 // no foreign key; the rows are written in the same statement sequence as the
 // judgment and never updated. A judgment whose inputs_recorded is false has
 // no rows here because none were recorded, not because it rests on nothing.
+//
+// A fifth kind, 'left_standing', records no judgment. A Steward at a label
+// that examined a node at a label it reads and left the judgment there
+// standing has an entry in audit_log saying so (action 'left_standing'),
+// and judgment_id is that entry's id. Its 'beside' rows name the judgments
+// it left standing, as a judgment's name the ones it was made beside, so
+// that the same record says when one of them has been replaced
+// (services/left-standing-service.ts).
 // ---------------------------------------------------------------------------
 export const judgmentInputs = pgTable(
   "judgment_inputs",
@@ -7179,6 +7412,10 @@ export const judgmentInputs = pgTable(
     nodeId: uuid("node_id"),
     relationType: text("relation_type"),
     inputJudgmentId: uuid("input_judgment_id"),
+    // 'beside': the label of the version in input_judgment_id. It is not
+    // this row's own label (sensitivity_label below), which is the label of
+    // the version that records it.
+    inputLabel: text("input_label").references(() => labels.name),
     // 'source': the source, and its content hash then when it had one.
     sourceId: uuid("source_id"),
     contentHash: text("content_hash"),
@@ -7196,14 +7433,20 @@ export const judgmentInputs = pgTable(
     index("idx_judgment_inputs_judgment").on(table.judgmentKind, table.judgmentId),
     check(
       "ck_judgment_inputs_judgment_kind",
-      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment')`
+      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation', 'left_standing')`
     ),
-    check("ck_judgment_inputs_input_kind", sql`${table.inputKind} IN ('premise', 'source')`),
+    check("ck_judgment_inputs_input_kind", sql`${table.inputKind} IN ('premise', 'source', 'beside')`),
     check(
       "ck_judgment_inputs_shape",
       sql`(${table.inputKind} = 'premise' AND ${table.nodeId} IS NOT NULL AND ${table.relationType} IS NOT NULL AND ${table.sourceId} IS NULL)
-        OR (${table.inputKind} = 'source' AND ${table.sourceId} IS NOT NULL AND ${table.nodeId} IS NULL)`
+        OR (${table.inputKind} = 'source' AND ${table.sourceId} IS NOT NULL AND ${table.nodeId} IS NULL)
+        OR (${table.inputKind} = 'beside' AND ${table.inputJudgmentId} IS NOT NULL AND ${table.inputLabel} IS NOT NULL AND ${table.nodeId} IS NULL AND ${table.sourceId} IS NULL)`
     ),
+    // The upkeep that finds versions made beside one that has since been
+    // replaced reads these rows by the version they name.
+    index("idx_judgment_inputs_beside")
+      .on(table.inputJudgmentId)
+      .where(sql`${table.inputKind} = 'beside'`),
   ]
 );
 
@@ -7337,45 +7580,1402 @@ export const mirrorRefusals = pgTable(
 );
 
 // ---------------------------------------------------------------------------
-// The judgment in force (#566)
+// node_changes: what the layer below changed on a node, kept for the work
+// above it (docs/architecture.md, "Word from the layer below")
 //
-// A node's judgment in force is the one a reader or an agent should go by:
-// today, the current row of the table its kind keeps (a proposition's verdict
-// in `assessments`, a quantity's estimate in `quantity_estimates`, a
-// question's standing in `question_assessments`), and the current evaluation
-// of an argument in `argument_evaluations`. Every read of "the current
-// judgment" goes through one of these four views, so that what "in force"
-// means is defined once, here, and can change here: when judgments come to
-// be versioned by label, the view will return the highest version its reader
-// is cleared for, and no query that reads it will need to change.
+// A judgment at a label rests on nodes that belong to the layer below it: a
+// version at a private label beside the public assessment, a version at one
+// label beside the judgment at a label it reads, a node with a premise at
+// either. When such a node is reworded, has an argument added, rewritten,
+// retired or removed, has its kind corrected, is merged away or is
+// withdrawn, the judgments that rest on it were made against the node as it
+// was. Edges, sources and judgments are compared from the record a judgment
+// keeps of its inputs (judgment_inputs); a wording, an argument, a kind and
+// a withdrawal leave no such trace once the row is overwritten, so what was
+// replaced is written here, in the transaction that replaced it.
 //
-// Read the view to learn what a node's judgment is. Read the table for
+// There are two writers and one reader. For a node the public graph holds,
+// the mirror's applier writes the row as each batch is applied, with the
+// batch's sequence and when the public graph cut it
+// (services/mirror-apply-service.ts). For a node of the deployment's own,
+// the database writes it (minerval_note_node_change, migration 0164), and
+// only where the deployment has a label besides `public`: with one label
+// there is no layer above to tell. Either way the row is a fact about the
+// node, the same whoever looks, so it carries the node's label (the
+// argument's, for an argument) and says nothing of what any other label
+// holds. The Steward's note of what has changed since a judgment reads it
+// (llm/agents/changes-below-note.ts), and a read of a mirrored node says
+// when the public graph merged or withdrew it.
+// ---------------------------------------------------------------------------
+export const nodeChanges = pgTable(
+  "node_changes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The node. No foreign key: the row is history, and outlives a node the
+    // public graph deleted outright.
+    claimId: uuid("claim_id").notNull(),
+    // For a mirrored node: the batch that carried the change, and when the
+    // public graph cut it. Null for a change made in this deployment.
+    sequence: bigint("sequence", { mode: "number" }),
+    cutAt: timestamp("cut_at", { withTimezone: true }),
+    // 'reworded' | 'argument_added' | 'argument_rewritten' |
+    // 'argument_retired' | 'argument_removed' | 'kind_corrected' |
+    // 'merged' | 'withdrawn'
+    change: text("change").notNull(),
+    // What the change was, in the words of the layer that made it: the
+    // wording before and after, an argument's id and name, the kind before
+    // and after, the node it was merged into, how it was withdrawn.
+    detail: jsonb("detail").notNull().default({}),
+    // When the change was made here: applied, for a batch.
+    appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+    // Who may read this row (src/labels.ts): whoever reads the row it
+    // describes. `public` for a mirrored node, named by the applier.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_node_changes_claim").on(table.claimId, table.appliedAt),
+    check(
+      "ck_node_changes_change",
+      sql`${table.change} IN ('reworded', 'argument_added', 'argument_rewritten', 'argument_retired', 'argument_removed', 'kind_corrected', 'merged', 'withdrawn')`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// overlays: what a label holds over a row of a layer below it
+// (services/overlay-service.ts; docs/architecture.md, "A label's overlay on
+// the structure below")
+//
+// A graph at a label is that label's own rows over the graph of the labels
+// it reads. What a label adds is a row of its own in the table the thing
+// lives in. What a label says about a row below, where it judges
+// differently for its own readers, is a row at its own label keyed by the
+// row below, and the row below is not touched. For a judgment that row is a
+// version (assessments and the three tables beside it); for a cut or a
+// reading it is the label's own row under the same key, which each layer
+// has had since identity became per layer. This table holds the cases with
+// no table of their own, because the thing diverged from is a column of the
+// row below or whether the row counts at all:
+//
+//   importance, contestation   the label's own value for a node below
+//                              (`value`, 0..1)
+//   set_aside                  an edge or an argument below that does not
+//                              bear for this label (`value` 1, with the
+//                              Steward's `reason`), or that a label this one
+//                              reads set aside and this one counts
+//                              (`value` 0)
+//
+// One rule composes them, the same that says which judgment is in force: a
+// reader, or work at a label, goes by the live row of the nearest layer
+// among those it reads, its own first; two labels that do not read each
+// other never see each other's. A row is replaced by ending it and writing
+// the next, so the table is its own history. When the layer below removes,
+// retypes, retires or merges away the row, the database ends the overlay
+// with the reason (minerval_overlay_follows_below) and the Steward at the
+// overlay's label is told on its next pass (llm/agents/changes-below-note.ts).
+// ---------------------------------------------------------------------------
+export const overlays = pgTable(
+  "overlays",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The row below: its table and id. No foreign key, because the tables
+    // differ and the overlay outlives an edge the layer below deletes.
+    targetTable: text("target_table").notNull(),
+    targetId: uuid("target_id").notNull(),
+    // The node whose page it is read on: the node itself, an edge's parent,
+    // an argument's claim. Kept so that an overlay on a deleted edge can
+    // still be told to that node's Steward.
+    claimId: uuid("claim_id").notNull(),
+    kind: text("kind").notNull(),
+    value: real("value").notNull(),
+    reason: text("reason"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Set when the overlay stops: taken back or replaced at its own label,
+    // or ended because the row below changed (`ended_because` says which,
+    // and `ended_detail` what the layer below did).
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBecause: text("ended_because"),
+    endedDetail: jsonb("ended_detail"),
+    // The label that holds it (src/labels.ts): the run's that recorded it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_overlays_live")
+      .on(table.targetTable, table.targetId, table.kind, table.sensitivityLabel)
+      .where(sql`${table.endedAt} IS NULL`),
+    index("idx_overlays_claim").on(table.claimId, table.sensitivityLabel),
+    index("idx_overlays_target").on(table.targetId, table.kind),
+    check(
+      "ck_overlays_kind",
+      sql`(${table.kind} IN ('importance', 'contestation') AND ${table.targetTable} = 'claims')
+          OR (${table.kind} = 'set_aside' AND ${table.targetTable} IN ('claim_relationships', 'arguments'))`
+    ),
+    check(
+      "ck_overlays_value",
+      sql`${table.value} >= 0 AND ${table.value} <= 1
+          AND (${table.kind} <> 'set_aside' OR (${table.value} IN (0, 1) AND (${table.value} = 0 OR ${table.reason} IS NOT NULL)))`
+    ),
+    check(
+      "ck_overlays_ended",
+      sql`${table.endedBecause} IS NULL OR ${table.endedBecause} IN ('taken_back', 'replaced', 'removed_below', 'retyped_below', 'retired_below', 'merged_below', 'withdrawn_below')`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// steward_slots: the Steward's pending slot for work on a node at a label
+// other than the node's own (src/labels.ts, "A judgment at each label")
+//
+// A node's own row is its queue for work at its own label
+// (claims.steward_state and the columns beside it). Work at another label
+// that reads the node, such as an internal assessment of a public claim,
+// keeps its slot here, one row per node and label, with the same columns
+// and the same lifecycle (services/steward-lease.ts says which of the two a
+// piece of work uses). So a pass at one label neither waits on nor shows
+// itself to a pass at another, and no run writes its bookkeeping into a row
+// at a label that is not its own. A row is made the first time work at its
+// label is asked for on the node, as 'done' (nothing waiting), and the
+// statement that asks then moves it.
+//
+// The public graph has one label, every piece of work is at its node's own,
+// and the table stays empty there.
+// ---------------------------------------------------------------------------
+export const stewardSlots = pgTable(
+  "steward_slots",
+  {
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    stewardState: text("steward_state").notNull().default("done"),
+    stewardTrigger: text("steward_trigger"),
+    stewardError: text("steward_error"),
+    stewardErrorReason: text("steward_error_reason"),
+    stewardedAt: timestamp("stewarded_at", { withTimezone: true }),
+    stewardRequeued: boolean("steward_requeued").notNull().default(false),
+    stewardAttempts: integer("steward_attempts").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // The label of the work the slot is for, stamped from the run or the
+    // request that first asked for it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.claimId, table.sensitivityLabel] }),
+    index("idx_steward_slots_pending")
+      .on(table.sensitivityLabel, table.updatedAt)
+      .where(sql`steward_state = 'pending'`),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// The judgment in force (#566), and a version at each label
+//
+// A node may carry one current judgment at each label: the current row, for
+// that label, of the table its kind keeps (a proposition's verdict in
+// `assessments`, a quantity's estimate in `quantity_estimates`, a question's
+// standing in `question_assessments`), and the current evaluation of an
+// argument in `argument_evaluations`. Each is a version, written by work at
+// its label and replaced only by it.
+//
+// Which versions are in force depends on who is reading. Among the current
+// versions a connection's clearance reads, a version is in force unless
+// another of them was made at a label that reads its label: that other one
+// was made with sight of everything this one saw, and more. A reader who
+// holds two labels that do not read each other, each with a version, has
+// both in force. Nothing is merged. That rule is written once, in the
+// database (minerval_version_standing, in the migration that brought it),
+// and everything here reads through it:
+//
+//   - `<table>_in_force` is the version a reader goes by, one row for each
+//     node at most: the version in force, and where several are in force
+//     the one made most recently. Every read of "the current judgment" that
+//     wants one row for a node goes through one of these four views.
+//   - `<table>_versions` is every current version the reader may read, each
+//     with its label and whether it is in force for this reader. A read that
+//     shows a node's versions side by side, or that wants the version at
+//     one label (a run's own), reads these.
+//
+// On the public graph there is one label and one version, and both
+// functions the views call are the constant true, which the planner folds
+// away: each view is planned as the plain "where is_current" it was. The
+// step that turns enforcement on (minerval_enforcement_sync) points the two
+// functions at the rule when a second label is defined.
+//
+// Read a view to learn what a node's judgment is. Read the table for
 // history (every row, current or not) and for the write seam that supersedes
 // a current row; nothing writes through a view. A file that mentions
 // is_current has to say why (tests/unit/db/judgment-in-force.test.ts).
 //
 // drizzle-kit writes the views into migrations with their columns spelled
-// out, so adding a column to one of the tables regenerates its view: run
+// out, so adding a column to one of the tables regenerates its views: run
 // `npm run db:generate` as for any schema change.
 // ---------------------------------------------------------------------------
 // Each reads its table with its caller's rights (security_invoker): a view
-// otherwise reads as its owner, whom the label policies do not bind, and
-// would show a connection held to a clearance every label. It is said here
-// so that a regenerated view is created with it.
+// otherwise reads as its owner, whom the label policies do not bind
+// (db/clearance.ts), and would show a cleared connection every label. It is
+// said here so that a regenerated view is created with it.
 const callersRights = { securityInvoker: true };
 
+/** The version a one-row read takes, as a condition on a judgment table's row. */
+const goneBy = (judgments: string, node: AnyPgColumn, label: AnyPgColumn): SQL =>
+  sql`minerval_version_gone_by(${sql.raw(`'${judgments}'`)}, ${node}, ${label})`;
+/** Whether a current version is in force for the connection reading it. */
+const inForce = (judgments: string, node: AnyPgColumn, label: AnyPgColumn): SQL<boolean> =>
+  sql<boolean>`minerval_version_in_force(${sql.raw(`'${judgments}'`)}, ${node}, ${label})`;
+
 export const assessmentsInForce = pgView("assessments_in_force").with(callersRights).as((qb) =>
-  qb.select().from(assessments).where(eq(assessments.isCurrent, true))
+  qb
+    .select()
+    .from(assessments)
+    .where(and(eq(assessments.isCurrent, true), goneBy("assessments", assessments.claimId, assessments.sensitivityLabel)))
 );
 
 export const argumentEvaluationsInForce = pgView("argument_evaluations_in_force").with(callersRights).as((qb) =>
-  qb.select().from(argumentEvaluations).where(eq(argumentEvaluations.isCurrent, true))
+  qb
+    .select()
+    .from(argumentEvaluations)
+    .where(
+      and(
+        eq(argumentEvaluations.isCurrent, true),
+        goneBy("argument_evaluations", argumentEvaluations.argumentId, argumentEvaluations.sensitivityLabel)
+      )
+    )
 );
 
 export const quantityEstimatesInForce = pgView("quantity_estimates_in_force").with(callersRights).as((qb) =>
-  qb.select().from(quantityEstimates).where(eq(quantityEstimates.isCurrent, true))
+  qb
+    .select()
+    .from(quantityEstimates)
+    .where(
+      and(
+        eq(quantityEstimates.isCurrent, true),
+        goneBy("quantity_estimates", quantityEstimates.claimId, quantityEstimates.sensitivityLabel)
+      )
+    )
 );
 
 export const questionAssessmentsInForce = pgView("question_assessments_in_force").with(callersRights).as((qb) =>
-  qb.select().from(questionAssessments).where(eq(questionAssessments.isCurrent, true))
+  qb
+    .select()
+    .from(questionAssessments)
+    .where(
+      and(
+        eq(questionAssessments.isCurrent, true),
+        goneBy("question_assessments", questionAssessments.claimId, questionAssessments.sensitivityLabel)
+      )
+    )
+);
+
+export const assessmentVersions = pgView("assessments_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(assessments),
+      inForce: inForce("assessments", assessments.claimId, assessments.sensitivityLabel).as("in_force"),
+    })
+    .from(assessments)
+    .where(eq(assessments.isCurrent, true))
+);
+
+export const argumentEvaluationVersions = pgView("argument_evaluations_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(argumentEvaluations),
+      inForce: inForce(
+        "argument_evaluations",
+        argumentEvaluations.argumentId,
+        argumentEvaluations.sensitivityLabel
+      ).as("in_force"),
+    })
+    .from(argumentEvaluations)
+    .where(eq(argumentEvaluations.isCurrent, true))
+);
+
+export const quantityEstimateVersions = pgView("quantity_estimates_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(quantityEstimates),
+      inForce: inForce("quantity_estimates", quantityEstimates.claimId, quantityEstimates.sensitivityLabel).as(
+        "in_force"
+      ),
+    })
+    .from(quantityEstimates)
+    .where(eq(quantityEstimates.isCurrent, true))
+);
+
+export const questionAssessmentVersions = pgView("question_assessments_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(questionAssessments),
+      inForce: inForce(
+        "question_assessments",
+        questionAssessments.claimId,
+        questionAssessments.sensitivityLabel
+      ).as("in_force"),
+    })
+    .from(questionAssessments)
+    .where(eq(questionAssessments.isCurrent, true))
+);
+
+// ---------------------------------------------------------------------------
+// Showing a node's page below its label (services/showing-service.ts,
+// docs/showing-a-page.md)
+//
+// A page written at one label can be shown to readers who may not read that
+// label: at another label inside the deployment, or outside it. It is one
+// act at every boundary. What is shown is the ordinary page, read from the
+// rows the Steward's ordinary work wrote, less what a Redactor removed under
+// the boundary's policy and less the parts the holders of `release` hold.
+//
+// Two sets of readers need rows about one showing, and they may share no
+// label: the people and runs at the page's label, who see the page whole,
+// and the readers on the destination side, who see what was released. So the
+// tables come in two families, and a row's sensitivity_label says which side
+// it is for.
+//
+//   At the page's label:        showings, showing_pages, showing_parts,
+//                               showing_removals, gate_settings
+//   At the destination's label: shown_showings, shown_nodes, shown_pages,
+//                               shown_parts, showing_acts, gates
+//   One row on each side:       redaction_policies
+//
+// These tables are the gate's (docs/the-gate.md). They were built for a
+// node's page and keep those names. A row of `showings` is one thing
+// offered across one boundary, or a flow of pages, and `showings.kind`
+// says which kind of thing; a row of `showing_pages` is one version of an
+// item of any kind, with its parts.
+//
+// A showing outside the deployment keeps its destination-side rows at
+// `public`: what is released to anyone may be read by every member.
+//
+// The rows on the destination side are written by the showing service as
+// the tables' owner, once the route has checked the permission of the
+// person acting, or by the step that follows an agent's run. They are the
+// one way text reaches a label that does not read the label it was written
+// at, and they hold only what was released, with fixed words for the rest.
+// A destination-side row does not name the page's label: a label's name is
+// not shown to people who may not read it.
+//
+// The public graph has one label, nothing can be shown below it, and every
+// table here stays empty there.
+// ---------------------------------------------------------------------------
+
+// A request to show a node's page, as the page's side holds it.
+export const showings = pgTable(
+  "showings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // What kind of thing goes down (GATE_KINDS in services/gate-kinds.ts):
+    // a node's page, an answer to a request, the fact that a request was
+    // taken up, a mandate's funding of work below, that a mandate exists,
+    // an answer to a message. One row is one subject offered across one
+    // boundary; each version of it is a row of showing_pages.
+    kind: text("kind").notNull().default("page"),
+    // The node, for a page asked for by node. Null for every other kind and
+    // for a flow of pages set for a mandate or for the whole boundary.
+    nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
+    // The row at this label the item is about, by kind: a request, a
+    // mandate, a message, a ledger row. For a flow of scope 'mandate', the
+    // mandate whose work flows.
+    subjectRef: uuid("subject_ref"),
+    // The row on the destination side that asked, where one did.
+    replyRef: uuid("reply_ref"),
+    // The mandate whose budget pays the Redactor's run and Audit's check,
+    // where the offer named one.
+    payerGrantId: uuid("payer_grant_id"),
+    // The destination: a label, or outside the deployment (to_label null).
+    toLabel: text("to_label").references(() => labels.name),
+    toOutside: boolean("to_outside").notNull().default(false),
+    // The boundary is the pair (the page's label, the destination). Its id
+    // is what the destination side knows it by (redaction_policies).
+    boundaryId: uuid("boundary_id").notNull(),
+    // 'once': the page as it stood when asked. 'standing': each later
+    // version follows.
+    form: text("form").notNull(),
+    // 'node': this node alone. 'under': with what sits under it. 'mandate':
+    // every node a mandate's work assessed at this label. 'boundary': every
+    // node assessed at this label. 'item': the one subject named.
+    scope: text("scope").notNull(),
+    askedBy: uuid("asked_by").references((): AnyPgColumn => contributors.id),
+    // The permissions the person held when they asked, as the record shows
+    // them ("direct", "release for <party>", ...).
+    askedHolding: text("asked_holding").array().notNull().default([]),
+    askedAt: timestamp("asked_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    endedHolding: text("ended_holding").array(),
+    // One of END_REASONS in services/showing-service.ts.
+    endReason: text("end_reason"),
+    // The page's label.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    check("ck_showings_destination", sql`(${table.toLabel} IS NULL) = ${table.toOutside}`),
+    check("ck_showings_form", sql`${table.form} IN ('once', 'standing')`),
+    check("ck_showings_scope", sql`${table.scope} IN ('node', 'under', 'mandate', 'boundary', 'item')`),
+    check("ck_showings_kind", sql`${table.kind} IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement', 'report', 'proposal')`),
+    check(
+      "ck_showings_subject",
+      sql`CASE WHEN ${table.scope} IN ('node', 'under') THEN ${table.nodeId} IS NOT NULL AND ${table.kind} = 'page'
+               WHEN ${table.scope} = 'boundary' THEN ${table.nodeId} IS NULL AND ${table.kind} = 'page'
+               ELSE ${table.nodeId} IS NULL AND ${table.subjectRef} IS NOT NULL END`
+    ),
+    check("ck_showings_not_own_label", sql`${table.toLabel} IS NULL OR ${table.toLabel} <> ${table.sensitivityLabel}`),
+    index("idx_showings_node").on(table.nodeId),
+    // One live showing of a node across a boundary in each form and scope:
+    // asking again for what already stands is refused, not stacked.
+    uniqueIndex("uq_showings_live")
+      .on(table.nodeId, table.boundaryId, table.form, table.scope)
+      .where(sql`ended_at IS NULL AND form = 'standing'`),
+    // One live flow for a mandate or a whole boundary, and one row for each
+    // subject of another kind across a boundary.
+    uniqueIndex("uq_showings_live_subject")
+      .on(table.sensitivityLabel, table.boundaryId, table.kind, table.scope, sql`COALESCE(subject_ref, '00000000-0000-0000-0000-000000000000'::uuid)`, sql`COALESCE(payer_grant_id, '00000000-0000-0000-0000-000000000000'::uuid)`)
+      .where(sql`ended_at IS NULL AND node_id IS NULL`),
+  ]
+);
+
+// One version of one node's page under a showing: the page as recorded when
+// the version was found, and where its redaction, check and gate stand.
+export const showingPages = pgTable(
+  "showing_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id")
+      .notNull()
+      .references(() => showings.id, { onDelete: "cascade" }),
+    // Null for an item that is not a node's page.
+    nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
+    // The version of the node's judgment at the page's label this page
+    // carries: one of the three judgment tables by kind, so no foreign key.
+    // Null for an item that is not a node's page.
+    judgmentKind: text("judgment_kind"),
+    judgmentId: uuid("judgment_id"),
+    // For an item that is not a node's page: the hash of what it was
+    // composed from, so that offering the same thing again opens nothing.
+    versionKey: text("version_key"),
+    // Set when the budget that pays for this item's redaction or check
+    // could not pay; cleared when the work is paid for.
+    fundsWantedAt: timestamp("funds_wanted_at", { withTimezone: true }),
+    // For a `funding` item that has come through: whether the mandate's
+    // money was placed on the pass at the other label, or the pass was
+    // opened there for that label's own funders because it could not be.
+    fundingPlaced: boolean("funding_placed"),
+    judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull().defaultNow(),
+    // to_redact | to_check | at_gate | cannot_cross | overtaken
+    stage: text("stage").notNull().default("to_redact"),
+    // How many times the redaction has been done: 1, and one more each time
+    // the check returned it.
+    round: integer("round").notNull().default(1),
+    redactActionId: uuid("redact_action_id"),
+    auditRunId: uuid("audit_run_id"),
+    policyId: uuid("policy_id"),
+    // What is always shown when the page is shown: the verdict with its
+    // confidence and any credence or estimate, coverage, the sources that
+    // exist, the gaps recorded, how the page was made, the removals counted
+    // by category. Canonical JSON, hashed as the tree's first leaf.
+    header: text("header"),
+    headerSalt: text("header_salt"),
+    root: text("root"),
+    // The parties whose release the verdict takes: every party whose
+    // material the version read. Empty means the organization's own.
+    restsOn: uuid("rests_on").array().notNull().default([]),
+    // Every source the page and its parts rest on, as worked out when the
+    // page was opened: the sources the parties above were read from, before
+    // any is left out because the destination already reads it. The
+    // Redactor opens these and no others, so that what it can read and what
+    // the gate asks about are one set. Null on a page opened before this
+    // was kept.
+    sourceIds: uuid("source_ids").array(),
+    // The Redactor's own words, which stay at the page's label.
+    leastSure: jsonb("least_sure"),
+    cannotCrossCategory: text("cannot_cross_category"),
+    cannotCrossNote: text("cannot_cross_note"),
+    // Audit's answers. `audit_answer` is one of the three fixed answers
+    // (FIDELITY_ANSWERS); its reasons stay at the page's label.
+    auditAnswer: text("audit_answer"),
+    auditReasons: text("audit_reasons"),
+    redactorModel: text("redactor_model"),
+    redactorRunId: uuid("redactor_run_id"),
+    redactedAt: timestamp("redacted_at", { withTimezone: true }),
+    checkedAt: timestamp("checked_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_showing_pages_version").on(table.showingId, table.nodeId, table.judgmentId),
+    uniqueIndex("uq_showing_pages_item_version").on(table.sensitivityLabel, table.showingId, table.versionKey).where(sql`node_id IS NULL`),
+    index("idx_showing_pages_stage").on(table.stage),
+    check(
+      "ck_showing_pages_stage",
+      sql`${table.stage} IN ('to_redact', 'to_check', 'at_gate', 'cannot_cross', 'overtaken')`
+    ),
+    check(
+      "ck_showing_pages_kind",
+      sql`CASE WHEN ${table.nodeId} IS NULL THEN ${table.judgmentKind} IS NULL AND ${table.versionKey} IS NOT NULL
+               ELSE ${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment') AND ${table.judgmentId} IS NOT NULL END`
+    ),
+  ]
+);
+
+// One part of a page: a paragraph, an argument, a source's reading, a
+// subclaim with its bearing. The page is divided mechanically from its
+// structure when it is recorded (services/page-parts.ts).
+export const showingParts = pgTable(
+  "showing_parts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    pageId: uuid("page_id")
+      .notNull()
+      .references(() => showingPages.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    // One of PART_KINDS in services/page-parts.ts.
+    kind: text("kind").notNull(),
+    // The kind as a held part is named: "argument:against", "reasoning".
+    descriptor: text("descriptor").notNull(),
+    // The row the part was read from (an argument, an instance, an edge, a
+    // request), where it has one.
+    refId: uuid("ref_id"),
+    // The part as written. Never changed.
+    original: text("original").notNull(),
+    salt: text("salt").notNull(),
+    // The parties whose release the part takes. Empty means the
+    // organization's own.
+    restsOn: uuid("rests_on").array().notNull().default([]),
+    // Set when the Redactor finishes: the part as it left it, and its hash.
+    redacted: text("redacted"),
+    marks: jsonb("marks"),
+    commitment: text("commitment"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_showing_parts_position").on(table.pageId, table.position)]
+);
+
+// One removal the Redactor made inside a part, by its place in the part as
+// written. The note is the Redactor's and stays at the page's label.
+export const showingRemovals = pgTable(
+  "showing_removals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    partId: uuid("part_id")
+      .notNull()
+      .references(() => showingParts.id, { onDelete: "cascade" }),
+    startOffset: integer("start_offset").notNull(),
+    endOffset: integer("end_offset").notNull(),
+    category: text("category").notNull(),
+    note: text("note").notNull(),
+    policyId: uuid("policy_id").notNull(),
+    madeInRound: integer("made_in_round").notNull().default(1),
+    // The person who made the removal at the gate; null for the Redactor's.
+    madeBy: uuid("made_by").references((): AnyPgColumn => contributors.id),
+    // A removal the Redactor took back, after the check returned the work.
+    takenBackAt: timestamp("taken_back_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_showing_removals_part").on(table.partId),
+    check("ck_showing_removals_span", sql`${table.startOffset} >= 0 AND ${table.endOffset} > ${table.startOffset}`),
+  ]
+);
+
+// The same showing as its destination side reads it. Same id as `showings`.
+export const shownShowings = pgTable(
+  "shown_showings",
+  {
+    id: uuid("id").primaryKey(),
+    kind: text("kind").notNull().default("page"),
+    nodeId: uuid("node_id"),
+    // The row at this label that asked, where one did. The row the item is
+    // about is at the other label and is not named here.
+    replyRef: uuid("reply_ref"),
+    toOutside: boolean("to_outside").notNull().default(false),
+    boundaryId: uuid("boundary_id").notNull(),
+    form: text("form").notNull(),
+    scope: text("scope").notNull(),
+    askedBy: uuid("asked_by").references((): AnyPgColumn => contributors.id),
+    askedHolding: text("asked_holding").array().notNull().default([]),
+    askedAt: timestamp("asked_at", { withTimezone: true }).notNull(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    endedHolding: text("ended_holding").array(),
+    endReason: text("end_reason"),
+    // For a showing outside: whether the person who asked chose, then, that
+    // each package is sent to the public graph as it is released, with no
+    // person sending each one (services/outbound-service.ts). False means a
+    // person sends each package.
+    sendAsReleased: boolean("send_as_released").notNull().default(false),
+    // The destination's label; `public` for a showing outside.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [index("idx_shown_showings_node").on(table.nodeId)]
+);
+
+// Each node a showing covers, from when it came under it until it left.
+// A node with no page yet is "not yet assessed".
+export const shownNodes = pgTable(
+  "shown_nodes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    // The node it sits under in this showing; null for the node asked for.
+    placeParentId: uuid("place_parent_id"),
+    enteredAt: timestamp("entered_at", { withTimezone: true }).notNull().defaultNow(),
+    leftAt: timestamp("left_at", { withTimezone: true }),
+    // One of LEFT_REASONS in services/showing-service.ts.
+    leftReason: text("left_reason"),
+    // When the node was first assessed at the page's label, so a reader can
+    // see whether the showing began before or after.
+    firstAssessedAt: timestamp("first_assessed_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_shown_nodes_showing").on(table.showingId),
+    index("idx_shown_nodes_node").on(table.nodeId),
+  ]
+);
+
+// One version of a node's page as the destination side reads it. Same id as
+// `showing_pages`. The header and its salt are null until the page is shown.
+export const shownPages = pgTable(
+  "shown_pages",
+  {
+    id: uuid("id").primaryKey(),
+    showingId: uuid("showing_id").notNull(),
+    kind: text("kind").notNull().default("page"),
+    nodeId: uuid("node_id"),
+    judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+    // True while the budget that pays for its redaction or check cannot pay.
+    waitingForFunds: boolean("waiting_for_funds").notNull().default(false),
+    // Where the page stands, in the fixed words of PAGE_STAGES.
+    stage: text("stage").notNull().default("to_redact"),
+    round: integer("round").notNull().default(1),
+    // The tree's root, recorded when the Redactor finished and before
+    // anyone decided anything. An earlier round's root stays in `roots`.
+    root: text("root"),
+    roots: jsonb("roots").notNull().default([]),
+    headerCommitment: text("header_commitment"),
+    header: text("header"),
+    headerSalt: text("header_salt"),
+    // The parties whose release the verdict takes, by id.
+    needs: uuid("needs").array().notNull().default([]),
+    auditAnswer: text("audit_answer"),
+    shownAt: timestamp("shown_at", { withTimezone: true }),
+    // The source this page arrived as at the destination label, once shown.
+    sourceId: uuid("source_id"),
+    // How the gate was set for the item when it was let through, for each
+    // party it rests on, in the gate's fixed vocabulary:
+    // [{ for_party, the_gate, scope, set_on }]. Stamped when it is shown
+    // and again when more of it is released. It names no node, mandate or
+    // request. A page shown outside carries it in its package.
+    releasedUnder: jsonb("released_under"),
+    // For an item that leaves the deployment by a call to the public graph
+    // and not in a page's package (gate-outside.ts): when the public graph
+    // took it, and the id it has there.
+    sentOutsideAt: timestamp("sent_outside_at", { withTimezone: true }),
+    outsideRef: text("outside_ref"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [index("idx_shown_pages_showing").on(table.showingId, table.nodeId)]
+);
+
+// One part of a shown page as the destination side reads it. Same id as
+// `showing_parts`. The text, its marks and its salt are null while held.
+export const shownParts = pgTable(
+  "shown_parts",
+  {
+    id: uuid("id").primaryKey(),
+    pageId: uuid("page_id").notNull(),
+    position: integer("position").notNull(),
+    kind: text("kind").notNull(),
+    descriptor: text("descriptor").notNull(),
+    commitment: text("commitment").notNull(),
+    needs: uuid("needs").array().notNull().default([]),
+    text: text("text"),
+    marks: jsonb("marks"),
+    salt: text("salt"),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_shown_parts_position").on(table.pageId, table.position)]
+);
+
+// Everything a person, a rule or the process did on a showing, in order.
+// Rows are added and never changed or removed: a hold stays on the record
+// after it is lifted, and a release is not taken back.
+export const showingActs = pgTable(
+  "showing_acts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    // The page the act is on, and the part; a page with no part is the act
+    // on the page itself (its verdict).
+    pageId: uuid("page_id"),
+    partId: uuid("part_id"),
+    // One of ACTS in services/showing-service.ts.
+    act: text("act").notNull(),
+    // The party the act was made for, where it was made under `release`.
+    partyId: uuid("party_id").references(() => parties.id),
+    // Who acted; null for an act of the process, of the Redactor or of the gate's setting.
+    actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id),
+    // The permissions the actor held when they acted.
+    holding: text("holding").array().notNull().default([]),
+    // The gate setting an act of the gate itself was made under.
+    ruleId: uuid("rule_id"),
+    // Which kind of actor: 'person', 'redactor' (with its run), 'setting'
+    // (the gate's setting let it through), 'process'.
+    by: text("by").notNull().default("process"),
+    // The Redactor's run, for an act it made.
+    runId: uuid("run_id"),
+    // For a delay: until when.
+    until: timestamp("until", { withTimezone: true }),
+    // A category from a fixed list, never free text.
+    reason: text("reason"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_showing_acts_showing").on(table.showingId, table.at),
+    index("idx_showing_acts_item").on(table.pageId, table.partId),
+  ]
+);
+
+// The standing rules a party's holders of `release` could set before a gate
+// had settings (two fixed conditions). Nothing sets or applies one now: each
+// live rule was made into a row of gate_settings, which names it. The rows
+// stay because releases made under a rule name the rule (showing_acts.rule_id).
+export const releaseRules = pgTable(
+  "release_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    partyId: uuid("party_id")
+      .notNull()
+      .references(() => parties.id),
+    boundaryId: uuid("boundary_id").notNull(),
+    condition: text("condition").notNull(),
+    // Whether the rule also releases the page itself, with its verdict.
+    coversVerdict: boolean("covers_verdict").notNull().default(false),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+    setHolding: text("set_holding").array().notNull().default([]),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_release_rules_boundary").on(table.boundaryId),
+    check("ck_release_rules_condition", sql`${table.condition} IN ('nothing_removed_and_only_ours', 'only_ours')`),
+  ]
+);
+
+// One gate for each boundary: the pair (the label a thing was produced at,
+// where it goes). The row holds what is set for the gate as a whole. It is
+// kept on the destination side, like the acts, and names no label the
+// destination does not read: the pair itself is on redaction_policies.
+export const gates = pgTable(
+  "gates",
+  {
+    boundaryId: uuid("boundary_id").notNull(),
+    // 'asked': what was asked for from the other side flows, and what a
+    // flow was set for. 'everything': every page at the label is offered.
+    flow: text("flow").notNull().default("asked"),
+    // Whether the destination's readers are shown the backlog. False keeps
+    // it to the gate's authorities.
+    backlogShown: boolean("backlog_shown").notNull().default(true),
+    // For the boundary to outside: whether what is released is sent to the
+    // public graph as it is released, with no person sending each package.
+    sendAsReleased: boolean("send_as_released").notNull().default(true),
+    // Keeping the other side's version of a node current: when a version
+    // here changes on a node the other side holds, this mandate is asked to
+    // pay for a fresh assessment of the node there, as a `funding` item at
+    // this gate. Between two labels it is a mandate at the label things
+    // come from, and `keep_current_micro_usd` is what it pays each time.
+    // For the gate to outside it is a public mandate the organization funds
+    // on the public graph, which pays there in public owls. Null: nothing
+    // is asked. Versions made before `keep_current_since` are not noticed.
+    keepCurrentMandate: uuid("keep_current_mandate"),
+    keepCurrentMicroUsd: bigint("keep_current_micro_usd", { mode: "number" }).notNull().default(0),
+    keepCurrentSince: timestamp("keep_current_since", { withTimezone: true }),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sensitivityLabel, table.boundaryId] }),
+    check("ck_gates_flow", sql`${table.flow} IN ('asked', 'everything')`),
+  ]
+);
+
+// How a gate treats what reaches it (GATE_MODES in services/gate-kinds.ts):
+// 'open' (it goes as written), 'redactor' (the Redactor decides), 'person'
+// (the Redactor proposes and the people who hold release decide). A row is
+// for one kind of thing or every kind ('*'), for one scope, and for one
+// party's material or, with no party, for every party that has not said.
+// Rows are ended and never changed, so the record shows what stood when.
+export const gateSettings = pgTable(
+  "gate_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    boundaryId: uuid("boundary_id").notNull(),
+    kind: text("kind").notNull().default("*"),
+    // 'boundary' | 'mandate' | 'under' | 'request'; scope_ref is the
+    // mandate, the node or the request (a row on the side things come from).
+    scope: text("scope").notNull().default("boundary"),
+    scopeRef: uuid("scope_ref"),
+    partyId: uuid("party_id").references(() => parties.id),
+    mode: text("mode").notNull(),
+    // A standing delay: what this setting covers is kept back this many
+    // hours from when it was produced, and then to the next multiple of
+    // `batch_hours`, so that items go together and when one was made is not
+    // told by when it arrived. Zero: no delay.
+    delayHours: integer("delay_hours").notNull().default(0),
+    batchHours: integer("batch_hours").notNull().default(0),
+    setBy: uuid("set_by").references((): AnyPgColumn => contributors.id),
+    setHolding: text("set_holding").array().notNull().default([]),
+    setAt: timestamp("set_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
+    // The release rule this row was made from, for a deployment that had rules.
+    fromRule: text("from_rule"),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_gate_settings_boundary").on(table.boundaryId),
+    check("ck_gate_settings_mode", sql`${table.mode} IN ('open', 'redactor', 'person')`),
+    check("ck_gate_settings_scope", sql`${table.scope} IN ('boundary', 'mandate', 'under', 'request') AND ((${table.scope} = 'boundary') = (${table.scopeRef} IS NULL))`),
+    check("ck_gate_settings_kind", sql`${table.kind} IN ('*', 'page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement', 'report', 'proposal')`),
+    check("ck_gate_settings_delay", sql`${table.delayHours} >= 0 AND ${table.batchHours} >= 0`),
+  ]
+);
+
+// The policy for one boundary, versioned. Each version is two rows with the
+// same text: one at the page's label, which the Redactor, Audit and the
+// assessing Steward read, and one on the destination side, which names no
+// label the destination does not read.
+export const redactionPolicies = pgTable(
+  "redaction_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    boundaryId: uuid("boundary_id").notNull(),
+    // 'page' or 'destination'.
+    side: text("side").notNull(),
+    version: integer("version").notNull(),
+    // The categories as saved: [{ name, covers, examples }].
+    categories: jsonb("categories").notNull(),
+    // The whole policy as a reader is given it.
+    body: text("body").notNull(),
+    // sha256 of `body`.
+    hash: text("hash").notNull(),
+    // The pair, on the page's side only.
+    fromLabel: text("from_label").references(() => labels.name),
+    toLabel: text("to_label").references(() => labels.name),
+    toOutside: boolean("to_outside").notNull().default(false),
+    // Null for the version every boundary starts from.
+    savedBy: uuid("saved_by").references((): AnyPgColumn => contributors.id),
+    savedAt: timestamp("saved_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_redaction_policies_version").on(table.boundaryId, table.side, table.version),
+    check("ck_redaction_policies_side", sql`${table.side} IN ('page', 'destination')`),
+    check(
+      "ck_redaction_policies_pair",
+      sql`(${table.side} = 'page') = (${table.fromLabel} IS NOT NULL)`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// A shown page leaves the deployment and is read on the public graph
+// (docs/published-pages.md).
+//
+// Two sides, in one codebase, and a deployment uses one of them.
+//
+//   In a deployment that shows pages outside: outbound_packages,
+//   outbound_sends, outbound_proposals. They are built from the
+//   destination-side rows of a showing outside, which are at `public`, by a
+//   connection cleared for `public` alone, and they are at `public`
+//   themselves: what is released to anyone may be read by every member.
+//
+//   On a graph that admits published pages: publishers, published_pages,
+//   published_page_packages. The public graph has one label and these are
+//   at it.
+// ---------------------------------------------------------------------------
+
+// One signed package: the state of one node under one showing outside, as
+// the outside reads it, at the moment it was built. A node's packages are
+// numbered and each names the one before.
+export const outboundPackages = pgTable(
+  "outbound_packages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    // The node's id on the public graph: its own for a mirrored node, and
+    // for a node that exists only here the node its proposal became.
+    publicNodeId: uuid("public_node_id").notNull(),
+    sequence: integer("sequence").notNull(),
+    // The hash of what the package says apart from its place in the
+    // sequence and when it was built: a new package is built when this
+    // differs from the last one's.
+    contentHash: text("content_hash").notNull(),
+    hash: text("hash").notNull(),
+    package: jsonb("package").notNull(),
+    builtAt: timestamp("built_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_outbound_packages_sequence").on(table.showingId, table.nodeId, table.sequence),
+    uniqueIndex("uq_outbound_packages_hash").on(table.hash),
+  ]
+);
+
+// Every time a package or a proposal left, or was handed to a person to
+// carry: who did it, how, and what came back. Rows are added and never
+// changed.
+export const outboundSends = pgTable(
+  "outbound_sends",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    packageId: uuid("package_id"),
+    proposalId: uuid("proposal_id"),
+    // Who sent it; null when it went under a standing choice.
+    sentBy: uuid("sent_by").references((): AnyPgColumn => contributors.id),
+    holding: text("holding").array().notNull().default([]),
+    underStandingChoice: boolean("under_standing_choice").notNull().default(false),
+    // 'https' or 'file'.
+    how: text("how").notNull(),
+    // 'admitted', 'refused', 'failed' or 'handed_over'.
+    result: text("result").notNull(),
+    // What the public graph answered, or why it could not be reached.
+    detail: text("detail"),
+    // The publication's id on the public graph, as its answer to an
+    // admitted package gave it. A contribution made there through the page
+    // names this id, which is how it is known to be about a page of ours.
+    publicPageId: uuid("public_page_id"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_outbound_sends_package").on(table.packageId),
+    check("ck_outbound_sends_how", sql`${table.how} IN ('https', 'file')`),
+    check("ck_outbound_sends_result", sql`${table.result} IN ('admitted', 'refused', 'failed', 'handed_over')`),
+  ]
+);
+
+// A node that exists only in this deployment, proposed to the public graph
+// so that its page has a node to appear on. The words are a person's, who
+// holds `direct`, and each party the node's wording rests on releases them.
+export const outboundProposals = pgTable(
+  "outbound_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    // 'claim', 'quantity' or 'question'.
+    nodeKind: text("node_kind").notNull().default("claim"),
+    // The words to be proposed.
+    text: text("text").notNull(),
+    writtenBy: uuid("written_by").references((): AnyPgColumn => contributors.id),
+    writtenHolding: text("written_holding").array().notNull().default([]),
+    writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow(),
+    // The parties whose release the words take, and the releases given:
+    // [{ party_id, by, holding, at }].
+    needs: uuid("needs").array().notNull().default([]),
+    releases: jsonb("releases").notNull().default([]),
+    // 'waiting_for_release', 'ready', 'sent', 'on_the_public_graph',
+    // 'not_admitted' or 'replaced'.
+    state: text("state").notNull().default("waiting_for_release"),
+    // The contribution the proposal became on the public graph.
+    publicContributionId: text("public_contribution_id"),
+    publicNodeId: uuid("public_node_id"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_outbound_proposals_node").on(table.showingId, table.nodeId),
+    check(
+      "ck_outbound_proposals_state",
+      sql`${table.state} IN ('waiting_for_release', 'ready', 'sent', 'on_the_public_graph', 'not_admitted', 'replaced')`
+    ),
+  ]
+);
+
+// An account that has registered a deployment's signing key. The row is a
+// public record: who registered it, the key, and where the deployment is
+// said to run, in fixed words. A registration is never changed: a new one
+// for the same key retires the one before.
+export const publishers = pgTable(
+  "publishers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id),
+    keyId: text("key_id").notNull(),
+    publicKey: text("public_key").notNull(),
+    // One of HOSTING_WORDS in src/published-page/verify.ts.
+    hosting: text("hosting").notNull(),
+    // What the publisher says of its own interest in what it publishes, in
+    // its own words; null where it said nothing.
+    declaredInterest: text("declared_interest"),
+    registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_publishers_live_key").on(table.keyId).where(sql`${table.retiredAt} IS NULL`),
+    index("idx_publishers_account").on(table.accountId),
+    check("ck_publishers_hosting", sql`${table.hosting} IN ('own_machines', 'minerval', 'third_party')`),
+  ]
+);
+
+// One node's page under one showing of one publisher: what the packages
+// received for it add up to. The contribution is the publisher's
+// submission of it to the node, reviewed as any contribution is.
+export const publishedPages = pgTable(
+  "published_pages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The account that submitted it, and the key its packages are signed with.
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id),
+    keyId: text("key_id").notNull(),
+    // The showing's id in the publisher's deployment.
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id")
+      .notNull()
+      .references((): AnyPgColumn => claims.id),
+    contributionId: uuid("contribution_id").references((): AnyPgColumn => contributions.id),
+    latestSequence: integer("latest_sequence").notNull().default(0),
+    firstReceivedAt: timestamp("first_received_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_published_pages_showing_node").on(table.keyId, table.showingId, table.nodeId),
+    index("idx_published_pages_node").on(table.nodeId),
+  ]
+);
+
+// A mandate a publisher's deployment let through its gate to outside: that
+// it exists, its name and terms, and how the publisher's gate is set for
+// its work. Each row is one signed package as received; nothing is
+// replaced, so a changed term or setting is a later, dated row. The face a
+// request is addressed to (label_faces, publisher_account_id) carries the
+// latest. `ref` is the publisher's own id for the offer.
+export const publishedMandates = pgTable(
+  "published_mandates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    faceId: uuid("face_id")
+      .notNull()
+      .references((): AnyPgColumn => labelFaces.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id),
+    keyId: text("key_id").notNull(),
+    ref: uuid("ref").notNull(),
+    sequence: integer("sequence").notNull(),
+    hash: text("hash").notNull(),
+    package: jsonb("package").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_published_mandates_sequence").on(table.keyId, table.ref, table.sequence),
+    uniqueIndex("uq_published_mandates_hash").on(table.hash),
+    index("idx_published_mandates_account").on(table.accountId),
+  ]
+);
+
+// Every package received, as signed. Nothing is replaced: a later package
+// is a later row.
+export const publishedPagePackages = pgTable(
+  "published_page_packages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    publishedPageId: uuid("published_page_id")
+      .notNull()
+      .references((): AnyPgColumn => publishedPages.id),
+    sequence: integer("sequence").notNull(),
+    hash: text("hash").notNull(),
+    // The state the package states: one of the four.
+    state: text("state").notNull(),
+    package: jsonb("package").notNull(),
+    // What the check confirmed and could not show when the package arrived.
+    checked: jsonb("checked").notNull(),
+    // The package as a source, where it carries a shown page.
+    sourceId: uuid("source_id").references((): AnyPgColumn => sources.id),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_published_page_packages_sequence").on(table.publishedPageId, table.sequence),
+    uniqueIndex("uq_published_page_packages_hash").on(table.hash),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// Outward acts, and what comes back (docs/outward-acts.md)
+//
+// Showing a page (above) is one way a private graph reaches the public one.
+// These tables are the rest: what the public says back about a page it was
+// shown, public requests taken up, public mandates and funding from inside,
+// keeping the public version of a node current, and an agent's report sent
+// to Minerval's maintainers. Every act is a call to a route any account on
+// the public graph could call, under the organization's own account.
+// ---------------------------------------------------------------------------
+
+// The public graph's contribution record and its requests, as the mirror's
+// feed carries them (services/mirror-manifest.ts). On a graph that
+// publishes a feed these are filled from `contributions` and `requests`
+// just before each cut (mirror-feed-service.ts, refreshFeedRecords), with
+// the public columns and no account. On a deployment that mirrors they
+// hold what the feed brought. They are tables of their own, and not
+// mirrored rows in `contributions` and `requests`, because those tables are
+// working state: a mirrored contribution there would be picked up by this
+// deployment's own review, and a mirrored request by its own Researcher.
+export const feedContributions = pgTable(
+  "feed_contributions",
+  {
+    id: uuid("id").primaryKey(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    contributionType: text("contribution_type").notNull(),
+    content: text("content").notNull(),
+    evidenceUrls: text("evidence_urls").array().notNull().default([]),
+    aboutPublishedPageId: uuid("about_published_page_id"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    reviewStatus: text("review_status").notNull(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [
+    originCheck("ck_feed_contributions_origin", table.origin),
+    index("idx_feed_contributions_claim").on(table.claimId),
+    index("idx_feed_contributions_page").on(table.aboutPublishedPageId),
+  ]
+);
+
+export const feedRequests = pgTable(
+  "feed_requests",
+  {
+    id: uuid("id").primaryKey(),
+    ask: text("ask").notNull(),
+    why: text("why").notNull(),
+    satisfiedBy: text("satisfied_by").notNull(),
+    whoCould: text("who_could"),
+    addressedTo: text("addressed_to"),
+    bearsOnText: text("bears_on_text"),
+    state: text("state").notNull(),
+    stateNote: text("state_note"),
+    filedAt: timestamp("filed_at", { withTimezone: true }).notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    // The face the request is addressed to, where it is addressed to one
+    // (requests.asked_of_face_id). A deployment that mirrors this graph
+    // finds here the requests addressed to a mandate it published.
+    askedOfFaceId: uuid("asked_of_face_id"),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [originCheck("ck_feed_requests_origin", table.origin), index("idx_feed_requests_asked_of").on(table.askedOfFaceId)]
+);
+
+export const feedRequestTargets = pgTable(
+  "feed_request_targets",
+  {
+    id: uuid("id").primaryKey(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => feedRequests.id, { onDelete: "cascade" }),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [
+    originCheck("ck_feed_request_targets_origin", table.origin),
+    index("idx_feed_request_targets_request").on(table.requestId),
+    index("idx_feed_request_targets_claim").on(table.claimId),
+  ]
+);
+
+// Every act of this deployment on the public graph other than sending a
+// package (outbound_sends has those): who did it, holding what, or the
+// standing choice it went under, what was sent, and what the public graph
+// answered. Rows are added and never changed. `sent` holds exactly what
+// left, so that the log is also the check on what crossed. At `public`:
+// each act is public on the public graph, so every member may read that it
+// was made.
+export const outwardActs = pgTable(
+  "outward_acts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // 'take_up_request' | 'decline_request' | 'open_public_mandate' |
+    // 'public_mandate_message' | 'fund_public_mandate' | 'back_public_mandate' |
+    // 'fund_public_node' | 'raise_public_node' | 'keep_current' | 'publish_mandate' | 'send_report' | 'send_failure_facts'.
+    kind: text("kind").notNull(),
+    actedBy: uuid("acted_by").references((): AnyPgColumn => contributors.id),
+    holding: text("holding").array().notNull().default([]),
+    // When nobody acted: "the gate" for what the gate to outside sent under its setting, or, on rows written
+    // before that, the key of the standing choice it went under.
+    underStandingChoice: text("under_standing_choice"),
+    // The public graph's id for what was acted on: a request, a node, a mandate, a conversation, a report.
+    publicRef: text("public_ref"),
+    sent: jsonb("sent").notNull().default({}),
+    // 'done' | 'refused' | 'failed'.
+    result: text("result").notNull(),
+    publicGraphSaid: text("public_graph_said"),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    index("idx_outward_acts_at").on(table.at),
+    check("ck_outward_acts_result", sql`${table.result} IN ('done', 'refused', 'failed')`),
+  ]
+);
+
+// A contribution made on the public graph through a page this deployment
+// published, as it came in with the mirror. The contribution's own text is
+// in feed_contributions, at `public`, and is given as written to the node's
+// Steward at the label the page came from (`delivered_at`). `repeats` names
+// an earlier row on the node with the same text: a repeat is counted once
+// and opens nothing. The reassessment a contribution opens is at the label
+// the page came from, so what became of it is copied here in fixed words
+// for the package that tells the outside ('not_funded', 'funded', 'made').
+export const inboundContributions = pgTable(
+  "inbound_contributions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    publicContributionId: uuid("public_contribution_id").notNull(),
+    publicPageId: uuid("public_page_id").notNull(),
+    showingId: uuid("showing_id").notNull(),
+    nodeId: uuid("node_id").notNull(),
+    contributionType: text("contribution_type").notNull(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull().defaultNow(),
+    // 'received' | 'repeat'.
+    state: text("state").notNull().default("received"),
+    repeats: uuid("repeats"),
+    // When it was given to the node's Steward at the page's label.
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    // What became of the reassessment it opened, for the outside.
+    reassessment: text("reassessment"),
+    reassessmentAt: timestamp("reassessment_at", { withTimezone: true }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_inbound_contributions_public").on(table.publicContributionId),
+    index("idx_inbound_contributions_node").on(table.showingId, table.nodeId),
+    check("ck_inbound_contributions_state", sql`${table.state} IN ('received', 'repeat')`),
+    check(
+      "ck_inbound_contributions_reassessment",
+      sql`${table.reassessment} IS NULL OR ${table.reassessment} IN ('not_funded', 'funded', 'made')`
+    ),
+  ]
+);
+
+// A request from the layer below, taken up at a label that reads it
+// (docs/architecture.md, "Word from the layer below"). The layer below is
+// the public graph, whose requests the mirror brings (public_request_id),
+// or a label this row's label reads (from_request_id); one of the two is
+// set. The request worked on is an ordinary request here (request_id), at
+// the label of this row, so it is funded, done and answered at that label
+// like any other, with what that label reads. This row links it to the one
+// it was taken up from, and is the record a later answer downward starts
+// from: nothing here is shown to readers of the label below. For a public
+// request, `taken_up_at` is set when a person said in public, in the
+// organization's name, that the graph is taking it up.
+export const adoptedRequests = pgTable(
+  "adopted_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => requests.id, { onDelete: "cascade" }),
+    publicRequestId: uuid("public_request_id"),
+    fromRequestId: uuid("from_request_id").references((): AnyPgColumn => requests.id, { onDelete: "cascade" }),
+    adoptedBy: uuid("adopted_by").references((): AnyPgColumn => contributors.id),
+    adoptedAt: timestamp("adopted_at", { withTimezone: true }).notNull().defaultNow(),
+    takenUpAt: timestamp("taken_up_at", { withTimezone: true }),
+    declinedAt: timestamp("declined_at", { withTimezone: true }),
+    declineReason: text("decline_reason"),
+    // Where the request below asked for a mandate and paid for one: the
+    // mandate created for it at this label (services/ask-above-service.ts).
+    grantId: uuid("grant_id").references((): AnyPgColumn => grants.id, { onDelete: "set null" }),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_adopted_requests_request").on(table.requestId),
+    index("idx_adopted_requests_grant").on(table.grantId),
+    index("idx_adopted_requests_public").on(table.publicRequestId),
+    index("idx_adopted_requests_from").on(table.fromRequestId),
+    check(
+      "ck_adopted_requests_from",
+      sql`(${table.publicRequestId} IS NULL) <> (${table.fromRequestId} IS NULL)`
+    ),
+  ]
+);
+
+// An agent's report that went to Minerval's maintainers: what became of it
+// there. The report leaves as an item at the gate to outside, like anything
+// else written at a label (gate-service.ts, kind `report`); this row is
+// made when the public graph has taken it, at the report's label, and keeps
+// the id it has there and what the maintainers' record of it says since.
+export const reportSendings = pgTable(
+  "report_sendings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reportId: uuid("report_id")
+      .notNull()
+      .references(() => agentReports.id, { onDelete: "cascade" }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    publicReportId: uuid("public_report_id"),
+    // How many times the report had been seen when it went.
+    seen: integer("seen"),
+    cameBack: jsonb("came_back"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [uniqueIndex("uq_report_sendings_report").on(table.reportId)]
+);
+
+// The addresses this deployment has been given from outside, at each label:
+// what a search returned, what the text of a fetched page, a listing or a
+// feed carries, what a fixed resolver answers for an identifier, what a
+// person wrote to their Assistant (services/given-addresses.ts). Where a
+// run reads material that is not public, a tool that takes an address takes
+// one only if it is here or is a recorded source's, and uses it as it is
+// written here, so that no address a model composed is fetched. One row for
+// a page at a label (`page_url_hash`, services/page-url.ts); `url` is the
+// address as it was given. Rows are added and never changed. Empty on the
+// public graph, where nothing writes it.
+export const givenAddresses = pgTable(
+  "given_addresses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    url: text("url").notNull(),
+    pageUrlHash: text("page_url_hash").notNull(),
+    // 'search' | 'page' | 'listing' | 'feed' | 'identifier' | 'person'.
+    givenBy: text("given_by").notNull(),
+    givenAt: timestamp("given_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_given_addresses_page_label").on(table.pageUrlHash, table.sensitivityLabel),
+    check(
+      "ck_given_addresses_given_by",
+      sql`${table.givenBy} IN ('search', 'page', 'listing', 'feed', 'identifier', 'person')`
+    ),
+  ]
 );

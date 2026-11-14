@@ -18,8 +18,12 @@ import { waitingMessages } from "./inbox-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { getClaimById, getClaimInstances } from "./claim-service.js";
+import { valuesByLabelOf, withLayer, withSetAside } from "./overlay-service.js";
 import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
+import { judgmentsInForce, nodeVersions, severalInForceNote } from "./judgment-version-service.js";
+import { lowerRowSql } from "./layer-service.js";
+import { mirroredFacts } from "./mirrored-node-service.js";
 import {
   getArgumentsForClaim,
   getEvaluationStateForClaim,
@@ -150,6 +154,17 @@ export const CLAIM_VIEW_DESCRIPTION =
   RETIRED_DESCRIPTION +
   " Free.";
 
+/**
+ * What the description adds on a deployment with more than one label, and
+ * nowhere else: how a read says which layer a row is at.
+ */
+export const CLAIM_VIEW_LAYERS_DESCRIPTION =
+  " On this graph each argument, subclaim edge, instance, link, tag, cut, reading and answer carries `label`, the " +
+  "label it is recorded at. An edge or argument a label you read has set aside carries `set_aside` (the label, " +
+  "its reason, since when) and is not one the judgment at that label rests on. Where a label you read holds " +
+  "its own importance or contestation for the node, `importance` and `contestation` are the ones in effect " +
+  "for you and `importance_by_label` lists each.";
+
 export const CLAIM_VIEW_INCLUDE_DESCRIPTION =
   "Sections to add to the base view; none by default. Ask for the ones " +
   "your work needs: each costs context.";
@@ -264,6 +279,8 @@ export async function getClaimView(
     waiting,
     changes,
     covered,
+    labelled,
+    mirrored,
   ] = await Promise.all([
     getCurrentAssessment(claimId),
     // Navigation, never the payload: a tag read failure is an empty list.
@@ -298,6 +315,12 @@ export async function getClaimView(
     // What examination the node has had (#543). A read failure loses the
     // field, never the read: absent is "not said", never "examined".
     summarizeCoverage([claimId]).catch(() => null),
+    // Where the deployment has more than one label: the node's own, and
+    // the versions of its judgment the reader may read (null elsewhere).
+    nodeVersions(claimId, kind),
+    // Where the deployment mirrors the public graph and this node is one
+    // of the public graph's: that it is, and as of when (null elsewhere).
+    mirroredFacts(claimId),
   ]);
   const since = sinceAssessed(changes?.get(claimId));
   const examination = coverage(covered?.get(claimId.toLowerCase()));
@@ -334,8 +357,13 @@ export async function getClaimView(
       // How actively the claim is disputed or consulted (0..1), kept apart
       // from the status (#524). null = not yet judged.
       contestation: claim.contestation ?? null,
+      // Where a label the reader reads holds its own importance or
+      // contestation for the node: each label's value, the one in effect
+      // for the reader marked (it is the one given above), and the node's
+      // own last.
+      ...valuesByLabelOf(claim),
       domains: claim.domains ?? [],
-      tags: tags.map((t) => ({ slug: t.slug, name: t.name })),
+      tags: tags.map((t) => ({ slug: t.slug, name: t.name, ...(t.label ? { label: t.label } : {}) })),
       // Whether a Steward has actually worked this node (#415).
       // decomposition_status flips to "complete" at onboarding, when the
       // node is handed to its Steward, so on its own it cannot tell "never
@@ -351,7 +379,26 @@ export async function getClaimView(
       created_at: iso(claim.createdAt),
       updated_at: iso(claim.updatedAt),
       page_url: claimPageUrl(claim.id),
+      // Who may read the node, on a deployment with more than one label.
+      ...(labelled ? { label: labelled.label } : {}),
     },
+    // The versions of the node's judgment, one for each label that has one
+    // and that the reader may read (judgment-version-service.ts). The
+    // judgment served just below is the first of them.
+    ...(labelled ? { versions: labelled.versions } : {}),
+    // Where a label the asker reads examined the node and left the judgment
+    // it reads standing (left-standing-service.ts), and the labels the
+    // asker reads at which it has been neither judged nor examined.
+    ...(labelled && labelled.left_standing.length > 0 ? { left_standing: labelled.left_standing } : {}),
+    ...(labelled && labelled.not_examined_at.length > 0 ? { not_examined_at: labelled.not_examined_at } : {}),
+    // Where more than one of them is in force for the asker, the judgment below is only the most recently made.
+    ...(labelled && labelled.in_force > 1
+      ? { judgments_in_force: labelled.in_force, judgments_in_force_note: severalInForceNote(labelled.in_force) }
+      : {}),
+    // That the node is the public graph's, read through the mirror, and as
+    // of when (mirrored-node-service.ts). Absent for a node of this
+    // deployment's own.
+    ...(mirrored ? { mirrored } : {}),
     assessment: withDeveloperDisclosure(
       formatClaimViewAssessment(assessment),
       assessment?.model,
@@ -399,7 +446,7 @@ export async function getClaimView(
           leanChecksByArgument(claimId).catch(() => new Map()),
         ]);
         const evaluationByArgument = new Map(evaluations.map((e) => [e.argument_id, e]));
-        payload.arguments = args.map((a) => {
+        const listed = args.map((a) => {
           const e = evaluationByArgument.get(a.id);
           return {
             id: a.id,
@@ -420,6 +467,9 @@ export async function getClaimView(
             lean_check: checks.get(a.id) ?? null,
           };
         });
+        // Which layer each argument is at, and which of them a label the
+        // reader reads has set aside (overlay-service.ts).
+        payload.arguments = await withSetAside("arguments", await withLayer("arguments", listed, (a) => a.id), (a) => a.id);
         // Passages where sources reason about the claim that matched none
         // of its arguments at ingestion (#541), waiting for the Steward to
         // place or dismiss them.
@@ -454,7 +504,15 @@ export async function getClaimView(
   if (include.has("subclaims")) {
     sections.push(
       (async () => {
-        const subclaims = await listDirectSubclaims(claimId);
+        const listed = await listDirectSubclaims(claimId);
+        // Which layer each edge is at, and which a label the reader reads
+        // has set aside: such an edge stays listed, marked, and is not
+        // one the judgment at that label rests on.
+        const subclaims = await withSetAside(
+          "claim_relationships",
+          await withLayer("claim_relationships", listed, (sc) => sc.edge_id),
+          (sc) => sc.edge_id
+        );
         payload.subclaims = subclaims;
         // Derived from the rows, never a stored counter (#417): an edge
         // shared by two arguments is two rows but one child (#437).
@@ -475,10 +533,14 @@ export async function getClaimView(
           getClaimInstances(claimId),
           getClaimSourceMap(claimId).catch(() => null),
         ]);
-        payload.instances = instances.map((inst) => ({
-          ...inst,
-          reading: full?.readings[inst.id] ?? null,
-        }));
+        payload.instances = await withLayer(
+          "claim_instances",
+          instances.map((inst) => ({
+            ...inst,
+            reading: full?.readings[inst.id] ?? null,
+          })),
+          (inst) => inst.id
+        );
         payload.provenance_edges = full?.edges ?? [];
         payload.source_relationships = full?.source_relationships ?? [];
       })()
@@ -507,8 +569,9 @@ export async function getClaimView(
       (async () => {
         // Lateral links (#436): claims a reader of this one would want beside
         // it, with the reason. Not dependencies; they never enter the assessment.
-        payload.related = (await listRelatedClaims(claimId)).map((r) => ({
+        payload.related = (await withLayer("claim_links", await listRelatedClaims(claimId), (r) => r.link_id)).map((r) => ({
           id: r.id,
+          ...(r.label ? { label: r.label } : {}),
           text: r.text,
           link_kind: r.kind,
           reasoning: r.reasoning,
@@ -630,8 +693,11 @@ async function listDirectSubclaims(claimId: string) {
     child_kind: string;
     child_estimate: unknown | null;
     child_standing: string | null;
+    lower_edge_id: string | null;
   } & StewardParkRow>(
-    `SELECT cr.id AS edge_id, cr.child_claim_id AS child_id, c.text AS child_text,
+    `SELECT cr.id AS edge_id,
+            ${lowerRowSql("claim_relationships", "cr", ["parent_claim_id", "child_claim_id", "relation_type"])} AS lower_edge_id,
+            cr.child_claim_id AS child_id, c.text AS child_text,
             c.claim_type AS child_type, cr.relation_type, cr.reasoning, cr.confidence,
             a.status AS child_status, a.confidence AS child_confidence,
             a.claim_credence AS child_credence,
@@ -652,7 +718,27 @@ async function listDirectSubclaims(claimId: string) {
   // Whether each premise has been examined at all (#543), for every kind in
   // one read. A failure loses the field, never the section.
   const covered = await summarizeCoverage(rows.map((sc) => sc.child_id)).catch(() => null);
-  return rows.map((sc) => ({
+  // Where more than one judgment of a premise is in force for the asker, its row says how many.
+  const several = await judgmentsInForce(rows.map((sc) => sc.child_id)).catch(() => new Map<string, number>());
+  // An edge recorded at one layer and the same edge (the same child and
+  // relation) recorded at a layer below it are the same thing recorded
+  // twice (layer-service.ts): the public graph's edge and this
+  // deployment's own, or one label's and that of a label reading it. They
+  // are listed once: the lowest layer's row, with its grouping under
+  // arguments, and beside it what the higher layer wrote for its own
+  // (`also_recorded_here`). The higher row is still listed where it is
+  // grouped under an argument, which is a fact of its own. Two rows at
+  // labels that do not read each other are neither below the other, and a
+  // reader of both is given both. Only a graph with more than one layer
+  // can hold such a pair.
+  const above = new Map<string, { edge_id: string; reasoning: string | null }>();
+  for (const sc of rows) {
+    if (sc.lower_edge_id && !above.has(sc.lower_edge_id)) {
+      above.set(sc.lower_edge_id, { edge_id: sc.edge_id, reasoning: sc.reasoning });
+    }
+  }
+  const listedOnce = rows.filter((sc) => !(sc.lower_edge_id && sc.argument_id === null));
+  return listedOnce.map((sc) => ({
     id: sc.child_id,
     edge_id: sc.edge_id,
     text: sc.child_text,
@@ -660,11 +746,18 @@ async function listDirectSubclaims(claimId: string) {
     relation: sc.relation_type,
     // Why the edge holds, as its author wrote it.
     reasoning: sc.reasoning,
+    ...(!sc.lower_edge_id && above.has(sc.edge_id) ? { also_recorded_here: above.get(sc.edge_id) } : {}),
     confidence: sc.confidence,
     assessment_status: sc.child_status,
     assessment_confidence: sc.child_confidence,
     assessment_credence: sc.child_credence,
     ...(covered ? { coverage: coverageRow(covered.get(sc.child_id.toLowerCase())) } : {}),
+    ...(several.has(sc.child_id.toLowerCase())
+      ? {
+          judgments_in_force: several.get(sc.child_id.toLowerCase()),
+          judgments_in_force_note: severalInForceNote(several.get(sc.child_id.toLowerCase())!),
+        }
+      : {}),
     argument_id: sc.argument_id,
     argument_name: sc.argument_name,
     ...(sc.child_kind !== "claim" ? { kind: sc.child_kind } : {}),

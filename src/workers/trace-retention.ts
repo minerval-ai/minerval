@@ -17,6 +17,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export interface TraceRetentionResult {
   /** Runs deleted this tick (steps cascade and are not counted). */
@@ -68,7 +69,10 @@ export function startTraceRetention(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await traceRetentionTick();
+      const result = await withSystemClearance(
+        "Retention deletes expired runs at every label.",
+        () => traceRetentionTick()
+      );
       if (result.deleted > 0) {
         options.logger.info(`Trace retention: deleted ${result.deleted} expired agent runs`);
       }

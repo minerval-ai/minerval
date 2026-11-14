@@ -20,10 +20,18 @@ const NOT_DESCRIBED: Record<string, string> = {
   "/logo-preview": "An internal preview of the logo.",
   "/oauth/consent": "Reached only from an OAuth client's sign-in, never navigated to.",
   "/queue": "A redirect kept for old links.",
+  "/members-gate": "What a members-only deployment shows in place of a page to someone who is not a member.",
   "/account/grants": "A redirect kept for old links: the Mandates list's own tab.",
   "/account/grants/new": "A redirect kept for old links: starting a mandate is in Ask.",
   "/account/grants/:id": "A redirect kept for old links: a grant and its mandate have one page.",
 };
+
+/**
+ * A page file. One named page.members.tsx is a page only in a build for a
+ * members-only deployment (web/next.config.mjs); the skill describes those
+ * too, and says which they are.
+ */
+const PAGE_FILES = ["page.tsx", "page.members.tsx"];
 
 function pageRoutes(dir: string, prefix = ""): string[] {
   const out: string[] = [];
@@ -35,7 +43,7 @@ function pageRoutes(dir: string, prefix = ""): string[] {
     const segment = /^\(.*\)$/.test(name) ? "" : `/${name.replace(/^\[(.+)\]$/, ":$1")}`;
     out.push(...pageRoutes(path, prefix + segment));
   }
-  if (existsSync(join(dir, "page.tsx"))) out.push(prefix || "/");
+  if (PAGE_FILES.some((file) => existsSync(join(dir, file)))) out.push(prefix || "/");
   return out;
 }
 

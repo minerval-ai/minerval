@@ -3,14 +3,26 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Whether this build is for a members-only deployment (lib/members.ts).
+const MEMBERS_ONLY = process.env.READS === "members";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Files a members-only build has and a build for the public graph does
+  // not. A file named *.members.tsx or *.members.ts takes its usual place
+  // (page.members.tsx is a page, proxy.members.ts is the proxy) only in a
+  // build made with READS=members; in any other build Next does not see it,
+  // so the public site has no such page, compiles none of its code, and
+  // runs no proxy in front of its requests. What a private deployment adds
+  // to the site is named this way: the gate (proxy.members.ts) and the
+  // administrators' pages under app/admin.
+  pageExtensions: [...(MEMBERS_ONLY ? ["members.tsx", "members.ts"] : []), "tsx", "ts", "jsx", "js"],
   // Whether this build was made for a members-only deployment (lib/members.ts),
   // fixed into the build so that instrumentation.ts can compare it with the
   // setting the app is started under. Nothing else reads it.
   env: {
-    MINERVAL_BUILT_READS: process.env.READS === "members" ? "members" : "open",
+    MINERVAL_BUILT_READS: MEMBERS_ONLY ? "members" : "open",
   },
   // This app is the build root (it lives in a subdir of the backend repo).
   outputFileTracingRoot: __dirname,

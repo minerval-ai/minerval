@@ -5,6 +5,7 @@ import {
   unresolvableModelIdMessage,
 } from "./llm/providers/routing.js";
 import {
+  featureOnGiven,
   parseFeaturesOff,
   unknownFeatureNames,
   unknownFeaturesMessage,
@@ -12,6 +13,8 @@ import {
 import { applyConfigFile } from "./config-file.js";
 import { parseModelEndpoints } from "./llm/providers/endpoint-config.js";
 import { parseProviderLabels, providerSettingProblems } from "./provider-labels.js";
+import { parseLabelPosture } from "./label-posture.js";
+import { parseModelPrices } from "./llm/model-prices.js";
 
 /**
  * Requests per minute one IP address may make without credentials. The one
@@ -146,6 +149,87 @@ const configSchema = z.object({
   // again before their groups lapse.
   signInValidHours: z.coerce.number().positive().default(12),
 
+  // Where this deployment's owls come from (docs/accounts.md, "Owls a
+  // deployment creates for itself"). "sold", the starting value, is the
+  // public graph: owls are bought through Stripe where it is configured, and
+  // granted or earned as the settings below say. "created" is for a
+  // deployment that pays its own model providers: its administrators create
+  // owls, each act logged, and nothing is sold. The Stripe routes and the
+  // packs are then not mounted, so it says more than payments being off:
+  // payments off leaves a deployment with no way to get owls, and this
+  // gives it one. It needs READS=members, because creating owls is an
+  // administrator's act and only a members-only deployment has
+  // administrators, and it refuses to load beside a Stripe key.
+  owls: z.enum(["sold", "created"]).default("sold"),
+  // Prices this deployment states for models, in US dollars per million
+  // tokens (src/llm/model-prices.ts): for a model the rate table does not
+  // know, or in place of the table's for one it does. A JSON list, empty by
+  // default. A value that cannot be read fails the load with what is wrong.
+  modelPrices: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const problem of parseModelPrices(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem });
+      }
+    })
+    .transform((raw) => {
+      const parsed = parseModelPrices(raw);
+      return parsed.problems.length > 0 ? [] : parsed.prices;
+    })
+    .prefault(""),
+  // How a members-only deployment pays toward the public graph it reads
+  // (docs/usage-report.md). "metered", the starting value: it reports the
+  // owls its runs spent each UTC day, one total and nothing else, and pays
+  // in proportion. "flat": it pays a flat price for the feed and reports
+  // nothing. Read only where READS=members; the public graph reports to
+  // no one.
+  publicGraphPrice: z.enum(["metered", "flat"]).default("metered"),
+  // Where a metered deployment's usage reports go. One of the two:
+  //   usageReportUrl: the address of the public graph's receiving route
+  //     (for instance https://api.minerval.ai/usage-reports), with
+  //     usageReportApiKey, an API key of the organization's account there;
+  //   usageReportDir: a directory the reports are written to as files, for
+  //     a deployment whose network is restricted, to be handed over.
+  // With neither, reports are prepared and kept, readable by the
+  // administrators, and sent once one is set.
+  usageReportUrl: z
+    .string()
+    .trim()
+    .refine(
+      (url) => {
+        if (url === "") return true;
+        try {
+          const parsed = new URL(url);
+          return parsed.protocol === "https:" || parsed.protocol === "http:";
+        } catch {
+          return false;
+        }
+      },
+      {
+        message:
+          "USAGE_REPORT_URL must be the http or https address of the public graph's receiving " +
+          'route, for example "https://api.minerval.ai/usage-reports".',
+      }
+    )
+    .default(""),
+  usageReportApiKey: z.string().trim().default(""),
+  usageReportDir: z.string().trim().default(""),
+  // The first UTC day a metered deployment reports, as YYYY-MM-DD. Empty by
+  // default: the first day reported is the first day anything was metered.
+  // A deployment that moves from the flat price to the metered one sets the
+  // day the metered price starts, so that days it paid for flat are not
+  // reported.
+  usageReportFrom: z
+    .string()
+    .trim()
+    .refine((day) => day === "" || (/^\d{4}-\d{2}-\d{2}$/.test(day) && !Number.isNaN(Date.parse(`${day}T00:00:00Z`))), {
+      message: 'USAGE_REPORT_FROM must be a day written as YYYY-MM-DD, for example "2026-11-01".',
+    })
+    .default(""),
+  // How often the usage report worker looks for closed days to report and
+  // for reports not yet sent, in seconds.
+  usageReportIntervalSeconds: z.coerce.number().positive().default(3600),
+
   // CORS
   corsOrigins: z.string().default(""),
 
@@ -224,6 +308,18 @@ const configSchema = z.object({
       }
     })
     .transform((raw) => parseProviderLabels(raw).labels)
+    .prefault(""),
+  // Each label's own posture (src/label-posture.ts): a JSON object from a
+  // label's name to the settings it changes for its own runs. Empty by
+  // default: every label works under the deployment's settings.
+  labelPosture: z
+    .string()
+    .superRefine((raw, ctx) => {
+      for (const message of parseLabelPosture(raw).problems) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+      }
+    })
+    .transform((raw) => parseLabelPosture(raw).posture)
     .prefault(""),
   awsRegion: z.string().default("us-east-1"),
 
@@ -356,6 +452,25 @@ const configSchema = z.object({
   // read replica. Unset, the SQL tools say they aren't configured.
   sqlAgentDatabaseUrl: z.string().optional(),
   sqlCallerDatabaseUrl: z.string().optional(),
+  // The password of the role every connection held to a clearance logs in
+  // as (db/clearance.ts, clearedRolePassword). Unset, it is derived from
+  // the owner's credentials in DATABASE_URL, which needs nothing
+  // configured. Set it, to any long random secret, where the owner's
+  // password changes while tasks run (managed rotation) or is a
+  // short-lived token: a derived password would change with it, and tasks
+  // started before the change could no longer open such a connection.
+  clearedRolePassword: z.string().optional(),
+  // How connections to the database are encrypted (db/client.ts,
+  // databaseSsl). Unset is what it always was: in production, TLS verified
+  // against the RDS certificate bundle the image carries, and none
+  // elsewhere. A deployment whose Postgres is not on RDS says which of two
+  // things holds: DATABASE_CA_FILE names the certificate authority its
+  // server's certificate is verified against, or DATABASE_TLS=off says the
+  // database is reached over a network that is the deployment's own (the
+  // packaged Compose network, docs/self-hosting.md) and connections are
+  // not encrypted. There is no setting that encrypts without verifying.
+  databaseTls: z.enum(["off"]).optional(),
+  databaseCaFile: z.string().optional(),
   /** The replica read-only SQL runs on, and the two login roles (infra/lib/database-stack.ts). */
   sqlDbHost: z.string().optional(),
   sqlDbPort: z.coerce.number().optional(),
@@ -799,6 +914,35 @@ const configSchema = z.object({
   // 1500 words is $0.75 at the default rate.
   pangramMaxWords: z.coerce.number().int().min(50).default(1500),
 
+  // --- File sets and the sandbox (docs/file-sets.md) ---
+  // A members-only deployment takes in sets of files and lets its agents
+  // explore them by running commands in a sandbox the deployment runs.
+  // Where uploaded sets are kept: a directory this process can write. The
+  // sandbox mounts the same directory read-only. Empty = no upload: a set
+  // can then only be a registered directory.
+  fileSetStoreDir: z.string().default(""),
+  // The root a directory must be under to be registered as a set, for data
+  // too large to upload. Read where it lies; the sandbox mounts the same
+  // root read-only. The root has no label: an administrator registers a
+  // directory under it and says then what label its files get. Empty = no
+  // directory can be registered.
+  fileSetDirectoryRoot: z.string().default(""),
+  // The most bytes one uploaded set may hold. Upload is for sets of modest
+  // size, since every byte passes through this process; larger data is
+  // registered where it lies.
+  fileSetUploadMaxBytes: z.coerce.number().int().min(1).default(10 * 1024 * 1024 * 1024),
+  // The sandbox service's private base URL and bearer token (sandbox/ in
+  // this repository). Empty URL = no sandbox: no run is offered a command,
+  // and a run that has file sets is told why.
+  sandboxUrl: z.string().default(""),
+  sandboxToken: z.string().default(""),
+  // What an hour of a command's time in the sandbox is charged to the run
+  // that ran it, into llm_usage like any spend, so the run's budget bounds
+  // it. The default is the rate the model provider's code sandbox is
+  // charged at here ($0.05 a container-hour, llm/instrument-harness.ts);
+  // set it from what the machine costs, or to 0 to charge nothing.
+  sandboxHourCostMicroUsd: z.coerce.number().min(0).default(50_000),
+
   // --- Mathematics: the Lean checker (docs/mathematics.md §5) ---
   // The lean-checker service's private base URL and bearer token. Empty
   // URL = no checker: the Lean tools are absent from every toolset, no
@@ -829,6 +973,16 @@ const configSchema = z.object({
   // the long-run betas, so a deployment pointing it elsewhere fails at config
   // load rather than deep into an attempt (§7.8). Joins the production
   // model-env guard below.
+  //
+  // Both hold where the mathematics feature is on, and neither where it is
+  // off (FEATURES_OFF names it): a deployment that will never run the solver
+  // is not asked to name a model for it, so one that runs everything on its
+  // own endpoint needs no Anthropic model to start. loadConfig then leaves
+  // SOLVER_MODEL unread and the setting empty, and the two places that would
+  // start an attempt refuse (SOLVER_OFF_WITH_MATHEMATICS, below) rather than run on
+  // a default nobody chose. SOLVER_ENABLED=false with mathematics on is not
+  // that case: the feature's other work still runs and an attempt can be
+  // funded the day the switch is turned, so the model is still named.
   solverModel: z
     .string()
     .superRefine((id, ctx) => {
@@ -1094,6 +1248,20 @@ const configSchema = z.object({
   // (auditModel) so it can run on Opus without also upgrading the reviewer.
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
+  // The Redactor's model (services/showing-service.ts), where a deployment
+  // shows pages to readers who do not read their label. Unset, it is the
+  // Steward's (stewardModel): the Redactor reads a page a Steward wrote and
+  // the sources behind it, and has to see what a passage gives away as well
+  // as its writer could have. It has a setting of its own so that the
+  // redaction and Audit's check of it need not run on one model.
+  redactorModel: z
+    .string()
+    .default("")
+    .superRefine((id, ctx) => {
+      if (id && !isSupportedModelId(id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: unresolvableModelIdMessage(id) });
+      }
+    }),
   // Arbitration is the highest-stakes governance call; production sets
   // ARBITRATION_MODEL=claude-fable-5-2 (the frontier tier: few runs, each one
   // final).
@@ -1317,9 +1485,107 @@ const configSchema = z.object({
     .default("")
     .transform((s) => s.split(",").map((k) => k.trim()).filter((k) => k.length > 0)),
   mirrorApplyIntervalSeconds: z.coerce.number().default(300),
+
+  // Pages shown outside (docs/published-pages.md). A deployment that shows
+  // pages outside signs each package with this key: an Ed25519 private key
+  // in PEM form, held as a secret, made the way the mirror's is
+  // (`npx tsx scripts/published-page.ts keygen`). Its public half is
+  // registered on the public graph by the organization's account there.
+  publishSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // Where this deployment runs, stated on every package in fixed words:
+  // "own_machines" (the organization's own), "minerval" (Minerval's) or
+  // "third_party" (a third party's). No default: a package is not built
+  // until the deployment has said.
+  deploymentHosting: z.enum(["", "own_machines", "minerval", "third_party"]).default(""),
+  // The public graph's API address and the key of the organization's own
+  // account there. With these the deployment sends packages and proposals
+  // over HTTPS, as a client of the routes any account uses. Without them a
+  // person carries each package as a file.
+  publicGraphApiUrl: z.string().default(""),
+  // Which addresses the tools of a run that reads a private label take
+  // (src/services/given-addresses.ts). "any", the starting value: any
+  // address, as on the public graph, and nothing of the rule exists. "given":
+  // only an address the deployment was given from outside (a search result,
+  // an address in a page read, a recorded source, a resolved identifier),
+  // used as it was given. That guards against text a run read telling it to
+  // fetch an address with private material written into it. It narrows that
+  // way out and does not close it (a search query is still text sent out),
+  // and it costs research: a run cannot write the address for something it
+  // knows of, or page through results by editing one. Nearly every run in a
+  // private graph reads private material, so "given" changes almost all of
+  // them, which is why it is the organization's choice and not the default.
+  privateRunFetches: z.enum(["any", "given"]).default("any"),
+  // Who may act on the public graph in the organization's name from inside
+  // this deployment: take a request up, open or fund a public mandate, fund
+  // a public node (docs/outward-acts.md). The holders of one permission,
+  // which the deployment's administrators grant. `direct` is where the
+  // design starts, because these acts say where the organization's
+  // attention is.
+  publicActsBy: z.enum(["direct", "fund", "administer"]).default("direct"),
+  publicGraphApiKey: z.string().default(""),
+  // The largest package a graph admits, in bytes. A backstop: a page is a
+  // node's assessment with its arguments and readings, a few hundred
+  // kilobytes at most, and the route that receives one parses it whole
+  // before it can check the signature.
+  publishedPageMaxBytes: z.coerce.number().default(4_000_000),
 });
 
 export type Config = z.infer<typeof configSchema>;
+
+/**
+ * What is wrong with settings that cannot hold together, in words an
+ * installer can act on, or null. Exported for the preflight, which says the
+ * same thing before the deployment starts.
+ */
+export function settingsThatDisagree(
+  config: Pick<Config, "owls" | "reads" | "stripeSecretKey" | "usageReportUrl" | "usageReportDir">,
+  /** The free grants the deployment's own settings ask for, in owls: zero where it sets none. */
+  grantsSet: { signup: number; monthly: number } = {
+    signup: Number(process.env.SIGNUP_GRANT_OWLS) || 0,
+    monthly: Number(process.env.MONTHLY_GRANT_OWLS) || 0,
+  }
+): string | null {
+  if (config.owls === "created" && config.reads !== "members") {
+    return (
+      "OWLS=created needs READS=members. Owls are created by an administrator, and only a " +
+      "members-only deployment has administrators. Set READS=members, or leave OWLS unset."
+    );
+  }
+  // The same test billing uses for a real key (stripeConfigured).
+  const stripeKey = config.stripeSecretKey.startsWith("sk_") || config.stripeSecretKey.startsWith("rk_");
+  if (config.owls === "created" && stripeKey) {
+    return (
+      "OWLS=created and STRIPE_SECRET_KEY are both set. A deployment either creates its own " +
+      "owls or sells them, never both: an owl its administrators created and an owl someone " +
+      "paid for would be one balance. Remove the Stripe keys, or leave OWLS unset."
+    );
+  }
+  if (config.owls === "created" && (grantsSet.signup > 0 || grantsSet.monthly > 0)) {
+    const which = [
+      ...(grantsSet.signup > 0 ? ["SIGNUP_GRANT_OWLS"] : []),
+      ...(grantsSet.monthly > 0 ? ["MONTHLY_GRANT_OWLS"] : []),
+    ].join(" and ");
+    return (
+      `OWLS=created and ${which} are both set. Where a deployment creates its own owls, an owl enters a ` +
+      `balance by an administrator's act, which is logged where every member can read it. A grant by ` +
+      `setting would create owls that no act records. Remove ${which}; an administrator creates owls ` +
+      `into the accounts that are to have them.`
+    );
+  }
+  if (config.usageReportUrl && config.usageReportDir) {
+    return (
+      "USAGE_REPORT_URL and USAGE_REPORT_DIR are both set. A usage report is sent to the public " +
+      "graph or written to a file to be handed over, never both, so that each report has one " +
+      "record of how it left. Set one of them."
+    );
+  }
+  return null;
+}
+
+/** What a caller is told where an attempt is asked for and the mathematics feature is off. */
+export const SOLVER_OFF_WITH_MATHEMATICS =
+  "The mathematics feature is switched off in this deployment (FEATURES_OFF), so the solver has no model and no proof attempt runs. " +
+  "Take mathematics out of FEATURES_OFF and set SOLVER_MODEL to run one.";
 
 let _config: Config | null = null;
 
@@ -1354,6 +1620,13 @@ export function loadConfig(): Config {
 
   const rawDatabaseUrl = process.env.DATABASE_URL ?? DEFAULT_DB_URL;
 
+  // Whether the mathematics feature is off, read from the setting as it is
+  // written: the solver's model is asked for only where it is on.
+  const mathematicsOff = !featureOnGiven(
+    "mathematics",
+    // Split here and not parsed: a name that is not a feature is the schema's to refuse, below.
+    (process.env.FEATURES_OFF ?? "").split(",").map((name) => name.trim())
+  );
   _config = configSchema.parse({
     env: process.env.ENVIRONMENT,
     port: process.env.PORT,
@@ -1362,6 +1635,7 @@ export function loadConfig(): Config {
     featuresOff: process.env.FEATURES_OFF,
     modelEndpoints: process.env.MODEL_ENDPOINTS,
     providerLabels: process.env.PROVIDER_LABELS,
+    labelPosture: process.env.LABEL_POSTURE,
     databaseUrl: rawDatabaseUrl,
     dbHost: process.env.DB_HOST,
     dbPort: process.env.DB_PORT,
@@ -1373,6 +1647,14 @@ export function loadConfig(): Config {
     reads: process.env.READS || undefined,
     firstAdministrator: process.env.FIRST_ADMINISTRATOR,
     signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
+    owls: process.env.OWLS || undefined,
+    modelPrices: process.env.MODEL_PRICES,
+    publicGraphPrice: process.env.PUBLIC_GRAPH_PRICE || undefined,
+    usageReportUrl: process.env.USAGE_REPORT_URL,
+    usageReportApiKey: process.env.USAGE_REPORT_API_KEY,
+    usageReportDir: process.env.USAGE_REPORT_DIR,
+    usageReportFrom: process.env.USAGE_REPORT_FROM,
+    usageReportIntervalSeconds: process.env.USAGE_REPORT_INTERVAL_SECONDS || undefined,
     corsOrigins: process.env.CORS_ORIGINS,
     publicReadMaxAgeSeconds: process.env.PUBLIC_READ_MAX_AGE_SECONDS,
     publicReadStaleWhileRevalidateSeconds:
@@ -1472,13 +1754,20 @@ export function loadConfig(): Config {
     pangramAiUsdPerWord: process.env.PANGRAM_AI_USD_PER_WORD,
     pangramPlagiarismUsdPerWord: process.env.PANGRAM_PLAGIARISM_USD_PER_WORD,
     pangramMaxWords: process.env.PANGRAM_MAX_WORDS,
+    fileSetStoreDir: process.env.FILE_SET_STORE_DIR,
+    fileSetDirectoryRoot: process.env.FILE_SET_DIRECTORY_ROOT,
+    fileSetUploadMaxBytes: process.env.FILE_SET_UPLOAD_MAX_BYTES || undefined,
+    sandboxUrl: process.env.SANDBOX_URL,
+    sandboxToken: process.env.SANDBOX_TOKEN,
+    sandboxHourCostMicroUsd: process.env.SANDBOX_HOUR_COST_MICRO_USD || undefined,
     leanCheckerUrl: process.env.LEAN_CHECKER_URL,
     leanCheckerToken: process.env.LEAN_CHECKER_TOKEN,
     leanCpuHourCostMicroUsd: process.env.LEAN_CPU_HOUR_COST_MICRO_USD,
     leanCheckOverheadMicroUsd: process.env.LEAN_CHECK_OVERHEAD_MICRO_USD,
     formalizationReviewPeriodDays: process.env.FORMALIZATION_REVIEW_PERIOD_DAYS,
     formalizationReviewAwardOwls: process.env.FORMALIZATION_REVIEW_AWARD_OWLS,
-    solverModel: process.env.SOLVER_MODEL,
+    // Unread where mathematics is off (see the schema's comment on solverModel).
+    solverModel: mathematicsOff ? undefined : process.env.SOLVER_MODEL,
     solverEnabled: process.env.SOLVER_ENABLED,
     solverDailyCapOwls: process.env.SOLVER_DAILY_CAP_OWLS,
     solverCalibrationDailyCapOwls: process.env.SOLVER_CALIBRATION_DAILY_CAP_OWLS,
@@ -1529,6 +1818,7 @@ export function loadConfig(): Config {
     extractorFallbackModel: process.env.EXTRACTOR_FALLBACK_MODEL,
     governanceModel: process.env.GOVERNANCE_MODEL,
     auditModel: process.env.AUDIT_MODEL,
+    redactorModel: process.env.REDACTOR_MODEL,
     arbitrationModel: process.env.ARBITRATION_MODEL,
     extensionModel: process.env.EXTENSION_MODEL,
     grantmakerModel: process.env.GRANTMAKER_MODEL,
@@ -1550,6 +1840,9 @@ export function loadConfig(): Config {
     officerSittingsEnabled: process.env.OFFICER_SITTINGS_ENABLED,
     sqlAgentDatabaseUrl: process.env.SQL_AGENT_DATABASE_URL,
     sqlCallerDatabaseUrl: process.env.SQL_CALLER_DATABASE_URL,
+    clearedRolePassword: process.env.CLEARED_ROLE_PASSWORD || undefined,
+    databaseTls: process.env.DATABASE_TLS || undefined,
+    databaseCaFile: process.env.DATABASE_CA_FILE || undefined,
     sqlDbHost: process.env.SQL_DB_HOST,
     sqlDbPort: process.env.SQL_DB_PORT,
     sqlAgentDbUser: process.env.SQL_AGENT_DB_USERNAME,
@@ -1612,6 +1905,13 @@ export function loadConfig(): Config {
     mirrorFeedApiKey: process.env.MIRROR_FEED_API_KEY,
     mirrorFeedPublicKeys: process.env.MIRROR_FEED_PUBLIC_KEYS,
     mirrorApplyIntervalSeconds: process.env.MIRROR_APPLY_INTERVAL_SECONDS,
+    publishSigningKey: process.env.PUBLISH_SIGNING_KEY,
+    deploymentHosting: process.env.DEPLOYMENT_HOSTING,
+    publicGraphApiUrl: process.env.PUBLIC_GRAPH_API_URL,
+    publicActsBy: process.env.PUBLIC_ACTS_BY || undefined,
+    privateRunFetches: process.env.PRIVATE_RUN_FETCHES || undefined,
+    publicGraphApiKey: process.env.PUBLIC_GRAPH_API_KEY,
+    publishedPageMaxBytes: process.env.PUBLISHED_PAGE_MAX_BYTES,
   });
 
   // What the two provider settings can only be checked for together: a name
@@ -1653,6 +1953,34 @@ export function loadConfig(): Config {
     };
   }
 
+  if (_config.databaseTls === "off" && _config.databaseCaFile) {
+    _config = null;
+    throw new Error(
+      "DATABASE_TLS=off and DATABASE_CA_FILE are both set. One says connections to the database are not " +
+        "encrypted and the other names the authority to verify its certificate against. Set one of them."
+    );
+  }
+
+  // Settings that only make sense together. Each refusal says what to change.
+  const settingsProblem = settingsThatDisagree(_config);
+  if (settingsProblem) {
+    _config = null;
+    throw new Error(settingsProblem);
+  }
+
+  // The free grants (the signup grant and the monthly owl) are the public
+  // graph's offer to a reader who has just arrived. A members-only
+  // deployment's accounts are its own people, and owls there are the
+  // organization's budget for its agents' work, so an account receives a
+  // grant only when the deployment sets one: the defaults do not apply.
+  if (_config.reads === "members") {
+    _config = {
+      ..._config,
+      signupGrantOwls: process.env.SIGNUP_GRANT_OWLS ? _config.signupGrantOwls : 0,
+      monthlyGrantOwls: process.env.MONTHLY_GRANT_OWLS ? _config.monthlyGrantOwls : 0,
+    };
+  }
+
   // An outside service the deployment has switched off is off whatever keys
   // the environment holds: each of these services is "configured" when its
   // key is set, so the switch is honored by not carrying the key.
@@ -1661,6 +1989,10 @@ export function loadConfig(): Config {
   if (_config.paymentsEnabled === "false") {
     _config = { ..._config, stripeSecretKey: "", stripeWebhookSecret: "" };
   }
+
+  // Where mathematics is off the solver has no model: the setting is empty,
+  // not the default, so nothing can run an attempt on a model nobody chose.
+  if (mathematicsOff) _config = { ..._config, solverModel: "" };
 
   // The constitution's "strongest model for non-saturating assessment" mandate
   // (#77) lives entirely in deploy-time env — the code defaults keep tests and
@@ -1682,8 +2014,10 @@ export function loadConfig(): Config {
     "EXTRACTOR_MODEL",
     // The solver (docs/mathematics.md §7.8): a multi-hour attempt on a
     // model nobody chose is a different product than the mandate funded,
-    // so production names it even while SOLVER_ENABLED is false.
-    "SOLVER_MODEL",
+    // so production names it wherever the mathematics feature is on, even
+    // while SOLVER_ENABLED is false. Where mathematics is off no attempt
+    // can run, so there is nothing to choose and it is not asked for.
+    ...(mathematicsOff ? [] : ["SOLVER_MODEL"]),
     // The Steward's six money triggers (formalize, formalization_review,
     // prize_claim, prize_claim_voided, prize_window_closed,
     // attempt_completed) run on this tier and nowhere else (§6.4); the

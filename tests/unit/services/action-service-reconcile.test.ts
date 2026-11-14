@@ -180,10 +180,10 @@ beforeEach(() => {
   state.unread = {};
 });
 
-// The sweep starts from a claim, not from a piece of work, so the rows it
-// opens for a pending claim take the label of the messages waiting on it,
-// or the claim's own (src/labels.ts). A row that is a mandate's work, or a
-// lookout's, takes the mandate's or the lookout's.
+// The sweep starts from a pending slot. A node's own row is its slot for
+// work at its own label, so the rows the sweep opens for it are at the
+// node's label, in that label's own group (src/labels.ts). A row that is a
+// mandate's work, or a lookout's, takes the mandate's or the lookout's.
 describe("rows opened by the sweep", () => {
   const assessRows = () =>
     queries.filter((x) => x.q.includes("INSERT INTO actions") && ["assess", "reassess"].includes(x.params[0] as string));
@@ -197,24 +197,28 @@ describe("rows opened by the sweep", () => {
     const rows = assessRows();
     // A standard and a strong row for each claim; the label is the last parameter.
     expect(rows.map((r) => [r.params[1], r.params[2], r.params[6]])).toEqual([
-      [ASSESS_GROUP(CLAIM_A), "standard", "internal"],
-      [ASSESS_GROUP(CLAIM_A), "strong", "internal"],
+      [ASSESS_GROUP(CLAIM_A, "internal"), "standard", "internal"],
+      [ASSESS_GROUP(CLAIM_A, "internal"), "strong", "internal"],
       [ASSESS_GROUP(CLAIM_B), "standard", "public"],
       [ASSESS_GROUP(CLAIM_B), "strong", "public"],
     ]);
+    expect(ASSESS_GROUP(CLAIM_A, "internal")).toBe(`assess:${CLAIM_A} @internal`);
+    expect(ASSESS_GROUP(CLAIM_B)).toBe(`assess:${CLAIM_B}`);
   });
 
-  it("opens a pending claim's rows at the label of its unread messages when they agree on one", async () => {
+  it("opens a pending claim's rows at the claim's own label whatever labels its unread messages carry", async () => {
     state.pending = [
       { id: CLAIM_A, sensitivity_label: "public" },
       { id: CLAIM_B, sensitivity_label: "public" },
     ];
-    // One label waiting on A; two on B, which cannot say which the pass is for.
+    // A message at another label waits in that label's own slot and has its
+    // own rows (tests/db/label-governance.test.ts); it does not decide the
+    // label of the node's own pass.
     state.unread = { [CLAIM_A]: ["internal"], [CLAIM_B]: ["internal", "embargoed"] };
     await reconcileActions();
     expect(assessRows().map((r) => [r.params[1], r.params[6]])).toEqual([
-      [ASSESS_GROUP(CLAIM_A), "internal"],
-      [ASSESS_GROUP(CLAIM_A), "internal"],
+      [ASSESS_GROUP(CLAIM_A), "public"],
+      [ASSESS_GROUP(CLAIM_A), "public"],
       [ASSESS_GROUP(CLAIM_B), "public"],
       [ASSESS_GROUP(CLAIM_B), "public"],
     ]);
@@ -229,8 +233,8 @@ describe("rows opened by the sweep", () => {
       ];
       await reconcileActions();
       expect(assessRows().map((r) => [r.params[1], r.params[6]])).toEqual([
-        [ASSESS_GROUP(CLAIM_B), "internal"],
-        [ASSESS_GROUP(CLAIM_B), "internal"],
+        [ASSESS_GROUP(CLAIM_B, "internal"), "internal"],
+        [ASSESS_GROUP(CLAIM_B, "internal"), "internal"],
       ]);
       expect(logged.mock.calls.flat().join(" ")).toContain("carries no label");
     } finally {
@@ -248,7 +252,7 @@ describe("rows opened by the sweep", () => {
       { action: "attempt_proof", claim_id: CLAIM_B, variant: "max", rationale: "a proof" },
     ];
     await reconcileActions();
-    expect(inserts("formalize").map((r) => r.params)).toEqual([[FORMALIZE_GROUP(CLAIM_A), CLAIM_A, 3_000_000, "internal"]]);
+    expect(inserts("formalize").map((r) => r.params)).toEqual([[FORMALIZE_GROUP(CLAIM_A, "internal"), CLAIM_A, 3_000_000, "internal"]]);
     const attempts = inserts("attempt_proof");
     expect(attempts).toHaveLength(2);
     expect(attempts.map((r) => r.params[6])).toEqual(["internal", "internal"]);
@@ -291,8 +295,10 @@ describe("lookout_run rows (docs/allocation.md, Lookouts)", () => {
     expect(due.q).toContain("l.sensitivity_label");
     expect(rows[0]!.params).toEqual([LOOKOUT_GROUP("l-1"), "l-1", 'Lookout run: "Retraction watch"', 50_000, "internal"]);
     expect(rows[0]!.q).toMatch(/WHERE actions.status IN \('done', 'superseded', 'cancelled'\)/);
-    // A closed row opened again takes the label of the work that reopens it.
-    expect(rows[0]!.q).toContain("sensitivity_label = EXCLUDED.sensitivity_label");
+    // A closed row opened again takes the new work's text and target. Its
+    // label is the lookout's and never changes.
+    expect(rows[0]!.q).not.toContain("EXCLUDED.sensitivity_label");
+    expect(rows[0]!.q).toContain("THEN EXCLUDED.label ELSE actions.label");
   });
 
   it("opens nothing when no lookout is due", async () => {

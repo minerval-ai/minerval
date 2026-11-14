@@ -28,6 +28,8 @@ const { state } = vi.hoisted(() => ({
     researcherInputs: [] as Array<Record<string, unknown>>,
     work: [] as Array<Record<string, unknown>>,
     notified: [] as unknown[][],
+    // The tier requestWorkTier finds the deployment can serve at the work's label.
+    fullTier: "strong" as "strong" | "standard",
     budgets: [] as unknown[],
     reviews: [] as Array<Record<string, unknown>>,
     linked: [] as unknown[][],
@@ -75,6 +77,7 @@ vi.mock("../../../src/services/research-run-service.js", async (importOriginal) 
     ...original,
     readResearcherPaused: vi.fn(async () => false),
     modelForTier: (tier: string) => `model-${tier}`,
+    requestWorkTier: () => state.fullTier,
     latestRequestRun: vi.fn(async () => state.prior),
     openResearchRun: vi.fn(async (input: Record<string, unknown>) => {
       state.opened.push(input);
@@ -161,6 +164,7 @@ const request = (bears: string[], sources: string[] = []) => ({
 const node = (id: string, kind = "claim") => ({ id, text: `node ${id.slice(0, 2)}`, domains: ["mathematics"], kind });
 
 beforeEach(() => {
+  state.fullTier = "strong";
   state.covered = null;
   state.request = null;
   state.nodes = [];
@@ -189,6 +193,16 @@ describe("a run taking up a request", () => {
     expect(state.notified).toHaveLength(1);
     expect(state.notified[0]![1]).toContain("Traced to a 2019 survey.");
     expect(state.notified[0]![2]).toEqual({ researchRunId: "run-new" });
+  });
+
+  it("runs on the standard tier where the deployment cannot serve the strong tier at the work's label", async () => {
+    state.fullTier = "standard";
+    state.covered = action("full");
+    state.request = request([NODE]);
+    state.nodes = [node(NODE)];
+    state.report = { answer: "x", request_outcome: "met" };
+    await processNextEngineAction();
+    expect(state.opened[0]).toMatchObject({ modelTier: "standard", effort: "high", model: "model-standard" });
   });
 
   it("names every node a request on several bears on, with no single claim", async () => {

@@ -31,6 +31,7 @@ import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { loadConfig } from "../config.js";
 import { featureOn } from "../features.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { isDeploymentFaultReason } from "../services/deployment-fault.js";
 
 export type LocalQueueName =
@@ -581,13 +582,17 @@ export function startLocalRunner(options: {
   const runSlot = async (index: number) => {
     busy[index] = true;
     try {
-      const stats = await drainLocalQueues({
-        maxMessages: options.maxMessages,
-        stewardModel: options.stewardModel,
-        singletonLanes: index === 0 && Date.now() >= singletonPausedUntil,
-        surfaceBudgetErrors: false,
-        shouldContinue: () => running && governor.mayStart(index, Date.now()),
-      });
+      const stats = await withSystemClearance(
+        "The runner finds waiting work at every label (queued jobs, covered ledger rows, pending claims); each piece then runs at the label of its own row.",
+        () =>
+          drainLocalQueues({
+            maxMessages: options.maxMessages,
+            stewardModel: options.stewardModel,
+            singletonLanes: index === 0 && Date.now() >= singletonPausedUntil,
+            surfaceBudgetErrors: false,
+            shouldContinue: () => running && governor.mayStart(index, Date.now()),
+          })
+      );
       const worked =
         Object.values(stats.processed).some((n) => n > 0) ||
         Object.values(stats.errors).some((n) => n > 0);

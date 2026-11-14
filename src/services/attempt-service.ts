@@ -16,7 +16,8 @@
  * undecided.
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
-import { loadConfig } from "../config.js";
+import { SOLVER_OFF_WITH_MATHEMATICS, loadConfig } from "../config.js";
+import { featureOn } from "../features.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { owlsToMicroUsd } from "./owl.js";
 import type { AttemptOutcome, AttemptSummary } from "./claim-extras-types.js";
@@ -269,7 +270,7 @@ export type OpenAttemptResult =
   | { ok: true; attempt: AttemptRow; costEstMicroUsd: number }
   | {
       ok: false;
-      code: "NOT_PUBLISHED" | "ALREADY_RUNNING" | "LIFETIME_CAP";
+      code: "NOT_PUBLISHED" | "ALREADY_RUNNING" | "LIFETIME_CAP" | "SOLVER_OFF";
       message: string;
     };
 
@@ -331,6 +332,10 @@ export async function openAttempt(input: {
   }
 
   const variant: AttemptVariant = input.action.variant === "max" ? "max" : "standard";
+  // Mathematics off: the solver has no model, and none is defaulted.
+  if (!featureOn("mathematics", config) || !(input.model ?? config.solverModel)) {
+    return { ok: false, code: "SOLVER_OFF", message: SOLVER_OFF_WITH_MATHEMATICS };
+  }
   const model = input.model ?? config.solverModel;
   const costEst =
     Number(input.action.cost_est_micro_usd) > 0
@@ -527,7 +532,7 @@ export async function recordAttemptLeanCheck(
         resource, pin_id, image_digest, checker_version, cost_micro_usd, finished_at, sensitivity_label)
      VALUES ($1, 'attempt', $2, $3, $4, 'math_solver', $5, $6, $7, $8::jsonb, $9::jsonb,
              $10, $11::jsonb, $12, $13, $14, $15, $16, $17)
-     ON CONFLICT (formalization_id, submission_sha256, checker_version, mode)
+     ON CONFLICT (formalization_id, submission_sha256, checker_version, mode, sensitivity_label)
        DO UPDATE SET attempt_id = EXCLUDED.attempt_id, run_id = EXCLUDED.run_id,
                      verdict = EXCLUDED.verdict, checks = EXCLUDED.checks,
                      diagnostics = EXCLUDED.diagnostics, truncated = EXCLUDED.truncated,

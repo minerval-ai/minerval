@@ -29,12 +29,16 @@ const MAY_MENTION_IS_CURRENT: Record<string, string> = {
     "Writes the flag: update_claim_assessment retires the claim's current verdict and inserts the new one.",
   "src/services/argument-service.ts":
     "Writes the flag: a new evaluation retires the current one, and a change of stance retires it too.",
+  "src/services/mirror-apply-service.ts":
+    "Writes the flag: the mirror's applier retires a judgment this deployment recorded at a mirrored node's own label before it writes the public graph's current one, and reads the flag on the rows of a batch.",
   "src/services/quantity-service.ts":
     "Writes the flag: recordEstimate retires the current estimate before inserting the new one.",
   "src/services/question-service.ts":
     "Writes the flag: recordQuestionAssessment retires the current assessment before inserting the new one.",
   "src/services/reconciliation-service.ts":
     "Writes the flag: a change of kind or a split retires current judgments, and undoing it brings them back.",
+  "src/services/left-standing-service.ts":
+    "Writes the flag: a Steward that leaves the judgment it reads standing retires its own label's judgment of the node, and that label's evaluations of other labels' arguments. Its reads go through the *_versions views.",
   "src/services/assessment-service.ts":
     "Reads history: every assessment of a claim, each served with its flag.",
   "src/services/claim-events-service.ts":
@@ -45,6 +49,8 @@ const MAY_MENTION_IS_CURRENT: Record<string, string> = {
     "Reads history: whether a judgment a finding cites by id has since been superseded.",
   "src/services/mirror-manifest.ts":
     "Orders the mirror applier's writes: the judgment that stopped being current is written before the one that became it. Reads no judgment.",
+  "src/services/sql-service.ts":
+    "Names the column of read-only SQL's `assessments` view in the note a result carries, which says what the flag means to a reader of several labels. No query.",
   "src/schemas/claim.ts": "Declares is_current as a field of the history rows the API serves; no query.",
   "src/routes/claims.ts": "Response schemas and the formatter for history rows; its reads of the current verdict use the view.",
 };

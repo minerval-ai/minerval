@@ -5,6 +5,7 @@ import type {
   SourceMapSummary,
   SourceRelationship,
 } from "@/lib/types";
+import { sourceHref } from "@/lib/source-address";
 
 // Source provenance (#286): what the claim's support rests on, as the
 // Steward recorded it. Three pieces, each rendering nothing until the API
@@ -44,7 +45,8 @@ const FIDELITY_CLAUSE: Record<ProvenanceEdge["fidelity"], string> = {
 };
 
 function sourceName(s: { title: string; url: string | null }) {
-  return s.url ? <a href={s.url}>{s.title}</a> : <span>{s.title}</span>;
+  const href = sourceHref(s.url);
+  return href ? <a href={href}>{s.title}</a> : <span>{s.title}</span>;
 }
 
 /** The Steward's account of what the support rests on, when it judged it worth showing. */

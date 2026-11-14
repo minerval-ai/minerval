@@ -21,11 +21,16 @@
  * message written for the agent; the tool executors turn that into a
  * structured refusal (§20).
  */
+import { layered, oneForKeySql, oneReadingForInstanceSql, oneSourceForAddressSql, refuseWhereHeldBelow } from "./layer-service.js";
+import { overlaid } from "./overlay-service.js";
+import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { runAtSourceLabel } from "./label-service.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
 import { getOrCreateSource, recordSourceKind } from "./source-service.js";
+import { noKeptSource, sourceAddressProblem } from "./reading-address.js";
 import { refreshSourceFactsOnce } from "./source-facts-service.js";
 import { segmentSourceOnce } from "./source-segment-service.js";
 import {
@@ -317,7 +322,7 @@ async function findSource(ref: { sourceId?: string; url?: string }): Promise<Sou
   }
   if (ref.url) {
     const [row] = await rawQuery<SourceRow>(
-      `SELECT id, url, title, source_type, raw_content FROM sources WHERE url = $1`,
+      `SELECT id, url, title, source_type, raw_content FROM sources WHERE url = $1${oneSourceForAddressSql()}`,
       [ref.url]
     );
     return row ?? null;
@@ -338,10 +343,14 @@ export async function fetchAndStoreSource(
   fetch: (url: string) => Promise<string> = (u) => fetchPublicUrl(u)
 ): Promise<string> {
   const raw = sanitizeStoredText(await fetch(source.url));
-  await rawQuery(
-    `UPDATE sources SET raw_content = $2, content_hash = $3, retrieved_at = now()
-      WHERE id = $1 AND (raw_content IS NULL OR raw_content = '')`,
-    [source.id, raw, sourceContentHash(raw)]
+  // The document's text is the same whoever fetches it, so it is stored at
+  // the document's label, whichever run asked for it (src/labels.ts).
+  await runAtSourceLabel(source.id, () =>
+    rawQuery(
+      `UPDATE sources SET raw_content = $2, content_hash = $3, retrieved_at = now()
+        WHERE id = $1 AND (raw_content IS NULL OR raw_content = '')`,
+      [source.id, raw, sourceContentHash(raw)]
+    )
   );
   await refreshSourceFactsOnce(source.id, { newText: true });
   await segmentSourceOnce(source.id);
@@ -365,6 +374,12 @@ export async function readSourceContent(input: {
 }): Promise<SourceReadResult> {
   let source = await findSource(input);
   if (!source && input.url) {
+    // A reading address no source holds is not a document to be created
+    // and fetched: a reading exists only as it was kept
+    // (services/reading-address.ts).
+    // The same holds for an analysis or a file kept from a file set.
+    const notKept = noKeptSource(input.url);
+    if (notKept) throw new SourceMapError(notKept);
     const created = await getOrCreateSource({ url: input.url });
     source = {
       id: created.id,
@@ -538,12 +553,17 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
   // A first reading takes this run's label, whatever the source's or the
   // claim's: a reading is the reader's. A re-read replaces the reading in
   // place and leaves the label it has (src/labels.ts).
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  // A reading a label this work reads already holds stays that label's.
+  // Where this work reads the passage differently, its reading is its own
+  // label's row for the passage, which its readers go by and which a read
+  // shows beside the one below (layer-service.ts).
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_instance_readings
        (instance_id, support, deployment, note, quote_check, worth_reading,
         worth_reading_reason, source_read, model, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     ON CONFLICT (instance_id) DO UPDATE SET
+     ON CONFLICT (instance_id, sensitivity_label) DO UPDATE SET
        support = EXCLUDED.support,
        deployment = EXCLUDED.deployment,
        note = EXCLUDED.note,
@@ -554,6 +574,7 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
        model = EXCLUDED.model,
        created_by = EXCLUDED.created_by,
        updated_at = now()
+     ${sameLabelOnly("claim_instance_readings")}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       instanceId,
@@ -568,6 +589,8 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
       input.createdBy,
       currentLabel(),
     ]
+  ),
+    "a reading of this passage"
   );
   // The current reading is replaced in place; the log keeps every one, so a
   // source's history shows a reading that changed (#507). Each log row is
@@ -639,9 +662,9 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
     }
   } else if (input.toSourceUrl) {
     const url = requiredText(input.toSourceUrl, "to_source_url", 2000);
-    if (!/^https?:\/\//i.test(url)) {
-      throw new SourceMapError("to_source_url must be an http(s) URL.");
-    }
+    // An http(s) URL, or the address of a reading kept from a connection.
+    const addressProblem = await sourceAddressProblem(url, "to_source_url must be an http(s) URL.");
+    if (addressProblem) throw new SourceMapError(addressProblem);
     const created = await getOrCreateSource({
       url,
       title: optionalText(input.toSourceTitle, "to_source_title", 500) ?? undefined,
@@ -665,12 +688,16 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
     [input.claimId, toSourceId]
   );
 
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  // What a label this work reads already holds is the row this work goes
+  // by, and not this work's to revise (layer-service.ts).
+  await refuseWhereHeldBelow(rawQuery, "claim_provenance_edges", { from_instance_id: fromInstanceId, to_source_id: toSourceId, relation_type: relationType }, "this provenance edge");
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_provenance_edges
        (from_instance_id, to_source_id, to_instance_id, relation_type, fidelity,
         evidence, reasoning, confidence, target_read, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-     ON CONFLICT (from_instance_id, to_source_id, relation_type) DO UPDATE SET
+     ON CONFLICT (from_instance_id, to_source_id, relation_type, sensitivity_label) DO UPDATE SET
        to_instance_id = EXCLUDED.to_instance_id,
        fidelity = EXCLUDED.fidelity,
        evidence = EXCLUDED.evidence,
@@ -679,6 +706,7 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
        target_read = EXCLUDED.target_read,
        created_by = EXCLUDED.created_by,
        created_at = now()
+     ${sameLabelOnly("claim_provenance_edges")}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       fromInstanceId,
@@ -695,6 +723,8 @@ export async function recordProvenanceEdge(input: RecordProvenanceEdgeInput): Pr
       // joins carry (src/labels.ts). An edge already there keeps its label.
       currentLabel(),
     ]
+  ),
+    "this provenance edge"
   );
   const row = rows[0]!;
   const kind = toSourceKind
@@ -748,17 +778,24 @@ export async function recordSourceRelationship(input: RecordSourceRelationshipIn
   if (found.length !== 2) {
     throw new SourceMapError("Both sources must already exist in the graph; take their ids from provenance_get_map.");
   }
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  // What a label this work reads already holds is the row this work goes
+  // by, and not this work's to revise (layer-service.ts).
+  await refuseWhereHeldBelow(rawQuery, "source_relationships", { parent_source_id: parent, child_source_id: child, relation_type: relationType }, "this relationship between the two sources");
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO source_relationships
        (parent_source_id, child_source_id, relation_type, reasoning, confidence, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (parent_source_id, child_source_id, relation_type) DO UPDATE SET
+     ON CONFLICT (parent_source_id, child_source_id, relation_type, sensitivity_label) DO UPDATE SET
        reasoning = EXCLUDED.reasoning,
        confidence = EXCLUDED.confidence,
        created_by = EXCLUDED.created_by,
        created_at = now()
+     ${sameLabelOnly("source_relationships")}
      RETURNING id, (xmax = 0) AS inserted`,
     [parent, child, relationType, reasoning, confidence, input.createdBy, currentLabel()]
+  ),
+    "this relationship between the two sources"
   );
   const row = rows[0]!;
   return { id: row.id, parent_source_id: parent, child_source_id: child, replaced: !row.inserted };
@@ -809,16 +846,23 @@ export async function recordProvenanceRoot(input: RecordProvenanceRootInput): Pr
         "Record the edge that reaches it first (provenance_record_edge), then mark it."
     );
   }
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  // What a label this work reads already holds is the row this work goes
+  // by, and not this work's to revise (layer-service.ts).
+  await refuseWhereHeldBelow(rawQuery, "claim_provenance_roots", { claim_id: claimId, source_id: sourceId }, "this node's record of where the source stands");
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_provenance_roots (claim_id, source_id, status, basis, created_by, sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (claim_id, source_id) DO UPDATE SET
+     ON CONFLICT (claim_id, source_id, sensitivity_label) DO UPDATE SET
        status = EXCLUDED.status,
        basis = EXCLUDED.basis,
        created_by = EXCLUDED.created_by,
        updated_at = now()
+     ${sameLabelOnly("claim_provenance_roots")}
      RETURNING id, (xmax = 0) AS inserted`,
     [claimId, sourceId, status, basis, input.createdBy, currentLabel()]
+  ),
+    "this node's record of where the source stands"
   );
   const row = rows[0]!;
   return { id: row.id, source_id: sourceId, status, has_upstream: place.has_upstream, replaced: !row.inserted };
@@ -866,7 +910,7 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
          WHERE ci.claim_id = $1 AND ci.detached_at IS NULL) AS sources_considered,
        (SELECT COUNT(*) FROM claim_instance_readings r
           JOIN claim_instances ci ON ci.id = r.instance_id
-         WHERE ci.claim_id = $1 AND ci.detached_at IS NULL AND r.source_read) AS sources_read,
+         WHERE ci.claim_id = $1 AND ci.detached_at IS NULL AND r.source_read${oneReadingForInstanceSql("r")}) AS sources_read,
        (SELECT COUNT(*) FROM claim_provenance_edges e
           JOIN claim_instances ci ON ci.id = e.from_instance_id
          WHERE ci.claim_id = $1 AND ci.detached_at IS NULL) AS edges_recorded`,
@@ -877,12 +921,16 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
   const edgesRecorded = Number(counts?.edges_recorded ?? 0);
   // A claim has one map, refreshed in place: the first run to write it sets
   // its label and a later rewrite leaves that as it was (src/labels.ts).
-  const rows = await rawQuery<{ id: string; inserted: boolean }>(
+  // What a label this work reads already holds is the row this work goes
+  // by, and not this work's to revise (layer-service.ts).
+  await refuseWhereHeldBelow(rawQuery, "claim_source_maps", { claim_id: claimId }, "this node's source map");
+  const rows = writtenAtOwnLabel(
+    await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_source_maps
        (claim_id, summary, material, sources_considered, sources_read, edges_recorded, model, mapped_by,
         sensitivity_label)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     ON CONFLICT (claim_id) DO UPDATE SET
+     ON CONFLICT (claim_id, sensitivity_label) DO UPDATE SET
        summary = EXCLUDED.summary,
        material = EXCLUDED.material,
        sources_considered = EXCLUDED.sources_considered,
@@ -891,6 +939,7 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
        model = EXCLUDED.model,
        mapped_by = EXCLUDED.mapped_by,
        mapped_at = now()
+     ${sameLabelOnly("claim_source_maps")}
      RETURNING id, (xmax = 0) AS inserted`,
     [
       claimId,
@@ -903,6 +952,8 @@ export async function writeSourceMap(input: WriteSourceMapInput): Promise<{
       input.mappedBy,
       currentLabel(),
     ]
+  ),
+    "this node's source map"
   );
   const row = rows[0]!;
   return {
@@ -937,6 +988,10 @@ export interface InstanceReadingView {
   worth_reading_reason: string | null;
   source_read: boolean;
   read_at: string;
+  /** On a graph with more than one label: the label this reading is recorded at. */
+  label?: string;
+  /** Where a label below that one also holds a reading of the passage: each, nearest first. */
+  below?: { label: string; support: string; note: string | null; read_at: string }[];
 }
 
 export interface ProvenanceEdgeView {
@@ -982,7 +1037,7 @@ export async function getSourceMapSummary(claimId: string): Promise<SourceMapSum
     mapped_at: Date;
   }>(
     `SELECT summary, material, sources_considered, sources_read, edges_recorded, mapped_by, mapped_at
-       FROM claim_source_maps WHERE claim_id = $1`,
+       FROM claim_source_maps m WHERE claim_id = $1${oneForKeySql("claim_source_maps", "m", ["claim_id"])}`,
     [claimId]
   );
   if (!row) return null;
@@ -1019,17 +1074,30 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
     worth_reading_reason: string | null;
     source_read: boolean;
     updated_at: Date;
+    label?: string;
   }>(
+    // Every layer's reading of each passage, nearest first: the first is
+    // the one the reader goes by, and the rest are what the layers below
+    // hold. On a graph with one layer a passage has one.
     `SELECT r.instance_id, r.support, r.deployment, r.note, r.quote_check,
-            r.worth_reading, r.worth_reading_reason, r.source_read, r.updated_at
+            r.worth_reading, r.worth_reading_reason, r.source_read, r.updated_at${overlaid() ? ", r.sensitivity_label AS label" : ""}
        FROM claim_instance_readings r
        JOIN claim_instances ci ON ci.id = r.instance_id
-      WHERE ci.claim_id = $1 AND ci.detached_at IS NULL`,
+      WHERE ci.claim_id = $1 AND ci.detached_at IS NULL${layered() ? " ORDER BY minerval_layer_depth(r.sensitivity_label, 'local') DESC, r.sensitivity_label" : ""}`,
     [claimId]
   );
   const readings: Record<string, InstanceReadingView> = {};
   for (const r of readingRows) {
+    const nearer = readings[r.instance_id];
+    if (nearer) {
+      nearer.below = [
+        ...(nearer.below ?? []),
+        { label: r.label ?? "public", support: r.support, note: r.note, read_at: new Date(r.updated_at).toISOString() },
+      ];
+      continue;
+    }
     readings[r.instance_id] = {
+      ...(r.label ? { label: r.label } : {}),
       support: r.support,
       deployment: r.deployment,
       note: r.note,

@@ -20,7 +20,7 @@
  * fails leaves the fact null, and the page says it was not found.
  */
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { runAtSourceLabel } from "./label-service.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { checkDoi, extractDois, type DoiCheck } from "./source-watch-service.js";
 import { decodeEntities, looksLikeHtml } from "./source-map-service.js";
@@ -180,7 +180,9 @@ export function kindFromUrl(url: string | null | undefined): SourceKind | null {
 /** The Internet Archive's closest snapshot of a URL, or null. */
 export async function findArchivedCopy(
   url: string,
-  fetch: (url: string) => Promise<string> = (u) => fetchPublicUrl(u)
+  // The Internet Archive's lookup, asked about a recorded source's address.
+  fetch: (url: string) => Promise<string> = (u) =>
+    fetchPublicUrl(u, { notFromTheRun: "the Internet Archive's lookup, for a recorded source's address" })
 ): Promise<string | null> {
   try {
     const body = await fetch(`https://archive.org/wayback/available?url=${encodeURIComponent(url)}`);
@@ -216,28 +218,35 @@ export interface RecordSourceEventInput {
  * the same whoever asks, so it holds no judgment of the run that asked, and
  * one recorded at a reader's label would keep the same notice from being
  * recorded for the document's other readers (src/labels.ts).
+ *
+ * There is no label to fall back on. A source that does not exist, or that
+ * the work in progress may not read (db/clearance.ts), has none to give,
+ * and the insert is refused for want of one: a notice is never recorded as
+ * public against a document that is not.
  */
 export async function recordSourceEvent(input: RecordSourceEventInput): Promise<{ recorded: boolean }> {
   if (!(SOURCE_EVENT_KINDS as readonly string[]).includes(input.kind)) {
     throw new Error(`Unknown source event kind "${input.kind}"`);
   }
   const occurred = input.occurredAt ? new Date(input.occurredAt) : null;
-  const rows = await rawQuery<{ id: string }>(
-    `INSERT INTO source_events (source_id, kind, occurred_at, notice_url, note, detected_by, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, $6, COALESCE((SELECT sensitivity_label FROM sources WHERE id = $1), $7))
-     ON CONFLICT (source_id, kind, notice_url) DO NOTHING
-     RETURNING id`,
-    [
-      input.sourceId,
-      input.kind,
-      occurred && !Number.isNaN(occurred.getTime()) ? occurred : null,
-      (input.noticeUrl ?? "").trim(),
-      input.note ?? null,
-      input.detectedBy,
-      // Never written: a source that does not exist has no label to give,
-      // and the insert then fails on the source it names, as it always did.
-      PUBLIC_LABEL,
-    ]
+  // Written at the source's label, and so on a connection at that label:
+  // the database lets a connection add a row only at its own
+  // (db/clearance.ts), and the notice is the document's, not the finder's.
+  const rows = await runAtSourceLabel(input.sourceId, () =>
+    rawQuery<{ id: string }>(
+      `INSERT INTO source_events (source_id, kind, occurred_at, notice_url, note, detected_by, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, (SELECT sensitivity_label FROM sources WHERE id = $1))
+       ON CONFLICT (source_id, kind, notice_url) DO NOTHING
+       RETURNING id`,
+      [
+        input.sourceId,
+        input.kind,
+        occurred && !Number.isNaN(occurred.getTime()) ? occurred : null,
+        (input.noticeUrl ?? "").trim(),
+        input.note ?? null,
+        input.detectedBy,
+      ]
+    )
   );
   return { recorded: rows.length > 0 };
 }
@@ -293,7 +302,10 @@ export async function refreshSourceFacts(
   // wherever it says something. A failed fetch leaves the facts as they are.
   const elsewhere = factsPageUrl(row.url);
   if (elsewhere && (page.authors.length === 0 || !page.published_date || !page.publisher)) {
-    const other = await (deps.fetch ?? ((u: string) => fetchPublicUrl(u)))(elsewhere)
+    const other = await (
+      deps.fetch ??
+      ((u: string) => fetchPublicUrl(u, { notFromTheRun: "the page that states a recorded source's facts" }))
+    )(elsewhere)
       .then(parsePageFacts)
       .catch(() => null);
     if (other) {
@@ -341,7 +353,11 @@ export async function refreshSourceFacts(
   const placeholderTitle = !row.title || row.title === row.url;
   if (placeholderTitle && next.title) filled.push("title");
 
-  await rawQuery(
+  // The facts are looked up about the document and are the same whoever
+  // asks, so they are written at the document's label, whichever run's
+  // fetch found them (src/labels.ts): no run writes into a row at a label
+  // that is not the write's own.
+  await runAtSourceLabel(sourceId, () => rawQuery(
     `UPDATE sources SET
        authors = CASE WHEN authors IS NULL OR cardinality(authors) = 0 THEN COALESCE($2::text[], authors) ELSE authors END,
        publisher = COALESCE(publisher, $3),
@@ -363,7 +379,7 @@ export async function refreshSourceFacts(
       placeholderTitle,
       next.title,
     ]
-  );
+  ));
 
   let eventsRecorded = 0;
   const fresh: SourceNotice[] = [];

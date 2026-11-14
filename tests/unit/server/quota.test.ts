@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   checkSpend: vi.fn(),
   getEntitlement: vi.fn(),
   chargeOwls: vi.fn(async () => ({ charged: true, entryId: "entry-1" })),
+  ensureFreeGrants: vi.fn(async () => {}),
   refundOwls: vi.fn(async () => {}),
   settleMeteredCharge: vi.fn(async () => ({ settledMicroUsd: 0 })),
 }));
@@ -40,6 +41,7 @@ vi.mock("../../../src/services/billing-service.js", async (importOriginal) => {
 });
 vi.mock("../../../src/services/owl-ledger-service.js", () => ({
   chargeOwls: mocks.chargeOwls,
+  ensureFreeGrants: mocks.ensureFreeGrants,
   refundOwls: mocks.refundOwls,
   settleMeteredCharge: mocks.settleMeteredCharge,
 }));

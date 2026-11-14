@@ -7,6 +7,7 @@ import {
 } from "@aws-sdk/client-sqs";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { withProgressListener } from "../llm/usage-context.js";
 
 /**
@@ -143,7 +144,11 @@ export function startPoller<T>(options: {
 
     const work = Promise.resolve()
       .then(() =>
-        withProgressListener(progress, () => options.handler(parsed, { signal: controller.signal, progress }))
+        withSystemClearance(
+          "A queue handler loads the row its message names, at whatever label, and then runs the work at that row's label.",
+          () =>
+            withProgressListener(progress, () => options.handler(parsed, { signal: controller.signal, progress }))
+        )
       )
       .then(
       () => ({ ok: true as const }),

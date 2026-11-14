@@ -16,9 +16,12 @@
  * Cards are read in one query however many are asked for, so a page showing
  * many claims makes one request (GET /claims/cards).
  */
+import { oneDefinitionForQuantitySql } from "./layer-service.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { resolveClaimId, type ResolvedFrom } from "./claim-alias-service.js";
+import { contestationSql } from "./overlay-service.js";
 
 /**
  * The most ids one batch read takes: the list route's largest page. A
@@ -136,6 +139,8 @@ export async function getClaimCards(ids: string[]): Promise<Map<string, ClaimCar
       cards.get(resolution.id) ?? (await readCards([resolution.id])).get(resolution.id);
     if (survivor) cards.set(id, { ...survivor, resolved_from: resolution.resolvedFrom });
   }
+  // Where more than one judgment of a node is in force for the reader, its card says how many.
+  await markSeveralInForce([...cards.values()], (card) => card.id);
   return cards;
 }
 
@@ -149,7 +154,7 @@ export async function getClaimCards(ids: string[]): Promise<Map<string, ClaimCar
 async function readCards(ids: string[]): Promise<Map<string, ClaimCard>> {
   if (ids.length === 0) return new Map();
   const rows = await rawQuery<CardRow>(
-    `SELECT c.id, c.kind, c.text, c.state, c.contestation, c.updated_at,
+    `SELECT c.id, c.kind, c.text, c.state, ${contestationSql("c")} AS contestation, c.updated_at,
             CASE WHEN c.kind = 'claim' THEN a.status END AS assessment_status,
             CASE c.kind WHEN 'claim' THEN a.confidence
                         WHEN 'question' THEN qa.confidence END AS assessment_confidence,
@@ -163,7 +168,7 @@ async function readCards(ids: string[]): Promise<Map<string, ClaimCard>> {
        LEFT JOIN assessments_in_force a ON a.claim_id = c.id
        LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
        LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
-       LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+       LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
       WHERE c.id = ANY($1::uuid[])`,
     [ids]
   );

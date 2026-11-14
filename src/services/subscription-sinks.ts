@@ -7,14 +7,14 @@
  * heartbeat decide when it next runs.
  */
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
 import type { EventRow } from "./event-service.js";
 import type { SubscriptionRow } from "./subscription-service.js";
 
 export async function deliverToAgentSink(s: SubscriptionRow, e: EventRow | null, text: string): Promise<boolean> {
-  // Inboxes and queued inputs are read at their own labels; only public
-  // events reach them.
-  if (e && e.sensitivity_label !== PUBLIC_LABEL) return false;
+  // Inboxes and queued inputs are read at their own labels. The router
+  // calls this at the subscriber's label, with an event that label reads
+  // (subscription-router.ts), so the message and the queued input below are
+  // written there.
   if (s.subscriber_kind === "node_inbox") {
     const { postMessage } = await import("./inbox-service.js");
     await postMessage({

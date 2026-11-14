@@ -22,6 +22,7 @@
  */
 import type { FastifyReply, FastifyRequest } from "fastify";
 import {
+  anyPermissionRefusal,
   holdsPermission,
   membersOnly,
   permissionRefusal,
@@ -46,19 +47,65 @@ export function refuse(
 }
 
 const permissionOfGuard = new WeakMap<object, PermissionName>();
+const anyOfGuard = new WeakMap<object, readonly PermissionName[]>();
 
-export function requirePermission(permission: PermissionName): Guard {
+/**
+ * `because` is one sentence added to the refusal, for a route where which
+ * permission it asks for needs saying why (registering a directory as a
+ * file set, routes/file-sets.ts).
+ */
+export function requirePermission(permission: PermissionName, because?: string): Guard {
   const guard: Guard = async (request, reply) => {
     if (!membersOnly()) return;
     if (holdsPermission(standingOf(request.auth), permission)) return;
     return refuse(reply, 403, {
-      error: permissionRefusal(permission),
+      error: because ? `${permissionRefusal(permission)} ${because}` : permissionRefusal(permission),
       code: "PERMISSION_REQUIRED",
       permission,
     });
   };
   permissionOfGuard.set(guard, permission);
   return guard;
+}
+
+/**
+ * A guard that any one of several permissions passes: for a read that more
+ * than one kind of holder has a reason to make. The file sets are the case
+ * (routes/file-sets.ts): a person who directs adds a set by upload, and an
+ * administrator registers a directory as one, so either may read the sets
+ * and watch one being hashed. Which sets either is shown is still the
+ * database's, by their clearance.
+ */
+export function requireAnyPermission(permissions: readonly PermissionName[], because?: string): Guard {
+  const guard: Guard = async (request, reply) => {
+    if (!membersOnly()) return;
+    const standing = standingOf(request.auth);
+    if (permissions.some((permission) => holdsPermission(standing, permission))) return;
+    const said = anyPermissionRefusal(permissions);
+    return refuse(reply, 403, {
+      error: because ? `${said} ${because}` : said,
+      code: "PERMISSION_REQUIRED",
+      permission: permissions[0]!,
+      any_of: [...permissions],
+    });
+  };
+  anyOfGuard.set(guard, [...permissions]);
+  return guard;
+}
+
+/**
+ * The groups of permissions of which a route's preHandlers ask for any one,
+ * in the order they are listed. Empty for a route with no such guard.
+ */
+export function anyPermissionsRequiredBy(preHandler: unknown): PermissionName[][] {
+  const hooks = preHandler === undefined || preHandler === null ? [] : Array.isArray(preHandler) ? preHandler : [preHandler];
+  const found: PermissionName[][] = [];
+  for (const hook of hooks) {
+    if (typeof hook !== "function") continue;
+    const group = anyOfGuard.get(hook);
+    if (group) found.push([...group]);
+  }
+  return found;
 }
 
 /**

@@ -46,21 +46,23 @@ beforeEach(() => {
 describe("GET /runs/:id visibility gate", () => {
   it("reads as the public for an anonymous caller", async () => {
     await (await app()).inject({ url: `/runs/${RUN}?include_private=true` });
-    expect(mocks.getRunSummary).toHaveBeenCalledWith(RUN, { isService: false });
+    expect(mocks.getRunSummary).toHaveBeenCalledWith(RUN, { isService: false, memberReads: null, rawSourceLabels: null });
   });
 
   it("reads as the public for a service key that does not ask for private runs", async () => {
     mocks.auth = { isService: true, isSession: false };
     await (await app()).inject({ url: `/runs/${RUN}` });
-    expect(mocks.getRunSummary).toHaveBeenCalledWith(RUN, { isService: false });
+    expect(mocks.getRunSummary).toHaveBeenCalledWith(RUN, { isService: false, memberReads: null, rawSourceLabels: null });
   });
 
   it("reads private runs only for a direct service caller that asks", async () => {
     mocks.auth = { isService: true, isSession: false };
     await (await app()).inject({ url: `/runs/${RUN}?include_private=true` });
-    expect(mocks.getRunSummary).toHaveBeenCalledWith(RUN, { isService: true });
+    // On the public graph no reader is a member, so a run with private reasons is served to the service alone.
+    expect(mocks.getRunSummary).toHaveBeenCalledWith(RUN, { isService: true, memberReads: null, rawSourceLabels: null });
     await (await app()).inject({ url: `/runs/${RUN}/steps/0?include_private=true` });
-    expect(mocks.getRunStep).toHaveBeenCalledWith(RUN, 0, { isService: true });
+    // On the public graph nothing holds a reader back from source text.
+    expect(mocks.getRunStep).toHaveBeenCalledWith(RUN, 0, { isService: true, memberReads: null, rawSourceLabels: null });
   });
 
   it("does not open private runs to a signed-in session, even with the service key", async () => {

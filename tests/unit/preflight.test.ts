@@ -21,6 +21,7 @@ import {
   type PreflightFacts,
   type PreflightReport,
 } from "../../src/preflight.js";
+import { noDeploymentFacts } from "../../src/preflight-deployment.js";
 
 const SRC = resolve(__dirname, "..", "..", "src");
 
@@ -74,6 +75,7 @@ function facts(over: Partial<PreflightFacts> = {}): PreflightFacts {
     endpointKeysMissing: [],
     database: CURRENT,
     runLog: { ok: true, steps: 2 },
+    deployment: noDeploymentFacts(),
     ...over,
   };
 }
@@ -815,6 +817,8 @@ describe("the report as a whole", () => {
       "run_log",
       "provider_labels",
       "reports_stay_inside",
+      "model_prices",
+      "sandbox_confinement",
     ]);
     expect(report.agent_work).toBe("refused");
   });

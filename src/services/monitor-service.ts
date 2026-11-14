@@ -24,6 +24,8 @@
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { importanceSql } from "./overlay-service.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
 import {
   STEWARD_ERROR_REASON_LABELS,
   stewardErrorReasonOf,
@@ -365,6 +367,9 @@ export interface PerformedSettlingCandidate {
   sources: number;
   lastAcceptedChallengeAt: string | null;
   inconclusiveRequiresChildren: number;
+  /** Present only where more than one judgment of the claim is in force for the asker: the candidate is judged by the most recently made (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
 }
 
 export interface PerformedSettlingReport {
@@ -372,6 +377,18 @@ export interface PerformedSettlingReport {
   description: string;
   thresholds: Pick<MonitorThresholds, "settledConfidence" | "settledStatuses" | "recentChallengeDays" | "minDisagreeingSources" | "limit">;
   candidates: PerformedSettlingCandidate[];
+}
+
+/**
+ * A detector's statement as the sweep at a label reads it: where a label it
+ * reads holds its own importance for a node (overlay-service.ts), the
+ * candidates are read and ordered by that. On a graph with one label it is
+ * the statement in docs/monitors.md, word for word.
+ */
+function atThisLabel(statement: string): string {
+  // The node's importance is read once, where the statement reads it from
+  // `claims`; the rest of the statement reads that column by name.
+  return statement.replace("c.importance, a.status", `${importanceSql("c")} AS importance, a.status`);
 }
 
 /**
@@ -388,10 +405,10 @@ export async function performedSettling(t: MonitorThresholds = defaultThresholds
     id: string; text: string; importance: number; status: string; confidence: number;
     claim_credence: number | null; assessed_at: Date; affirms: number; denies: number; sources: number;
     last_accepted_challenge_at: Date | null; inconclusive_requires_children: number;
-  }>(MONITOR_SQL.performed_settling, [
+  }>(atThisLabel(MONITOR_SQL.performed_settling), [
     [...t.settledStatuses], t.settledConfidence, t.recentChallengeDays, t.minDisagreeingSources, t.limit,
   ]);
-  return {
+  const report: PerformedSettlingReport = {
     signal: "performed_settling",
     description:
       "Claims whose current assessment reads as settled while the record shows live disagreement. " +
@@ -425,6 +442,8 @@ export async function performedSettling(t: MonitorThresholds = defaultThresholds
       };
     }),
   };
+  await markSeveralInForce(report.candidates, (c) => c.claimId);
+  return report;
 }
 
 export interface EmptyChairCandidate {
@@ -440,6 +459,9 @@ export interface EmptyChairCandidate {
   instanceStance: string | null;
   arguments: number;
   argumentStance: string | null;
+  /** Present only where more than one judgment of the claim is in force for the asker: the candidate is judged by the most recently made. */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
 }
 
 export interface EmptyChairsReport {
@@ -462,8 +484,8 @@ export async function emptyChairs(t: MonitorThresholds = defaultThresholds()): P
     id: string; text: string; importance: number; status: string; confidence: number;
     claim_credence: number | null; assessed_at: Date; instances: number; instance_stance: string | null;
     arguments: number; argument_stance: string | null;
-  }>(MONITOR_SQL.empty_chairs, [t.emptyChairMinInstances, t.limit]);
-  return {
+  }>(atThisLabel(MONITOR_SQL.empty_chairs), [t.emptyChairMinInstances, t.limit]);
+  const report: EmptyChairsReport = {
     signal: "empty_chairs",
     description:
       "Inconclusive claims whose instances or named arguments are all on one side. " +
@@ -489,6 +511,8 @@ export async function emptyChairs(t: MonitorThresholds = defaultThresholds()): P
       };
     }),
   };
+  await markSeveralInForce(report.candidates, (c) => c.claimId);
+  return report;
 }
 
 export interface OverturnRateReport extends OverturnReport {

@@ -13,7 +13,7 @@
  */
 import type { FastifyInstance, FastifySchema } from "fastify";
 import type { PermissionName } from "../../permissions.js";
-import { permissionsRequiredBy } from "../require-permission.js";
+import { anyPermissionsRequiredBy, permissionsRequiredBy } from "../require-permission.js";
 
 export interface CatalogRoute {
   method: string;
@@ -26,6 +26,11 @@ export interface CatalogRoute {
    * binding nowhere on the public graph.
    */
   permissions: PermissionName[];
+  /**
+   * Groups of permissions of which the route asks for any one
+   * (requireAnyPermission). Empty for nearly every route.
+   */
+  anyPermissions?: PermissionName[][];
 }
 
 /** `"GET /claims/:claim_id"`: how the parity table names a route. */
@@ -50,6 +55,7 @@ export async function registerRouteCatalog(app: FastifyInstance): Promise<void> 
         url: normalizeRouteUrl(route.url),
         schema: route.schema,
         permissions: permissionsRequiredBy(route.preHandler),
+        anyPermissions: anyPermissionsRequiredBy(route.preHandler),
       });
     }
   });

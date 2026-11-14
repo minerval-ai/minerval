@@ -303,14 +303,33 @@ describe("partitions and sweeps (#330)", () => {
     expect(open.length).toBeGreaterThan(0);
     expect(open.length % 2).toBe(0);
 
-    // Each row is priced by its partition's assessed nodes (#756).
-    const partitions = await listPartitions(3);
-    const priced = await rawQuery<{ target_ref: string; variant: string; cost: string }>(
-      `SELECT target_ref, variant, cost_est_micro_usd::text AS cost
+    // Each row is priced by its partition's assessed nodes (#756), and the
+    // partition is the one the row was opened for: listed with the tag
+    // threshold the deployment is set to, and as the row's own label reads
+    // the graph. Where an earlier file has left a second label and judged
+    // nodes at it, each label has its own rows, priced by what that label
+    // reads (reconcileConsistencySweeps). This used to list the partitions
+    // once, at a threshold of 3 and seeing every label, and compare every
+    // row with that list: right only while one label existed and no
+    // partition held more nodes than the price's floor, so it passed alone
+    // and failed after any file that left judged nodes at another label.
+    const { loadConfig } = await import("../../src/config.js");
+    const { runAtLabel } = await import("../../src/llm/usage-context.js");
+    const priced = await rawQuery<{ target_ref: string; variant: string; cost: string; label: string }>(
+      `SELECT target_ref, variant, cost_est_micro_usd::text AS cost, sensitivity_label AS label
          FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
     );
+    const partitionsAt = new Map<string, Awaited<ReturnType<typeof listPartitions>>>();
     for (const row of priced) {
-      const p = partitions.find((x) => (x.tag_id ?? "residual") === row.target_ref)!;
+      if (!partitionsAt.has(row.label)) {
+        partitionsAt.set(
+          row.label,
+          await runAtLabel(row.label, "a test's reading of one label's partitions", () =>
+            listPartitions(loadConfig().consistencyMinTagClaims)
+          )
+        );
+      }
+      const p = partitionsAt.get(row.label)!.find((x) => (x.tag_id ?? "residual") === row.target_ref)!;
       expect(p).toBeDefined();
       expect(Number(row.cost)).toBe(
         (await priceConsistencySweep(row.variant as "standard" | "strong", p.assessed)).microUsd
@@ -327,9 +346,15 @@ describe("partitions and sweeps (#330)", () => {
       [grantId]
     );
     // One variant bought per partition: at the default estimates and
-    // expected gain, the standard one for partitions this small.
-    expect(funded[0]!.n).toBe(open.length / 2);
-    expect(funded[0]!.groups).toBe(open.length / 2);
+    // expected gain, the standard one for partitions this small. The
+    // General mandate here is at `public` and pays for the sweeps at
+    // `public`: where an earlier file left a second label with rows of its
+    // own, those are its own General mandate's to pay for, and it has none
+    // (tests/db/word-from-below.test.ts).
+    const atPublic = priced.filter((r) => r.label === "public").length;
+    expect(atPublic).toBeGreaterThan(0);
+    expect(funded[0]!.n).toBe(atPublic / 2);
+    expect(funded[0]!.groups).toBe(atPublic / 2);
     expect(funded[0]!.variants).toEqual(["standard"]);
   });
 
@@ -351,8 +376,9 @@ describe("partitions and sweeps (#330)", () => {
     resetAllocationPolicyCache();
 
     await reconcileActions();
+    // The partitions at `public`, which this General mandate pays for.
     const groups = await rawQuery<{ exclusion_group: string }>(
-      `SELECT DISTINCT exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open'`
+      `SELECT DISTINCT exclusion_group FROM actions WHERE kind = 'consistency_sweep' AND status = 'open' AND sensitivity_label = 'public'`
     );
     expect(groups.length).toBeGreaterThan(0);
     // An open row whose stored price is stale takes the partition's price again.

@@ -118,6 +118,10 @@ export async function buildHandoff(
   if (c.contribution_type === "claim_prize") {
     return { error: "A prize claim's admission brings the Steward; nothing to hand over." };
   }
+  const [published] = await rawQuery(`SELECT 1 FROM published_pages WHERE contribution_id = $1`, [c.id]);
+  if (published) {
+    return { error: "A published page reaches the node's Steward when its submission is admitted; nothing to hand over." };
+  }
   if (c.contribution_type === STATED_VIEW_CONTRIBUTION_TYPE) {
     return {
       error:

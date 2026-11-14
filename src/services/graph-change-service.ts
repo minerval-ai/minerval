@@ -336,6 +336,9 @@ async function listEventChanges(
      ev AS (
        SELECT al.id, al.created_at AS at, 'work_commissioned'::text AS kind, al.claim_id,
               concat((al.amount_micro_usd / 1e6)::float8, ' owls, by ', al.commissioned_by) AS summary
+         -- From the table, under the label policies: a commission is an
+         -- event for the readers of the label it was placed at. The money
+         -- views show every label's, and are for sums, not for a feed.
          FROM action_allocations al
         WHERE al.commissioned_by IS NOT NULL AND al.claim_id IS NOT NULL AND 'work_commissioned' = ANY($6)
        UNION ALL

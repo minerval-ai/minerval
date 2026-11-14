@@ -79,7 +79,7 @@ function bountyTermsFromSql(grantIdExpr: string): string {
        CROSS JOIN LATERAL (
          SELECT COALESCE(SUM(CASE WHEN j.status = 'running' THEN j.budget_micro_usd
                                   ELSE (SELECT COALESCE(SUM(al.amount_micro_usd), 0)
-                                          FROM action_allocations al
+                                          FROM minerval_whole.allocation_money al
                                           JOIN actions a ON a.id = al.action_id
                                          WHERE ${reserveActionPredicateSql("b.id")}
                                            AND al.user_id = j.user_id)

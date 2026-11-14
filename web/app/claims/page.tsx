@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SeveralAssessments } from "@/components/SeveralAssessments";
 import { loadClaims, loadFeatures, loadOpenPrizes, loadTag, loadTags, loadTerritories } from "@/lib/data";
 import { featureOn } from "@/lib/features";
 import { claimTypeMeta, DEFINED_IN, IMPORTANCE_FLOORS, importanceFloorMin } from "@/lib/ontology";
@@ -228,6 +229,7 @@ export default async function ClaimsIndex({
                 </Link>
                 <div className="card-foot">
                   <Verdict c={c} href={claimHref} />
+                  <SeveralAssessments id={c.id} n={c.judgments_in_force} />
                   {kindTag ? (
                     <Term gloss={kindTag.gloss} href={kindTag.href} linkTo={claimHref} className="tag kind">
                       {kindTag.label}

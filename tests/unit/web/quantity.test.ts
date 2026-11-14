@@ -4,7 +4,7 @@ import { describe, it, expect } from "vitest";
 // that states any estimate in words and fits any value to an axis, whatever
 // its unit and however wide its uncertainty.
 import {
-  describeEstimate, formatRange, makeScale, probAbove, valuesOf,
+  describeEstimate, estimateAsRecorded, formatRange, makeScale, probAbove, valuesOf,
 } from "../../../web/lib/quantity";
 import type { QuantityEstimate, QuantityUnit } from "../../../web/lib/types";
 
@@ -76,5 +76,23 @@ describe("probAbove", () => {
   it("reads a claim's implied credence off the estimate, and reports tails as bounds", () => {
     expect(probAbove(DIST, 50e6)!.p).toBeCloseTo(0.25, 6);
     expect(probAbove(DIST, 100e6)).toEqual({ p: expect.closeTo(0.05, 6), tail: "below" });
+  });
+});
+
+describe("estimateAsRecorded", () => {
+  // A shown or published page carries its estimate without the quantity's
+  // unit; the first run with real models found the second tab printing it as
+  // raw JSON ('Estimate: {"form":"none","reason":"…"}').
+  it("states an estimate in words, with no unit, and the reason where there is no figure", () => {
+    expect(estimateAsRecorded({ form: "none", reason: "The lanes may not be the whole network." })).toBe(
+      "No figure: The lanes may not be the whole network."
+    );
+    expect(estimateAsRecorded({ form: "interval", low: 0.92, high: 0.96 })).toBe("Between 0.92 and 0.96");
+    expect(estimateAsRecorded({ form: "bound", bound: { side: "above", value: 0.929 } })).toBe("At least 0.929");
+  });
+
+  it("falls back to the record as it is where it is not an estimate it can read", () => {
+    expect(estimateAsRecorded({ form: "nonsense" })).toBe('{"form":"nonsense"}');
+    expect(estimateAsRecorded(null)).toBe("not recorded");
   });
 });

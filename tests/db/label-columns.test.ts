@@ -97,7 +97,7 @@ describe("the label column, in the catalog", () => {
         ORDER BY r.relname`
     );
 
-  it("is on one hundred and nine tables, defaulting to the connection's label, each with a key to labels", async () => {
+  it("is on one hundred and forty tables, defaulting to the connection's label, each with a key to labels", async () => {
     const columns = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; data_type: string }>(
       `SELECT c.table_name, c.column_default, c.is_nullable, c.data_type
          FROM information_schema.columns c
@@ -105,7 +105,7 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(109);
+    expect(columns).toHaveLength(142);
     for (const column of columns) {
       expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
@@ -154,14 +154,18 @@ describe("the label column, in the catalog", () => {
         WHERE c.column_name = 'sensitivity_label' AND t.table_type = 'VIEW'
         ORDER BY 1`
     );
-    // The four views of the judgment in force carry it with the rest of
-    // their table, as they have since the judgments got the column. They
-    // are the app's own and not among the views query_sql reads.
+    // The views of the judgment in force, and of a node's versions at each
+    // label, carry it with the rest of their table. They are the app's own
+    // and not among the views query_sql reads.
     expect(views.map((v) => v.view).sort()).toEqual([
       "public.argument_evaluations_in_force",
+      "public.argument_evaluations_versions",
       "public.assessments_in_force",
+      "public.assessments_versions",
       "public.quantity_estimates_in_force",
+      "public.quantity_estimates_versions",
       "public.question_assessments_in_force",
+      "public.question_assessments_versions",
     ]);
   });
 
@@ -175,9 +179,9 @@ describe("the label column, in the catalog", () => {
         ORDER BY t.table_name`
     );
     expect(rows.map((r) => r.table_name)).toEqual([
-      // The groups a person's latest sign-in carried, which decide what they may read. Not itself read at a label.
+      // What a sign-in asserted about an account: the groups it carried.
       "account_groups",
-      // The log of what administrators changed about who may read what. Not itself read at a label.
+      // The administrators' own log: who granted what, and which labels were defined.
       "administrative_events",
       // Accounts and their keys.
       "api_keys",
@@ -204,10 +208,8 @@ describe("the label column, in the catalog", () => {
       "oauth_tokens",
       // The owl ledger and what is paid out of it.
       "owl_ledger",
-      // Whose material a source is: a name an administrator typed, as a label's name is. An outside
-      // party's name can itself be private, so it is not settled that it should stay without one.
+      // Whose material a source is, and who may do what (src/permissions.ts).
       "parties",
-      // Who may do what, and at which label. Not itself read at a label.
       "permission_grants",
       // Switches and marks the platform keeps for itself.
       "platform_flags",
@@ -216,8 +218,8 @@ describe("the label column, in the catalog", () => {
       "queue_depth_snapshots",
       // Database time used by query_sql, per account and day.
       "sql_usage",
-      // What a deployment reports of its owl spend, and what was reported to this one: a day, a
-      // total and identifiers, taken over every label and made to leave. Nobody's words.
+      // The usage reports a deployment prepares and the ones a public graph is sent: a day, counts and
+      // totals across every label, naming none, and no text (docs/usage-report.md).
       "usage_reports",
       "usage_reports_received",
     ]);
@@ -304,7 +306,11 @@ describe("what a reader is shown", () => {
 
   const carriesIt = (text: string) => /sensitivity[_ ]?label/i.test(text);
   /** The label's name as a JSON value. */
-  const namesIt = (text: string) => text.includes(`"${SECOND}"`);
+  // A read of a node or of a source says which label it carries, on a
+  // deployment with more than one, and a node's versions each say theirs
+  // (services/judgment-version-service.ts). That one field is shown by
+  // design; the label's name anywhere else is not.
+  const namesIt = (text: string) => text.replaceAll(`"label":"${SECOND}"`, "").includes(`"${SECOND}"`);
 
   it("has no response of the busiest claim, source, request, mandate and run routes that carries the column", async () => {
     // Each route, and something its answer holds when it has read the seeded row.

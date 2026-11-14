@@ -26,6 +26,8 @@
  * message written for the agent; the tool executors turn it into a
  * structured refusal.
  */
+import { oneReadingForInstanceSql, unlessHeldBelowSql } from "./layer-service.js";
+import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { EXAMINATION_SCOPES, EXAMINATION_TRIGGERS } from "../schemas/common.js";
@@ -401,8 +403,11 @@ export async function recordCoverage(input: {
   await segmentsOfSource(exam.source_id, ids);
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO examination_coverage (examination_id, segment_id, facet, sensitivity_label)
-     SELECT $1, unnest($2::uuid[]), $3, $4
-     ON CONFLICT (examination_id, segment_id, facet) DO NOTHING
+     SELECT $1, examined.segment_id, $3, $4 FROM unnest($2::uuid[]) AS examined(segment_id)${unlessHeldBelowSql(
+       "examination_coverage",
+       "held.examination_id = $1 AND held.segment_id = examined.segment_id AND held.facet = $3"
+     )}
+     ON CONFLICT (examination_id, segment_id, facet, sensitivity_label) DO NOTHING
      RETURNING id`,
     [exam.id, ids, facet, currentLabel()]
   );
@@ -436,8 +441,11 @@ export async function recordFinding(input: {
   // A finding on a passage means the passage was examined for that facet.
   await rawQuery(
     `INSERT INTO examination_coverage (examination_id, segment_id, facet, sensitivity_label)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (examination_id, segment_id, facet) DO NOTHING`,
+     SELECT $1, $2::uuid, $3, $4${unlessHeldBelowSql(
+       "examination_coverage",
+       "held.examination_id = $1 AND held.segment_id = $2::uuid AND held.facet = $3"
+     )}
+     ON CONFLICT (examination_id, segment_id, facet, sensitivity_label) DO NOTHING`,
     [exam.id, segmentId, facet, currentLabel()]
   );
   return { id: row!.id, covered: true };
@@ -464,7 +472,7 @@ export async function citeFindings(input: {
     detached_at: Date | null;
   }>(
     `SELECT ci.claim_id, ci.source_id, r.id AS reading_id, ci.detached_at
-       FROM claim_instances ci LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id
+       FROM claim_instances ci LEFT JOIN claim_instance_readings r ON r.instance_id = ci.id${oneReadingForInstanceSql("r")}
       WHERE ci.id = $1`,
     [instanceId]
   );
@@ -490,8 +498,11 @@ export async function citeFindings(input: {
   }
   const rows = await rawQuery<{ id: string }>(
     `INSERT INTO reading_citations (reading_id, finding_id, created_by, sensitivity_label)
-     SELECT $1, unnest($2::uuid[]), $3, $4
-     ON CONFLICT (reading_id, finding_id) DO NOTHING RETURNING id`,
+     SELECT $1, cited.finding_id, $3, $4 FROM unnest($2::uuid[]) AS cited(finding_id)${unlessHeldBelowSql(
+       "reading_citations",
+       "held.reading_id = $1 AND held.finding_id = cited.finding_id"
+     )}
+     ON CONFLICT (reading_id, finding_id, sensitivity_label) DO NOTHING RETURNING id`,
     [inst.reading_id, ids, input.createdBy, currentLabel()]
   );
   return { reading_id: inst.reading_id, cited: rows.length };
@@ -540,12 +551,40 @@ export interface ExaminationView {
   runs: Array<{ id: string; status: string; model: string; spent_usd: number; finished_at: string | null }>;
   coverage: Array<{ segment_id: string; facet: string }>;
   findings: FindingView[];
+  /**
+   * Set where each finding's `segment_label`, a heading from the document,
+   * is withheld from this reader (src/raw-sources.ts).
+   */
+  headings_withheld?: WithheldSourceText;
 }
 
-/** Every examination of the given sources, with coverage, findings, notes, and citations. */
-export async function listExaminations(sourceIds: string[]): Promise<ExaminationView[]> {
+/**
+ * Every examination of the given sources, with coverage, findings, notes, and citations.
+ *
+ * A finding's statement and evidence are what the agent wrote, which
+ * reading at the label covers. Its `segment_label` is a heading copied from
+ * the document, so a read for a person passes `rawSourceLabels`
+ * (rawSourceLabelsOf) and the heading is withheld where the person may not
+ * open the source, as GET /sources/:id/document withholds it. An agent's
+ * own run passes nothing and is not held to it.
+ */
+export async function listExaminations(
+  sourceIds: string[],
+  opts: { rawSourceLabels?: readonly string[] | null } = {}
+): Promise<ExaminationView[]> {
   const ids = sourceIds.filter((s) => UUID_RE.test(s));
   if (ids.length === 0) return [];
+  const withheldAt = new Map<string, string>();
+  if (opts.rawSourceLabels !== undefined) {
+    const held = opts.rawSourceLabels;
+    const labels = await rawQuery<{ id: string; sensitivity_label: string }>(
+      `SELECT id, sensitivity_label FROM sources WHERE id = ANY($1::uuid[])`,
+      [ids]
+    );
+    for (const row of labels) {
+      if (!mayOpenRawSources(held, row.sensitivity_label)) withheldAt.set(row.id, row.sensitivity_label);
+    }
+  }
   const exams = await rawQuery<{
     id: string;
     scope: string;
@@ -647,7 +686,7 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
       .map((f) => ({
         id: f.id,
         segment_id: f.segment_id,
-        segment_label: f.segment_label,
+        segment_label: withheldAt.has(e.source_id) ? null : f.segment_label,
         facet: f.facet,
         statement: f.statement,
         evidence: f.evidence,
@@ -658,5 +697,6 @@ export async function listExaminations(sourceIds: string[]): Promise<Examination
           .map((n) => ({ note: n.note, created_by: n.created_by, created_at: new Date(n.created_at).toISOString() })),
         cited_by_claims: citations.filter((c) => c.finding_id === f.id).map((c) => c.claim_id),
       })),
+    ...(withheldAt.has(e.source_id) ? { headings_withheld: withheldSourceText(withheldAt.get(e.source_id)!) } : {}),
   }));
 }

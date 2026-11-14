@@ -34,6 +34,7 @@ import {
   ORDINARY_REVIEW_TYPE_FILTER,
   REVIEW_RECLAIM_MINUTES,
 } from "./contribution-pipeline.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 /** Don't re-enqueue rows younger than this — their original message is
  * almost certainly still queued or in flight. */
@@ -269,7 +270,10 @@ export function startRecoverySweep(options: {
   const sweep = async () => {
     if (!running) return;
     try {
-      const stats = await sweepStalledReviewWork();
+      const stats = await withSystemClearance(
+        "The recovery sweep finds stalled reviews and orders at every label and re-enqueues each at its own.",
+        () => sweepStalledReviewWork()
+      );
       const requeued =
         stats.contributionsRequeued +
         stats.escalationsRequeued +
@@ -292,7 +296,10 @@ export function startRecoverySweep(options: {
       );
     }
     try {
-      const ingests = await sweepStalledIngests();
+      const ingests = await withSystemClearance(
+        "The ingest sweep finds extractions that stopped at every label and returns each one's ledger row to open, or cancels it.",
+        () => sweepStalledIngests()
+      );
       if (ingests.reopened > 0 || ingests.cancelled > 0) {
         options.logger.info(
           `[recovery-sweep] gave up on stalled extractions: ${ingests.reopened} ingest rows reopened, ` +

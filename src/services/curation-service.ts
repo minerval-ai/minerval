@@ -25,6 +25,9 @@
  * (tests/unit/workers/curation-trigger-lockdown.test.ts) holds every other
  * path under src/ to it.
  */
+import { layered } from "./layer-service.js";
+import { withSystemClearance } from "../db/clearance.js";
+import { notMirroredSql, publicGraphJudges } from "./mirrored-node-service.js";
 import { rawQuery } from "../db/client.js";
 import { ensureCurateAction } from "./action-service.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
@@ -169,6 +172,18 @@ export async function requestCuration(
   );
   if (!anchor) {
     return { ok: false, problem: `claim ${input.anchorClaimId} is not an active claim` };
+  }
+  // A mirrored node is the public graph's to curate at its own label
+  // (mirrored-node-service.ts): the concern is anchored on this
+  // deployment's node, with the public one named beside it.
+  if (await publicGraphJudges(input.anchorClaimId)) {
+    return {
+      ok: false,
+      problem:
+        `claim ${input.anchorClaimId} belongs to the public graph and is read here through the mirror, so ` +
+        `nothing is curated around it at its own label in this deployment. Where the concern involves a ` +
+        `node of this deployment's own, make that node the claim_id and name this one as other_claim_id`,
+    };
   }
   if (input.otherClaimId) {
     const [other] = await rawQuery<{ id: string }>(
@@ -353,6 +368,20 @@ const SCAN_OUTER_LIMIT = 200;
  * Curator's run is the valuation's call, which weighs a scan's pair below an
  * agent's escalation.
  *
+ * On a deployment that mirrors the public graph, the scan starts from the
+ * deployment's own nodes: two mirrored nodes that look alike are the public
+ * graph's to reconcile. A node of the deployment's own beside a public node
+ * that arrives later is paired when the batch that brings it is applied
+ * (mirror-upkeep.ts).
+ *
+ * Between labels the pair is found with no regard to labels and raised
+ * where it can be acted on: at the label that reads both, anchored on that
+ * label's own node, whichever of the two the scan started from
+ * (raiseConvergence). The Curator there can fold its node into the lower
+ * one; work at the lower label cannot read the pair and is told nothing.
+ * Two nodes at labels that do not read each other raise nothing: no
+ * label's work reads both.
+ *
  * Bounded twice: at most `reconcile_candidates_max_per_sweep` requests per
  * sweep (0, the default, is off), and a fixed window of recent claims for
  * the nearest-neighbour search, since claims.embedding carries no vector
@@ -364,15 +393,35 @@ export async function scanReconcileCandidates(policy: {
 }): Promise<number> {
   const cap = Math.floor(policy.reconcile_candidates_max_per_sweep);
   if (cap <= 0) return 0;
-  const pairs = await rawQuery<{ anchor: string; anchor_label: string; other: string; similarity: number }>(
-    `SELECT c.id AS anchor, c.sensitivity_label AS anchor_label, n.id AS other, n.similarity
-       FROM (SELECT id, embedding, sensitivity_label FROM claims
-              WHERE state = 'active' AND embedding IS NOT NULL
+  // How the two nodes' layers stand, asked only where there is more than
+  // one layer (layer-service.ts): on a graph with one the statement is
+  // what it was, and every pair is raised on the node the scan started from.
+  const layers = layered()
+    ? `, n.sensitivity_label AS other_label,
+         (c.sensitivity_label = n.sensitivity_label AND c.origin = n.origin) AS same_layer,
+         minerval_layer_below(n.sensitivity_label, n.origin, c.sensitivity_label, c.origin) AS other_below,
+         minerval_layer_below(c.sensitivity_label, c.origin, n.sensitivity_label, n.origin) AS anchor_below,
+         n.origin = 'mirror' AS other_mirrored`
+    : "";
+  const pairs = await rawQuery<{
+    anchor: string;
+    anchor_label: string;
+    other: string;
+    similarity: number;
+    other_label?: string;
+    same_layer?: boolean;
+    other_below?: boolean;
+    anchor_below?: boolean;
+    other_mirrored?: boolean;
+  }>(
+    `SELECT c.id AS anchor, c.sensitivity_label AS anchor_label, n.id AS other, n.similarity${layers}
+       FROM (SELECT id, embedding, sensitivity_label, origin FROM claims
+              WHERE state = 'active' AND embedding IS NOT NULL${notMirroredSql()}
                 AND created_at > now() - make_interval(days => $3)
               ORDER BY created_at DESC
               LIMIT ${SCAN_OUTER_LIMIT}) c
        CROSS JOIN LATERAL (
-         SELECT o.id, (1 - (o.embedding <=> c.embedding))::real AS similarity
+         SELECT o.id, o.sensitivity_label, o.origin, (1 - (o.embedding <=> c.embedding))::real AS similarity
            FROM claims o
           WHERE o.state = 'active' AND o.embedding IS NOT NULL AND o.id <> c.id
           ORDER BY o.embedding <=> c.embedding
@@ -393,35 +442,170 @@ export async function scanReconcileCandidates(policy: {
     [policy.reconcile_candidate_min_similarity, cap * 2, SCAN_WINDOW_DAYS]
   );
   // Each unordered pair once: the newer claim's lookup and the older one's
-  // can both find the same pair.
+  // can both find the same pair. A pair is marked only once its request
+  // has been raised, so a row of the pair that could not be raised leaves
+  // the other row of it to be tried.
   const seen = new Set<string>();
   let raised = 0;
   for (const p of pairs) {
     if (raised >= cap) break;
     const key = [p.anchor, p.other].sort().join(":");
     if (seen.has(key)) continue;
-    seen.add(key);
-    // The scan starts from the anchor claim, outside any run, so the
-    // Curator's row is opened at the anchor's label (runAtClaimLabel in
-    // label-service.ts). The pair itself is found with no regard to labels:
-    // the neighbor may carry another one, and holding the scan to pairs a
-    // single run may read is the enforcement work's, not this floor's.
-    const r = await runAtLabel(p.anchor_label, `claim ${p.anchor}`, () =>
-      requestCuration({
-        anchorClaimId: p.anchor,
-        otherClaimId: p.other,
-        source: "reconcile_candidate",
-        defect: "duplicate",
-        signal: Number(p.similarity),
-        concern:
-          `The reconcile-candidate scan found this claim and claim ${p.other} ` +
-          `unusually alike (embedding similarity ${Number(p.similarity).toFixed(3)}) ` +
-          `with no edge or link between them. They may be duplicates, ` +
-          `counterparts, or simply neighbours; decide which, and do nothing ` +
-          `if they are distinct.`,
-      })
-    );
+    let r: CurationRequestResult;
+    if (p.other_label !== undefined && !p.same_layer && !p.other_mirrored) {
+      // The two nodes are at different labels: the pair is put to the
+      // Curator at the label that reads both, on that label's own node.
+      if (!p.other_below && !p.anchor_below) continue;
+      r = await raiseConvergence({
+        upper: p.other_below ? p.anchor : p.other,
+        upperLabel: p.other_below ? p.anchor_label : p.other_label,
+        lower: p.other_below ? p.other : p.anchor,
+        similarity: Number(p.similarity),
+        lowerIs: "a label this one reads",
+      });
+    } else {
+      // The scan starts from the anchor claim, outside any run, so the
+      // Curator's row is opened at the anchor's label (runAtClaimLabel in
+      // label-service.ts).
+      r = await runAtLabel(p.anchor_label, `claim ${p.anchor}`, () =>
+        requestCuration({
+          anchorClaimId: p.anchor,
+          otherClaimId: p.other,
+          source: "reconcile_candidate",
+          defect: "duplicate",
+          signal: Number(p.similarity),
+          concern:
+            `The reconcile-candidate scan found this claim and claim ${p.other} ` +
+            `unusually alike (embedding similarity ${Number(p.similarity).toFixed(3)}) ` +
+            `with no edge or link between them. They may be duplicates, ` +
+            `counterparts, or simply neighbours; decide which, and do nothing ` +
+            `if they are distinct.`,
+        })
+      );
+    }
+    if (r.ok) seen.add(key);
     if (r.ok && !r.repeat) raised++;
   }
   return raised;
+}
+
+/**
+ * Put to the Curator a node and a node at a layer below it that may state
+ * the same thing: the public graph's node that arrived with the mirror, or
+ * a node at a label the upper node's label reads. One act for both
+ * boundaries. The request is raised at the upper node's label and anchored
+ * on the upper node, because that is the only layer whose work reads both
+ * and the only one whose Curator can fold its node into the other: a merge
+ * marks the node merged away, which is a change to that node's own row.
+ * Nothing is written at the lower layer.
+ */
+async function raiseConvergence(pair: {
+  upper: string;
+  upperLabel: string;
+  lower: string;
+  similarity: number;
+  lowerIs: LowerLayer;
+}): Promise<CurationRequestResult> {
+  return runAtLabel(pair.upperLabel, `claim ${pair.upper}`, () =>
+    requestCuration({
+      anchorClaimId: pair.upper,
+      otherClaimId: pair.lower,
+      source: "reconcile_candidate",
+      // A node close to one a layer below now holds: the two may be one (#955).
+      defect: "duplicate",
+      signal: pair.similarity,
+      concern: convergenceConcern(pair.lower, pair.similarity, pair.lowerIs),
+    })
+  );
+}
+
+/** Which layer below holds the other node of a convergence pair. */
+type LowerLayer = "the public graph" | "a label this one reads";
+
+const ARRIVALS_REASON =
+  "Pairing each of this deployment's own nodes with a public node that has just arrived means reading nodes at every label; each request is then raised at the deployment's node's label.";
+
+/**
+ * A node of this deployment's own that a node which just arrived may
+ * state (mirror-upkeep.ts): the Curator is asked, at the deployment's
+ * node's label. A scan and not a judgment, like the reconcile-candidate
+ * scan above, whose similarity floor it takes. Each of the deployment's nodes is paired
+ * with the nearest of the arrivals, once: a pair with an edge, a link or a
+ * request of any age between them is not raised again. Raising costs no
+ * model call, and a Curator's run happens only if someone funds it, so the
+ * number raised is not capped: money bounds what follows. It does not wait
+ * on the other scan's per-sweep allowance either, which is off by default:
+ * that one looks at every new node, this one only at a node of the
+ * deployment's own beside a public node that has just arrived, which is the
+ * one moment the pair can be found.
+ */
+export async function scanArrivedPublicNodes(arrived: readonly string[]): Promise<number> {
+  if (arrived.length === 0) return 0;
+  const { getEffectiveAllocationPolicy } = await import("./allocation-policy-service.js");
+  const policy = await getEffectiveAllocationPolicy();
+  const pairs = await withSystemClearance(ARRIVALS_REASON, () =>
+    rawQuery<{ anchor: string; label: string; other: string; similarity: number }>(
+      `SELECT p.id AS anchor, p.sensitivity_label AS label, n.id AS other, n.similarity
+         FROM claims p
+         CROSS JOIN LATERAL (
+           SELECT m.id, (1 - (m.embedding <=> p.embedding))::real AS similarity
+             FROM claims m
+            WHERE m.id = ANY($1::uuid[]) AND m.origin = 'mirror' AND m.state = 'active' AND m.embedding IS NOT NULL
+            ORDER BY m.embedding <=> p.embedding
+            LIMIT 1
+         ) n
+        WHERE p.origin = 'local' AND p.state = 'active' AND p.embedding IS NOT NULL
+          AND n.similarity >= $2
+          AND NOT EXISTS (SELECT 1 FROM claim_relationships r
+                           WHERE (r.parent_claim_id = p.id AND r.child_claim_id = n.id)
+                              OR (r.parent_claim_id = n.id AND r.child_claim_id = p.id))
+          AND NOT EXISTS (SELECT 1 FROM claim_links l
+                           WHERE l.claim_a_id = LEAST(p.id, n.id) AND l.claim_b_id = GREATEST(p.id, n.id))
+          AND NOT EXISTS (SELECT 1 FROM curation_requests q
+                           WHERE (q.anchor_claim_id = p.id AND q.other_claim_id = n.id)
+                              OR (q.anchor_claim_id = n.id AND q.other_claim_id = p.id))
+        ORDER BY n.similarity DESC`,
+      [[...arrived], policy.reconcile_candidate_min_similarity]
+    )
+  );
+  let raised = 0;
+  for (const p of pairs) {
+    const r = await raiseConvergence({
+      upper: p.anchor,
+      upperLabel: p.label,
+      lower: p.other,
+      similarity: Number(p.similarity),
+      lowerIs: "the public graph",
+    });
+    if (r.ok && !r.repeat) raised++;
+  }
+  return raised;
+}
+
+/**
+ * What the Curator is asked about a node and a node a layer below now
+ * holds: a public node that just arrived with the mirror, or a node at a
+ * label this one reads.
+ */
+export function convergenceConcern(lowerNodeId: string, similarity: number, lowerIs: LowerLayer = "the public graph"): string {
+  if (lowerIs === "the public graph") {
+    return (
+      `The public graph now holds a node unusually like this one (embedding similarity ` +
+      `${similarity.toFixed(3)}): ${lowerNodeId}, which arrived with the mirror. They may be one claim, ` +
+      `counterparts, or simply neighbors; decide which, and do nothing if they are distinct. If they are ` +
+      `one, this node is the one to fold in: merge_claims with the public node as the survivor moves what ` +
+      `is recorded on this node (its sources, arguments and edges) onto the public node, each row at the ` +
+      `label it has, and its judgment is then made again there at that label. The public node cannot be ` +
+      `the one merged away, or be reworded here: it is the public graph's.`
+    );
+  }
+  return (
+    `A label this one reads now holds a node unusually like this one (embedding similarity ` +
+    `${similarity.toFixed(3)}): ${lowerNodeId}. They may be one claim, counterparts, or simply neighbors; ` +
+    `decide which, and do nothing if they are distinct. If they are one, this node is the one to fold in: ` +
+    `merge_claims with ${lowerNodeId} as the survivor moves what is recorded on this node (its sources, ` +
+    `arguments and edges) onto that node, each row at the label it has, and its judgment is then made ` +
+    `again there at this label. That node cannot be the one merged away, or be reworded here: it belongs ` +
+    `to the label it carries, whose readers do not read this one.`
+  );
 }

@@ -7,7 +7,8 @@
  *   GET    /permissions: what each permission covers.
  *   GET    /permissions/mine: what the signed-in account holds.
  *   GET    /permissions/log: every grant, removal and
- *     administrative change, newest first. Any member may read it.
+ *     administrative change, newest first, owls created and standing
+ *     mandates set up included (routes/owls.ts). Any member may read it.
  *   GET    /permissions/grants: who holds what now.
  *   POST   /permissions/grants: grant one permission.
  *   DELETE /permissions/grants/:grant_id: remove a grant (the row stays).
@@ -15,6 +16,7 @@
  *   GET    /parties, POST /parties: whose material the graph holds.
  *   PUT    /sources/:source_id/party: whose material one source is.
  *   GET    /labels, POST /labels: the labels and which reads which.
+ *   GET    /labels/mine: the labels the caller may file new material at.
  *   POST   /labels/:label/reads, DELETE /labels/:label/reads/:reads
  *   POST   /operator/administrators: the operator key's way back in.
  *
@@ -31,15 +33,23 @@ import {
   PERMISSION_DEFINITIONS,
   PERMISSIONS,
   heldPermissions,
+  holdsPermission,
   standingOf,
 } from "../permissions.js";
-import { requirePermission } from "../server/require-permission.js";
+import { deploymentHoldsLabels } from "../db/client.js";
+import { requireAnyPermission, requirePermission } from "../server/require-permission.js";
+import { choosableLabels } from "../services/label-service.js";
 import { getContributorById } from "../services/contributor-service.js";
 import {
   LABEL_DESCRIPTION_MAX_CHARS,
   LABEL_NAME_PATTERN,
   addLabelRead,
   defineLabel,
+  FACE_LINE_MAX_CHARS,
+  FACE_NAME_MAX_CHARS,
+  listLabelFaces,
+  showLabelFace,
+  withdrawLabelFace,
   listLabels,
   removeLabelRead,
 } from "../services/label-admin-service.js";
@@ -132,7 +142,7 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["permissions"],
       summary:
-        "The log of who was granted what, who removed it, and every change to labels, parties and whose material a source is, newest first",
+        "The log of who was granted what, who removed it, every change to labels, parties and whose material a source is, and every creation of owls or of a standing mandate, newest first",
       description:
         "Any member may read it. People appear by display name. The name of a label you are " +
         "not cleared to read, or of a party that is neither the organization itself nor one " +
@@ -257,10 +267,18 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
   app.get("/parties", {
     schema: {
       tags: ["permissions"],
-      summary: "The parties whose material this deployment holds (administrators)",
+      summary: "The parties whose material this deployment holds (administrators; by name, people who direct the graph)",
+      description:
+        "An administrator reads each party in full. A person who holds the permission to direct reads each " +
+        "party's id and name and whether it is the organization itself, and nothing else: adding a source or a " +
+        "set of files says whose material it is, so whoever adds one has to be able to name the party.",
     },
-    preHandler: administrator,
-    handler: async (_request, reply) => reply.send({ parties: await listParties() }),
+    preHandler: [...signedIn, requireAnyPermission(["administer", "direct"])],
+    handler: async (request, reply) => {
+      const parties = await listParties();
+      if (holdsPermission(standingOf(request.auth), "administer")) return reply.send({ parties });
+      return reply.send({ parties: parties.map((p) => ({ id: p.id, name: p.name, is_own_organization: p.is_own_organization })) });
+    },
   });
 
   app.post<{ Body: { name: string; is_own_organization?: boolean } }>("/parties", {
@@ -335,6 +353,36 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (_request, reply) => reply.send({ labels: await listLabels() }),
   });
 
+  // What a page, or an agent, needs where a label is chosen or shown
+  // (server/request-labels.ts): the labels this request may file new
+  // material at, and what each means for who reads it.
+  app.get("/labels/mine", {
+    schema: {
+      tags: ["permissions"],
+      summary:
+        "The labels you may file new material at, and who reads each: for choosing a label when you start something new",
+      description:
+        "must_choose is true when this deployment holds material at more than one label and the " +
+        "request is a signed-in session: a request that starts something new (a source, a " +
+        "proposed node, a granting conversation, a conversation with the Assistant, an API key) " +
+        "must then name one of these in `label`, and there is no default. works_at is set " +
+        "instead when the request was made with an API key or an access token, or by the " +
+        "Assistant: that credential works at one label, fixed when it was made, and names none. " +
+        "For each label: what else its readers read, who reads it (who_reads, in words), and the " +
+        "labels that read it, of which only those you may read are named.",
+    },
+    preHandler: signedIn,
+    handler: async (request, reply) => {
+      const held = await deploymentHoldsLabels();
+      const fixed = held ? request.auth?.fixedLabel : undefined;
+      return reply.send({
+        must_choose: held && !fixed,
+        works_at: fixed?.label ?? null,
+        labels: await choosableLabels(),
+      });
+    },
+  });
+
   app.post<{ Body: { name: string; description: string; reads?: string[] } }>("/labels", {
     schema: {
       tags: ["permissions"],
@@ -362,6 +410,60 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
       });
       if (!result.ok) return reply.code(labelStatus(result.code)).send({ error: result.message, code: result.code });
       return reply.code(201).send({ labels: await listLabels() });
+    },
+  });
+
+  app.get("/labels/faces", {
+    schema: {
+      tags: ["permissions"],
+      summary: "The faces labels have been given at labels they read, by which work is asked of them from there (administrators)",
+    },
+    preHandler: administrator,
+    handler: async (_request, reply) => reply.send({ faces: await listLabelFaces() }),
+  });
+
+  app.put<{ Params: { label: string }; Body: { at: string; name: string; can_be_asked: string } }>("/labels/:label/face", {
+    schema: {
+      tags: ["permissions"],
+      summary: "Give a label a face at a label it reads, so that work can be asked of it from there (administrators, from a signed-in session)",
+      description: FACE_TOLD,
+      params: { type: "object", required: ["label"], properties: { label: { type: "string" } } },
+      body: {
+        type: "object",
+        required: ["at", "name", "can_be_asked"],
+        properties: {
+          at: { type: "string", minLength: 1 },
+          name: { type: "string", minLength: 1, maxLength: FACE_NAME_MAX_CHARS },
+          can_be_asked: { type: "string", minLength: 1, maxLength: FACE_LINE_MAX_CHARS },
+        },
+      },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const result = await showLabelFace({
+        label: request.params.label,
+        at: request.body.at,
+        name: request.body.name,
+        canBeAsked: request.body.can_be_asked,
+        actorId: request.auth!.userId!,
+      });
+      if (!result.ok) return reply.code(labelStatus(result.code)).send({ error: result.message, code: result.code });
+      return reply.send({ faces: await listLabelFaces() });
+    },
+  });
+
+  app.delete<{ Params: { label: string; at: string } }>("/labels/:label/face/:at", {
+    schema: {
+      tags: ["permissions"],
+      summary: "Withdraw a label's face at a label: nothing new can be asked of it from there (administrators, from a signed-in session)",
+      description: "What was already asked stays as it is, and its work goes on.",
+      params: { type: "object", required: ["label", "at"], properties: { label: { type: "string" }, at: { type: "string" } } },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const result = await withdrawLabelFace({ label: request.params.label, at: request.params.at, actorId: request.auth!.userId! });
+      if (!result.ok) return reply.code(labelStatus(result.code)).send({ error: result.message, code: result.code });
+      return reply.send({ faces: await listLabelFaces() });
     },
   });
 
@@ -442,8 +544,15 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
   });
 }
 
+/** What giving a label a face shows, and to whom. */
+const FACE_TOLD =
+  "A label cannot be read or named from the labels it reads. Giving it a face at one of them shows there, and at every label that " +
+  "reads that one, that it exists under this name and can be asked for work: people who may fund, mandates and agents' runs there " +
+  "can then ask for and pay for work at it, done by agents that read what it reads. What that work finds comes down only through " +
+  "the label's gate. The name and the line are yours to write and are all that is shown; the label's own name is not.";
+
 function labelStatus(code: string): number {
-  if (code === "UNKNOWN_LABEL" || code === "NOT_READ") return 404;
+  if (code === "UNKNOWN_LABEL" || code === "NOT_READ" || code === "NO_FACE") return 404;
   if (code === "LABEL_EXISTS" || code === "ALREADY_READS") return 409;
   return 400;
 }

@@ -12,6 +12,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { paginationSchema, uuidSchema, STATED_VIEW_STANCES } from "../schemas/common.js";
 import { gateContributor } from "../server/contributor-gate.js";
+import { requirePermission } from "../server/require-permission.js";
+import { publicStatedViewRefusal } from "../services/mirrored-node-service.js";
 import { getClaimById } from "../services/claim-service.js";
 import { loadConfig } from "../config.js";
 import type { NodeKind } from "../schemas/kinds.js";
@@ -162,11 +164,10 @@ export async function statedViewRoutes(app: FastifyInstance): Promise<void> {
         },
       },
       // In a members-only deployment, stating the organization's own view is
-      // part of the permission to direct the graph. That guard goes in this
-      // list, after app.authenticate: requirePermission("direct")
-      // (src/server/require-permission.ts, on the claude/permissions branch).
-      // On the public graph an account speaks for itself and needs none.
-      preHandler: app.authenticate,
+      // part of the permission to direct the graph
+      // (src/server/require-permission.ts). On the public graph an account
+      // speaks for itself and needs none: the guard does nothing there.
+      preHandler: [app.authenticate, requirePermission("direct")],
       handler: async (request, reply) => {
         const claimId = request.params.claim_id;
         const claim = await getClaimById(claimId);
@@ -183,6 +184,15 @@ export async function statedViewRoutes(app: FastifyInstance): Promise<void> {
             error: `This node is ${claim.state}; a view is stated on an active node.`,
             code: "CLAIM_NOT_ACTIVE",
           });
+        }
+
+        // A mirrored node at its own label takes no statement here, as it
+        // takes no contribution (mirrored-node-service.ts): the review and
+        // what follows would be work at that label on a node the public
+        // graph judges. A view stated at a label that reads it is taken.
+        const notTaken = await publicStatedViewRefusal(claim.id);
+        if (notTaken) {
+          return reply.code(409).send({ error: notTaken, code: "PUBLIC_GRAPH_NODE" });
         }
 
         const kind = (claim.kind ?? "claim") as NodeKind;

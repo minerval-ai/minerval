@@ -87,6 +87,9 @@ export function startGithubIssueSync(options: {
     if (busy) return;
     busy = true;
     try {
+      // No system clearance: only public reports are ever filed (a tracker
+      // is outside the deployment), and a timer with nothing in context
+      // reads `public` alone, which is all this needs.
       const result = await githubIssueSyncTick();
       if (result.pending > 0) {
         options.logger.info(

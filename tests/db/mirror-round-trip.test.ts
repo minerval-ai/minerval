@@ -404,6 +404,16 @@ async function seedPublicGraph(): Promise<void> {
     stake: "Its research program rests on the finding.",
     recorded_by: "claim_steward",
   });
+  // The public record that is not rows of the graph: a contribution on a node, and a request that bears on one.
+  // The feed carries their public columns, with no account (mirror-feed-service.ts, refreshFeedRecords).
+  const [contributor] = await pub.query<{ id: string }>(`INSERT INTO contributors (display_name, external_id) VALUES ('A contributor', $1) RETURNING id`, [`round-trip:${randomUUID()}`]);
+  await ins(pub, "contributions", { claim_id: id.parent, contributor_id: contributor!.id, contribution_type: "challenge", content: "The trial was not blinded." });
+  const [request] = await pub.query<{ id: string }>(
+    `INSERT INTO requests (ask, why, satisfied_by, filer_kind, filer_agent, keeper_kind, keeper_claim_id)
+     VALUES ('A blinded replication.', 'The assessment turns on it.', 'A registered report.', 'admin', 'claim_steward', 'steward', $1) RETURNING id`,
+    [id.parent]
+  );
+  await ins(pub, "request_targets", { request_id: request!.id, claim_id: id.parent });
   await ins(pub, "judgment_inputs", {
     id: id.inputPremise,
     judgment_kind: "assessment",
@@ -423,6 +433,9 @@ async function seedPublicGraph(): Promise<void> {
 }
 
 /** The mirror holds exactly the publisher's rows, replicated column for replicated column. */
+/** What the mirror holds that the public graph no longer does: the rows it kept because local rows point to them. */
+const KEPT = { claims: [id.doomedReferenced], sources: [id.page] };
+
 async function expectMirrorEqualsPublic(except: { extraOnMirror?: Record<string, string[]> } = {}): Promise<void> {
   const publicRows = await replicated(pub, "");
   const mirrored = await replicated(priv, "WHERE x.origin = 'mirror'");
@@ -798,20 +811,20 @@ describe("changes on the public graph, with local rows beside the mirror", () =>
     });
     expect(result.changed.claims!.written).toHaveLength(2);
     expect(result.changed.assessments!.written).toHaveLength(2);
-    expect(result.changed.sources).toEqual({ written: [], removed: [id.page], kept: [] });
+    // The page the public graph removed is kept: a row of this deployment's own quotes it.
+    expect(result.changed.sources).toEqual({ written: [], removed: [], kept: [id.page] });
     // And a deployment ahead of the publisher applies the next one the same way.
     await apply(await getBatchText(later, pub), { migration: { number: mine.number + 3, tag: "9999_ahead" } });
-    // The one row the mirror holds that the public graph no longer does: the kept claim.
-    await expectMirrorEqualsPublic({ extraOnMirror: { claims: [id.doomedReferenced] } });
+    // The rows the mirror holds that the public graph no longer does: the kept claim and the kept page.
+    await expectMirrorEqualsPublic({ extraOnMirror: KEPT });
   });
 
-  it("left every local row exactly as it was, with one stated exception", async () => {
+  it("left every local row exactly as it was", async () => {
     const after = await localRows();
-    // The private instance sat in a source the public graph deleted, and a
-    // row cannot outlive the source it quotes: it followed its foreign key.
-    const expected = JSON.parse(JSON.stringify(before)) as typeof before;
-    delete expected.claim_instances![own.instanceInPage];
-    expect(after).toEqual(expected);
+    // The local instance sat in a source the public graph deleted. The
+    // source is kept for it, so the instance is where it was: a batch
+    // deletes nothing this deployment recorded.
+    expect(after).toEqual(before);
     const [mine] = await rawQuery<{ steward_state: string; queue_priority: number }>(
       `SELECT steward_state, queue_priority FROM claims WHERE id = $1`,
       [own.claim]
@@ -863,10 +876,10 @@ describe("changes on the public graph, with local rows beside the mirror", () =>
         },
       ],
     });
-    // The local instance that went with the deleted source is in the notes too.
-    expect(applied!.notes.local_rows_followed).toEqual([
-      { table: "sources", reason: "deleted", local_rows: [{ table: "claim_instances", column: "source_id", on_delete: "cascade", rows: 1 }] },
-    ]);
+    // The deleted source that a local instance quotes is kept too, and the notes say so.
+    expect(applied!.notes.local_rows_followed).toBeUndefined();
+    expect(applied!.notes.kept_rows).toEqual([{ table: "sources", reason: "deleted", count: 1, keys: [id.page] }]);
+    expect(await rawQuery(`SELECT 1 FROM claim_instances WHERE id = $1`, [own.instanceInPage])).toHaveLength(1);
   });
 
   it("changes nothing when a batch is replayed", async () => {
@@ -910,7 +923,7 @@ describe("changes on the public graph, with local rows beside the mirror", () =>
     // Once the local row is out of the way the same batch applies.
     await rawQuery(`DELETE FROM claims WHERE id = $1`, [shared]);
     expect((await apply(await getBatchText(sequence, pub))).status).toBe("applied");
-    await expectMirrorEqualsPublic({ extraOnMirror: { claims: [id.doomedReferenced] } });
+    await expectMirrorEqualsPublic({ extraOnMirror: KEPT });
   });
 });
 
@@ -940,7 +953,7 @@ describe("a mirror that cannot apply the next batch", () => {
     expect(result.applied.map((a) => a.sequence)).toEqual([start]);
     // The stale edge was cleared before the snapshot's rows were written, so its replacement fit.
     expect(await rawQuery(`SELECT 1 FROM claim_relationships WHERE id = $1`, [edge!.id])).toEqual([]);
-    await expectMirrorEqualsPublic({ extraOnMirror: { claims: [id.doomedReferenced] } });
+    await expectMirrorEqualsPublic({ extraOnMirror: KEPT });
     // The batch that was passed over can no longer be applied.
     expect((await refusal(async () => apply(await getBatchText(missed, pub)))).code).toBe("sequence_gap");
     expect(await mirrorStatus()).toMatchObject({ sequence: start, complete: true, last_refusal: { code: "sequence_gap" } });
@@ -952,7 +965,7 @@ describe("a mirror that cannot apply the next batch", () => {
     const result = await cut();
     expect(result.batches.map((b) => b.kind)).toEqual(["snapshot"]);
     expect((await syncMirror(feed(), { trustedKeys })).applied).toHaveLength(1);
-    await expectMirrorEqualsPublic({ extraOnMirror: { claims: [id.doomedReferenced] } });
+    await expectMirrorEqualsPublic({ extraOnMirror: KEPT });
   });
 });
 
@@ -962,10 +975,11 @@ describe("only public rows are published", () => {
     await pub.query(`INSERT INTO labels (name, description) VALUES ('internal', 'Ours.')`);
     try {
       await ins(pub, "sources", { id: secret.source, title: "An internal memo", raw_content: "Private text.", sensitivity_label: "internal" });
-      // A row with no label of its own that points to the labelled one.
-      await ins(pub, "claim_instances", { id: secret.instance, claim_id: id.child, source_id: secret.source, verbatim_text: "Private text.", stance: "affirms" });
+      // A public row that points to the labelled one. Where a second label
+      // exists a row is never public by omission, so the insert names it.
+      await ins(pub, "claim_instances", { id: secret.instance, claim_id: id.child, source_id: secret.source, verbatim_text: "Private text.", stance: "affirms", sensitivity_label: "public" });
       await ins(pub, "assessments", { id: secret.verdict, claim_id: id.child, status: "supported", confidence: 0.5, reasoning_trace: "Private reasoning.", sensitivity_label: "internal" });
-      await ins(pub, "judgment_inputs", { id: secret.input, judgment_kind: "assessment", judgment_id: secret.verdict, input_kind: "source", source_id: secret.source });
+      await ins(pub, "judgment_inputs", { id: secret.input, judgment_kind: "assessment", judgment_id: secret.verdict, input_kind: "source", source_id: secret.source, sensitivity_label: "public" });
 
       const published = await pub.transaction(async (tx) => {
         await tx.query("SET LOCAL TIME ZONE 'UTC'");

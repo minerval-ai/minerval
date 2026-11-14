@@ -23,13 +23,19 @@
  * page kept for a user, a review and a ruling, an audit's findings and the
  * audit trail on a claim, a sweep and its flags, a bounty and a prize
  * claim, a lookout and a correspondent with what each queues, flags and
- * publishes, a view stated to the graph, money placed on a piece of work
- * with its brief and reason, and money moved between two mandates with its
- * note. A placement and a regrant take the label of the work that made
- * them. Two placements are worked out and not written by anyone: a
- * mandate's money put on its own row by the scheduler is at the mandate's
- * label, and a share of a settled row's cost is at the row's. The tables
- * that carry none are the accounts and their keys,
+ * publishes. And so do the rows of a connection to an organization's own
+ * system (src/connections.ts): the connection, the tools its server lists,
+ * and each call a run makes through it. The connection's label is named by
+ * the administrator who adds it and says which runs are offered it. A tool's
+ * definition is the system describing itself, the same whoever looks, so it
+ * carries the connection's label, and so does what any run finds out about
+ * the connection (that its server answered, that a tool changed). A call,
+ * and the source kept from one, are the run's: its arguments are the run's
+ * own words. A set of files (src/file-sets.ts) is the same: the set's
+ * label is named by the person who adds it, its manifest and a file kept
+ * from it are the set's own material and carry the set's label whichever
+ * run keeps the file, and a command a run runs against it, with the
+ * analysis kept from one, is the run's. The tables that carry none are the accounts and their keys,
  * the owl ledger and what is paid from it, the platform's own switches and
  * counters, and the labels themselves.
  * The column is not simply `label` because that name is already a display
@@ -56,9 +62,56 @@
  * restricted subclaim to a public parent. A reading of a source is the
  * reader's in the same way: a passage a restricted run records from a
  * public document is restricted, and so are its reading of it, the
- * examination it opens and the stake it records. A write that lands on a
- * row already there (an upsert) leaves that row's label as it was, and so
- * does the text or the facts a fetch writes into a source's own row.
+ * examination it opens and the stake it records. A row's label never
+ * changes, and a row is changed or deleted only by work at its own label:
+ * a write that would land on a row at another label (an upsert, a plain
+ * update) writes nothing and says so, because what it wrote would be read
+ * by that row's readers as their own label's work (the database's
+ * own_label_guard behind every write). What a label has to say about a
+ * row at another label is a row of its own.
+ *
+ * Each layer keeps its own identity. A graph at a label is that label's
+ * own rows over the graph of the labels it reads, down to the public
+ * graph's rows in the mirror. A key a labelled table has besides its id
+ * (an edge's two nodes and relation, a source's address, a tag's slug, a
+ * claim's cut, an instance's reading) holds the label, so a row at one
+ * label and a row for the same thing at another are two rows. Work at a
+ * label is never stopped by a row at a label it does not read, and is
+ * told nothing of it. Work at a label that does read a row for the thing
+ * goes by that row: it is handed it, or refused where it would revise it,
+ * and records no second one. Where the higher label recorded the thing
+ * first and the lower one later, both stay, and a read gives the thing
+ * once (services/layer-service.ts has the rule, for every table and for
+ * the mirror alike).
+ *
+ * A label's overlay. What a label says about a row below, where it judges
+ * differently for its own readers, is a row at its own label keyed by the
+ * row below: a version of a judgment, its own cut or reading under the
+ * same key, and in `overlays` its own importance and contestation for a
+ * node and an edge or argument it sets aside (services/overlay-service.ts).
+ * The row below is not touched. A reader, or work at a label, goes by the
+ * nearest layer's among those it reads, its own first. The text and the facts a fetch writes into a source's own row are
+ * the same whoever fetches, and are written at the source's label.
+ *
+ * A judgment at each label. A node may carry one current judgment at each
+ * label: a version, in the table its kind keeps, and so may an argument's
+ * evaluation. A run writes its own label's version and no other, made
+ * without sight of anything its label does not read, and a version is
+ * replaced only by work at its own label, so each stays current for the
+ * readers and runs that go by it. On a node that carries another label,
+ * the Steward at a label records its own version or leaves the one it
+ * reads standing for its readers, and that it did so is recorded
+ * (services/left-standing-service.ts). Nothing tests what its label has
+ * attached to the node: whether that bears is its judgment.
+ * A reader, like a run, goes by the versions in force for it: among the
+ * current versions it may read, every one that no other was made at a
+ * label reading its own. Two labels that do not read each other may each
+ * have one in force for a reader who holds both, and nothing is merged.
+ * Each version records the versions it was made beside, and when one of
+ * those is replaced it is shown as made against an earlier one and its
+ * reassessment is opened on the ledger at its own label. The rule is the
+ * database's (db/schema.ts, the *_in_force and *_versions views), and
+ * services/judgment-version-service.ts is the application's side of it.
  *
  * A step of a run's transcript is the run's in the strictest sense: it
  * carries the label the run was opened at, which the run's handle keeps
@@ -119,14 +172,51 @@
  * (services/source-notice-service.ts), whether the retraction poll found
  * the notice or a run's fetch of the document did: the letter is the same
  * whoever found it and is sent once, so it goes at the node's label and
- * not the finder's. All of this is a floor, not the whole rule: the
- * claim's pending slot is one per claim and does not say what label a pass
- * was asked for at. The messages waiting on the claim do, each carrying
- * the label of whoever sent it, so a pending claim whose unread messages
- * agree on a label is taken up at that label, whatever the claim's own is
- * (pendingPassLabel). When they carry more than one, the pass runs at the
- * claim's label and reads them all. Keeping those apart takes a slot, or a
- * judgment, per label, which is later work.
+ * not the finder's. That is the node's own work. Work on a node at another
+ * label that reads it (an internal assessment of a public claim) is keyed
+ * by that label throughout, so that it neither waits on the node's own
+ * work nor shows itself to readers of the node's label: its ledger rows
+ * have that label's own key (groupAtLabel in services/ingest-focus-service.ts,
+ * for a node's assess, curate and formalize groups, a document's ingest
+ * and a partition's sweep), its Steward's slot is a row of its own
+ * (steward_slots, services/steward-lease.ts), an order is one for each
+ * person, node and label, and a message opens work only at the label it
+ * was sent at.
+ *
+ * Word from the layer below. What a label reads is the layer below it,
+ * down to the public graph, and what happens there reaches the work above
+ * without anything being written below. A pass on a node is given the
+ * messages sent at the labels it reads as well as its own, each marked
+ * with its label; that it read one, and what it answered, is a row at the
+ * pass's label (node_message_reads, services/inbox-service.ts), so the
+ * message stays as it was for the pass at its own label. A request filed
+ * below is taken up above as a request of the label that takes it up,
+ * linked to it (adopted_requests, services/request-adoption-service.ts),
+ * and is funded, done and answered there. What the layer below changes on
+ * a node in place (a wording, an argument, a kind, a withdrawal) is
+ * written at the node's label as it happens (node_changes) and told to
+ * the Steward above on its next pass (llm/agents/changes-below-note.ts).
+ * And each label's upkeep is paid by the General mandate at that label
+ * (services/allocation-policy-service.ts). The mirror is the bottom case
+ * of each: a public request adopted, a mirrored node's changes. Nothing
+ * here goes the other way. An answer, a take-up, or a read from above is
+ * not shown below, where its readers may not read what it rests on.
+ *
+ * Work asked for from below. A label cannot be read or named from the
+ * labels it reads. Its administrators may give it a face at one of them
+ * (label_faces: a name and a line, a row at the label it is shown at), and
+ * from there a person who may fund, a mandate or a run can ask for work at
+ * it and pay for it (services/ask-above-service.ts). The ask is an ordinary
+ * request at the asker's label, which is the asker's record of it. The act
+ * takes it up at the label above and attaches the money there: a
+ * commission on its ledger row, whose payer is below, or the budget of a
+ * new mandate. So an allocation and a regrant may sit at a label above
+ * their payer's, and a payer's escrow counts them wherever they are. The
+ * run that does the work is at the label above, under that label's posture
+ * (src/label-posture.ts). What it finds, and every other account of it,
+ * comes down through the gate (services/gate-handoff.ts) or not at all. A
+ * petition from such a run names a mandate at a label that does not read
+ * its own: it is recorded and nothing waits on it.
  *
  * Other work belongs to a row that carries a label of its own, and runs at
  * that row's label whichever sweep, timer or run happens to start it. A
@@ -158,10 +248,14 @@
  * services/label-service.ts), and it is the same floor: what a worker
  * writes about a restricted source is never public. A restricted run that
  * reads a public source is not covered by it. Its judgments carry its
- * label and the document's segments and notices carry the document's, but
- * the text it fetches lands in the public row, an instance has one current
- * reading whoever wrote it, and a source is still found by its URL
- * whatever its label. Telling those apart is later work too.
+ * label and the document's segments and notices carry the document's. The
+ * text it fetches is stored at the document's label, since it is the same
+ * whoever fetches it; text a caller hands over with a submission goes
+ * into a row only at the caller's own label. An instance has one current
+ * reading at each label, and an address has one source at each: work at a
+ * label goes by the nearest layer's row, its own first, and a reading of
+ * its own beside one below is its divergence from it
+ * (services/layer-service.ts).
  *
  * A carrier whose label is missing is not treated as public: the run is
  * refused (MissingLabelError), because writing private work as public is
@@ -178,9 +272,42 @@
  * the table, so the worker checks that the label it carries is defined and
  * refuses the message if it is not (UndefinedLabelError).
  *
- * The public graph has one label, the one named here, and no pairs. No read
- * of a row is held to a label yet: the rows carry them and the writes stamp
- * them, and holding a reader or a run to its clearance is later work.
+ * A person's request is the other thing that writes. It has a clearance,
+ * the labels its account was granted to read, and no label until it is
+ * given one, and it is given one by rule, never by default
+ * (server/request-labels.ts): the label of the row it is about (a
+ * contribution's node, a message's conversation, the mandate money is put
+ * behind), or the label the person names when they start something new. A
+ * request made with an API key or an access token, and each call the
+ * Assistant makes for its user, works at the one label that credential was
+ * made for: it changes only rows that carry it, and may start work at its
+ * own label on a node that label reads. A signed-in person who starts work
+ * on a node that is already there (an order, funding, a decomposition) may
+ * name a label they hold that reads the node's, and the work is then at
+ * that label. No agent chooses a label here either, and a request that
+ * should have a label and has none is refused.
+ *
+ * The public graph has one label, the one named here, and no pairs, and
+ * there nothing is held: every query runs as it always did. Where a
+ * deployment defines a second label, the database holds every read and
+ * write to a clearance, the set of labels a run or a reader may read
+ * (db/clearance.ts): a run reads its own label and the labels it reads, a
+ * request reads what its account was granted (and, once it has a label,
+ * only what that label reads as well), and work with nothing in context
+ * reads `public` alone. An insert that names no label is given
+ * the label of the connection it arrives on, so a forgotten stamp inside
+ * a run lands at the run's label.
+ *
+ * A deployment may also hold the public graph's own rows, through a mirror
+ * (docs/mirror.md). They are `public`, and they are the public graph's:
+ * no run changes one, and the judgment of a mirrored node at `public` is
+ * the mirrored row, so a run at `public` records none of its own there and
+ * a run at another label records its version beside it
+ * (services/mirrored-node-service.ts). A mirrored row and a row of the
+ * deployment's own never collide: where a table has a key besides its id,
+ * the key is unique within each graph (db/schema.ts, the origin column).
+ * The mirror is the lowest layer, and what holds between a label and a
+ * label it reads holds between a deployment's own rows and the mirror's.
  *
  * One thing is held to a run's label already: where its text may be sent.
  * A model provider or an outside service receives text only from runs at

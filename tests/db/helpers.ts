@@ -240,3 +240,79 @@ export async function seedValuation(input: {
 export function pgCode(err: unknown): string | undefined {
   return (err as { code?: string } | null)?.code;
 }
+
+const SQL_TEST_ROLE = "minerval_sql_dbtest";
+const SQL_TEST_PASSWORD = "dbtest-sql";
+
+/**
+ * Rows of the public_read views as read-only SQL returns them to a reader
+ * cleared for `labels`: each row as an object keyed by column. Where a
+ * deployment has more than one label the views show a row only at a label
+ * the asker reads (src/db/clearance.ts), so a test that looks through a
+ * view at rows it wrote at another label says what the asker reads. It runs
+ * the service's own path (runReadOnlyQuery), on the login role the SQL
+ * tests use, so the query must be one the service allows.
+ */
+export async function readViewsAs(
+  labels: readonly string[],
+  sql: string,
+  params: unknown[] = []
+): Promise<Array<Record<string, unknown>>> {
+  const { loadConfig } = await import("../../src/config.js");
+  const { runReadOnlyQuery } = await import("../../src/services/sql-service.js");
+  const { runWithUsageContext } = await import("../../src/llm/usage-context.js");
+  const { TEST_DATABASE_URL } = await import("./urls.js");
+  // Made as the tables' owner: a test that has put its own out-of-context
+  // work on a cleared connection (setNoContextSessionForTests(null)) may not
+  // create a role, and on a cluster that has never run the suite the role
+  // is not there yet.
+  const { withSystemClearance } = await import("../../src/db/clearance.js");
+  await withSystemClearance("A test fixture: the login role the read-only SQL tests connect as.", () =>
+    rawQuery(`DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${SQL_TEST_ROLE}') THEN
+      CREATE ROLE ${SQL_TEST_ROLE} LOGIN PASSWORD '${SQL_TEST_PASSWORD}' CONNECTION LIMIT 3 IN ROLE minerval_sql;
+    END IF; END $$`)
+  );
+  const config = loadConfig();
+  if (!config.sqlAgentDatabaseUrl) {
+    const url = new URL(TEST_DATABASE_URL);
+    url.username = SQL_TEST_ROLE;
+    url.password = SQL_TEST_PASSWORD;
+    Object.assign(config, { sqlAgentDatabaseUrl: url.toString() });
+  }
+  const result = await runWithUsageContext({ clearance: [...labels] }, () =>
+    runReadOnlyQuery(sql, params, { audience: "agent", maxRows: 500 })
+  );
+  return result.rows.map((row) => Object.fromEntries(result.columns.map((c, i) => [c, row[i]])));
+}
+
+/**
+ * Record `url` as an address the deployment was given from outside, as a
+ * search would have, and return it. Where a run reads material that is not
+ * public, it records a source only at such an address
+ * (src/services/given-addresses.ts), so a test whose stand-in for an agent
+ * writes a source at an address the test made up gives the address first.
+ * With `label` the row is written at that label, from outside any run;
+ * without it, at the label of the work in progress. On a database with one
+ * label the row is written and read by nothing.
+ */
+export async function asGiven(url: string, label?: string): Promise<string> {
+  const { normalizePageUrl, pageUrlHash } = await import("../../src/services/page-url.js");
+  const hash = pageUrlHash(normalizePageUrl(url) ?? url);
+  if (label === undefined) {
+    await rawQuery(
+      `INSERT INTO given_addresses (page_url_hash, url, given_by) VALUES ($1, $2, 'search') ON CONFLICT DO NOTHING`,
+      [hash, url]
+    );
+    return url;
+  }
+  const { withSystemClearance } = await import("../../src/db/clearance.js");
+  await withSystemClearance("A test gives a run an address, as a search would have.", () =>
+    rawQuery(
+      `INSERT INTO given_addresses (page_url_hash, url, given_by, sensitivity_label) VALUES ($1, $2, 'search', $3)
+       ON CONFLICT DO NOTHING`,
+      [hash, url, label]
+    )
+  );
+  return url;
+}

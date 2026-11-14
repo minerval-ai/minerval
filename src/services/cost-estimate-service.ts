@@ -19,6 +19,7 @@
  * quotes line up with what users actually pay.
  */
 import { rawQuery } from "../db/client.js";
+import { readerKey } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
 import { hasExplicitRates, ratesForModel } from "../llm/pricing.js";
 import {
@@ -32,6 +33,9 @@ interface CacheEntry {
 }
 
 const CACHE_TTL_MS = 5 * 60_000;
+// Each estimate is worked out from the usage rows its asker may read, so
+// every key begins with the reader (readerKey): a figure taken over one
+// label's runs is not handed to a reader of another.
 const cache = new Map<string, CacheEntry>();
 
 /** Test hook. */
@@ -80,7 +84,7 @@ async function recentRunCostEstimateMicroUsd(
   if (windowDays <= 0 || minRuns <= 0) return null;
   const percentile = Math.min(1, Math.max(0, config.costEstimatePercentile ?? 0.8));
 
-  const key = `${agent}:${model}:${opts.variant ?? ""}:${percentile}`;
+  const key = `${readerKey()}:${agent}:${model}:${opts.variant ?? ""}:${percentile}`;
   const cached = cache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.value || null;
 
@@ -206,13 +210,13 @@ export async function stewardTierCostEstimates(): Promise<{
  * an audit has no claim at all.
  */
 export async function estimateLedgerKindCostMicroUsd(
-  kind: "curate" | "audit" | "request_scope" | "ingest"
+  kind: "curate" | "audit" | "request_scope" | "redact" | "ingest"
 ): Promise<number> {
   const config = loadConfig();
   const windowDays = config.costEstimateWindowDays ?? 14;
   const minRuns = config.costEstimateMinRuns ?? 5;
   const percentile = Math.min(1, Math.max(0, config.costEstimatePercentile ?? 0.8));
-  const key = `ledger:${kind}:${percentile}`;
+  const key = `${readerKey()}:ledger:${kind}:${percentile}`;
   const cached = cache.get(key);
   let live: number | null = null;
   if (cached && cached.expiresAt > Date.now()) {
@@ -244,8 +248,11 @@ export async function estimateLedgerKindCostMicroUsd(
   const priorOwls =
     kind === "curate"
       ? policy.est_curate_cost_owls
-      : kind === "audit"
-        ? policy.est_audit_cost_owls
+      : kind === "audit" || kind === "redact"
+        ? // A redaction reads one page against one policy, as an audit reads
+          // one decision against the record: until the ledger has its own
+          // series of redactions, the audit's prior stands for it.
+          policy.est_audit_cost_owls
         : kind === "ingest"
           ? policy.est_ingest_cost_owls
           : policy.est_request_scope_cost_owls;
@@ -293,7 +300,7 @@ export async function estimateConsistencyNodeCostMicroUsd(
   const windowDays = config.costEstimateWindowDays ?? 14;
   const minRuns = config.costEstimateMinRuns ?? 5;
   const percentile = Math.min(1, Math.max(0, config.costEstimatePercentile ?? 0.8));
-  const key = `consistency_node:${variant}:${minNodes}:${percentile}`;
+  const key = `${readerKey()}:consistency_node:${variant}:${minNodes}:${percentile}`;
   const cached = cache.get(key);
   let live: number | null = null;
   if (cached && cached.expiresAt > Date.now()) {

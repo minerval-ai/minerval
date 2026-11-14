@@ -4,10 +4,11 @@
  * of them, and served whole on the read of one node and in a short form on
  * every row of a tree.
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { rawQuery } from "../../src/db/client.js";
+import { oneLabelOnly } from "../../src/services/judgment-version-service.js";
 import {
   COVERAGE_UNEXAMINED_NOTE,
   coverage,
@@ -28,8 +29,23 @@ import type { TreeNode } from "../../src/schemas/claim.js";
 import { seedClaim } from "./helpers.js";
 
 const NOT_EXAMINED: CoverageSummary = { examined: false, on: [] };
+// Where `public` is the only label, which is the public graph and this file's
+// subject, coverage reads as it always has. The suite's scratch database is
+// shared, and a file that ran earlier may have left a second label defined.
+// Coverage is then said to its reader in the words a deployment with more
+// than one label uses (coverage-service.ts), and the same facts are checked
+// in those words. tests/db/showing-a-page.test.ts holds what they mean.
 const PUBLIC: CoverageSummary = { examined: true, on: ["public_evidence"] };
 const NOT_SHOWN: CoverageSummary = { examined: true, on: ["public_evidence", "evidence_not_shown"] };
+
+beforeAll(async () => {
+  const others = await rawQuery(`SELECT 1 FROM labels WHERE name <> 'public' LIMIT 1`);
+  // The first statement above is what tells this process whether the database holds another label.
+  if (others.length > 0 && !oneLabelOnly()) {
+    PUBLIC.on = ["evidence_this_reader_can_read"];
+    NOT_SHOWN.on = ["evidence_this_reader_can_read", "evidence_not_shown"];
+  }
+});
 // The same three on a row of a list, which names only what goes beyond public evidence.
 const ROW_NOT_EXAMINED = { examined: false };
 const ROW_PUBLIC = { examined: true };

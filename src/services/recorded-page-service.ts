@@ -23,8 +23,9 @@
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { readerKey } from "../db/clearance.js";
 import { PAGE_HASH_PREFIX_CHARS } from "./page-url.js";
-import { AnalysisCache, loadMatchedClaim, type MatchedClaim } from "./extension-service.js";
+import { AnalysisCache, loadMatchedClaim, severalOnAnnotation, type MatchedClaim } from "./extension-service.js";
 import type { NodeKind } from "../schemas/kinds.js";
 
 const PREFIX_RE = new RegExp(`^[0-9a-f]{${PAGE_HASH_PREFIX_CHARS}}$`);
@@ -92,6 +93,9 @@ export interface RecordedPassage {
     summary: string | null;
     subclaim_count: number;
     url: string;
+    /** Present only where more than one judgment of the node is in force for the asker. */
+    judgments_in_force?: number;
+    judgments_in_force_note?: string;
   };
 }
 
@@ -113,7 +117,9 @@ function nodeStatus(m: MatchedClaim): string {
 }
 
 // The endpoint is public and each page costs a few reads per node, so a
-// page's answer is reused briefly; statuses are at most this stale.
+// page's answer is reused briefly; statuses are at most this stale. An
+// answer is reused only for a reader of the same clearance (readerKey): the
+// passages and nodes in it are the ones the first asker could read.
 const recent = new AnalysisCache<RecordedPage>(60 * 1000, 500);
 
 /** Claims loaded at once for one page. */
@@ -126,7 +132,8 @@ const LOAD_CONCURRENCY = 8;
  */
 export async function getRecordedPage(urlHash: string): Promise<RecordedPage | null> {
   if (!HASH_RE.test(urlHash)) return null;
-  const hit = recent.get(urlHash);
+  const slot = `${readerKey()}:${urlHash}`;
+  const hit = recent.get(slot);
   if (hit) return hit;
 
   const rows = await rawQuery<{
@@ -194,6 +201,7 @@ export async function getRecordedPage(urlHash: string): Promise<RecordedPage | n
         summary: node.summary,
         subclaim_count: node.subclaimCount,
         url: node.claimUrl,
+        ...(node.judgmentsInForce ? severalOnAnnotation(node.judgmentsInForce) : {}),
       },
     });
   }
@@ -204,7 +212,7 @@ export async function getRecordedPage(urlHash: string): Promise<RecordedPage | n
     passages,
     total: Number(rows[0]!.total),
   };
-  recent.set(urlHash, page);
+  recent.set(slot, page);
   return page;
 }
 

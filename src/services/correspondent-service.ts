@@ -481,22 +481,25 @@ export async function graphChangeScanTick(opts: { max?: number } = {}): Promise<
   );
   let queued = 0;
   for (const c of rows) {
-    const page = await listGraphChanges({
-      after: c.changes_cursor && decodeChangeCursor(c.changes_cursor) ? c.changes_cursor : cursorAt(new Date(c.created_at)),
-      scope: { under: c.scope_claim_ids ?? [], tagIds: c.scope_tag_ids ?? [] },
-      limit: 1,
-    });
-    const first = page.changes[0];
-    if (!first) continue;
     // The scan is a timer and the wake is the correspondent's, so it is
-    // queued at the correspondent's label (src/labels.ts).
-    const res = await runAtLabel(c.sensitivity_label, `correspondent ${c.id}`, () =>
-      queueCorrespondentEvent({
+    // queued at the correspondent's label (src/labels.ts). Whether there is
+    // a change to wake it for is asked at that label as well: the scan has
+    // every label in sight, and a change the correspondent does not read is
+    // not one to name in its input, or to wake it for.
+    const res = await runAtLabel(c.sensitivity_label, `correspondent ${c.id}`, async () => {
+      const page = await listGraphChanges({
+        after: c.changes_cursor && decodeChangeCursor(c.changes_cursor) ? c.changes_cursor : cursorAt(new Date(c.created_at)),
+        scope: { under: c.scope_claim_ids ?? [], tagIds: c.scope_tag_ids ?? [] },
+        limit: 1,
+      });
+      const first = page.changes[0];
+      if (!first) return { queued: false };
+      return queueCorrespondentEvent({
         correspondentId: c.id,
         kind: "graph_change",
         payload: { first_change_id: first.change_id, first_change_at: first.at, claim_id: first.claim_id },
-      })
-    );
+      });
+    });
     if (res.queued) queued++;
   }
   return { checked: rows.length, queued };

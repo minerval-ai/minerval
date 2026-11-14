@@ -55,6 +55,7 @@ import { getLookoutSystemPrompt } from "../src/llm/prompts/lookout.js";
 import { getProgramOfficerSystemPrompt } from "../src/llm/prompts/program-officer.js";
 import { getCorrespondentSystemPrompt } from "../src/llm/prompts/correspondent.js";
 import { getConsistencyCheckerSystemPrompt } from "../src/llm/prompts/consistency-checker.js";
+import { getRedactorSystemPrompt } from "../src/llm/prompts/redactor.js";
 import { getMathSolverSystemPrompt } from "../src/llm/prompts/math-solver.js";
 import { getResearcherSystemPrompt } from "../src/llm/prompts/researcher.js";
 import { getAssistantSystemPrompt } from "../src/llm/prompts/assistant.js";
@@ -160,7 +161,7 @@ const AGENTS: AgentMeta[] = [
     model: modelLabel(MODELS.frontier), fn: getDisputeArbitratorSystemPrompt },
   { key: "audit-agent", name: "Audit Agent", stage: 7, group: "governance",
     tagline: "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
-    invokedWhen: "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the General mandate funds.",
+    invokedWhen: "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, the prize decisions (a large bounty, an accepted prize claim, a checker failure), and, in a deployment that holds material at more than one label, the check of each redaction before a page is shown to readers who do not read its label. Each is a ledger action the General mandate funds.",
     model: "Claude Opus 5.5", fn: getAuditAgentSystemPrompt },
   { key: "grantmaker", name: "Grantmaker", stage: 8, group: "governance",
     tagline: "Designs and stewards funded mandates: surveys the territory, writes its mandate's valuations over the action ledger, grows its own plan, moves budget between peer mandates, and may refuse money that would warp the graph.",
@@ -182,6 +183,13 @@ const AGENTS: AgentMeta[] = [
     tagline: "The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.",
     invokedWhen: "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     model: `${modelLabel(OPENROUTER_MODELS.flash)} (standard sweep), ${modelLabel(MODELS.sonnet)} (strong sweep)`, fn: getConsistencyCheckerSystemPrompt },
+  // The Redactor runs only where a deployment holds material at more than
+  // one label (services/showing-service.ts). Its prompt is published like
+  // every other, since readers of a shown page weigh how it was made.
+  { key: "redactor", name: "Redactor", stage: 10, group: "governance",
+    tagline: "Works at the gate where something written at one label goes to readers who may not read that label: a node's page, an answer, a mandate's terms or funding. Under the policy for that boundary it removes the passages a category covers and marks each removal in place, and may hold or delay a part. Its tools change no word. What it lets through goes once Audit has checked its work, unless the gate is set for a person to decide as well.",
+    invokedWhen: "In a deployment that holds material at more than one label: when a page a flow covers has a new version, when work on a request taken up from another label has a result, when a message from another label is answered, or when a mandate or its funding is offered to a gate, unless the gate is open for it. Each run is a ledger action paid from the budget of the work whose result is going down. The public graph has one label and no Redactor runs there.",
+    model: `${modelLabel(MODELS.strong)} (the Steward's model, unless REDACTOR_MODEL names another)`, fn: getRedactorSystemPrompt },
   // The solver (docs/mathematics.md §7.1): an instrument, not an
   // administrator. It owns no claim, holds no standing, receives no
   // constitution, and writes nothing to the graph; its prompt is the
@@ -262,6 +270,18 @@ export function syncFrontendContent(contentDir: string): {
   copyFileSync(resolve(root, "docs/policies.md"), resolve(contentDir, "policies.md"));
   copyFileSync(resolve(root, "docs/rewards-policy.md"), resolve(contentDir, "rewards-policy.md"));
   copyFileSync(resolve(root, "docs/contributor-terms.md"), resolve(contentDir, "contributor-terms.md"));
+  // The check of a published page and the reading of its shape run in the
+  // reader's browser as well (docs/published-pages.md), so the web app
+  // carries the two files that do them, word for word. They import nothing
+  // but each other; only the import's spelling differs between the builds.
+  const publishedDir = resolve(root, "web/lib/published-page");
+  mkdirSync(publishedDir, { recursive: true });
+  for (const name of ["verify.ts", "shape.ts"]) {
+    writeFileSync(
+      resolve(publishedDir, name),
+      readFileSync(resolve(root, "src/published-page", name), "utf-8").replace('from "./verify.js"', 'from "./verify"')
+    );
+  }
   copyFileSync(resolve(root, "docs/terms-of-service.md"), resolve(contentDir, "terms-of-service.md"));
 
   // Nothing written here holds a figure over the whole set (a hash over every

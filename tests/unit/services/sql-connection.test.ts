@@ -16,6 +16,14 @@ vi.mock("../../../src/config.js", () => ({
   }),
 }));
 
+// The service asks the main database which labels the asker reads
+// (src/db/clearance.ts). These tests are about the query's own connection
+// and have no main database, so the answer is given: nothing is held.
+vi.mock("../../../src/db/client.js", async (original) => ({
+  ...(await original<typeof import("../../../src/db/client.js")>()),
+  currentReadClearance: async () => null,
+}));
+
 import { runReadOnlyQuery, SqlRefusal } from "../../../src/services/sql-service.js";
 
 const RAW =

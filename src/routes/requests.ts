@@ -13,6 +13,7 @@ import { getRequest, listRequests } from "../services/request-service.js";
 import { allocateToRequest } from "../services/allocation-service.js";
 import { microUsdToOwls } from "../services/owl.js";
 import { requirePermission } from "../server/require-permission.js";
+import { DECLINE_REASONS, TakeUpError, declineTakenUpRequest, takeUpRequest } from "../services/request-take-up-service.js";
 
 const listRequestsParams = z.object({
   // One state, or "live" for every request still open to work.
@@ -96,6 +97,64 @@ export const REQUEST_SCHEMA = {
           budget_usd: { type: "number", nullable: true },
           quote_usd: { type: "number", nullable: true },
           funding: { type: "string", nullable: true },
+        },
+      },
+    },
+    // Where a deployment has more than one label, or mirrors the public
+    // graph: the request this one was taken up from, and the requests at
+    // labels the reader reads that took this one up
+    // (services/request-adoption-service.ts). Absent otherwise.
+    taken_up_from: {
+      type: "object",
+      properties: {
+        request_id: { type: "string", format: "uuid" },
+        label: { type: "string" },
+        public_request_id: { type: "string", format: "uuid" },
+      },
+    },
+    // That work at a label the reader may not read took the request up, as it came through the gate
+    // (docs/the-gate.md). Absent where nothing came.
+    taken_up_above: {
+      type: "object",
+      properties: { said_at: { type: "string" }, answer: { type: "string" }, answer_source_id: { type: "string", format: "uuid" } },
+    },
+    taken_up_at: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          request_id: { type: "string", format: "uuid" },
+          state: { type: "string" },
+        },
+      },
+    },
+    // Where the request was addressed to a mandate another graph published here (published-mandate-service.ts): the
+    // mandate, its publisher, and where the request stands with it, read from this graph's own record. Absent otherwise.
+    addressed_to_mandate: {
+      type: "object",
+      properties: {
+        face_id: { type: "string", format: "uuid" },
+        name: { type: "string" },
+        publisher: { type: "object", properties: { account_id: { type: "string", format: "uuid" }, name: { type: "string" } } },
+        withdrawn: { type: "boolean" },
+        stands: { type: "string" },
+        in_words: { type: "string" },
+      },
+    },
+    // Accounts that have said they are taking the request up, and what followed.
+    taken_up: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          by: { type: "string" },
+          account_id: { type: "string", format: "uuid" },
+          at: { type: "string", format: "date-time" },
+          followed: { type: "string" },
+          in_words: { type: "string" },
+          published_page_id: { type: "string", format: "uuid", nullable: true },
+          node_id: { type: "string", format: "uuid", nullable: true },
         },
       },
     },
@@ -252,4 +311,54 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
       },
     }
   );
+
+  // POST /requests/:request_id/take-up: an account says, on the request's
+  // record, that it is taking the request up (request-take-up-service.ts).
+  app.post<{ Params: { request_id: string } }>("/:request_id/take-up", {
+    schema: {
+      tags: ["requests"],
+      summary: "Say on a request's record, under your account's name, that you are taking the request up",
+      description:
+        "A request may be addressed to whoever holds the evidence, and what becomes of it is part of its record. Any account may say it is taking a " +
+        "request up. The statement is public at once, in fixed words with your account's name and the date. It commits you to doing the work well, " +
+        "not to a result, and it funds nothing: the work is still paid for like any work. The record then shows what followed, read from the graph " +
+        "and not from you: a page your account publishes on a node the request bears on, your own later statement that you will not do the work, or " +
+        "nothing yet, with how long. The statement stays on the record.",
+      params: { type: "object", required: ["request_id"], properties: { request_id: { type: "string", format: "uuid" } } },
+    },
+    preHandler: [app.authenticate, app.requireUser],
+    handler: async (request, reply) => {
+      try {
+        const result = await takeUpRequest({ requestId: request.params.request_id, accountId: request.auth!.userId! });
+        return reply.code(result.already ? 200 : 201).send(result);
+      } catch (err) {
+        if (err instanceof TakeUpError) {
+          return reply.code(err.code === "REQUEST_NOT_FOUND" ? 404 : 409).send({ error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    },
+  });
+
+  app.post<{ Params: { request_id: string }; Body: { reason: string } }>("/:request_id/take-up/decline", {
+    schema: {
+      tags: ["requests"],
+      summary: "Say on a request's record that you will not do the work you took up, with a reason from a fixed list",
+      description:
+        "A refusal is a complete answer to a request and part of its record. The reason is one of: " +
+        Object.entries(DECLINE_REASONS).map(([k, v]) => `${k} (${v})`).join("; ") +
+        ". It is your own statement and nobody checks it. That you took the request up, and when, stays on the record.",
+      params: { type: "object", required: ["request_id"], properties: { request_id: { type: "string", format: "uuid" } } },
+      body: { type: "object", required: ["reason"], properties: { reason: { type: "string", enum: Object.keys(DECLINE_REASONS) } } },
+    },
+    preHandler: [app.authenticate, app.requireUser],
+    handler: async (request, reply) => {
+      try {
+        return reply.send(await declineTakenUpRequest({ requestId: request.params.request_id, accountId: request.auth!.userId!, reason: request.body.reason }));
+      } catch (err) {
+        if (err instanceof TakeUpError) return reply.code(409).send({ error: err.message, code: err.code });
+        throw err;
+      }
+    },
+  });
 }

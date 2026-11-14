@@ -17,9 +17,27 @@
  *
  * Off by default (MONITOR_SWEEP_INTERVAL_HOURS=0): the signals are always
  * readable; feeding them to the Audit Agent is an operator's decision.
+ *
+ * Where a deployment has more than one label the sweep works label by
+ * label (everyLabel in services/label-service.ts). A candidate's context
+ * states a verdict, its confidence and how many instances affirm and deny
+ * it, so it is found with the clearance of the label it is written at: the
+ * detectors run inside each label, and a label asks for an audit only of
+ * the judgments recorded at that label, as its readers see their record.
+ * A node's public judgment is looked at on what `public` reads, and its
+ * version at another label on what that label reads, each once. The sweep
+ * never sees every label at once, so it is not system work. On a
+ * deployment that mirrors the public graph, a mirrored node's judgment at
+ * the node's own label is the public graph's, and no audit of it is opened
+ * here (services/mirrored-node-service.ts).
  */
 import { loadConfig } from "../config.js";
-import { runAtClaimLabel } from "../services/label-service.js";
+import { rawQuery } from "../db/client.js";
+import { PUBLIC_LABEL } from "../labels.js";
+import { runAtLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "../services/judgment-version-service.js";
+import { everyLabel, keyAtLabel } from "../services/label-service.js";
+import { holdsMirror } from "../services/mirrored-node-service.js";
 import { requestAudit } from "../services/queue-service.js";
 import {
   defaultThresholds,
@@ -111,32 +129,61 @@ export async function flagMonitorCandidates(
   if (maxFlags <= 0) return result;
 
   const t = defaultThresholds({ limit: maxFlags });
-  const [ps, ec] = await Promise.all([performedSettling(t), emptyChairs(t)]);
-  result.candidates = ps.candidates.length + ec.candidates.length;
-
-  // Interleave by importance across the two signals, capped per sweep.
-  const queue: Array<{ signal: MonitorFlag["signal"]; importance: number; claimId: string; context: string }> = [
-    ...ps.candidates.map((c) => ({ signal: "performed_settling" as const, importance: c.importance, claimId: c.claimId, context: performedSettlingContext(c) })),
-    ...ec.candidates.map((c) => ({ signal: "empty_chairs" as const, importance: c.importance, claimId: c.claimId, context: emptyChairsContext(c) })),
-  ].sort((a, b) => b.importance - a.importance);
+  type Item = { signal: MonitorFlag["signal"]; importance: number; claimId: string; context: string; label: string };
+  const queue: Item[] = [];
+  for (const label of await everyLabel()) {
+    // The detectors read, and the context is worded, inside the label the
+    // audit will be asked for at: what it says of the claim's record is
+    // what that label's readers see of it.
+    await runAtLabel(label, `the monitor's sweep at ${label}`, async () => {
+      const [ps, ec] = await Promise.all([performedSettling(t), emptyChairs(t)]);
+      const found: Item[] = [
+        ...ps.candidates.map((c) => ({ signal: "performed_settling" as const, importance: c.importance, claimId: c.claimId, context: performedSettlingContext(c), label })),
+        ...ec.candidates.map((c) => ({ signal: "empty_chairs" as const, importance: c.importance, claimId: c.claimId, context: emptyChairsContext(c), label })),
+      ];
+      const own = await judgedHereAtThisLabel(found.map((f) => f.claimId), label);
+      queue.push(...found.filter((f) => own === null || own.has(f.claimId)));
+    });
+  }
+  result.candidates = queue.length;
+  // Interleave by importance across the two signals and the labels, capped per sweep.
+  queue.sort((a, b) => b.importance - a.importance);
 
   for (const item of queue) {
     if (result.requested >= maxFlags) break;
-    // The sweep is a timer and each audit is about one claim, so it is
-    // asked for at that claim's label (runAtClaimLabel): the audit's record,
-    // which quotes the claim, and the ledger row that runs it.
-    const runId = await runAtClaimLabel(item.claimId, () =>
+    // Each audit is about one judgment of one claim, so it is asked for at
+    // that judgment's label: the audit's record, which quotes the claim and
+    // states its verdict, and the ledger row that runs it.
+    const runId = await runAtLabel(item.label, `claim ${item.claimId}`, () =>
       requestAudit({
         auditType: "anomaly_investigation",
         context: item.context,
         triggeredBy: "monitor_signal",
-        dedupeKey: `monitor:${item.signal}:${item.claimId}:${bucket}`,
+        dedupeKey: keyAtLabel(`monitor:${item.signal}:${item.claimId}:${bucket}`, item.label),
       })
     );
     result.flags.push({ signal: item.signal, claimId: item.claimId, runId });
     if (runId !== null) result.requested++;
   }
   return result;
+}
+
+/**
+ * Which of these claims have, as the judgment in force for the work in
+ * progress, one recorded at `label` by this deployment. A label that reads
+ * another sees that label's judgments too, and a mirror brings the public
+ * graph's: neither is this label's to ask an audit of. Null where there is
+ * nothing to tell apart (one label, no mirror), and nothing is asked.
+ */
+async function judgedHereAtThisLabel(claimIds: string[], label: string): Promise<Set<string> | null> {
+  if (oneLabelOnly() && !holdsMirror()) return null;
+  if (claimIds.length === 0) return new Set();
+  const rows = await rawQuery<{ id: string }>(
+    `SELECT a.claim_id AS id FROM assessments_in_force a
+      WHERE a.claim_id = ANY($1::uuid[]) AND a.sensitivity_label = $2 AND a.origin = 'local'`,
+    [claimIds, label ?? PUBLIC_LABEL]
+  );
+  return new Set(rows.map((r) => r.id));
 }
 
 export interface MonitorSchedulerTickResult {
@@ -180,6 +227,8 @@ export function startMonitorScheduler(options: {
     if (busy) return;
     busy = true;
     try {
+      // Not system work: the sweep looks inside each label in turn (see the
+      // header), so nothing it writes at a label was read outside it.
       const result = await monitorSchedulerTick();
       if (result.swept && result.flags) {
         options.logger.info(

@@ -4,12 +4,28 @@
  * These let the steward update assessments, modify canonical forms,
  * add decomposition edges, log decisions, and notify dependent stewards.
  */
+import { refusalForCaller } from "../../db/clearance.js";
+import { placementOf, recordOverlay, setAsideFor } from "../../services/overlay-service.js";
+import {
+  mirroredNode,
+  mirroredRefusalForAgent,
+  mirroredRowMessage,
+  publicGraphEvaluates,
+  publicGraphJudges,
+  publicJudgmentMessage,
+} from "../../services/mirrored-node-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedInputRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../../db/client.js";
 import { recordJudgmentInputs } from "../../services/judgment-inputs-service.js";
+import {
+  anotherLabelsNode,
+  anotherLabelsNodeMessage,
+  oneLabelOnly,
+  recordMadeBeside,
+} from "../../services/judgment-version-service.js";
 import {
   claims,
   assessments,
@@ -19,6 +35,7 @@ import {
 } from "../../db/schema.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { getOrCreateSource } from "../../services/source-service.js";
+import { sourceAddressProblem } from "../../services/reading-address.js";
 import {
   ARGUMENT_VERDICTS,
   addArgument,
@@ -87,6 +104,7 @@ import { ownershipRefusal } from "./steward-ownership.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { MARGINAL_YIELD_DESCRIPTION } from "./judgment-fields.js";
 import { malformedIdRefusal, writeIdCandidates } from "./id-repair.js";
+import { isMalformedIdError } from "../seen-ids.js";
 import {
   executeStewardStructureTool,
   getStewardStructureToolDefinitions,
@@ -200,6 +218,29 @@ async function wrongKindForAssessment(claimId: string): Promise<string | null> {
 }
 
 /** Coerce a tool input to a clamped unit-interval score in [0, 1], or undefined if absent/invalid. */
+/**
+ * What a Steward is told when it sets the importance of a node that is at
+ * a layer below its run's label: its label's own value, held over the node.
+ */
+export function importanceAtALabelMessage(
+  nodeId: string,
+  own: string,
+  below: string,
+  importance: number,
+  contestation: number | undefined,
+  was: { importance: number; contestation: number | null } | undefined
+): string {
+  const lower = below === "the public graph" ? below : `\`${below}\``;
+  return (
+    `Importance of ${nodeId} is ${importance} at \`${own}\`.` +
+    (contestation !== undefined ? ` Contestation is ${contestation} at \`${own}\`.` : "") +
+    ` The node is at ${lower}, which keeps its own value (importance ${was?.importance ?? "?"}` +
+    `${was && was.contestation != null ? `, contestation ${was.contestation}` : ""}) for its readers and its work. ` +
+    `What reads importance at \`${own}\` goes by yours: the order work waits in, what a mandate is shown, ` +
+    `and the sweeps. restore_below takes this back.`
+  );
+}
+
 function clampUnit(value: unknown): number | undefined {
   if (value === undefined || value === null) return undefined;
   const n = Number(value);
@@ -1486,6 +1527,18 @@ export async function executeStewardTool(
         const kindRefusal = await wrongKindForAssessment(claimId);
         if (kindRefusal) return kindRefusal;
 
+        // A node may carry a version at each label, and this run writes its
+        // own label's (judgment-version-service.ts). Whether to record one
+        // on a node that carries another label, or to leave the one it
+        // reads standing, is the Steward's judgment
+        // (left-standing-service.ts).
+        // The judgment of a mirrored node at the node's own label is the
+        // public graph's, and nothing here records one in its place
+        // (mirrored-node-service.ts). Asked before anything is written.
+        if (await publicGraphJudges(claimId)) {
+          return JSON.stringify({ success: false, message: publicJudgmentMessage("An assessment of it") });
+        }
+
         const db = getDb();
         // The verdict in force before this one, for the event a subscriber
         // reads; never a reason to fail the verdict itself.
@@ -1499,11 +1552,18 @@ export async function executeStewardTool(
           before = undefined;
         }
 
-        // Mark previous assessment as non-current
+        // Retire this label's current version, and no other label's: each
+        // stays in force for the readers and runs that go by it.
         await db
           .update(assessments)
           .set({ isCurrent: false })
-          .where(eq(assessments.claimId, claimId));
+          .where(
+            and(
+              eq(assessments.claimId, claimId),
+              eq(assessments.isCurrent, true),
+              eq(assessments.sensitivityLabel, currentLabel())
+            )
+          );
 
         // Insert new assessment
         const [written] = await db.insert(assessments).values({
@@ -1557,6 +1617,7 @@ export async function executeStewardTool(
           });
           try {
             await recordJudgmentInputs(rawQuery, "assessment", written.id, claimId);
+            await recordMadeBeside(rawQuery, "assessments", "assessment", written.id, claimId);
           } catch (err) {
             console.error(
               "[steward] failed to record what an assessment was made against:",
@@ -1615,13 +1676,15 @@ export async function executeStewardTool(
         const optText = (v: unknown): string | undefined =>
           typeof v === "string" && v.trim() ? v.trim() : undefined;
 
-        if (!/^https?:\/\//i.test(url)) {
-          return JSON.stringify({
-            success: false,
-            message:
-              "url must be the http(s) URL of the source you read; an " +
-              "instance without provenance is not recordable.",
-          });
+        // An http(s) URL, or the address of a reading kept from a
+        // connection (services/reading-address.ts).
+        const addressProblem = await sourceAddressProblem(
+          url,
+          "url must be the http(s) URL of the source you read; an " +
+            "instance without provenance is not recordable."
+        );
+        if (addressProblem) {
+          return JSON.stringify({ success: false, message: addressProblem });
         }
         if (!verbatimText) {
           return JSON.stringify({
@@ -2089,6 +2152,17 @@ export async function executeStewardTool(
       case "update_canonical_form": {
         const claimId = input.claim_id as string;
         const newText = input.new_text as string;
+        // A node that carries another label is that label's Steward's to
+        // change (judgment-version-service.ts): refused, with the reason.
+        // So is a node the public graph holds, whatever this run's label
+        // (mirrored-node-service.ts): the one refusal, with what to do.
+        if (await mirroredNode(claimId)) {
+          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's wording and type") });
+        }
+        const notOurs = await anotherLabelsNode(claimId);
+        if (notOurs) {
+          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "wording and type") });
+        }
         // Optional type correction (docs/mathematics.md §2.1): the type is a
         // facet the page, the cards, and the map read, so a theorem left as
         // "empirical, derived" is a category error the Steward can fix here.
@@ -2163,6 +2237,15 @@ export async function executeStewardTool(
 
       case "set_claim_domains": {
         const claimId = input.claim_id as string;
+        // A node that carries another label is that label's Steward's to
+        // change (judgment-version-service.ts): refused, with the reason.
+        if (await mirroredNode(claimId)) {
+          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's domains") });
+        }
+        const notOurs = await anotherLabelsNode(claimId);
+        if (notOurs) {
+          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "domains") });
+        }
         const parsed = parseDomains(input.domains);
         if ("error" in parsed) {
           return JSON.stringify({ success: false, message: parsed.error });
@@ -2199,6 +2282,50 @@ export async function executeStewardTool(
         // it (#172 phase 1); absent means "leave the stored judgment as is",
         // never "reset to unjudged".
         const contestation = clampUnit(input.contestation);
+
+        // A node at a layer below this run's label keeps the importance its
+        // own label gave it, for that label's readers and work. What this
+        // label holds it to be is a row of its own over the node
+        // (services/overlay-service.ts), and everything at this label that
+        // reads importance goes by it.
+        const nodeAt = await placementOf("claims", claimId);
+        if (nodeAt?.below) {
+          const [below] = await rawQuery<{ importance: number; contestation: number | null }>(
+            `SELECT importance, contestation FROM claims WHERE id = $1`,
+            [claimId]
+          );
+          const recorded = await recordOverlay({
+            table: "claims",
+            id: claimId,
+            kind: "importance",
+            value: importance,
+            reason: typeof input.reasoning === "string" ? input.reasoning : null,
+            createdBy: "claim_steward",
+          });
+          if (contestation !== undefined) {
+            await recordOverlay({
+              table: "claims",
+              id: claimId,
+              kind: "contestation",
+              value: contestation,
+              reason: typeof input.reasoning === "string" ? input.reasoning : null,
+              createdBy: "claim_steward",
+            });
+          }
+          return JSON.stringify({
+            success: true,
+            message: importanceAtALabelMessage(claimId, recorded.label, recorded.below, importance, contestation, below),
+          });
+        }
+        // A node at a label this run does not work at and does not lie
+        // above (a mirrored node read at `public`) is not its to change.
+        if (await mirroredNode(claimId)) {
+          return JSON.stringify({ success: false, message: mirroredRowMessage("the node's importance and contestation") });
+        }
+        const notOurs = await anotherLabelsNode(claimId);
+        if (notOurs) {
+          return JSON.stringify({ success: false, message: anotherLabelsNodeMessage(notOurs, "importance and contestation") });
+        }
 
         const db = getDb();
         await db
@@ -2498,6 +2625,14 @@ export async function executeStewardTool(
           });
         }
 
+        // An evaluation is a version too, recorded at this run's label
+        // (judgment-version-service.ts). The evaluation of a mirrored
+        // argument at the argument's own label is the public graph's
+        // (mirrored-node-service.ts).
+        if (await publicGraphEvaluates(argumentId)) {
+          return JSON.stringify({ success: false, message: publicJudgmentMessage("An evaluation of this argument") });
+        }
+
         // Provenance: stamp the claim assessment this evaluation was derived
         // under, so an evaluation left behind by a later reassessment is
         // detectably stale. Call evaluate_argument AFTER update_claim_assessment
@@ -2506,6 +2641,16 @@ export async function executeStewardTool(
         const [currentEstimate] = await rawQuery<{ id: string }>(
           `SELECT qe.id FROM quantity_estimates_in_force qe JOIN claims c ON c.id = qe.claim_id
             WHERE qe.claim_id = $1 AND c.kind = 'quantity'`,
+          [argument.claimId]
+        );
+        // Each kind of node has its own judgment, and the note below names the one this node lacks, with the tool
+        // that records it. A quantity told it lacks a claim's assessment records its estimate again, and again.
+        const [conclusion] = await rawQuery<{ kind: string; judged: boolean }>(
+          `SELECT c.kind, CASE c.kind
+                    WHEN 'quantity' THEN EXISTS (SELECT 1 FROM quantity_estimates_in_force q WHERE q.claim_id = c.id)
+                    WHEN 'question' THEN EXISTS (SELECT 1 FROM question_assessments_in_force q WHERE q.claim_id = c.id)
+                    ELSE EXISTS (SELECT 1 FROM assessments_in_force a WHERE a.claim_id = c.id) END AS judged
+             FROM claims c WHERE c.id = $1`,
           [argument.claimId]
         );
         const db = getDb();
@@ -2530,11 +2675,16 @@ export async function executeStewardTool(
           message:
             `Evaluation recorded for argument "${argument.name}": ${verdict}` +
             (decisive ? ", decisive." : ".") +
-            (currentAssessment
+            (!conclusion || conclusion.judged
               ? ""
-              : ` Note: the claim has no current assessment yet; record one ` +
-                `with update_claim_assessment so the evaluation is anchored ` +
-                `to it.`),
+              : conclusion.kind === "quantity"
+                ? ` Note: the quantity has no current estimate yet; record one with update_quantity_estimate ` +
+                  `so the evaluation is anchored to it.`
+                : conclusion.kind === "question"
+                  ? ` Note: the question has no current assessment yet; record one with update_question_assessment.`
+                  : ` Note: the claim has no current assessment yet; record one ` +
+                    `with update_claim_assessment so the evaluation is anchored ` +
+                    `to it.`),
         });
       }
 
@@ -2622,6 +2772,7 @@ export async function executeStewardTool(
         const argumentLabel = argument
           ? `argument "${argument.name ?? argumentId}"`
           : null;
+        const standing = edge.created ? null : await setAsideFor("claim_relationships", edge.id);
         const message =
           (edge.created
             ? `Linked existing claim ${childId} as a subclaim of ${parentId} (${relation}).`
@@ -2632,6 +2783,11 @@ export async function executeStewardTool(
             ? grouped
               ? ` Grouped it under ${argumentLabel}.`
               : ` It was already grouped under ${argumentLabel}.`
+            : "") +
+          // An edge the layer below holds, which a label this run reads set aside.
+          (standing?.set_aside
+            ? ` It is set aside at \`${standing.label}\`${standing.reason ? ` ("${standing.reason}")` : ""}, so the ` +
+              `judgment there does not rest on it; restore_below counts it again at this run's label.`
             : "");
 
         return JSON.stringify({
@@ -2787,6 +2943,21 @@ export async function executeStewardTool(
         }
 
         const db = getDb();
+
+        // Where there is more than one label, a parent this run does not
+        // read is not found, as add_parent_claim does not find its node:
+        // the edge would otherwise be written under a node the run was
+        // never shown. A Steward's run names its own node here, so this is
+        // a backstop for a caller that is not one.
+        if (!oneLabelOnly()) {
+          const visible = await rawQuery(`SELECT 1 FROM claims WHERE id = $1`, [parentId]);
+          if (visible.length === 0) {
+            return JSON.stringify({
+              success: false,
+              message: `Claim not found: ${parentId}. Pass the id of the node you steward.`,
+            });
+          }
+        }
 
         if (domainsSource === null || claimType === undefined) {
           const [parent] = await db
@@ -3276,10 +3447,15 @@ export async function executeStewardTool(
           reasoning,
           createdBy: "claim_steward",
         });
-        await db
-          .update(claims)
-          .set({ updatedAt: new Date() })
-          .where(eq(claims.id, claimId));
+        // The node's own row is touched only by work at its own label; the
+        // decision itself is the row above, at this run's label.
+        // A mirrored node's row is the public graph's, at every label.
+        if (!(await anotherLabelsNode(claimId)) && !(await mirroredNode(claimId))) {
+          await db
+            .update(claims)
+            .set({ updatedAt: new Date() })
+            .where(eq(claims.id, claimId));
+        }
 
         return JSON.stringify({
           success: true,
@@ -3342,7 +3518,11 @@ export async function executeStewardTool(
     // A malformed uuid reaches the database as a syntax error (22P02).
     // Nothing was written; say which id is malformed and offer the ids the
     // run has seen nearest it, rather than the bare database message.
-    if ((err as { code?: string } | null)?.code === "22P02") return malformedIdRefusal(input);
+    if (isMalformedIdError(err)) return malformedIdRefusal(input);
+    // The database's refusal of a write across labels is told whole, with
+    // its reason: a limit the agent works under, not a fault of the tool.
+    const refusal = mirroredRefusalForAgent(err) ?? refusalForCaller(err);
+    if (refusal) return JSON.stringify({ success: false, message: refusal });
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }

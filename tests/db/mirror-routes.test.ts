@@ -2,12 +2,16 @@
  * The mirror feed over HTTP (src/routes/mirror.ts): a publisher's routes as
  * a caller sees them, and a private deployment fed from them.
  *
- * This file's app database is the publisher's ("a" of the two the global
- * setup makes for the mirror). The private side is the other, reached
- * through its own pool, and fetches through the publisher's real routes.
- * It works whether or not mirror-round-trip.test.ts ran first: the feed is
- * new here or continued here, and the mirror starts from a snapshot or
- * goes on from where it was.
+ * This file's app database is the publisher's, and the private side is
+ * another, reached through its own pool, which fetches through the
+ * publisher's real routes. They are this file's own pair ("f" and "g" of
+ * the copies the global setup makes, tests/db/urls.ts). This file used to
+ * share "a" and "b" with mirror-round-trip.test.ts and was written to work
+ * after it. The round trip was not written to work after this file: it
+ * expects a publisher that has cut nothing and a mirror that has applied
+ * nothing, and the suite's files are not run in a fixed order (a file that
+ * failed last time, or took longer, runs first). When this file ran first
+ * the round trip failed 21 tests.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -19,7 +23,7 @@ const env = vi.hoisted(() => {
   const { generateKeyPairSync } = require("node:crypto") as typeof import("node:crypto");
   const base = process.env.TEST_DATABASE_URL ?? "postgresql://episteme:episteme@localhost:5432/episteme_dbtest";
   const url = new URL(base);
-  url.pathname = `${url.pathname}_mirror_a`;
+  url.pathname = `${url.pathname}_mirror_f`;
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const publicKeyRaw = Buffer.from((publicKey.export({ format: "jwk" }) as { x: string }).x, "base64url").toString("base64");
   process.env.DATABASE_URL = url.toString();
@@ -61,7 +65,7 @@ const viaApp: typeof fetch = async (input, init) => {
 };
 
 beforeAll(async () => {
-  privPool = new pg.Pool({ connectionString: mirrorDatabaseUrl("b"), max: 4 });
+  privPool = new pg.Pool({ connectionString: mirrorDatabaseUrl("g"), max: 4 });
   priv = poolDb(privPool);
   claimId = randomUUID();
   await rawQuery(`INSERT INTO claims (id, text, steward_state) VALUES ($1, $2, 'done')`, [

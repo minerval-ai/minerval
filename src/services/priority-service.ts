@@ -9,15 +9,24 @@
  */
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
+import { ASSESS_GROUP_SQL } from "./action-service.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
+import { currentLabel } from "../llm/usage-context.js";
+import { contestationSql, importanceSql } from "./overlay-service.js";
 
 /** The ordering for one claims row `c` (SQL fragment). */
+// The node's own value: this stamps the node's own row, for work at its own label.
 const ORDER_SQL = `COALESCE(c.importance, 0)`;
 
 /** Restamp one claim's place in the list. Returns it. */
 export async function refreshQueuePriority(claimId: string): Promise<number> {
+  // The priority is a column of the node's own row, which is changed only
+  // by work at the node's own label (db/clearance.ts): work at another
+  // label that touches the node leaves its place in its own list alone.
+  const own = oneLabelOnly();
   const rows = await rawQuery<{ queue_priority: number }>(
-    `UPDATE claims c SET queue_priority = ${ORDER_SQL} WHERE c.id = $1 RETURNING c.queue_priority`,
-    [claimId]
+    `UPDATE claims c SET queue_priority = ${ORDER_SQL} WHERE c.id = $1${own ? "" : " AND c.sensitivity_label = $2"} RETURNING c.queue_priority`,
+    own ? [claimId] : [claimId, currentLabel()]
   );
   return rows[0]?.queue_priority ?? 0;
 }
@@ -59,7 +68,7 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
     assessed_at: Date | null;
     created_by: string;
   }>(
-    `SELECT c.queue_priority, c.importance, c.contestation, c.created_by,
+    `SELECT c.queue_priority, ${importanceSql("c")} AS importance, ${contestationSql("c")} AS contestation, c.created_by,
             (SELECT a.marginal_yield FROM assessments_in_force a
               WHERE a.claim_id = c.id
               ORDER BY a.assessed_at DESC LIMIT 1) AS marginal_yield,
@@ -67,8 +76,8 @@ export async function getPriorityBreakdown(claimId: string): Promise<{
               WHERE a.claim_id = c.id
               ORDER BY a.assessed_at DESC LIMIT 1) AS assessed_at,
             COALESCE((SELECT SUM(a.amount_micro_usd - a.spent_micro_usd)
-                        FROM action_allocations a
-                       WHERE a.exclusion_group = 'assess:' || c.id::text
+                        FROM minerval_whole.allocation_money a
+                       WHERE a.exclusion_group = ${ASSESS_GROUP_SQL("c.id", "c.sensitivity_label")}
                          AND a.released_at IS NULL), 0)
               AS backing_micro
        FROM claims c WHERE c.id = $1`,

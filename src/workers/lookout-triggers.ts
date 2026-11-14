@@ -53,8 +53,10 @@ import {
   claimsRestingOnSources,
   retractionNoticesSince,
   sourcesForDois,
+  sourcesWithClaims,
 } from "../services/source-watch-service.js";
-import { queueLookoutEventsByTrigger } from "../services/lookout-service.js";
+import { queueLookoutEvent } from "../services/lookout-service.js";
+import { runAtLabel } from "../llm/usage-context.js";
 import { eventKindForCrossref, recordSourceEvent } from "../services/source-facts-service.js";
 import {
   TOLD_NOTICE_TYPES,
@@ -62,6 +64,7 @@ import {
   type FreshSourceEvent,
 } from "../services/source-notice-service.js";
 import { expireItems, pollFeed, type FeedRow } from "../services/feed-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 const FLAG_KEY = "lookout_retraction_poll";
 /** First poll looks back this far; later polls resume from the mark. */
@@ -182,40 +185,84 @@ export async function retractionPollTick(
     }
   }
 
-  // The resting claims are needed to tell Stewards about a fresh event, and
-  // to wake a lookout that watches for retractions.
-  const [subscribed] = await rawQuery<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM lookouts l JOIN grants g ON g.id = l.grant_id
-      WHERE l.status = 'active' AND g.status = 'active' AND l.triggers ? 'retraction'`
-  );
-  const watched = Number(subscribed?.n ?? 0) > 0;
-  const resting = (watched || fresh.length > 0) && matches.length > 0
-    ? await claimsRestingOnSources(matches.map((m) => m.source_id))
-    : [];
-
+  // Stewards are told of a fresh event. The poll has every label in sight,
+  // so who might be told is found here, and what each is told is read again
+  // at that node's own label (tellStewardsOfSourceEvents).
+  const resting = fresh.length > 0 ? await claimsRestingOnSources(fresh.map((f) => f.source.source_id)) : [];
   result.stewardsTold = await tellStewardsOfSourceEvents(fresh, resting);
 
-  for (const m of watched ? matches : []) {
+  // Lookouts that watch for retractions. Each is handed the matched sources
+  // its own label reads, with the nodes its label reads on them, and
+  // nothing of the others: its input is put together at its label, from
+  // what the database shows a connection at that label (db/clearance.ts).
+  // A lookout whose label reads none of the matched sources is not told.
+  const noticeFor = new Map<string, { doi: string; notice: (typeof notices)[number] }>();
+  for (const m of matches) {
+    const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
+    if (notice) noticeFor.set(m.source_id, { doi: m.doi, notice });
+  }
+  const subscribers = noticeFor.size > 0
+    ? await rawQuery<{ id: string; sensitivity_label: string }>(
+        `SELECT l.id, l.sensitivity_label FROM lookouts l JOIN grants g ON g.id = l.grant_id
+          WHERE l.status = 'active' AND g.status = 'active' AND l.triggers ? 'retraction'`
+      )
+    : [];
+  for (const lookout of subscribers) {
+    result.eventsQueued += await runAtLabel(lookout.sensitivity_label, `lookout ${lookout.id}`, () =>
+      queueRetractionsFor(lookout.id, noticeFor)
+    );
+  }
+
+  // Read to the end: the next window starts now, after the usual cadence.
+  // Stopped early: it starts from the newest notice read, and the cadence
+  // is left as it was so the next tick carries on. Read nothing: the mark
+  // stays and the next tick tries again.
+  if (window.complete) await writeMark(new Date(now), new Date(now));
+  else if (window.readThrough) await writeMark(window.readThrough, polledAt);
+  return result;
+}
+
+/** Unconsumed events a lookout may hold before further ones are dropped. */
+const MAX_PENDING_EVENTS = 50;
+
+/**
+ * Queue one lookout's retraction events, at its label: one for each matched
+ * source it reads that a node it reads has a passage from or rests on. The
+ * sources and the nodes are read here, so the payload holds what this
+ * lookout's label reads and nothing else. A lookout already holding an
+ * event for a notice is not handed it again (the overlap window and a
+ * re-run would otherwise duplicate), and a full queue takes no more.
+ */
+async function queueRetractionsFor(
+  lookoutId: string,
+  noticeFor: Map<string, { doi: string; notice: Awaited<ReturnType<typeof retractionNoticesSince>>["notices"][number] }>
+): Promise<number> {
+  const sources = await sourcesWithClaims([...noticeFor.keys()]);
+  if (sources.length === 0) return 0;
+  const resting = await claimsRestingOnSources(sources.map((m) => m.source_id));
+  let queued = 0;
+  for (const m of sources) {
     const through = resting.filter((r) => r.source_id === m.source_id);
     if (m.claim_ids.length === 0 && through.length === 0) continue;
-    const notice = notices.find((n) => n.retracted_dois.includes(m.doi));
-    // A lookout already holding an event for this notice is not handed it
-    // again (the overlap window and a re-run would otherwise duplicate).
-    const [dup] = await rawQuery<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM lookout_events
-        WHERE kind = 'retraction' AND consumed_at IS NULL
-          AND payload->>'notice_doi' = $1 AND payload->>'source_id' = $2`,
-      [notice?.notice_doi ?? "", m.source_id]
+    const { doi, notice } = noticeFor.get(m.source_id)!;
+    const [held] = await rawQuery<{ dup: number; pending: number }>(
+      `SELECT COUNT(*) FILTER (WHERE kind = 'retraction' AND payload->>'notice_doi' = $2
+                                 AND payload->>'source_id' = $3)::int AS dup,
+              COUNT(*)::int AS pending
+         FROM lookout_events
+        WHERE lookout_id = $1 AND consumed_at IS NULL`,
+      [lookoutId, notice.notice_doi ?? "", m.source_id]
     );
-    if (Number(dup?.n ?? 0) > 0) continue;
-    const { queued } = await queueLookoutEventsByTrigger({
+    if (Number(held?.dup ?? 0) > 0 || Number(held?.pending ?? 0) >= MAX_PENDING_EVENTS) continue;
+    const res = await queueLookoutEvent({
+      lookoutId,
       kind: "retraction",
       payload: {
-        doi: m.doi,
-        notice_doi: notice?.notice_doi ?? null,
-        notice_type: notice?.type ?? "retraction",
-        notice_title: notice?.title ?? null,
-        notice_source: notice?.source ?? null,
+        doi,
+        notice_doi: notice.notice_doi ?? null,
+        notice_type: notice.type ?? "retraction",
+        notice_title: notice.title ?? null,
+        notice_source: notice.source ?? null,
         source_id: m.source_id,
         source_url: m.url,
         source_title: m.title,
@@ -228,22 +275,15 @@ export async function retractionPollTick(
           relation_type: r.relation_type,
         })),
         note:
-          `Crossref records a ${notice?.type ?? "retraction"} notice against a source ` +
+          `Crossref records a ${notice.type ?? "retraction"} notice against a source ` +
           `in the graph. claim_ids assert it directly; resting_claims rest on it through ` +
           `recorded provenance (a copy or version of the work, or a source that draws on ` +
           `it). Check whether any of them should be looked at again.`,
       },
     });
-    result.eventsQueued += queued;
+    if (res.queued) queued++;
   }
-
-  // Read to the end: the next window starts now, after the usual cadence.
-  // Stopped early: it starts from the newest notice read, and the cadence
-  // is left as it was so the next tick carries on. Read nothing: the mark
-  // stays and the next tick tries again.
-  if (window.complete) await writeMark(new Date(now), new Date(now));
-  else if (window.readThrough) await writeMark(window.readThrough, polledAt);
-  return result;
+  return queued;
 }
 
 /**
@@ -327,7 +367,10 @@ export function startLookoutTriggers(options: {
     try {
       if (retractions) {
         try {
-          const r = await retractionPollTick();
+          const r = await withSystemClearance(
+            "The retraction poll matches notices against sources at every label and queues each lookout's input at that lookout's label.",
+            () => retractionPollTick()
+          );
           if (!r.skipped) {
             options.logger.info(
               `Lookout retraction poll: ${r.notices} notices, ${r.matchedSources} matched ` +
@@ -343,14 +386,20 @@ export function startLookoutTriggers(options: {
         }
       }
       try {
-        const g = await graphFeedTick();
+        const g = await withSystemClearance(
+          "The graph feed wakes every lookout that watches the graph, whatever its label; each then runs at its own.",
+          () => graphFeedTick()
+        );
         if (g.woke > 0) options.logger.info(`Lookout graph feed: ${g.woke} lookouts woken`);
       } catch (err) {
         options.logger.error("Lookout graph feed error", err instanceof Error ? err.message : err);
       }
       if (feeds) {
         try {
-          const f = await feedPollTick();
+          const f = await withSystemClearance(
+            "The feed poll finds every due feed, whatever its lookout's label, and polls each at that label.",
+            () => feedPollTick()
+          );
           if (f.polled > 0 || f.expired > 0) {
             options.logger.info(
               `Lookout feed poll: ${f.polled} feeds (${f.failed} failed), ${f.newItems} new items, ` +
@@ -380,15 +429,15 @@ export function startLookoutTriggers(options: {
  */
 export async function graphFeedTick(): Promise<{ woke: number }> {
   const { listGraphChanges, GRAPH_CHANGE_KINDS } = await import("../services/graph-change-service.js");
-  const { queueLookoutEvent } = await import("../services/lookout-service.js");
   const rows = await rawQuery<{
     id: string;
     changes_cursor: string | null;
     last_run_at: Date | null;
     territory_claim_ids: string[];
     territory_tag_ids: string[];
+    sensitivity_label: string;
   }>(
-    `SELECT l.id, l.changes_cursor, l.last_run_at, l.territory_claim_ids, l.territory_tag_ids
+    `SELECT l.id, l.changes_cursor, l.last_run_at, l.territory_claim_ids, l.territory_tag_ids, l.sensitivity_label
        FROM lookouts l JOIN grants g ON g.id = l.grant_id
       WHERE l.status = 'active' AND g.status = 'active'
         AND l.triggers ? 'graph'
@@ -399,16 +448,23 @@ export async function graphFeedTick(): Promise<{ woke: number }> {
   );
   let woke = 0;
   for (const l of rows) {
-    const page = await listGraphChanges({
-      after: l.changes_cursor,
-      since: l.changes_cursor ? null : l.last_run_at ?? new Date(Date.now() - 86_400_000),
-      scope: { under: l.territory_claim_ids ?? [], tagIds: l.territory_tag_ids ?? [] },
-      kinds: [...GRAPH_CHANGE_KINDS],
-      limit: 1,
+    // Whether there is anything for this lookout is asked at its own label:
+    // a change it does not read is not one it can be woken for. Its run
+    // could not read that change, so it would move no cursor past it and be
+    // woken for it again at every tick. The wake is queued at its label too.
+    const queued = await runAtLabel(l.sensitivity_label, `lookout ${l.id}`, async () => {
+      const page = await listGraphChanges({
+        after: l.changes_cursor,
+        since: l.changes_cursor ? null : l.last_run_at ?? new Date(Date.now() - 86_400_000),
+        scope: { under: l.territory_claim_ids ?? [], tagIds: l.territory_tag_ids ?? [] },
+        kinds: [...GRAPH_CHANGE_KINDS],
+        limit: 1,
+      });
+      if (page.changes.length === 0) return false;
+      const q = await queueLookoutEvent({ lookoutId: l.id, kind: "graph", payload: { first_change: page.changes[0]!.kind } });
+      return q.queued;
     });
-    if (page.changes.length === 0) continue;
-    const q = await queueLookoutEvent({ lookoutId: l.id, kind: "graph", payload: { first_change: page.changes[0]!.kind } });
-    if (q.queued) woke++;
+    if (queued) woke++;
   }
   return { woke };
 }

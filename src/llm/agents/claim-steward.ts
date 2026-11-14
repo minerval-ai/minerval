@@ -9,6 +9,7 @@
  * against the run's budget (#299). Acts through tools -- no structured
  * return value.
  */
+import { PublicGraphNodeError, publicGraphJudges } from "../../services/mirrored-node-service.js";
 import { toolUseLoop } from "../client.js";
 import { getClaimStewardSystemPromptBlocks } from "../prompts/claim-steward.js";
 import { listSkills } from "../prompts/skills.js";
@@ -29,6 +30,8 @@ import {
   getMatcherToolDefinition,
   executeMatcherTool,
 } from "../tools/matcher-tools.js";
+import { createConnectionTools } from "../tools/connection-tools.js";
+import { createFileSetTools, withRunScratch } from "../tools/file-set-tools.js";
 import {
   getElicitToolDefinitions,
   executeElicitTool,
@@ -55,11 +58,14 @@ import { CODE_EXECUTION_TOOL, CODE_EXECUTION_USD_PER_HOUR } from "../instrument-
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { getReadPageToolDefinition, executeReadPage } from "../tools/read-page-tool.js";
 import { createFigureTools } from "../tools/figure-tools.js";
-import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentRunPrivate } from "../usage-context.js";
+import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentRunPrivate, currentLabel } from "../usage-context.js";
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
+import { executePolicyReadTool, getPolicyReadToolDefinition } from "../tools/policy-read-tool.js";
+import { executeLeaveStandingTool, getLeaveStandingToolDefinition, LEAVE_STANDING_TOOL_NAME } from "../tools/leave-standing-tool.js";
+import { oneLabelOnly } from "../../services/judgment-version-service.js";
 import { openInbox, markMessagesRead } from "../../services/inbox-service.js";
 import { rawQuery } from "../../db/client.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -164,6 +170,32 @@ async function hasCurrentJudgment(claimId: string, kind: NodeKind): Promise<bool
   return rows.length > 0;
 }
 
+/** The view of each kind's current judgments, one for each label. */
+const JUDGMENT_VERSIONS_VIEW: Record<NodeKind, string> = {
+  claim: "assessments_versions",
+  quantity: "quantity_estimates_versions",
+  question: "question_assessments_versions",
+};
+
+/**
+ * Whether the node carries another label than this run's and this run's
+ * label has no judgment of it, so that the judgment in force for the run
+ * is one made at a label it reads. Never on the public graph, where there
+ * is one label and nothing is asked. A failed read counts as no.
+ */
+export async function readsAnothersJudgment(claimId: string, kind: NodeKind): Promise<boolean> {
+  if (oneLabelOnly()) return false;
+  const label = currentLabel();
+  const rows = await rawQuery<{ node_label: string; own: boolean }>(
+    `SELECT c.sensitivity_label AS node_label,
+            EXISTS (SELECT 1 FROM ${JUDGMENT_VERSIONS_VIEW[kind]} v
+                     WHERE v.claim_id = c.id AND v.sensitivity_label = $2) AS own
+       FROM claims c WHERE c.id = $1`,
+    [claimId, label]
+  ).catch(() => []);
+  return rows.length > 0 && rows[0]!.node_label !== label && !rows[0]!.own;
+}
+
 /**
  * Whether the node has structure: an active subclaim, subquestion or answer,
  * or an unretired argument. null when the read fails, so the pass note
@@ -234,7 +266,7 @@ it.`;
  * decision is the whole outcome. Re-recording the same verdict would also
  * mark every argument evaluation stale and ask for each to be re-recorded.
  */
-function defaultTask(passNote: string, kind: NodeKind, mustRecord: boolean): PassTask {
+export function defaultTask(passNote: string, kind: NodeKind, mustRecord: boolean, readsAnothers = false): PassTask {
   const noun = kind === "claim" ? "claim" : kind;
   const tool = ASSESSMENT_TOOL[kind];
   const record =
@@ -259,6 +291,28 @@ of what they assert and how that stands before you read its instances or rely
 on its current assessment. When you need them, get_claim_instances returns the
 instances recorded so far; which of them belong on the ${noun}, and in what
 order a reader sees them, is yours to decide.`;
+  // A node at a label this run reads, judged there and not at this run's
+  // label (services/left-standing-service.ts). The pass owes one of two
+  // outcomes, and the logged decision alone is neither: it would leave the
+  // node's page saying nobody had looked from this label.
+  if (readsAnothers) {
+    return {
+      text: `${opening}
+
+The ${noun} carries another label than this run's. The current assessment was
+made at a label this run reads, and this run's label has none of its own.
+Before the run ends, record your own: ${record}. Or leave the one you read
+standing for readers at this run's label (${LEAVE_STANDING_TOOL_NAME}, with
+your reasons). Either is the complete outcome of this pass.`,
+      concluding: `your assessment (${tool}), or ${LEAVE_STANDING_TOOL_NAME}`,
+      nudge: {
+        when: (done) => !done.has(tool) && !done.has(LEAVE_STANDING_TOOL_NAME),
+        message:
+          `You ended your turn without recording an outcome for this ${noun}. Record your own ` +
+          `assessment with ${tool}, or leave the one you read standing with ${LEAVE_STANDING_TOOL_NAME}.`,
+      },
+    };
+  }
   if (mustRecord) {
     return {
       text: `${opening}
@@ -294,7 +348,10 @@ your judgment did not change, logging that with ${LOG}
 this pass, and the current assessment stands. Either way, log your decision.`,
     concluding: `your decision (${LOG}), with ${tool} first if your judgment changed`,
     nudge: {
-      when: (done) => !done.has(tool) && !done.has(LOG),
+      // Leaving the judgment it reads standing is a recorded outcome too
+      // (leave-standing-tool.ts; offered where a node carries a judgment at
+      // each label).
+      when: (done) => !done.has(tool) && !done.has(LOG) && !done.has(LEAVE_STANDING_TOOL_NAME),
       message:
         `You ended your turn without recording anything. If your judgment of this ` +
         `${noun} changed, record it with ${tool}; if it did not, log that with ` +
@@ -576,9 +633,22 @@ function succeeded(output: string): boolean {
 export function runClaimSteward(
   input: Parameters<typeof runClaimStewardImpl>[0]
 ): ReturnType<typeof runClaimStewardImpl> {
-  return runWithUsageContext({ claimId: input.claimId }, () =>
-    withAgent("steward", () => runClaimStewardImpl(input))
-  );
+  return runWithUsageContext({ claimId: input.claimId }, async () => {
+    // The backstop behind everything that would have opened this pass
+    // (services/mirrored-node-service.ts): a Steward's pass on a mirrored
+    // node at the node's own label is the public graph's to run. Checked
+    // before the run opens, so nothing is sent to a model and nothing spent.
+    if (await publicGraphJudges(input.claimId)) {
+      throw new PublicGraphNodeError(
+        `No Steward pass was run on ${input.claimId}: the node belongs to the public graph, and its ` +
+          `assessment at its own label is the public graph's.`
+      );
+    }
+    // The run's scratch directory in the sandbox goes when the run ends
+    // (tools/file-set-tools.ts); a run that never runs a command asks the
+    // sandbox nothing.
+    return withAgent("steward", () => withRunScratch(() => runClaimStewardImpl(input)));
+  });
 }
 
 async function runClaimStewardImpl(input: {
@@ -621,6 +691,14 @@ async function runClaimStewardImpl(input: {
   // Pangram (AI-writing detection, original-source search), priced per
   // word against the run's budget inside the bundle.
   const pangramTools = createPangramTools({ config });
+  // The reading tools of the systems this deployment is connected to, for
+  // a run whose label reads them (tools/connection-tools.ts). None on the
+  // public graph, where this reads nothing and adds nothing.
+  const connectionTools = await createConnectionTools({ config });
+  // The sets of files this deployment holds for a run whose label reads
+  // them, and the sandbox they are explored in (tools/file-set-tools.ts).
+  // None on the public graph, where this reads nothing and adds nothing.
+  const fileSetTools = await createFileSetTools({ config });
 
   // Skills load on demand (load_skill): the prompt carries the catalog,
   // and the claim's recorded domains point the task at the domain skills
@@ -682,11 +760,20 @@ async function runClaimStewardImpl(input: {
     ...getSpendToolDefinitions(),
     ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
+    // Where a page may be shown below its label, the policy it would be
+    // shown under (label-note.ts). Not on the public graph.
+    ...(oneLabelOnly() ? [] : [getPolicyReadToolDefinition()]),
+    // Where a node can carry a judgment at each label, the Steward's other
+    // outcome on a node at a label it reads (label-note.ts). Not on the
+    // public graph.
+    ...(oneLabelOnly() ? [] : [getLeaveStandingToolDefinition()]),
     ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
     ...elicitTools,
     ...pangramTools.definitions,
+    ...connectionTools.definitions,
+    ...fileSetTools.definitions,
     ...skillLoader.definitions,
     ...skillTools,
     ...researchTools.definitions,
@@ -757,7 +844,7 @@ a cent.`
   const task =
     formalTask ??
     moneyTask(input.trigger) ??
-    defaultTask(passNote, kind, !judged);
+    defaultTask(passNote, kind, !judged, judged && (await readsAnothersJudgment(input.claimId, kind)));
 
   // What has changed under the node's judgment since it was written (#566):
   // which premises were judged again, added or removed, which sources came
@@ -779,7 +866,7 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
-${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${skillsNote}`;
+${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.
@@ -807,6 +894,9 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
         // A pass that came for its own reason (not merely to resume) brings
         // that reason: its trigger, its task and what changed, or the
         // resumed run would answer a task it never saw.
+        // The connections are said again on resume: which of them the run
+        // has, and which of their tools, may have changed while it was paused.
+        // So are the file sets, and that the scratch directory starts empty.
         newMessages: [
           input.trigger !== "session_resume"
             ? `This pass came for its own reason as well. Today's date: ${today}. Trigger: ${input.trigger}.\n\n${task.text}` +
@@ -814,6 +904,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
             : "",
           input.context.trim() ? `Context: ${input.context}` : "",
           inbox.brief,
+          connectionTools.note,
+          fileSetTools.note,
         ].filter(Boolean).join("\n\n"),
         budgetLine: turnBudgetLine(iterationBudget, { canSpend: true }),
       })
@@ -895,6 +987,10 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     if (spendOutput !== null) return spendOutput;
     const sqlOutput = await executeSqlTool(name, toolInput);
     if (sqlOutput !== null) return sqlOutput;
+    const policyOutput = await executePolicyReadTool(name, toolInput);
+    if (policyOutput !== null) return policyOutput;
+    const leftStanding = await executeLeaveStandingTool(name, toolInput);
+    if (leftStanding !== null) return leftStanding;
     const loaded = await skillLoader.execute(name, toolInput);
     if (loaded !== null) return loaded;
     // The report channel first (#366): null means "not my tool".
@@ -906,6 +1002,10 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     if (research !== null) return research;
     const pangram = await pangramTools.execute(name, toolInput);
     if (pangram !== null) return pangram;
+    const connection = await connectionTools.execute(name, toolInput);
+    if (connection !== null) return connection;
+    const fileSet = await fileSetTools.execute(name, toolInput);
+    if (fileSet !== null) return fileSet;
     if (name === "match_claim") {
       // The Matcher receives the domains its caller knows.
       return executeMatcherTool(name, toolInput, { domains: claimDomains });

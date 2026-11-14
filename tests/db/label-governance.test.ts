@@ -126,7 +126,8 @@ import { executeGovernanceTool } from "../../src/llm/tools/governance-tools.js";
 import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import { createResearcherReadTools } from "../../src/llm/tools/researcher-read-tools.js";
 import { executeReviewerTool } from "../../src/llm/tools/reviewer-tools.js";
-import { currentLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { currentLabel, runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { withSystemClearance } from "../../src/db/clearance.js";
 import {
   ASSESS_GROUP,
   LOOKOUT_GROUP,
@@ -165,10 +166,8 @@ import {
 } from "../../src/services/grant-conversation-service.js";
 import { createGrant, getGrant, serializeGrant } from "../../src/services/grant-service.js";
 import { openInbox } from "../../src/services/inbox-service.js";
-import { createRegrant } from "../../src/services/regrant-service.js";
-import { fundGrantSelfActions } from "../../src/services/allocation-service.js";
 import { recordIngestFocus } from "../../src/services/ingest-focus-service.js";
-import { pendingPassLabel, runAtMandateLabel, runAtMandateLabelOutsideAnyRun } from "../../src/services/label-service.js";
+import { runAtMandateLabel, runAtMandateLabelOutsideAnyRun } from "../../src/services/label-service.js";
 import { createLookout, flagNote, getLookout, listLookoutFlags, queueLookoutEvent } from "../../src/services/lookout-service.js";
 import { collectMandateEvents, pendingMandateEvents, openReviewsForEscalations } from "../../src/services/mandate-event-service.js";
 import { raiseToMandate } from "../../src/services/mandate-inbox-service.js";
@@ -226,7 +225,9 @@ async function labelsWhere(table: string, where: string, params: unknown[]): Pro
 const labelOf = async (table: string, id: string) => (await labelsWhere(table, "id = $1", [id]))[0];
 const setLabel = (table: string, id: string, label: string) =>
   rawQuery(`UPDATE ${table} SET sensitivity_label = $2 WHERE id = $1`, [id, label]);
-const assessLabels = (claimId: string) => labelsWhere("actions", "exclusion_group = $1", [ASSESS_GROUP(claimId)]);
+// Work at each label on a node has its own assess group (groupAtLabel), so
+// a node's rows are found by the node and the kind of work.
+const assessLabels = (claimId: string) => labelsWhere("actions", "claim_id = $1 AND kind IN ('assess', 'reassess')", [claimId]);
 
 /** A claim as it stands after its pass, so no sweep picks it up until a test says. */
 async function settledClaim(label: string): Promise<string> {
@@ -556,6 +557,64 @@ describe("the columns", () => {
     );
   });
 
+  it("are on every table but the ones that are left without one on purpose", async () => {
+    const rows = await rawQuery<{ table_name: string }>(
+      `SELECT t.table_name FROM information_schema.tables t
+        WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+          AND NOT EXISTS (SELECT 1 FROM information_schema.columns c
+                           WHERE c.table_schema = 'public' AND c.table_name = t.table_name
+                             AND c.column_name = 'sensitivity_label')
+        ORDER BY t.table_name`
+    );
+    expect(rows.map((r) => r.table_name)).toEqual([
+      // What a sign-in asserted about an account: the groups it carried.
+      "account_groups",
+      // The administrators' own log: who granted what, and which labels were defined.
+      "administrative_events",
+      // Accounts and their keys.
+      "api_keys",
+      // A per-account allowance: a number.
+      "assistant_allowances",
+      "contributors",
+      // What is wrong with the deployment itself, one row for each kind of fault and provider (the credit ran out, a
+      // key was refused): the same whoever asks. Its last_error is the provider's own message for a failure of
+      // that kind, and is shown on no surface (deployment-fault-service.ts).
+      "deployment_faults",
+      // Scorecards of the corpus harness, written by scripts into its own database.
+      "eval_runs",
+      // Where the subscription router has read the event log to: a number.
+      "event_router_state",
+      // The labels themselves.
+      "label_reads",
+      "labels",
+      // A deployment's bookkeeping about its feed of public rows, with no text of their own.
+      "mirror_applied_batches",
+      "mirror_feed_batches",
+      "mirror_feed_rows",
+      "mirror_refusals",
+      "mirror_snapshot_rows",
+      "oauth_authorization_requests",
+      "oauth_clients",
+      "oauth_tokens",
+      // The owl ledger and what is paid out of it.
+      "owl_ledger",
+      // Whose material a source is, and who may do what (src/permissions.ts).
+      "parties",
+      "permission_grants",
+      // Switches and marks the platform keeps for itself.
+      "platform_flags",
+      "prize_payouts",
+      // Counts of what waits, with no content.
+      "queue_depth_snapshots",
+      // Database time used by query_sql, per account and day.
+      "sql_usage",
+      // The usage reports a deployment prepares and the ones a public graph is sent: a day, counts and
+      // totals across every label, naming none, and no text (docs/usage-report.md).
+      "usage_reports",
+      "usage_reports_received",
+    ]);
+  });
+
   it("cannot carry a label no row defines", async () => {
     const grantId = await mandateAt(PUBLIC_LABEL);
     await expect(setLabel("grants", grantId, "undefined-label")).rejects.toSatisfy((err) => sqlState(err) === FOREIGN_KEY_VIOLATION);
@@ -600,9 +659,11 @@ describe("a row of work or governance", () => {
     await inRunAt(SECOND, async () => {
       // The same scoped ingest, the same feed, the same page saved again, a second message in the conversation.
       await recordIngestFocus(group, "https://dbtest.example/governance/kept", "another focus");
-      expect(await addFeed({ grantId: ids.grantId, lookoutId: ids.lookoutId, url: `${site}/feed`, createdBy: "grantmaker:review" })).toMatchObject({ ok: true });
-      expect(await savePage({ userId: ids.user, id: ids.pageId, title: "Where it stands now", body: "A later brief." })).toMatchObject({ ok: true });
+      // A lookout's feeds are changed by work at the lookout's own label.
+      expect(await addFeed({ grantId: ids.grantId, lookoutId: ids.lookoutId, url: `${site}/feed`, createdBy: "grantmaker:review" })).toMatchObject({ ok: false, code: "OTHER_LABEL" });
     });
+    // A page saved again is saved at the page's own label, which is the label a request about it works at.
+    expect(await savePage({ userId: ids.user, id: ids.pageId, title: "Where it stands now", body: "A later brief." })).toMatchObject({ ok: true });
     expect(await labelsWhere("ingest_focuses", "exclusion_group = $1", [group])).toEqual([PUBLIC_LABEL]);
     expect(await labelsWhere("lookout_feeds", "lookout_id = $1", [ids.lookoutId])).toEqual([PUBLIC_LABEL]);
     expect(await labelOf("assistant_pages", ids.pageId)).toBe(PUBLIC_LABEL);
@@ -638,18 +699,17 @@ describe("a mandate's work", () => {
     await reconcileActions();
     expect(await labelOf("claims", claim)).toBe(PUBLIC_LABEL);
     expect(new Set(await assessLabels(claim))).toEqual(new Set([SECOND]));
-    expect(await labelsWhere("actions", "exclusion_group = $1", [`ingest:${url}`])).toEqual([SECOND]);
+    // Work at the mandate's label on a document has that label's own key.
+    expect(await labelsWhere("actions", "exclusion_group = $1", [`ingest:${url} @${SECOND}`])).toEqual([SECOND]);
+    expect(await labelsWhere("actions", "exclusion_group = $1", [`ingest:${url}`])).toEqual([]);
     expect(await labelsWhere("actions", "exclusion_group = $1", [REVIEW_GROUP(grantId)])).toEqual([SECOND]);
-    // So is the money the scheduler places on the mandate's own rows, also from outside any run.
-    expect(await fundGrantSelfActions()).toBeGreaterThanOrEqual(1);
-    expect(await labelsWhere("action_allocations", "grant_id = $1", [grantId])).toEqual([SECOND]);
     // The message the order left for the node's Steward is the mandate's too.
     expect(await labelsWhere("node_messages", "node_id = $1", [claim])).toEqual([SECOND]);
 
     // The pass the order pays for runs at it, picked up from outside any run.
     await rawQuery(
       `UPDATE actions SET status = 'cancelled' WHERE status = 'open' AND kind IN ('assess', 'reassess') AND exclusion_group <> $1`,
-      [ASSESS_GROUP(claim)]
+      [ASSESS_GROUP(claim, SECOND)]
     );
     expect(await processNextStewardTask()).toMatchObject({ status: "processed", claimId: claim, ok: true });
     expect(stage.seen).toEqual([{ agent: "steward", label: SECOND, brief: "" }]);
@@ -660,7 +720,15 @@ describe("a mandate's work", () => {
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtMandateLabel(grantId, at)).toBe(SECOND);
     expect(await runAtMandateLabelOutsideAnyRun(grantId, at)).toBe(SECOND);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtMandateLabel(grantId, at))).toBe(SECOND);
+    // A sweep sees every label (withSystemClearance), whatever label is in the air around it.
+    expect(
+      await withSystemClearance("A test stands in for a sweep.", () =>
+        runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtMandateLabel(grantId, at))
+      )
+    ).toBe(SECOND);
+    // Work that does not read the mandate's label cannot move itself to it:
+    // the mandate is not there for that work, and it runs as it would have.
+    expect(await runAtLabel(PUBLIC_LABEL, "a public run", () => runAtMandateLabel(grantId, at))).toBe(PUBLIC_LABEL);
     expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtMandateLabelOutsideAnyRun(grantId, at))).toBe(PUBLIC_LABEL);
     // A mandate that does not exist has nothing to run at.
     expect(await runAtMandateLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
@@ -670,9 +738,19 @@ describe("a mandate's work", () => {
     await setLabel("claims", swept, PUBLIC_LABEL);
     expect((await placeStandingOrder({ grantId, claimId: swept, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." })).state).toBe("placed");
     expect(new Set(await assessLabels(swept))).toEqual(new Set([SECOND]));
+    // The run is at a label of its own that reads the mandate's: a run that
+    // did not read it could not place an order for it.
+    const reader = "reads-embargoed";
+    await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'Defined for one test.') ON CONFLICT (name) DO NOTHING`, [reader]);
+    await rawQuery(`INSERT INTO label_reads (label, reads) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [reader, SECOND]);
     const inRun = await seedClaim("governance order, in a run");
-    await inRunAt(PUBLIC_LABEL, () => placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." }));
-    expect(new Set(await assessLabels(inRun))).toEqual(new Set([PUBLIC_LABEL]));
+    try {
+      await inRunAt(reader, () => placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." }));
+    } finally {
+      // Other files expect the pairs they did not make to be absent.
+      await rawQuery(`DELETE FROM label_reads WHERE label = $1`, [reader]);
+    }
+    expect(new Set(await assessLabels(inRun))).toEqual(new Set([reader]));
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = ANY($1::uuid[])`, [[swept, inRun]]);
 
     // materializePlanItems, as a route or the retry sweep calls it.
@@ -682,7 +760,9 @@ describe("a mandate's work", () => {
       JSON.stringify({ strategy: "s", items: [{ action: "ingest", url: `https://dbtest.example/governance/plan/${formal}`, rationale: "a source" }] }),
     ]);
     await materializePlanItems(grantId);
-    expect(await labelsWhere("actions", "exclusion_group = $1", [`ingest:https://dbtest.example/governance/plan/${formal}`])).toEqual([SECOND]);
+    expect(
+      await labelsWhere("actions", "exclusion_group = $1", [`ingest:https://dbtest.example/governance/plan/${formal} @${SECOND}`])
+    ).toEqual([SECOND]);
   });
 
   it("has its events collected at its label, and its review woken at it whatever label the row had", async () => {
@@ -815,8 +895,10 @@ describe("a lookout's and a correspondent's work", () => {
     const { grantId, lookoutId } = await lookoutAt(SECOND, ["feed"]);
     const site = `https://blog-${randomUUID().slice(0, 8)}.example`;
     stage.pages.set(`${site}/feed`, rss(site, ["a"]));
-    // The Grantmaker adds the feed in a public run: the feed, and what it held then, are that run's.
-    const feed = await inRunAt(PUBLIC_LABEL, () => addFeed({ grantId, lookoutId, url: `${site}/feed`, rule: { wake: "each" }, createdBy: "grantmaker:chat" }));
+    // The feed is the lookout's, added by work at the lookout's label.
+    const feed = await inRunAt(SECOND, () =>
+      addFeed({ grantId, lookoutId, url: `${site}/feed`, rule: { wake: "each" }, createdBy: "grantmaker:chat" })
+    );
     if (!feed.ok) throw new Error(JSON.stringify(feed));
     await rawQuery(`UPDATE lookout_feeds SET next_poll_at = now() - interval '1 minute' WHERE id = $1`, [feed.feed_id]);
     await rawQuery(`UPDATE lookout_feeds SET next_poll_at = now() + interval '1 day' WHERE id <> $1`, [feed.feed_id]);
@@ -832,7 +914,7 @@ describe("a lookout's and a correspondent's work", () => {
       )
     ).sort((a, b) => (a.url < b.url ? -1 : 1));
     expect(items).toEqual([
-      { url: `${site}/p/a`, sensitivity_label: PUBLIC_LABEL },
+      { url: `${site}/p/a`, sensitivity_label: SECOND },
       { url: `${site}/p/b`, sensitivity_label: SECOND },
     ]);
     expect(await labelsWhere("lookout_events", "lookout_id = $1 AND kind = 'feed'", [lookoutId])).toEqual([SECOND]);
@@ -889,54 +971,60 @@ describe("a lookout's and a correspondent's work", () => {
   });
 });
 
-// A claim has one pending slot, and no row says what label the pass it waits
-// for was asked at. The messages waiting on it do, when they agree.
-describe("a claim left pending by the messages waiting on it", () => {
-  /** A public claim, mid-pass, that a message at `labels` reaches; the pass then ends and the claim is pending. */
-  async function repended(labels: string[]): Promise<string> {
-    const claim = await seedClaim("governance repended");
-    const row = await seedAction({ group: ASSESS_GROUP(claim), claimId: claim, costMicroUsd: 1, status: "running" });
-    await rawQuery(`UPDATE claims SET steward_state = 'running', stewarded_at = now() WHERE id = $1`, [claim]);
-    for (const label of labels) {
-      const send = () => enqueueSteward({ claimId: claim, trigger: "steward_note", context: `A note at ${label}.` });
-      await (label === PUBLIC_LABEL ? send() : inRunAt(label, send));
-    }
-    // The message joined the running pass's slot: the claim is still running, the row still the pass's.
-    expect(await labelOf("actions", row)).toBe(PUBLIC_LABEL);
-    // The pass ends without having read it, and the claim goes back to pending.
-    await rawQuery(`UPDATE actions SET status = 'done' WHERE id = $1`, [row]);
-    await rawQuery(`UPDATE claims SET steward_state = 'pending', steward_requeued = false WHERE id = $1`, [claim]);
-    return claim;
-  }
-  const sweepOnly = async (claims: string[]) => {
-    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE steward_state = 'pending' AND NOT (id = ANY($1::uuid[]))`, [claims]);
-    await reconcileActions();
+// A message waits for a pass at the label it was sent at. A node's own row is
+// its slot for work at its own label, and work asked for at another label
+// that reads it waits in a slot of its own (steward_slots), so neither marks
+// the other pending, neither reads the other's messages, and each has its
+// own row on the ledger.
+describe("a message waiting on a node", () => {
+  const slots = (claim: string) =>
+    rawQuery<{ sensitivity_label: string; steward_state: string }>(
+      `SELECT sensitivity_label, steward_state FROM steward_slots WHERE claim_id = $1 ORDER BY sensitivity_label`,
+      [claim]
+    );
+  const own = async (claim: string) =>
+    (await rawQuery<{ steward_state: string }>(`SELECT steward_state FROM claims WHERE id = $1`, [claim]))[0]!.steward_state;
+  const note = (claim: string, label: string) => {
+    const send = () => enqueueSteward({ claimId: claim, trigger: "steward_note", context: `A note at ${label}.` });
+    return label === PUBLIC_LABEL ? send() : inRunAt(label, send);
   };
 
-  it("is taken up at the label of those messages, not the claim's", async () => {
-    const claim = await repended([SECOND]);
-    expect(await labelOf("claims", claim)).toBe(PUBLIC_LABEL);
-    expect(await pendingPassLabel(claim, PUBLIC_LABEL)).toBe(SECOND);
-    await sweepOnly([claim]);
+  it("at another label than the node's leaves the node's own slot as it was and waits in its label's slot", async () => {
+    const claim = await settledClaim("governance message elsewhere");
+    await note(claim, SECOND);
+    expect(await own(claim)).toBe("done");
+    expect(await slots(claim)).toEqual([{ sensitivity_label: SECOND, steward_state: "pending" }]);
+    // The row the message opened is that label's, in that label's group.
+    expect(await labelsWhere("actions", "exclusion_group = $1", [ASSESS_GROUP(claim, SECOND)])).not.toEqual([]);
     expect(new Set(await assessLabels(claim))).toEqual(new Set([SECOND]));
-    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
+    await rawQuery(`UPDATE steward_slots SET steward_state = 'done' WHERE claim_id = $1`, [claim]);
   });
 
-  it("is taken up at the claim's label when messages of two labels wait, and that pass reads them all", async () => {
-    const claim = await repended([SECOND, PUBLIC_LABEL]);
+  it("is read by a pass at its own label and by a pass at a label that reads it, and by no pass below, where messages at two labels wait", async () => {
+    const claim = await settledClaim("governance two labels");
+    await note(claim, SECOND);
+    await note(claim, PUBLIC_LABEL);
     expect(await labelsWhere("node_messages", "node_id = $1 AND read_at IS NULL", [claim])).toEqual([SECOND, PUBLIC_LABEL].sort());
-    expect(await pendingPassLabel(claim, PUBLIC_LABEL)).toBe(PUBLIC_LABEL);
-    await sweepOnly([claim]);
-    expect(new Set(await assessLabels(claim))).toEqual(new Set([PUBLIC_LABEL]));
-    // What that pass is shown: every unread message, whatever its label. One
-    // slot per claim cannot keep them apart; that is later work.
-    const inbox = await openInbox(claim);
-    expect(inbox.ids).toHaveLength(2);
-    expect(inbox.brief).toContain(`A note at ${SECOND}.`);
+    expect(await own(claim)).toBe("pending");
+    expect(await slots(claim)).toEqual([{ sensitivity_label: SECOND, steward_state: "pending" }]);
+    expect(new Set(await assessLabels(claim))).toEqual(new Set([PUBLIC_LABEL, SECOND]));
+    // The pass at `public` is shown its own label's message and nothing from above.
+    const atPublic = await openInbox(claim);
+    expect(atPublic.ids).toHaveLength(1);
+    expect(atPublic.brief).toContain(`A note at ${PUBLIC_LABEL}.`);
+    expect(atPublic.brief).not.toContain(`A note at ${SECOND}.`);
+    expect(atPublic.brief).not.toContain("said at");
+    // The pass at the label that reads `public` is shown both, the one from below marked with its label
+    // (tests/db/word-from-below.test.ts has the rest).
+    const atSecond = await inRunAt(SECOND, () => openInbox(claim));
+    expect(atSecond.ids).toHaveLength(2);
+    expect(atSecond.brief).toContain(`A note at ${SECOND}.`);
+    expect(atSecond.brief).toMatch(new RegExp(`said at \`${PUBLIC_LABEL}\`\nA note at ${PUBLIC_LABEL}\\.`));
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
+    await rawQuery(`UPDATE steward_slots SET steward_state = 'done' WHERE claim_id = $1`, [claim]);
   });
 
-  it("is run by the Steward's fallback lane at the label of those messages", async () => {
+  it("at the node's own label is run by the Steward's fallback lane at that label, which leaves another label's slot alone", async () => {
     const config = loadConfig();
     const before = {
       backgroundFallbackLaneEnabled: config.backgroundFallbackLaneEnabled,
@@ -945,38 +1033,32 @@ describe("a claim left pending by the messages waiting on it", () => {
     // The lane as a deployment with no General mandate turns it on, with no daily budget to count against.
     Object.assign(config, { backgroundFallbackLaneEnabled: true, backgroundDailyBudgetOwls: 0 });
     try {
-      const claim = await repended([SECOND]);
+      const claim = await settledClaim("governance fallback");
+      await note(claim, SECOND);
+      await note(claim, PUBLIC_LABEL);
       // Nothing on the ledger is covered, so the lane falls through to its own pick: the pending claim with the highest priority.
       await rawQuery(`UPDATE actions SET status = 'cancelled' WHERE status = 'open' AND kind IN ('assess', 'reassess')`);
+      await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE steward_state = 'pending' AND id <> $1`, [claim]);
       await rawQuery(`UPDATE claims SET queue_priority = 99 WHERE id = $1`, [claim]);
       expect(currentLabel()).toBe(PUBLIC_LABEL);
       expect(await processNextStewardTask()).toMatchObject({ status: "processed", claimId: claim, ok: true });
-      expect(stage.seen).toEqual([{ agent: "steward", label: SECOND, brief: "" }]);
+      expect(stage.seen).toEqual([{ agent: "steward", label: PUBLIC_LABEL, brief: "" }]);
+      // The other label's pass is still owed, in its own slot.
+      expect(await slots(claim)).toEqual([{ sensitivity_label: SECOND, steward_state: "pending" }]);
       await rawQuery(`UPDATE claims SET queue_priority = 0.5 WHERE id = $1`, [claim]);
+      await rawQuery(`UPDATE steward_slots SET steward_state = 'done' WHERE claim_id = $1`, [claim]);
     } finally {
       Object.assign(config, before);
     }
   });
 
-  it("is taken up at the claim's label when no message waits", async () => {
+  it("is not needed for a pending node to be taken up at its own label", async () => {
     const claim = await seedClaim("governance pending, no message");
     await setLabel("claims", claim, SECOND);
-    expect(await pendingPassLabel(claim, SECOND)).toBe(SECOND);
-    await sweepOnly([claim]);
+    await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE steward_state = 'pending' AND id <> $1`, [claim]);
+    await reconcileActions();
     expect(new Set(await assessLabels(claim))).toEqual(new Set([SECOND]));
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [claim]);
-  });
-});
-
-describe("money moved between two mandates", () => {
-  it("carries the label of the work that moved it, with its note", async () => {
-    const from = await mandateAt(PUBLIC_LABEL);
-    const to = await mandateAt(PUBLIC_LABEL);
-    const inRun = await inRunAt(SECOND, () => createRegrant({ fromGrantId: from, toGrantId: to, owls: 2, note: "For the replications." }));
-    const outside = await createRegrant({ fromGrantId: from, toGrantId: to, owls: 1, note: "A second slice." });
-    if (!inRun.ok || !outside.ok) throw new Error(JSON.stringify([inRun, outside]));
-    expect(await labelOf("regrants", inRun.regrantId)).toBe(SECOND);
-    expect(await labelOf("regrants", outside.regrantId)).toBe(PUBLIC_LABEL);
   });
 });
 
@@ -992,9 +1074,8 @@ describe("work a timer or another run starts for a row", () => {
     // The scheduler's sweep, outside any run.
     expect(currentLabel()).toBe(PUBLIC_LABEL);
     expect(await sweepFollowUps()).toBeGreaterThanOrEqual(1);
-    expect(new Set(await assessLabels(node))).toEqual(new Set([SECOND]));
-    // The money placed on the follow-up, with its brief and reason, is at the petition's label too.
-    expect(await labelsWhere("action_allocations", "claim_id = $1 AND grant_id = $2", [node, grantId])).toEqual([SECOND]);
+    // The follow-up's own row, in the petition's label's group on this public node.
+    expect(new Set(await labelsWhere("actions", "exclusion_group = $1", [ASSESS_GROUP(node, SECOND)]))).toEqual(new Set([SECOND]));
     expect(await labelsWhere("node_messages", "node_id = $1", [node])).toEqual([SECOND]);
     await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [node]);
   });
@@ -1075,7 +1156,11 @@ describe("what a reader is shown", () => {
 
   const carriesIt = (text: string) => /sensitivity[_ ]?label/i.test(text);
   /** The label's name as a JSON value, which no response has another reason to hold. */
-  const namesIt = (text: string) => text.includes(`"${SECOND}"`);
+  // A read of a node or of a source says which label it carries, on a
+  // deployment with more than one, and a node's versions each say theirs
+  // (services/judgment-version-service.ts). That one field is shown by
+  // design; the label's name anywhere else is not.
+  const namesIt = (text: string) => text.replaceAll(`"label":"${SECOND}"`, "").includes(`"${SECOND}"`);
 
   it("has no view query_sql reads that exposes the column", async () => {
     // The public_read views name their columns, and Postgres stores a view

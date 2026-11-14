@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { rawQuery } from "../db/client.js";
 import { normalizePageUrl, pageUrlHash } from "./page-url.js";
 import { getDb } from "../db/client.js";
@@ -8,6 +8,8 @@ import { sourceContentHash } from "./source-content.js";
 import { enqueueUrlExtraction } from "./queue-service.js";
 import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { layered } from "./layer-service.js";
+import { addressForRun } from "./given-addresses.js";
 
 /**
  * Find or create the source row for a URL, without enqueueing extraction.
@@ -21,19 +23,47 @@ export async function getOrCreateSource(input: {
   content?: string;
 }) {
   const db = getDb();
+  // A run that reads material that is not public records a source only at
+  // an address it was given, written as it was given: the row's address is
+  // fetched later by workers that no run watches (given-addresses.ts). The
+  // tool loop has already held the call to this; here it holds any path
+  // that reached this function another way. Everywhere else the address is
+  // the caller's as written.
+  input = { ...input, url: await addressForRun(input.url) };
 
-  const [existing] = await db
-    .select()
-    .from(sources)
-    .where(eq(sources.url, input.url))
-    .limit(1);
+  // One row for the address. Where more than one layer holds it, the one
+  // this label wrote, else the lowest layer's: the public graph's, then a
+  // label this work reads (layer-service.ts, oneSourceForAddressSql).
+  const [existing] = layered()
+    ? await db
+        .select()
+        .from(sources)
+        .where(eq(sources.url, input.url))
+        .orderBy(
+          sql`(${sources.origin} = 'local' AND ${sources.sensitivityLabel} = ${currentLabel()}) DESC`,
+          sql`minerval_layer_depth(${sources.sensitivityLabel}, ${sources.origin})`,
+          sources.retrievedAt,
+          sources.id
+        )
+        .limit(1)
+    : await db.select().from(sources).where(eq(sources.url, input.url)).limit(1);
   if (existing) {
     // A row can exist with no content before anyone submits the document:
     // the Steward records the URLs it cites as sources. A later submission
     // that carries the text fills it in (and a placeholder title), or the
     // extraction worker re-fetches a URL the caller already had the text
     // for — arxiv answered that fetch with a 403 and a corpus post was lost.
-    if (!existing.rawContent && input.content) {
+    // The text a caller hands over is the caller's: it goes into the row
+    // only where the row is at the caller's own label. A row at another
+    // label is that label's to fill (the database refuses another's write),
+    // and its text comes from the address when a worker fetches it.
+    // A mirrored row is the public graph's, and its text arrives with the mirror.
+    if (
+      !existing.rawContent &&
+      input.content &&
+      existing.sensitivityLabel === currentLabel() &&
+      existing.origin !== "mirror"
+    ) {
       const [updated] = await db
         .update(sources)
         .set({
@@ -91,13 +121,16 @@ export async function recordSourceKind(
             UPDATE sources s SET source_type = $2
               FROM prior
              WHERE s.id = $1 AND prior.source_type <> $2
+               -- What kind of document it is, as this reader judged it, is
+               -- written only into a row at the reader's own label.
+               AND s.sensitivity_label = $5
                AND ($3::boolean OR prior.source_type = 'unknown'
                     OR (prior.source_type = 'webpage' AND NOT $2 = ANY($4::text[])))
             RETURNING s.source_type)
      SELECT prior.source_type AS before,
             COALESCE((SELECT source_type FROM changed), prior.source_type) AS after
        FROM prior`,
-    [sourceId, kind, opts.read === true, [...GENERIC_SOURCE_KINDS]]
+    [sourceId, kind, opts.read === true, [...GENERIC_SOURCE_KINDS], currentLabel()]
   );
   if (!row) return { source_kind: kind };
   if (row.after === kind) return { source_kind: kind };
@@ -163,7 +196,8 @@ export async function submitSource(
     "url_extraction",
     {
       sourceId: source.id,
-      url: input.url,
+      // The row's address: the caller's own, or as it was given (getOrCreateSource).
+      url: source.url ?? input.url,
       ...(scope?.focus ? { focus: scope.focus } : {}),
     },
     attribution,
@@ -173,7 +207,7 @@ export async function submitSource(
   await enqueueUrlExtraction({
     sourceId: source.id,
     jobId: job.id,
-    url: input.url,
+    url: source.url ?? input.url,
     ...(attribution?.meterJobId ? { meterJobId: attribution.meterJobId } : {}),
     ...(scope?.focus ? { focus: scope.focus } : {}),
     ...(scope?.ingestGroup ? { ingestGroup: scope.ingestGroup } : {}),

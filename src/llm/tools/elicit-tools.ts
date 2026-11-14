@@ -28,6 +28,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { loadConfig, type Config } from "../../config.js";
 import { meterExternalUsage } from "../../services/usage-service.js";
 import { budgetRefusal } from "../usage-context.js";
+import { addressesIn, noteGiven } from "../../services/given-addresses.js";
 import { providerClearedHere } from "../provider-clearance.js";
 
 export const ELICIT_TOOL_PREFIX = "elicit_";
@@ -170,6 +171,12 @@ export async function executeElicitTool(
           `blindly; proceed with web_search and the evidence you have (§20).`,
       });
     }
+    // Where the run is held to addresses it was given, the ones Elicit
+    // returned are given now (services/given-addresses.ts). One that the
+    // call itself wrote is left out: a result that repeats the query back
+    // gives the run nothing from outside.
+    const asked = JSON.stringify(input);
+    await noteGiven(addressesIn(text).filter((address) => !asked.includes(address)), "search");
     return text || JSON.stringify({ success: true, message: "(empty result)" });
   } catch (err) {
     // A transport-level failure may mean the cached connection died; clear it

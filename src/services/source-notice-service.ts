@@ -22,10 +22,10 @@
  * notice means for its node; a correction may change nothing.
  */
 import { rawQuery } from "../db/client.js";
-import { getUsageContext } from "../llm/usage-context.js";
+import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 import { enqueueSteward } from "./queue-service.js";
 import { runAtClaimLabel } from "./label-service.js";
-import { claimsRestingOnSources, type RestingClaim } from "./source-watch-service.js";
+import { claimsRestingOnSources, sourcesWithClaims, type RestingClaim } from "./source-watch-service.js";
 
 /**
  * The notices a Steward is told of, as Crossref types them (its
@@ -85,55 +85,66 @@ export interface FreshSourceEvent {
  * never repeats a message. One failed send is logged and the rest still go,
  * since the event is already recorded and will not come round again.
  * Returns how many messages were sent.
+ *
+ * Whoever calls this may have found the sources and the nodes with more in
+ * sight than a node's own label reads: the Crossref poll sees every label.
+ * So `fresh` and `resting` only say which nodes might be told. What a
+ * letter says is read again at the node's own label (pathsSeenFrom): it
+ * names a document only where the node's label reads the document and the
+ * passage or the edge that ties the node to it. A node tied to a document
+ * only by rows its label does not read is not told. Its label could not
+ * open the document the letter would point at, and the letter would say
+ * that the graph holds it.
  */
 export async function tellStewardsOfSourceEvents(
   fresh: FreshSourceEvent[],
   resting: RestingClaim[]
 ): Promise<number> {
-  const letters = new Map<string, { claimId: string; notice: SourceNotice; paths: string[] }>();
-  const add = (claimId: string, notice: SourceNotice, path: string) => {
+  const letters = new Map<string, { claimId: string; notice: SourceNotice; sourceIds: string[] }>();
+  const add = (claimId: string, notice: SourceNotice, sourceId: string) => {
     const which = notice.notice_doi || notice.title || `${notice.type ?? ""}:${notice.updated ?? ""}`;
     const key = `${which}|${claimId}`;
-    const letter = letters.get(key) ?? { claimId, notice, paths: [] };
-    if (!letter.paths.includes(path)) letter.paths.push(path);
+    const letter = letters.get(key) ?? { claimId, notice, sourceIds: [] };
+    if (!letter.sourceIds.includes(sourceId)) letter.sourceIds.push(sourceId);
     letters.set(key, letter);
   };
   for (const { source: m, notice } of fresh) {
-    const named = `"${m.title || m.url}" (${m.url})`;
-    for (const claimId of m.claim_ids) {
-      add(claimId, notice, `${named} is one of this node's sources.`);
-    }
-    for (const r of resting.filter((x) => x.source_id === m.source_id)) {
-      add(
-        r.claim_id,
-        notice,
-        r.via === "copy_or_version"
-          ? `"${r.through_source_title}", one of this node's sources, is a copy or another version of ${named}.`
-          : `"${r.through_source_title}", one of this node's sources, draws on ${named}` +
-              (r.relation_type ? ` (recorded as ${r.relation_type}).` : ".")
-      );
-    }
+    for (const claimId of m.claim_ids) add(claimId, notice, m.source_id);
+    for (const r of resting.filter((x) => x.source_id === m.source_id)) add(r.claim_id, notice, m.source_id);
   }
 
+  // The event names the document, so it is recorded at the document's own
+  // label, whoever found the notice (the poll sees every label), and names
+  // the nodes that label reads the document on. A subscriber is told of it
+  // only where its label reads that label (subscription-router.ts).
   const { recordEvent } = await import("./event-service.js");
   for (const { source: m, notice } of fresh) {
-    await recordEvent({
-      kind: "source_event",
-      sourceId: m.source_id,
-      refs: { claims: m.claim_ids, notice_doi: notice.notice_doi ?? null },
-      summary: `A ${(notice.type ?? "retraction").toLowerCase()} notice was recorded against "${m.title || m.url}" (${m.url}).`,
-      payload: { notice },
-    });
+    const [at] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM sources WHERE id = $1`, [m.source_id]);
+    if (!at) continue;
+    await runAtLabel(at.label, `source ${m.source_id}`, async () => {
+      const readable = await rawQuery<{ id: string }>(
+        `SELECT DISTINCT i.claim_id AS id FROM claim_instances i
+          WHERE i.source_id = $2 AND i.claim_id = ANY($1::uuid[])`,
+        [m.claim_ids, m.source_id]
+      );
+      await recordEvent({
+        kind: "source_event",
+        sourceId: m.source_id,
+        refs: { claims: readable.map((r) => r.id), notice_doi: notice.notice_doi ?? null },
+        summary: `A ${(notice.type ?? "retraction").toLowerCase()} notice was recorded against "${m.title || m.url}" (${m.url}).`,
+        payload: { notice },
+      });
+    }).catch((err) => console.error(`[source-notice] recording the event for ${m.source_id} failed:`, err instanceof Error ? err.message : err));
   }
 
   let told = 0;
-  for (const { claimId, notice, paths } of letters.values()) {
+  for (const { claimId, notice, sourceIds } of letters.values()) {
     const kind = (notice.type ?? "retraction").toLowerCase().replace(/[_-]/g, " ");
     const article = /^[aeiou]/i.test(kind) ? "an" : "a";
     const when = notice.updated ? ` dated ${notice.updated.slice(0, 10)}` : "";
     const where = notice.notice_doi ? ` The notice: https://doi.org/${notice.notice_doi}.` : "";
     const title = notice.title ? ` ("${notice.title}")` : "";
-    const context =
+    const context = (paths: string[]) =>
       `Crossref records ${article} ${kind} notice${title}${when} against a document this ` +
       `node rests on.${where}\n\n` +
       paths.map((p) => `- ${p}`).join("\n") +
@@ -151,11 +162,15 @@ export async function tellStewardsOfSourceEvents(
       // that happened to fetch the document first would not reach a node
       // that run's label does not cover (src/labels.ts). The letter names
       // the source, whose event was recorded at the source's own label; a
-      // node and a source it rests on may carry different labels, and
-      // holding a letter to what its node may read of the source is the
-      // enforcement work's.
-      await runAtClaimLabel(claimId, () => enqueueSteward({ claimId, trigger: "source_event", context }));
-      told++;
+      // node and a source it rests on may carry different labels, so how
+      // the notice reaches the node is read here, at the node's label.
+      const sent = await runAtClaimLabel(claimId, async () => {
+        const paths = await pathsSeenFrom(claimId, sourceIds);
+        if (paths.length === 0) return false;
+        await enqueueSteward({ claimId, trigger: "source_event", context: context(paths) });
+        return true;
+      });
+      if (sent) told++;
     } catch (err) {
       console.warn(
         `[source-notice] could not tell the Steward of ${claimId}:`,
@@ -164,6 +179,34 @@ export async function tellStewardsOfSourceEvents(
     }
   }
   return told;
+}
+
+/**
+ * How a notice against these sources reaches a node, as the work in
+ * progress reads it: one sentence for each source the node has a passage
+ * from, and one for each it rests on through recorded provenance. A source,
+ * a passage or an edge this work does not read gives no sentence.
+ */
+async function pathsSeenFrom(claimId: string, sourceIds: string[]): Promise<string[]> {
+  const sources = await sourcesWithClaims(sourceIds);
+  const resting = (await claimsRestingOnSources(sourceIds)).filter((r) => r.claim_id === claimId);
+  const paths: string[] = [];
+  const add = (path: string) => {
+    if (!paths.includes(path)) paths.push(path);
+  };
+  for (const m of sources) {
+    const named = `"${m.title || m.url}" (${m.url})`;
+    if (m.claim_ids.includes(claimId)) add(`${named} is one of this node's sources.`);
+    for (const r of resting.filter((x) => x.source_id === m.source_id)) {
+      add(
+        r.via === "copy_or_version"
+          ? `"${r.through_source_title}", one of this node's sources, is a copy or another version of ${named}.`
+          : `"${r.through_source_title}", one of this node's sources, draws on ${named}` +
+              (r.relation_type ? ` (recorded as ${r.relation_type}).` : ".")
+      );
+    }
+  }
+  return paths;
 }
 
 /**

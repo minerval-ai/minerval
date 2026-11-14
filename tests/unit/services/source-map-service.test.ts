@@ -517,6 +517,8 @@ describe("readSourceContent", () => {
   it("scrubs NUL and control characters from a fetched copy before storing it (#430)", async () => {
     const updates: unknown[][] = [];
     routeQueries([
+      // The fetched text is stored at the source's own label, which is read first.
+      [/SELECT sensitivity_label FROM sources WHERE id = \$1/, () => [{ sensitivity_label: "public" }]],
       [/FROM sources WHERE id = \$1/, () => [{ ...stored, raw_content: null }]],
       [
         /UPDATE sources SET raw_content/,

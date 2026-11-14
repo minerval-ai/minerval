@@ -22,6 +22,8 @@
  */
 import { rawQuery } from "../db/client.js";
 import { fetchPublicBytes, fetchPublicUrl, type PublicBody } from "./url-guard.js";
+import { fetchRuleApplies, noteGiven, noteGivenIn } from "./given-addresses.js";
+import { parseDoi } from "./identifiers.js";
 import { bodyToText, looksLikePdf, windowText, type TextWindow } from "./document-text.js";
 import { sniffImage } from "./paper-files.js";
 
@@ -98,7 +100,13 @@ function updatesOf(w: CrossrefWork): CrossrefUpdate[] {
 }
 
 async function crossrefJson<T>(path: string): Promise<T | null> {
-  const body = await fetchPublicUrl(`${CROSSREF}${path}`, { userAgent: USER_AGENT }).catch(
+  // Crossref's own address, with a path this file builds: a DOI of checked
+  // shape, a date, a fixed filter, or the words of a search, which go to
+  // Crossref as a search query goes to a search engine.
+  const body = await fetchPublicUrl(`${CROSSREF}${path}`, {
+    userAgent: USER_AGENT,
+    notFromTheRun: "Crossref's API at a path built here",
+  }).catch(
     () => null
   );
   if (!body) return null;
@@ -130,6 +138,10 @@ export async function checkDoi(rawDoi: string): Promise<DoiCheck> {
     updates_to: [],
   };
   if (!/^10\.\d{4,9}\//.test(doi)) return empty;
+  // Where a run reads material that is not public, what it sends Crossref
+  // is a DOI and nothing a DOI's loose suffix could be made to carry
+  // (identifiers.ts).
+  if ((await fetchRuleApplies()) && parseDoi(doi) === null) return empty;
   const [work, notices] = await Promise.all([
     crossrefJson<{ message?: CrossrefWork }>(`/works/${encodeURIComponent(doi)}`),
     crossrefJson<{ message?: { items?: CrossrefWork[] } }>(
@@ -146,6 +158,9 @@ export async function checkDoi(rawDoi: string): Promise<DoiCheck> {
     }
   }
   if (!w) return { ...empty, updates };
+  // Crossref holds this DOI, so its resolver address is one the run was
+  // given, where runs are held to those (given-addresses.ts).
+  await noteGiven([`https://doi.org/${doi}`], "identifier");
   return {
     doi,
     found: true,
@@ -402,6 +417,31 @@ export async function sourcesForDois(dois: string[]): Promise<
   );
 }
 
+/**
+ * The sources with these ids as the work in progress reads them, each with
+ * the active nodes that have a live passage from it: the rows sourcesForDois
+ * returns, for sources already matched. A fan-out that found its sources
+ * with every label in sight reads them again through this at each
+ * recipient's label, so that what it writes for a recipient holds only what
+ * that recipient reads (db/clearance.ts).
+ */
+export async function sourcesWithClaims(
+  sourceIds: string[]
+): Promise<Array<{ source_id: string; url: string; title: string; claim_ids: string[] }>> {
+  const ids = [...new Set(sourceIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id)))];
+  if (ids.length === 0) return [];
+  return rawQuery(
+    `SELECT s.id AS source_id, s.url, s.title,
+            COALESCE(array_agg(DISTINCT ci.claim_id) FILTER (WHERE c.id IS NOT NULL), '{}') AS claim_ids
+       FROM sources s
+       LEFT JOIN claim_instances ci ON ci.source_id = s.id AND ci.detached_at IS NULL
+       LEFT JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
+      WHERE s.id = ANY($1::uuid[])
+      GROUP BY s.id`,
+    [ids]
+  );
+}
+
 /** How a claim comes to rest on a watched source (#507). */
 export type RestingVia =
   /** The claim asserts a republished copy or another version of the source's work. */
@@ -624,7 +664,13 @@ export async function readPage(
   opts: { offset?: number; maxChars?: number } = {}
 ): Promise<ReadPageResult> {
   try {
-    const full = await pageText(await fetchPublicBytes(url, { userAgent: USER_AGENT }));
+    const body = await fetchPublicBytes(url, { userAgent: USER_AGENT });
+    const full = await pageText(body);
+    // Where the run is held to addresses it was given, the ones this page
+    // carries are given now: the address it was served from after any
+    // redirect, and every address written out in its text.
+    await noteGiven([body.url], "page");
+    await noteGivenIn(full, "page");
     const { content, ...window } = windowText(full, opts.offset, opts.maxChars);
     return { ok: true, url, text: content, chars: content.length, ...window };
   } catch (err) {

@@ -22,7 +22,9 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestAuth } from "../../server/plugins/auth.js";
 import { buildMcpServer } from "../../mcp/server.js";
-import { withheldRouteTools } from "../../mcp/route-tools.js";
+import { NATIVE_TOOL_ROUTES, ROUTE_TOOLS, withheldRouteTools } from "../../mcp/route-tools.js";
+import { REQUEST_LABELS } from "../../server/request-labels.js";
+import { decideRequestLabel } from "../../server/plugins/request-label.js";
 import { membersOnly, type PermissionName } from "../../permissions.js";
 import { resolveStanding } from "../../services/permission-service.js";
 import { getCallerSkill, listCallerSkills } from "../../mcp/caller-skills.js";
@@ -37,6 +39,9 @@ export const HELD_KINDS = {
   assess: "Order and fund assessments of single nodes",
   fund: "Fund requests and mandates, and approve a mandate's plan",
   cancel: "Cancel orders, jobs and mandates, and withdraw funding",
+  gate: "Act at a gate: set it, set what flows to it, and release, hold, delay or remove from what is going to readers who do not read its label",
+  send_outside:
+    "Act on the public graph in the organization's name: send released pages and proposals of nodes, take up or decline a public request, and spend public owls",
 } as const;
 
 export type HeldKind = keyof typeof HELD_KINDS;
@@ -50,6 +55,28 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   propose_claim: "propose",
   submit_source: "submit",
   submit_contribution: "submit",
+  submit_published_page: "submit",
+  submit_published_mandate: "submit",
+  register_publisher_key: "submit",
+  send_pages_outside: "send_outside",
+  set_gate: "gate",
+  set_gate_mode: "gate",
+  end_gate_setting: "gate",
+  decide_at_gate: "gate",
+  offer_to_gate: "gate",
+  set_page_flow: "gate",
+  end_page_flow: "gate",
+  hold_gate_item: "gate",
+  save_redaction_policy: "gate",
+  take_up_public_request: "send_outside",
+  decline_public_request: "send_outside",
+  fund_public_mandate: "send_outside",
+  back_public_mandate: "send_outside",
+  fund_public_node: "send_outside",
+  ask_public_mandate_for_assessment: "send_outside",
+  take_up_request: "submit",
+  decline_taken_up_request: "submit",
+  ask_mandate_for_assessment: "fund",
   state_view: "submit",
   submit_appeal: "submit",
   challenge_prize_claim: "submit",
@@ -57,6 +84,7 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   fund_claim_assessment: "assess",
   fund_deep_decomposition: "fund",
   fund_request_work: "fund",
+  fund_showing_work: "fund",
   fund_grant: "fund",
   approve_grant_plan: "fund",
   fund_mandate: "fund",
@@ -96,6 +124,28 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   propose_claim: "Propose a node to the graph",
   submit_source: "Submit a source for the graph to read",
   submit_contribution: "Submit a contribution",
+  submit_published_page: "Submit a page your deployment publishes, as a source on its node",
+  submit_published_mandate: "Put a mandate your deployment publishes on your publisher's record, where requests can be addressed to it",
+  register_publisher_key: "Put your account on public record as the publisher for a deployment's key",
+  send_pages_outside: "Send what this showing has released to the public graph, under the organization's account",
+  set_gate: "Change what flows to a gate, whether its backlog is shown, or whether what is released outside is sent",
+  set_gate_mode: "Set a gate to open, to the Redactor's decision, or to a person's decision as well",
+  end_gate_setting: "End one setting of a gate",
+  decide_at_gate: "Release, approve, hold, delay or remove from items at a gate",
+  offer_to_gate: "Offer a mandate, or a mandate's funding of work, to a gate",
+  set_page_flow: "Set a flow of pages through a gate",
+  end_page_flow: "End a flow of pages through a gate",
+  hold_gate_item: "Hold an item at a gate before it is shown, or lift that hold",
+  save_redaction_policy: "Save a new version of a boundary's redaction policy",
+  take_up_public_request: "Offer to the gate to outside that this graph is taking a public request up, to be said there in the organization's name",
+  decline_public_request: "Decline a request taken up from the public graph, and offer to the gate to outside that the work will not be done, with the reason",
+  fund_public_mandate: "Fund a public mandate from the organization's public owls",
+  back_public_mandate: "Add the organization's public owls to a public mandate",
+  fund_public_node: "Pay for a public assessment of this node from the organization's public owls",
+  ask_public_mandate_for_assessment: "Ask one of the organization's public mandates for a fresh public assessment of this node",
+  take_up_request: "Say on a request's record, under your name, that you are taking it up",
+  decline_taken_up_request: "Say on a request's record that you will not do the work you took up",
+  ask_mandate_for_assessment: "Ask a mandate you fund to pay for a fresh assessment of a node",
   state_view: "State your view on a node, under your name",
   submit_appeal: "Appeal a decision",
   challenge_prize_claim: "Challenge a prize claim",
@@ -103,6 +153,7 @@ export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   fund_claim_assessment: "Fund an assessment",
   fund_deep_decomposition: "Fund a deep decomposition",
   fund_request_work: "Fund the work on a request",
+  fund_showing_work: "Pay for the redaction of a page that is to be shown, or the check of it",
   fund_grant: "Fund the mandate the Grantmaker drafted",
   approve_grant_plan: "Approve a grant's plan",
   fund_mandate: "Back a mandate",
@@ -221,6 +272,14 @@ export interface AccountTools {
    * (llm/permissions-note.ts). Absent or empty when nothing is withheld.
    */
   withheld?: Array<{ tool: string; permission: PermissionName }>;
+  /**
+   * Whether a call would be refused for its label (server/request-labels.ts)
+   * before anything else about it is looked at: the tool's own refusal, as
+   * the Assistant would be given it, or null. Asked before a call is held,
+   * so a person is never shown a card that could not run. Absent or null
+   * everywhere a deployment has one label.
+   */
+  labelRefusal?(name: string, input: Record<string, unknown>): Promise<string | null>;
   call(name: string, input: Record<string, unknown>): Promise<AccountToolResult>;
   close(): Promise<void>;
 }
@@ -230,9 +289,14 @@ export interface AccountTools {
  * API key. Whatever the request that started the turn carried (the web
  * tier's service key acting for a signed-in user), the Assistant's own calls
  * get no service or session trust, so it can do nothing an MCP client
- * holding the user's key could not.
+ * holding the user's key could not. `label` is the label of the
+ * conversation the calls are made in, which they are held to as a key is
+ * held to its own.
  */
-export function assistantAuth(user: { id: string; externalId: string | null }): RequestAuth {
+export function assistantAuth(
+  user: { id: string; externalId: string | null },
+  label?: string
+): RequestAuth {
   return {
     method: "api_key",
     userId: user.id,
@@ -240,6 +304,10 @@ export function assistantAuth(user: { id: string; externalId: string | null }): 
     contributorExternalId: user.externalId,
     isService: false,
     isSession: false,
+    // The conversation's label (server/request-labels.ts): every call the
+    // Assistant makes in it reads and writes at that label, like a key
+    // minted for it.
+    ...(label !== undefined ? { fixedLabel: { label, of: "Assistant conversation" as const } } : {}),
   };
 }
 
@@ -271,10 +339,29 @@ export async function openAccountTools(
     input_schema: t.inputSchema as Tool["input_schema"],
   }));
 
+  // The route each tool that writes stands for, to ask that route's rule
+  // for the label a call would work at.
+  const writingRoute = new Map<string, string>();
+  for (const [key, tool] of Object.entries(ROUTE_TOOLS)) if (!key.startsWith("GET ")) writingRoute.set(tool.name, key);
+  for (const [key, names] of Object.entries(NATIVE_TOOL_ROUTES)) {
+    if (!key.startsWith("GET ")) for (const name of names) writingRoute.set(name, key);
+  }
+
   return {
     definitions,
     readOnly,
     withheld,
+    async labelRefusal(name, input) {
+      if (!membersOnly()) return null;
+      const key = writingRoute.get(name);
+      const rule = key ? REQUEST_LABELS[key] : undefined;
+      if (!rule) return null;
+      // A tool's input is its route's params and body in one object, and
+      // the two never share a name (mcp/route-tools.ts).
+      const decided = await decideRequestLabel(rule, { auth, params: input, body: input });
+      if (!("refusal" in decided)) return null;
+      return JSON.stringify({ error: { code: decided.refusal.code, message: decided.refusal.error } });
+    },
     async call(name, input) {
       const result = await runAsAssistant(() => client.callTool({ name, arguments: input }));
       const content = (result.content ?? []) as Array<{ type: string; text?: string }>;
@@ -357,6 +444,13 @@ export function createAssistantTools(account: AccountTools, hooks: AssistantTool
     }
     const kind = HELD_TOOLS[name];
     if (kind) {
+      // A call that its label would refuse is refused now, with the reason,
+      // and not held: the card would show an action that cannot run.
+      const refused = await account.labelRefusal?.(name, input);
+      if (refused) {
+        hooks.used(name, { text: refused, isError: true }, input);
+        return refused;
+      }
       const ran = await hooks.hold(name, kind, input);
       if (!ran) return heldResult(name, kind);
       hooks.used(name, ran, input);
