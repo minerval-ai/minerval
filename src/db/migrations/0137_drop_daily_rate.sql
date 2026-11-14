@@ -15,5 +15,5 @@ GRANT SELECT ON public_read.mandates TO minerval_sql;
 -- A view in public_read made after enforcement is held by the step, or read-only
 -- SQL would read every label through it until the next start (added when this
 -- line of migrations met the private-deployment work; a database that had
--- already run this file is covered by the step in 0143).
+-- already run this file is covered by the step in 0148).
 SELECT minerval_enforcement_sync();

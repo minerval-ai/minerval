@@ -108,9 +108,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "has not been re-judged, so treat it as provisional, not a finding); the kind's record, since a quantity or a " +
   "question has no `assessment` (`quantity`: definition, the graph's " +
   "estimate with its work and marginal_yield (`assessed.id` is what a " +
-  "finding cites), the figures sources state, readings and cuts; " +
+  "finding cites, `assessed.run_id` the run that wrote it), the figures sources state, readings and cuts; " +
   "`question`: standing with its confidence and marginal_yield " +
-  "(`assessment.id` is what a finding cites), answers, presuppositions, " +
+  "(`assessment.id` is what a finding cites, `assessment.run_id` the run that wrote it), answers, presuppositions, " +
   "subquestions; " +
   "`threshold_of` on a claim that cuts a quantity); `coverage`, " +
   COVERAGE_DESCRIPTION +

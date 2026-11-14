@@ -584,7 +584,7 @@ reader. For a reader with one judgment in force each is what it was.
 | The nanopublication | The assertion states the pinned assessment; the publication info names every one in force (`mv:assessmentInForce`) |
 | The MIRA export | Every assessment in force is a node of its own (`mv:Assessment`, for a claim and for a question), with its label, verdict and reasoning. A neighbour whose status is one of several carries `mv:judgmentsInForce` |
 | Findings | No count: one judgment is not chosen at all. A filter by the claim's status finds a finding under the status of either judgment in force, the counts beside the filter count it under each, and a cited assessment is `current` while it is its own label's current one (a judgment at another label does not make it old). `cited_assessments` carries the count |
-| Read-only SQL's `assessments` view | One row for each judgment: `is_current` is true for every judgment in force for the session (migration 0154), so a join on it returns a row for each and nothing is chosen by date. The note on the result says so to a reader of more than one label besides `public` |
+| Read-only SQL's `assessments` view | One row for each judgment: `is_current` is true for every judgment in force for the session (migration 0159), so a join on it returns a row for each and nothing is chosen by date. The note on the result says so to a reader of more than one label besides `public` |
 
 On the web, the rails (what depends on a node, see also, a question's
 rail), the compass and the map count each node once, by the one status its
@@ -818,9 +818,17 @@ spent (§15):
 |---|---|---|
 | propose a claim (`POST /claims/propose`) | **up to 2 owls** | `CAP_CLAIM_PROPOSAL_OWLS` |
 | order a claim assessment | **up to 2 owls** | `CAP_ASSESSMENT_OWLS` |
-| submit a source (`POST /sources`) | up to 0.1 owl | `CAP_SOURCE_INGEST_OWLS` |
+| submit a source (`POST /sources`) | **up to 10 owls** | `CAP_SOURCE_INGEST_OWLS` |
 | extension page analysis | up to 1 owl | `CAP_EXTENSION_ANALYSIS_OWLS` |
 | MCP text tools (match/extract/assess) | up to 0.1 owl | `CAP_TEXT_ANALYSIS_OWLS` |
+
+A source's cap is a ceiling, not a price: the submitter pays what the
+extraction and its Matcher runs actually cost (about half an owl to a few
+owls for an article or a paper), up to the cap. It is held from the balance
+when the source is submitted, so submitting one needs a balance of the cap.
+A mandate's ingest rows are not priced at the cap: they carry the ledger's
+own figure for an ingest (the p80 of recent ones, else
+`est_ingest_cost_owls`).
 
 A page analysis's cap is above its average run on purpose: it is also the
 run's budget, which the Extractor is told and which pays for matching every
@@ -897,7 +905,7 @@ This budget entity is the substrate grants build on.
 ## Grants — the granting conversation
 
 People create grants by talking to the **Grantmaker agent**
-(`/grant-conversations`, UI at `/account/grants/new`): the best available
+(`/grant-conversations`, UI at `/ask/mandates/new`): the best available
 model, running with the full constitution, surveys the scope, quotes
 expected costs in owls, pushes back where judgment differs, and drafts a
 mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows
@@ -913,14 +921,27 @@ returns at once with the message's place (`message.index`,
 `turn.state: "replying"`, not the transcript (#905); the reply lands in the
 conversation when the turn finishes (a drafting turn can take minutes,
 streamed so it has the model's full output for the plan). Callers read
-`GET /grant-conversations/:id?after=<message_count>&mandate_sha256=<hash>&wait=25`
+`GET /grant-conversations/:id?after=<message_count>&mandate_sha256=<hash>&wait=50`
 until the turn is `idle`, or `failed` with `turn.error` (the message stays
 saved; a short follow-up asks again). `after` returns only the messages
 after those the caller holds; `mandate_sha256` leaves the draft out
 (`mandate_unchanged: true`) while it still hashes the same; `wait` holds
-the read up to 25 seconds for the turn to end, well under the load
-balancer's idle timeout. With no parameters the read is the whole
-conversation. Funding returns the new `grant_id`, and the conversation list
+the read up to 120 seconds for the turn to end (a drafting turn takes a
+minute or two; 50 fits the 60 seconds most MCP clients give a tool call),
+well under the load balancer's idle timeout of 300. While the turn runs,
+`turn.progress` says which step the Grantmaker is on (how many tools it
+has called, and the latest few with what each was about) and
+`turn.partial` holds the reply as it writes it. With no parameters the
+read is the whole conversation. Every read carries `page_url` (the
+conversation's page, or once funded the manager's page for the mandate,
+with `mandate_page_url` and `funder_url`). A draft carries `warnings`:
+what the funder must read before paying, recorded by the Grantmaker or
+implied by the draft (a stake line on a mandate whose funder chose not to
+be named is public, and may identify them). Funding a draft with warnings
+is refused with `WARNINGS_UNACKNOWLEDGED` and the warnings until the call
+carries `acknowledge_warnings` (true, or the ids accepted); the site's
+fund card asks the funder to tick that they have read them, and the
+Assistant's call that acknowledges them always waits for the user's press. Funding returns the new `grant_id`, and the conversation list
 returns one summary per conversation (title, status, message count, turn),
 not transcripts.
 One turn runs at a time: a message sent meanwhile is refused with
@@ -952,11 +973,15 @@ Grantmaker's, neutral and faithful; the mandate's page says who funds it
 and any stake they declared (docs/allocation.md, "Who funds a mandate").
 Pause/top-up/refund semantics are the budget job's:
 `POST /grants/:id/topup`, `POST /grants/:id/cancel`, dashboards on
-`GET /grants/:id` (spend, plan, the assessments the grant bought).
+`GET /grants/:id` (spend, plan, the assessments the grant bought; a
+summary by default, its plan a page at a time, `detail=full` for all of
+it). `GET /grants` lists one short row per grant, with `page_url` and
+`funder_url`.
 
-**Free tier:** a one-time signup grant of 5 owls (`SIGNUP_GRANT_OWLS`) — "see
-a claim you care about, get it assessed": it covers two capped
-assessments, and the unused part of each cap settles back — plus a 1 owl/month trickle
+**Free tier:** a one-time signup grant of 10 owls (`SIGNUP_GRANT_OWLS`) — "see
+a claim you care about, get it assessed": it covers a few capped
+assessments, or one source submitted at its 10-owl cap, and the unused
+part of each cap settles back — plus a 1 owl/month trickle
 (`MONTHLY_GRANT_OWLS`). Both are lazy, idempotent ledger grants
 (`signup:<user>` / `monthly:<user>:<YYYY-MM>` idempotency keys) written by
 whichever entitlement read sees the user first.

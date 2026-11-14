@@ -32,11 +32,13 @@ const TURN_PROTOCOL =
   "hash (mandate_sha256) and turn.state \"replying\"; not the transcript, " +
   "which you already hold. To get the reply, call GET " +
   "/grant-conversations/:id (MCP: get_grant_conversation) with " +
-  "after=<message_count>, mandate_sha256=<the hash> and wait=25: it " +
-  "returns when the turn ends, or after 25 seconds, with only the messages " +
+  `after=<message_count>, mandate_sha256=<the hash> and wait=${SUGGESTED_TURN_WAIT_SECONDS}: it ` +
+  `returns when the turn ends, or after ${SUGGESTED_TURN_WAIT_SECONDS} seconds, with only the messages ` +
   "after the ones you have, and the draft only if the reply changed it " +
-  "(otherwise mandate_unchanged: true). Repeat with the same values while " +
-  "turn.state is \"replying\" (a drafting turn can take several minutes). " +
+  "(otherwise mandate_unchanged: true). wait may be up to " +
+  `${MAX_TURN_WAIT_SECONDS} if your client lets a call run that long. Repeat with the same values while ` +
+  "turn.state is \"replying\" (a drafting turn usually takes one to three minutes); " +
+  "turn.progress says which step it is on and turn.partial holds the reply as it is written. " +
   "At \"idle\" the new messages end with the reply; at \"failed\", " +
   "turn.error says why and a short follow-up asks again. Never resend the " +
   "same message: it is already saved. One turn runs at a time; a message " +
@@ -53,7 +55,9 @@ import {
   serializeSentMessage,
   getConversationAfterTurn,
   MAX_TURN_WAIT_SECONDS,
+  SUGGESTED_TURN_WAIT_SECONDS,
 } from "../services/grant-conversation-service.js";
+import { mandateFunderUrl, mandatePageUrl } from "../services/mandate-urls.js";
 import { getPublicPlatformConversation } from "../services/platform-mandate-service.js";
 import { requirePermission } from "../server/require-permission.js";
 import { deploymentHoldsLabels } from "../db/client.js";
@@ -113,12 +117,24 @@ export async function grantConversationRoutes(
       tags: ["grants"],
       summary:
         "List the authenticated user's granting conversations: id, status, " +
-        "draft title, message count and turn state for each (read one with " +
+        "draft title, message count, turn state, warning count and page_url for each (read one with " +
         "GET /grant-conversations/:id for its messages and draft)",
+      querystring: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            enum: ["active", "proposed", "funded", "declined", "abandoned"],
+            description: "Only conversations in this state.",
+          },
+          limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+        },
+      },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const rows = await listConversations(request.auth!.userId!);
+      const q = request.query as { status?: string; limit?: number };
+      const rows = await listConversations(request.auth!.userId!, q.limit ?? 50, q.status);
       const showLabels = await conversationsShowLabels();
       return reply.send({
         conversations: rows.map((c) => ({
@@ -133,14 +149,23 @@ export async function grantConversationRoutes(
   // reasoning behind every platform mandate is on the public record, and
   // the CI check on a funding request reads the draft and its hash here.
   // A person's conversations are never served by this route.
-  app.get<{ Params: { id: string } }>("/platform/:id", {
+  app.get<{ Params: { id: string }; Querystring: { after?: number } }>("/platform/:id", {
     schema: {
       tags: ["grants"],
       summary:
         "Read one of the platform's granting conversations: transcript, standing draft, and the draft's hash (public)",
+      description:
+        "after=<n> returns only the messages after the first n (message_count says how many " +
+        "there are), for a reader following a long conversation.",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
+      },
+      querystring: {
+        type: "object",
+        properties: {
+          after: { type: "integer", minimum: 0, description: "How many messages you already hold." },
+        },
       },
     },
     handler: async (request, reply) => {
@@ -151,7 +176,14 @@ export async function grantConversationRoutes(
           code: "NOT_FOUND",
         });
       }
-      return reply.send({ conversation: convo });
+      const after = Math.min(request.query.after ?? 0, convo.messages.length);
+      return reply.send({
+        conversation: {
+          ...convo,
+          message_count: convo.messages.length,
+          ...(after > 0 ? { messages_after: after, messages: convo.messages.slice(after) } : {}),
+        },
+      });
     },
   });
 
@@ -172,9 +204,14 @@ export async function grantConversationRoutes(
         "only the messages after those, mandate_sha256=<hash> leaves the " +
         "draft out (mandate_unchanged: true) while it still hashes the " +
         "same, and wait=<seconds> (at most " +
-        `${MAX_TURN_WAIT_SECONDS}) holds the read until the running turn ` +
+        `${MAX_TURN_WAIT_SECONDS}; ${SUGGESTED_TURN_WAIT_SECONDS} fits most clients) holds the read until the running turn ` +
         "ends or the time is up. message_count and mandate_sha256 come back " +
-        "on every read. To check only the turn, fields=conversation.turn.state.",
+        "on every read. While it replies, turn.progress says which step the Grantmaker is on " +
+        "(the tools it has called) and turn.partial holds its reply as it writes it. " +
+        "The draft (mandate) carries `warnings`: show each to your user before funding; " +
+        "fund_grant refuses a draft with warnings until they are acknowledged. page_url is " +
+        "the conversation's page on the site; once funded, mandate_page_url and funder_url " +
+        "are the mandate's. To check only the turn, fields=conversation.turn.",
       params: {
         type: "object",
         properties: { id: { type: "string", format: "uuid" } },
@@ -278,7 +315,10 @@ export async function grantConversationRoutes(
     }
   );
 
-  app.post<{ Params: { id: string }; Body: { budget_owls: number } }>(
+  app.post<{
+    Params: { id: string };
+    Body: { budget_owls: number; acknowledge_warnings?: boolean | string[] };
+  }>(
     "/:id/fund",
     {
       schema: {
@@ -286,6 +326,15 @@ export async function grantConversationRoutes(
         summary:
           "Fund the drafted mandate: escrow the budget and start the grant " +
           "(returns the new grant_id; read it with GET /grants/:id)",
+        description:
+          "A draft can carry warnings (the draft's `warnings` on get_grant_conversation): " +
+          "things the funder must read before paying, such as a stake line that could " +
+          "identify a funder who chose not to be named. While a draft has any, funding is " +
+          "refused with WARNINGS_UNACKNOWLEDGED and the warnings, and nothing is escrowed. " +
+          "Show them to your user, and pass acknowledge_warnings (true, or the ids they " +
+          "accepted) only once they have agreed: acknowledging for them without asking " +
+          "defeats the point. Returns grant_id, page_url (the mandate's public page) and " +
+          "funder_url (your page for it, with its Grantmaker).",
         params: {
           type: "object",
           properties: { id: { type: "string", format: "uuid" } },
@@ -303,6 +352,16 @@ export async function grantConversationRoutes(
               maximum: FUNDING_CALL_MAX_OWLS,
               description: FUNDING_CALL_MAX_NOTE,
             },
+            acknowledge_warnings: {
+              anyOf: [
+                { type: "boolean" },
+                { type: "array", items: { type: "string" }, maxItems: 20 },
+              ],
+              description:
+                "Your user's acknowledgement of the draft's warnings, after they have read " +
+                "them: true for all, or the ids of those they accepted. Required when the " +
+                "draft has warnings.",
+            },
           },
         },
       },
@@ -312,7 +371,15 @@ export async function grantConversationRoutes(
           conversationId: request.params.id,
           userId: request.auth!.userId!,
           budgetOwls: request.body.budget_owls,
+          acknowledgeWarnings: request.body.acknowledge_warnings,
         });
+        if (!result.ok && result.code === "WARNINGS_UNACKNOWLEDGED") {
+          return reply.code(409).send({
+            error: result.message,
+            code: result.code,
+            warnings: result.warnings,
+          });
+        }
         if (!result.ok) {
           const status =
             result.code === "NOT_FOUND"
@@ -328,6 +395,8 @@ export async function grantConversationRoutes(
         }
         return reply.send({
           grant_id: result.grantId,
+          page_url: mandatePageUrl(result.grantId),
+          funder_url: mandateFunderUrl(result.grantId),
           conversation: {
             id: result.conversation.id,
             status: result.conversation.status,

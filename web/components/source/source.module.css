@@ -234,6 +234,19 @@
   padding: 0.35rem 0 0.35rem 2.2rem; min-height: 2.2rem; cursor: pointer; text-align: left;
 }
 .fold:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Where a lead passage sits in the document: its section, quietly. */
+.where {
+  font-family: var(--sans); font-size: 0.64rem; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted); margin: 0.9rem 0 0.05rem 2.2rem;
+}
+/* The one fold over the full text, below the passages that lead. */
+.wholeFold {
+  display: block; margin: 1.1rem 0 0.4rem; padding: 0.4rem 0;
+  font-family: var(--sans); font-size: 0.78rem; color: var(--link);
+  background: none; border: 0; border-top: 1px solid var(--rule-soft); width: 100%; text-align: left; cursor: pointer;
+}
+.wholeFold:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 2px; }
+.wholeFold:disabled { color: var(--muted); cursor: default; }
 
 /* ----- margin notes ----- */
 .mg { font-family: var(--sans); font-size: 0.72rem; color: var(--ink-soft); display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }

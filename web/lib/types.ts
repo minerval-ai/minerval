@@ -369,6 +369,13 @@ export interface Instance {
   publication?: string | null;
   source_date?: string | null;
   link?: string | null;
+  // The source document's own record (what its page shows): authors,
+  // publisher, publication date and DOI. Absent from an API that predates
+  // them; null or empty where the source has none.
+  source_authors?: string[];
+  source_publisher?: string | null;
+  source_published_date?: string | null;
+  source_doi?: string | null;
   // The Steward's reading of this source (#286); null or absent until one
   // has been recorded.
   reading?: InstanceReading | null;

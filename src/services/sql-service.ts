@@ -337,7 +337,7 @@ async function askerClearance(): Promise<string[] | null> {
  * that silently covers less than the whole graph would mislead. An asker
  * who reads more than one label besides `public` is also told what
  * is_current means in `assessments`, where they may have two judgments of
- * a node in force (migration 0154).
+ * a node in force (migration 0159).
  */
 export function sqlClearanceNote(clearance: readonly string[]): string {
   const read = [...clearance].sort((a, b) => (a === PUBLIC_LABEL ? -1 : b === PUBLIC_LABEL ? 1 : a < b ? -1 : 1));

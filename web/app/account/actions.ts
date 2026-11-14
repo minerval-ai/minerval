@@ -141,6 +141,7 @@ export async function approveGrantAction(formData: FormData): Promise<void> {
     console.error("[account] grant approval failed:", err);
   }
   revalidatePath(`/account/grants/${grantId}`);
+  revalidatePath(`/mandates/${grantId}`);
 }
 
 export async function topUpGrantAction(
@@ -162,6 +163,7 @@ export async function topUpGrantAction(
     };
   }
   revalidatePath(`/account/grants/${grantId}`);
+  revalidatePath(`/mandates/${grantId}`);
   return { ok: true };
 }
 
@@ -176,6 +178,7 @@ export async function cancelGrantAction(formData: FormData): Promise<void> {
     console.error("[account] grant cancel failed:", err);
   }
   revalidatePath(`/account/grants/${grantId}`);
+  revalidatePath(`/mandates/${grantId}`);
 }
 
 export async function signOutAction(): Promise<void> {

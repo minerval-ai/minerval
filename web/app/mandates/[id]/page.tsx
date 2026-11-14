@@ -1,448 +1,530 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { auth } from "../../../auth";
-import {
-  accountApiConfigured,
-  fetchMandateView,
-  type MandateDetailView,
-  type MandateCorrespondentView,
-  type MandateLookoutView,
-  type MandatePipelineRow,
-  type MandatePrizesView,
-  type MandateTextView,
-} from "../../../lib/account-api";
-import type { AttemptSummary } from "../../../lib/types";
-import { formatOwls } from "../../../lib/format";
-import { ATTEMPT_VARIANT_LABEL, BOUNTY_STATUS_LABEL, attemptOutcomeLabel } from "../../../lib/prizes";
-import { OwlMark } from "../../../components/OwlMark";
-import { MandateRecord } from "../../../components/MandateRecord";
+import { accountApiConfigured, fetchMandateView, type MandateDetailView } from "../../../lib/account-api";
+import { fetchMandateAllocation, type MandateAllocationView } from "../../../lib/api";
+import { dateish, owlParts, owls } from "../../../lib/account-format";
+import { mandatePageView, paceWords, windowWords } from "../../../lib/mandate-page";
 import { loadFeatures } from "../../../lib/data";
 import { featureOn, type Features } from "../../../lib/features";
-import { AllocationSection } from "./AllocationView";
+import { OwlMark } from "../../../components/OwlMark";
+import { MandateRecord } from "../../../components/MandateRecord";
+import { MastheadHeight } from "../../../components/MastheadHeight";
+import { AskBox } from "../../../components/AskBox";
+import { PageBack, PageHead } from "@/components/PageHead";
+import { Sheet, Prose, FoldedProse, FoldedNote } from "../../../components/mandate/Sheet";
+import { CompletedWork } from "../../../components/mandate/CompletedWork";
+import { PlanSection } from "../../../components/mandate/PlanSection";
+import { AgentsSection } from "../../../components/mandate/AgentsSection";
+import { SpendingSection } from "../../../components/mandate/SpendingSection";
+import { AttemptsTable, PrizesSection } from "../../../components/mandate/Prizes";
+import { approveGrantAction, cancelGrantAction } from "../../account/actions";
+import { TopUpGrant } from "../../../components/mandate/TopUpGrant";
 import { ContributeBox } from "./ContributeBox";
-import { MandateChat } from "./MandateChat";
-import { PageHead } from "@/components/PageHead";
 
 export const metadata: Metadata = { title: "Mandate · Minerval" };
 export const dynamic = "force-dynamic";
 
-function owls(n: number): string {
-  return Number(n.toFixed(2)).toString();
-}
-
-function dateish(iso: string | null): string {
-  return iso ? iso.slice(0, 10) : "·";
-}
-
-const ACTION_LABEL: Record<string, string> = {
-  assess: "assess",
-  reassess: "reassess",
-  deepen: "deepen",
-  ingest: "ingest",
-  sweep: "consistency sweep",
-  propose: "propose",
-};
+// A mandate's page. The mandate itself (its title, objective and strategy)
+// is a document someone wrote, and is set as one: a sheet with a byline.
+// Under it the page reports, in sections that stay reachable from a bar that
+// follows the reader down: what the mandate has finished, what is happening
+// now, its plan, its agents, its spending, and its history. Text an agent
+// wrote is always on a sheet with a byline; everything else is the page.
 
 const STATE_LABEL: Record<string, string> = {
-  done: "done",
-  current: "in progress",
-  queued: "planned",
-  waiting: "waiting",
-  blocked: "blocked",
-  cancelled: "cancelled",
+  planning: "Being drafted",
+  pending_approval: "Plan awaiting approval",
+  active: "Working",
+  completed: "Finished",
+  cancelled: "Withdrawn",
 };
 
-// The importance histogram as inline CSS bars: four buckets, peripheral to
-// central. Small enough to read at a glance, honest enough to dig into.
-function Histogram({ buckets }: { buckets: number[] }) {
-  const max = Math.max(1, ...buckets);
-  const labels = ["0–.25", ".25–.5", ".5–.75", ".75–1"];
-  return (
-    <span
-      className="pipeline-hist"
-      title={buckets
-        .map((n, i) => `importance ${labels[i]}: ${n} claim${n === 1 ? "" : "s"}`)
-        .join(", ")}
-    >
-      {buckets.map((n, i) => (
-        <span
-          key={i}
-          className="pipeline-hist-bar"
-          style={{ height: `${4 + Math.round((n / max) * 14)}px` }}
-          data-empty={n === 0 ? "" : undefined}
-        />
-      ))}
-    </span>
-  );
-}
+const KIND_OPEN_LABEL: Record<string, string> = {
+  assess: "Assessments",
+  reassess: "Reassessments",
+  ingest: "Sources being read",
+  consistency_sweep: "Consistency sweeps",
+  lookout_run: "Lookout runs",
+  correspondent_run: "Correspondent runs",
+  mandate_review: "Its Grantmaker's sitting",
+  officer_run: "Officers' sittings",
+  request: "Work on requests",
+  formalize: "Formal statements",
+  attempt_proof: "Proof attempts",
+  research: "Research",
+};
 
-/** A mandate section written as prose: paragraphs separated by blank lines. */
-function Paragraphs({ text, muted = false }: { text: string; muted?: boolean }) {
-  const style = muted
-    ? { maxWidth: "44rem", color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".84rem" }
-    : { maxWidth: "44rem" };
+function OwlFigure({ value }: { value: number }) {
+  const { whole, fraction } = owlParts(value);
   return (
     <>
-      {text
-        .split(/\n\s*\n/)
-        .map((para) => para.trim())
-        .filter((para) => para.length > 0)
-        .map((para, i) => (
-          <p key={i} style={style}>
-            {para}
-          </p>
-        ))}
+      {whole}
+      {fraction && <span className="acct-fraction">{fraction}</span>}
     </>
   );
 }
 
-// The mandate's own text (docs/mathematics.md §10.4, Appendix B): a mandate
-// is a public document that must stand alone for a reader who has read
-// nothing else on the site, a funder deciding whether to back it included,
-// so every section it carries is rendered here in full.
-//
-// The prize and attempt policies are the exception: each is shown only where
-// this deployment has the feature it is a policy for.
-function MandateTextSection({ text, features }: { text: MandateTextView; features: Features }) {
-  const policies: Array<[string, string | null]> = [
-    ["Scope", text.scope],
-    ["Prizes", featureOn(features, "prizes") ? text.prize_policy : null],
-    ["Attempts", featureOn(features, "mathematics") ? text.attempt_policy : null],
-    ["What this mandate declines", text.refusals],
-    ["What every funded claim says", text.disclosure],
+function funderLine(m: MandateDetailView): string {
+  if (m.is_platform) return "Run by Minerval.";
+  if (!m.funder) return `Managed by ${m.manager}.`;
+  if (!m.funder.declared) {
+    return `Funded by ${m.funder.shown_as}, before funders were asked to declare a stake.`;
+  }
+  return m.funder.stake
+    ? `Funded by ${m.funder.shown_as}, who declared a stake in its subject: ${m.funder.stake}.`
+    : `Funded by ${m.funder.shown_as}, who declared no stake in its subject.`;
+}
+
+/** The mandate's longer sections, each shown only where it has one. */
+function mandateSections(m: MandateDetailView, features: Features): Array<[string, string]> {
+  const t = m.text;
+  if (!t) return [];
+  const all: Array<[string, string | null]> = [
+    ["Scope", t.scope],
+    ["Prizes", featureOn(features, "prizes") ? t.prize_policy : null],
+    ["Attempts", featureOn(features, "mathematics") ? t.attempt_policy : null],
+    ["What this mandate declines", t.refusals],
+    ["What every funded claim says", t.disclosure],
   ];
-  if (!policies.some(([, body]) => body)) return null;
-  return (
-    <section>
-      <h2>The mandate in full</h2>
-      {policies
-        .filter((entry): entry is [string, string] => !!entry[1])
-        .map(([heading, body]) => (
-          <div key={heading} style={{ marginBottom: "1.2rem" }}>
-            <h3 style={{ fontFamily: "var(--sans)", fontSize: ".84rem", letterSpacing: ".04em", textTransform: "uppercase", color: "var(--muted)", marginBottom: ".3rem" }}>
-              {heading}
-            </h3>
-            <Paragraphs text={body} />
-          </div>
-        ))}
-    </section>
-  );
+  return all.filter((e): e is [string, string] => !!e[1]);
 }
 
-const TRIGGER_LABEL: Record<string, string> = {
-  retraction: "retraction poll",
-  manual: "pokes",
-  feed: "feeds",
-};
-
-const FEED_WAKE_LABEL: Record<string, string> = {
-  batch: "batched",
-  each: "every post",
-  heartbeat: "on heartbeat",
-  paused: "paused",
-  auto_ingest: "auto-ingest",
-};
-
-function LookoutsSection({ lookouts }: { lookouts: MandateLookoutView[] }) {
+/** What only the mandate's manager sees: what waits on them, and what they can do. */
+function ManagerStrip({ mandate }: { mandate: MandateDetailView }) {
+  const paused = mandate.budget_status === "paused_budget";
+  const open = mandate.status === "active" || mandate.status === "pending_approval" || mandate.status === "planning";
+  const note = mandate.funder_notes?.[0];
+  const head =
+    mandate.status === "pending_approval"
+      ? "Its plan is ready for you to approve."
+      : mandate.status === "planning"
+        ? "You and its Grantmaker are still drafting it."
+        : paused
+          ? "Its budget is spent, and the work has stopped until it is topped up."
+          : mandate.status === "active"
+            ? note
+              ? "Its Grantmaker left you a note."
+              : "Nothing is waiting on your decision."
+            : mandate.status === "completed"
+              ? "It has finished. What it did not spend has returned to its backers."
+              : "It was withdrawn. What it did not spend has returned to its backers.";
   return (
-    <section>
-      <h2>Lookouts</h2>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
-        Standing watches this mandate funds: a cheap agent with a brief, woken
-        on a heartbeat and on triggers, that reads the graph, the retraction
-        record, and the open web and raises candidates for the mandate to
-        fund: a claim to look at again, a source to bring in, a note for the
-        Grantmaker. It writes no assessment and moves no money. Precision is
-        how often the passes it asked for changed a verdict.
-      </p>
-      <ul className="mandate-items">
-        {lookouts.map((l) => (
-          <li key={l.id} data-state={l.status === "active" ? "current" : "done"}>
-            <span className="tag">{l.status}</span>{" "}
-            <strong>{l.title}</strong>
-            <span className="mandate-state sc">
-              {" "}
-              {l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-driven"}
-              {l.triggers.length > 0
-                ? ` · ${l.triggers.map((t) => TRIGGER_LABEL[t] ?? t).join(", ")}`
-                : ""}
-              {` · ${l.runs} run${l.runs === 1 ? "" : "s"}`}
-              {` · ${l.precision.moved}/${l.precision.ran} passes moved a verdict (${l.precision.flagged} asked)`}
-            </span>
-            <p className="mandate-rationale" style={{ margin: ".35rem 0 0" }}>{l.brief}</p>
-            {l.feeds && l.feeds.length > 0 && (
-              <p className="mandate-state sc" style={{ margin: ".35rem 0 0" }}>
-                Follows:{" "}
-                {l.feeds.map((f, i) => (
-                  <span key={f.feed_id}>
-                    {i > 0 ? " · " : ""}
-                    <a href={f.url} rel="nofollow noopener">{f.title ?? f.url}</a>
-                    {` (${FEED_WAKE_LABEL[f.wake] ?? f.wake}${f.status !== "active" ? `, ${f.status}` : ""}` +
-                      `${f.waiting > 0 ? `, ${f.waiting} waiting` : ""})`}
-                  </span>
-                ))}
-              </p>
-            )}
-            {l.last_note && (
-              <blockquote className="mandate-review-note" style={{ marginTop: ".4rem" }}>
-                {l.last_note}
-              </blockquote>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function CorrespondentsSection({ correspondents }: { correspondents: MandateCorrespondentView[] }) {
-  return (
-    <section>
-      <h2>Correspondents</h2>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
-        Readers this mandate funds for an audience: an agent with a brief that
-        reads the graph and publishes updates on what changed that its readers
-        should know, each with what it did not cover. It reports the graph&rsquo;s
-        judgment, writes no assessment and moves no money. Subscribe to its feed.
-      </p>
-      <ul className="mandate-items">
-        {correspondents.map((c) => (
-          <li key={c.id} data-state={c.status === "active" ? "current" : "done"}>
-            <span className="tag">{c.status}</span>{" "}
-            <strong>{c.title}</strong>
-            <span className="mandate-state sc">
-              {" "}
-              for {c.audience}
-              {c.heartbeat_hours > 0 ? ` · every ${c.heartbeat_hours}h` : " · event-driven"}
-              {c.triggers.includes("graph_change") ? ` · on changes in scope (at most every ${c.min_wake_hours}h)` : ""}
-              {` · ${c.updates} update${c.updates === 1 ? "" : "s"}`}
-              {" · "}
-              <a href={`/correspondents/${c.id}/feed`}>feed</a>
-            </span>
-            <p className="mandate-rationale" style={{ margin: ".35rem 0 0" }}>{c.brief}</p>
-            {c.last_note && (
-              <blockquote className="mandate-review-note" style={{ marginTop: ".4rem" }}>
-                {c.last_note}
-              </blockquote>
-            )}
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function PipelineSection({ pipeline }: { pipeline: MandatePipelineRow[] }) {
-  return (
-    <section>
-      <h2>Ingestion pipeline</h2>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
-        The sources this mandate has brought into the graph, and what became
-        of their claims: how many were linked or minted, how many have
-        assessments, and how their importance runs (the bars span peripheral
-        to central).
-      </p>
-      <table className="account-table pipeline-table">
-        <thead>
-          <tr>
-            <th>source</th>
-            <th>ingested</th>
-            <th>status</th>
-            <th>claims</th>
-            <th>assessed</th>
-            <th>importance</th>
-            <th>avg</th>
-            <th title="claims with contestation at or above 0.5">disputed</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pipeline.map((s) => (
-            <tr key={s.source_id}>
-              <td className="pipeline-source">
-                <a href={s.url} rel="noreferrer">
-                  {s.title ?? s.url}
-                </a>
-              </td>
-              <td>{dateish(s.ingested_at)}</td>
-              <td>{s.extraction_status?.replace(/_/g, " ") ?? "·"}</td>
-              <td>{s.claims_linked}</td>
-              <td>{s.claims_assessed}</td>
-              <td>
-                <Histogram buckets={s.importance_histogram} />
-              </td>
-              <td>{s.avg_importance ?? "·"}</td>
-              <td>{s.contested_claims > 0 ? s.contested_claims : "·"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
-  );
-}
-
-// The house solver's attempts under a mandate, newest first, each with its
-// cost and its report once published. Its own component because attempts
-// belong to mathematics and the section around them to prizes: a deployment
-// with prizes off and mathematics on still lists them, under their own
-// heading.
-function AttemptsTable({ attempts }: { attempts: AttemptSummary[] }) {
-  const sorted = [...attempts].sort((a, b) =>
-    (b.finished_at ?? b.started_at).localeCompare(a.finished_at ?? a.started_at),
-  );
-  return (
-    <>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem", maxWidth: "44rem" }}>
-        The house solver&rsquo;s runs against published statements, each
-        public with its cost and its report.
-      </p>
-      <table className="account-table">
-        <thead>
-          <tr>
-            <th>claim</th>
-            <th>finished</th>
-            <th>variant</th>
-            <th>cost</th>
-            <th>outcome</th>
-            <th aria-label="report" />
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((a) => (
-            <tr key={a.id}>
-              <td>
-                <Link href={`/claims/${a.claim_id}`}>view claim</Link>
-                {a.is_calibration && <> <span className="tag">calibration</span></>}
-              </td>
-              <td>{dateish(a.finished_at ?? a.started_at)}</td>
-              <td>{ATTEMPT_VARIANT_LABEL[a.variant] ?? a.variant}</td>
-              <td>{formatOwls(a.spent_micro_usd)}</td>
-              <td>{attemptOutcomeLabel(a)}</td>
-              <td>
-                {a.published_at ? (
-                  <Link href={`/claims/${a.claim_id}/attempts/${a.id}`}>report</Link>
-                ) : (
-                  <span style={{ color: "var(--faint)" }}>not yet published</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-// The prizes section (docs/mathematics.md §8.1, §8.3): the mandate's prize
-// numbers (a bounty is owls held against this mandate's own escrow from the
-// day it opens until it resolves, and the payout consumes the hold), the
-// house solver's attempts, and the claims with a bounty. Every amount is in
-// owls; the sentence under the heading says where the money comes from.
-function PrizesSection({
-  prizes, attempts,
-}: {
-  prizes: MandatePrizesView;
-  attempts: AttemptSummary[];
-}) {
-  return (
-    <section>
-      <h2>Prizes</h2>
-      <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
-        A prize is owls held against this mandate&rsquo;s own escrow from the
-        day it opens until it resolves, in the same committed money as its
-        attempts and formalizations; the payout consumes the hold. Prizes
-        reward proofs and disproofs of formal statements the steward has
-        published, and they buy no influence over any assessment.
-      </p>
-      <div className="alloc-tiles">
-        <div className="alloc-tile">
-          <span className="alloc-tile-kind sc">escrow</span>
-          <span className="alloc-tile-big">{formatOwls(prizes.escrow_micro_usd)}</span>
-          <span className="alloc-tile-sub">the mandate&rsquo;s budget, every prize&rsquo;s only source</span>
+    <section className="mnd-strip" aria-label="For you, the manager">
+      <div className="mnd-strip-say">
+        <div className="sc">
+          You manage this mandate <span className="mnd-strip-only">only you see this</span>
         </div>
-        <div className="alloc-tile">
-          <span className="alloc-tile-kind sc">held</span>
-          <span className="alloc-tile-big">{formatOwls(prizes.held_micro_usd)}</span>
-          <span className="alloc-tile-sub">in open prizes</span>
-        </div>
-        <div className="alloc-tile">
-          <span className="alloc-tile-kind sc">paid</span>
-          <span className="alloc-tile-big">{formatOwls(prizes.paid_micro_usd)}</span>
-          <span className="alloc-tile-sub">in prizes, gross of withholding</span>
-        </div>
-        <div className="alloc-tile">
-          <span className="alloc-tile-kind sc">review reserve</span>
-          <span className="alloc-tile-big">{formatOwls(prizes.review_reserve_micro_usd)}</span>
-          <span className="alloc-tile-sub">set aside for the review of submissions</span>
-        </div>
-        <div className="alloc-tile">
-          <span className="alloc-tile-kind sc">headroom</span>
-          <span className="alloc-tile-big">{formatOwls(prizes.headroom_micro_usd)}</span>
-          <span className="alloc-tile-sub">what remains after every hold</span>
-        </div>
-        <div className="alloc-tile">
-          <span className="alloc-tile-kind sc">prizes posted</span>
-          <span className="alloc-tile-big">{prizes.bounties_posted.toLocaleString("en-US")}</span>
-          <span className="alloc-tile-sub">{formatOwls(prizes.bounties_total_micro_usd)} in all</span>
-        </div>
-        <div className="alloc-tile">
-          <span className="alloc-tile-kind sc">prizes paid</span>
-          <span className="alloc-tile-big">{prizes.prizes_paid.toLocaleString("en-US")}</span>
-          <span className="alloc-tile-sub">
-            <OwlMark size={12} className="owl-mark" />
-            {owls(prizes.owls_paid)} owls granted, net of withholding
-          </span>
-        </div>
+        <p>{head}</p>
+        {note && mandate.status === "active" && (
+          <p className="acct-note">
+            {dateish(note.at)}: {note.note}
+          </p>
+        )}
       </div>
-
-      {attempts.length > 0 && (
-        <>
-          <h3>Attempts</h3>
-          <AttemptsTable attempts={attempts} />
-        </>
+      {open && (
+        <div className="mnd-strip-do">
+          {mandate.status === "pending_approval" && (
+            <form action={approveGrantAction}>
+              <input type="hidden" name="grant_id" value={mandate.id} />
+              <button type="submit" className="mnd-button mnd-button-main">
+                Approve the plan and start
+              </button>
+            </form>
+          )}
+          {mandate.conversation_id && (
+            <Link className="mnd-button" href={`/ask/mandates/${mandate.id}`}>
+              Talk to its Grantmaker
+            </Link>
+          )}
+          {mandate.status === "active" && (
+            <details className="mnd-do">
+              <summary className="mnd-button">{paused ? "Top up and resume" : "Top up"}</summary>
+              <div className="mnd-do-body">
+                <TopUpGrant grantId={mandate.id} paused={paused} />
+              </div>
+            </details>
+          )}
+          <details className="mnd-do">
+            <summary className="mnd-button">Withdraw</summary>
+            <div className="mnd-do-body">
+              <p className="acct-note">
+                Withdrawing stops the mandate. Work already running finishes; everything not spent returns to
+                its backers. It cannot be restarted.
+              </p>
+              <form action={cancelGrantAction}>
+                <input type="hidden" name="grant_id" value={mandate.id} />
+                <button type="submit" className="mnd-button">
+                  Withdraw this mandate
+                </button>
+              </form>
+            </div>
+          </details>
+        </div>
       )}
+    </section>
+  );
+}
 
-      {prizes.bounties.length > 0 && (
-        <>
-          <h3>Claims with a prize</h3>
-          <table className="account-table">
-            <thead>
-              <tr>
-                <th>claim</th>
-                <th>amount</th>
-                <th>status</th>
-                <th>open since</th>
-                <th>submissions</th>
-                <th>outcome</th>
-              </tr>
-            </thead>
-            <tbody>
-              {prizes.bounties.map((b) => (
-                <tr key={`${b.claim_id}-${b.opened_at ?? ""}`}>
-                  <td className="alloc-label">
-                    <Link href={`/claims/${b.claim_id}`}>{b.text}</Link>
-                  </td>
-                  <td>{formatOwls(b.amount_micro_usd)}</td>
-                  <td>{BOUNTY_STATUS_LABEL[b.status] ?? String(b.status).replace(/_/g, " ")}</td>
-                  <td>{dateish(b.opened_at)}</td>
-                  <td>{b.submissions}</td>
-                  <td>{b.outcome ? b.outcome.replace(/_/g, " ") : "·"}</td>
-                </tr>
+function Figures({
+  mandate,
+  budget,
+  running,
+}: {
+  mandate: MandateDetailView;
+  budget: MandateAllocationView["budget"] | null;
+  running: number;
+}) {
+  const total = Math.max(mandate.budget_owls, 0.000001);
+  const held = budget?.held_owls ?? 0;
+  const reserve = budget?.reserve_owls ?? 0;
+  const free = Math.max(0, mandate.budget_owls - mandate.spent_owls - held - reserve);
+  const share = (n: number) => `${Math.max(0, Math.min(100, (n / total) * 100))}%`;
+  const counts = mandate.work_counts;
+  const pace = budget?.pace ?? null;
+  const waiting = mandate.grantmaker?.state === "waiting";
+  return (
+    <section className="acct-figures mnd-figures" aria-label="Summary">
+      <div className="acct-figure">
+        <div className="sc">Budget</div>
+        <p className="acct-balance">
+          <OwlMark size={26} />
+          <strong>
+            <OwlFigure value={mandate.spent_owls} />
+          </strong>
+          <span className="acct-unit">of {owls(mandate.budget_owls)} owls spent</span>
+        </p>
+        <div
+          className="mnd-budget"
+          role="img"
+          aria-label={`Of ${owls(mandate.budget_owls)} owls: ${owls(mandate.spent_owls)} spent, ${owls(held)} held by running work, ${owls(reserve)} in reserve, ${owls(free)} free`}
+        >
+          <span data-part="spent" style={{ width: share(mandate.spent_owls) }} />
+          <span data-part="held" style={{ width: share(held) }} />
+          <span data-part="reserve" style={{ width: share(reserve) }} />
+        </div>
+        <p className="acct-figure-note mnd-budget-key">
+          <span data-part="spent">spent</span>
+          {held > 0 && <span data-part="held">{owls(held)} held by running work</span>}
+          {reserve > 0 && <span data-part="reserve">{owls(reserve)} in reserve</span>}
+          <span data-part="free">{owls(free)} free</span>
+        </p>
+      </div>
+      <div className="acct-figure">
+        <div className="sc">Completed</div>
+        <p className="acct-figure-value">
+          {(counts?.assessments.nodes ?? mandate.funded_assessments.length).toLocaleString("en-US")}{" "}
+          <span className="acct-unit">assessment{counts?.assessments.nodes === 1 ? "" : "s"}</span>
+        </p>
+        <p className="acct-figure-note">
+          {counts
+            ? [
+                `${counts.sources.toLocaleString("en-US")} source${counts.sources === 1 ? "" : "s"} read`,
+                `${counts.findings} finding${counts.findings === 1 ? "" : "s"}`,
+              ].join(" · ")
+            : "counted by kind below"}
+        </p>
+      </div>
+      <div className="acct-figure">
+        <div className="sc">Open</div>
+        <p className="acct-figure-value">
+          {running.toLocaleString("en-US")} <span className="acct-unit">run{running === 1 ? "" : "s"}</span>
+        </p>
+        <p className="acct-figure-note">
+          {mandate.status !== "active"
+            ? (STATE_LABEL[mandate.status] ?? mandate.status).toLowerCase()
+            : running > 0 && waiting
+              ? "its Grantmaker is waiting on them"
+              : running > 0
+                ? "under way now"
+                : "nothing is running now"}
+        </p>
+      </div>
+      <div className="acct-figure">
+        <div className="sc">Pace</div>
+        {pace?.kind === "steady" ? (
+          <>
+            <p className="acct-figure-value">
+              <OwlFigure value={budget?.pace_window_used_owls ?? 0} />{" "}
+              <span className="acct-unit">of {owls(pace.owls)} owls</span>
+            </p>
+            <p className="acct-figure-note">
+              committed in {windowWords(pace.period_hours)}; a steady pace of {paceWords(pace.owls, pace.period_hours)},
+              agreed with the funder
+            </p>
+          </>
+        ) : pace ? (
+          <>
+            <p className="acct-figure-value">
+              <span className="acct-unit">as needed</span>
+            </p>
+            <p className="acct-figure-note">the budget is the only bound on how fast it is committed</p>
+          </>
+        ) : (
+          <>
+            <p className="acct-figure-value">
+              <span className="acct-unit">not running</span>
+            </p>
+            <p className="acct-figure-note">a pace applies only while the mandate is live</p>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function NowSection({
+  mandate,
+  allocation,
+}: {
+  mandate: MandateDetailView;
+  allocation: MandateAllocationView | null;
+}) {
+  const g = mandate.grantmaker;
+  const open = (allocation?.kinds ?? []).filter((k) => k.running > 0);
+  const openByKind = new Map<string, number>();
+  for (const k of open) openByKind.set(k.kind, (openByKind.get(k.kind) ?? 0) + k.running);
+  const faults = (mandate.platform_faults ?? []).filter((f) => f.waiting_rows > 0);
+  const live = mandate.status === "active";
+  const updates = mandate.updates_total ?? (mandate.last_review ? 1 : 0);
+  const sittings = mandate.sittings ?? [];
+  return (
+    <section className="acct-section" id="now">
+      <div className="acct-head">
+        <h2>Now</h2>
+        {updates > 1 && (
+          <span className="acct-note">
+            <Link href={`/mandates/${mandate.id}/updates`}>All {updates} of its updates →</Link>
+          </span>
+        )}
+      </div>
+      <div className="acct-cols">
+        <div className="acct-main mnd-sheets">
+          {mandate.direction && (
+            <Sheet
+              label="Current direction"
+              by={`written by its Grantmaker${mandate.direction.at ? ` · ${dateish(mandate.direction.at)}` : ""} · the first part of its operating policy`}
+            >
+              <FoldedNote text={mandate.direction.text} />
+            </Sheet>
+          )}
+          {mandate.last_review ? (
+            <Sheet label="Latest update" by={`written by its Grantmaker · ${dateish(mandate.last_review.at)}`}>
+              <FoldedNote text={mandate.last_review.note} />
+            </Sheet>
+          ) : (
+            !mandate.direction && (
+              <p className="acct-note">
+                {live
+                  ? "Its Grantmaker has not written an update yet. It leaves one at the end of each sitting."
+                  : "Its Grantmaker left no update."}
+              </p>
+            )
+          )}
+        </div>
+        <aside className="acct-side acct-side-wide">
+          {live && g && g.state !== "none" && (
+            <>
+              <h3 className="mnd-h3">
+                {g.state === "working" ? "Its Grantmaker is at work" : "Its Grantmaker is waiting"}
+              </h3>
+              <p className="acct-note">
+                It works in one long session: it commissions work, ends its turn, and is woken by what it asked
+                to be told of.
+              </p>
+              <div className="sc mnd-sub">Woken by</div>
+              {g.runs_awaited > 0 && (
+                <div className="acct-line">
+                  <span>
+                    {g.runs_awaited === 1 ? "A run it commissioned" : `The ${g.runs_awaited} runs it commissioned`}{" "}
+                    settling
+                  </span>
+                </div>
+              )}
+              {g.nodes_watched > 0 && (
+                <div className="acct-line">
+                  <span>
+                    A change on {g.nodes_watched === 1 ? "a node" : `any of ${g.nodes_watched} nodes`} it is
+                    watching
+                  </span>
+                </div>
+              )}
+              {g.spend_threshold && (
+                <div className="acct-line">
+                  <span>Its commitments passing an amount it set</span>
+                </div>
+              )}
+              {g.check_in_at && (
+                <div className="acct-line">
+                  <span>A check-in</span>
+                  <span className="acct-detail acct-num">{g.check_in_at.slice(0, 16).replace("T", " ")} UTC</span>
+                </div>
+              )}
+              <div className="acct-line">
+                <span>Anything its officers send up</span>
+                <span className="acct-detail">always</span>
+              </div>
+              <div className="acct-line">
+                <span>A note from its funder</span>
+                <span className="acct-detail">always</span>
+              </div>
+            </>
+          )}
+          {sittings.length > 0 && (
+            <>
+              <h3 className={`mnd-h3${live && g && g.state !== "none" ? " mnd-h3-gap" : ""}`}>Watch it work</h3>
+              <p className="acct-note">
+                Each sitting is on the run log, step by step: what it was told, what it read, what it
+                commissioned and why.
+              </p>
+              {sittings.map((s) => (
+                <div className="acct-line" key={s.run_id}>
+                  <span>
+                    <Link href={`/runs/${s.run_id}`}>
+                      {s.finished_at ? `Sitting of ${s.started_at.slice(0, 16).replace("T", " ")} UTC` : "At work now: watch →"}
+                    </Link>
+                    {!s.public && <span className="acct-detail">not public</span>}
+                  </span>
+                  <span className="acct-detail acct-num">
+                    {s.steps} step{s.steps === 1 ? "" : "s"}
+                    {s.finished_at ? "" : " so far"}
+                  </span>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </>
+          )}
+          <h3 className={`mnd-h3${(live && g && g.state !== "none") || sittings.length > 0 ? " mnd-h3-gap" : ""}`}>
+            Open work
+          </h3>
+          {openByKind.size === 0 ? (
+            <p className="acct-note">{live ? "Nothing is running now." : "None: the mandate is not live."}</p>
+          ) : (
+            [...openByKind].map(([kind, n]) => (
+              <div className="acct-line" key={kind}>
+                <span>{KIND_OPEN_LABEL[kind] ?? kind.replace(/_/g, " ")}</span>
+                <span className="acct-num">{n}</span>
+              </div>
+            ))
+          )}
+          {live &&
+            faults.map((f) => (
+              <p className="acct-note mnd-fault" key={f.reason}>
+                A platform fault is open since {dateish(f.since)}: {f.reason}. Work it stops stays funded and is
+                retried automatically.
+              </p>
+            ))}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function HistorySection({ mandate }: { mandate: MandateDetailView }) {
+  const started = ["active", "completed", "cancelled"].includes(mandate.status);
+  const updates = mandate.updates_total ?? 0;
+  const steps: Array<{ title: string; body: React.ReactNode; done: boolean }> = [
+    {
+      title: "Drafted",
+      body: mandate.is_platform
+        ? `Its Grantmaker drafted it for Minerval${mandate.created_at ? `, beginning ${dateish(mandate.created_at)}` : ""}.`
+        : `Its funder and a Grantmaker drafted it in conversation${mandate.created_at ? `, beginning ${dateish(mandate.created_at)}` : ""}.`,
+      done: true,
+    },
+    {
+      title: "Approved and funded",
+      body: mandate.platform_approval ? (
+        <>
+          Funded {dateish(mandate.platform_approval.funded_at)} with {owls(mandate.platform_approval.budget_owls)}{" "}
+          owls under a <a href={mandate.platform_approval.approval_url}>public approval</a> merged by{" "}
+          {mandate.platform_approval.approved_by}.
         </>
-      )}
+      ) : started ? (
+        "Its funder approved the plan, and the budget went into escrow."
+      ) : mandate.status === "pending_approval" ? (
+        "The plan waits for its funder to approve it."
+      ) : (
+        "Not yet: it is still being drafted."
+      ),
+      done: started,
+    },
+    {
+      title: "At work",
+      body: started
+        ? `${owls(mandate.spent_owls)} of ${owls(mandate.budget_owls)} owls spent` +
+          (updates > 0 ? `; ${updates} update${updates === 1 ? "" : "s"} from its Grantmaker kept` : "") +
+          (mandate.last_review ? `, the latest ${dateish(mandate.last_review.at)}.` : ".")
+        : "Starts once it is approved.",
+      done: started,
+    },
+    {
+      title: mandate.status === "cancelled" ? "Withdrawn" : "Finished",
+      body:
+        mandate.status === "completed"
+          ? "Its plan ran out or its budget was spent. What was not spent returned to its backers in proportion."
+          : mandate.status === "cancelled"
+            ? "Its funder withdrew it. What was not spent returned to its backers in proportion."
+            : "When its work is done or its budget is spent. What is not spent returns to its backers in proportion.",
+      done: mandate.status === "completed" || mandate.status === "cancelled",
+    },
+  ];
+  return (
+    <section className="acct-section" id="history">
+      <div className="acct-head">
+        <h2>History</h2>
+      </div>
+      <div className="acct-cols">
+        <ol className="acct-main mnd-steps">
+          {steps.map((s) => (
+            <li key={s.title} data-done={s.done ? "" : undefined}>
+              <div className="mnd-step-title">{s.title}</div>
+              <div className="acct-note">{s.body}</div>
+            </li>
+          ))}
+        </ol>
+        <aside className="acct-side acct-side-wide">
+          {updates > 0 && (
+            <div className="acct-line">
+              <Link href={`/mandates/${mandate.id}/updates`}>All its Grantmaker&rsquo;s updates →</Link>
+            </div>
+          )}
+          {mandate.platform_approval && (
+            <div className="acct-line">
+              <a href={mandate.platform_approval.approval_url}>The public approval →</a>
+            </div>
+          )}
+          <p className="acct-note">
+            The title and objective change only when the funder asks or agrees.
+          </p>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * A section that reads more than the mandate holds (its actions' wording, a
+ * page of completed work), as it stands while that read is under way: the
+ * rest of the page is sent without waiting for it.
+ */
+function SectionReading({ id, title }: { id: string; title: string }) {
+  return (
+    <section className="acct-section" id={id} aria-busy="true">
+      <div className="acct-head">
+        <h2>{title}</h2>
+      </div>
+      <p className="acct-note">Reading…</p>
     </section>
   );
 }
 
 export default async function MandatePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
   if (!accountApiConfigured()) {
@@ -454,268 +536,150 @@ export default async function MandatePage({
     );
   }
   const session = await auth();
-  let mandate: MandateDetailView;
-  try {
-    mandate = await fetchMandateView(id, session?.externalId ?? null);
-  } catch {
-    notFound();
-  }
-
-  const pct =
-    mandate.budget_owls > 0
-      ? Math.min(
-          100,
-          Math.round((mandate.spent_owls / mandate.budget_owls) * 100)
-        )
-      : 0;
-  const hasPlan = mandate.plan_items.length > 0;
-  const hasPipeline = mandate.pipeline.length > 0;
-  const open = mandate.status === "active";
+  const viewer = session?.externalId ?? null;
+  // The mandate, its operations view and the features are read together,
+  // not one after another. The operations view answers only for an active
+  // mandate (null otherwise), and is dropped below for any other.
+  const [read, allocationRead, features, query] = await Promise.all([
+    fetchMandateView(id, viewer).then(
+      (m) => ({ ok: true as const, mandate: m }),
+      () => ({ ok: false as const })
+    ),
+    fetchMandateAllocation(id),
+    loadFeatures(),
+    searchParams,
+  ]);
+  if (!read.ok) notFound();
+  const mandate: MandateDetailView = read.mandate;
+  const view = mandatePageView(query);
+  const live = mandate.status === "active";
+  const allocation = live ? allocationRead : null;
+  const budget = allocation?.budget ?? null;
+  const running = (allocation?.kinds ?? []).reduce((n, k) => n + k.running, 0);
   const prizes = mandate.prizes ?? null;
   // The mandate's own routes keep their prize and attempt fields whatever is
   // switched on; the sections that show them go with their features.
-  const features = await loadFeatures();
   const prizesOn = featureOn(features, "prizes");
   const mathematicsOn = featureOn(features, "mathematics");
   const attempts = mathematicsOn ? (mandate.attempts ?? []) : [];
+  const sections = mandateSections(mandate, features);
+  const showPrizes = prizesOn && !!prizes;
 
   return (
-    <div className="col-wide account">
-      <PageHead
-        back={{ href: "/mandates", label: "mandates" }}
-        kicker="Mandate"
-        tags={mandate.status !== "active" && <span className="tag">{mandate.status}</span>}
-        title={mandate.title}
-        meta={
-          <>
-            {mandate.is_platform
-              ? "run by Minerval"
-              : `managed by ${mandate.manager}`}
-            {mandate.platform_approval && (
-              <>
-                {" · funded under a "}
-                <a href={mandate.platform_approval.approval_url}>
-                  public approval
-                </a>
-                {` merged by ${mandate.platform_approval.approved_by}`}
-              </>
+    <div className="mnd">
+      <MastheadHeight />
+      <div className="mnd-top">
+        <PageBack href="/mandates" label="Mandates" />
+        <span className="mnd-chip" data-state={mandate.status}>
+          {STATE_LABEL[mandate.status] ?? mandate.status}
+          {mandate.budget_status === "paused_budget" && live ? " · budget spent" : ""}
+        </span>
+        <span className="acct-note">{funderLine(mandate)}</span>
+      </div>
+
+      {mandate.is_manager && <ManagerStrip mandate={mandate} />}
+
+      <Sheet
+        id="mandate"
+        className="mnd-mandate"
+        label="The mandate"
+        by={
+          mandate.platform_approval ? (
+            <>
+              Drafted by its Grantmaker and funded under a{" "}
+              <a href={mandate.platform_approval.approval_url}>public approval</a>
+            </>
+          ) : (
+            "Drafted by its Grantmaker in conversation with the funder, who approved it by funding it"
+          )
+        }
+      >
+        <PageHead title={mandate.title} variant="statement" />
+        <div className="mnd-mandate-cols">
+          <div className="mnd-objective">
+            {mandate.objective ? <Prose text={mandate.objective} /> : <p className="acct-note">No objective is written yet.</p>}
+            {sections.length > 0 && (
+              <details className="mnd-more mnd-rest">
+                <summary>The rest of the mandate: {sections.map(([h]) => h.toLowerCase()).join(", ")}</summary>
+                {sections.map(([heading, body]) => (
+                  <div key={heading}>
+                    <div className="sc mnd-sub">{heading}</div>
+                    <Prose text={body} />
+                  </div>
+                ))}
+              </details>
             )}
-          </>
+          </div>
+          {mandate.strategy && (
+            <aside className="mnd-strategy">
+              <div className="sc">
+                Strategy <span className="mnd-strategy-how">how its Grantmaker goes about it</span>
+              </div>
+              <FoldedProse text={mandate.strategy} />
+            </aside>
+          )}
+        </div>
+      </Sheet>
+      <p className="acct-note mnd-tagline">A mandate decides which work gets done, not how it comes out.</p>
+
+      <Figures mandate={mandate} budget={budget} running={running} />
+
+      <nav className="acct-nav" aria-label="On this page">
+        <a href="#mandate">The mandate</a>
+        <a href="#now">Now</a>
+        <a href="#actions">Actions</a>
+        <a href="#agents">Agents</a>
+        <a href="#spending">Spending</a>
+        {showPrizes && <a href="#prizes">Prizes</a>}
+        <a href="#completed">Completed work</a>
+        <a href="#history">History</a>
+      </nav>
+
+      <NowSection mandate={mandate} allocation={allocation} />
+      <Suspense fallback={<SectionReading id="actions" title="Actions" />}>
+        <PlanSection mandate={mandate} view={view} budget={budget} />
+      </Suspense>
+      <AgentsSection mandate={mandate} allocation={allocation} />
+      <SpendingSection
+        mandate={mandate}
+        allocation={allocation}
+        backing={
+          live ? (
+            <div className="mnd-back">
+              <ContributeBox mandateId={mandate.id} signedIn={!!viewer} />
+            </div>
+          ) : null
         }
       />
-      {mandate.objective && <Paragraphs text={mandate.objective} />}
-      {mandate.funder && !mandate.is_platform && (
-        <p className="meter-caption">
-          {mandate.funder.declared
-            ? mandate.funder.stake
-              ? `Funded by ${mandate.funder.shown_as}, who declared a stake in its subject: ${mandate.funder.stake}.`
-              : `Funded by ${mandate.funder.shown_as}, who declared no stake in its subject.`
-            : `Funded by ${mandate.funder.shown_as}. This mandate was funded before funders were asked to declare a stake.`}{" "}
-          Funding buys attention, never conclusions; the agents that assess
-          claims are not told who funds them.
-        </p>
-      )}
-      {mandate.strategy && (
-        <section>
-          <h2>Strategy</h2>
-          <Paragraphs text={mandate.strategy} muted />
-        </section>
-      )}
-
-      <div className="usage-chips">
-        <span className="summary-chip">
-          <OwlMark size={14} className="owl-mark" />
-          {owls(mandate.spent_owls)} of {owls(mandate.budget_owls)} owls spent
-        </span>
-        <span className="summary-chip">
-          {mandate.contributor_count} contributor
-          {mandate.contributor_count === 1 ? "" : "s"}
-        </span>
-        {mandate.budget_status === "paused_budget" && (
-          <span className="summary-chip">paused: budget spent</span>
-        )}
-        {mandate.funded_assessments.length > 0 && (
-          <span className="summary-chip">
-            {mandate.funded_assessments.length} assessments funded
-          </span>
-        )}
-        {hasPipeline && (
-          <span className="summary-chip">
-            {mandate.pipeline.length} source
-            {mandate.pipeline.length === 1 ? "" : "s"} ingested
-          </span>
-        )}
-        {prizesOn && prizes && prizes.bounties_posted > 0 && (
-          <span className="summary-chip">
-            {prizes.bounties_posted} prize{prizes.bounties_posted === 1 ? "" : "s"} posted
-          </span>
-        )}
-      </div>
-      <div className="mandate-meter mandate-meter-page" aria-hidden>
-        <div className="mandate-meter-fill" style={{ width: `${pct}%` }} />
-      </div>
-
-      {open && (
-        <ContributeBox
-          mandateId={mandate.id}
-          signedIn={!!session?.externalId}
-        />
-      )}
-
-      {(mandate.contributors.length > 0 ||
-        mandate.funded_by_mandates.length > 0) && (
-        <p className="order-line">
-          Backed by{" "}
-          {[
-            ...mandate.contributors.map(
-              (c) => `${c.name} (${owls(c.owls)} owls)`
-            ),
-            ...mandate.funded_by_mandates.map(
-              (m) => `the ${m.title} mandate (${owls(m.owls)} owls)`
-            ),
-          ].join(", ")}
-          .
-        </p>
-      )}
-
-      {mandate.regrants_out.length > 0 && (
-        <p className="order-line">
-          This mandate funds{" "}
-          {mandate.regrants_out.map((m, i) => (
-            <span key={m.grant_id}>
-              {i > 0 && ", "}
-              <Link href={`/mandates/${m.grant_id}`}>{m.title}</Link> (
-              {owls(m.owls)} owls)
-            </span>
-          ))}
-          . Mandates are peers: money moves between them, judgment
-          never does.
-        </p>
-      )}
-
-      {mandate.last_review && (
-        <section>
-          <h2>The Grantmaker&rsquo;s latest review</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
-            This mandate stewards itself. Its Grantmaker takes autonomous
-            review passes, surveying its territory, revising its
-            valuations and growing its plan, and leaves a note each time.
-            Last pass: {dateish(mandate.last_review.at)}.
-          </p>
-          <blockquote className="mandate-review-note">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {mandate.last_review.note}
-            </ReactMarkdown>
-          </blockquote>
-        </section>
-      )}
-
-      {(mandate.lookouts?.length ?? 0) > 0 && (
-        <LookoutsSection lookouts={mandate.lookouts ?? []} />
-      )}
-
-      {(mandate.correspondents?.length ?? 0) > 0 && (
-        <CorrespondentsSection correspondents={mandate.correspondents ?? []} />
-      )}
-
-      {open && <AllocationSection mandateId={mandate.id} />}
-
-      {hasPipeline && <PipelineSection pipeline={mandate.pipeline} />}
-
-      {hasPlan && (
-        <section>
-          <h2>The plan</h2>
-          <ul className="mandate-items">
-            {mandate.plan_items.map((item, i) => (
-              <li key={i} data-state={item.state}>
-                <span className="tag">{ACTION_LABEL[item.action] ?? item.action}</span>{" "}
-                {item.action === "ingest" ? (
-                  <span className="mandate-target">{item.url}</span>
-                ) : item.action === "sweep" ? (
-                  <span className="mandate-target">
-                    {item.partition === "residual" ? "the residual bucket" : `tag ${item.partition}`}
-                  </span>
-                ) : item.action === "propose" ? (
-                  // A proposal (#656): its wording, and the node once the
-                  // review has made it one.
-                  <span className="mandate-target">
-                    a new {item.kind}: “{item.text}”
-                    {item.claim_id && (
-                      <>
-                        {" "}
-                        (<Link href={`/claims/${item.claim_id}`}>the node it became</Link>)
-                      </>
-                    )}
-                  </span>
-                ) : !item.claim_id ? (
-                  <span className="mandate-target">the proposed node “{item.claim_ref}”</span>
-                ) : (
-                  <Link className="mandate-target" href={`/claims/${item.claim_id}`}>
-                    view claim
-                  </Link>
-                )}
-                <span className="mandate-rationale"> {item.rationale}</span>
-                <span className="mandate-state sc"> {STATE_LABEL[item.state] ?? item.state}</span>
-                {(item.state === "blocked" || item.state === "waiting" || item.state === "cancelled") && item.ledger?.reason && (
-                  <span className="mandate-rationale"> ({item.ledger.reason})</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {mandate.funded_assessments.length > 0 && (
-        <section>
-          <h2>Assessments this mandate funded</h2>
-          <table className="account-table">
-            <thead>
-              <tr>
-                <th>claim</th>
-                <th>verdict</th>
-                <th>assessed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {mandate.funded_assessments.map((f) => (
-                <tr key={`${f.claim_id}-${f.assessed_at}`}>
-                  <td>
-                    <Link href={`/claims/${f.claim_id}`}>{f.text}</Link>
-                  </td>
-                  <td>{f.status.replace(/_/g, " ")}</td>
-                  <td>{dateish(f.assessed_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      )}
 
       {/* The prizes section carries the attempts. Where prizes are off and
           mathematics is on, the attempts stand in a section of their own. */}
-      {prizesOn
+      {showPrizes
         ? prizes && <PrizesSection prizes={prizes} attempts={attempts} />
         : attempts.length > 0 && (
-          <section>
-            <h2>Attempts</h2>
-            <AttemptsTable attempts={attempts} />
-          </section>
-        )}
+            <section className="acct-section" id="attempts">
+              <div className="acct-head">
+                <h2>Attempts</h2>
+              </div>
+              <AttemptsTable attempts={attempts} />
+            </section>
+          )}
       {mathematicsOn && mandate.skills?.includes("mathematics") && <MandateRecord grantId={mandate.id} />}
-      {mandate.text && <MandateTextSection text={mandate.text} features={features} />}
 
-      {mandate.is_manager && mandate.conversation_id && (
-        <section>
-          <h2>Talk to the Grantmaker</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "44rem" }}>
-            Your mandate, your Grantmaker: ask how the work is going, dig
-            into the numbers, or redirect what remains of the budget. It can
-            see everything on this page and more, and it can amend the
-            unexecuted part of the plan.
-          </p>
-          <MandateChat conversationId={mandate.conversation_id} />
-        </section>
-      )}
+      <Suspense fallback={<SectionReading id="completed" title="Completed work" />}>
+        <CompletedWork mandate={mandate} view={view} viewer={viewer} />
+      </Suspense>
+
+      <HistorySection mandate={mandate} />
+
+      <section className="acct-section mnd-ask" aria-label="Ask about this mandate">
+        <div className="sc">Ask your Assistant about this mandate</div>
+        <AskBox
+          placeholder="Which of its verdicts changed, and why?"
+          about={`the mandate “${mandate.title}” (/mandates/${mandate.id})`}
+        />
+      </section>
+
     </div>
   );
 }

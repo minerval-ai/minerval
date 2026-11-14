@@ -343,6 +343,10 @@ export interface SourceDocumentView {
   source_id: string;
   segmented: boolean;
   total_chars: number;
+  /** How many segments the document has; `segments` may be a page of them. */
+  segment_count: number;
+  /** The first segment returned, when a page was asked for. */
+  segment_offset?: number;
   segments: DocumentSegmentView[];
   /** Instances of claims on this source whose text was not found in it. */
   unanchored: DocumentInstanceView[];
@@ -370,12 +374,19 @@ export interface SourceDocumentView {
  * null where nothing is held (the public graph, and work that is not a
  * person's read). A reader who may not open this source's label gets its
  * structure and what the agents recorded, with the text withheld and said
- * to be.
+ * to be. `offset` and `limit` ask for a page of the segments (the whole
+ * document otherwise), and `withText` false leaves every passage's text out.
  */
 export async function getSourceDocument(
   sourceId: string,
-  opts: { rawSourceLabels?: readonly string[] | null } = {}
+  opts: {
+    rawSourceLabels?: readonly string[] | null;
+    offset?: number;
+    limit?: number;
+    withText?: boolean;
+  } = {}
 ): Promise<SourceDocumentView | null> {
+  const page = opts;
   const [row] = await rawQuery<{ raw_content: string | null; sensitivity_label: string }>(
     `SELECT raw_content, sensitivity_label FROM sources WHERE id = $1`,
     [sourceId]
@@ -445,11 +456,18 @@ export async function getSourceDocument(
     list.push(view(i));
     bySegment.set(i.segment_id, list);
   }
+  // A page of the segments, when one was asked for (the whole document
+  // otherwise, as the source page renders it).
+  const offset = Math.max(0, page.offset ?? 0);
+  const shown = page.limit !== undefined ? segments.slice(offset, offset + page.limit) : segments;
+  const withText = page.withText ?? true;
   return {
     source_id: sourceId,
     segmented: segments.length > 0,
     total_chars: text.length,
-    segments: segments.map((s) => ({
+    segment_count: segments.length,
+    ...(page.limit !== undefined ? { segment_offset: offset } : {}),
+    segments: shown.map((s) => ({
       id: s.id,
       parent_id: s.parent_id,
       ordinal: s.ordinal,
@@ -458,7 +476,7 @@ export async function getSourceDocument(
       label: open ? s.label : null,
       char_start: s.char_start,
       char_end: s.char_end,
-      text: !open || s.kind === "section" ? null : text.slice(s.char_start, s.char_end),
+      text: !open || s.kind === "section" || !withText ? null : text.slice(s.char_start, s.char_end),
       instances: bySegment.get(s.id) ?? [],
     })),
     unanchored,

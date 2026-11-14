@@ -34,7 +34,7 @@ import { currentLabel } from "../llm/usage-context.js";
 import { enqueueSteward } from "./queue-service.js";
 import { assertPublicHttpUrl, UnsafeUrlError } from "./url-guard.js";
 import { ingestCoverage, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
-import { capMicroUsd } from "./owl.js";
+import { estimateLedgerKindCostMicroUsd } from "./cost-estimate-service.js";
 import { raiseToMandate } from "./mandate-inbox-service.js";
 
 /** Input kinds a lookout can wake on, beyond its heartbeat. */
@@ -756,7 +756,7 @@ export async function flagIngest(input: {
       group,
       url,
       focus ? `Ingest ${url} (focus: ${focus.slice(0, 120)})` : `Ingest ${url}`,
-      capMicroUsd("source_ingest"),
+      await estimateLedgerKindCostMicroUsd("ingest"),
       currentLabel(),
     ]
   );

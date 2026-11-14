@@ -164,7 +164,7 @@ export default async function AccountPage({
     jobs.map((j) => {
       const grant = grantByJob.get(j.id);
       if (grant) {
-        return [j.id, { name: grant.name, href: `/account/grants/${grant.id}`, grant: true }];
+        return [j.id, { name: grant.name, href: `/mandates/${grant.id}`, grant: true }];
       }
       const claim = j.claim_id ? claimTexts.get(j.claim_id) : undefined;
       const kind = sentence(j.kind);
@@ -297,7 +297,7 @@ export default async function AccountPage({
                 . What they don&rsquo;t spend returns to your balance.
               </>
             ) : (
-              <>Nothing is in escrow. A grant or a funded job holds its budget here.</>
+              <>Nothing is in escrow. A mandate or a funded job holds its budget here.</>
             )}
           </p>
         </div>
@@ -440,7 +440,7 @@ export default async function AccountPage({
         <div className="acct-head">
           <h2>Funded work</h2>
           <nav className="acct-links" aria-label="More of your funded work">
-            <a href="/account/grants">All your grants →</a>
+            <a href="/mandates?show=mine">All your mandates →</a>
             <a href="/ask">The Assistant →</a>
           </nav>
         </div>
@@ -485,10 +485,10 @@ export default async function AccountPage({
               <p className="account-empty">Nothing is running on your owls right now.</p>
             )}
             <p className="acct-prose acct-measure">
-              A grant funds sustained attention on the part of the graph you care about, from a
-              handful of claims to a whole literature. You describe the work to the Grantmaker,
-              it drafts a mandate and quotes the cost in owls, and nothing is spent until you
-              fund the plan. <a href="/account/grants/new">Start a grant →</a>
+              A mandate funds sustained attention on the part of the graph you care about, from a
+              handful of claims to a whole literature. You describe the work to a Grantmaker,
+              it drafts the mandate and quotes the cost in owls, and nothing is spent until you
+              fund it. <a href="/ask/mandates/new">Start a mandate →</a>
             </p>
             <p className="acct-prose acct-measure">
               The Assistant is an agent that works for you with this account&rsquo;s tools,

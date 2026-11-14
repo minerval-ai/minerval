@@ -432,7 +432,7 @@ export interface EndedOverlay {
 /**
  * The overlays the work's own label held on this node, on the edges and
  * arguments under it, and on nodes since merged into it, that the database
- * ended because the layer below changed the row (migration 0163), since
+ * ended because the layer below changed the row (migration 0168), since
  * `since`. Oldest first.
  */
 export async function overlaysEndedBelow(nodeId: string, since: Date | null): Promise<EndedOverlay[]> {

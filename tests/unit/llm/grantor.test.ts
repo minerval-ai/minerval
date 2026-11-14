@@ -217,16 +217,18 @@ describe("runGrantor", () => {
     ];
     const res = await runGrantor({ grantId: GRANT });
     expect(JSON.parse(state.outputs[0]!)).toMatchObject({ success: true, accepted_items: 4, floor_owls: 3 });
+    // Each item says who added it and when: the planning pass, as it wrote it.
+    const BY_PLANNING = { added_by: "grantmaker_planning", added_at: expect.any(String) };
     expect(res).toEqual({
       strategy: "Seed the scope with the primary sources.",
       items: [
-        { action: "ingest", url: "https://journal.test/a", rationale: "primary" },
+        { action: "ingest", url: "https://journal.test/a", rationale: "primary", ...BY_PLANNING },
         // The focus survives (#684): it was dropped here, and a scoped
         // ingest became a whole-document one.
-        { action: "ingest", url: "https://journal.test/b", rationale: "one chapter", focus: "grid reliability" },
+        { action: "ingest", url: "https://journal.test/b", rationale: "one chapter", focus: "grid reliability", ...BY_PLANNING },
         // A stewarding item is stored with its tier (#956): standard when it names none.
-        { action: "assess", claim_id: CLAIM, rationale: "crux", variant: "standard" },
-        { action: "attempt_proof", claim_id: CLAIM, rationale: "target", variant: "max", is_calibration: true, lifetime_cap_owls: 8 },
+        { action: "assess", claim_id: CLAIM, rationale: "crux", variant: "standard", ...BY_PLANNING },
+        { action: "attempt_proof", claim_id: CLAIM, rationale: "target", variant: "max", is_calibration: true, lifetime_cap_owls: 8, ...BY_PLANNING },
       ],
     });
   });

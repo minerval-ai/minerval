@@ -7,10 +7,12 @@ import s from "./source.module.css";
 
 type Findings = Map<string, Array<{ f: ExaminationFinding; ev: ExamView }>>;
 
-// The document as annotated text (#507), in the document's own order. A
-// passage a claim asserts or engages is marked, and the margin carries each
-// such claim's reading; passages nothing touches fold by section, so the
-// picture of the whole is built from many claims' work, none leading it.
+// The document as annotated text (#507). What the graph's work touched
+// leads: each passage a claim asserts or engages, or an examination found
+// something in, in the document's order, with the section it sits in and
+// each claim's reading in the margin. The whole text follows behind one
+// fold. A scraped page is mostly its site's navigation; drawn section by
+// section, it buried one quoted passage under dozens of empty headings.
 export function AnnotatedText({
   doc, groups, exams, findings, names, shown, setShown,
 }: {
@@ -22,20 +24,19 @@ export function AnnotatedText({
   shown: string | null;
   setShown: (id: string | null) => void;
 }) {
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [whole, setWhole] = useState(false);
   const only = exams.find((e) => e.exam.id === shown) ?? null;
   const leaves = groups.flatMap((g) => g.leaves);
   const marked = leaves.filter((l) => l.seg.instances.length > 0).length;
+  const touched = (l: Leaf) => l.seg.instances.length > 0 || (findings.get(l.seg.id)?.length ?? 0) > 0;
+  const lead = groups.flatMap((g) => g.leaves.filter(touched).map((l) => ({ g, l })));
+  // Headings with nothing under them (a page's navigation) are left out.
+  const withText = groups.filter((g) => g.leaves.length > 0);
+  // Showing one examination over the text is reading its coverage, which
+  // needs the whole text.
+  const showWhole = whole || !!only;
   const anchored = leaves.reduce((n, l) => n + (findings.get(l.seg.id)?.length ?? 0), 0);
   const unanchored = doc?.unanchored ?? [];
-
-  const toggle = (id: string) =>
-    setOpen((cur) => {
-      const next = new Set(cur);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   return (
     <section id="text">
@@ -96,17 +97,29 @@ export function AnnotatedText({
             </span>
           </div>
 
-          {groups.map((g) => (
-            <GroupBlock
-              key={g.id}
-              g={g}
-              open={open.has(g.id)}
-              onToggle={() => toggle(g.id)}
-              exams={exams}
-              only={only}
-              findings={findings}
-              names={names}
-            />
+          {lead.length === 0 && <p className={s.empty} style={{ margin: ".6rem 0" }}>No claim quotes it yet.</p>}
+          {lead.map(({ g, l }) => (
+            <div key={l.seg.id}>
+              <div className={s.where}>{[g.label, l.sub].filter(Boolean).join(" · ") || "Opening"}</div>
+              <PassageRow leaf={l.seg} exams={exams} only={only} findings={findings.get(l.seg.id) ?? []} names={names} anchor />
+            </div>
+          ))}
+
+          <button
+            type="button"
+            className={s.wholeFold}
+            aria-expanded={showWhole}
+            disabled={!!only}
+            onClick={() => setWhole((w) => !w)}
+          >
+            {showWhole
+              ? only ? `The full text, as ${only.code} examined it` : "Fold the full text"
+              : `Read the full text: ${leaves.length} ${leaves.length === 1 ? "passage" : "passages"}${
+                  withText.length > 1 ? ` in ${withText.length} sections` : ""
+                }`}
+          </button>
+          {showWhole && withText.map((g) => (
+            <GroupBlock key={g.id} g={g} exams={exams} only={only} findings={findings} names={names} />
           ))}
         </>
       )}
@@ -130,26 +143,22 @@ export function AnnotatedText({
   );
 }
 
+// One section of the full text, every passage in place. The passages the
+// lead list already shows are marked here too, so each reads in context.
 function GroupBlock({
-  g, open, onToggle, exams, only, findings, names,
+  g, exams, only, findings, names,
 }: {
   g: Group;
-  open: boolean;
-  onToggle: () => void;
   exams: ExamView[];
   only: ExamView | null;
   findings: Findings;
   names: Map<string, string>;
 }) {
-  const isMarked = (l: Leaf) => l.seg.instances.length > 0 || (findings.get(l.seg.id)?.length ?? 0) > 0;
-  const hidden = g.leaves.filter((l) => !isMarked(l));
-  const visible = open ? g.leaves : g.leaves.filter(isMarked);
   const marks = g.leaves.filter((l) => l.seg.instances.length > 0).length;
-  const unit = unitOf(hidden.length ? hidden : g.leaves);
   let lastSub: string | null = null;
 
   return (
-    <div className={s.group} id={`grp-${g.id}`}>
+    <div className={s.group}>
       {g.label && (
         <div className={s.gh}>
           {g.label}
@@ -159,7 +168,7 @@ function GroupBlock({
           </span>
         </div>
       )}
-      {visible.map((l) => {
+      {g.leaves.map((l) => {
         const showSub = l.sub && l.sub !== lastSub;
         lastSub = l.sub;
         return (
@@ -169,11 +178,6 @@ function GroupBlock({
           </div>
         );
       })}
-      {hidden.length > 0 && (
-        <button type="button" className={s.fold} aria-expanded={open} onClick={onToggle}>
-          {open ? `Fold unmarked ${unit}` : `${hidden.length} unmarked ${unitOf(hidden, hidden.length)}`}
-        </button>
-      )}
     </div>
   );
 }
@@ -186,20 +190,22 @@ function unitOf(leaves: Leaf[], n = 2): string {
 }
 
 function PassageRow({
-  leaf, exams, only, findings, names,
+  leaf, exams, only, findings, names, anchor = false,
 }: {
   leaf: DocumentSegment;
   exams: ExamView[];
   only: ExamView | null;
   findings: Array<{ f: ExaminationFinding; ev: ExamView }>;
   names: Map<string, string>;
+  /** The lead list's copy carries the passage's anchor; the full text's does not, so ids stay unique. */
+  anchor?: boolean;
 }) {
   const by = (only ? [only] : exams).filter((ev) => ev.covered.has(leaf.id));
   const dim = only && by.length === 0;
   const marked = leaf.instances.length > 0;
   const kindCls = leaf.kind === "reference" ? s.ref : leaf.kind === "note" ? s.knote : "";
   return (
-    <div className={`${s.prow} ${dim ? s.dim : ""}`} id={`seg-${leaf.id}`}>
+    <div className={`${s.prow} ${dim ? s.dim : ""}`} id={anchor ? `seg-${leaf.id}` : undefined}>
       <div className={s.gut}>
         {by.map((ev) => <Tick key={ev.exam.id} ev={ev} small />)}
       </div>

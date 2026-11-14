@@ -1,4 +1,4 @@
-import { getDb } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
 import { assessments, assessmentsInForce } from "../db/schema.js";
 import { eq, desc, and, gte, lte, count } from "drizzle-orm";
 
@@ -38,6 +38,49 @@ export async function getAssessmentHistory(
   ]);
 
   return { assessments: rows, total: totalRows[0]?.count ?? 0 };
+}
+
+/**
+ * Every judgment of a quantity or a question, newest first: the estimates a
+ * quantity's Stewards recorded, or a question's assessments of its standing.
+ * The same paging and dates as getAssessmentHistory, and each row carries
+ * the run that wrote it, so a caller can open it on the run log as it would
+ * a claim's verdict. A claim's history is getAssessmentHistory's.
+ */
+export async function getKindJudgmentHistory(
+  claimId: string,
+  kind: "quantity" | "question",
+  options: { limit?: number; offset?: number; since?: Date; until?: Date } = {}
+): Promise<{ rows: Array<Record<string, unknown>>; total: number }> {
+  const { limit = 20, offset = 0, since, until } = options;
+  const table = kind === "quantity" ? "quantity_estimates" : "question_assessments";
+  const where = `claim_id = $1 AND ($2::timestamptz IS NULL OR assessed_at >= $2)
+                 AND ($3::timestamptz IS NULL OR assessed_at <= $3)`;
+  const columns =
+    kind === "quantity"
+      ? `id, claim_id, estimate, summary, work AS reasoning_trace, marginal_yield, model, run_id,
+         is_current, trigger, trigger_context, assessed_at`
+      : `id, claim_id, standing, confidence, favored_claim_ids::text[] AS favored_claim_ids, incomplete,
+         summary, reasoning_trace, marginal_yield, model, run_id, is_current, trigger,
+         trigger_context, assessed_at`;
+  const params = [claimId, since ?? null, until ?? null];
+  const [rows, total] = await Promise.all([
+    rawQuery<Record<string, unknown> & { assessed_at: Date }>(
+      `SELECT ${columns} FROM ${table} WHERE ${where}
+        ORDER BY assessed_at DESC, id LIMIT $4 OFFSET $5`,
+      [...params, limit, offset]
+    ),
+    rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM ${table} WHERE ${where}`, params),
+  ]);
+  return {
+    rows: rows.map((r) => ({
+      ...r,
+      kind,
+      assessed_at: new Date(r.assessed_at).toISOString(),
+      run_id: r.run_id ?? null,
+    })),
+    total: Number(total[0]?.n ?? 0),
+  };
 }
 
 /**

@@ -27,9 +27,12 @@
  *     nothing.
  *
  * Between sweeps, on every tick (STANDING_ORDER_RETRY_MINUTES apart by
- * default), the plans' standing orders are asked for again, the mandates
- * no agent ends are tended, and the gates and what passes to and from the
- * public graph are followed (betweenSweeps, followTheGates).
+ * default), a new mandate's first sitting is opened, the lookouts and
+ * Correspondents that have fallen due get their rows, the plans' standing
+ * orders are asked for again, the mandates no agent ends are tended, and
+ * the gates and what passes to and from the public graph are followed
+ * (betweenSweeps, followTheGates). Nothing an agent is told runs on its own
+ * cadence waits for the sweep.
  *
  * The last-sweep timestamp rides in memory: an extra sweep after a restart
  * is harmless (every job is idempotent).
@@ -40,7 +43,12 @@ import { sweepSessions } from "../services/session-service.js";
 import { rawQuery } from "../db/client.js";
 import { enqueueSteward } from "../services/queue-service.js";
 import { getEffectiveAllocationPolicy } from "../services/allocation-policy-service.js";
-import { materializeStandingOrders, reconcileActions } from "../services/action-service.js";
+import {
+  materializeStandingOrders,
+  openDueAgentRuns,
+  openFirstSittings,
+  reconcileActions,
+} from "../services/action-service.js";
 import { tendMandates } from "../services/mandate-lifecycle-service.js";
 import { STANDING_ORDER_RETRY_MINUTES } from "../services/standing-order-service.js";
 import { scanReconcileCandidates } from "../services/curation-service.js";
@@ -155,6 +163,22 @@ async function tend(): Promise<void> {
  * at the next six-hour sweep.
  */
 async function betweenSweeps(): Promise<void> {
+  // What runs on its own clock is opened on this tick, not the sweep's: a
+  // new mandate's first sitting, and the lookouts and Correspondents whose
+  // heartbeat has fallen due or that have an input waiting. Each is told
+  // its cadence (its heartbeat, the check-ins it sets), and the six-hourly
+  // sweep is a cadence none of them is told of (CLAUDE.md, "Constraints on
+  // agents"). The executor's tick funds the rows (fundGrantSelfActions).
+  await openFirstSittings().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] first sittings failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+  await openDueAgentRuns().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] due lookout and correspondent runs failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
   await materializeStandingOrders().catch((err: unknown) =>
     console.error(
       `[allocation-scheduler] standing orders failed: ${err instanceof Error ? err.message : String(err)}`

@@ -16,6 +16,14 @@
  * prompt: the integrity of the claim graph and the truth outrank the
  * funder, and ideology-warping mandates are declined outright.
  */
+import {
+  draftWarnings,
+  parseGrantmakerWarnings,
+  WARNING_MAX_CHARS,
+  WARNING_TOPICS,
+  WARNINGS_MAX,
+  type MandateWarning,
+} from "../../services/mandate-warnings.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -121,6 +129,13 @@ export interface GrantMandate {
   origin?: string;
   /** The part of the budget its Grantmaker passes may spend, when it has one. */
   grantmaker_share_owls?: number;
+  /**
+   * What the funder must see before funding, as the Grantmaker recorded it
+   * (mandate-warnings.ts); funding is refused until they are acknowledged.
+   */
+  warnings?: MandateWarning[];
+  /** When the funder acknowledged the warnings, set on funding. */
+  warnings_acknowledged_at?: string;
 }
 
 export interface GrantmakerTurnResult {
@@ -134,6 +149,16 @@ export interface GrantmakerTurnResult {
 // and refused past it, never cut silently (#698).
 const TITLE_MAX_CHARS = 200;
 const FUNDER_STAKE_MAX_CHARS = 500;
+
+/** The one way to record that a funder declared no stake. */
+const NO_STAKE = /^none\.?$/i;
+/**
+ * A stake line that opens by saying there is none and then goes on. The page
+ * prints the line after "who declared a stake in its subject:", so "None
+ * declared: … he is the founder of Minerval" read as a stake of "None
+ * declared". Either there is no stake ("none") or the line states it.
+ */
+const SAYS_NO_STAKE = /^(none|no stake|no interest|nothing|n\/a)\b/i;
 
 /**
  * Tool-use turns in one chat reply. Not a spending limit (funded turns
@@ -171,7 +196,10 @@ const MANDATE_SCHEMA = {
       maxLength: FUNDER_STAKE_MAX_CHARS,
       description:
         "The stake the funder declared in the mandate's subject, in words a " +
-        "reader can weigh, or \"none\" when they declared none. Shown on the " +
+        "reader can weigh, or exactly \"none\" when they declared none. The page " +
+        "prints it after \"who declared a stake in its subject:\", so write the " +
+        "stake itself (\"the founder of Minerval, the platform that hosts this " +
+        "graph\"), never \"none\" followed by a qualification. Shown on the " +
         "mandate's page whether or not the funder is named.",
     },
     scope_claim_id: {
@@ -245,6 +273,29 @@ const MANDATE_SCHEMA = {
         "Anything the funder should know: uncertainties in the estimate, " +
         "what you deliberately left out, what a top-up would buy next.",
     },
+    warnings: {
+      type: "array",
+      maxItems: WARNINGS_MAX,
+      description:
+        "What the funder must see and agree to before paying, which they could miss in the " +
+        "conversation: the stake line could identify a funder who chose not to be named, the " +
+        "quote may well run over, the plan leaves out something they asked for, a conflict of " +
+        "interest. Each is shown beside the Fund button, and funding is refused until it is " +
+        "acknowledged, so the funder (or an agent funding for them) cannot fund past it " +
+        "unread. Say each in your reply as well. Leave it out when there is nothing of the kind.",
+      items: {
+        type: "object",
+        properties: {
+          about: { type: "string", enum: [...WARNING_TOPICS] },
+          text: {
+            type: "string",
+            maxLength: WARNING_MAX_CHARS,
+            description: "What the funder must weigh, in a sentence or two addressed to them.",
+          },
+        },
+        required: ["about", "text"],
+      },
+    },
     skills: {
       type: "array",
       items: { type: "string" },
@@ -266,7 +317,12 @@ const UUID_RE =
  * Mechanical mandate validation; exported for tests. `knownRefs` are the
  * proposal refs of the plan the items are joining (extend_plan, adjust_plan).
  */
-export function validateMandate(raw: GrantMandate, knownRefs: readonly string[] = []): string | null {
+export function validateMandate(
+  raw: GrantMandate,
+  knownRefs: readonly string[] = [],
+  /** The ingest urls of the plan the items join, which an item's `after` may name. */
+  knownIngestUrls: readonly string[] = []
+): string | null {
   if (raw.skills !== undefined) {
     if (!Array.isArray(raw.skills)) return "skills must be an array of skill names";
     const known = new Set(listSkills().map((s) => s.name));
@@ -286,6 +342,14 @@ export function validateMandate(raw: GrantMandate, knownRefs: readonly string[] 
   if (typeof raw.funder_stake !== "string" || !raw.funder_stake.trim()) {
     return 'funder_stake is required: ask the funder about any stake in the subject, and record it or "none"';
   }
+  if (!NO_STAKE.test(raw.funder_stake.trim()) && SAYS_NO_STAKE.test(raw.funder_stake.trim())) {
+    return (
+      'funder_stake is either exactly "none" or the stake itself, since the page reads "who declared a ' +
+      'stake in its subject: <funder_stake>". Don\'t write "none" and then qualify it: if the funder has ' +
+      "a tie a reader would weigh (founding or working for the platform, owning what the claims are " +
+      "about), that tie is the stake; state it plainly, with the funder's own account of it if they want one"
+    );
+  }
   if (!raw.objective?.trim()) return "objective is required";
   if (!raw.plan?.items?.length) return "the plan needs at least one item";
   if (!(raw.expected_cost_owls > 0)) {
@@ -297,7 +361,7 @@ export function validateMandate(raw: GrantMandate, knownRefs: readonly string[] 
       return `scope_ref "${String(raw.scope_ref)}" names no propose item in the plan`;
     }
   }
-  return validatePlanItems(raw.plan.items, knownRefs);
+  return validatePlanItems(raw.plan.items, knownRefs, undefined, knownIngestUrls);
 }
 
 /**
@@ -314,6 +378,22 @@ export async function planProposalRefs(grantId: string, opts: { executedOnly?: b
     [grantId, opts.executedOnly ?? false]
   );
   return rows.map((r) => r.ref);
+}
+
+/**
+ * The ingest urls a live mandate's plan already carries, which items
+ * joining it may wait for (`after`): all of them (extend_plan), or those of
+ * the executed items an adjust_plan keeps (`executedOnly`).
+ */
+export async function planIngestUrls(grantId: string, opts: { executedOnly?: boolean } = {}): Promise<string[]> {
+  const rows = await rawQuery<{ url: string }>(
+    `SELECT t.e->>'url' AS url
+       FROM grants g, jsonb_array_elements(COALESCE(g.plan->'items', '[]'::jsonb)) WITH ORDINALITY t(e, i)
+      WHERE g.id = $1 AND t.e->>'action' = 'ingest' AND t.e->>'url' IS NOT NULL
+        AND ($2::boolean IS NOT TRUE OR t.i <= g.plan_cursor)`,
+    [grantId, opts.executedOnly ?? false]
+  );
+  return rows.map((r) => r.url);
 }
 
 /**
@@ -379,6 +459,8 @@ async function runGrantmakerTurnImpl(input: {
   funder?: "platform";
   /** The reply's text as it is written, with the model turn it belongs to. */
   onText?: (delta: string, turn: number) => void;
+  /** Each tool the turn calls, as it calls it: what a reader waiting on the reply sees. */
+  onTool?: (name: string, input: Record<string, unknown>) => void;
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
 
@@ -433,8 +515,10 @@ async function runGrantmakerTurnImpl(input: {
   const pipelineTool: Tool = {
     name: "ingestion_report",
     description:
-      "The grant's ingestion pipeline: each source brought in, extraction " +
-      "status, how many claims it linked or minted, how many are assessed, " +
+      "The grant's ingestion pipeline: each source brought in, where its " +
+      "extraction is (extraction_stage: queued, with extraction_queued_ahead " +
+      "the extractions waiting ahead of it, extracting since " +
+      "extraction_started_at, done or failed), how many claims it linked or minted, how many are assessed, " +
       "average and max importance, contested counts, and an importance " +
       "histogram per source. Use this for 'where are the claims coming " +
       "from' and source-quality questions.",
@@ -677,6 +761,12 @@ async function runGrantmakerTurnImpl(input: {
     ...(input.onText ? { onText: input.onText } : {}),
     maxIterations: CHAT_MAX_TURNS,
     executeTool: async (name, toolInput) => {
+      // A progress report only: what the turn is doing, for whoever waits on it.
+      try {
+        input.onTool?.(name, toolInput);
+      } catch {
+        // never a reason to fail the tool call
+      }
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const loaded = await skillLoader.execute(name, toolInput);
       if (loaded !== null) return loaded;
@@ -708,6 +798,8 @@ async function runGrantmakerTurnImpl(input: {
         const raw = toolInput as unknown as GrantMandate;
         const problem = validateMandate(raw);
         if (problem) return JSON.stringify({ success: false, problem });
+        const warned = parseGrantmakerWarnings((toolInput as { warnings?: unknown }).warnings);
+        if (!warned.ok) return JSON.stringify({ success: false, problem: warned.problem });
         mandate = {
           title: String(raw.title).trim(),
           objective: String(raw.objective),
@@ -715,20 +807,31 @@ async function runGrantmakerTurnImpl(input: {
           ...(raw.scope_ref ? { scope_ref: String(raw.scope_ref) } : {}),
           scope_query: raw.scope_query || null,
           // The one stored form every plan path writes (#684).
-          plan: { ...raw.plan, items: normalizePlanItems(raw.plan.items) },
+          plan: { ...raw.plan, items: normalizePlanItems(raw.plan.items, { by: "grantmaker_draft" }) },
           expected_cost_owls: raw.expected_cost_owls,
           funder_named: raw.funder_named,
-          funder_stake: /^none\.?$/i.test(String(raw.funder_stake).trim())
+          funder_stake: NO_STAKE.test(String(raw.funder_stake).trim())
             ? null
             : String(raw.funder_stake).trim(),
           ...(raw.notes ? { notes: String(raw.notes) } : {}),
           ...(raw.skills && raw.skills.length > 0
             ? { skills: [...new Set(raw.skills.map(String))].sort() }
             : {}),
+          ...(warned.warnings.length > 0 ? { warnings: warned.warnings } : {}),
         };
+        // Every warning the funder will be asked to acknowledge, the ones
+        // the draft implies included, so the reply can say them all.
+        const warnings = draftWarnings(mandate);
         return JSON.stringify({
           success: true,
           recorded_items: mandate.plan.items.length,
+          ...(warnings.length > 0
+            ? {
+                warnings: warnings.map((w) => ({ about: w.about, text: w.text, raised_by: w.raised_by })),
+                warnings_note:
+                  "Funding is refused until the funder acknowledges these; say each in your reply.",
+              }
+            : {}),
         });
       }
       if (name === "decline_mandate") {
@@ -1329,10 +1432,17 @@ export async function executeManagementTool(
       funder_named: true,
       funder_stake: "none",
     };
-    const problem = validateMandate(probe, await planProposalRefs(grantId, { executedOnly: true }));
+    const problem = validateMandate(
+      probe,
+      await planProposalRefs(grantId, { executedOnly: true }),
+      await planIngestUrls(grantId, { executedOnly: true })
+    );
     if (problem) return JSON.stringify({ success: false, problem });
-    // Stored in the one plan-item form every path writes (#684).
-    const stored = normalizePlanItems(items);
+    // Stored in the one plan-item form every path writes (#684), stamped
+    // with who added it: the chat, with the funder present, or the review
+    // pass on its own.
+    const inChat = (opts.actor ?? "").includes("chat") || Boolean(opts.confirmedBy);
+    const stored = normalizePlanItems(items, { by: inChat ? "grantmaker_chat" : "grantmaker_review" });
     if (toolInput.preview === true) {
       const { previewPlanOrders } = await import("../../services/standing-order-service.js");
       return JSON.stringify({ success: true, preview: true, ...(await previewPlanOrders(grantId, stored)) });
