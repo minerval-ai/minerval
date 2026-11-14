@@ -276,6 +276,10 @@ describe("the Redactor's pass", () => {
     expect(first.part_now_reads).toContain("[redacted: internal identifiers] shows");
     const back = await tool(id.page!, "restore", { removal_id: first.removal_id });
     expect(back.part_now_reads).toContain("Acme's meter data shows");
+    // A mistyped id is the model's slip: the run is told so and goes on, rather than ending on the database's error.
+    const mistyped = await tool(id.page!, "restore", { removal_id: "210520bf-d816-4892-b1b?0" });
+    expect(mistyped).toMatchObject({ success: false, code: "MALFORMED_ID" });
+    expect(mistyped.message).toContain('removal_id "210520bf-d816-4892-b1b?0"');
     const done = await tool(id.page!, "redact", { part: 3, passage: SECRET, category: "commercial figures", note: "An output figure a counterparty could use." });
     expect(done.part_now_reads).toBe("The meter data shows [redacted: commercial figures] against a target of 4500.");
     const again = await tool(id.page!, "redact", { part: 8, passage: SECRET, category: "commercial figures", note: "The same figure, quoted in the reading." });

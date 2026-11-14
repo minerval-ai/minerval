@@ -10,6 +10,7 @@ import { refusalForCaller } from "../../db/clearance.js";
 import { HOLD_REASONS } from "../../services/gate-kinds.js";
 import { redactorActs } from "../../services/release-gate-service.js";
 import { policyById } from "../../services/redaction-policy.js";
+import { describeIdShape } from "../seen-ids.js";
 import {
   ShowingError,
   finishRedaction,
@@ -249,6 +250,19 @@ export async function executeRedactorTool(
     }
   } catch (err) {
     if (err instanceof ShowingError) return answer({ success: false, code: err.code, message: err.message });
+    // A mistyped id (a removal's or a source's) reaches the database as a syntax error (22P02). It is the
+    // model's slip, so the run is told which id and goes on, rather than ending on the database's words.
+    if ((err as { code?: string } | null)?.code === "22P02") {
+      const bad = Object.entries(input).filter(([k, v]) => k.endsWith("_id") && describeIdShape(v) !== null);
+      return answer({
+        success: false,
+        code: "MALFORMED_ID",
+        message:
+          "Nothing was changed: " +
+          (bad.length > 0 ? bad.map(([k, v]) => `${k} ${JSON.stringify(v)} is not a well-formed id (${describeIdShape(v)})`).join("; ") : "an id in this call is not well formed") +
+          ". Call again with the id copied exactly from a tool result.",
+      });
+    }
     const refusal = refusalForCaller(err);
     if (refusal) return answer({ success: false, message: refusal });
     throw err;
