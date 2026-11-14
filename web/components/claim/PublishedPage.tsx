@@ -12,6 +12,7 @@ import { AssessmentText } from "../AssessmentText";
 import { Term } from "../Term";
 import { HeldPart } from "./HeldPart";
 import { CheckPublishedPage } from "./CheckPublishedPage";
+import { estimateAsRecorded } from "@/lib/quantity";
 
 // A page another graph publishes of this node, on this node's page
 // (docs/published-pages.md). The public assessment stays the default and
@@ -114,7 +115,8 @@ export function publishedDetail(detail: ClaimDetail, view: PublishedPageView): C
         } as Assessment)
       : null;
   return {
-    claim: { ...detail.claim, kind: "claim" },
+    // The node keeps its kind, so that the page names it as what it is; with no quantity detail it is drawn as a claim's page.
+    claim: detail.claim,
     assessment,
     subclaim_count: 0,
     tags: detail.tags,
@@ -189,7 +191,7 @@ export function OtherVerdict({ view }: { view: PublishedPageView }) {
   if (!v || "status" in v) return null;
   return (
     <div className="claim-assess">
-      <span>{"estimate" in v ? `Estimate: ${JSON.stringify(v.estimate)}` : `Standing: ${String(v.standing).replace(/_/g, " ")}`}</span>
+      <span>{"estimate" in v ? `Estimate: ${estimateAsRecorded(v.estimate)}` : `Standing: ${String(v.standing).replace(/_/g, " ")}`}</span>
       <span className="assess-when">
         version of {day(view.shown_version_of)}
         {view.page?.assessed_by_model ? ` · ${modelDisplayName(view.page.assessed_by_model)}` : ""}

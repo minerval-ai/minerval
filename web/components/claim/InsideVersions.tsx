@@ -8,6 +8,7 @@ import type { ClaimDetail, NodeVersion } from "@/lib/types";
 import { Credence, StatusBadge, VerdictConfidence } from "../Assessment";
 import { AssessmentText } from "../AssessmentText";
 import { CheckShownPage } from "./CheckShownPage";
+import { estimateAsRecorded } from "@/lib/quantity";
 
 // A node's page inside a private deployment (lib/inside-node.ts). The page
 // is the ordinary one. A deployment that holds material at more than one
@@ -192,7 +193,7 @@ function VersionBand({ version }: { version: NodeVersion }) {
           <VerdictConfidence value={version.confidence} />
         </>
       ) : "estimate" in version ? (
-        <span>Estimate: {JSON.stringify(version.estimate)}</span>
+        <span>Estimate: {estimateAsRecorded(version.estimate)}</span>
       ) : (
         <span>Standing: {String(version.standing ?? "not recorded").replace(/_/g, " ")}</span>
       )}

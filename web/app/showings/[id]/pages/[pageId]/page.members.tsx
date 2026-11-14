@@ -8,6 +8,7 @@ import { CheckShownPage } from "@/components/claim/CheckShownPage";
 import { Hash, WorkNav, day } from "@/components/inside/nav";
 import { fetchShowing, fetchShownPage, type ShowingAct } from "@/lib/inside-api";
 import { capital, kindWords, removalsInWords, stateOfVersion } from "@/lib/inside-words";
+import { estimateAsRecorded } from "@/lib/quantity";
 
 export const metadata: Metadata = { title: "A page as shown · Minerval" };
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ function verdictWords(v: Record<string, unknown>): string {
   if ("status" in v) {
     return `${capital(String(v.status))}, with confidence ${String(v.confidence)}${v.credence !== null && v.credence !== undefined ? ` and credence ${String(v.credence)}` : "; no credence was given"}.`;
   }
-  if ("estimate" in v) return `Estimate: ${JSON.stringify(v.estimate)}.`;
+  if ("estimate" in v) return `Estimate: ${estimateAsRecorded(v.estimate)}.`;
   return `Standing: ${String(v.standing).replace(/_/g, " ")}.`;
 }
 

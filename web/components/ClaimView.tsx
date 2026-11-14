@@ -205,7 +205,7 @@ export function ClaimView({
       <PageHead
         back={{ href: "/claims", label: "claims" }}
         // kicker: type + state
-        kicker={isQuantity ? "Quantity" : "Claim"}
+        kicker={claim.kind === "quantity" ? "Quantity" : "Claim"}
         tags={
           <>
             {claimType ? (
