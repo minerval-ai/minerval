@@ -359,6 +359,10 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "The recovery sweep finds stalled reviews and orders at every label and re-enqueues each at its own.",
       "Queue messages that name a row by id. The handler that takes one reads the row and runs at its label.",
     ],
+    [
+      "The ingest sweep finds extractions that stopped at every label and returns each one's ledger row to open, or cancels it.",
+      "The job's own status and error, and its ledger row's status. No row is added, and nothing moves between rows; the executor submits the source again at the row's label.",
+    ],
   ],
   "src/workers/report-embedding-backfill.ts": [
     [

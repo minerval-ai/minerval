@@ -296,7 +296,10 @@ export function startRecoverySweep(options: {
       );
     }
     try {
-      const ingests = await sweepStalledIngests();
+      const ingests = await withSystemClearance(
+        "The ingest sweep finds extractions that stopped at every label and returns each one's ledger row to open, or cancels it.",
+        () => sweepStalledIngests()
+      );
       if (ingests.reopened > 0 || ingests.cancelled > 0) {
         options.logger.info(
           `[recovery-sweep] gave up on stalled extractions: ${ingests.reopened} ingest rows reopened, ` +

@@ -41,7 +41,7 @@ describe("where owls come from", () => {
   it("starts as on the public graph: owls are sold, and the free grants are given", async () => {
     const config = await load();
     expect(config.owls).toBe("sold");
-    expect(config.signupGrantOwls).toBe(5);
+    expect(config.signupGrantOwls).toBe(10);
     expect(config.monthlyGrantOwls).toBe(1);
     const { owlsCreatedHere } = await import("../../src/services/owl.js");
     expect(owlsCreatedHere()).toBe(false);

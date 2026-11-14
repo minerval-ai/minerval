@@ -201,8 +201,13 @@ function sessionConnectionString(session: Session): string {
     url.username = CLEARED_ROLE;
     url.password = clearedRolePassword(config.databaseUrl, config.clearedRolePassword);
   }
-  const options = [url.searchParams.get("options"), sessionOptions(session)].filter(Boolean).join(" ");
-  if (options) url.searchParams.set("options", options);
+  // No JIT compilation here either, for the reason the owner's pool gives
+  // (getPool): where enforcement is on, nearly all the app's reads go out
+  // on these connections.
+  const options = [url.searchParams.get("options"), sessionOptions(session), "-c jit=off"]
+    .filter(Boolean)
+    .join(" ");
+  url.searchParams.set("options", options);
   return url.toString();
 }
 

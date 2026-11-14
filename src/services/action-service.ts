@@ -1006,7 +1006,7 @@ export async function mandateWorkInFlight(grantId: string): Promise<number> {
        (SELECT count(*) FROM actions a
          WHERE a.status IN ('open', 'running')
            AND a.kind NOT IN ('grant_planning', 'mandate_review', 'lookout_run', 'correspondent_run', 'resume')
-           AND EXISTS (SELECT 1 FROM action_allocations al
+           AND EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                         WHERE al.grant_id = $1 AND al.released_at IS NULL
                           AND al.exclusion_group = a.exclusion_group
                           AND (al.action_id IS NULL OR al.action_id = a.id)))

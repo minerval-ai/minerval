@@ -119,10 +119,14 @@ async function deliverDue(): Promise<number> {
   for (const s of conditions) {
     const c = s.condition!;
     if (c.kind === "work_settled") {
+      // Counted and delivered at the subscriber's label, as every delivery
+      // is: the work counted is the work that label reads, and the note is
+      // written there.
       const { mandateWorkInFlight } = await import("./action-service.js");
-      if ((await mandateWorkInFlight(c.grant_id)) > 0) continue;
+      if ((await atSubscriber(s, () => mandateWorkInFlight(c.grant_id))) > 0) continue;
       if (!(await claimEnd(s.id))) continue;
-      if (await deliver({ ...s, once: false }, null, `All the work your mandate set going is settled: no pass, ingest or other run it commissioned is waiting to run or running, and no plan item is waiting for its ingests (set ${c.since.slice(0, 16).replace("T", " ")} UTC).`)) n++;
+      const text = `All the work your mandate set going is settled: no pass, ingest or other run it commissioned is waiting to run or running, and no plan item is waiting for its ingests (set ${c.since.slice(0, 16).replace("T", " ")} UTC).`;
+      if (await atSubscriber(s, () => deliver({ ...s, once: false }, null, text))) n++;
       continue;
     }
     if (c.kind !== "committed_owls") continue;
