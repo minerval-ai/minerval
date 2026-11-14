@@ -46,11 +46,16 @@ export const FACE_OTHER_PARTIES_WORDS =
   "These are the settings for the publisher's own material. Where a page rests on another party's material, that party's own setting " +
   "applies to those parts, and each page's record says which setting it was released under.";
 
-/** The kinds a published mandate's stamp states: what answers a request addressed to it. */
-const STAMPED_KINDS: ReadonlyArray<{ kind: GateKind; what: string }> = [
-  { kind: "taken_up", what: "That a request was taken up" },
-  { kind: "answer", what: "That the work will not be done, with its reason" },
-  { kind: "page", what: "The page of a node a request bears on, which is how what the work found is published" },
+/**
+ * The kinds a published mandate's stamp states: what answers a request
+ * addressed to it. A public request is taken up, or declined, at the
+ * mandate's own label, so only that label's gate says those; a page may
+ * leave from any label the work went on to.
+ */
+const STAMPED_KINDS: ReadonlyArray<{ kind: GateKind; what: string; ownLabelOnly: boolean }> = [
+  { kind: "taken_up", what: "That a request was taken up", ownLabelOnly: true },
+  { kind: "answer", what: "That the work will not be done, with its reason", ownLabelOnly: true },
+  { kind: "page", what: "The page of a node a request bears on, which is how what the work found is published", ownLabelOnly: false },
 ];
 
 export interface FaceSetting {
@@ -106,9 +111,9 @@ export async function faceStamp(grantId: string): Promise<FaceStamp | null> {
     for (const from of labels) gates.push({ boundaryId: (await ensureBoundaryPolicy({ from, to: null })).boundary_id, from });
 
     const settings: FaceSetting[] = [];
-    for (const { kind, what } of STAMPED_KINDS) {
+    for (const { kind, what, ownLabelOnly } of STAMPED_KINDS) {
       let strictest: FaceSetting | null = null;
-      for (const gate of gates) {
+      for (const gate of ownLabelOnly ? gates.slice(0, 1) : gates) {
         const found = (
           await modesFor({ boundaryId: gate.boundaryId, kind, fromLabel: gate.from, nodeId: null, subjectRef: null, replyRef: null, grantIds: [grantId] }, [own.id])
         ).get(own.id)!;
@@ -140,6 +145,8 @@ export async function faceStamp(grantId: string): Promise<FaceStamp | null> {
         if (s.party_id !== null && s.party_id !== own.id) continue;
         if (s.scope === "request") narrower++;
         if (s.scope !== "under") continue;
+        // Only what answers a request is stated: a setting for another kind of thing under a node says nothing about requests.
+        if (s.kind !== "*" && !STAMPED_KINDS.some((k) => k.kind === s.kind)) continue;
         const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id = $1 AND origin = 'mirror'`, [s.scope_ref]);
         if (!node) {
           narrower++;

@@ -83,6 +83,12 @@ export function PublisherRecordSection({ record }: { record: PublisherRecord }) 
 // Spelling for this page's readers: the deployment stamps its words in American English.
 const british = (text: string) => text.replace(/\borganiz/g, "organis").replace(/\bOrganiz/g, "Organis");
 
+const UNDER_SAID: Record<string, string> = {
+  open: "open: it goes as written",
+  redactor: "what its Redactor lets through under its published policy goes, with no person deciding after it",
+  person: "a person decides as well, after its Redactor",
+};
+
 // One published mandate: its terms, how its publisher's gate is set for its
 // work as the publishing deployment stamped it, and each change with its
 // date. A request on this graph is addressed to it by its id.
@@ -106,7 +112,7 @@ function PublishedMandateRow({ m }: { m: PublishedMandate }) {
             ))}
             {m.gate.for_requests_under.map((u) => (
               <li key={`${u.public_node_id}-${u.kind}`}>
-                For requests on <Link href={`/claims/${u.public_node_id}`}>a node</Link> and what sits under it ({u.kind}): {british(u.in_words)}, set on {u.set_on}.
+                For requests on <Link href={`/claims/${u.public_node_id}`}>a node</Link> and what sits under it ({u.kind.replace(/_/g, " ")}): {UNDER_SAID[u.the_gate] ?? u.the_gate}, set on {u.set_on}.
               </li>
             ))}
           </ul>
