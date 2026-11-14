@@ -222,12 +222,17 @@ export function addressedRequestMessage(input: { id: string; filedAt: Date; ask:
   );
 }
 
+/** Why a request addressed to a published mandate goes straight to its Grantmaker. */
+export const ADDRESSED_TO_GRANTMAKER =
+  "It is addressed to this mandate, and whether to take it up is the Grantmaker's decision, so it comes to you directly.";
+
 /**
  * Put each request on the public graph that is addressed to a mandate this
  * deployment published in front of that mandate, once: an item in its
  * inbox, at its label, with the request as it was written. The mandate's
  * Grantmaker decides whether to take it up, under the mandate's terms, as
  * it decides anything put in front of it, and no person acts for each one.
+ * The item goes to the Grantmaker directly, not to officer sittings.
  * Runs after the mirror brings requests in, and on the scheduler.
  */
 export async function deliverAddressedRequests(): Promise<number> {
@@ -249,7 +254,7 @@ export async function deliverAddressedRequests(): Promise<number> {
       const targets = await rawQuery<{ claim_id: string }>(`SELECT claim_id FROM feed_request_targets WHERE request_id = $1 ORDER BY claim_id`, [r.id]);
       const raised = await runAtLabel(r.label, `a request on the public graph addressed to mandate ${r.grant_id}`, async () => {
         const { raiseToMandate } = await import("./mandate-inbox-service.js");
-        return raiseToMandate({
+        const item = await raiseToMandate({
           grantId: r.grant_id,
           targetNodeId: null,
           targetRef: `public-request:${r.id}`,
@@ -265,6 +270,26 @@ export async function deliverAddressedRequests(): Promise<number> {
           }),
           detail: { public_request_id: r.id },
         });
+        // Taking it up or declining it is the Grantmaker's decision, so it goes to the Grantmaker as an
+        // officer's escalation does: a live session is woken, and a mandate with none is given a review pass
+        // (openReviewsForEscalations). Officer sittings are off unless a deployment turns them on, and an item
+        // left for them would wait unread.
+        if (item && !item.folded) {
+          await rawQuery(`UPDATE mandate_inbox SET escalated_at = now(), escalation_note = $2 WHERE id = $1 AND escalated_at IS NULL`, [
+            item.id,
+            ADDRESSED_TO_GRANTMAKER,
+          ]);
+          const { recordEvent } = await import("./event-service.js");
+          await recordEvent({
+            kind: "escalated",
+            grantId: r.grant_id,
+            nodeId: null,
+            refs: { petition: null, item: item.id },
+            summary: `A request on the public graph: ${ADDRESSED_TO_GRANTMAKER}`,
+            payload: { waiting: false },
+          });
+        }
+        return item;
       }).catch((err: unknown) => {
         console.error(`[inbound] could not put public request ${r.id} in front of its mandate: ${err instanceof Error ? err.message : String(err)}`);
         return null;

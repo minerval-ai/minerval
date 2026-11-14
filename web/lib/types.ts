@@ -43,8 +43,28 @@ export type SourceKind =
   | "report" | "standard" | "news_article" | "opinion" | "press_release" | "blog_post"
   | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "shown_page" | "published_page" | "unknown";
 
+/** A label that has set an edge or an argument aside for its own readers, with its reason. */
+export interface SetAside {
+  at: string;
+  reason: string | null;
+}
+
+/** One label's importance or contestation for a node, where labels the reader reads hold their own. */
+export interface ValueByLabel {
+  label: string;
+  value: number | null;
+  in_effect: boolean;
+}
+
 export interface TreeNode {
   id: string;
+  // Inside a deployment with more than one label: the label the edge into
+  // this node is recorded at, and its argument's; and where a label the
+  // reader reads has set either aside, which label and why.
+  label?: string;
+  argument_label?: string;
+  set_aside?: SetAside;
+  argument_set_aside?: SetAside;
   // Only where more than one judgment of the node, or evaluation of the
   // argument it sits under, is in force for the reader: how many.
   judgments_in_force?: number;

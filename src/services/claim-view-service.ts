@@ -18,6 +18,7 @@ import { waitingMessages } from "./inbox-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { getClaimById, getClaimInstances } from "./claim-service.js";
+import { valuesByLabelOf, withLayer, withSetAside } from "./overlay-service.js";
 import { RESOLVED_FROM_DESCRIPTION, resolveClaimId } from "./claim-alias-service.js";
 import { getCurrentAssessment } from "./assessment-service.js";
 import { judgmentsInForce, nodeVersions, severalInForceNote } from "./judgment-version-service.js";
@@ -152,6 +153,17 @@ export const CLAIM_VIEW_DESCRIPTION =
   " " +
   RETIRED_DESCRIPTION +
   " Free.";
+
+/**
+ * What the description adds on a deployment with more than one label, and
+ * nowhere else: how a read says which layer a row is at.
+ */
+export const CLAIM_VIEW_LAYERS_DESCRIPTION =
+  " On this graph each argument, subclaim edge, instance, link, tag, cut, reading and answer carries `label`, the " +
+  "label it is recorded at. An edge or argument a label you read has set aside carries `set_aside` (the label, " +
+  "its reason, since when) and is not one the judgment at that label rests on. Where a label you read holds " +
+  "its own importance or contestation for the node, `importance` and `contestation` are the ones in effect " +
+  "for you and `importance_by_label` lists each.";
 
 export const CLAIM_VIEW_INCLUDE_DESCRIPTION =
   "Sections to add to the base view; none by default. Ask for the ones " +
@@ -345,8 +357,13 @@ export async function getClaimView(
       // How actively the claim is disputed or consulted (0..1), kept apart
       // from the status (#524). null = not yet judged.
       contestation: claim.contestation ?? null,
+      // Where a label the reader reads holds its own importance or
+      // contestation for the node: each label's value, the one in effect
+      // for the reader marked (it is the one given above), and the node's
+      // own last.
+      ...valuesByLabelOf(claim),
       domains: claim.domains ?? [],
-      tags: tags.map((t) => ({ slug: t.slug, name: t.name })),
+      tags: tags.map((t) => ({ slug: t.slug, name: t.name, ...(t.label ? { label: t.label } : {}) })),
       // Whether a Steward has actually worked this node (#415).
       // decomposition_status flips to "complete" at onboarding, when the
       // node is handed to its Steward, so on its own it cannot tell "never
@@ -429,7 +446,7 @@ export async function getClaimView(
           leanChecksByArgument(claimId).catch(() => new Map()),
         ]);
         const evaluationByArgument = new Map(evaluations.map((e) => [e.argument_id, e]));
-        payload.arguments = args.map((a) => {
+        const listed = args.map((a) => {
           const e = evaluationByArgument.get(a.id);
           return {
             id: a.id,
@@ -450,6 +467,9 @@ export async function getClaimView(
             lean_check: checks.get(a.id) ?? null,
           };
         });
+        // Which layer each argument is at, and which of them a label the
+        // reader reads has set aside (overlay-service.ts).
+        payload.arguments = await withSetAside("arguments", await withLayer("arguments", listed, (a) => a.id), (a) => a.id);
         // Passages where sources reason about the claim that matched none
         // of its arguments at ingestion (#541), waiting for the Steward to
         // place or dismiss them.
@@ -484,7 +504,15 @@ export async function getClaimView(
   if (include.has("subclaims")) {
     sections.push(
       (async () => {
-        const subclaims = await listDirectSubclaims(claimId);
+        const listed = await listDirectSubclaims(claimId);
+        // Which layer each edge is at, and which a label the reader reads
+        // has set aside: such an edge stays listed, marked, and is not
+        // one the judgment at that label rests on.
+        const subclaims = await withSetAside(
+          "claim_relationships",
+          await withLayer("claim_relationships", listed, (sc) => sc.edge_id),
+          (sc) => sc.edge_id
+        );
         payload.subclaims = subclaims;
         // Derived from the rows, never a stored counter (#417): an edge
         // shared by two arguments is two rows but one child (#437).
@@ -505,10 +533,14 @@ export async function getClaimView(
           getClaimInstances(claimId),
           getClaimSourceMap(claimId).catch(() => null),
         ]);
-        payload.instances = instances.map((inst) => ({
-          ...inst,
-          reading: full?.readings[inst.id] ?? null,
-        }));
+        payload.instances = await withLayer(
+          "claim_instances",
+          instances.map((inst) => ({
+            ...inst,
+            reading: full?.readings[inst.id] ?? null,
+          })),
+          (inst) => inst.id
+        );
         payload.provenance_edges = full?.edges ?? [];
         payload.source_relationships = full?.source_relationships ?? [];
       })()
@@ -537,8 +569,9 @@ export async function getClaimView(
       (async () => {
         // Lateral links (#436): claims a reader of this one would want beside
         // it, with the reason. Not dependencies; they never enter the assessment.
-        payload.related = (await listRelatedClaims(claimId)).map((r) => ({
+        payload.related = (await withLayer("claim_links", await listRelatedClaims(claimId), (r) => r.link_id)).map((r) => ({
           id: r.id,
+          ...(r.label ? { label: r.label } : {}),
           text: r.text,
           link_kind: r.kind,
           reasoning: r.reasoning,

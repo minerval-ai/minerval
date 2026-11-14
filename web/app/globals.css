@@ -693,6 +693,9 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 .term:hover .term-pop,
 .term:focus-within .term-pop,
 .term.pinned .term-pop { opacity: 1; visibility: visible; }
+/* A closed popover takes no room, so one near the edge of a narrow screen does not widen the page. */
+.term:not(:hover):not(:focus-within):not(.pinned) .term-pop { display: none; }
+.term-pop { max-width: min(17rem, calc(100vw - 2rem)); }
 /* labels near a viewport edge pin the popover to one side instead */
 .term-pop.pop-start { left: 0; transform: none; }
 .term-pop.pop-end { left: auto; right: 0; transform: none; }
@@ -1200,6 +1203,20 @@ a.fnd-card:hover, a.fnd-card:target {
 .basis-text.clickable { cursor: pointer; }
 .basis-text.clickable:hover { color: var(--link); }
 .basis-flag { color: var(--faint); font-size: 0.85em; font-style: italic; }
+/* Inside a deployment with more than one label: a row recorded at another
+   label than the node's own says which, quietly, and a row a label has set
+   aside is shown dimmed with the label's reason under it. */
+.layer-mark {
+  display: inline-block; margin-left: 0.4em; padding: 0 0.4em;
+  border: 1px solid var(--rule); border-radius: 0.7em;
+  color: var(--muted); font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.02em;
+  line-height: 1.5; vertical-align: 0.08em; white-space: nowrap;
+}
+.set-aside > .basis-row, .argblock.set-aside > .arghead, .argblock.set-aside > .argform,
+.argblock.set-aside > .argeval, .argblock.set-aside > .basis-list { opacity: 0.55; }
+.set-aside-note { margin: 0.15rem 0 0.35rem; color: var(--muted); font-family: var(--sans); font-size: 0.78rem; }
+.set-aside-note .sc { margin-right: 0.35em; }
+.set-aside-what { color: var(--faint); }
 
 /* End-of-section invitation into the map (#204, #192): a bordered, genuinely
    clickable affordance rather than the easy-to-miss small text beside it. */

@@ -17,7 +17,7 @@ import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { madeBesideOf } from "../../src/services/judgment-version-service.js";
 import { verifyShownPage, type ShownPageForCheck } from "../../src/services/page-fingerprint.js";
-import { readablePolicies, savePolicyVersion } from "../../src/services/redaction-policy.js";
+import { ensureBoundaryPolicy, hashPolicy, readablePolicies, savePolicyVersion } from "../../src/services/redaction-policy.js";
 import {
   askedShowings,
   decideAtGate,
@@ -224,6 +224,47 @@ describe("the Redactor's pass", () => {
     expect(source.success).toBe(true);
   });
 
+  it("can see what the readers on the other side already hold, by name, and nothing at the page's own label", async () => {
+    // What the first run with real models lacked: a Redactor removed the destination's own file names and a
+    // figure the destination already read, because nothing told it they were there.
+    await system(async () => {
+      const set = async (label: string, name: string, path: string) => {
+        const [row] = await rawQuery<{ id: string }>(
+          `INSERT INTO file_sets (name, slug, origin, storage_key, party_id, stake, sensitivity_label)
+           VALUES ($1, $2, 'upload', $2, $3, 'The organization holds these files.', $4) RETURNING id`,
+          [name, `${name.toLowerCase().replace(/ /g, "-")}-${Date.now()}`, id.org, label]
+        );
+        await rawQuery(`INSERT INTO file_set_files (file_set_id, path, bytes, sha256, sensitivity_label) VALUES ($1, $2, 1, 'x', $3)`, [row!.id, path, label]);
+      };
+      await set(A, `Lane reports ${Date.now()}`, "lanes-2026-q3.csv");
+      await set(C, `Meter exports ${Date.now()}`, "meters-secret.csv");
+      await rawQuery(
+        `INSERT INTO connections (name, tool_prefix, url, party_id, stake, sensitivity_label) VALUES ('Contracts at a', 'contracts_a', 'http://127.0.0.1:9/', $1, 'Ours.', $2)`,
+        [id.org, A]
+      );
+    });
+    const all = await tool(id.page!, "look_at_destination");
+    expect(all.success).toBe(true);
+    expect(all.destination).toBe(A);
+    expect(all.readers_there_read.sort()).toEqual([A, "public"].sort());
+    expect(all.file_sets.map((f: any) => f.paths)).toEqual([["lanes-2026-q3.csv"]]);
+    expect(all.connections.map((c: any) => c.name)).toEqual(["Contracts at a"]);
+    expect(all.sources_containing_it).toBeUndefined();
+    const memo = await tool(id.page!, "look_at_destination", { text: "TARGET WAS MET" });
+    expect(memo.sources_containing_it.map((s: any) => s.source_id)).toEqual([id.aSource]);
+    expect(JSON.stringify(memo)).not.toContain("An internal memo");
+    const node = await tool(id.page!, "look_at_destination", { text: "output target" });
+    expect(node.nodes_containing_it.map((n: any) => n.node_id)).toContain(id.node);
+    // What is at the page's own label is not where those readers read, and is not found.
+    const secret = await tool(id.page!, "look_at_destination", { text: SECRET });
+    expect(secret.sources_containing_it).toEqual([]);
+    expect((await tool(id.page!, "look_at_destination", { text: "meters-secret" })).file_sets[0].paths_containing_it).toEqual([]);
+    expect((await tool(id.page!, "look_at_destination", { text: "50%_" })).sources_containing_it).toEqual([]);
+    // Audit has the same look, by the page's id.
+    const audited = await audit("look_at_destination", { page_id: id.page, text: "lanes" });
+    expect(audited.file_sets[0].paths_containing_it).toEqual(["lanes-2026-q3.csv"]);
+  });
+
   it("removes a passage given exactly and leaves the category's mark, and refuses anything else", async () => {
     const policy = await tool(id.page!, "get_redaction_policy");
     expect(policy.policy).toContain("## What is shown whenever a page is shown");
@@ -235,6 +276,10 @@ describe("the Redactor's pass", () => {
     expect(first.part_now_reads).toContain("[redacted: internal identifiers] shows");
     const back = await tool(id.page!, "restore", { removal_id: first.removal_id });
     expect(back.part_now_reads).toContain("Acme's meter data shows");
+    // A mistyped id is the model's slip: the run is told so and goes on, rather than ending on the database's error.
+    const mistyped = await tool(id.page!, "restore", { removal_id: "210520bf-d816-4892-b1b?0" });
+    expect(mistyped).toMatchObject({ success: false, code: "MALFORMED_ID" });
+    expect(mistyped.message).toContain('removal_id "210520bf-d816-4892-b1b?0"');
     const done = await tool(id.page!, "redact", { part: 3, passage: SECRET, category: "commercial figures", note: "An output figure a counterparty could use." });
     expect(done.part_now_reads).toBe("The meter data shows [redacted: commercial figures] against a target of 4500.");
     const again = await tool(id.page!, "redact", { part: 8, passage: SECRET, category: "commercial figures", note: "The same figure, quoted in the reading." });
@@ -270,6 +315,10 @@ describe("Audit's check", () => {
     expect(work.parts[2].as_redacted).not.toContain(SECRET);
     expect(work.parts[2].removals[0].note).toBe("An output figure a counterparty could use.");
     expect(work.least_sure).toHaveLength(1);
+    const [asked] = await system(() => rawQuery<{ context: string }>(`SELECT r.context FROM audit_runs r JOIN showing_pages p ON p.audit_run_id = r.id WHERE p.id = $1`, [id.page]));
+    expect(asked!.context).toContain(
+      "The policy protects what the readers on the other side do not already have: look_at_destination shows what is already where they read."
+    );
 
     const returned = await audit("record_fidelity_outcome", { page_id: id.page, outcome: "return", reasons: `The target of 4500 in part 3 lets a reader bound the figure ${SECRET}.` });
     expect(returned.success).toBe(true);
@@ -821,6 +870,24 @@ describe("the policy of a boundary", () => {
     expect(forA.map((p) => [p.version, p.categories.map((c) => c.name)])).toEqual([[2, ["personal data", "plant layout"]]]);
     expect(forA[0]!.body).toContain("### plant layout");
   });
+
+  it("takes a new version, with the same categories, when the text every version shares has changed since the last was saved", async () => {
+    // As a deployment that saved its versions before the shared sections were reworded would have them.
+    const boundary = { from: C, to: A };
+    const before = (await system(() => ensureBoundaryPolicy(boundary)))!;
+    const older = before.body.replace(/\n\nA supplier's name, the words of a recorded interest[^\n]*/, "");
+    expect(older).not.toBe(before.body);
+    await system(() => rawQuery(`UPDATE redaction_policies SET body = $2, hash = $3 WHERE boundary_id = $1 AND version = $4`, [before.boundary_id, older, hashPolicy(older), before.version]));
+    const now = await system(() => ensureBoundaryPolicy(boundary));
+    expect(now.version).toBe(before.version + 1);
+    expect(now.categories).toEqual(before.categories);
+    expect(now.body).toBe(before.body.replace(`version ${before.version}`, `version ${now.version}`));
+    expect(now.starting_text).toBe(false);
+    // The version pages were shown under stays as it was, and asking again takes no further version.
+    const [kept] = await system(() => rawQuery<{ hash: string }>(`SELECT hash FROM redaction_policies WHERE boundary_id = $1 AND version = $2 AND side = 'destination'`, [before.boundary_id, before.version]));
+    expect(kept!.hash).toBe(hashPolicy(older));
+    expect((await system(() => ensureBoundaryPolicy(boundary))).version).toBe(now.version);
+  });
 });
 
 describe("two labels that do not read each other", () => {
@@ -883,8 +950,8 @@ describe("a quantity's page and a question's page", () => {
       await rawQuery(`UPDATE sources SET party_id = $2 WHERE id = $1`, [meter.source, id.acme]);
       await rawQuery(`INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, sensitivity_label) VALUES ($1, $2, 'Acme', 'Acme is paid by output.', 'steward', $3)`, [meter.source, quantity, C]);
       await rawQuery(
-        `INSERT INTO quantity_estimates (claim_id, estimate, summary, work, model, is_current, sensitivity_label)
-         VALUES ($1, $2::jsonb, 'About thirteen thousand units.', $3, 'a-model', true, $4)`,
+        `INSERT INTO quantity_estimates (claim_id, estimate, summary, work, model, is_current, sensitivity_label, run_id)
+         VALUES ($1, $2::jsonb, 'About thirteen thousand units.', $3, 'a-model', true, $4, gen_random_uuid())`,
         [quantity, JSON.stringify({ central: 13200, low: 12800, high: 13600, unit: "units" }), "Three monthly meter totals were added.\n\nThe September total was corrected for a stoppage.", C]
       );
     });
@@ -896,6 +963,8 @@ describe("a quantity's page and a question's page", () => {
     expect(page.always_shown.node_kind).toBe("quantity");
     expect(page.always_shown.verdict).toEqual({ estimate: { central: 13200, low: 12800, high: 13600, unit: "units" } });
     expect(page.always_shown.sources).toEqual([{ source: 1, kind: "unknown", fingerprint: null, supplied_by: "an_outside_party", interest_recorded: true }]);
+    // The estimate names its run, so the page says what is known of that run's log (here: none was recorded).
+    expect(page.always_shown.made.run_log).toEqual({ sealed: false, seal: null, steps: null, chain_verifies: null });
     await throughTheCheck(pageId, { answer: "supports" });
 
     // A holder of release who reads neither the page's label nor the node is shown the node's wording as the page would show it.

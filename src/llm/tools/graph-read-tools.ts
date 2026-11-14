@@ -19,6 +19,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import {
   CLAIM_VIEW_DESCRIPTION,
+  CLAIM_VIEW_LAYERS_DESCRIPTION,
   CLAIM_VIEW_INCLUDE_DESCRIPTION,
   CLAIM_VIEW_INCLUDES,
   DEFAULT_DEPENDENTS_PAGE,
@@ -34,8 +35,9 @@ import {
   MAX_INSTANCES_PAGE,
   getArgumentView,
 } from "../../services/argument-view-service.js";
-import { describeIdShape } from "../seen-ids.js";
+import { describeIdShape, isMalformedIdError } from "../seen-ids.js";
 import { repairRead, type IdTarget } from "./id-repair.js";
+import { overlaid } from "../../services/overlay-service.js";
 
 export const GRAPH_READ_TOOL_NAMES = [
   "search_claims",
@@ -53,7 +55,7 @@ export const GRAPH_READ_TOOL_NAMES = [
 export function getClaimToolDefinition(): Tool {
   return {
     name: "get_claim",
-    description: CLAIM_VIEW_DESCRIPTION + ID_REPAIR_NOTE,
+    description: CLAIM_VIEW_DESCRIPTION + (overlaid() ? CLAIM_VIEW_LAYERS_DESCRIPTION : "") + ID_REPAIR_NOTE,
     input_schema: {
       type: "object" as const,
       properties: {
@@ -240,7 +242,7 @@ async function executeGraphReadOnce(
     // A model that cites a claim by a shortened or mangled id gets a tool
     // error it can recover from, not a query error that ends its run
     // (Postgres rejects the malformed uuid with 22P02).
-    if ((err as { code?: string } | null)?.code === "22P02") {
+    if (isMalformedIdError(err)) {
       return JSON.stringify(
         name === "get_argument"
           ? argumentMissError(input.argument_id, true)

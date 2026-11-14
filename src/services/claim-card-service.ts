@@ -21,6 +21,7 @@ import { markSeveralInForce } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { resolveClaimId, type ResolvedFrom } from "./claim-alias-service.js";
+import { contestationSql } from "./overlay-service.js";
 
 /**
  * The most ids one batch read takes: the list route's largest page. A
@@ -153,7 +154,7 @@ export async function getClaimCards(ids: string[]): Promise<Map<string, ClaimCar
 async function readCards(ids: string[]): Promise<Map<string, ClaimCard>> {
   if (ids.length === 0) return new Map();
   const rows = await rawQuery<CardRow>(
-    `SELECT c.id, c.kind, c.text, c.state, c.contestation, c.updated_at,
+    `SELECT c.id, c.kind, c.text, c.state, ${contestationSql("c")} AS contestation, c.updated_at,
             CASE WHEN c.kind = 'claim' THEN a.status END AS assessment_status,
             CASE c.kind WHEN 'claim' THEN a.confidence
                         WHEN 'question' THEN qa.confidence END AS assessment_confidence,

@@ -63,6 +63,8 @@ export interface MirrorUpkeepResult {
   withdrawals: number;
   /** Requests to the Curator about a node of this deployment's own and one that arrived. */
   convergence: number;
+  /** Contributions from the public graph given to a Steward here, and requests there put in a mandate's inbox here. */
+  fromOutside: number;
 }
 
 const short = (text: string, max = 200) => (text.length > max ? `${text.slice(0, max)}...` : text);
@@ -290,7 +292,7 @@ async function tellOfWithdrawal(withdrawnId: string): Promise<number> {
  * beside an earlier one in any case.
  */
 export async function afterMirrorApplied(applied: readonly ApplyResult[]): Promise<MirrorUpkeepResult> {
-  const result: MirrorUpkeepResult = { versions: 0, merges: 0, withdrawals: 0, convergence: 0 };
+  const result: MirrorUpkeepResult = { versions: 0, merges: 0, withdrawals: 0, convergence: 0, fromOutside: 0 };
   const done = applied.filter((a) => a.status === "applied");
   if (done.length === 0) return result;
   const union = <T>(pick: (a: ApplyResult) => T[]) => [...new Set(done.flatMap(pick))];
@@ -327,6 +329,14 @@ export async function afterMirrorApplied(applied: readonly ApplyResult[]): Promi
   await attempt("asking the Curator about nodes that arrived", async () => {
     const { scanArrivedPublicNodes } = await import("./curation-service.js");
     result.convergence = await scanArrivedPublicNodes(union((a) => a.nodes.arrived));
+  });
+  // What the public graph said back through a page published from here, and requests there addressed to a
+  // mandate published from here, arrive with the batch: taken in now, not at the scheduler's next look.
+  await attempt("taking in what the public graph said back", async () => {
+    const { takeInFromOutside } = await import("./outward-follow.js");
+    const out = await takeInFromOutside();
+    const given = out.given_to_stewards as { delivered?: number } | undefined;
+    result.fromOutside = (given?.delivered ?? 0) + (Number(out.asked_of_published_mandates) || 0);
   });
   return result;
 }

@@ -38,6 +38,22 @@ describe("the text every boundary starts from", () => {
     ]);
   });
 
+  it("says a supplier's name and the words of an interest or a gap are removable parts, outside the list no category covers", () => {
+    // Three agents in the first run with real models read a sentence inside
+    // the always-shown list as making these words unremovable, and held whole
+    // pages. Nothing in the list may name words a category can cover.
+    for (const line of ALWAYS_SHOWN) {
+      expect(line, line).not.toMatch(/\bname\b|\bwords\b|part of the page/i);
+    }
+    const [list, after] = body.split("No category covers any of these.");
+    expect(list).not.toContain("supplier's name");
+    expect(after).toContain(
+      "A supplier's name, the words of a recorded interest and the words of a gap are not among these. They are " +
+        "parts of the page like any other: a category covers them as it covers any passage, and removing one does " +
+        "not hold the page."
+    );
+  });
+
   it("names no label and ranks none: a boundary is a pair, not a level", () => {
     expect(body).not.toMatch(/restricted|internal\b(?! identifiers)|higher|lower|Boundary [AB]/);
   });

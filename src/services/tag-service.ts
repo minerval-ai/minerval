@@ -26,7 +26,8 @@ import { getDb, rawQuery } from "../db/client.js";
 import { claims, tags, taggings, TAG_SUBJECT_KINDS, type TagSubjectKind } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { currentLabel } from "../llm/usage-context.js";
-import { layered } from "./layer-service.js";
+import { layered, oneTagForSlugSql, taggedWithSql } from "./layer-service.js";
+import { overlaid } from "./overlay-service.js";
 
 /**
  * Cosine similarity above which a proposed tag is the same topic as an
@@ -69,6 +70,8 @@ export interface SubjectTag extends TagRef {
   source: string;
   confidence: number | null;
   reasoning: string | null;
+  /** On a graph with more than one label: the label the tagging is recorded at. */
+  label?: string;
 }
 
 /** A tag to attach, by existing id or by a name to find-or-create. */
@@ -218,10 +221,10 @@ export async function listTags(opts: {
               t.created_by, t.created_at,
               (SELECT count(*)::int FROM taggings tg
                  JOIN claims c ON c.id = tg.subject_id
-                WHERE tg.tag_id = t.id AND tg.subject_kind = 'claim'
+                WHERE ${taggedWithSql("tg", "t.id")} AND tg.subject_kind = 'claim'
                   AND c.state = 'active' AND c.merged_into IS NULL) AS claim_count
          FROM tags t
-        WHERE ${where}
+        WHERE ${where}${oneTagForSlugSql("t")}
      ) counted
      ${opts.includeUnused ? "" : "WHERE claim_count > 0"}
      ORDER BY claim_count DESC, name ASC
@@ -272,10 +275,10 @@ async function searchTagsByEmbedding(
             1 - (t.embedding <=> $1::vector) AS similarity,
             (SELECT count(*)::int FROM taggings tg
                JOIN claims c ON c.id = tg.subject_id
-              WHERE tg.tag_id = t.id AND tg.subject_kind = 'claim'
+              WHERE ${taggedWithSql("tg", "t.id")} AND tg.subject_kind = 'claim'
                 AND c.state = 'active' AND c.merged_into IS NULL) AS claim_count
        FROM tags t
-      WHERE t.status = 'active'
+      WHERE t.status = 'active'${oneTagForSlugSql("t")}
         AND ((t.embedding IS NOT NULL AND 1 - (t.embedding <=> $1::vector) > $2)${lexical})
       ORDER BY similarity DESC NULLS LAST, claim_count DESC
       LIMIT $3`,
@@ -319,13 +322,14 @@ export async function getTagsForSubjects(
     source: string;
     confidence: number | null;
     reasoning: string | null;
+    label?: string;
   }>(
     `SELECT tg.subject_id,
             COALESCE(m.id, t.id) AS id,
             COALESCE(m.slug, t.slug) AS slug,
             COALESCE(m.name, t.name) AS name,
             COALESCE(m.description, t.description) AS description,
-            tg.source, tg.confidence, tg.reasoning
+            tg.source, tg.confidence, tg.reasoning${overlaid() ? ", tg.sensitivity_label AS label" : ""}
        FROM taggings tg
        JOIN tags t ON t.id = tg.tag_id
        LEFT JOIN tags m ON m.id = t.merged_into AND t.status = 'merged'
@@ -337,7 +341,9 @@ export async function getTagsForSubjects(
     const list = out.get(r.subject_id) ?? [];
     // A merge can leave the same survivor twice on one subject; keep the
     // first (highest-confidence) occurrence.
-    if (list.some((t) => t.id === r.id)) continue;
+    // So can the same slug held at two layers (layer-service.ts): the
+    // subject carries the tag once.
+    if (list.some((t) => t.id === r.id || t.slug === r.slug)) continue;
     list.push({
       id: r.id,
       slug: r.slug,
@@ -346,6 +352,7 @@ export async function getTagsForSubjects(
       source: r.source,
       confidence: r.confidence,
       reasoning: r.reasoning,
+      ...(r.label ? { label: r.label } : {}),
     });
     out.set(r.subject_id, list);
   }

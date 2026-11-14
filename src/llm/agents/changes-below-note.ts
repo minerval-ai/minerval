@@ -36,6 +36,7 @@ import type { NodeKind } from "../../schemas/kinds.js";
 import { layered } from "../../services/layer-service.js";
 import { nodeVersions } from "../../services/judgment-version-service.js";
 import { currentLabel } from "../usage-context.js";
+import { overlaysEndedBelow, type EndedOverlay } from "../../services/overlay-service.js";
 
 /** How many items each list names, as in the note this one joins. */
 export const CHANGES_BELOW_NAMED_PER_LIST = 5;
@@ -153,6 +154,59 @@ function layerLines(heading: string, withdrawnBy: string, changes: readonly Chan
 }
 
 /**
+ * What a Steward is told of the overlays its label held that ended because
+ * the layer below changed the row they were said of. `texts` gives the
+ * wording of the nodes named.
+ */
+export function endedOverlaysNote(label: string, ended: readonly EndedOverlay[], texts: ReadonlyMap<string, string>): string {
+  if (ended.length === 0) return "";
+  const own = `\`${label}\``;
+  const day = (o: EndedOverlay) => new Date(o.ended_at).toISOString().slice(0, 10);
+  const node = (id: unknown) => `${String(id)}${texts.get(String(id)) ? ` "${cut(texts.get(String(id)))}"` : ""}`;
+  const why = (o: EndedOverlay) => (o.reason ? ` ("${cut(o.reason)}")` : "");
+  const lines = ended.map((o) => {
+    const d = o.ended_detail ?? {};
+    if (o.target_table === "claim_relationships") {
+      const edge = `The ${String(d.relation_type ?? "")} edge to ${node(d.child_claim_id)}, which ${own} had set aside${why(o)},`;
+      return o.ended_because === "retyped_below"
+        ? `${edge} was changed to ${String(d.now ?? "another relation")} on ${day(o)}.`
+        : `${edge} was removed on ${day(o)}.`;
+    }
+    if (o.target_table === "arguments") {
+      return (
+        `Argument ${String(d.argument_id ?? o.target_id)} "${cut(d.name)}", which ${own} had set aside${why(o)}, was ` +
+        `${o.ended_because === "retired_below" ? "retired" : "removed"} on ${day(o)}` +
+        (d.reason ? ` (${cut(d.reason)}).` : ".")
+      );
+    }
+    const held = `${own} held its own ${o.kind} (${Number(o.value)}) for`;
+    return o.ended_because === "merged_below"
+      ? `${held} ${node(o.target_id)}, which was merged into ${node(d.merged_into)} on ${day(o)}.`
+      : `${held} this node, which was withdrawn on ${day(o)}.`;
+  });
+  return [
+    `What ${own} held over rows at the labels below it, ended because the row was changed there:`,
+    ...list("Ended", lines).slice(1),
+    `Each ended when its row changed, and nothing else at ${own} was changed. Where one still holds of the ` +
+      `row as it now is, the tool that recorded it records it again.`,
+  ].join("\n");
+}
+
+async function loadEndedOverlaysNote(claimId: string, label: string, since: Date | null): Promise<string> {
+  const ended = await overlaysEndedBelow(claimId, since).catch(() => []);
+  if (ended.length === 0) return "";
+  const ids = [
+    ...new Set(
+      ended.flatMap((o) => [o.target_table === "claims" ? o.target_id : null, o.ended_detail?.child_claim_id, o.ended_detail?.merged_into])
+    ),
+  ].filter((id): id is string => typeof id === "string");
+  const rows = ids.length
+    ? await rawQuery<{ id: string; text: string }>(`SELECT id::text AS id, text FROM claims WHERE id = ANY($1::uuid[])`, [ids]).catch(() => [])
+    : [];
+  return endedOverlaysNote(label, ended, new Map(rows.map((r) => [r.id, r.text])));
+}
+
+/**
  * Read the record and write the note for one node. A failed read says
  * nothing and never costs the pass.
  *
@@ -173,7 +227,12 @@ export async function loadChangesBelowNote(claimId: string, kind: NodeKind): Pro
     const own = node?.versions.find((v) => v.label === label);
     const left = own ? undefined : node?.left_standing?.find((e) => e.label === label);
     const at = own?.assessed_at ?? left?.examined_at;
-    if (!at) return "";
+    // What this label held over rows below that the layer below has since
+    // removed, retyped, retired or merged away (overlay-service.ts). Told
+    // whether or not this label has judged the node: an overlay needs no
+    // judgment to have been recorded.
+    const ended = await loadEndedOverlaysNote(claimId, label, at ? new Date(at as string | Date) : null);
+    if (!at) return ended;
     const since = new Date(at as string | Date).toISOString();
     const changes = await rawQuery<ChangeBelow>(
       `SELECT ch.claim_id, (ch.claim_id = $1) AS own, ch.change, ch.detail,
@@ -188,7 +247,7 @@ export async function loadChangesBelowNote(claimId: string, kind: NodeKind): Pro
         ORDER BY ch.applied_at, ch.id`,
       [claimId, since, label]
     );
-    return changesBelowNote(label, since, changes, { leftStanding: !own });
+    return [changesBelowNote(label, since, changes, { leftStanding: !own }), ended].filter(Boolean).join("\n\n");
   } catch (err) {
     console.warn(
       `[steward] what the layer below changed could not be read for ${claimId}:`,

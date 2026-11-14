@@ -104,7 +104,7 @@ interface Kind {
   write: (w: Record<string, string>, words: string) => Promise<unknown>;
   rows: (w: Record<string, string>) => { table: string; where: string; params: unknown[] };
   /** What the higher work is given where the lower layer already holds the thing: the same row, or a refusal. */
-  onLower: "handed the lower row" | "refused";
+  onLower: "handed the lower row" | "refused" | "its own beside it";
 }
 
 const pair = async () => ({ parent: await seedNode("public", "A parent"), child: await seedNode("public", "A child") });
@@ -205,7 +205,7 @@ const kinds: Kind[] = [
     },
     write: (w) => recordCut({ claimId: w.claim!, quantityId: w.quantity!, direction: "above", value: 10, createdBy: "claim_steward" }),
     rows: (w) => ({ table: "quantity_cuts", where: "claim_id = $1", params: [w.claim] }),
-    onLower: "refused",
+    onLower: "its own beside it",
   },
   {
     name: "a quantity's definition",
@@ -224,7 +224,7 @@ const kinds: Kind[] = [
     write: (w, words) =>
       recordInstanceReading({ claimId: w.node!, instanceId: w.instance!, support: "supports", note: words, createdBy: "claim_steward" }),
     rows: (w) => ({ table: "claim_instance_readings", where: "instance_id = $1", params: [w.instance] }),
-    onLower: "refused",
+    onLower: "its own beside it",
   },
   {
     name: "what one source draws on",
@@ -311,6 +311,16 @@ describe("lower first, then higher: the lower layer's row is the row", () => {
         if (kind.name === "a concern put to the Curator") {
           // The one exception: a concern is the run's own words, so each label's is its own row.
           expect(await labelsOf(table, where, params)).toEqual([...before, higher].sort());
+          continue;
+        }
+        if (kind.onLower === "its own beside it") {
+          // A cut and a reading are the label's own judgment of the thing: its row beside the lower one, which is untouched.
+          expect("result" in outcome, `${kind.name}: ${(outcome as { error?: Error }).error?.message}`).toBe(true);
+          expect(await labelsOf(table, where, params), kind.name).toEqual([...before, higher].sort());
+          const lowerRows = await system(() =>
+            rawQuery<{ row: string }>(`SELECT to_jsonb(t)::text AS row FROM ${table} t WHERE (${where}) AND t.sensitivity_label = $${params.length + 1}`, [...params, lower])
+          );
+          expect(lowerRows.map((r) => r.row).join("\n")).not.toContain("-ONLY words");
           continue;
         }
         // No second row, and nothing of the higher label's words anywhere in the lower one.
@@ -432,7 +442,7 @@ describe("a row a lower layer records after a higher one did", () => {
     expect(await asPerson([A], () => sourceHeldAtALabelBelow(rawQuery, mine.id))).toBeNull();
   });
 
-  it("a cut and a definition: a read takes the reader's own label's, else the lowest, and each stays as written", async () => {
+  it("a cut and a definition: a read takes the nearest layer's, the reader's own first, and each stays as written", async () => {
     const quantity = await seedNode("public", "A quantity", "quantity");
     const claim = await seedNode("public", "A claim that cuts it");
     // c defines a public quantity that has no definition yet, and cuts a public claim.
@@ -448,14 +458,21 @@ describe("a row a lower layer records after a higher one did", () => {
     expect((await at(C, () => getThresholdOf(claim)))!.value).toBe(30);
     expect((await at(A, () => getThresholdOf(claim)))!.value).toBe(10);
     expect((await at("public", () => getThresholdOf(claim)))!.value).toBe(10);
-    // Once a layer below holds the claim's cut, no label above writes one beside it or revises its own,
-    // as against the public graph's cut in the mirror.
-    for (const label of [C, A]) {
-      await expect(at(label, () => recordCut({ claimId: claim, quantityId: quantity, direction: "above", value: 5, createdBy: "claim_steward" }))).rejects.toThrow(
-        /already exists at another label than this work's, one this work reads/
-      );
-    }
-    expect((await at(C, () => getThresholdOf(claim)))!.value).toBe(30);
+    // A cut is the label's own judgment of where the claim cuts. c's is its divergence from the public one,
+    // shown as that, and stays c's to revise; a records its own beside the public one, and c, which reads a,
+    // goes on by its own with a's and the public one beside it (services/overlay-service.ts).
+    expect(await at(C, () => getThresholdOf(claim))).toMatchObject({ value: 30, label: C, below: [{ label: "public", value: 10 }] });
+    await at(C, () => recordCut({ claimId: claim, quantityId: quantity, direction: "above", value: 5, createdBy: "claim_steward" }));
+    await at(A, () => recordCut({ claimId: claim, quantityId: quantity, direction: "above", value: 7, createdBy: "claim_steward" }));
+    expect(await labelsOf("quantity_cuts", "claim_id = $1", [claim])).toEqual(["public", A, C]);
+    expect(await at(C, () => getThresholdOf(claim))).toMatchObject({ value: 5, label: C, below: [{ label: A, value: 7 }, { label: "public", value: 10 }] });
+    expect(await at(A, () => getThresholdOf(claim))).toMatchObject({ value: 7, label: A, below: [{ label: "public", value: 10 }] });
+    expect(await at(B, () => getThresholdOf(claim))).toMatchObject({ value: 10, label: "public" });
+    expect((await at("public", () => getThresholdOf(claim)))!.value).toBe(10);
+    // A definition is the quantity's canonical form, and a label does not hold its own beside one below.
+    await expect(
+      at(A, () => defineQuantity({ claimId: quantity, definition: { ...DEFINITION, measures: "A's wording" }, createdBy: "claim_steward" }))
+    ).rejects.toThrow(/already exists at another label than this work's, one this work reads/);
   });
 
   it("a reading of a passage: a read takes one, the reader's own label's where it has one", async () => {
@@ -472,10 +489,17 @@ describe("a row a lower layer records after a higher one did", () => {
     expect(await taken(C)).toEqual([{ note: "C-ONLY: how c reads it." }]);
     expect(await taken(A)).toEqual([{ note: "How the public label reads it." }]);
     expect(await taken("public")).toEqual([{ note: "How the public label reads it." }]);
-    // The node's source map, read at c, has the passage once, with c's reading.
+    // The node's source map, read at c, has the passage once, with c's reading, and the public label's beside it
+    // as what c's diverges from. Read at public it has the public label's alone.
     const map = await at(C, () => getClaimSourceMap(node));
-    expect(JSON.stringify(map)).toContain("C-ONLY: how c reads it.");
-    expect(JSON.stringify(map)).not.toContain("How the public label reads it.");
+    expect(map.readings[instance]).toMatchObject({
+      label: C,
+      note: "C-ONLY: how c reads it.",
+      below: [{ label: "public", note: "How the public label reads it." }],
+    });
+    const below = await at("public", () => getClaimSourceMap(node));
+    expect(below.readings[instance]).toMatchObject({ note: "How the public label reads it." });
+    expect(JSON.stringify(below)).not.toContain("C-ONLY");
   });
 
   it("a tag: the slug names the lower label's tag, and the higher label's stays with what was tagged with it", async () => {

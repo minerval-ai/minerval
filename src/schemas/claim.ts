@@ -220,6 +220,12 @@ export interface TreeNode {
   unit?: unknown | null;
   standing?: string | null;
   steward_parked?: { reason: string; reason_label: string; since: string | null; failed_passes: number };
+  /** On a graph with more than one label: the label the edge into this node is recorded at, and its argument's. */
+  label?: string;
+  argument_label?: string;
+  /** Where a label the reader reads has set the edge, or its argument, aside: that label and its reason. */
+  set_aside?: { at: string; reason: string | null };
+  argument_set_aside?: { at: string; reason: string | null };
   children: TreeNode[];
   subtree_collapsed?: boolean;
   children_truncated?: boolean;

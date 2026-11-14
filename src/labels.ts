@@ -82,7 +82,15 @@
  * and records no second one. Where the higher label recorded the thing
  * first and the lower one later, both stay, and a read gives the thing
  * once (services/layer-service.ts has the rule, for every table and for
- * the mirror alike). The text and the facts a fetch writes into a source's own row are
+ * the mirror alike).
+ *
+ * A label's overlay. What a label says about a row below, where it judges
+ * differently for its own readers, is a row at its own label keyed by the
+ * row below: a version of a judgment, its own cut or reading under the
+ * same key, and in `overlays` its own importance and contestation for a
+ * node and an edge or argument it sets aside (services/overlay-service.ts).
+ * The row below is not touched. A reader, or work at a label, goes by the
+ * nearest layer's among those it reads, its own first. The text and the facts a fetch writes into a source's own row are
  * the same whoever fetches, and are written at the source's label.
  *
  * A judgment at each label. A node may carry one current judgment at each
@@ -245,8 +253,8 @@
  * whoever fetches it; text a caller hands over with a submission goes
  * into a row only at the caller's own label. An instance has one current
  * reading at each label, and an address has one source at each: work at a
- * label goes by the row a label it reads already holds, and where it
- * recorded its own first it keeps reading that one
+ * label goes by the nearest layer's row, its own first, and a reading of
+ * its own beside one below is its divergence from it
  * (services/layer-service.ts).
  *
  * A carrier whose label is missing is not treated as public: the run is

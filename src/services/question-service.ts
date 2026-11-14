@@ -22,7 +22,8 @@ import {
 } from "../schemas/kinds.js";
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { markSeveralInForce, recordMadeBeside } from "./judgment-version-service.js";
-import { oneDefinitionForQuantitySql, refuseWhereHeldBelow } from "./layer-service.js";
+import { layered, lowerRowSql, oneDefinitionForQuantitySql, oneForKeySql, refuseWhereHeldBelow } from "./layer-service.js";
+import { overlaid } from "./overlay-service.js";
 import { publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
@@ -385,23 +386,30 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
         credence: number | null;
         estimate: QuantityEstimate | null;
         unit: QuantityUnit | null;
+        label?: string;
       }
     >(
+      // An edge held at two layers is listed once, by the lowest layer's
+      // row (layer-service.ts); each row says which label it is at.
       `SELECT ${NODE_REF_COLUMNS}, r.relation_type, r.answer_basis,
-              a.claim_credence AS credence, qe.estimate, qd.unit
+              a.claim_credence AS credence, qe.estimate, qd.unit${overlaid() ? ", r.sensitivity_label AS label" : ""}
          FROM claim_relationships r
          JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
          ${NODE_REF_JOINS}
          LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
          LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
         WHERE r.parent_claim_id = $1
-          AND r.relation_type IN ('answers', 'part_of', 'assumes', 'requires')
+          AND r.relation_type IN ('answers', 'part_of', 'assumes', 'requires')${
+            layered() ? ` AND ${lowerRowSql("claim_relationships", "r", ["parent_claim_id", "child_claim_id", "relation_type"])} IS NULL` : ""
+          }
         ORDER BY r.created_at, r.id`,
       [claimId]
     ),
     rawQuery<{ a: string; b: string; relation: AnswerRelationKind }>(
-      `SELECT claim_a_id AS a, claim_b_id AS b, relation
-         FROM answer_relations WHERE question_id = $1 ORDER BY created_at, id`,
+      // One relation for a pair of answers: the nearest layer's (layer-service.ts).
+      `SELECT claim_a_id AS a, claim_b_id AS b, relation${overlaid() ? ", sensitivity_label AS label" : ""}
+         FROM answer_relations ar WHERE question_id = $1${oneForKeySql("answer_relations", "ar", ["question_id", "claim_a_id", "claim_b_id"])}
+        ORDER BY created_at, id`,
       [claimId]
     ),
     rawQuery<QuestionNodeRefView>(
@@ -425,12 +433,13 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
   ]);
   const cur = current[0] ?? null;
   const favored = new Set(cur?.favored_ids ?? []);
-  const ref = (r: QuestionNodeRefView): QuestionNodeRefView => ({
+  const ref = (r: QuestionNodeRefView & { label?: string }): QuestionNodeRefView => ({
     id: r.id,
     text: r.text,
     kind: r.kind,
     status: r.status,
     standing: r.standing,
+    ...(r.label ? { label: r.label } : {}),
   });
   const answers = children.filter((r) => r.relation_type === "answers");
   const answerSet = new Set(answers.map((r) => r.id));
@@ -463,6 +472,7 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
       unit: r.unit,
       favored: favored.has(r.id),
       basis: r.answer_basis,
+      ...(r.label ? { label: r.label } : {}),
     })),
     relations: relations.filter((r) => answerSet.has(r.a) && answerSet.has(r.b)),
     depended_on_by: dependedOnBy.map(ref),

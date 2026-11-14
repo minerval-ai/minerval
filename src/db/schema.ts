@@ -6549,6 +6549,10 @@ export const quantityEstimates = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
     // Which graph the row belongs to (the origin column, above).
     origin: originColumn(),
+    // The agent run that wrote it, as on assessments.run_id: a page of the
+    // quantity shown across a boundary carries that run's log seal. Last, so
+    // that the views that list every column gain it at their end.
+    runId: uuid("run_id"),
   },
   (table) => [
     originCheck("ck_quantity_estimates_origin", table.origin),
@@ -7586,6 +7590,88 @@ export const nodeChanges = pgTable(
     check(
       "ck_node_changes_change",
       sql`${table.change} IN ('reworded', 'argument_added', 'argument_rewritten', 'argument_retired', 'argument_removed', 'kind_corrected', 'merged', 'withdrawn')`
+    ),
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// overlays: what a label holds over a row of a layer below it
+// (services/overlay-service.ts; docs/architecture.md, "A label's overlay on
+// the structure below")
+//
+// A graph at a label is that label's own rows over the graph of the labels
+// it reads. What a label adds is a row of its own in the table the thing
+// lives in. What a label says about a row below, where it judges
+// differently for its own readers, is a row at its own label keyed by the
+// row below, and the row below is not touched. For a judgment that row is a
+// version (assessments and the three tables beside it); for a cut or a
+// reading it is the label's own row under the same key, which each layer
+// has had since identity became per layer. This table holds the cases with
+// no table of their own, because the thing diverged from is a column of the
+// row below or whether the row counts at all:
+//
+//   importance, contestation   the label's own value for a node below
+//                              (`value`, 0..1)
+//   set_aside                  an edge or an argument below that does not
+//                              bear for this label (`value` 1, with the
+//                              Steward's `reason`), or that a label this one
+//                              reads set aside and this one counts
+//                              (`value` 0)
+//
+// One rule composes them, the same that says which judgment is in force: a
+// reader, or work at a label, goes by the live row of the nearest layer
+// among those it reads, its own first; two labels that do not read each
+// other never see each other's. A row is replaced by ending it and writing
+// the next, so the table is its own history. When the layer below removes,
+// retypes, retires or merges away the row, the database ends the overlay
+// with the reason (minerval_overlay_follows_below) and the Steward at the
+// overlay's label is told on its next pass (llm/agents/changes-below-note.ts).
+// ---------------------------------------------------------------------------
+export const overlays = pgTable(
+  "overlays",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The row below: its table and id. No foreign key, because the tables
+    // differ and the overlay outlives an edge the layer below deletes.
+    targetTable: text("target_table").notNull(),
+    targetId: uuid("target_id").notNull(),
+    // The node whose page it is read on: the node itself, an edge's parent,
+    // an argument's claim. Kept so that an overlay on a deleted edge can
+    // still be told to that node's Steward.
+    claimId: uuid("claim_id").notNull(),
+    kind: text("kind").notNull(),
+    value: real("value").notNull(),
+    reason: text("reason"),
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Set when the overlay stops: taken back or replaced at its own label,
+    // or ended because the row below changed (`ended_because` says which,
+    // and `ended_detail` what the layer below did).
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    endedBecause: text("ended_because"),
+    endedDetail: jsonb("ended_detail"),
+    // The label that holds it (src/labels.ts): the run's that recorded it.
+    sensitivityLabel: sensitivityLabelColumn(),
+  },
+  (table) => [
+    uniqueIndex("uq_overlays_live")
+      .on(table.targetTable, table.targetId, table.kind, table.sensitivityLabel)
+      .where(sql`${table.endedAt} IS NULL`),
+    index("idx_overlays_claim").on(table.claimId, table.sensitivityLabel),
+    index("idx_overlays_target").on(table.targetId, table.kind),
+    check(
+      "ck_overlays_kind",
+      sql`(${table.kind} IN ('importance', 'contestation') AND ${table.targetTable} = 'claims')
+          OR (${table.kind} = 'set_aside' AND ${table.targetTable} IN ('claim_relationships', 'arguments'))`
+    ),
+    check(
+      "ck_overlays_value",
+      sql`${table.value} >= 0 AND ${table.value} <= 1
+          AND (${table.kind} <> 'set_aside' OR (${table.value} IN (0, 1) AND (${table.value} = 0 OR ${table.reason} IS NOT NULL)))`
+    ),
+    check(
+      "ck_overlays_ended",
+      sql`${table.endedBecause} IS NULL OR ${table.endedBecause} IN ('taken_back', 'replaced', 'removed_below', 'retyped_below', 'retired_below', 'merged_below', 'withdrawn_below')`
     ),
   ]
 );

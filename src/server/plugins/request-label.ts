@@ -290,6 +290,17 @@ type Handler = (this: FastifyInstance, request: FastifyRequest, reply: FastifyRe
  * public graph's schema, and its OpenAPI document, are untouched: this
  * plugin is not registered there.
  */
+const BY_LABEL_DESCRIPTION =
+  "Present where a label you read holds its own value for the node: each label's value, with the one in effect " +
+  "for you marked (it is the value given beside this), and the node's own label's last.";
+
+/** The node's tags, each able to say which label its tagging is recorded at. */
+function tagsOf(tags: unknown): Record<string, unknown> | null {
+  const t = tags as { items?: { properties?: Record<string, unknown> } } | undefined;
+  if (!t?.items?.properties) return null;
+  return { ...t, items: { ...t.items, properties: { ...t.items.properties, label: { type: "string" } } } };
+}
+
 function showVersions(route: RouteOptions): void {
   const response = (route.schema?.response ?? {}) as Record<string, { properties?: Record<string, unknown> }>;
   const ok = response[200] ?? response["200"];
@@ -305,8 +316,16 @@ function showVersions(route: RouteOptions): void {
           ...ok.properties,
           claim: {
             ...claim,
-            properties: { ...(claim.properties ?? {}), label: { type: "string", description: LABEL_DESCRIPTION } },
+            properties: {
+              ...(claim.properties ?? {}),
+              label: { type: "string", description: LABEL_DESCRIPTION },
+              // Where a label the reader reads holds its own importance or
+              // contestation for the node (services/overlay-service.ts).
+              importance_by_label: { type: "array", description: BY_LABEL_DESCRIPTION, items: { type: "object", additionalProperties: true } },
+              contestation_by_label: { type: "array", description: BY_LABEL_DESCRIPTION, items: { type: "object", additionalProperties: true } },
+            },
           },
+          ...(tagsOf(ok.properties.tags) ? { tags: tagsOf(ok.properties.tags) } : {}),
           versions: {
             type: "array",
             description: VERSIONS_DESCRIPTION,

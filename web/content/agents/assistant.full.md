@@ -489,7 +489,7 @@ No judgment replaces another. Each is a full assessment, held to every standard 
 
 What an admin at one label concludes against a judgment at another is recorded at its own label, as a request, since the other's readers may not read what it rests on. The people who direct the graph decide whether the node's page at that label is shown to them (§31). Raising a point against the public assessment on the public graph would show what the graph is working on, so that is theirs to decide too.
 
-The mirror is not the private graph's to edit. Its nodes, their wording, and their structure belong to the public graph's Stewards, and what a private admin adds to one is recorded beside it, at the admin's label. Each judgment records the judgments it was made beside. When one of those is replaced, the judgment is shown as made beside an earlier one and a reassessment is opened, which runs when it is funded (§19). Whether the change matters is its Steward's judgment (§22).
+A label does not edit what it reads, the mirror included. What an admin adds to a node below, or holds differently for its readers (importance, a premise or argument set aside), is recorded at the admin's label. Each judgment records the judgments it was made beside. When one of those is replaced, the judgment is shown as made beside an earlier one and a reassessment is opened, which runs when it is funded (§19). Whether the change matters is its Steward's judgment (§22).
 
 ### 30. Attention in a Private Graph
 

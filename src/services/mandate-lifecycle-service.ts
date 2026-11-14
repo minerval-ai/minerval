@@ -38,6 +38,7 @@ import { refundUnspentBudget } from "./budget-job-service.js";
 import { mandateClosureBlockers } from "./bounty-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { PLAN_ORDER_COMMISSIONER, placeStandingOrder } from "./standing-order-service.js";
+import { importanceSql } from "./overlay-service.js";
 
 interface LifecycleGrant {
   id: string;
@@ -118,7 +119,7 @@ async function orderDeepenScope(g: LifecycleGrant): Promise<boolean> {
         AND NOT EXISTS (SELECT 1 FROM assessments_in_force x WHERE x.claim_id = c.id)
         AND NOT EXISTS (SELECT 1 FROM quantity_estimates_in_force q WHERE q.claim_id = c.id)
         AND NOT EXISTS (SELECT 1 FROM question_assessments_in_force qa WHERE qa.claim_id = c.id)
-      ORDER BY (${slotColumnSql("steward_state", "c")} = 'pending') DESC, c.importance DESC NULLS LAST
+      ORDER BY (${slotColumnSql("steward_state", "c")} = 'pending') DESC, ${importanceSql("c")} DESC NULLS LAST
       LIMIT 100`,
     [g.scope_claim_id, g.scope_query]
   );

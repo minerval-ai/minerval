@@ -21,7 +21,8 @@
  * message written for the agent; the tool executors turn that into a
  * structured refusal (§20).
  */
-import { oneForKeySql, oneReadingForInstanceSql, oneSourceForAddressSql, refuseWhereHeldBelow } from "./layer-service.js";
+import { layered, oneForKeySql, oneReadingForInstanceSql, oneSourceForAddressSql, refuseWhereHeldBelow } from "./layer-service.js";
+import { overlaid } from "./overlay-service.js";
 import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
@@ -552,9 +553,10 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
   // A first reading takes this run's label, whatever the source's or the
   // claim's: a reading is the reader's. A re-read replaces the reading in
   // place and leaves the label it has (src/labels.ts).
-  // What a label this work reads already holds is the row this work goes
-  // by, and not this work's to revise (layer-service.ts).
-  await refuseWhereHeldBelow(rawQuery, "claim_instance_readings", { instance_id: instanceId }, "a reading of this passage");
+  // A reading a label this work reads already holds stays that label's.
+  // Where this work reads the passage differently, its reading is its own
+  // label's row for the passage, which its readers go by and which a read
+  // shows beside the one below (layer-service.ts).
   const rows = writtenAtOwnLabel(
     await rawQuery<{ id: string; inserted: boolean }>(
     `INSERT INTO claim_instance_readings
@@ -986,6 +988,10 @@ export interface InstanceReadingView {
   worth_reading_reason: string | null;
   source_read: boolean;
   read_at: string;
+  /** On a graph with more than one label: the label this reading is recorded at. */
+  label?: string;
+  /** Where a label below that one also holds a reading of the passage: each, nearest first. */
+  below?: { label: string; support: string; note: string | null; read_at: string }[];
 }
 
 export interface ProvenanceEdgeView {
@@ -1068,17 +1074,30 @@ export async function getClaimSourceMap(claimId: string): Promise<ClaimSourceMap
     worth_reading_reason: string | null;
     source_read: boolean;
     updated_at: Date;
+    label?: string;
   }>(
+    // Every layer's reading of each passage, nearest first: the first is
+    // the one the reader goes by, and the rest are what the layers below
+    // hold. On a graph with one layer a passage has one.
     `SELECT r.instance_id, r.support, r.deployment, r.note, r.quote_check,
-            r.worth_reading, r.worth_reading_reason, r.source_read, r.updated_at
+            r.worth_reading, r.worth_reading_reason, r.source_read, r.updated_at${overlaid() ? ", r.sensitivity_label AS label" : ""}
        FROM claim_instance_readings r
        JOIN claim_instances ci ON ci.id = r.instance_id
-      WHERE ci.claim_id = $1 AND ci.detached_at IS NULL${oneReadingForInstanceSql("r")}`,
+      WHERE ci.claim_id = $1 AND ci.detached_at IS NULL${layered() ? " ORDER BY minerval_layer_depth(r.sensitivity_label, 'local') DESC, r.sensitivity_label" : ""}`,
     [claimId]
   );
   const readings: Record<string, InstanceReadingView> = {};
   for (const r of readingRows) {
+    const nearer = readings[r.instance_id];
+    if (nearer) {
+      nearer.below = [
+        ...(nearer.below ?? []),
+        { label: r.label ?? "public", support: r.support, note: r.note, read_at: new Date(r.updated_at).toISOString() },
+      ];
+      continue;
+    }
     readings[r.instance_id] = {
+      ...(r.label ? { label: r.label } : {}),
       support: r.support,
       deployment: r.deployment,
       note: r.note,

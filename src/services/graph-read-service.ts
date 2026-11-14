@@ -33,6 +33,7 @@ import {
   type JudgmentChangeSummary,
 } from "./judgment-inputs-service.js";
 import { COVERAGE_ROW_DESCRIPTION } from "./coverage-service.js";
+import { contestationSql } from "./overlay-service.js";
 
 /** Who is reading: an outside caller over MCP, or one of the graph's agents. */
 export type GraphReadAudience = "caller" | "agent";
@@ -246,7 +247,7 @@ interface SearchSignals {
 async function searchSignals(ids: string[]): Promise<Map<string, SearchSignals>> {
   if (ids.length === 0) return new Map();
   const rows = await rawQuery<SearchSignals & { id: string }>(
-    `SELECT c.id, c.contestation, c.steward_state,
+    `SELECT c.id, ${contestationSql("c")} AS contestation, c.steward_state,
             FLOOR(EXTRACT(EPOCH FROM (now() - COALESCE(a.assessed_at, qe.assessed_at, qa.assessed_at)))
                   / 86400)::int AS days_since_assessed
        FROM claims c

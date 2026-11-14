@@ -1,5 +1,5 @@
 import { rawQuery, searchableClaims } from "../db/client.js";
-import { oneDefinitionForQuantitySql } from "./layer-service.js";
+import { oneDefinitionForQuantitySql, taggedWithSql } from "./layer-service.js";
 import { markSeveralInForce } from "./judgment-version-service.js";
 
 /** Rows of a search, each saying how many judgments of its node are in force for the reader where that is more than one. */
@@ -13,6 +13,7 @@ import {
   checkedKindSql,
   liveBountySql,
 } from "./formalization-service.js";
+import { importanceSql } from "./overlay-service.js";
 
 // All search paths below (browse search, matcher candidates, MCP, agent graph
 // tools) serve ONLY state='active' claims — an allowlist on purpose: archived
@@ -89,7 +90,7 @@ function filterClauses(filters: SearchFilters, params: unknown[]): string {
   else if (filters.assessed === "unassessed") sql += `\n      AND NOT ${ASSESSED_SQL}`;
   if (filters.minImportance && filters.minImportance > 0) {
     params.push(filters.minImportance);
-    sql += `\n      AND c.importance >= $${params.length}`;
+    sql += `\n      AND ${importanceSql("c")} >= $${params.length}`;
   }
   if (filters.withPrizes) sql += "\n      AND pb.id IS NOT NULL";
   if (filters.claimType) {
@@ -99,7 +100,7 @@ function filterClauses(filters: SearchFilters, params: unknown[]): string {
   if (filters.tagId) {
     params.push(filters.tagId);
     sql += `\n      AND EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
-                       AND tg.subject_id = c.id AND tg.tag_id = $${params.length})`;
+                       AND tg.subject_id = c.id AND ${taggedWithSql("tg", `$${params.length}::uuid`)})`;
   }
   if (filters.kind) {
     params.push(filters.kind);
@@ -202,7 +203,7 @@ async function hybridSearchWithEmbedding(
     SearchResult & { text_rank: number; semantic_score: number }
   >(
     `
-    SELECT c.id, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       1 - (c.embedding <=> $2::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
@@ -251,7 +252,7 @@ async function keywordSearch(
 
   const rows = await rawQuery<SearchResult & { text_rank: number }>(
     `
-    SELECT c.id, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
       ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
@@ -306,7 +307,7 @@ export async function keywordClaimSearch(
   const claimsTable = await searchableClaims();
   const rows = await rawQuery<SearchResult & { text_rank: number }>(
     `
-    SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.kind, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence
     FROM ${claimsTable} c
@@ -352,7 +353,7 @@ export async function findSimilarClaims(
 
   const rows = await rawQuery<SearchResult & { semantic_score: number }>(
     `
-    SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.kind, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       1 - (c.embedding <=> $1::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence
     FROM ${claimsTable} c

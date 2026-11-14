@@ -37,6 +37,7 @@ import {
 } from "../../services/billing-service.js";
 import {
   chargeOwls,
+  ensureFreeGrants,
   refundOwls,
   settleMeteredCharge,
 } from "../../services/owl-ledger-service.js";
@@ -162,6 +163,9 @@ export async function chargeAgenticOp(
   refs: { claimId?: string | null; contributionId?: string | null } = {}
 ): Promise<QuotaDecision & { entryId?: string | null }> {
   if (!auth?.userId) return { allowed: true };
+  // The free grants land on the first read of a balance (getEntitlement). A route that charges without
+  // checking first would otherwise charge an account that has never been read against an empty ledger.
+  await ensureFreeGrants(auth.userId);
   const { charged, entryId } = await chargeOwls({
     userId: auth.userId,
     priceOwls: capOwls(op),

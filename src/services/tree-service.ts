@@ -1,5 +1,5 @@
 import { rawQuery } from "../db/client.js";
-import { oneDefinitionForQuantitySql } from "./layer-service.js";
+import { layered, lowerRowSql, oneDefinitionForQuantitySql } from "./layer-service.js";
 import { evaluationsInForce, judgmentsInForce, markSeveralInForce, severalEvaluationsNote, severalInForceNote } from "./judgment-version-service.js";
 import type { TreeNode } from "../schemas/claim.js";
 import {
@@ -16,6 +16,7 @@ import {
   type LeanCheckSummary,
 } from "./formalization-service.js";
 import { coverageRow, summarizeCoverage, type CoverageSummary } from "./coverage-service.js";
+import { importanceSql, overlaid } from "./overlay-service.js";
 
 /**
  * The mathematics fields every node carries (docs/mathematics.md §8.3): the
@@ -111,7 +112,37 @@ interface TreeEdgeRow extends MathRowFields, KindRowFields, StewardParkRow {
   lean_check_pin_id?: string | null;
   lean_check_sha256?: string | null;
   lean_check_submitted_by?: string | null;
+  edge_label?: string | null;
+  argument_label?: string | null;
+  edge_set_aside?: { at: string; reason: string | null } | null;
+  argument_set_aside?: { at: string; reason: string | null } | null;
 }
+
+/** The nearest layer's setting aside of the row `idSql` of `table`, as a JSON object or null. */
+const setAsideJsonSql = (table: string, idSql: string) =>
+  `(SELECT CASE WHEN o.value = 1 THEN jsonb_build_object('at', o.sensitivity_label, 'reason', o.reason) END
+      FROM overlays o
+     WHERE o.target_table = '${table}' AND o.target_id = ${idSql} AND o.kind = 'set_aside' AND o.ended_at IS NULL
+     ORDER BY minerval_layer_depth(o.sensitivity_label) DESC, o.created_at DESC LIMIT 1)`;
+
+/** What the tree's edge query adds on a graph with more than one label: which layer each edge and argument is at, and whether it is set aside. */
+const layerColumnsSql = () =>
+  overlaid()
+    ? `, cr.sensitivity_label AS edge_label, arg.sensitivity_label AS argument_label,
+              ${setAsideJsonSql("claim_relationships", "cr.id")} AS edge_set_aside,
+              ${setAsideJsonSql("arguments", "arg.id")} AS argument_set_aside`
+    : "";
+
+/**
+ * An edge held at two layers is listed once, by the lowest layer's row; the
+ * higher row is still listed where it is grouped under an argument, which
+ * is a fact of its own (claim-view-service.ts, listDirectSubclaims). Empty
+ * on a graph with one layer.
+ */
+const onceSql = () =>
+  layered()
+    ? ` AND NOT (am.argument_id IS NULL AND ${lowerRowSql("claim_relationships", "cr", ["parent_claim_id", "child_claim_id", "relation_type"])} IS NOT NULL)`
+    : "";
 
 /** The per-node mathematics columns, for any query whose claim alias is `c`. */
 const NODE_MATH_SELECT_SQL = `pb.amount_micro_usd AS bounty_micro_usd,
@@ -238,7 +269,7 @@ export async function getClaimTree(
               ${NODE_PARK_SELECT_SQL},
               alc.lean_check_id, alc.lean_check_kind, alc.lean_check_verdict,
               alc.lean_check_at, alc.lean_check_pin_id, alc.lean_check_sha256,
-              alc.lean_check_submitted_by
+              alc.lean_check_submitted_by${layerColumnsSql()}
          FROM claim_relationships cr
          JOIN claims c ON c.id = cr.child_claim_id
          LEFT JOIN assessments_in_force a ON a.claim_id = c.id
@@ -250,7 +281,7 @@ export async function getClaimTree(
          ${NODE_MATH_JOIN_SQL}
          ${nodeKindJoinSql()}
         WHERE cr.parent_claim_id = ANY($1)
-          AND c.state = 'active'
+          AND c.state = 'active'${onceSql()}
         ORDER BY cr.created_at, cr.id, am.created_at, am.argument_id`,
       [frontier]
     );
@@ -334,7 +365,7 @@ function dependentRow<T extends MathRowFields>(row: T): T & Omit<TreeNodeMathFie
 export async function getClaimDependents(claimId: string): Promise<DependentClaim[]> {
   const rows = await rawQuery<DependentClaim>(
     `SELECT cr.parent_claim_id AS id, c.text, c.claim_type, c.kind AS node_kind,
-            cr.relation_type, cr.reasoning, c.importance,
+            cr.relation_type, cr.reasoning, ${importanceSql("c")} AS importance,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
             a.claim_credence AS assessment_credence,
             ${NODE_MATH_SELECT_SQL}
@@ -343,7 +374,7 @@ export async function getClaimDependents(claimId: string): Promise<DependentClai
      LEFT JOIN assessments_in_force a ON a.claim_id = cr.parent_claim_id
      ${NODE_MATH_JOIN_SQL}
      WHERE cr.child_claim_id = $1 AND c.state = 'active'
-     ORDER BY c.importance DESC, a.confidence DESC NULLS LAST, c.text`,
+     ORDER BY ${importanceSql("c")} DESC, a.confidence DESC NULLS LAST, c.text`,
     [claimId]
   );
   // Where more than one judgment of a dependent is in force for the asker, the row says so.
@@ -391,7 +422,7 @@ export async function getTransitiveDependents(
     const rows = await rawQuery<DependentClaim>(
       `SELECT DISTINCT ON (cr.parent_claim_id)
               cr.parent_claim_id AS id, c.text, c.claim_type, c.kind AS node_kind,
-              cr.relation_type, cr.reasoning, c.importance,
+              cr.relation_type, cr.reasoning, ${importanceSql("c")} AS importance,
               a.status AS assessment_status, a.confidence AS assessment_confidence,
               a.claim_credence AS assessment_credence,
               ${NODE_MATH_SELECT_SQL}
@@ -401,7 +432,7 @@ export async function getTransitiveDependents(
                 ON a.claim_id = cr.parent_claim_id
          ${NODE_MATH_JOIN_SQL}
         WHERE cr.child_claim_id = ANY($1) AND c.state = 'active'
-        ORDER BY cr.parent_claim_id, c.importance DESC`,
+        ORDER BY cr.parent_claim_id, ${importanceSql("c")} DESC`,
       [frontier]
     );
 
@@ -445,7 +476,7 @@ export async function listClaimDependents(
   const offset = opts.offset ?? 0;
   const rows = await rawQuery<DependentClaim & { total: string }>(
     `SELECT cr.parent_claim_id AS id, c.text, c.claim_type, c.kind AS node_kind,
-            cr.relation_type, cr.reasoning, c.importance,
+            cr.relation_type, cr.reasoning, ${importanceSql("c")} AS importance,
             a.status AS assessment_status, a.confidence AS assessment_confidence,
             a.claim_credence AS assessment_credence,
             ${NODE_MATH_SELECT_SQL},
@@ -455,7 +486,7 @@ export async function listClaimDependents(
      LEFT JOIN assessments_in_force a ON a.claim_id = cr.parent_claim_id
      ${NODE_MATH_JOIN_SQL}
      WHERE cr.child_claim_id = $1 AND c.state = 'active'
-     ORDER BY c.importance DESC, a.confidence DESC NULLS LAST, c.text
+     ORDER BY ${importanceSql("c")} DESC, a.confidence DESC NULLS LAST, c.text
      LIMIT $2 OFFSET $3`,
     [claimId, limit, offset]
   );
@@ -547,6 +578,13 @@ function assembleTree(
       argument_verdict: edge?.argument_verdict ?? null,
       argument_decisive: edge?.argument_decisive ?? null,
       argument_evaluation: edge?.argument_evaluation ?? null,
+      // On a graph with more than one label: the label the edge is at, and
+      // its argument's, and where a label the reader reads has set either
+      // aside, that it has and why (overlay-service.ts).
+      ...(edge?.edge_label ? { label: edge.edge_label } : {}),
+      ...(edge?.argument_label ? { argument_label: edge.argument_label } : {}),
+      ...(edge?.edge_set_aside ? { set_aside: edge.edge_set_aside } : {}),
+      ...(edge?.argument_set_aside ? { argument_set_aside: edge.argument_set_aside } : {}),
       ...kindFields(node, edge),
       ...stewardParkedField(node),
       ...mathFields(node),

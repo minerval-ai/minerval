@@ -320,6 +320,13 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect((await verifyPublishedPage(waiting!.package)).ok).toBe(true);
 
     pageId = await latestPageOf(id.showing!, id.p!);
+    // Everything outside goes under the organization's own name, so its readers already have that name. In the
+    // second run with real models a Redactor that was not told so held a whole page for naming the organization.
+    const look = await tool(pageId, "look_at_destination", { text: id.orgName!.slice(0, 6) });
+    expect(look.published_as).toMatchObject({ name: id.orgName });
+    expect(look.published_as.note).toContain("every package");
+    expect(look.the_publishers_name_contains_it).toBe(true);
+    expect((await tool(pageId, "look_at_destination", { text: "not the publisher" })).the_publishers_name_contains_it).toBe(false);
     await redactAndCheck(pageId);
     // The organization holds an argument against; Acme holds its own name and the words of its interest.
     await releaseAllBut(pageId, ["an argument against", "a source's supplier and recorded interest, by name"]);
@@ -811,6 +818,11 @@ describe("a gate to outside set to send what is released", () => {
     const page = await latestPageOf(id.standingChoice!, id.q!);
     await redactAndCheck(page);
     expect(await system(() => rawQuery(`SELECT 1 FROM showing_acts WHERE page_id = $1 AND by = 'person'`, [page]))).toEqual([]);
+    // Sent when the gate let it through, not at the scheduler's next look (the first run with real models waited for that).
+    const sentAtOnce = await system(() =>
+      rawQuery<{ result: string }>(`SELECT s.result FROM outbound_sends s JOIN outbound_packages p ON p.id = s.package_id WHERE p.showing_id = $1`, [id.standingChoice])
+    );
+    expect(sentAtOnce.map((r) => r.result)).toEqual(["admitted"]);
     const followed = await followOutbound();
     // This showing's package, and those of the earlier showings across the same gate that were waiting for a person.
     expect(followed.sent).toBeGreaterThanOrEqual(1);

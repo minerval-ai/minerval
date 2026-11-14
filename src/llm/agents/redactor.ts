@@ -20,7 +20,8 @@ import { withAgent, withSkills } from "../usage-context.js";
 export function redactorTaskMessage(input: { round: number }): string {
   return (
     `Something written at this label is going to readers who may not read it. You are at the gate, under the policy ` +
-    `for that boundary.\n\n` +
+    `for that boundary. The policy protects what those readers do not already have: look_at_destination shows what ` +
+    `is already where they read.\n\n` +
     (input.round > 1
       ? `This is round ${input.round}: Audit returned your earlier redaction. Its reasons are in get_page_to_redact ` +
         `under returned_by_audit, and your earlier removals are still in place.\n\n`

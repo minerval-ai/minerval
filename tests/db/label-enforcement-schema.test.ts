@@ -117,7 +117,7 @@ describe("with public the only label", () => {
       await publicOnly(tx);
       return catalog(tx);
     });
-    expect(now.labelled.length).toBe(141);
+    expect(now.labelled.length).toBe(142);
     expect(now.secured).toEqual([]);
     expect(now.policies).toEqual({});
     expect(now.judgmentGuards).toEqual([]);
@@ -214,13 +214,13 @@ describe("defining a second label", () => {
       return { during, after: await catalog(tx) };
     });
     expect(during.secured).toEqual(during.labelled);
-    expect(during.policies).toEqual({ label_clearance: 141, label_own_insert: 141, label_sql_read: 141 });
+    expect(during.policies).toEqual({ label_clearance: 142, label_own_insert: 142, label_sql_read: 142 });
     expect(during.judgmentGuards).toEqual(["argument_evaluations", "assessments", "quantity_estimates", "question_assessments"]);
     expect(during.collisionGuards).toBeGreaterThan(30);
     // Every labelled table keeps a row's label as it was written.
-    expect(during.labelFixedGuards).toBe(141);
+    expect(during.labelFixedGuards).toBe(142);
     // And lets a cleared connection change or delete one only at its own label.
-    expect(during.ownLabelGuards).toBe(141);
+    expect(during.ownLabelGuards).toBe(142);
     expect(after.secured).toEqual([]);
     expect(after.policies).toEqual({});
     expect(after.judgmentGuards).toEqual([]);
@@ -456,6 +456,7 @@ describe("the functions that run with their owner's rights", () => {
         "minerval_judgment_label_guard",
         "minerval_labels_changed",
         "minerval_note_node_change",
+        "minerval_overlay_follows_below",
         "minerval_sql_clearance",
         "minerval_unseen_collision_guard",
         "minerval_version_standing",

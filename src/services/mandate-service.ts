@@ -31,6 +31,7 @@ import type { PlanItemLedger } from "./action-service.js";
 import { describePlanItems, type PlanItemState } from "./plan-state.js";
 import { summarizeLookouts, type LookoutSummary } from "./lookout-service.js";
 import type { PlatformApproval } from "./platform-mandate-service.js";
+import { contestationSql, importanceSql } from "./overlay-service.js";
 
 export interface MandateSummary {
   id: string;
@@ -208,18 +209,18 @@ export async function getMandatePipeline(
             COUNT(DISTINCT ci.claim_id)::int AS claims_linked,
             COUNT(DISTINCT ci.claim_id)
               FILTER (WHERE a.id IS NOT NULL)::int AS claims_assessed,
-            AVG(cl.importance)::real AS avg_importance,
-            MAX(cl.importance)::real AS max_importance,
+            AVG(${importanceSql("cl")})::real AS avg_importance,
+            MAX(${importanceSql("cl")})::real AS max_importance,
             COUNT(DISTINCT ci.claim_id)
-              FILTER (WHERE cl.contestation >= 0.5)::int AS contested_claims,
+              FILTER (WHERE ${contestationSql("cl")} >= 0.5)::int AS contested_claims,
             COUNT(DISTINCT ci.claim_id)
-              FILTER (WHERE cl.importance < 0.25)::int AS b1,
+              FILTER (WHERE ${importanceSql("cl")} < 0.25)::int AS b1,
             COUNT(DISTINCT ci.claim_id) FILTER
-              (WHERE cl.importance >= 0.25 AND cl.importance < 0.5)::int AS b2,
+              (WHERE ${importanceSql("cl")} >= 0.25 AND ${importanceSql("cl")} < 0.5)::int AS b2,
             COUNT(DISTINCT ci.claim_id) FILTER
-              (WHERE cl.importance >= 0.5 AND cl.importance < 0.75)::int AS b3,
+              (WHERE ${importanceSql("cl")} >= 0.5 AND ${importanceSql("cl")} < 0.75)::int AS b3,
             COUNT(DISTINCT ci.claim_id)
-              FILTER (WHERE cl.importance >= 0.75)::int AS b4
+              FILTER (WHERE ${importanceSql("cl")} >= 0.75)::int AS b4
        FROM grant_sources gs
        JOIN sources s ON s.id = gs.source_id
        LEFT JOIN jobs j ON j.id = gs.job_id
