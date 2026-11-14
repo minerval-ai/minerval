@@ -176,7 +176,16 @@ the run does not spend goes back.
 
 Where none of them can pay, the item waits. The other side is told in
 fixed words that it is waiting for funds, the backlog counts it so, and
-each look of the scheduler tries again. A person who holds `fund` can also
+each look of the scheduler tries again, every `STANDING_ORDER_RETRY_MINUTES`
+and not only at the six-hourly sweep, since what it waits on (a budget
+topped up, a pace's window opening) comes at any time. The rest of the
+gates' upkeep runs on the same look (`followTheGates` in
+`src/workers/allocation-scheduler.ts`): following standing showings, letting
+through what a delay was keeping, and the outside's packages. A page let
+through to outside under a gate set to send what is released is packaged
+and sent at once (`followReleaseOutside`), and what the public graph says
+back is taken in when the mirror batch that carries it is applied
+(`afterMirrorApplied`); the scheduler is the backstop for both. A person who holds `fund` can also
 pay by hand (`POST /showings/:showing_id/pages/:page_id/commission`).
 
 ## The backlog

@@ -811,6 +811,11 @@ describe("a gate to outside set to send what is released", () => {
     const page = await latestPageOf(id.standingChoice!, id.q!);
     await redactAndCheck(page);
     expect(await system(() => rawQuery(`SELECT 1 FROM showing_acts WHERE page_id = $1 AND by = 'person'`, [page]))).toEqual([]);
+    // Sent when the gate let it through, not at the scheduler's next look (the first run with real models waited for that).
+    const sentAtOnce = await system(() =>
+      rawQuery<{ result: string }>(`SELECT s.result FROM outbound_sends s JOIN outbound_packages p ON p.id = s.package_id WHERE p.showing_id = $1`, [id.standingChoice])
+    );
+    expect(sentAtOnce.map((r) => r.result)).toEqual(["admitted"]);
     const followed = await followOutbound();
     // This showing's package, and those of the earlier showings across the same gate that were waiting for a person.
     expect(followed.sent).toBeGreaterThanOrEqual(1);

@@ -574,6 +574,37 @@ export async function followOutbound(): Promise<{ built: number; sent: number }>
   return { built, sent };
 }
 
+/** The showings outside whose packages are being brought up to date in this process, so two releases of one wait for each other. */
+const followingRelease = new Map<string, Promise<void>>();
+
+/**
+ * A page under a showing outside was released, or more of it was. Where the
+ * gate to outside is set to send what it lets through (send_as_released)
+ * and the deployment has a route to the public graph, its package is built
+ * and sent now, as that setting says; without this it waited for the
+ * scheduler's next look. Where a person sends each package, nothing is
+ * hurried: the scheduler builds it, and sending builds it too. The
+ * scheduler's followOutbound stays the backstop for a send that failed and
+ * for a later version held.
+ */
+export function followReleaseOutside(showingId: string): Promise<void> {
+  const work = async (): Promise<void> => {
+    if (oneLabelOnly()) return;
+    const config = loadConfig();
+    if (!config.publishSigningKey || !config.deploymentHosting || !config.publicGraphApiUrl || !config.publicGraphApiKey) return;
+    const [showing] = await asOwner(() =>
+      rawQuery<{ send_as_released: boolean }>(`SELECT send_as_released FROM shown_showings WHERE id = $1 AND to_outside AND kind = 'page'`, [showingId])
+    );
+    if (showing?.send_as_released) await sendOutbound({ showingId, sender: { standing: true } });
+  };
+  const next = (followingRelease.get(showingId) ?? Promise.resolve()).then(work, work);
+  const settled = next.finally(() => {
+    if (followingRelease.get(showingId) === settled) followingRelease.delete(showingId);
+  });
+  followingRelease.set(showingId, settled);
+  return settled;
+}
+
 /**
  * One package as a file, for a person to carry where the network does not
  * reach: the package exactly as signed. Handing it over is recorded with

@@ -396,7 +396,7 @@ describe("a public claim, mirrored into a deployment with private labels", () =>
       expect(labels, table).toEqual([{ l: PUBLIC_LABEL }]);
     }
     // Nothing was opened by its arrival.
-    expect(await afterMirrorApplied(first)).toEqual({ versions: 0, merges: 0, withdrawals: 0, convergence: 0 });
+    expect(await afterMirrorApplied(first)).toEqual({ versions: 0, merges: 0, withdrawals: 0, convergence: 0, fromOutside: 0 });
     expect(await ledger(id.parent)).toEqual([]);
   });
 
@@ -593,7 +593,7 @@ describe("the public assessment replaced upstream", () => {
     expect(own.made_beside).toEqual([{ label: PUBLIC_LABEL, replaced: true }]);
     expect(own.made_against_earlier).toBe(true);
     // The upkeep ran for the nodes the batch touched, as soon as it was in.
-    expect(upkeep).toEqual({ versions: 1, merges: 0, withdrawals: 0, convergence: 0 });
+    expect(upkeep).toEqual({ versions: 1, merges: 0, withdrawals: 0, convergence: 0, fromOutside: 0 });
     const messages = await inbox(id.parent);
     expect(messages.map((m) => [m.l, m.trigger])).toEqual([[A, "version_beside_changed"]]);
     expect(messages[0]!.body).toContain("- `public`: the version yours was made beside has been replaced by a newer one.");

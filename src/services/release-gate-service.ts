@@ -225,13 +225,22 @@ const gatePartsOf = (pageId: string) =>
  * twice. The second waits for the first, then finds nothing left to do.
  */
 async function settle(pageId: string): Promise<{ shown: boolean; newlyReleased: number }> {
-  return withTransaction(async (lock) => {
+  const { outsidePage, ...result } = await withTransaction(async (lock) => {
     await lock.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`settle-shown-page:${pageId}`]);
     return settleLocked(pageId);
   });
+  // A node's page released outside leaves in its signed package, built and sent now (outbound-service.ts),
+  // and on the scheduler's next look if that fails.
+  if (outsidePage) {
+    const { followReleaseOutside } = await import("./outbound-service.js");
+    await followReleaseOutside(outsidePage).catch((err: unknown) =>
+      console.error(`[gate] the page ${pageId} is through the gate to outside and its package was not sent yet: ${err instanceof Error ? err.message : String(err)}`)
+    );
+  }
+  return result;
 }
 
-async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyReleased: number }> {
+async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyReleased: number; outsidePage?: string }> {
   const [page] = await rawQuery<GatePage>(`SELECT ${GATE_PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [pageId]);
   if (!page || page.stage !== "at_gate") return { shown: false, newlyReleased: 0 };
   const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
@@ -311,6 +320,8 @@ async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyRele
       await import("./gate-outside.js")
         .then((out) => out.sendThroughOutside({ itemId: pageId }))
         .catch((err: unknown) => console.error(`[gate] item ${pageId} is through the gate to outside and was not sent yet: ${err instanceof Error ? err.message : String(err)}`));
+    } else {
+      return { shown: isShown, newlyReleased: changed, outsidePage: showing!.id };
     }
   }
   return { shown: isShown, newlyReleased: changed };
