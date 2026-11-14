@@ -35,7 +35,7 @@ import {
   MAX_INSTANCES_PAGE,
   getArgumentView,
 } from "../../services/argument-view-service.js";
-import { describeIdShape } from "../seen-ids.js";
+import { describeIdShape, isMalformedIdError } from "../seen-ids.js";
 import { repairRead, type IdTarget } from "./id-repair.js";
 import { overlaid } from "../../services/overlay-service.js";
 
@@ -242,7 +242,7 @@ async function executeGraphReadOnce(
     // A model that cites a claim by a shortened or mangled id gets a tool
     // error it can recover from, not a query error that ends its run
     // (Postgres rejects the malformed uuid with 22P02).
-    if ((err as { code?: string } | null)?.code === "22P02") {
+    if (isMalformedIdError(err)) {
       return JSON.stringify(
         name === "get_argument"
           ? argumentMissError(input.argument_id, true)

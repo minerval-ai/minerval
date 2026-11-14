@@ -225,13 +225,22 @@ const gatePartsOf = (pageId: string) =>
  * twice. The second waits for the first, then finds nothing left to do.
  */
 async function settle(pageId: string): Promise<{ shown: boolean; newlyReleased: number }> {
-  return withTransaction(async (lock) => {
+  const { outsidePage, ...result } = await withTransaction(async (lock) => {
     await lock.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`settle-shown-page:${pageId}`]);
     return settleLocked(pageId);
   });
+  // A node's page released outside leaves in its signed package, built and sent now (outbound-service.ts),
+  // and on the scheduler's next look if that fails.
+  if (outsidePage) {
+    const { followReleaseOutside } = await import("./outbound-service.js");
+    await followReleaseOutside(outsidePage).catch((err: unknown) =>
+      console.error(`[gate] the page ${pageId} is through the gate to outside and its package was not sent yet: ${err instanceof Error ? err.message : String(err)}`)
+    );
+  }
+  return result;
 }
 
-async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyReleased: number }> {
+async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyReleased: number; outsidePage?: string }> {
   const [page] = await rawQuery<GatePage>(`SELECT ${GATE_PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [pageId]);
   if (!page || page.stage !== "at_gate") return { shown: false, newlyReleased: 0 };
   const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
@@ -311,6 +320,8 @@ async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyRele
       await import("./gate-outside.js")
         .then((out) => out.sendThroughOutside({ itemId: pageId }))
         .catch((err: unknown) => console.error(`[gate] item ${pageId} is through the gate to outside and was not sent yet: ${err instanceof Error ? err.message : String(err)}`));
+    } else {
+      return { shown: isShown, newlyReleased: changed, outsidePage: showing!.id };
     }
   }
   return { shown: isShown, newlyReleased: changed };
@@ -454,7 +465,8 @@ function renderShownPage(
   page: ShownPageRow,
   parts: readonly ShownPartRow[],
   holders: (part: ShownPartRow) => string[],
-  policy: { version: number | null; hash: string | null }
+  policy: { version: number | null; hash: string | null },
+  acts: readonly ActRow[]
 ): string {
   const header = JSON.parse(page.header!) as Record<string, unknown>;
   const held = parts.filter((p) => p.released_at === null);
@@ -485,7 +497,7 @@ function renderShownPage(
     `How it was made: prompt set ${String(made.prompt_set ?? "not recorded").slice(0, 16)}, policy version ${policy.version ?? "not recorded"}` +
       `, assessed by ${String(made.assessed_by_model ?? "a model not recorded")}, redacted by ${String(made.redacted_by_model ?? "a model not recorded")}.`,
     `Removals under the policy: ${removals.length === 0 ? "none" : removals.map(([c, n]) => `${c}: ${n}`).join(", ")}.`,
-    `Audit's check of the redaction: ${page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : "not recorded"}`,
+    `Audit's check of the redaction: ${auditAnswerWords(page.audit_answer, acts) ?? "not recorded"}`,
     held.length === 0
       ? `Parts: ${parts.length}, all released.`
       : `Parts: ${parts.length}, of which ${held.length} ${held.length === 1 ? "is" : "are"} held (${heldByKind(held)}).`,
@@ -532,7 +544,7 @@ async function arrive(pageId: string, showing: ShowingRow): Promise<void> {
     `SELECT p.version, p.hash FROM showing_pages sp JOIN redaction_policies p ON p.id = sp.policy_id WHERE sp.id = $1`,
     [pageId]
   );
-  const text = renderShownPage(page, parts, holders, { version: policy?.version ?? null, hash: policy?.hash ?? null });
+  const text = renderShownPage(page, parts, holders, { version: policy?.version ?? null, hash: policy?.hash ?? null }, acts);
   const [{ n }] = (await rawQuery<{ n: number }>(
     `SELECT count(*)::int AS n FROM sources WHERE url LIKE $1`,
     [`minerval:shown-page/${pageId}/%`]
@@ -821,7 +833,9 @@ async function answerReachesItsNodes(pageId: string, showing: ShowingRow, destin
       [
         claim_id,
         sourceId,
-        "An answer to a request on this node, from work at a label this one does not read.",
+        // The passage is the source's own first sentence (renderShownItem), so
+        // that a Steward checking the instance against the source finds it.
+        `${capitalize(GATE_KINDS.answer)}, from work at a label this one does not read.`,
         "The source's text is the answer as it came through the gate, with removals marked and held parts named.",
         destination,
       ]
@@ -1400,7 +1414,7 @@ export async function gateQueue(actor: GateActor, opts: { limit?: number; kind?:
         // What is shown whenever anything of the page is shown, and so with any part this person releases.
         always_shown: JSON.parse(page.header),
         ...(wording ? { wording_as_it_would_be_shown: wording.redacted ?? wording.original } : {}),
-        audit: page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : null,
+        audit: auditAnswerWords(page.audit_answer, acts),
         waiting_since: page.checked_at?.toISOString() ?? null,
         ...(reads ? {} : { shown_as_released: SHOWN_AS_RELEASED }),
       };
@@ -1525,6 +1539,28 @@ function age(since: Date): string {
   return hours < 48 ? `${hours} hour${hours === 1 ? "" : "s"}` : `${Math.floor(hours / 24)} days`;
 }
 
+/**
+ * Audit's answer as it is shown, with what a person changed after it. Audit
+ * checks the page as the Redactor left it. A person at the gate may then
+ * remove more, or lift a hold the Redactor placed, and nothing checks that
+ * again: those acts are said beside the answer in fixed words, so that the
+ * answer is not read as covering text Audit never saw. A hold or a release
+ * changes no text and is not listed. Null where no answer is recorded.
+ */
+export function auditAnswerWords(answer: FidelityAnswer | null, acts: readonly Pick<ActRow, "act" | "by" | "party_id" | "part_id">[]): string | null {
+  if (!answer) return null;
+  const byPerson = acts.filter((a) => a.by === "person");
+  const removed = byPerson.filter((a) => a.act === "removed").length;
+  const lifted = byPerson.filter((a) => a.act === "hold_lifted" && a.party_id === null);
+  const after: string[] = [];
+  if (removed > 0) after.push(`removed ${removed === 1 ? "a passage" : `${removed} passages`}`);
+  if (lifted.some((a) => a.part_id === null)) after.push("lifted the Redactor's hold on the whole item");
+  const liftedParts = new Set(lifted.filter((a) => a.part_id !== null).map((a) => a.part_id)).size;
+  if (liftedParts > 0) after.push(`lifted the Redactor's hold on ${liftedParts === 1 ? "a part" : `${liftedParts} parts`}`);
+  if (after.length === 0) return FIDELITY_ANSWERS[answer];
+  return `${FIDELITY_ANSWERS[answer]} The check was made before a person at the gate ${after.join(" and ")}, which it did not check.`;
+}
+
 /** Why an item that has not been shown is held, in fixed words: a person's hold, the Redactor's, a delay, who it waits on, or the stage it is at. */
 function heldBecause(page: ShownPageRow, acts: readonly ActRow[], waitingOn: readonly string[]): string {
   const directHold = pageHeldByDirect(acts);
@@ -1564,7 +1600,7 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
     ...(state === "released_whole" ? { of_parts: parts.length } : {}),
     redaction_round: page.round,
     fingerprint: page.root,
-    audit: page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : null,
+    audit: auditAnswerWords(page.audit_answer, acts),
   };
 }
 
@@ -1900,7 +1936,7 @@ export async function outsideRecord(showingId: string, nodeId: string): Promise<
           ? { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, text: p.text, marks: p.marks ?? [], salt: p.salt }
           : { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, held: heldOf(p) }
       ),
-      audit: page.shown_at && page.audit_answer ? FIDELITY_ANSWERS[page.audit_answer] : null,
+      audit: page.shown_at ? auditAnswerWords(page.audit_answer, acts) : null,
     };
     if (header) {
       const how = (header.made ?? {}) as Record<string, unknown>;

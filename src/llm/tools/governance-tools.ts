@@ -371,8 +371,27 @@ async function getContributionDetails(
     .where(eq(contributions.id, contributionId))
     .limit(1);
 
-  if (!contribution)
+  if (!contribution) {
+    // A contribution made on the public graph, which reaches a private
+    // deployment with the mirror (feed_contributions): a Steward told of one
+    // through a page this graph published is given its id there.
+    const [onPublic] = await rawQuery<{
+      id: string; claim_id: string | null; contribution_type: string; content: string; evidence_urls: string[];
+      submitted_at: Date; review_status: string;
+    }>(
+      `SELECT id, claim_id, contribution_type, content, evidence_urls, submitted_at, review_status
+         FROM feed_contributions WHERE id = $1`,
+      [contributionId]
+    ).catch(() => []);
+    if (onPublic) {
+      return {
+        on_the_public_graph: true,
+        note: "A contribution on the public graph, as this deployment's copy of the public graph holds it. Who made it, its review and any appeal are on the public graph.",
+        contribution: { ...onPublic, submitted_at: onPublic.submitted_at.toISOString() },
+      };
+    }
     return { error: `Contribution not found: ${contributionId}` };
+  }
 
   // Contributor
   const [contributor] = await db

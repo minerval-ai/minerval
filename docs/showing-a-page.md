@@ -143,6 +143,12 @@ cause serious harm; test content. A deployment's administrators save later
 versions with the categories they want (`PUT /redaction-policies`). Two
 sections of every version are written by the code and are the same at every
 boundary: how removal works, and what is shown whenever a page is shown.
+When the code's wording of those two sections changes, the next use of a
+boundary saves a new version with the same categories, as any edit does
+(`ensureBoundaryPolicy`). A page already shown keeps the version, and the
+hash, it was shown under. The always-shown list names facts, never words: a
+supplier's name, the words of a recorded interest and the words of a gap are
+parts, and the policy says so after the list.
 
 A version is refused when it is saved, with the reason, if a category is
 worded by how a passage reflects on someone ("anything unfavorable to the
@@ -188,6 +194,18 @@ tools:
   the node, and a source cited through an argument or a subclaim, can be
   opened whether or not an instance on the node was recorded from them. The
   sources listed as always shown are among them.
+- `look_at_destination`: what the readers on the other side already read:
+  the labels the destination reads, the file sets and connections held
+  there by name (with a set's paths), and, given words or a figure, the
+  sources whose title, stored text or quoted passages contain them and the
+  nodes whose wording or definition does. Outside the deployment it also
+  gives the name everything is published under, the organization's own
+  party, which the public graph's readers see on every package, and says
+  whether the words looked for are in it. Names and ids only, no text
+  (`whatTheDestinationHolds`). The policy protects what those readers do
+  not already have, and the task message says so in one sentence; whether
+  something found there makes a passage safe to leave is the Redactor's
+  judgment. Audit has the same tool, by the page's id.
 - `redact`: remove one passage, given exactly as it appears, under one of
   the policy's categories, with a note. The passage is replaced by
   `[redacted: <category>]`. Nothing else in the part changes.
@@ -263,6 +281,17 @@ so that the answer cannot itself give anything away:
 - The reasoning shown supports the verdict.
 - The reasoning shown supports the verdict in part.
 - The reasoning shown does not show why the verdict was reached.
+
+Audit checks the page as the Redactor left it. A person at the gate may
+then remove more, or lift a hold the Redactor placed, and nothing checks
+that again. Where one did, the answer is shown with fixed words after it,
+for example "The check was made before a person at the gate removed 2
+passages and lifted the Redactor's hold on the whole item, which it did not
+check." (`auditAnswerWords`). The acts themselves are on the destination
+side's record with who made them. Re-checking after each person's act was
+the alternative; it would add a paid Audit run and a wait to every act at a
+gate set to a person's decision, which is the setting where a person has
+already read the page.
 
 ## The gate
 

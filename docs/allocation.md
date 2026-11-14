@@ -1039,7 +1039,11 @@ the request, or finds it cannot or should not be met, records that
 outcome instead. A quote prices only work a Researcher has the means to
 do: a request that needs a GPU, a model API, a lab or new data is
 reported `cannot_be_met` with who could do it, or quoted for its desk part
-alone. One variant is open at a time.
+alone. One variant is open at a time. The full work runs on the
+Researcher's strong tier where the deployment has a key for that tier's
+provider and has cleared it for the label the work is at, and on its
+standard tier where not (`requestWorkTier`), so work asked of a label
+never needs a provider the deployment has not set up.
 
 **Who pays.** Whether a request is worth its budget is a judgment, made by
 whoever pays. A fresh request row is put in front of the General mandate's

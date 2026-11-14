@@ -17,6 +17,8 @@ const { state } = vi.hoisted(() => ({
     priorityRuns: 0,
     selfFunds: 0,
     followUpSweeps: 0,
+    // Each step of the gates' and the outside's upkeep, in the order it ran.
+    gateSteps: [] as string[],
     enqueued: [] as Array<{ claimId: string; trigger: string }>,
     scans: [] as number[],
     config: {
@@ -103,6 +105,27 @@ vi.mock("../../../src/services/queue-service.js", () => ({
   ),
 }));
 
+vi.mock("../../../src/services/showing-service.js", () => ({
+  followShowings: vi.fn(async () => (state.gateSteps.push("followShowings"), 0)),
+  retryGatePayments: vi.fn(async () => (state.gateSteps.push("retryGatePayments"), 0)),
+}));
+vi.mock("../../../src/services/release-gate-service.js", () => ({
+  settleWaiting: vi.fn(async () => (state.gateSteps.push("settleWaiting"), 0)),
+}));
+vi.mock("../../../src/services/gate-service.js", () => ({
+  offerMandatesWhereEverythingFlows: vi.fn(async () => (state.gateSteps.push("offerMandates"), 0)),
+}));
+vi.mock("../../../src/services/outward-follow.js", () => ({
+  followOutwardActs: vi.fn(async () => (state.gateSteps.push("followOutwardActs"), {})),
+}));
+vi.mock("../../../src/services/outbound-service.js", () => ({
+  followOutbound: vi.fn(async () => (state.gateSteps.push("followOutbound"), { built: 0, sent: 0 })),
+}));
+vi.mock("../../../src/services/judgment-version-service.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  oneLabelOnly: () => false,
+}));
+
 vi.mock("../../../src/config.js", () => ({
   loadConfig: () => state.config,
 }));
@@ -121,6 +144,7 @@ beforeEach(() => {
   state.priorityRuns = 0;
   state.selfFunds = 0;
   state.followUpSweeps = 0;
+  state.gateSteps = [];
   state.enqueued = [];
   state.enqueuedAt = [];
   state.scans = [];
@@ -197,6 +221,19 @@ describe("allocationSchedulerTick", () => {
 
     const later = await allocationSchedulerTick(1_000_000 + 7 * 3_600_000);
     expect(later.prioritiesRefreshed).toBe(3);
+  });
+
+  it("follows the gates and the outside on every tick, between sweeps as in them", async () => {
+    // In the first run with real models a page released outside waited for the
+    // next sweep to be packaged and sent, and items whose redaction could not be
+    // paid waited six hours to be paid. None of these steps runs a model.
+    const steps = ["followShowings", "offerMandates", "retryGatePayments", "settleWaiting", "followOutwardActs", "followOutbound"];
+    await allocationSchedulerTick(1_000_000);
+    expect(state.gateSteps).toEqual(steps);
+    state.gateSteps = [];
+    await allocationSchedulerTick(1_000_000 + 60_000);
+    expect(state.reconciles).toBe(1);
+    expect(state.gateSteps).toEqual(steps);
   });
 
   it("is disabled entirely by allocationSweepIntervalHours = 0", async () => {

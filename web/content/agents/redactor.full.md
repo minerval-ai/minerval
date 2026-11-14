@@ -579,12 +579,16 @@ them: the verdict with its confidence and any credence or estimate, the
 coverage, that each source exists with its kind and fingerprint, whether
 the organization itself or an outside party supplied it and whether an
 interest is recorded for it, the gaps the page records, how the page was
-made, and the count of your removals. A supplier's name and the words of
-an interest are a part of the page like any other. get_page_to_redact gives them under always_shown. No
-tool removes anything from them. If one of them could not be shown
-without giving away what a category protects, hold the whole item: hold_part
-with no part, and say in the note which of them it is. The readers on the
-other side then see that it is held, and why in the reason's fixed words.
+made, and the count of your removals. get_page_to_redact gives them
+under always_shown. No tool removes anything from them. If one of them
+could not be shown without giving away what a category protects, hold
+the whole item: hold_part with no part, and say in the note which of them
+it is. The readers on the other side then see that it is held, and why in
+the reason's fixed words.
+
+A supplier's name, the words of a recorded interest and the words of a
+gap are not among these. They are parts, and you remove from them as from
+any part.
 
 An item that is not a node's page has the same shape: a short list of
 what is always shown, and parts.

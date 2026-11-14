@@ -27,8 +27,9 @@
  *     nothing.
  *
  * Between sweeps, on every tick (STANDING_ORDER_RETRY_MINUTES apart by
- * default), the plans' standing orders are asked for again and the mandates
- * no agent ends are tended (betweenSweeps).
+ * default), the plans' standing orders are asked for again, the mandates
+ * no agent ends are tended, and the gates and what passes to and from the
+ * public graph are followed (betweenSweeps, followTheGates).
  *
  * The last-sweep timestamp rides in memory: an extra sweep after a restart
  * is harmless (every job is idempotent).
@@ -66,6 +67,58 @@ import {
   openReassessmentsForJudgmentsLeftStanding,
 } from "../services/version-upkeep.js";
 import { withSystemClearance } from "../db/clearance.js";
+
+/**
+ * The gates and what passes between this deployment and the public graph,
+ * on every tick and not only at the sweep: none of it runs a model, each
+ * step is idempotent, and what it moves is waited on (a page released, a
+ * redaction whose budget could not pay at first, a contribution from the
+ * public graph). Each also happens when its cause does: a release outside
+ * sends its package at once (release-gate-service.ts), and a mirror batch
+ * brings in what the public graph said back (mirror-upkeep.ts). This is
+ * the backstop for both, and the only way for what waits on time or money:
+ * a delay running out, a pace's window or an escrow opening.
+ */
+async function followTheGates(): Promise<void> {
+  // Standing showings of a page below its label (showing-service.ts):
+  // a page is opened for each new version, with its redaction on the ledger,
+  // and nodes that came under a shown node or left it are recorded. Opening
+  // a redaction runs nothing; it runs when it is paid for.
+  await followShowings().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // The rest of the gate's own upkeep (docs/the-gate.md): pay again
+  // for work whose budget could not pay, let through what a delay or a
+  // changed setting was keeping, and offer mandates where everything flows.
+  await gateUpkeep().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] the gate's upkeep failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // What passes between this deployment and the public graph besides
+  // pages (docs/outward-acts.md), before the packages are built so that a
+  // package says what is now so. Contributions the mirror brought about a
+  // page this deployment published are taken in and their reading opened on
+  // the ledger; summaries already written are given to the node's Steward
+  // at the page's label. Requests on the public graph addressed to a
+  // mandate this deployment published are put in its inbox. Changed
+  // versions are offered to each gate that names a mandate to keep the other
+  // side current, agents' reports about Minerval's machinery are offered to
+  // the gate to outside, published mandates are restated where a setting
+  // changed, and what the gate to outside has let through is sent. None of
+  // it runs an agent here, and on a graph with one label none of it does
+  // anything.
+  await followOutwardActs().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following outward acts failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // Pages shown outside (outbound-service.ts): a signed package is
+  // built for each change in what the outside would read, and sent where
+  // the person who asked for the showing chose that. It runs no agent.
+  await followOutbound().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following pages shown outside failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+}
 
 export interface AllocationTickResult {
   actionsReconciled: number;
@@ -108,6 +161,7 @@ async function betweenSweeps(): Promise<void> {
     )
   );
   await tend();
+  await followTheGates();
 }
 
 /** One scheduler pass; exported separately so tests can drive the clock. */
@@ -178,44 +232,9 @@ export async function allocationSchedulerTick(
     )
   );
 
-  // 1d. Standing showings of a page below its label (showing-service.ts):
-  // a page is opened for each new version, with its redaction on the ledger,
-  // and nodes that came under a shown node or left it are recorded. Opening
-  // a redaction runs nothing; it runs when it is paid for.
-  await followShowings().catch((err: unknown) =>
-    console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
-  );
-
-  // 1d''. The rest of the gate's own upkeep (docs/the-gate.md): pay again
-  // for work whose budget could not pay, let through what a delay or a
-  // changed setting was keeping, and offer mandates where everything flows.
-  await gateUpkeep().catch((err: unknown) =>
-    console.error(`[allocation-scheduler] the gate's upkeep failed: ${err instanceof Error ? err.message : String(err)}`)
-  );
-
-  // 1d'. What passes between this deployment and the public graph besides
-  // pages (docs/outward-acts.md), before the packages are built so that a
-  // package says what is now so. Contributions the mirror brought about a
-  // page this deployment published are taken in and their reading opened on
-  // the ledger; summaries already written are given to the node's Steward
-  // at the page's label. Requests on the public graph addressed to a
-  // mandate this deployment published are put in its inbox. Changed
-  // versions are offered to each gate that names a mandate to keep the other
-  // side current, agents' reports about Minerval's machinery are offered to
-  // the gate to outside, published mandates are restated where a setting
-  // changed, and what the gate to outside has let through is sent. None of
-  // it runs an agent here, and on a graph with one label none of it does
-  // anything.
-  await followOutwardActs().catch((err: unknown) =>
-    console.error(`[allocation-scheduler] following outward acts failed: ${err instanceof Error ? err.message : String(err)}`)
-  );
-
-  // 1e. Pages shown outside (outbound-service.ts): a signed package is
-  // built for each change in what the outside would read, and sent where
-  // the person who asked for the showing chose that. It runs no agent.
-  await followOutbound().catch((err: unknown) =>
-    console.error(`[allocation-scheduler] following pages shown outside failed: ${err instanceof Error ? err.message : String(err)}`)
-  );
+  // 1d. The gates and what passes to and from the public graph
+  // (followTheGates), as on every tick.
+  await followTheGates();
 
   // 2. The pending list's order, for display and the fallback lane. It
   // decides no funding: mandates fund work through their agents and their

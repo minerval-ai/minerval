@@ -27,7 +27,7 @@ import { withoutOffFeatureTools } from "../tools/feature-tools.js";
 import { oneLabelOnly } from "../../services/judgment-version-service.js";
 
 /** The tools of a redaction_fidelity audit, which exist only where a deployment has more than one label. */
-const REDACTION_CHECK_TOOLS: ReadonlySet<string> = new Set(["get_redaction_to_check", "record_fidelity_outcome"]);
+const REDACTION_CHECK_TOOLS: ReadonlySet<string> = new Set(["get_redaction_to_check", "look_at_destination", "record_fidelity_outcome"]);
 import { loadConfig } from "../../config.js";
 import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { REDACTION_CHECK_REASON } from "../run-visibility.js";

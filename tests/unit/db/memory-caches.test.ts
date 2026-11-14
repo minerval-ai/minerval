@@ -82,6 +82,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/prompt-set.ts:cached": "The prompt set, read from files in the repository.",
   "src/services/report-sending-service.ts:toolNames": "The names of Minerval's own tools, gathered once from the tool definitions in the code. No rows.",
   "src/services/outbound-service.ts:cachedSigner": "The deployment's signing key for pages shown outside, parsed once from the configuration. No rows.",
+  "src/services/outbound-service.ts:followingRelease": "The sends of packages in flight, by showing id, so that two releases of one showing wait for each other. No rows.",
   "src/services/queue-service.ts:_sqsClient": "The message queue's client.",
   "src/services/setup-service.ts:registry": "Where each prompt part comes from in the repository.",
   "src/services/stripe-service.ts:_stripe": "The payment provider's client.",

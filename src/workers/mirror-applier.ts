@@ -47,6 +47,9 @@ export function describeUpkeep(upkeep: MirrorUpkeepResult): string | null {
     upkeep.convergence > 0
       ? `the Curator asked about ${upkeep.convergence} of this deployment's nodes that a public node may now state`
       : null,
+    upkeep.fromOutside > 0
+      ? `${upkeep.fromOutside} ${upkeep.fromOutside === 1 ? "contribution or request" : "contributions or requests"} from the public graph passed to the work they are for`
+      : null,
   ].filter((p): p is string => p !== null);
   return parts.length > 0 ? `Mirror: ${parts.join("; ")}. Nothing was run: each waits to be funded.` : null;
 }
