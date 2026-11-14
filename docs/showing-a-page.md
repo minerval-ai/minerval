@@ -279,6 +279,17 @@ so that the answer cannot itself give anything away:
 - The reasoning shown supports the verdict in part.
 - The reasoning shown does not show why the verdict was reached.
 
+Audit checks the page as the Redactor left it. A person at the gate may
+then remove more, or lift a hold the Redactor placed, and nothing checks
+that again. Where one did, the answer is shown with fixed words after it,
+for example "The check was made before a person at the gate removed 2
+passages and lifted the Redactor's hold on the whole item, which it did not
+check." (`auditAnswerWords`). The acts themselves are on the destination
+side's record with who made them. Re-checking after each person's act was
+the alternative; it would add a paid Audit run and a wait to every act at a
+gate set to a person's decision, which is the setting where a person has
+already read the page.
+
 ## The gate
 
 After the check the page is at the gate, and the gate's setting decides

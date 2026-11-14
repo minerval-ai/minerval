@@ -263,6 +263,10 @@ describe("a node's page, finance to company", () => {
     expect((page.parts as any[])[2].held).toBe("[A paragraph of reasoning, held by the Redactor]");
     expect((page.always_shown as any).removals).toEqual({ "commercial figures": 1 });
     expect(page.verification).toMatchObject({ ok: true });
+    // Audit checked the page as the Redactor left it; what the person removed after is said beside its answer.
+    expect(page.audit).toBe(
+      "The reasoning shown supports the verdict. The check was made before a person at the gate removed a passage, which it did not check."
+    );
 
     // The person lifts the Redactor's hold and releases the part, with its mark; and the delay runs out by itself.
     await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "lift" }, { item_id: item, part: 3, decision: "release" }] });
@@ -272,6 +276,13 @@ describe("a node's page, finance to company", () => {
     page = (await atCompany(() => shownPage(item)))!;
     expect(page.state).toBe("released_whole");
     expect((page.parts as any[])[2].text).toBe("Counsel advised on [redacted: commercial figures].");
+    expect(page.audit).toBe(
+      "The reasoning shown supports the verdict. The check was made before a person at the gate removed a passage and lifted the Redactor's hold on a part, which it did not check."
+    );
+    const [arrived] = await atCompany(() =>
+      rawQuery<{ raw_content: string }>(`SELECT s.raw_content FROM sources s JOIN shown_pages p ON p.source_id = s.id WHERE p.id = $1`, [item])
+    );
+    expect(arrived!.raw_content).toContain("Audit's check of the redaction: The reasoning shown supports the verdict. The check was made before a person at the gate removed a passage and lifted the Redactor's hold on a part, which it did not check.");
     expect(JSON.stringify(page)).not.toContain(SECRET);
     expect(page.verification).toMatchObject({ ok: true });
     // Once the item itself is shown, nothing more is removed from it.
