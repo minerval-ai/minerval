@@ -128,6 +128,7 @@ describe("run visibility", () => {
         "tool:keep_file",
         "tool:keep_reading",
         "tool:lift_hold",
+        "tool:look_at_destination",
         "tool:notebook_read",
         "tool:notebook_write",
         "tool:open_output",

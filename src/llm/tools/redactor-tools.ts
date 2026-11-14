@@ -18,11 +18,13 @@ import {
   restorePassage,
   showingPage,
   sourceBehindPage,
+  whatTheDestinationHolds,
 } from "../../services/showing-service.js";
 
 export const REDACTOR_TOOL_NAMES = [
   "get_redaction_policy",
   "get_page_to_redact",
+  "look_at_destination",
   "redact",
   "restore",
   "hold_part",
@@ -49,6 +51,18 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
           source_id: { type: "string", description: "One of the listed sources, to read its stored text." },
           offset: { type: "integer", description: "Where in the source's text to start. 0 if omitted." },
         },
+        required: [],
+      },
+    },
+    {
+      name: "look_at_destination",
+      description:
+        "What the readers on the other side of this boundary can already read: the labels they read, the file sets held there by name with their paths, "
+        + "and the connections held there by name. Given text (a phrase, a figure, a file name), also the sources there whose title, stored text or "
+        + "quoted passages contain it and the nodes there whose wording or definition does. It returns names and ids, not text.",
+      input_schema: {
+        type: "object",
+        properties: { text: { type: "string", description: "Words or a figure to look for where the readers on the other side read." } },
         required: [],
       },
     },
@@ -171,6 +185,8 @@ export async function executeRedactorTool(
         }
         return answer({ success: true, ...(await pageToRedact(ctx.pageId)) });
       }
+      case "look_at_destination":
+        return answer({ success: true, ...(await whatTheDestinationHolds(ctx.pageId, typeof input.text === "string" ? input.text : undefined)) });
       case "redact": {
         const result = await redactPassage({
           pageId: ctx.pageId,

@@ -224,6 +224,47 @@ describe("the Redactor's pass", () => {
     expect(source.success).toBe(true);
   });
 
+  it("can see what the readers on the other side already hold, by name, and nothing at the page's own label", async () => {
+    // What the first run with real models lacked: a Redactor removed the destination's own file names and a
+    // figure the destination already read, because nothing told it they were there.
+    await system(async () => {
+      const set = async (label: string, name: string, path: string) => {
+        const [row] = await rawQuery<{ id: string }>(
+          `INSERT INTO file_sets (name, slug, origin, storage_key, party_id, stake, sensitivity_label)
+           VALUES ($1, $2, 'upload', $2, $3, 'The organization holds these files.', $4) RETURNING id`,
+          [name, `${name.toLowerCase().replace(/ /g, "-")}-${Date.now()}`, id.org, label]
+        );
+        await rawQuery(`INSERT INTO file_set_files (file_set_id, path, bytes, sha256, sensitivity_label) VALUES ($1, $2, 1, 'x', $3)`, [row!.id, path, label]);
+      };
+      await set(A, `Lane reports ${Date.now()}`, "lanes-2026-q3.csv");
+      await set(C, `Meter exports ${Date.now()}`, "meters-secret.csv");
+      await rawQuery(
+        `INSERT INTO connections (name, tool_prefix, url, party_id, stake, sensitivity_label) VALUES ('Contracts at a', 'contracts_a', 'http://127.0.0.1:9/', $1, 'Ours.', $2)`,
+        [id.org, A]
+      );
+    });
+    const all = await tool(id.page!, "look_at_destination");
+    expect(all.success).toBe(true);
+    expect(all.destination).toBe(A);
+    expect(all.readers_there_read.sort()).toEqual([A, "public"].sort());
+    expect(all.file_sets.map((f: any) => f.paths)).toEqual([["lanes-2026-q3.csv"]]);
+    expect(all.connections.map((c: any) => c.name)).toEqual(["Contracts at a"]);
+    expect(all.sources_containing_it).toBeUndefined();
+    const memo = await tool(id.page!, "look_at_destination", { text: "TARGET WAS MET" });
+    expect(memo.sources_containing_it.map((s: any) => s.source_id)).toEqual([id.aSource]);
+    expect(JSON.stringify(memo)).not.toContain("An internal memo");
+    const node = await tool(id.page!, "look_at_destination", { text: "output target" });
+    expect(node.nodes_containing_it.map((n: any) => n.node_id)).toContain(id.node);
+    // What is at the page's own label is not where those readers read, and is not found.
+    const secret = await tool(id.page!, "look_at_destination", { text: SECRET });
+    expect(secret.sources_containing_it).toEqual([]);
+    expect((await tool(id.page!, "look_at_destination", { text: "meters-secret" })).file_sets[0].paths_containing_it).toEqual([]);
+    expect((await tool(id.page!, "look_at_destination", { text: "50%_" })).sources_containing_it).toEqual([]);
+    // Audit has the same look, by the page's id.
+    const audited = await audit("look_at_destination", { page_id: id.page, text: "lanes" });
+    expect(audited.file_sets[0].paths_containing_it).toEqual(["lanes-2026-q3.csv"]);
+  });
+
   it("removes a passage given exactly and leaves the category's mark, and refuses anything else", async () => {
     const policy = await tool(id.page!, "get_redaction_policy");
     expect(policy.policy).toContain("## What is shown whenever a page is shown");
@@ -270,6 +311,10 @@ describe("Audit's check", () => {
     expect(work.parts[2].as_redacted).not.toContain(SECRET);
     expect(work.parts[2].removals[0].note).toBe("An output figure a counterparty could use.");
     expect(work.least_sure).toHaveLength(1);
+    const [asked] = await system(() => rawQuery<{ context: string }>(`SELECT r.context FROM audit_runs r JOIN showing_pages p ON p.audit_run_id = r.id WHERE p.id = $1`, [id.page]));
+    expect(asked!.context).toContain(
+      "The policy protects what the readers on the other side do not already have: look_at_destination shows what is already where they read."
+    );
 
     const returned = await audit("record_fidelity_outcome", { page_id: id.page, outcome: "return", reasons: `The target of 4500 in part 3 lets a reader bound the figure ${SECRET}.` });
     expect(returned.success).toBe(true);

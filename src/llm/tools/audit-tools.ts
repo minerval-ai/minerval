@@ -599,6 +599,21 @@ export function getAuditToolDefinitions(): Tool[] {
       },
     },
     {
+      name: "look_at_destination",
+      description:
+        "For a redaction_fidelity audit: " + "what the readers on the other side of this boundary can already read: the labels they read, the file sets held there by name with their paths, "
+        + "and the connections held there by name. Given text (a phrase, a figure, a file name), also the sources there whose title, stored text or "
+        + "quoted passages contain it and the nodes there whose wording or definition does. It returns names and ids, not text.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          page_id: { type: "string", description: "The page's id, from the audit's context" },
+          text: { type: "string", description: "Words or a figure to look for where the readers on the other side read." },
+        },
+        required: ["page_id"],
+      },
+    },
+    {
       name: "record_fidelity_outcome",
       description:
         "Record the outcome of a redaction_fidelity audit. 'pass' sends the item on through the gate: what the Redactor " +
@@ -1393,6 +1408,17 @@ export async function executeAuditTool(
         const { redactionToCheck, ShowingError } = await import("../../services/showing-service.js");
         try {
           return JSON.stringify({ success: true, ...(await redactionToCheck(String(input.page_id ?? "").trim())) });
+        } catch (err) {
+          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          throw err;
+        }
+      }
+
+      case "look_at_destination": {
+        const { whatTheDestinationHolds, ShowingError } = await import("../../services/showing-service.js");
+        try {
+          const text = typeof input.text === "string" ? input.text : undefined;
+          return JSON.stringify({ success: true, ...(await whatTheDestinationHolds(String(input.page_id ?? "").trim(), text)) });
         } catch (err) {
           if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
           throw err;

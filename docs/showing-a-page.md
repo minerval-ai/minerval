@@ -194,6 +194,15 @@ tools:
   the node, and a source cited through an argument or a subclaim, can be
   opened whether or not an instance on the node was recorded from them. The
   sources listed as always shown are among them.
+- `look_at_destination`: what the readers on the other side already read:
+  the labels the destination reads, the file sets and connections held
+  there by name (with a set's paths), and, given words or a figure, the
+  sources whose title, stored text or quoted passages contain them and the
+  nodes whose wording or definition does. Names and ids only, no text
+  (`whatTheDestinationHolds`). The policy protects what those readers do
+  not already have, and the task message says so in one sentence; whether
+  something found there makes a passage safe to leave is the Redactor's
+  judgment. Audit has the same tool, by the page's id.
 - `redact`: remove one passage, given exactly as it appears, under one of
   the policy's categories, with a note. The passage is replaced by
   `[redacted: <category>]`. Nothing else in the part changes.

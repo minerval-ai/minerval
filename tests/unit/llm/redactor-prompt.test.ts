@@ -5,6 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { getRedactorSystemPrompt } from "../../../src/llm/prompts/redactor.js";
+import { redactorTaskMessage } from "../../../src/llm/agents/redactor.js";
+import { getRedactorToolDefinitions } from "../../../src/llm/tools/redactor-tools.js";
 
 describe("the Redactor's prompt", () => {
   const prompt = getRedactorSystemPrompt();
@@ -20,5 +22,17 @@ describe("the Redactor's prompt", () => {
     expect(role).toContain(
       "A supplier's name, the words of a recorded interest and the words of a\ngap are not among these. They are parts, and you remove from them as from\nany part."
     );
+  });
+});
+
+describe("the Redactor's task", () => {
+  it("says the policy protects what the readers on the other side do not already have, and offers the look at what they hold", () => {
+    // In the first run the Redactor removed the destination's own file names and a published figure it already read.
+    for (const round of [1, 2]) {
+      expect(redactorTaskMessage({ round })).toContain(
+        "The policy protects what those readers do not already have: look_at_destination shows what is already where they read."
+      );
+    }
+    expect(getRedactorToolDefinitions().map((t) => t.name)).toContain("look_at_destination");
   });
 });

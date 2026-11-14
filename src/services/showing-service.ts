@@ -1385,6 +1385,103 @@ export async function pageToRedact(pageId: string): Promise<Record<string, unkno
   };
 }
 
+/** How many sources, nodes or paths one look at the destination lists of each. */
+export const DESTINATION_LOOK_ROWS = 20;
+
+/**
+ * What the readers on the other side of a page's boundary can already read,
+ * for the Redactor and Audit: removing what they already hold protects
+ * nothing. Without `text`, the file sets and connections held where they
+ * read, by name. With `text`, also the sources whose title, stored text or
+ * quoted passages contain it and the nodes whose wording or definition does, and the paths
+ * in those file sets that contain it. Only the rows' names and ids are
+ * returned: what is found is said to be there, and none of its text is.
+ *
+ * Read with the run's own clearance, held to the labels the destination
+ * reads. A run at the page's label reads the destination where the page's
+ * label reads it, which is the usual case of a page going down; where it
+ * does not (two labels that do not read each other), only what both read
+ * is found, and the answer says so.
+ */
+export async function whatTheDestinationHolds(pageId: string, text?: string): Promise<Record<string, unknown>> {
+  const page = await pageAtOwnLabel(pageId);
+  const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
+  if (!showing) throw new ShowingError("PAGE_NOT_FOUND", "This item's showing could not be read.");
+  const destination = destinationOf(showing);
+  const [reach] = await rawQuery<{ reads: string[]; this_run_reads_all: boolean }>(
+    `SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads,
+            minerval_labels_readable_from(ARRAY[$1::text]) <@ minerval_labels_readable_from(ARRAY[$2::text]) AS this_run_reads_all`,
+    [destination, page.page_label]
+  );
+  const reads = reach?.reads ?? [destination];
+  const needle = (text ?? "").trim();
+  const like = `%${needle.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const fileSets = await rawQuery<{ id: string; name: string; description: string; file_count: number; party: string | null }>(
+    `SELECT f.id, f.name, f.description, f.file_count, p.name AS party
+       FROM file_sets f LEFT JOIN parties p ON p.id = f.party_id
+      WHERE f.sensitivity_label = ANY($1::text[]) ORDER BY f.name`,
+    [reads]
+  );
+  const paths = fileSets.length
+    ? await rawQuery<{ file_set_id: string; path: string }>(
+        `SELECT file_set_id, path FROM (
+           SELECT file_set_id, path, row_number() OVER (PARTITION BY file_set_id ORDER BY path) AS n
+             FROM file_set_files WHERE file_set_id = ANY($1::uuid[]) AND ($2 = '' OR path ILIKE $3)) x
+          WHERE n <= $4 ORDER BY path`,
+        [fileSets.map((f) => f.id), needle, like, DESTINATION_LOOK_ROWS]
+      )
+    : [];
+  const connections = await rawQuery<{ name: string; party: string | null }>(
+    `SELECT c.name, p.name AS party FROM connections c LEFT JOIN parties p ON p.id = c.party_id
+      WHERE c.sensitivity_label = ANY($1::text[]) ORDER BY c.name`,
+    [reads]
+  );
+  const found = needle
+    ? {
+        sources_containing_it: (
+          await rawQuery<{ id: string; title: string; source_type: string; label: string }>(
+            `SELECT s.id, s.title, s.source_type, s.sensitivity_label AS label FROM sources s
+              WHERE s.sensitivity_label = ANY($1::text[])
+                AND (s.title ILIKE $2 OR s.raw_content ILIKE $2 OR EXISTS (
+                      SELECT 1 FROM claim_instances i
+                       WHERE i.source_id = s.id AND i.sensitivity_label = ANY($1::text[]) AND i.verbatim_text ILIKE $2))
+              ORDER BY s.title, s.id LIMIT $3`,
+            [reads, like, DESTINATION_LOOK_ROWS]
+          )
+        ).map((s) => ({ source_id: s.id, title: s.title, kind: s.source_type, label: s.label })),
+        nodes_containing_it: (
+          await rawQuery<{ id: string; kind: string; text: string; label: string }>(
+            `SELECT c.id, c.kind, c.text, c.sensitivity_label AS label FROM claims c
+              WHERE c.sensitivity_label = ANY($1::text[])
+                AND (c.text ILIKE $2 OR EXISTS (
+                      SELECT 1 FROM quantity_definitions d
+                       WHERE d.claim_id = c.id AND d.sensitivity_label = ANY($1::text[])
+                         AND (d.measures ILIKE $2 OR d.population ILIKE $2 OR d.conditions ILIKE $2)))
+              ORDER BY c.text, c.id LIMIT $3`,
+            [reads, like, DESTINATION_LOOK_ROWS]
+          )
+        ).map((c) => ({ node_id: c.id, kind: c.kind, text: c.text, label: c.label })),
+      }
+    : {};
+  return {
+    destination: showing.to_outside ? "outside this deployment: the public graph" : destination,
+    readers_there_read: reads,
+    ...(reach?.this_run_reads_all === false
+      ? { note: "This run does not read every label the readers there read, so what is found here is only what both read." }
+      : {}),
+    ...(needle ? { looked_for: needle } : {}),
+    file_sets: fileSets.map((f) => ({
+      name: f.name,
+      description: f.description,
+      files: f.file_count,
+      supplied_by: f.party,
+      [needle ? "paths_containing_it" : "paths"]: paths.filter((p) => p.file_set_id === f.id).map((p) => p.path),
+    })),
+    connections: connections.map((c) => ({ name: c.name, supplied_by: c.party })),
+    ...found,
+  };
+}
+
 /** One slice of a source the page rests on, for judging what a passage gives away. */
 export async function sourceBehindPage(pageId: string, sourceId: string, offset = 0): Promise<Record<string, unknown>> {
   const page = await pageAtOwnLabel(pageId);
@@ -1604,7 +1701,9 @@ export async function finishRedaction(input: {
   const { requestAudit } = await import("./queue-service.js");
   const auditRunId = await requestAudit({
     auditType: "redaction_fidelity",
-    context: `Check the redaction of item ${page.id} (round ${page.round}) before it goes on through the gate. get_redaction_to_check reads it.`,
+    context:
+      `Check the redaction of item ${page.id} (round ${page.round}) before it goes on through the gate. get_redaction_to_check reads it. ` +
+      `The policy protects what the readers on the other side do not already have: look_at_destination shows what is already where they read.`,
     triggeredBy: "redaction_finished",
     dedupeKey: `redaction:${page.id}:${page.round}`,
     claimId: page.node_id,
