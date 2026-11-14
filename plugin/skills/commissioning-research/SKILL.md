@@ -224,7 +224,11 @@ conversation.
    the subject, and whether they want to be named. Ask your user and relay
    the answer as they give it: a stake is disclosed on the mandate's page
    even when the funder is not named, and one who will not disclose a
-   stake they have is declined. Never answer for your user.
+   stake they have is declined. A tie a reader would weigh (founding or
+   working for Minerval, making what the claims are about) is a stake
+   even when your user says it gives them no interest in the outcome:
+   relay it as the stake, not as "none" with a footnote. Never answer for
+   your user.
 4. When it proposes a mandate, show your user the draft and the quote, and
    fund it with `fund_grant` only on their explicit go-ahead. Funding
    escrows the budget; unspent budget refunds. A draft can carry
