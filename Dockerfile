@@ -38,6 +38,11 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 COPY rds-ca-bundle.pem ./
 COPY src/db/migrations/ ./drizzle-migrations/
+# Where a packaged deployment keeps uploaded file sets (deploy/compose.yml
+# mounts a volume here and sets FILE_SET_STORE_DIR to it). Made here and
+# owned by the API's user, because a new volume takes the ownership of the
+# directory it is mounted over; without it the API could not write a set.
+RUN mkdir -p /var/lib/minerval/file-sets && chown minerval:minerval /var/lib/minerval/file-sets
 USER minerval
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

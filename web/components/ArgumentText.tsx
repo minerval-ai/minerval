@@ -12,17 +12,62 @@ import { parseProse, recordHref } from "@/lib/claim-links";
  * Serves argument written forms and evaluations (#129/#173) and assessment
  * prose (#203) alike.
  */
+/**
+ * A stretch of plain text from a published page (docs/published-pages.md),
+ * with each removal's mark set apart: "[redacted: <category>]" where the
+ * publisher's policy took a passage out. Only the categories the page's own
+ * record counts are taken for marks, so an author's square brackets stay
+ * prose.
+ */
+function WithMarks({ text, categories }: { text: string; categories: string[] }) {
+  const marks = categories.map((c) => `[redacted: ${c}]`);
+  const out: React.ReactNode[] = [];
+  let rest = text;
+  for (let n = 0; rest.length > 0; n++) {
+    let at = -1;
+    let mark = "";
+    for (const m of marks) {
+      const i = rest.indexOf(m);
+      if (i !== -1 && (at === -1 || i < at)) {
+        at = i;
+        mark = m;
+      }
+    }
+    if (at === -1) {
+      out.push(rest);
+      break;
+    }
+    if (at > 0) out.push(rest.slice(0, at));
+    out.push(
+      <span
+        key={n}
+        className="redaction"
+        title={`A passage was removed here under the publisher's redaction policy, in the category "${mark.slice(11, -1)}". The mark says nothing else about it.`}
+      >
+        {mark}
+      </span>,
+    );
+    rest = rest.slice(at + mark.length);
+  }
+  return <>{out}</>;
+}
+
 export function ArgumentText({
   content,
   texts,
+  categories,
 }: {
   content: string;
   texts?: Map<string, string>;
+  /** On a published page: the categories its removals are marked with. */
+  categories?: string[];
 }) {
   return (
     <>
       {parseProse(content).map((seg, i) => {
-        if (seg.kind === "text") return <span key={i}>{seg.text}</span>;
+        if (seg.kind === "text") {
+          return <span key={i}>{categories?.length ? <WithMarks text={seg.text} categories={categories} /> : seg.text}</span>;
+        }
         if (seg.kind === "url") {
           return (
             <a key={i} href={seg.href} className="prose-url" rel="nofollow noopener">

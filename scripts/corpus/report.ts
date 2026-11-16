@@ -19,7 +19,7 @@ const TREE_MAX_DEPTH = 4;
 const TREE_MAX_LINES = 50;
 
 function cell(s: unknown): string {
-  return String(s ?? "").replace(/\s+/g, " ").replace(/\|/g, "\\|").trim();
+  return String(s ?? "").replace(/\s+/g, " ").replace(/[\\|]/g, "\\$&").trim();
 }
 function trunc(s: unknown, n: number): string {
   const t = cell(s);

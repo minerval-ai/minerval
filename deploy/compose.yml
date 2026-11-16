@@ -1,0 +1,236 @@
+# A private Minerval, on one machine: the database, the API with its
+# workers, the web app built members-only, and the sandbox.
+# docs/self-hosting.md has the steps, in order.
+#
+#   cp env.example .env        # then fill it in; it is never committed
+#   docker compose build
+#   docker compose up -d
+#
+# Every setting is named in env.example with what it is for. No secret is
+# in this file or in any file of the repository: each comes from .env, and
+# a setting the deployment must give stops `docker compose` with its name
+# when it is missing.
+#
+# What each service may reach:
+#
+#   postgres   the `data` network only. Nothing outside the deployment
+#              connects to it, and it has no route out.
+#   sandbox    the `sandbox` network only, shared with the API. It has no
+#              route out and no name server, which is what "the files never
+#              leave" rests on (sandbox/README.md).
+#   api        `data`, `sandbox`, and `outside`: it calls the model
+#              providers the deployment has keys for.
+#   web        `outside`: people reach it, and it calls the API.
+
+name: minerval
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      # The server's superuser. Only this container is given it: it makes
+      # the owner role and the extensions the first time the volume is
+      # empty (postgres/10-owner.sh) and is not used again.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (env.example says what it is)}
+      # The role the API connects as. It owns the tables and is not a
+      # superuser: the label policies bind the role the API reads through
+      # (minerval_cleared, which the migrations make), and a superuser's
+      # connections would pass them.
+      MINERVAL_DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?Set DB_OWNER_PASSWORD in .env (env.example says what it is)}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/10-owner.sh:/docker-entrypoint-initdb.d/10-owner.sh:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minerval_owner -d minerval"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build:
+      context: ..
+      args:
+        GIT_SHA: ${GIT_SHA:-}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      sandbox:
+        condition: service_started
+    # Any other setting the API reads (.env.example at the repository's
+    # root lists them: budgets, intervals, limits) goes in api.env beside
+    # this file. It is optional.
+    env_file:
+      - path: ./api.env
+        required: false
+    environment:
+      # --- fixed by this package ---
+      # Production: migrations and the enforcement step run at every start,
+      # errors carry no stack, and every load-bearing role's model must be
+      # named.
+      - ENVIRONMENT=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=minerval
+      - DB_USERNAME=minerval_owner
+      - DB_PASSWORD=${DB_OWNER_PASSWORD:?Set DB_OWNER_PASSWORD in .env}
+      # The database is on a network of this deployment's own that nothing
+      # else joins, so connections to it are not encrypted. A database
+      # elsewhere: remove this and set DATABASE_CA_FILE (docs/self-hosting.md).
+      - DATABASE_TLS=off
+      # A private deployment: nothing is served to anyone not signed in.
+      - READS=members
+      - API_KEYS=${WEB_API_KEY:?Set WEB_API_KEY in .env}
+      - PUBLIC_WEB_BASE_URL=${SITE_URL:?Set SITE_URL in .env}
+      - FILE_SET_STORE_DIR=/var/lib/minerval/file-sets
+      - FILE_SET_DIRECTORY_ROOT=/registered
+      - SANDBOX_URL=http://sandbox:8080
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?Set SANDBOX_TOKEN in .env}
+      # --- given by the deployment: passed through from .env as they are.
+      # One that is not set there is not set here, and the API's own
+      # starting value holds. env.example says what each is.
+      - FIRST_ADMINISTRATOR
+      - SIGN_IN_VALID_HOURS
+      - CLEARED_ROLE_PASSWORD
+      - MINERVAL_OPERATOR_KEY
+      - LOG_LEVEL
+      - FEATURES_OFF
+      - RUN_LOG_MODE
+      - TRACE_RETENTION_DAYS
+      - OWLS
+      - MODEL_PRICES
+      - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - OPENROUTER_API_KEY
+      - MODEL_ENDPOINTS
+      - PROVIDER_LABELS
+      - STEWARD_MODEL=${STEWARD_MODEL:?Set STEWARD_MODEL in .env, the model the Steward runs on}
+      - STEWARD_STRONG_MODEL=${STEWARD_STRONG_MODEL:?Set STEWARD_STRONG_MODEL in .env, the model the Steward's strong tier runs on}
+      - CURATOR_MODEL=${CURATOR_MODEL:?Set CURATOR_MODEL in .env, the model the Curator runs on}
+      - EXTRACTOR_MODEL=${EXTRACTOR_MODEL:?Set EXTRACTOR_MODEL in .env, the model the Extractor runs on}
+      - EXTRACTOR_FALLBACK_MODEL
+      - MATCHER_MODEL
+      - TAGGER_MODEL
+      - GOVERNANCE_MODEL
+      - AUDIT_MODEL=${AUDIT_MODEL:?Set AUDIT_MODEL in .env, the model Audit runs on}
+      - REDACTOR_MODEL
+      - ARBITRATION_MODEL=${ARBITRATION_MODEL:?Set ARBITRATION_MODEL in .env, the model the Dispute Arbitrator runs on}
+      - GRANTMAKER_MODEL
+      - PROGRAM_OFFICER_MODEL
+      - LOOKOUT_MODEL
+      - CORRESPONDENT_MODEL
+      - CONSISTENCY_MODEL
+      - CONSISTENCY_STRONG_MODEL
+      - ASSISTANT_MODEL
+      - ASSISTANT_STANDARD_MODEL
+      - ASSISTANT_TITLE_MODEL
+      - EXTENSION_MODEL
+      - RESEARCHER_STRONG_MODEL
+      - RESEARCHER_STANDARD_MODEL
+      - RESEARCHER_CHEAP_MODEL
+      # Empty where mathematics is off (FEATURES_OFF): the API asks for it only where the feature is on.
+      - SOLVER_MODEL=${SOLVER_MODEL:-}
+      - FILE_SET_UPLOAD_MAX_BYTES
+      - SANDBOX_HOUR_COST_MICRO_USD
+      - MIRROR_FEED_URL
+      - MIRROR_FEED_API_KEY
+      - MIRROR_FEED_PUBLIC_KEYS
+      - MIRROR_APPLY_INTERVAL_SECONDS
+      - DEPLOYMENT_HOSTING
+      - PUBLISH_SIGNING_KEY
+      - PUBLIC_GRAPH_API_URL
+      - PUBLIC_GRAPH_API_KEY
+      - PUBLIC_ACTS_BY
+      - PRIVATE_RUN_FETCHES
+      - LABEL_POSTURE
+      - PUBLIC_GRAPH_PRICE
+      - USAGE_REPORT_URL
+      - USAGE_REPORT_API_KEY
+      - USAGE_REPORT_FROM
+    volumes:
+      - file_sets:/var/lib/minerval/file-sets
+      - ${REGISTERED_DIR:-registered}:/registered:ro
+    networks: [data, sandbox, outside]
+    ports:
+      # The API and MCP, for the organization's own agents and scripts.
+      # Bound to this machine alone unless BIND_ADDRESS says otherwise.
+      - "${BIND_ADDRESS:-127.0.0.1}:${API_PORT:-3000}:3000"
+
+  web:
+    build:
+      context: ../web
+      args:
+        READS: members
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - READS=members
+      - MINERVAL_API_URL=http://api:3000
+      - MINERVAL_API_KEY=${WEB_API_KEY:?Set WEB_API_KEY in .env}
+      - SITE_URL=${SITE_URL:?Set SITE_URL in .env}
+      # Sign-in sends people back to this address. Without it they are sent
+      # to the address the app has inside its container.
+      - AUTH_URL=${SITE_URL:?Set SITE_URL in .env}
+      - AUTH_SECRET=${AUTH_SECRET:?Set AUTH_SECRET in .env}
+      - AUTH_OIDC_ISSUER=${AUTH_OIDC_ISSUER:?Set AUTH_OIDC_ISSUER in .env}
+      - AUTH_OIDC_ID=${AUTH_OIDC_ID:?Set AUTH_OIDC_ID in .env}
+      - AUTH_OIDC_SECRET=${AUTH_OIDC_SECRET:?Set AUTH_OIDC_SECRET in .env}
+      - AUTH_OIDC_NAME
+      - AUTH_OIDC_SCOPE
+      - AUTH_OIDC_GROUPS_CLAIM
+      - SIGN_IN_VALID_HOURS
+    networks: [outside]
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-3001}:3000"
+
+  sandbox:
+    build:
+      context: ../sandbox
+      args:
+        SANDBOX_IMAGE: ${SANDBOX_IMAGE:-minerval-sandbox:local}
+    restart: unless-stopped
+    environment:
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:?Set SANDBOX_TOKEN in .env}
+      - SANDBOX_MAX_COMMANDS=${SANDBOX_MAX_COMMANDS:-2}
+      - SANDBOX_COMMAND_SECONDS
+      - SANDBOX_OUTPUT_BYTES
+      - SANDBOX_MEMORY_MB
+      - SANDBOX_SCRATCH_MB
+      - SANDBOX_QUEUE_SECONDS
+      - SANDBOX_SCRATCH_IDLE_HOURS
+    volumes:
+      # The same store and the same root the API has, read-only here.
+      - file_sets:/sets:ro
+      - ${REGISTERED_DIR:-registered}:/registered:ro
+    tmpfs:
+      # Each run's scratch directory, in memory: gone when the container stops.
+      - /scratch:size=${SANDBOX_SCRATCH_SIZE:-4g},uid=10002,gid=10002,mode=0700
+    # One network, with no route out, and no port published.
+    networks: [sandbox]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # At least SANDBOX_MEMORY_MB (2048 unless set) times SANDBOX_MAX_COMMANDS.
+    mem_limit: ${SANDBOX_MEMORY_LIMIT:-5g}
+    pids_limit: 2048
+
+volumes:
+  postgres_data:
+  # Uploaded file sets: written by the API, read by the sandbox.
+  file_sets:
+  # Stands in for the root directories are registered from while
+  # REGISTERED_DIR names none. It stays empty.
+  registered:
+
+networks:
+  data:
+    internal: true
+  sandbox:
+    internal: true
+  outside:

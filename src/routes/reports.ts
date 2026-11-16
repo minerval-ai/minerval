@@ -21,6 +21,10 @@ import {
   listReportSightings,
   triageAgentReport,
   TRIAGE_NOTE_MAX_LENGTH,
+  REPORT_BODY_MAX_CHARS,
+  REPORT_TITLE_MAX_CHARS,
+  checkReportRateLimit,
+  raiseIssue,
 } from "../services/report-service.js";
 
 const listReportsParams = z.object({
@@ -230,4 +234,97 @@ export async function reportRoutes(app: FastifyInstance): Promise<void> {
       },
     }
   );
+
+  // POST /reports: an account reports a problem with the graph's machinery
+  // to the people who maintain it. The same report the raise_issue tool
+  // files over MCP, for a caller that holds a key and speaks REST: a
+  // deployment of Minerval sending on one of its own agents' reports
+  // (docs/outward-acts.md) is one such caller, and gets nothing the others
+  // do not.
+  app.post<{ Body: Record<string, unknown> }>("/", {
+    preHandler: [app.authenticate, app.requireUser],
+    schema: {
+      tags: ["reports"],
+      summary: "Report a problem with this graph's tools or machinery to the people who maintain it",
+      description:
+        "For a failure of the machinery, a tool that is missing or misdescribed, or a concrete improvement: never a judgment about a claim, which is a " +
+        "contribution. The report goes to the maintainers and affects no claim, contribution or review. It is attributed to your account and limited " +
+        "to the same number an hour as raise_issue, because each one takes maintainer attention nothing prices. Cite ids and do not paste content. " +
+        "With private: true the report is kept to the maintainers' own view and is not filed anywhere the public can read. A repeat of a report " +
+        "already on record under the same title is counted on that report.",
+      body: {
+        type: "object",
+        required: ["kind", "severity", "title"],
+        properties: {
+          kind: { type: "string", enum: [...reportKindEnum.options] },
+          severity: { type: "string", enum: [...reportSeverityEnum.options] },
+          title: { type: "string", minLength: 1, maxLength: REPORT_TITLE_MAX_CHARS },
+          body: { type: "string", maxLength: REPORT_BODY_MAX_CHARS },
+          surface: { type: "string", maxLength: 200 },
+          context_refs: { type: "object", additionalProperties: true },
+          private: { type: "boolean" },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const userId = request.auth!.userId!;
+      const rate = checkReportRateLimit(userId);
+      if (rate.limited) {
+        return reply.code(429).send({ error: `Report rate limit (${rate.limitPerHour}/hour) exceeded; retry later`, code: "REPORT_RATE_LIMITED" });
+      }
+      const body = request.body as { kind: string; severity: string; title: string; body?: string; surface?: string; context_refs?: Record<string, unknown>; private?: boolean };
+      const result = await raiseIssue({
+        kind: body.kind,
+        severity: body.severity,
+        title: body.title,
+        body: body.body ?? "",
+        surface: body.surface ?? null,
+        contextRefs: { ...(body.context_refs ?? {}), ...(body.private === true ? { private: true } : {}) },
+        origin: "external",
+        agent: "api",
+        reporterContributorId: userId,
+      });
+      if (!result.reportId) {
+        return reply.code(400).send({ error: result.problem ?? "The report could not be recorded; retry later", code: "REPORT_NOT_RECORDED" });
+      }
+      return reply.code(result.deduplicated ? 200 : 201).send({
+        report: {
+          id: result.reportId,
+          status: result.existing?.status ?? "new",
+          occurrence_count: result.occurrenceCount,
+          deduplicated: result.deduplicated,
+        },
+      });
+    },
+  });
+
+  // GET /reports/mine/:id: what the maintainers' record says of a report the account filed.
+  app.get<{ Params: { id: string } }>("/mine/:id", {
+    preHandler: [app.authenticate, app.requireUser],
+    schema: {
+      tags: ["reports"],
+      summary: "Where a report your account filed stands: its status and the maintainers' note",
+      description:
+        "Status is new, triaged, duplicate, actioned (the gap is closed), wontfix or withdrawn. The note is the maintainers' reading of the report, " +
+        "which is where a fix and the version it shipped in are said. Only the account that filed a report can read it here.",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string", format: "uuid" } } },
+    },
+    handler: async (request, reply) => {
+      const row = await getAgentReportById(request.params.id);
+      if (!row || row.reporter_contributor_id !== request.auth!.userId) {
+        return reply.code(404).send({ error: "No report with that id was filed by your account.", code: "NOT_FOUND" });
+      }
+      return reply.send({
+        report: {
+          id: row.id,
+          status: row.status,
+          maintainers_note: row.triage_note,
+          issue_url: row.github_issue_url ?? null,
+          occurrence_count: Number(row.occurrence_count),
+          first_seen_at: row.first_seen_at,
+          last_seen_at: row.last_seen_at,
+        },
+      });
+    },
+  });
 }

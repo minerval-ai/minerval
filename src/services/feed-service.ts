@@ -27,15 +27,17 @@
  * through url-guard.ts.
  */
 import { estimateLedgerKindCostMicroUsd } from "./cost-estimate-service.js";
+import { heldBelow, oneSourceForAddressSql } from "./layer-service.js";
 import { XMLParser } from "fast-xml-parser";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { fetchPublicUrl } from "./url-guard.js";
+import { noteGiven } from "./given-addresses.js";
 import { decodeEntities, htmlToText, looksLikeHtml } from "./source-map-service.js";
 import { segmentText } from "./source-segment-service.js";
 import { flagIngest, queueLookoutEvent } from "./lookout-service.js";
 import { normalizeFocus } from "./ingest-focus-service.js";
-import { runAtLookoutLabelOutsideAnyRun } from "./label-service.js";
+import { runAtLookoutLabel } from "./label-service.js";
 
 const USER_AGENT = "Minerval/1.0 (lookout feeds; mailto:hello@minerval.ai)";
 
@@ -495,8 +497,13 @@ export function parseSitemap(text: string): { index: boolean; urls: string[] } |
 // Discovery and listings — network
 // ---------------------------------------------------------------------------
 
-async function fetchText(url: string): Promise<string> {
-  return fetchPublicUrl(url, { userAgent: USER_AGENT });
+/**
+ * `notFromTheRun` says why the address is not the words of the run in
+ * progress (url-guard.ts). Without it, a run that reads material that is
+ * not public may fetch `url` only if it was given it.
+ */
+async function fetchText(url: string, notFromTheRun?: string): Promise<string> {
+  return fetchPublicUrl(url, { userAgent: USER_AGENT, ...(notFromTheRun ? { notFromTheRun } : {}) });
 }
 
 export type ResolveFeedResult =
@@ -517,7 +524,9 @@ export async function resolveFeed(rawUrl: string): Promise<ResolveFeedResult> {
     if (tried.includes(candidate)) return null;
     tried.push(candidate);
     try {
-      return parseFeed(await fetchText(candidate), candidate);
+      // A feed the fetched page advertises, or a common feed location on
+      // the site of the address that was fetched.
+      return parseFeed(await fetchText(candidate, "a feed location on the site already fetched"), candidate);
     } catch {
       return null;
     }
@@ -595,8 +604,11 @@ export async function readListing(
   });
 
   const feed = parseFeed(body, url);
+  // Where the run is held to addresses it was given (given-addresses.ts),
+  // every link the listing carries is given now, not only this page of them.
   if (feed) {
     const p = page(feed.items.filter((i) => i.url));
+    await noteGiven(feed.items.flatMap((i) => (i.url ? [i.url] : [])), "listing");
     return {
       ok: true, url, kind: "feed", total: p.total, offset: p.offset, next_offset: p.next_offset,
       rows: p.slice.map((i) => ({ url: i.url!, text: i.title, published: i.published?.toISOString() ?? null })),
@@ -605,6 +617,7 @@ export async function readListing(
   const sitemap = parseSitemap(body);
   if (sitemap) {
     const p = page(sitemap.urls);
+    await noteGiven(sitemap.urls, "listing");
     return {
       ok: true, url, kind: sitemap.index ? "sitemap_index" : "sitemap",
       total: p.total, offset: p.offset, next_offset: p.next_offset,
@@ -613,10 +626,12 @@ export async function readListing(
   }
   const links = extractLinks(body, url, 5000);
   const p = page(links);
+  const feeds = looksLikeHtml(body) ? discoverFeedLinks(body, url) : [];
+  await noteGiven([...links.map((l) => l.url), ...feeds], "listing");
   return {
     ok: true, url, kind: "page", total: p.total, offset: p.offset, next_offset: p.next_offset,
     rows: p.slice,
-    feeds: looksLikeHtml(body) ? discoverFeedLinks(body, url) : [],
+    feeds,
   };
 }
 
@@ -745,14 +760,25 @@ export async function addFeed(input: {
   createdBy: string;
 }): Promise<AddFeedResult> {
   if (!isUuid(input.lookoutId)) return { ok: false, code: "NOT_FOUND", problem: "No such lookout on this mandate" };
-  const [lookout] = await rawQuery<{ id: string; grant_id: string; status: string }>(
-    `SELECT id, grant_id, status FROM lookouts WHERE id = $1`,
+  const [lookout] = await rawQuery<{ id: string; grant_id: string; status: string; sensitivity_label: string }>(
+    `SELECT id, grant_id, status, sensitivity_label FROM lookouts WHERE id = $1`,
     [input.lookoutId]
   );
   if (!lookout || lookout.grant_id !== input.grantId) {
     return { ok: false, code: "NOT_FOUND", problem: "No such lookout on this mandate" };
   }
   if (lookout.status === "retired") return { ok: false, code: "RETIRED", problem: "That lookout is retired" };
+  // A lookout's feeds are the lookout's own, changed by work at its label
+  // (work changes only rows at its own label, db/clearance.ts).
+  if (lookout.sensitivity_label !== currentLabel()) {
+    return {
+      ok: false,
+      code: "OTHER_LABEL",
+      problem:
+        `That lookout is labeled "${lookout.sensitivity_label}" and this work is at "${currentLabel()}". ` +
+        `A lookout's feeds are changed by work at the lookout's own label. Nothing was changed.`,
+    };
+  }
   const rule = normalizeFeedRule(input.rule ?? {});
   if (typeof rule === "string") return { ok: false, code: "RULE", problem: rule };
   const [count] = await rawQuery<{ n: number }>(
@@ -949,12 +975,13 @@ export async function pollFeed(
   feed: FeedRow,
   opts: { now?: Date; parsed?: ParsedFeed } = {}
 ): Promise<FeedPollResult> {
-  // The poller is a timer, outside any run, and the poll is the lookout's
-  // work: the items it records, the wake it queues and the ingests an
-  // auto_ingest feed raises are written at the lookout's label
-  // (label-service.ts). A poll made from inside a run (a Grantmaker adding
-  // the feed) is that run's.
-  return runAtLookoutLabelOutsideAnyRun(feed.lookout_id, () => pollFeedAtLabel(feed, opts));
+  // The poll is the lookout's work, whoever starts it: the poller's timer,
+  // or a run that reads the lookout. What a feed holds is the same whoever
+  // asks, and the items the poll records, the wake it queues, the ingests
+  // an auto_ingest feed raises and the feed's own bookkeeping are written
+  // at the lookout's label (label-service.ts), which for the lookout's own
+  // runs is the label they already have.
+  return runAtLookoutLabel(feed.lookout_id, () => pollFeedAtLabel(feed, opts));
 }
 
 async function pollFeedAtLabel(
@@ -968,7 +995,7 @@ async function pollFeedAtLabel(
   let parsed = opts.parsed ?? null;
   if (!parsed) {
     try {
-      parsed = parseFeed(await fetchText(feed.url), feed.url);
+      parsed = parseFeed(await fetchText(feed.url, "a followed feed's recorded address"), feed.url);
       if (!parsed) throw new Error("The URL no longer answers with an RSS or Atom feed");
     } catch (err) {
       const msg = (err instanceof Error ? err.message : String(err)).slice(0, 500);
@@ -996,13 +1023,18 @@ async function pollFeedAtLabel(
     .sort((a, b) => (b.published?.getTime() ?? 0) - (a.published?.getTime() ?? 0))
     .slice(0, FEED_BOUNDS.itemsPerPoll);
   for (const it of items) {
+    // An item a label this poll reads already recorded has been seen: it
+    // is not new, and nothing is recorded beside it (layer-service.ts). An
+    // item recorded only at a label the poll does not read is not there
+    // for it, and the poll records its own.
+    if (await heldBelow(rawQuery, "lookout_feed_items", { feed_id: feed.id, item_key: it.key })) continue;
     const rows = await rawQuery<{ id: string }>(
       `INSERT INTO lookout_feed_items
          (feed_id, lookout_id, item_key, url, title, author, published_at,
           summary, content, status, first_seen_at, expires_at, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
                CASE WHEN $10 = 'new' THEN $11::timestamptz + make_interval(days => $12) END, $13)
-       ON CONFLICT (feed_id, item_key) DO NOTHING
+       ON CONFLICT (feed_id, item_key, sensitivity_label) DO NOTHING
        RETURNING id`,
       [
         feed.id, feed.lookout_id, it.key, it.url, it.title, it.author, it.published,
@@ -1288,7 +1320,7 @@ export async function readItem(input: {
     from = "page";
     if (!html && item.url) {
       try {
-        html = (await fetchText(item.url)).slice(0, FEED_BOUNDS.bodyChars);
+        html = (await fetchText(item.url, "a feed item's link, as the feed gave it")).slice(0, FEED_BOUNDS.bodyChars);
         await rawQuery(`UPDATE lookout_feed_items SET body = $2, fetched_at = now() WHERE id = $1`, [
           item.id, html,
         ]);
@@ -1314,7 +1346,7 @@ export async function readItem(input: {
     ? await rawQuery<{ id: string; title: string; claims: number }>(
         `SELECT s.id, s.title,
                 (SELECT COUNT(DISTINCT ci.claim_id)::int FROM claim_instances ci WHERE ci.source_id = s.id) AS claims
-           FROM sources s WHERE s.url = $1`,
+           FROM sources s WHERE s.url = $1${oneSourceForAddressSql("s")}`,
         [item.url]
       )
     : [];

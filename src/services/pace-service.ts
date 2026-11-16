@@ -82,7 +82,7 @@ export function describePace(pace: Pace): string {
 export function windowUseSql(g: string): string {
   return `(CASE WHEN ${g}.pace->>'kind' = 'steady' THEN
       COALESCE((SELECT SUM(${allocationDayUseSql("pal")})
-                  FROM action_allocations pal
+                  FROM minerval_whole.allocation_money pal
                  WHERE pal.grant_id = ${g}.id
                    AND pal.created_at > now() - make_interval(hours => (${g}.pace->>'period_hours')::int)), 0)
     ELSE 0 END)`;
@@ -210,7 +210,7 @@ export async function committedWithinMicroUsd(grantId: string, hours: number, tx
   const q = <T,>(text: string, params: unknown[]) => (tx ? tx.query<T>(text, params) : rawQuery<T>(text, params));
   const [row] = await q<{ used: string }>(
     `SELECT COALESCE(SUM(${allocationDayUseSql()}), 0)::bigint AS used
-       FROM action_allocations WHERE grant_id = $1 AND created_at > now() - make_interval(hours => $2::int)`,
+       FROM minerval_whole.allocation_money WHERE grant_id = $1 AND created_at > now() - make_interval(hours => $2::int)`,
     [grantId, Math.max(1, Math.round(hours))]
   );
   return Number(row?.used ?? 0);

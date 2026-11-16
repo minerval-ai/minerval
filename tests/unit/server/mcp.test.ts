@@ -220,6 +220,8 @@ vi.mock("../../../src/services/owl-ledger-service.js", async (importOriginal) =>
     typeof import("../../../src/services/owl-ledger-service.js")
   >()),
   chargeOwls: mocks.chargeOwls,
+  // The grants a charge lands first are the ledger's; this test's ledger is the mock above.
+  ensureFreeGrants: async () => {},
   refundOwls: mocks.refundOwls,
 }));
 

@@ -1,3 +1,4 @@
+import { PublicMandates } from "@/components/outside/PublicMandates";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { auth } from "../../auth";
@@ -272,6 +273,9 @@ export default async function MandatesPage({
           </nav>
         </div>
       )}
+
+      {/* In a private deployment: the organisation's public mandates, after its own and marked as public. */}
+      <PublicMandates />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * The label a credential works at, in the catalog (the private_deployment
+ * The label a credential works at, in the catalog (the request_label
  * migration): `work_label` on API keys and access tokens, and on the
  * consent a token is issued from.
  *

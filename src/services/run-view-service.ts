@@ -6,14 +6,37 @@
  * is public in full: its setup, its opening messages, every model turn and
  * every tool result. A run with reasons is withheld: the response says so and
  * lists the reasons, which name what made it private without repeating it.
- * Direct service callers read every run. The account a run was attributed to
+ * Direct service callers read every run. In a members-only deployment a
+ * member who reads the run's label reads a run whose every reason is one
+ * that label covers (run-visibility.ts, REASONS_A_LABEL_COVERS): the run
+ * that read an organization's data through a connection or ran a command
+ * over its files, a Redactor's run, Audit's check of a redaction. Inside a
+ * private graph an assessment's run is open to every member cleared to read
+ * it (constitution §26). A run with any other reason, a person's own
+ * conversation or a funder's words among them, stays withheld from members
+ * as from anyone. The account a run was attributed to
  * (user_id) and its job are never served: funding is disclosed on the
  * verdict, by name, not through the run.
  *
  * Shape, for agents that fetch only what they need: the run's summary first,
  * then its steps as one-line summaries with a cursor, then any step in full.
+ *
+ * Source text. A log holds what its run was handed and what its tools
+ * returned, and for some agents and tools that is a source's stored text.
+ * Opening raw sources is a permission of its own in a members-only
+ * deployment (src/raw-sources.ts), so a reader who lacks it is served those
+ * parts of a step as withheld, with the permission that opens them, and
+ * everything else in the step as recorded. The run's label says what it
+ * could have opened: sources at its own label and at every label that one
+ * reads. Which source each step actually read is not worked out, so the
+ * reader needs the permission at each of those labels; a run at `public`
+ * read only public sources and nothing in it is withheld.
  */
 import { rawQuery } from "../db/client.js";
+import { PUBLIC_LABEL } from "../labels.js";
+import { AGENTS_GIVEN_SOURCE_TEXT, labelCoversReason, returnsSourceText } from "../llm/run-visibility.js";
+import { withheldRunSourceText, type WithheldSourceText } from "../raw-sources.js";
+import { labelsReadableFrom } from "./permission-service.js";
 import { chainChecker, RUN_LOG_FORMAT, type ChainedStep, type ChainProblem } from "./run-log.js";
 import type { SetupRecord } from "./setup-split.js";
 
@@ -37,6 +60,23 @@ interface RunRow {
   private_reasons: string[];
   log_hash: string | null;
   sealed_at: Date | null;
+  sensitivity_label: string;
+}
+
+/** What a caller of these reads says about who is reading. */
+export interface RunReader {
+  isService?: boolean;
+  /**
+   * The labels the reader may read as a member of a members-only
+   * deployment (the request's clearance), or null or absent on the public
+   * graph, where a run with private reasons is served to no reader.
+   */
+  memberReads?: readonly string[] | null;
+  /**
+   * The labels whose raw sources the reader may open (rawSourceLabelsOf), or
+   * null or absent where nothing is held: the public graph.
+   */
+  rawSourceLabels?: readonly string[] | null;
 }
 
 export interface RunSetupPartView {
@@ -112,7 +152,7 @@ export interface StepSummary {
 async function loadRun(runId: string): Promise<RunRow | null> {
   const rows = await rawQuery<RunRow>(
     `SELECT id, agent, claim_id, started_at, finished_at, outcome, error, steps, skills,
-            wrote_to_graph, commit_sha, private_reasons, log_hash, sealed_at
+            wrote_to_graph, commit_sha, private_reasons, log_hash, sealed_at, sensitivity_label
        FROM agent_runs
       WHERE id = COALESCE(
               (SELECT id FROM agent_runs WHERE id = $1),
@@ -122,13 +162,63 @@ async function loadRun(runId: string): Promise<RunRow | null> {
   return rows[0] ?? null;
 }
 
-/** Whether `run` may be served to this caller. */
-function servable(run: RunRow, isService: boolean): boolean {
-  return isService || run.private_reasons.length === 0;
+/**
+ * Whether `run` may be served to this reader: a public run to anyone, any
+ * run to a direct service caller, and to a member who reads the run's
+ * label a run whose every private reason that label covers.
+ */
+function servable(run: RunRow, reader: RunReader): boolean {
+  if (reader.isService || run.private_reasons.length === 0) return true;
+  return (
+    !!reader.memberReads?.includes(run.sensitivity_label) &&
+    run.private_reasons.every((reason) => labelCoversReason(reason, run.private_reasons))
+  );
 }
 
 function withheld(run: RunRow): WithheldRun {
   return { id: run.id, agent: run.agent, withheld: true, public: false, private_reasons: run.private_reasons };
+}
+
+/**
+ * The notice that stands in for source text in this run's log for this
+ * reader, or null when the reader may read all of it. See the module
+ * comment for why the run's label decides.
+ */
+async function sourceTextNotice(run: RunRow, reader: RunReader): Promise<WithheldSourceText | null> {
+  const held = reader.rawSourceLabels;
+  if (held === null || held === undefined || run.sensitivity_label === PUBLIC_LABEL) return null;
+  const couldOpen = (await labelsReadableFrom([run.sensitivity_label])).filter((l) => l !== PUBLIC_LABEL);
+  const missing = couldOpen.filter((l) => !held.includes(l));
+  return missing.length > 0 ? withheldRunSourceText(run.sensitivity_label, missing) : null;
+}
+
+/**
+ * A step's content with any source text in it replaced by `notice`: the
+ * opening messages (or a single call's prompt) of an agent that is handed
+ * a document, and the output of a tool that returns one. Everything else
+ * is the content as recorded.
+ */
+export function withholdSourceText(agent: string, kind: string, content: unknown, notice: WithheldSourceText): unknown {
+  if (kind === "tool_results" && Array.isArray(content)) {
+    return content.map((result) =>
+      result && typeof result === "object" && returnsSourceText(String((result as { name?: unknown }).name))
+        ? { ...(result as Record<string, unknown>), output: notice }
+        : result
+    );
+  }
+  if (agent in AGENTS_GIVEN_SOURCE_TEXT && content && typeof content === "object" && !Array.isArray(content)) {
+    const c = content as Record<string, unknown>;
+    if (kind === "prompt" && "initialMessages" in c) return { ...c, initialMessages: notice };
+    if (kind === "completion") {
+      return {
+        ...c,
+        ...("messages" in c ? { messages: notice } : {}),
+        ...("prompt" in c ? { prompt: notice } : {}),
+        ...("input" in c ? { input: notice } : {}),
+      };
+    }
+  }
+  return content;
 }
 
 /**
@@ -137,12 +227,12 @@ function withheld(run: RunRow): WithheldRun {
  */
 export async function getRunSummary(
   runId: string,
-  opts: { isService?: boolean } = {}
+  opts: RunReader = {}
 ): Promise<RunSummary | WithheldRun | null> {
   if (!/^[0-9a-f-]{36}$/i.test(runId)) return null;
   const run = await loadRun(runId);
   if (!run) return null;
-  if (!servable(run, opts.isService ?? false)) return withheld(run);
+  if (!servable(run, opts)) return withheld(run);
   // The agent run's own id from here on: `runId` may have named a research run.
   runId = run.id;
 
@@ -224,7 +314,9 @@ export function summarizeStep(kind: string, content: unknown): { summary: string
   switch (kind) {
     case "prompt": {
       const tools = Array.isArray(c.tools) ? (c.tools as Array<{ name?: string }>).map((t) => t.name ?? "?") : [];
-      const opening = preview(textOf(c.initialMessages), 120);
+      const opening = isWithheld(c.initialMessages)
+        ? "(withheld: text from a source)"
+        : preview(textOf(c.initialMessages), 120);
       return {
         summary: `Setup: ${String(c.model ?? "model unknown")}, ${tools.length} tool(s). Opening: ${opening || "(none)"}`,
         tools: [],
@@ -240,7 +332,11 @@ export function summarizeStep(kind: string, content: unknown): { summary: string
     case "tool_results": {
       const results = Array.isArray(content) ? (content as Array<Record<string, unknown>>) : [];
       const names = results.map((r) => String(r.name));
-      const first = results[0] ? preview(String(r0(results[0].output)), 120) : "";
+      const first = !results[0]
+        ? ""
+        : isWithheld(results[0].output)
+          ? "(withheld: text from a source)"
+          : preview(String(r0(results[0].output)), 120);
       return { summary: `${names.join(", ")} returned${first ? `: ${first}` : ""}`, tools: names };
     }
     case "completion":
@@ -248,6 +344,11 @@ export function summarizeStep(kind: string, content: unknown): { summary: string
     default:
       return { summary: kind, tools: [] };
   }
+}
+
+/** Whether a part of a step is the notice that stands in for source text. */
+function isWithheld(value: unknown): boolean {
+  return !!value && typeof value === "object" && (value as { withheld?: unknown }).withheld === "source_text";
 }
 
 function r0(output: unknown): string {
@@ -261,14 +362,16 @@ function r0(output: unknown): string {
  */
 export async function listRunSteps(
   runId: string,
-  opts: { after?: number; limit?: number; kind?: string; tool?: string; isService?: boolean } = {}
+  opts: { after?: number; limit?: number; kind?: string; tool?: string } & RunReader = {}
 ): Promise<{ steps: StepSummary[]; next_after: number | null } | WithheldRun | null> {
   if (!/^[0-9a-f-]{36}$/i.test(runId)) return null;
   const run = await loadRun(runId);
   if (!run) return null;
-  if (!servable(run, opts.isService ?? false)) return withheld(run);
+  if (!servable(run, opts)) return withheld(run);
   // The agent run's own id from here on: `runId` may have named a research run.
   runId = run.id;
+  // A summary quotes the head of a step, so source text is taken out first.
+  const notice = await sourceTextNotice(run, opts);
 
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   // A tool filter is applied after summarizing, so read in pages until the
@@ -285,7 +388,10 @@ export async function listRunSteps(
     );
     for (const r of rows) {
       cursor = r.seq;
-      const { summary, tools } = summarizeStep(r.kind, r.content);
+      const { summary, tools } = summarizeStep(
+        r.kind,
+        notice ? withholdSourceText(run.agent, r.kind, r.content, notice) : r.content
+      );
       if (opts.tool && !tools.includes(opts.tool)) continue;
       out.push({ seq: r.seq, kind: r.kind, created_at: new Date(r.created_at).toISOString(), summary, chars: r.chars, tools, hash: r.hash });
       if (out.length === limit) return { steps: out, next_after: r.seq };
@@ -300,7 +406,7 @@ export async function listRunSteps(
 export async function getRunStep(
   runId: string,
   seq: number,
-  opts: { isService?: boolean } = {}
+  opts: RunReader = {}
 ): Promise<
   | { seq: number; kind: string; created_at: string; content: unknown; prev_hash: string | null; hash: string | null }
   | WithheldRun
@@ -309,7 +415,7 @@ export async function getRunStep(
   if (!/^[0-9a-f-]{36}$/i.test(runId) || !Number.isInteger(seq)) return null;
   const run = await loadRun(runId);
   if (!run) return null;
-  if (!servable(run, opts.isService ?? false)) return withheld(run);
+  if (!servable(run, opts)) return withheld(run);
   // The agent run's own id from here on: `runId` may have named a research run.
   runId = run.id;
   const rows = await rawQuery<{
@@ -321,11 +427,12 @@ export async function getRunStep(
   );
   const r = rows[0];
   if (!r) return null;
+  const notice = await sourceTextNotice(run, opts);
   return {
     seq: r.seq,
     kind: r.kind,
     created_at: new Date(r.created_at).toISOString(),
-    content: r.content,
+    content: notice ? withholdSourceText(run.agent, r.kind, r.content, notice) : r.content,
     prev_hash: r.prev_hash,
     hash: r.hash,
   };
@@ -368,12 +475,12 @@ export interface RunLogCheck {
  */
 export async function verifyRunLog(
   runId: string,
-  opts: { isService?: boolean } = {}
+  opts: RunReader = {}
 ): Promise<RunLogCheck | WithheldRun | null> {
   if (!/^[0-9a-f-]{36}$/i.test(runId)) return null;
   const run = await loadRun(runId);
   if (!run) return null;
-  if (!servable(run, opts.isService ?? false)) return withheld(run);
+  if (!servable(run, opts)) return withheld(run);
   // A page of steps at a time: a long run's content is large.
   const checker = chainChecker(run.id);
   let recorded = 0;

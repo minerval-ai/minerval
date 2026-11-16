@@ -124,12 +124,16 @@ describe("the table of settings", () => {
         "OPENAI_API_KEY",
         "OPENROUTER_API_KEY",
         "PANGRAM_API_KEY",
+        "PUBLIC_GRAPH_API_KEY",
+        "PUBLISH_SIGNING_KEY",
+        "SANDBOX_TOKEN",
         "SQL_AGENT_DATABASE_URL",
         "SQL_AGENT_DB_PASSWORD",
         "SQL_CALLER_DATABASE_URL",
         "SQL_CALLER_DB_PASSWORD",
         "STRIPE_SECRET_KEY",
         "STRIPE_WEBHOOK_SECRET",
+        "USAGE_REPORT_API_KEY",
       ].sort()
     );
     for (const key of secretConfigFileKeys()) expect(key.field, key.key).toBeUndefined();
@@ -184,6 +188,31 @@ const SAMPLES: Record<string, { file: ConfigFileValue; loads?: unknown }> = {
   "hosting.log_level": { file: "debug" },
   "hosting.cors_origins": { file: ["https://a.test", "https://b.test"], loads: "https://a.test,https://b.test" },
   "pricing.owl_packs": { file: ["3:900:Test"], loads: [{ owls: 3, priceCents: 900, name: "Test" }] },
+  // Settings that only load together with others, or never beside another, keep the value
+  // that loads with every other sample here; tests/unit/own-owls-config.test.ts and
+  // tests/unit/db/database-tls.test.ts hold what they refuse.
+  "pricing.owls": { file: "sold" },
+  "pricing.model_prices": {
+    file: [
+      { model: "gpt-oss-120b", input_usd_per_mtok: 0.5, output_usd_per_mtok: 1.5 },
+      { model: "a-vendor/priced", input_usd_per_mtok: 1, output_usd_per_mtok: 2, cache_read_multiplier: 0.2, cache_write_multiplier: 1 },
+    ],
+    loads: [
+      { model: "gpt-oss-120b", inputUsdPerMtok: 0.5, outputUsdPerMtok: 1.5 },
+      { model: "a-vendor/priced", inputUsdPerMtok: 1, outputUsdPerMtok: 2, cacheReadMultiplier: 0.2, cacheWriteMultiplier: 1 },
+    ],
+  },
+  "private_runs.fetches": { file: "given" },
+  "publishing.hosting": { file: "third_party" },
+  "public_graph.acts_by": { file: "fund" },
+  "public_graph.price": { file: "flat" },
+  "usage_report.dir": { file: "" },
+  "usage_report.from": { file: "2026-11-01" },
+  "file_sets.store_dir": { file: "/var/lib/minerval/file-sets" },
+  "file_sets.directory_root": { file: "/srv/registered" },
+  "sandbox.hour_cost_micro_usd": { file: 0 },
+  "database.tls": { file: "off" },
+  "database.ca_file": { file: "", loads: undefined },
 };
 
 function sampleFor(key: { key: string; kind: string }): { file: ConfigFileValue; loads: unknown } {
@@ -328,7 +357,8 @@ describe("what a file is refused for", () => {
   it("names an unknown group or setting, what is near it, and what the place holds", () => {
     expect(problemsOf(() => parse('[run_logs]\nmode = "record"\n'))).toEqual([
       "run_logs is not a group of settings. Did you mean run_log? The groups are: features, models, " +
-        "model_providers, outside_services, provider_labels, run_log, hosting, database, pricing.",
+        "model_providers, outside_services, provider_labels, run_log, hosting, database, pricing, private_runs, publishing, " +
+        "public_graph, usage_report, file_sets, sandbox.",
     ]);
     expect(problemsOf(() => parse('[run_log]\nmodes = "record"\n'))).toEqual([
       "run_log.modes is not a setting. Did you mean run_log.mode? [run_log] holds: mode, level, retention_days.",
@@ -458,6 +488,16 @@ describe("what a file is refused for", () => {
           `Set the environment variable ${key.env} instead.`,
       ]);
     }
+  });
+
+  it("refuses a connection's credential by the shape of its name, since a deployment chooses those names", () => {
+    expect(problemsOf(() => parse('CONNECTION_WAREHOUSE = "token"\n'))).toEqual([
+      "CONNECTION_WAREHOUSE looks like a connection's credential, which is a secret, and secrets are not kept in the config file. " +
+        "Set the environment variable CONNECTION_WAREHOUSE instead.",
+    ]);
+    expect(problemsOf(() => parse('[sandbox]\nconnection_wiki = "token"\n'))[0]).toMatch(
+      /sandbox\.connection_wiki looks like a connection's credential.*Set the environment variable CONNECTION_WIKI instead\./
+    );
   });
 
   it("reports everything wrong at once, and text that is not TOML with its line", () => {

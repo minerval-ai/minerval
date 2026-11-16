@@ -141,6 +141,8 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   model("researcher_cheap", "RESEARCHER_CHEAP_MODEL", "researcherCheapModel"),
   model("solver", "SOLVER_MODEL", "solverModel"),
   model("judge", "JUDGE_MODEL", "judgeModel"),
+  // Empty for the Steward's model: the Redactor then runs on that.
+  model("redactor", "REDACTOR_MODEL", "redactorModel"),
 
   {
     key: "model_providers.openrouter_provider_sort",
@@ -258,6 +260,11 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   { key: "database.port", env: "DB_PORT", kind: "number", field: "dbPort" },
   { key: "database.name", env: "DB_NAME", kind: "text", field: "dbName" },
   { key: "database.user", env: "DB_USERNAME", kind: "text", field: "dbUser" },
+  // How the connection is secured where the database is not on RDS: "off"
+  // for one on a network of the deployment's own, or the authority its
+  // certificate is checked against. One of the two, never both.
+  { key: "database.tls", env: "DATABASE_TLS", kind: "text", field: "databaseTls" },
+  { key: "database.ca_file", env: "DATABASE_CA_FILE", kind: "text", field: "databaseCaFile" },
   secret("database.password", "DB_PASSWORD"),
   // A connection string carries its password.
   secret("database.url", "DATABASE_URL"),
@@ -296,7 +303,63 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
     kind: "number",
     field: "capTextAnalysisOwls",
   },
+  // Whether owls are sold or the deployment's administrators create them.
+  { key: "pricing.owls", env: "OWLS", kind: "text", field: "owls" },
+  // Prices the deployment states for models (src/llm/model-prices.ts).
+  // Written last in its group: a [[...]] heading ends the plain settings above it.
+  {
+    key: "pricing.model_prices",
+    env: "MODEL_PRICES",
+    kind: "groups",
+    field: "modelPrices",
+    members: {
+      model: "model",
+      input_usd_per_mtok: "inputUsdPerMtok",
+      output_usd_per_mtok: "outputUsdPerMtok",
+      cache_read_multiplier: "cacheReadMultiplier",
+      cache_write_multiplier: "cacheWriteMultiplier",
+    },
+  },
+
+  // Which addresses the tools of a run that reads a private label take.
+  { key: "private_runs.fetches", env: "PRIVATE_RUN_FETCHES", kind: "text", field: "privateRunFetches" },
+
+  // Showing pages outside (docs/published-pages.md). The signing key is a secret.
+  { key: "publishing.hosting", env: "DEPLOYMENT_HOSTING", kind: "text", field: "deploymentHosting" },
+  secret("publishing.signing_key", "PUBLISH_SIGNING_KEY"),
+
+  // The public graph, as this deployment reaches it and pays toward it
+  // (docs/outward-acts.md, docs/usage-report.md).
+  { key: "public_graph.api_url", env: "PUBLIC_GRAPH_API_URL", kind: "text", field: "publicGraphApiUrl" },
+  { key: "public_graph.acts_by", env: "PUBLIC_ACTS_BY", kind: "text", field: "publicActsBy" },
+  { key: "public_graph.price", env: "PUBLIC_GRAPH_PRICE", kind: "text", field: "publicGraphPrice" },
+  secret("public_graph.api_key", "PUBLIC_GRAPH_API_KEY"),
+
+  { key: "usage_report.url", env: "USAGE_REPORT_URL", kind: "text", field: "usageReportUrl" },
+  { key: "usage_report.dir", env: "USAGE_REPORT_DIR", kind: "text", field: "usageReportDir" },
+  { key: "usage_report.from", env: "USAGE_REPORT_FROM", kind: "text", field: "usageReportFrom" },
+  secret("usage_report.api_key", "USAGE_REPORT_API_KEY"),
+
+  // Sets of files and the sandbox agents explore them in (docs/file-sets.md).
+  { key: "file_sets.store_dir", env: "FILE_SET_STORE_DIR", kind: "text", field: "fileSetStoreDir" },
+  { key: "file_sets.directory_root", env: "FILE_SET_DIRECTORY_ROOT", kind: "text", field: "fileSetDirectoryRoot" },
+  { key: "sandbox.url", env: "SANDBOX_URL", kind: "text", field: "sandboxUrl" },
+  {
+    key: "sandbox.hour_cost_micro_usd",
+    env: "SANDBOX_HOUR_COST_MICRO_USD",
+    kind: "number",
+    field: "sandboxHourCostMicroUsd",
+  },
+  secret("sandbox.token", "SANDBOX_TOKEN"),
 ];
+
+/**
+ * A connection's credential (docs/connections.md): any number of them, each
+ * in an environment variable the connection names, all beginning with this.
+ * They are secrets with no row above, since a deployment chooses their
+ * names, so a file that holds one is refused by the name's shape.
+ */
+export const CONNECTION_CREDENTIAL_PREFIX = "CONNECTION_";
 
 /**
  * One line on each group, written above it in a file this code writes, so a
@@ -324,7 +387,26 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
   run_log: "How much a run depends on its log, and how long logs of runs that wrote nothing are kept.",
   hosting: "Where this deployment is reached and how the API listens.",
   database: "Where the database is. Its password is DB_PASSWORD.",
-  pricing: "What an owl costs, what is given away, and the most each paid operation can cost.",
+  pricing:
+    "What an owl costs, whether owls are sold or created here, what is given away, and the most each paid operation can cost.",
+  "pricing.model_prices":
+    "A price this deployment states for a model, in US dollars per million tokens: for a model the rate table " +
+    "does not know, or in place of the table's. Where owls are created, a run on a model with no price is refused.",
+  private_runs:
+    "Runs that read a private label. fetches is \"any\" (the starting value: a tool takes any address, as on the " +
+    "public graph) or \"given\": a tool takes only an address the deployment was given from outside, which guards " +
+    "against text a run read telling it to fetch an address with private material written into it. It narrows " +
+    "that way out and does not close it, and a run can then not write an address for something it knows of.",
+  publishing:
+    "Showing pages outside. hosting says where this deployment runs (own_machines, minerval or third_party) and is " +
+    "stated in every package. The signing key is PUBLISH_SIGNING_KEY.",
+  public_graph:
+    "The public graph as this deployment reaches it: its API, which permission's holders may act there in the " +
+    "organization's name, and how the deployment pays toward it (metered or flat). The account key is PUBLIC_GRAPH_API_KEY.",
+  usage_report:
+    "Where a metered deployment's usage reports go: an address (with USAGE_REPORT_API_KEY) or a directory, never both.",
+  file_sets: "Where uploaded sets of files are kept, and the directory that directories are registered from.",
+  sandbox: "The sandbox agents run commands over file sets in. Its token is SANDBOX_TOKEN.",
 };
 
 const KEYS_BY_NAME = new Map(CONFIG_FILE_KEYS.map((k) => [k.key, k]));
@@ -441,6 +523,12 @@ function unknownKeyProblem(path: string): string {
   // A name copied from the environment: say where it goes instead.
   const byEnv = CONFIG_FILE_KEYS.find((k) => k.env === name);
   if (byEnv?.secret) return secretProblem(path, byEnv);
+  if (name.toUpperCase().startsWith(CONNECTION_CREDENTIAL_PREFIX)) {
+    return (
+      `${path} looks like a connection's credential, which is a secret, and secrets are not kept in the config file. ` +
+      `Set the environment variable ${name.toUpperCase()} instead.`
+    );
+  }
   if (byEnv) {
     return `${path} is an environment variable's name, not a setting in the file. In the file it is ${byEnv.key}.`;
   }

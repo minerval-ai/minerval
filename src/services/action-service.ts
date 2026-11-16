@@ -19,10 +19,11 @@
  *    metered cost is consumed pro rata from the winner's covering
  *    allocations.
  */
+import { oneSourceForAddressSql } from "./layer-service.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
-import { currentLabel, runAtLabel } from "../llm/usage-context.js";
-import { pendingPassLabel, runAtMandateLabelOutsideAnyRun } from "./label-service.js";
+import { currentLabel, labelInContext, runAtLabel } from "../llm/usage-context.js";
+import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
 import { STEWARD_ERROR_REASON_LABELS, stewardErrorReasonOf } from "./steward-park-reason.js";
 import {
   FAULT_RETRY_BASE_SECONDS,
@@ -47,7 +48,9 @@ import {
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { reviewPassBudget, type OperatingPolicy } from "./operating-policy-service.js";
 import { capMicroUsd, microUsdToOwls, owlsToMicroUsd } from "./owl.js";
-import { ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
+import { groupAtLabel, ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
+import { oneLabelOnly } from "./judgment-version-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import {
   duePartitions,
   listPartitions,
@@ -58,6 +61,7 @@ import {
 import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { ownWorkSql } from "./mirrored-node-service.js";
 import { AFTER_INGESTS_MAX_WAIT_HOURS } from "./grant-service.js";
 import { retiredNodeRefusal } from "./claim-lifecycle-service.js";
 import { actionUnavailable } from "../llm/tools/feature-tools.js";
@@ -146,23 +150,44 @@ export type ActionKind =
   // a time: `scope` (a cheap pass that returns a quote) while the request
   // has no budget, then `full`, costed at the request's budget. Valued by
   // mandates like any action, and fundable by anyone.
-  | "request";
+  | "request"
+  // One Redactor run on a page that is to be shown below its label
+  // (showing-service.ts): group `redact:<showing_pages.id>`, target_ref the
+  // page, at the page's label. Opened when a showing takes in a version and
+  // again each time Audit returns the work; it runs when a mandate that
+  // values it or the person who asked pays for it.
+  | "redact";
 
-export const ASSESS_GROUP = (claimId: string) => `assess:${claimId}`;
+/**
+ * A node's assess group, at a label: the label of the work in progress
+ * unless one is named. Work at each label on a node has its own group
+ * (groupAtLabel in ingest-focus-service.ts), so an internal assessment of a
+ * public claim neither waits on public work nor is visible on its row. The
+ * same holds for the other groups keyed by something several labels can
+ * work on: curate, formalize, ingest and a consistency partition.
+ */
+export const ASSESS_GROUP = (claimId: string, label?: string) => groupAtLabel(`assess:${claimId}`, label);
+/**
+ * SQL expression for the same key: the assess group of the node whose id is
+ * `idSql`, at the label `labelSql`. The plain key where `public` is the
+ * only label.
+ */
+export const ASSESS_GROUP_SQL = (idSql: string, labelSql: string) =>
+  oneLabelOnly() ? `'assess:' || ${idSql}::text` : `minerval_group_at('assess:' || ${idSql}::text, ${labelSql})`;
 export const PLANNING_GROUP = (grantId: string) => `plan:${grantId}`;
 /** An ingest's group: per URL, and per focus for a scoped ingest (ingest-focus-service.ts). */
-export const INGEST_GROUP = (url: string, focus?: string | null) => ingestGroup(url, focus);
+export const INGEST_GROUP = (url: string, focus?: string | null, label?: string) => ingestGroup(url, focus, label);
 export const REVIEW_GROUP = (grantId: string) => `review:${grantId}`;
 export const LOOKOUT_GROUP = (lookoutId: string) => `lookout:${lookoutId}`;
 export const CORRESPONDENT_GROUP = (correspondentId: string) => `correspondent:${correspondentId}`;
-export const CONSISTENCY_GROUP = (ref: string) => `consistency:${ref}`;
-export const CURATE_GROUP = (claimId: string) => `curate:${claimId}`;
+export const CONSISTENCY_GROUP = (ref: string, label?: string) => groupAtLabel(`consistency:${ref}`, label);
+export const CURATE_GROUP = (claimId: string, label?: string) => groupAtLabel(`curate:${claimId}`, label);
 /** The Curator's row for one request it keeps (#722). */
 export const CURATE_REQUEST_GROUP = (requestId: string) => `curate:request:${requestId}`;
 export const AUDIT_GROUP = (auditRunId: string) => `audit:${auditRunId}`;
 export const REQUEST_GROUP = (requestId: string) => `request:${requestId}`;
 /** One statement per claim at a time: one group, one variant (§5.4). */
-export const FORMALIZE_GROUP = (claimId: string) => `formalize:${claimId}`;
+export const FORMALIZE_GROUP = (claimId: string, label?: string) => groupAtLabel(`formalize:${claimId}`, label);
 /** `attempt:<formalization_id>:<n>` — a closed attempt never reopens (§7.2). */
 export const ATTEMPT_GROUP = (formalizationId: string, n: number) =>
   `attempt:${formalizationId}:${n}`;
@@ -197,7 +222,7 @@ const INGEST_JOB_LOST_DAYS = 4;
  * row's own cost estimate only gates the allocator's increments.
  */
 export const COMMISSIONED_SQL = `
-  EXISTS (SELECT 1 FROM action_allocations al
+  EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
            WHERE al.exclusion_group = a.exclusion_group
              AND al.released_at IS NULL
              AND al.commissioned_by IS NOT NULL
@@ -207,10 +232,13 @@ export const COMMISSIONED_SQL = `
 /** Coverage subquery for one actions row `a` (SQL fragment). */
 export const COVERAGE_SQL = `
   COALESCE((SELECT SUM(al.amount_micro_usd - al.spent_micro_usd)
-              FROM action_allocations al
+              FROM minerval_whole.allocation_money al
              WHERE al.exclusion_group = a.exclusion_group
                AND al.released_at IS NULL
                AND (al.action_id IS NULL OR al.action_id = a.id)), 0)`;
+
+/** The statuses of a ledger row whose work is over. A row in one of these is reopened by its group's next piece of work. */
+export const FINISHED_STATUSES_SQL = `('done', 'superseded', 'cancelled')`;
 
 /**
  * Whether actions row `a` may be picked now (SQL fragment): it is not inside
@@ -222,19 +250,22 @@ export const COVERAGE_SQL = `
 export const NOT_WAITING_ON_FAULT_SQL = `(a.retry_after IS NULL OR a.retry_after <= now())`;
 
 /**
- * What an upsert that can reopen a finished row does with the row's label
- * (SQL fragment for its SET list; src/labels.ts). Every producer below
+ * What an upsert that can reopen a finished row does with the row's display
+ * text and its target (SQL fragment for its SET list). Every producer below
  * stamps a new row with the label of the work that opens it (currentLabel),
- * and the executors run a row at its label. But a group's row is reused for
- * the group's next piece of work, so the label has to follow the work: a
- * row that is open or running keeps the label of the work already waiting
- * on it, and a finished row opened again takes the label of the work that
- * reopens it. Without this a claim first assessed at one label would have
- * every later pass run at that label, whatever asked for it.
+ * and the executors run a row at its label. A row's label never changes
+ * (the database's label_fixed_guard). A group whose subject several labels
+ * can work on (a node, a document, a partition) has a key for each label
+ * (groupAtLabel), and every other group belongs to a row that carries one
+ * label of its own (a mandate, a request, a lookout), so a row is only ever
+ * reopened by work at its own label.
+ *
+ * A reopened row is the new work's row: its display text and its target
+ * are replaced. A row that is open or running keeps both.
  */
-export const LABEL_ON_REOPEN_SQL = `sensitivity_label = CASE
-             WHEN actions.status IN ('open', 'running') THEN actions.sensitivity_label
-             ELSE EXCLUDED.sensitivity_label END`;
+export const LABEL_ON_REOPEN_SQL = `label = CASE WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.label ELSE actions.label END,
+           target_ref = CASE WHEN actions.status IN ${FINISHED_STATUSES_SQL} THEN EXCLUDED.target_ref
+                             ELSE actions.target_ref END`;
 
 // ---------------------------------------------------------------------------
 // Producers: keep the ledger's open rows in sync with the graph's state.
@@ -250,15 +281,25 @@ export const LABEL_ON_REOPEN_SQL = `sensitivity_label = CASE
 export async function ensureAssessActions(claimId: string): Promise<void> {
   const config = loadConfig();
   const tiers = await stewardTierCostEstimates();
+  // A first pass or a fresh one, at the label of the work that asks: a
+  // label with no version of its own on the node has not assessed it yet,
+  // whatever another label holds.
+  const assessedHere = oneLabelOnly()
+    ? `EXISTS (SELECT 1 FROM assessments_in_force x
+                     WHERE x.claim_id = c.id)`
+    : `EXISTS (SELECT 1 FROM assessments_versions x
+                     WHERE x.claim_id = c.id AND x.sensitivity_label = $2)`;
   const [claim] = await rawQuery<{ text: string; assessed: boolean }>(
     `SELECT c.text,
-            EXISTS (SELECT 1 FROM assessments_in_force x
-                     WHERE x.claim_id = c.id)
+            ${assessedHere}
               AS assessed
        FROM claims c
-      WHERE c.id = $1 AND c.state = 'active'`,
-    [claimId]
+      WHERE c.id = $1 AND c.state = 'active'${ownWorkSql("c")}`,
+    oneLabelOnly() ? [claimId] : [claimId, currentLabel()]
   );
+  // No row for a node that is not active, and none for a mirrored node at
+  // its own label, where the assessment is the public graph's
+  // (mirrored-node-service.ts).
   if (!claim) return;
   const kind = claim.assessed ? "reassess" : "assess";
   const group = ASSESS_GROUP(claimId);
@@ -301,9 +342,12 @@ export async function ensureAssessActions(claimId: string): Promise<void> {
  * opened only for a defect someone named.
  */
 export async function ensureCurateAction(anchorClaimId: string): Promise<string | null> {
+  // A mirrored node is the public graph's to curate, at its own label: a
+  // concern that involves one is anchored on this deployment's node, or
+  // raised at a label that reads it (mirrored-node-service.ts).
   const [claim] = await rawQuery<{ text: string }>(
-    `SELECT text FROM claims c
-      WHERE c.id = $1 AND c.state = 'active'
+    `SELECT c.text FROM claims c
+      WHERE c.id = $1 AND c.state = 'active'${ownWorkSql("c")}
         AND EXISTS (SELECT 1 FROM curation_requests r
                      WHERE r.anchor_claim_id = c.id AND r.consumed_at IS NULL)`,
     [anchorClaimId]
@@ -422,14 +466,19 @@ export async function ensureAuditAction(input: {
  * Returns the open row's id, or null when there is none.
  */
 export async function ensureRequestActions(requestId: string): Promise<string | null> {
-  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null; sensitivity_label: string }>(
-    `SELECT ask, state, budget_micro_usd, sensitivity_label FROM requests WHERE id = $1`,
+  const [req] = await rawQuery<{ ask: string; state: string; budget_micro_usd: string | null; sensitivity_label: string; asked_above: boolean }>(
+    `SELECT ask, state, budget_micro_usd, sensitivity_label, (asked_of_face_id IS NOT NULL) AS asked_above FROM requests WHERE id = $1`,
     [requestId]
   );
   if (!req || (CLOSED_REQUEST_STATES as readonly string[]).includes(req.state)) {
     await closeRequestActions(requestId);
     return null;
   }
+  // A request that asked for work at a label above, and paid for it there
+  // (ask-above-service.ts), has no row at this label: the work is done by
+  // an agent that reads what the asker could not, and a row here would buy
+  // the same question from one that cannot.
+  if (req.asked_above) return null;
   const group = REQUEST_GROUP(requestId);
   const budget = req.budget_micro_usd == null ? null : Number(req.budget_micro_usd);
   const variant = budget != null ? "full" : "scope";
@@ -441,7 +490,6 @@ export async function ensureRequestActions(requestId: string): Promise<string | 
      VALUES ('request', $1, $2, $3, $4, $5, $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-           label = EXCLUDED.label,
            ${LABEL_ON_REOPEN_SQL},
            status = CASE WHEN actions.status = 'running'
                          THEN actions.status ELSE 'open' END,
@@ -487,13 +535,13 @@ export async function closeRequestActions(requestId: string): Promise<void> {
     if (running.length > 0) return;
     const live = await tx.query<{ id: string; user_id: string | null; unspent: string }>(
       `SELECT id, user_id, (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-         FROM action_allocations
+         FROM minerval_whole.allocation_money
         WHERE exclusion_group = $1 AND released_at IS NULL
         FOR UPDATE`,
       [group]
     );
     for (const al of live) {
-      await tx.query(`UPDATE action_allocations SET released_at = now() WHERE id = $1`, [al.id]);
+      await tx.query(`UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`, [al.id]);
       if (al.user_id && Number(al.unspent) > 0) {
         await tx.query(
           `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, idempotency_key)
@@ -524,28 +572,38 @@ export async function reconcileActions(): Promise<{
   /** Mandates whose plan could not be materialized this sweep (logged). */
   plansFailed: number;
 }> {
+  // A pending slot with no open row. A node's own row is its slot for work
+  // at its own label; work asked for at another label waits in
+  // steward_slots, one row per node and label (steward-lease.ts), which
+  // only a deployment with more than one label has.
   const pending = await rawQuery<{ id: string; sensitivity_label: string }>(
     `SELECT c.id, c.sensitivity_label FROM claims c
       WHERE c.state = 'active' AND c.steward_state = 'pending'
         AND NOT EXISTS (SELECT 1 FROM actions a
-                         WHERE a.exclusion_group = 'assess:' || c.id::text
+                         WHERE a.exclusion_group = ${ASSESS_GROUP_SQL("c.id", "c.sensitivity_label")}
                            AND a.status IN ('open', 'running'))
       LIMIT 500`
   );
+  if (!oneLabelOnly()) {
+    pending.push(
+      ...(await rawQuery<{ id: string; sensitivity_label: string }>(
+        `SELECT s.claim_id AS id, s.sensitivity_label FROM steward_slots s
+           JOIN claims c ON c.id = s.claim_id AND c.state = 'active'
+          WHERE s.steward_state = 'pending'
+            AND NOT EXISTS (SELECT 1 FROM actions a
+                             WHERE a.exclusion_group = minerval_group_at('assess:' || s.claim_id::text, s.sensitivity_label)
+                               AND a.status IN ('open', 'running'))
+          LIMIT 500`
+      ))
+    );
+  }
   for (const row of pending) {
     // One claim's failure (a bad row, a transient DB error) must not take
     // the rest of the sweep with it: log and move on (#416).
     try {
-      // The sweep starts from the claim, not from a piece of work. A claim
-      // is pending because of the messages waiting on it, so the rows are
-      // opened at the label those messages carry when they agree on one,
-      // and the pass they pay for runs at it (pendingPassLabel in
-      // label-service.ts). With no message waiting, or with messages of
-      // more than one label, the rows take the claim's own label: a floor,
-      // under which work on a restricted claim is never opened as public.
-      // The pending slot is one per claim and does not say which label a
-      // pass was asked for at; one slot per label is later work.
-      const label = await pendingPassLabel(row.id, row.sensitivity_label);
+      // The rows are opened at the label of the slot that is pending, and
+      // the pass they pay for runs at it.
+      const label = row.sensitivity_label;
       await runAtLabel(label, `claim ${row.id}`, () => ensureAssessActions(row.id));
     } catch (err) {
       console.error(
@@ -624,7 +682,7 @@ export async function reconcileActions(): Promise<{
               END
         RETURNING a.exclusion_group
      )
-     UPDATE action_allocations al SET released_at = now()
+     UPDATE minerval_whole.allocation_money al SET released_at = now()
       WHERE al.exclusion_group IN (SELECT exclusion_group FROM gone)
         AND al.released_at IS NULL AND al.grant_id IS NOT NULL
         AND al.spent_micro_usd = 0`
@@ -642,7 +700,7 @@ export async function reconcileActions(): Promise<{
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
         AND NOT EXISTS (SELECT 1 FROM claims c
                          WHERE c.id = a.claim_id AND c.state = 'active'
-                           AND c.steward_state IN ('pending', 'running'))
+                           AND ${slotColumnSql("steward_state", "c", "a.sensitivity_label")} IN ('pending', 'running'))
       RETURNING a.id`
   );
 
@@ -654,7 +712,7 @@ export async function reconcileActions(): Promise<{
       WHERE a.kind = 'request' AND r.state IN ('met', 'declined', 'withdrawn', 'moot')
         AND (a.status = 'open'
              OR (a.status <> 'running' AND EXISTS (
-                  SELECT 1 FROM action_allocations al
+                  SELECT 1 FROM minerval_whole.allocation_money al
                    WHERE al.exclusion_group = a.exclusion_group
                      AND al.released_at IS NULL AND al.spent_micro_usd < al.amount_micro_usd)))`
   );
@@ -739,7 +797,7 @@ export async function openDueAgentRuns(): Promise<void> {
        VALUES ('lookout_run', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
       // A lookout decides for its work: its run is opened at its label.
@@ -773,7 +831,7 @@ export async function openDueAgentRuns(): Promise<void> {
        VALUES ('correspondent_run', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')`,
       // And so does a correspondent: its run is opened at its label.
@@ -802,7 +860,7 @@ async function openMandateSittingRow(g: Pick<PlanGrantRow, "id" | "name" | "stat
        VALUES ('grant_planning', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          -- A grant still in 'planning' with a closed planning action
          -- wants a fresh run (a failed write, a pushed-back plan).
@@ -838,7 +896,7 @@ async function openMandateSittingRow(g: Pick<PlanGrantRow, "id" | "name" | "stat
        VALUES ('mandate_review', $1, 'standard', $2, $3, $4, $5)
        ON CONFLICT (exclusion_group, variant) DO UPDATE
          SET status = 'open', cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-             sensitivity_label = EXCLUDED.sensitivity_label,
+             ${LABEL_ON_REOPEN_SQL},
              updated_at = now()
          WHERE actions.status IN ('done', 'superseded', 'cancelled')
            -- A mandate's Grantmaker works in one long session that wakes
@@ -948,7 +1006,7 @@ export async function mandateWorkInFlight(grantId: string): Promise<number> {
        (SELECT count(*) FROM actions a
          WHERE a.status IN ('open', 'running')
            AND a.kind NOT IN ('grant_planning', 'mandate_review', 'lookout_run', 'correspondent_run', 'resume')
-           AND EXISTS (SELECT 1 FROM action_allocations al
+           AND EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                         WHERE al.grant_id = $1 AND al.released_at IS NULL
                           AND al.exclusion_group = a.exclusion_group
                           AND (al.action_id IS NULL OR al.action_id = a.id)))
@@ -1048,10 +1106,26 @@ async function reconcileConsistencySweeps(): Promise<void> {
   // A sweep whose process died leaves its row 'running'; close it so the
   // coverage record reads true and the partition can be due again.
   await reclaimAbandonedSweeps();
+  // Where a deployment has more than one label the rows are opened label
+  // by label. A row names its partition's tag and is priced by how many
+  // judged nodes the partition holds, so it is made from what the label it
+  // is at reads: the partitions are listed inside each label, and a label
+  // opens a row only for a partition where a judgment of its own has been
+  // recorded since that label last swept it. Each label's rows have that
+  // label's own key (CONSISTENCY_GROUP).
+  if (oneLabelOnly()) return openDueConsistencySweeps(config.consistencyMinTagClaims);
+  const { everyLabel } = await import("./label-service.js");
+  for (const label of await everyLabel()) {
+    await runAtLabel(label, `consistency sweeps at ${label}`, () => openDueConsistencySweeps(config.consistencyMinTagClaims));
+  }
+}
+
+/** Open the rows of the partitions due a sweep at the label of the work in progress, and close those no longer due. */
+async function openDueConsistencySweeps(minTagClaims: number): Promise<void> {
   // Every due partition gets its rows: a partition is due at most once
   // per re-sweep interval, and the General mandate's escrow and day room
   // decide how many are bought.
-  const due = await duePartitions(config.consistencyMinTagClaims);
+  const due = (await duePartitions(minTagClaims)).filter((p) => oneLabelOnly() || p.changedAtOwnLabel > 0);
   const refs = due.map((p) => CONSISTENCY_GROUP(partitionRef(p)));
   // A partition no longer due loses its open rows, so open rows never
   // pile up across days, unless a live mandate's plan names it (a sweep
@@ -1059,9 +1133,9 @@ async function reconcileConsistencySweeps(): Promise<void> {
   // to fund, and the plan materializer reopens them anyway.
   await rawQuery(
     `UPDATE actions a SET status = 'cancelled', updated_at = now()
-      WHERE a.kind = 'consistency_sweep' AND a.status = 'open'
+      WHERE a.kind = 'consistency_sweep' AND a.status = 'open'${oneLabelOnly() ? "" : " AND a.sensitivity_label = minerval_write_label()"}
         AND NOT (a.exclusion_group = ANY($1::text[]))
-        AND NOT EXISTS (SELECT 1 FROM action_allocations al
+        AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL)
         AND NOT EXISTS (
@@ -1124,12 +1198,12 @@ export async function ensureFormalizeAction(
      SELECT 'formalize', $1, 'standard', c.id,
             'Formalize: ' || left(c.text, 280), $3, $4
        FROM claims c
-      WHERE c.id = $2 AND c.state = 'active'
+      WHERE c.id = $2 AND c.state = 'active'${ownWorkSql("c")}
         AND NOT EXISTS (SELECT 1 FROM claim_formalizations f
                          WHERE f.claim_id = c.id AND f.status = 'published')
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET cost_est_micro_usd = EXCLUDED.cost_est_micro_usd,
-           sensitivity_label = EXCLUDED.sensitivity_label,
+           ${LABEL_ON_REOPEN_SQL},
            status = 'open', updated_at = now()
        WHERE actions.status IN ('done', 'cancelled', 'superseded')
          AND actions.updated_at < now() - make_interval(hours => ${FORMALIZE_RETRY_HOURS})`,
@@ -1480,6 +1554,32 @@ async function formalizeToolGap(claimId: string): Promise<string | null> {
 }
 
 /** The ledger status one exclusion group (or one row) reads as. */
+/**
+ * A finished ingest of this address (and focus) at another label that the
+ * work in progress reads, or null. Work at each label has its own ingest
+ * group, and an ingest finished at a label this one reads has already put
+ * the document's claims where this work reads them.
+ */
+async function ingestDoneAtALabelRead(
+  url: string,
+  focus: string | null
+): Promise<Awaited<ReturnType<typeof groupLedger>>> {
+  if (oneLabelOnly()) return null;
+  const own = currentLabel();
+  const [reads] = await rawQuery<{ labels: string[] }>(
+    `SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS labels`,
+    [own]
+  );
+  const groups = (reads?.labels ?? []).filter((l) => l !== own).map((l) => INGEST_GROUP(url, focus, l));
+  if (groups.length === 0) return null;
+  const [row] = await rawQuery<{ id: string }>(
+    `SELECT id FROM actions WHERE exclusion_group = ANY($1::text[]) AND status = 'done'
+      ORDER BY updated_at DESC LIMIT 1`,
+    [groups]
+  );
+  return row ? groupLedger({ actionId: row.id }) : null;
+}
+
 async function groupLedger(
   where: { group: string } | { actionId: string }
 ): Promise<{
@@ -1530,8 +1630,9 @@ interface ClaimStanding {
 
 async function claimStanding(claimId: string): Promise<ClaimStanding | null> {
   const [row] = await rawQuery<ClaimStanding>(
-    `SELECT c.id, c.state, c.steward_state, c.steward_error_reason,
-            COALESCE(c.steward_attempts, 0) AS steward_attempts,
+    `SELECT c.id, c.state, ${slotColumnSql("steward_state")} AS steward_state,
+            ${slotColumnSql("steward_error_reason")} AS steward_error_reason,
+            COALESCE(${slotColumnSql("steward_attempts")}, 0) AS steward_attempts,
             EXISTS (SELECT 1 FROM claim_formalizations f
                      WHERE f.claim_id = c.id AND f.status = 'published') AS published,
             -- Each kind keeps its current assessment in its own table: a
@@ -1612,7 +1713,7 @@ export async function materializeGrantPlan(
         LIMIT 1`,
       [INGEST_GROUP(item.url, normalizeFocus(item.focus))]
     );
-    if (!closed) break;
+    if (!closed && !(await ingestDoneAtALabelRead(item.url, normalizeFocus(item.focus)))) break;
     cursor++;
   }
   if (cursor !== g.plan_cursor) {
@@ -1913,8 +2014,16 @@ async function materializePlanItem(
       // (fundGrantSelfActions), until it runs. Forcing "done" on position
       // hid exactly those (#427). Only an item with no row at all (executed
       // before the ledger recorded plan work) reads done on position alone.
-      const row = await groupLedger({ group });
+      const row = (await groupLedger({ group })) ?? (await ingestDoneAtALabelRead(item.url, focus));
       return row ? fromRow(row) : { status: "done", checked_at: nowIso() };
+    }
+    // A document already read at a label this work reads has been read for
+    // this work too: its claims and instances are there to read. The item
+    // is met by that row, at no cost, as it was when a group had one row
+    // whatever the label. A fresh reading at this label is its own row.
+    if (!(await groupLedger({ group }))) {
+      const elsewhere = await ingestDoneAtALabelRead(item.url, focus);
+      if (elsewhere) return fromRow(elsewhere);
     }
     // An unexecuted one gets (or keeps) its open row, funded by the grant's
     // own escrow (fundGrantSelfActions). The focus is recorded first, so the
@@ -2127,12 +2236,16 @@ async function materializePlanItem(
     // it runs on every sweep until every child is dealt with, which catches
     // the children the node's pass mints. An item that names no tier
     // releases and orders nothing.
+    // A deferred stub is released by work at the stub's own label: a
+    // node's row is its own label's to change (the database refuses
+    // another's), so a mandate at one label leaves another label's stubs
+    // as that label's own economics left them.
     if (tier) {
       await rawQuery(
         `UPDATE claims SET steward_state = 'pending', updated_at = now()
           WHERE state = 'active' AND steward_state = 'deferred'
             AND id IN (SELECT child_claim_id FROM claim_relationships
-                        WHERE parent_claim_id = $1)`,
+                        WHERE parent_claim_id = $1)${oneLabelOnly() ? "" : ` AND sensitivity_label = '${currentLabel()}'`}`,
         [claim.id]
       );
     }
@@ -3022,7 +3135,7 @@ export async function completeAction(
       `SELECT id, grant_id, user_id, claim_id, action_id,
               amount_micro_usd::bigint AS amount,
               (amount_micro_usd - spent_micro_usd)::bigint AS unspent
-         FROM action_allocations
+         FROM minerval_whole.allocation_money
         WHERE exclusion_group = $1 AND released_at IS NULL
           AND spent_micro_usd < amount_micro_usd
         ORDER BY created_at ASC
@@ -3055,7 +3168,7 @@ export async function completeAction(
     );
     for (const r of losers) {
       await tx.query(
-        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
+        `UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`,
         [r.id]
       );
       await refundUser({ ...r, key: `release:${r.id}` });
@@ -3078,7 +3191,7 @@ export async function completeAction(
         const take = Math.min(Number(row.unspent), Math.max(0, share));
         if (take <= 0) continue;
         await tx.query(
-          `UPDATE action_allocations
+          `UPDATE minerval_whole.allocation_money
               SET spent_micro_usd = spent_micro_usd + $2
             WHERE id = $1`,
           [row.id, take]
@@ -3137,15 +3250,12 @@ export async function completeAction(
           const claimId =
             covering.find((r) => r.grant_id === grantId)?.claim_id ?? null;
           await tx.query(
+            // The record of a shortfall met, at the label of the row that ran.
             `INSERT INTO action_allocations
                (exclusion_group, action_id, claim_id, grant_id,
                 amount_micro_usd, spent_micro_usd, released_at, sensitivity_label)
-             VALUES ($1, $2, $3, $4, $5, $5, now(), (SELECT sensitivity_label FROM actions WHERE id = $2))`,
-            // A share of a settled row's cost is worked out from the row,
-            // the same whoever settles it, so it carries the row's label
-            // and not the settler's (src/labels.ts). It holds no brief or
-            // reason.
-            [action.exclusion_group, actionId, claimId, grantId, share]
+             VALUES ($1, $2, $3, $4, $5, $5, now(), COALESCE($6, (SELECT sensitivity_label FROM actions WHERE id = $2)))`,
+            [action.exclusion_group, actionId, claimId, grantId, share, labelInContext()]
           );
           assigned += share;
           consumed += share;
@@ -3160,7 +3270,7 @@ export async function completeAction(
     for (const r of covering) {
       if (Number(r.unspent) <= 0) continue;
       await tx.query(
-        `UPDATE action_allocations SET released_at = now() WHERE id = $1`,
+        `UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`,
         [r.id]
       );
       await refundUser({ ...r, key: `settle:${r.id}` });
@@ -3169,7 +3279,7 @@ export async function completeAction(
     // told exactly when its money has come back (event-service.ts).
     const [done] = await tx.query<{ kind: string; claim_id: string | null; target_ref: string | null; label: string; grants: string[] }>(
       `SELECT a.kind, a.claim_id, a.target_ref, a.label,
-              ARRAY(SELECT DISTINCT al.grant_id::text FROM action_allocations al
+              ARRAY(SELECT DISTINCT al.grant_id::text FROM minerval_whole.allocation_money al
                      WHERE al.action_id = a.id AND al.grant_id IS NOT NULL) AS grants
          FROM actions a WHERE a.id = $1`,
       [actionId]
@@ -3213,7 +3323,7 @@ export async function completeAction(
 export async function actionFunderGrants(actionId: string): Promise<string[]> {
   const rows = await rawQuery<{ grant_id: string }>(
     `SELECT DISTINCT al.grant_id
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        JOIN actions a ON a.id = $1
       WHERE al.exclusion_group = a.exclusion_group
         AND al.released_at IS NULL
@@ -3257,11 +3367,11 @@ async function attributeIngestedSource(grantId: string, url: string, focus: stri
   // funder, when it submits (engine-executor.ts runIngestAction).
   const [have] = await rawQuery(
     `SELECT 1 WHERE EXISTS (SELECT 1 FROM grant_sources WHERE grant_id = $1 AND url = $2)
-                 OR EXISTS (SELECT 1 FROM action_allocations WHERE grant_id = $1 AND exclusion_group = $3)`,
+                 OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money WHERE grant_id = $1 AND exclusion_group = $3)`,
     [grantId, url, INGEST_GROUP(url, focus)]
   );
   if (have) return;
-  const [source] = await rawQuery<{ id: string }>(`SELECT id FROM sources WHERE url = $1 LIMIT 1`, [url]);
+  const [source] = await rawQuery<{ id: string }>(`SELECT id FROM sources WHERE url = $1${oneSourceForAddressSql() || " LIMIT 1"}`, [url]);
   if (!source) return;
   const [job] = await rawQuery<{ id: string }>(
     `SELECT id FROM jobs
@@ -3289,7 +3399,7 @@ export async function largestActionFunder(
     budget_job_id: string | null;
   }>(
     `SELECT al.grant_id, al.user_id, g.budget_job_id
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        JOIN actions a ON a.id = $1
        LEFT JOIN grants g ON g.id = al.grant_id
       WHERE al.exclusion_group = a.exclusion_group

@@ -15,6 +15,8 @@ import { seedClaim } from "./helpers.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { addArgument, retireArgument, setArgumentEvaluation } from "../../src/services/argument-service.js";
 import { getArgumentView } from "../../src/services/argument-view-service.js";
+import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
+import { defineQuantity, recordEstimate } from "../../src/services/quantity-service.js";
 
 const steward = async (name: string, input: Record<string, unknown>) =>
   JSON.parse(await executeStewardTool(name, input));
@@ -43,6 +45,28 @@ beforeAll(async () => {
     argumentId,
     edge!.id,
   ]);
+});
+
+describe("evaluate_argument on a quantity", () => {
+  // In the second run with real models every evaluation of an argument on a quantity was answered "the claim has no
+  // current assessment yet; record one with update_claim_assessment", estimate or not. The public Steward recorded
+  // its estimate again after each such answer and evaluated again, 47 times, until its 200-turn backstop.
+  it("is anchored to the estimate in force, and says nothing of a claim's assessment", async () => {
+    const quantity = await seedClaim("evaluated quantity");
+    await defineQuantity({
+      claimId: quantity,
+      definition: { measures: "Tests run", population: "This suite", unit: { kind: "count", noun: "tests", min: 0 } },
+      createdBy: "dbtest",
+    });
+    const argument = await addArgument({ claimId: quantity, stance: "for", name: "a count", content: "Counted.", createdBy: "claim_steward" });
+    const before = await steward("evaluate_argument", { argument_id: argument.id, verdict: "likely", evaluation: "A count is a count." });
+    expect(before.message).not.toContain("update_claim_assessment");
+    expect(before.message).toContain("update_quantity_estimate");
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 1, high: 5 }, work: "counted" });
+    const after = await steward("evaluate_argument", { argument_id: argument.id, verdict: "likely", evaluation: "A count is a count." });
+    expect(after.success).toBe(true);
+    expect(after.message).not.toContain("Note:");
+  });
 });
 
 describe("record_argument_instance", () => {
@@ -93,6 +117,13 @@ describe("get_argument", () => {
       conclusion: { id: claimId },
     });
     expect(JSON.stringify(view)).not.toContain("instance");
+  });
+
+  // In the second run with real models a Grantmaker's review called get_argument with "none". The query builder
+  // wraps the database's refusal of the malformed uuid, so the tool did not see its code, and the run ended.
+  it("answers an id that is not a uuid with an error the run can act on", async () => {
+    const out = JSON.parse((await executeGraphReadTool("get_argument", { argument_id: "none" }))!);
+    expect(out.code).toBe("INVALID_ARGUMENT_ID");
   });
 
   it("adds the evaluation with its history", async () => {

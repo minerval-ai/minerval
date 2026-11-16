@@ -19,7 +19,17 @@
  * third-party models with their own prices. That adapter reports the provider's
  * OWN computed cost, which overrides everything here; see
  * `UsageTokens.providerCostMicroUsd`.
+ *
+ * A deployment can state prices of its own in MODEL_PRICES (model-prices.ts):
+ * for a model this table does not know, or in place of this table's for one it
+ * does. A stated price wins over the table. Where a deployment creates its own
+ * owls, a model with no price at all is refused before it is called
+ * (assertModelPriced below); everywhere else an unknown model meters at the
+ * fallback rate, as it always has.
  */
+import { loadConfig } from "../config.js";
+import { modelPriceExample, type StatedModelPrice } from "./model-prices.js";
+import { resolveProvider } from "./providers/routing.js";
 
 interface ModelRates {
   /** USD per 1M uncached input tokens. */
@@ -100,7 +110,8 @@ const FALLBACK_RATES: ModelRates = { inputPerMtok: 10, outputPerMtok: 50 };
 const DEFAULT_CACHE_READ_MULTIPLIER = 0.1;
 const DEFAULT_CACHE_WRITE_MULTIPLIER = 1.25;
 
-export function ratesForModel(model: string): ModelRates {
+/** The table's entry for a model: longest prefix wins. */
+function tableRates(model: string): ModelRates | null {
   let best: ModelRates | null = null;
   let bestLen = 0;
   for (const [prefix, rates] of Object.entries(MODEL_RATES)) {
@@ -109,7 +120,42 @@ export function ratesForModel(model: string): ModelRates {
       bestLen = prefix.length;
     }
   }
-  return best ?? FALLBACK_RATES;
+  return best;
+}
+
+/** The prices this deployment states (MODEL_PRICES). None in a config without the setting. */
+function statedPrices(): readonly StatedModelPrice[] {
+  return loadConfig()?.modelPrices ?? [];
+}
+
+/** The price this deployment states for a model, if it states one: longest match wins. */
+export function statedPriceFor(model: string): StatedModelPrice | null {
+  let best: StatedModelPrice | null = null;
+  for (const price of statedPrices()) {
+    if (model.startsWith(price.model) && (!best || price.model.length > best.model.length)) {
+      best = price;
+    }
+  }
+  return best;
+}
+
+export function ratesForModel(model: string): ModelRates {
+  const table = tableRates(model);
+  const stated = statedPriceFor(model);
+  if (stated) {
+    // A stated price that leaves the cache multipliers out keeps the
+    // table's for a model the table knows: a negotiated input price does
+    // not change how the provider bills its cache.
+    const readMultiplier = stated.cacheReadMultiplier ?? table?.cacheReadMultiplier;
+    const writeMultiplier = stated.cacheWriteMultiplier ?? table?.cacheWriteMultiplier;
+    return {
+      inputPerMtok: stated.inputUsdPerMtok,
+      outputPerMtok: stated.outputUsdPerMtok,
+      ...(readMultiplier !== undefined ? { cacheReadMultiplier: readMultiplier } : {}),
+      ...(writeMultiplier !== undefined ? { cacheWriteMultiplier: writeMultiplier } : {}),
+    };
+  }
+  return table ?? FALLBACK_RATES;
 }
 
 /**
@@ -121,7 +167,77 @@ export function ratesForModel(model: string): ModelRates {
  * exempt: they report provider cost per call and are priced from that instead.
  */
 export function hasExplicitRates(model: string): boolean {
-  return Object.keys(MODEL_RATES).some((prefix) => model.startsWith(prefix));
+  return tableRates(model) !== null || statedPriceFor(model) !== null;
+}
+
+/**
+ * Whether a call to the model has a price: the table or the deployment
+ * states one, or its provider prices each call itself. Only the two
+ * providers priced from the table (Anthropic and OpenAI) can lack one. A
+ * provider that reports its own cost (OpenRouter), and an endpoint a
+ * deployment declares with its prices, are priced by what they report or
+ * declare. A model ID that resolves to no provider is not this function's
+ * to refuse: routing does, with its own message.
+ */
+export function modelIsPriced(model: string): boolean {
+  const provider = resolveProvider(model);
+  if (provider !== "anthropic" && provider !== "openai") return true;
+  return hasExplicitRates(model);
+}
+
+/**
+ * The models this deployment is configured to run that have no price: each
+ * setting whose value is a model ID (STEWARD_MODEL and the rest) and whose
+ * model the table and MODEL_PRICES both lack. Where owls are created, a
+ * run on one of these is refused at its first call, so the owls page and
+ * the preflight say so before any run starts.
+ */
+export function unpricedConfiguredModels(
+  config: object = loadConfig()
+): Array<{ setting: string; model: string }> {
+  return Object.entries(config)
+    .filter(
+      (entry): entry is [string, string] =>
+        /Model$/.test(entry[0]) && typeof entry[1] === "string" && entry[1].length > 0
+    )
+    .filter(([, model]) => !modelIsPriced(model))
+    .map(([key, model]) => ({
+      // stewardStrongModel is set by STEWARD_STRONG_MODEL.
+      setting: key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase(),
+      model,
+    }))
+    .sort((a, b) => a.setting.localeCompare(b.setting));
+}
+
+/** What a refusal of a call to a model with no price says. */
+export function unpricedModelMessage(model: string): string {
+  return (
+    `The model "${model}" has no price in this deployment, so the call was refused before ` +
+    `anything was sent. This deployment creates its own owls, and one owl covers one dollar ` +
+    `of metered cost at the prices it is configured with: a model with no price would run ` +
+    `uncounted. State its price in MODEL_PRICES, in US dollars per million input and output ` +
+    `tokens, for example ${modelPriceExample(model)}, or use a model that has a price.`
+  );
+}
+
+/** A call refused because its model has no price here. */
+export class ModelNotPricedError extends Error {
+  readonly code = "MODEL_NOT_PRICED";
+  constructor(readonly model: string) {
+    super(unpricedModelMessage(model));
+    this.name = "ModelNotPricedError";
+  }
+}
+
+/**
+ * Refuse a call to a model with no price, in a deployment that creates its
+ * own owls (OWLS=created). There an owl is defined by the deployment's own
+ * prices, so the fallback rate would be a number nobody chose. On the
+ * public graph, and wherever owls are sold, this does nothing.
+ */
+export function assertModelPriced(model: string): void {
+  if (loadConfig()?.owls !== "created") return;
+  if (!modelIsPriced(model)) throw new ModelNotPricedError(model);
 }
 
 export interface UsageTokens {

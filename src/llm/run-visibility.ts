@@ -28,7 +28,22 @@
  *
  * tests/unit/llm/run-visibility.test.ts fails when a tool defined in the code
  * is missing here, so every new tool gets a decision.
+ *
+ * Inside a members-only deployment some of these reasons are what a label
+ * already holds. A run that read an organization's data through a
+ * connection, ran a command over its files, or redacted a page written at a
+ * label, is private here because that material is not the public's. It is
+ * at the run's label, and a member who reads that label reads what the
+ * agents wrote there, their runs included (constitution §26, §11).
+ * REASONS_A_LABEL_COVERS lists those reasons; a run all of whose reasons
+ * are on it is served to members who read its label
+ * (services/run-view-service.ts), with source text held to `read_sources`
+ * as in any log. Every other reason keeps a run withheld from members too:
+ * a person's own conversation, a funder's words, account and payee detail,
+ * operator data, reports.
  */
+
+import { isConnectionToolName } from "../connections.js";
 
 export type Reads = "public" | "private";
 
@@ -36,6 +51,43 @@ export interface Classification {
   reads: Reads;
   /** Why, in a phrase: for public, what the output is; for private, what it exposes. */
   why: string;
+}
+
+/**
+ * Where a run's log holds a source's stored text (src/raw-sources.ts): the
+ * agents whose opening message carries a document, and the tools whose
+ * output is a window of one. A reader of the log who may not open raw
+ * sources is shown these parts as withheld (services/run-view-service.ts).
+ * A passage an agent chose to quote is not on this list: that is what the
+ * agent wrote, and reading at the label covers it.
+ *
+ * tests/unit/db/raw-source-text.test.ts fails when a tool file comes to
+ * read a source's stored text and is not accounted for here.
+ */
+export const AGENTS_GIVEN_SOURCE_TEXT: Readonly<Record<string, string>> = {
+  extractor: "the document it is asked to read is in its opening message",
+};
+
+export const TOOLS_RETURNING_SOURCE_TEXT: Readonly<Record<string, string>> = {
+  get_page_to_redact: "with source_id, a window of the stored text of a source the page drew on",
+  open_reading: "a window of what an organization's system returned through a connection, which is the text of the source a kept reading becomes",
+  run_command: "what a command printed over the files of a file set, which can be the files' own text",
+  open_output: "a window of what such a command printed",
+  provenance_read_source: "a window of the source's stored text",
+  examination_outline: "the opening words of each segment of the examined document",
+  get_contribution_details: "an excerpt of the stored text of a source proposed for intake",
+};
+
+/**
+ * Whether a tool's output holds a source's text. Beside the list above, a
+ * connection's own tools: each returns what an organization's system holds,
+ * as it holds it, and that result is the text of the source a kept reading
+ * becomes. They are named by an administrator's prefix and a server, so no
+ * list can hold them, and are known by the shape of the name
+ * (src/connections.ts).
+ */
+export function returnsSourceText(tool: string): boolean {
+  return tool in TOOLS_RETURNING_SOURCE_TEXT || isConnectionToolName(tool);
 }
 
 /** Agents whose inputs are public by construction; any other agent starts private. */
@@ -56,6 +108,7 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
   matcher: { reads: "public", why: "a source's assertion, public once submitted; on-demand matching runs untraced, or private in record mode" },
   math_solver: { reads: "private", why: "an attempt and earlier attempts, unpublished until the platform publishes them" },
   program_officer: { reads: "private", why: "petitions and inbox items with fields the public views leave out" },
+  redactor: { reads: "private", why: "a page written at a label only some readers may read, before anything is removed from it" },
   researcher: { reads: "public", why: "a research task; runs a Grantmaker launched from a funder's brief are marked private" },
   steward: { reads: "public", why: "a claim's id and context; the graph it reads is public" },
   tagger: { reads: "public", why: "public claims" },
@@ -63,6 +116,19 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
 
 /** Every tool an agent can call, by what its output can carry. */
 export const TOOL_READS: Readonly<Record<string, Classification>> = {
+  hold_part: { reads: "private", why: "confirms a hold on a part of a page held at a label only some readers read" },
+  delay_part: { reads: "private", why: "confirms a delay on a part of a page held at a label only some readers read" },
+  lift_hold: { reads: "private", why: "confirms that a hold or a delay on such a part was taken back" },
+  finish_redaction: { reads: "private", why: "the fingerprint and removal counts of a page not yet released" },
+  get_page_to_redact: { reads: "private", why: "a page as written at a label only some readers read, and its sources' text" },
+  leave_judgment_standing: { reads: "public", why: "confirms the run's own write, naming labels and a date and nothing the run read" },
+  get_redaction_policies: { reads: "private", why: "boundaries' policies, read by the two sides of each boundary and not by everyone" },
+  get_redaction_policy: { reads: "private", why: "a boundary's policy, read by the two sides of that boundary and not by everyone" },
+  get_redaction_to_check: { reads: "private", why: "a page as written and as redacted, with the Redactor's notes" },
+  look_at_destination: { reads: "private", why: "what is found where a page is going, looked for with words from the page before it is released" },
+  record_fidelity_outcome: { reads: "private", why: "confirms an outcome on a page held at a label only some readers read" },
+  redact: { reads: "private", why: "a part of a page as it reads after a removal, before release" },
+  restore: { reads: "private", why: "a part of a page as it reads after a removal is taken back, before release" },
   add_answer: { reads: "public", why: "confirms the run's own write to public graph records" },
   add_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
   add_decomposition_edge: { reads: "public", why: "confirms the run's own write to public graph records" },
@@ -120,6 +186,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   flag_issue: { reads: "public", why: "confirms the run's own write; reputation and suspension state are public" },
   flag_reassessment: { reads: "public", why: "lookout records, public on the mandate's lookout route" },
   fund_request: { reads: "public", why: "confirms the run's own funding; a request's ledger is public on GET /requests/:id" },
+  decline_asked_request: { reads: "public", why: "confirms the run's own decision on a request asked of its mandate; it returns the id of the request at its own label and fixed words" },
   get_agent_reports: { reads: "private", why: "agent reports and triage notes, served only with the service key" },
   get_argument: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
   get_assessment_history: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
@@ -149,6 +216,9 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   grant_overview: { reads: "private", why: "the grant workspace and funder notes, which no route serves" },
   importance_distribution: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
   ingestion_report: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
+  keep_analysis: { reads: "private", why: "an analysis of an organization's own files, kept from the sandbox" },
+  keep_file: { reads: "private", why: "a file of an organization's own file set" },
+  keep_reading: { reads: "private", why: "a reading of an organization's own data, kept from a connection" },
   lean_check: { reads: "public", why: "checker and Mathlib output for text the run sent; checks are public on GET /lean-checks/:id" },
   lean_elaborate: { reads: "public", why: "checker and Mathlib output for text the run sent; checks are public on GET /lean-checks/:id" },
   lean_search: { reads: "public", why: "checker and Mathlib output for text the run sent; checks are public on GET /lean-checks/:id" },
@@ -181,6 +251,8 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   notebook_write: { reads: "private", why: "a run's notebook, unpublished (solver) or not served (researcher)" },
   notify_claim_steward: { reads: "public", why: "confirms the run's own write to public graph records" },
   notify_steward: { reads: "public", why: "confirms the message; the budget left it reports is run spend, public on GET /changes" },
+  open_output: { reads: "private", why: "the output of a command run over an organization's own files" },
+  open_reading: { reads: "private", why: "an organization's own data, as a connection returned it" },
   pangram_check_ai: { reads: "public", why: "third-party analysis of a passage or URL the run chose" },
   pangram_find_sources: { reads: "public", why: "third-party analysis of a passage or URL the run chose" },
   petition_mandate: { reads: "public", why: "a mandate's decision on a petition, public on the mandate's routes" },
@@ -235,10 +307,13 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   remove_subclaim_edge: { reads: "public", why: "confirms the run's own write to public graph records" },
   report: { reads: "public", why: "ends the loop; returns only an acknowledgement" },
   resolve_finding: { reads: "public", why: "confirms the run's own write; reputation and suspension state are public" },
+  resolve_identifier: { reads: "public", why: "the address a fixed resolver has for the identifier the run passed; nothing is read" },
   retire_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
+  restore_below: { reads: "public", why: "confirms the run's own write to public graph records" },
   reverse_reconciliation: { reads: "public", why: "confirms the run's own write to public graph records" },
   revise_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
   revise_request: { reads: "public", why: "confirms the run's own write to public graph records" },
+  run_command: { reads: "private", why: "the output of a command run over an organization's own files" },
   scope_sources: { reads: "public", why: "lookout records, public on the mandate's lookout route" },
   search_claims: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
   search_findings: { reads: "public", why: "published findings, public on GET /findings" },
@@ -302,9 +377,70 @@ export function agentPrivateReason(agent: string): string | null {
   return c.reads === "private" ? `agent:${agent}` : null;
 }
 
-/** The reason executing `tool` makes a run private, or null when its output is public. */
+/**
+ * The reason executing `tool` makes a run private, or null when its output
+ * is public. A connection's tools are named by its administrator's prefix
+ * and its server, so no list can hold them: they are known by the shape of
+ * the name (src/connections.ts), and what they return is an organization's
+ * own data.
+ */
 export function toolPrivateReason(tool: string): string | null {
+  if (isConnectionToolName(tool)) return `tool:${tool}`;
   const c = TOOL_READS[tool];
   if (!c) return `tool:${tool}:unclassified`;
   return c.reads === "private" ? `tool:${tool}` : null;
+}
+
+/** The reason an Audit run carries when what it was handed is a page whose redaction it checks, and nothing else. */
+export const REDACTION_CHECK_REASON = "input:redaction-check";
+
+/**
+ * The private reasons that a label covers in a members-only deployment:
+ * what each protects is material at the run's own label, written or read
+ * there by an agent, which a member who reads that label reads. Each with
+ * why. Text a tool returned from a source is still withheld from a reader
+ * without `read_sources` (TOOLS_RETURNING_SOURCE_TEXT, returnsSourceText).
+ *
+ * A reason not listed keeps its run withheld from everyone but a direct
+ * service caller, in every deployment. tests/unit/llm/run-visibility.test.ts
+ * holds this list to private reasons that exist.
+ */
+export const REASONS_A_LABEL_COVERS: Readonly<Record<string, string>> = {
+  "agent:redactor": "the page it is handed is the page at the run's label, which readers of that label read",
+  [REDACTION_CHECK_REASON]: "the page whose redaction Audit checks is the page at the run's label",
+  "input:research-report": "a report by research this run commissioned, written at the run's label",
+  "tool:get_page_to_redact": "the page at the run's label; its sources' text is held to read_sources",
+  "tool:redact": "a part of the page at the run's label",
+  "tool:restore": "a part of the page at the run's label",
+  "tool:hold_part": "a hold on a part of the page at the run's label",
+  "tool:delay_part": "a delay on a part of the page at the run's label",
+  "tool:lift_hold": "a hold or a delay on a part of the page at the run's label",
+  "tool:finish_redaction": "the fingerprint and removal counts of the page at the run's label",
+  "tool:get_redaction_policy": "the policy as the run's label reads it",
+  "tool:get_redaction_policies": "the policies as the run's label reads them",
+  "tool:get_redaction_to_check": "the page at the run's label, as written and as redacted, with the Redactor's notes",
+  "tool:look_at_destination": "names of what the readers on the other side of a boundary read, found with words from the page at the run's label",
+  "tool:record_fidelity_outcome": "an outcome on the page at the run's label",
+  "tool:open_reading": "an organization's data read at the run's label; held to read_sources",
+  "tool:keep_reading": "a source kept at the run's label",
+  "tool:run_command": "a command over an organization's files at the run's label; its output is held to read_sources",
+  "tool:open_output": "the output of such a command; held to read_sources",
+  "tool:keep_analysis": "a source kept at the run's label",
+  "tool:keep_file": "a source kept at the run's label",
+  "tool:notebook_read": "the run's own working notes, written at its label",
+  "tool:notebook_write": "the run's own working notes, written at its label",
+};
+
+/**
+ * Whether a label covers this private reason, among all of a run's
+ * reasons. A connection's tools are known by the shape of the name, as in
+ * toolPrivateReason, and what they return is held to read_sources. An Audit
+ * run starts private because an audit's context can carry operator data;
+ * the label covers that only where the run says its context was a page to
+ * check (REDACTION_CHECK_REASON).
+ */
+export function labelCoversReason(reason: string, all: readonly string[]): boolean {
+  if (reason === "agent:audit") return all.includes(REDACTION_CHECK_REASON);
+  if (reason in REASONS_A_LABEL_COVERS) return true;
+  return reason.startsWith("tool:") && isConnectionToolName(reason.slice("tool:".length));
 }

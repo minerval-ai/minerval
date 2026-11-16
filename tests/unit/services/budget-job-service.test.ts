@@ -31,7 +31,7 @@ const { state, handleQuery } = vi.hoisted(() => {
     if (q.includes("SELECT id FROM grants WHERE budget_job_id")) {
       return state.grantForJob ? [state.grantForJob] : [];
     }
-    if (q.includes("UPDATE action_allocations SET released_at")) {
+    if (q.includes("UPDATE minerval_whole.allocation_money SET released_at")) {
       state.releasedAllocations.push(params);
       return [];
     }
@@ -47,7 +47,7 @@ const { state, handleQuery } = vi.hoisted(() => {
     if (q.includes("JOIN grants g ON g.id = r.to_grant_id")) {
       return state.regrantsIn;
     }
-    if (q.includes("UPDATE regrants")) {
+    if (q.includes("UPDATE minerval_whole.regrant_money")) {
       // Set-to-target stamp: returns the PRIOR refunded value when the
       // stamp advanced, nothing when already at/past the target.
       if (!state.stampAccepted) return [];

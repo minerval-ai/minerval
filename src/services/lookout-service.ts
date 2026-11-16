@@ -379,36 +379,12 @@ export async function queueLookoutEvent(input: {
   return { queued: rows.length > 0 };
 }
 
-/**
- * Fan an event out to every active lookout that watches for `kind` on an
- * active mandate. Which lookouts care about THIS retraction is their
- * judgment, so every subscriber gets it; the per-lookout event cap keeps a
- * noisy poller from queueing more than one run can read.
- */
-export async function queueLookoutEventsByTrigger(input: {
-  kind: LookoutTriggerKind;
-  payload: Record<string, unknown>;
-  /** Unconsumed events a lookout may hold before further ones are dropped. */
-  maxPendingPerLookout?: number;
-}): Promise<{ queued: number }> {
-  const cap = input.maxPendingPerLookout ?? 50;
-  const rows = await rawQuery<{ id: string }>(
-    // The fan-out is a timer's (the retraction poll), not a run's, and each
-    // event is for one lookout: it carries that lookout's label, read here
-    // with the row (src/labels.ts).
-    `INSERT INTO lookout_events (lookout_id, kind, payload, sensitivity_label)
-     SELECT l.id, $1, $2::jsonb, l.sensitivity_label
-       FROM lookouts l
-       JOIN grants g ON g.id = l.grant_id
-      WHERE l.status = 'active' AND g.status = 'active'
-        AND l.triggers ? $1
-        AND (SELECT COUNT(*) FROM lookout_events e
-              WHERE e.lookout_id = l.id AND e.consumed_at IS NULL) < $3
-     RETURNING id`,
-    [input.kind, JSON.stringify(input.payload), cap]
-  );
-  return { queued: rows.length };
-}
+// There is no function here that hands one event to every lookout that
+// watches for a kind. The one fan-out there is (the retraction poll,
+// workers/lookout-triggers.ts) puts each lookout's event together at that
+// lookout's label, from what the label reads, and queues it with
+// queueLookoutEvent: one payload written for every subscriber would carry
+// to each what only some of them may read (db/clearance.ts).
 
 export interface LookoutEventRow {
   id: string;

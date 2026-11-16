@@ -51,6 +51,9 @@ vi.mock("../../../src/services/contributor-service.js", async (orig) => ({
 vi.mock("../../../src/db/client.js", async (orig) => ({
   ...(await orig<typeof import("../../../src/db/client.js")>()),
   rawQuery: vi.fn(async () => []),
+  // Asked of the database itself, on the owner's connection, where a
+  // credential works at one label: this deployment holds one label.
+  deploymentHoldsLabels: vi.fn(async () => false),
 }));
 
 const savedEnv = { ...process.env };
@@ -72,12 +75,8 @@ afterAll(() => {
   Object.assign(process.env, savedEnv);
 });
 
-/**
- * A small app from the real plugins, with one route of each kind. With
- * `rateLimit`, the anonymous limit is registered where the real app has it:
- * before the hook that authenticates every request.
- */
-async function smallApp(env: Record<string, string>, rateLimit = false): Promise<FastifyInstance> {
+/** A small app from the real plugins, with one route of each kind. */
+async function smallApp(env: Record<string, string>): Promise<FastifyInstance> {
   setEnv(env);
   const { registerCors } = await import("../../../src/server/plugins/cors.js");
   const { registerAuth } = await import("../../../src/server/plugins/auth.js");
@@ -90,10 +89,6 @@ async function smallApp(env: Record<string, string>, rateLimit = false): Promise
   await registerCors(app);
   await registerAuth(app);
   await registerRouteCatalog(app);
-  if (rateLimit) {
-    const { registerAnonymousRateLimit } = await import("../../../src/server/plugins/anonymous-rate-limit.js");
-    await registerAnonymousRateLimit(app);
-  }
   await registerMembersOnly(app);
 
   app.get("/health", async () => ({ status: "ok" }));
@@ -222,41 +217,6 @@ describe("members-only", () => {
         expect(res.statusCode, url).toBe(401);
         expect(res.json().code, url).toBe("SIGN_IN_REQUIRED");
       }
-    } finally {
-      await dev.close();
-    }
-  });
-
-  it("counts a made-up key against its address in every environment, and past the limit the hook is never reached", async () => {
-    // No key configured, outside production: on an open deployment this is
-    // keyless local development and nothing is counted. Here there is no
-    // dev account, so the anonymous limit stands in front of the hook.
-    const dev = await smallApp({ ENVIRONMENT: "development", READS: "members", ANONYMOUS_RATE_LIMIT_PER_MINUTE: "3" }, true);
-    try {
-      const headers = { "x-api-key": "made-up", "cf-connecting-ip": "203.0.113.7" };
-      resolveApiKey.mockClear();
-      for (let i = 0; i < 3; i++) {
-        const res = await dev.inject({ url: "/open", headers });
-        expect(res.statusCode).toBe(401);
-        expect(res.headers["ratelimit-policy"]).toBe("3;w=60");
-      }
-      // Each of those was looked up twice: once by the limit, to see whether
-      // the key is one it knows, and once by the hook that authenticates.
-      expect(resolveApiKey).toHaveBeenCalledTimes(6);
-
-      const refused = await dev.inject({ url: "/open", headers });
-      expect(refused.statusCode).toBe(429);
-      expect(refused.json().error.code).toBe("ANONYMOUS_RATE_LIMITED");
-      // The limit's own look, and nothing after it: the hook did not run.
-      expect(resolveApiKey).toHaveBeenCalledTimes(7);
-
-      // A request with no credential is counted the same way, and looks nothing up.
-      resolveApiKey.mockClear();
-      const bare = { "cf-connecting-ip": "203.0.113.8" };
-      const seen: number[] = [];
-      for (let i = 0; i < 4; i++) seen.push((await dev.inject({ url: "/open", headers: bare })).statusCode);
-      expect(seen).toEqual([401, 401, 401, 429]);
-      expect(resolveApiKey).not.toHaveBeenCalled();
     } finally {
       await dev.close();
     }
@@ -445,7 +405,7 @@ describe("what an outside MCP caller is told", () => {
     expect(limited.instructions).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
     expect(limited.instructions).not.toMatch(/Without the permission to fund work/);
 
-    const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }]);
+    const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }, { permission: "release" }]);
     expect(all.instructions).toBe(all.base);
   });
 });

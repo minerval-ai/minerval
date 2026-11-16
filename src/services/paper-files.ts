@@ -28,6 +28,8 @@
 import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { fetchPublicBytes } from "./url-guard.js";
+import { addressForRun, fetchRuleApplies } from "./given-addresses.js";
+import { parseArxivIdStrict } from "./identifiers.js";
 import { looksLikePdf, sanitizeStoredText } from "./document-text.js";
 import type { ImageMediaType } from "../llm/tool-output.js";
 
@@ -528,7 +530,19 @@ export type ArxivSource =
 
 /** The source archive of an arXiv paper, fetched under the guard and unpacked in memory. */
 export async function fetchArxivSource(rawId: string, now: () => number = Date.now): Promise<ArxivSource> {
-  const id = parseArxivId(rawId);
+  let id = parseArxivId(rawId);
+  // Where a run reads material that is not public, the id it sends arXiv is
+  // one arXiv could have issued, and an address it passes is one it was
+  // given (identifiers.ts, given-addresses.ts).
+  if (id && (await fetchRuleApplies())) {
+    if (/^https?:/i.test(rawId.trim())) {
+      try {
+        await addressForRun(rawId.trim());
+      } catch (err) {
+        return { ok: false, problem: message(err) };
+      }
+    } else if (parseArxivIdStrict(id) === null) id = null;
+  }
   if (!id) {
     return {
       ok: false,
@@ -542,6 +556,7 @@ export async function fetchArxivSource(rawId: string, now: () => number = Date.n
   try {
     const body = await fetchPublicBytes(arxivEprintUrl(id), {
       userAgent: USER_AGENT,
+      notFromTheRun: "arXiv's source archive, at an address built here from an id of checked shape",
       maxBytes: ARCHIVE_MAX_DOWNLOAD_BYTES,
     });
     const archive = await unpackEprint(body.bytes, { id });

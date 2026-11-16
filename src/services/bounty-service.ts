@@ -33,6 +33,7 @@
  */
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { PLATFORM_EXTERNAL_ID, getPlatformAccountId } from "./platform-account.js";
 import { requestAudit } from "./queue-service.js";
@@ -50,7 +51,7 @@ import {
 } from "./prize-commitment.js";
 import type { BountyStatus, BountySummary, AttemptOutcome } from "./claim-extras-types.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { currentLabel, labelInContext } from "../llm/usage-context.js";
 
 export { HOLDING_BOUNTY_STATUSES, PRIZE_RESERVE_JOB_KIND, isHoldingBountyStatus };
 
@@ -1063,13 +1064,13 @@ export async function releasePrizeReviewReserve(
   const live = await r.query<{ id: string; user_id: string | null; claim_id: string | null; unspent: string | number }>(
     `SELECT al.id, al.user_id, al.claim_id,
             (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        JOIN actions a ON a.id = al.action_id
       WHERE ${reserveActionPredicateSql("$1::uuid")} AND al.released_at IS NULL`,
     [bountyId]
   );
   for (const al of live) {
-    await r.query(`UPDATE action_allocations SET released_at = now() WHERE id = $1`, [al.id]);
+    await r.query(`UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`, [al.id]);
     if (al.user_id && Number(al.unspent) > 0) {
       await r.query(
         `INSERT INTO owl_ledger (user_id, amount_micro_usd, reason, claim_id, idempotency_key)
@@ -1088,7 +1089,7 @@ export async function releasePrizeReviewReserve(
   );
   const [placed] = await r.query<{ total: string | number }>(
     `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS total
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        JOIN actions a ON a.id = al.action_id
       WHERE ${reserveActionPredicateSql("$1::uuid")} AND al.user_id = $2`,
     [bountyId, job.user_id]
@@ -1117,7 +1118,7 @@ export async function reserveRoomMicroUsd(bountyId: string, tx?: Runner): Promis
   if (!job) return { job: null, room: 0 };
   const [placed] = await r.query<{ total: string | number }>(
     `SELECT COALESCE(SUM(al.amount_micro_usd), 0)::bigint AS total
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
        JOIN actions a ON a.id = al.action_id
       WHERE ${reserveActionPredicateSql("$1::uuid")} AND al.user_id = $2`,
     [bountyId, job.user_id]
@@ -1153,7 +1154,7 @@ export async function fundPrizeAuditFromReserve(
   const { job, room } = await reserveRoomMicroUsd(bountyId, r);
   if (!job || job.status !== "running") return 0;
   const [existing] = await r.query<{ n: number }>(
-    `SELECT COUNT(*)::int AS n FROM action_allocations
+    `SELECT COUNT(*)::int AS n FROM minerval_whole.allocation_money
       WHERE action_id = $1 AND user_id = $2 AND released_at IS NULL`,
     [actionId, job.user_id]
   );
@@ -1174,9 +1175,11 @@ export async function fundPrizeAuditFromReserve(
   await r.query(
     `INSERT INTO action_allocations
        (exclusion_group, action_id, claim_id, user_id, amount_micro_usd, commissioned_by, reason, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5, 'prize_reserve', 'The prize''s review reserve pays for its audits.', $6)`,
-    // The label of the work that placed the money (src/labels.ts).
-    [action.exclusion_group, actionId, action.claim_id, job.user_id, cost, currentLabel()]
+     VALUES ($1, $2, $3, $4, $5, 'prize_reserve', 'The prize''s review reserve pays for its audits.',
+             COALESCE($6, (SELECT sensitivity_label FROM actions WHERE id = $2)))`,
+    // At the label of the work in progress, and where a sweep is what
+    // funds the audit, at the audit row's own.
+    [action.exclusion_group, actionId, action.claim_id, job.user_id, cost, labelInContext()]
   );
   return cost;
 }
@@ -1375,6 +1378,9 @@ export interface OpenBountyListing {
   text: string;
   claim_type: string;
   assessment_status: string | null;
+  /** Present only where more than one judgment of the claim is in force for the asker (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
   importance: number;
   checked: "proof" | "disproof" | null;
   bounty: BountySummary;
@@ -1431,6 +1437,8 @@ export async function listOpenBounties(opts: {
       bounty: await bountySummary(normalize(bounty)),
     });
   }
+  // Where more than one judgment of a claim is in force for the asker, its listing says so.
+  await markSeveralInForce(items, (i) => i.claim_id);
   return { items, total: Number(count?.n ?? 0) };
 }
 

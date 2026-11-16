@@ -114,6 +114,42 @@ different tools. The list is always recorded: `[]` means nothing was off,
 which is every run on the public graph, and a setup with no `featuresOff`
 is from before the field existed and says nothing either way.
 
+## Who reads a log
+
+`GET /runs/:run_id` and the routes under it serve a run to whoever reads
+its row: on the public graph anyone, and where a deployment has more than
+one label the people who read the run's label
+([architecture.md](architecture.md), "Labels and clearance").
+
+A run is public when nothing it was handed or read is known to be private
+(`src/llm/run-visibility.ts` classifies every agent's inputs and every
+tool's output). A run that is not public answers with its id, its agent
+and the reasons, which name what made it private without repeating it, and
+a direct service caller that asks for it reads it whole.
+
+Inside a members-only deployment some of those reasons are what the run's
+label already holds: the run read an organization's data through a
+connection or ran a command over its files, redacted a page written at the
+label, or checked that redaction. That material is at the run's label, and
+inside a private graph an assessment's reasoning and its run are open to
+every member cleared to read them (constitution §26). So a member who reads
+the run's label reads a run whose every reason is one of those
+(`REASONS_A_LABEL_COVERS`): the Steward's or Researcher's run that examined
+the evidence, a Redactor's run, and Audit's check of a redaction. A run with
+any other reason stays withheld from members as from anyone: a person's
+conversation with the Assistant, a Grantmaker's or an officer's run, which
+holds a funder's words, a run that read or filed a problem report, any
+other Audit run, a solver's attempt.
+
+In any log a member reads, the parts that hold a source's stored text are
+shown to those who also hold the permission to open raw sources at the
+labels the run could read, and are replaced by a notice that says so for
+everyone else: the opening message of an agent that is handed a document,
+and the output of a tool that returns one, among them a connection's
+tools, `open_reading`, `run_command`, `open_output` and the Redactor's
+`get_page_to_redact` ([accounts.md](accounts.md), "Opening raw sources").
+The rest of the step and its hash are served.
+
 ## Checking a log
 
 `GET /runs/:run_id/verify` (`verify_run_log` on MCP) recomputes the chain
@@ -209,8 +245,8 @@ Naming a conversation is one run of the `assistant` agent, whose role part
 is the prompt set's `assistant-title`; if its log cannot be written the
 name is dropped and the conversation keeps its opening words as its title.
 
-These runs start private, so their transcripts are served only with the
-service key, like any private run's: the naming run because every run of
+These runs start private for a reason no label covers ("Who reads a log",
+above), so their transcripts are served only with the service key: the naming run because every run of
 the `assistant` agent is private, the others with the reason
 `input:readers-own-content` in `private_reasons`. A report an agent raises
 from such work still leaves its body out, in either mode: a report travels

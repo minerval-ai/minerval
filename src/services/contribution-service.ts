@@ -1,6 +1,7 @@
 /**
  * Contribution service -- DB operations for contributions, reviews, appeals.
  */
+import { PublicGraphNodeError, publicContributionRefusal } from "./mirrored-node-service.js";
 import { eq, sql, desc, inArray } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { loadConfig } from "../config.js";
@@ -475,10 +476,17 @@ export async function createContribution(input: {
   argumentId?: string | null;
   mergeTargetArgumentId?: string | null;
   proposedCanonicalForm?: string;
+  /** A published page on the node the contribution is made through, checked by checkAboutPublishedPage. */
+  aboutPublishedPageId?: string | null;
   /** Submitted by research a mandate funds (Part VIII): the mandate, and the job its review is metered to. */
   grantId?: string | null;
   fundedByJobId?: string | null;
 }) {
+  // A mirrored node at its own label: the review and what follows it would
+  // be work there, which is not done here (mirrored-node-service.ts). The
+  // route and the MCP tool ask first; this holds whatever else calls.
+  const notTaken = await publicContributionRefusal(input.claimId);
+  if (notTaken) throw new PublicGraphNodeError(notTaken);
   const db = getDb();
   const values: NewContribution = {
     claimId: input.claimId,
@@ -490,6 +498,7 @@ export async function createContribution(input: {
     argumentId: input.argumentId ?? null,
     mergeTargetArgumentId: input.mergeTargetArgumentId ?? null,
     proposedCanonicalForm: input.proposedCanonicalForm ?? null,
+    aboutPublishedPageId: input.aboutPublishedPageId ?? null,
     grantId: input.grantId ?? null,
     fundedByJobId: input.fundedByJobId ?? null,
     // The review this starts runs at the submitter's label (src/labels.ts).
@@ -700,6 +709,7 @@ export function formatContribution(c: {
   mergeTargetClaimId: string | null;
   argumentId?: string | null;
   mergeTargetArgumentId?: string | null;
+  aboutPublishedPageId?: string | null;
   proposedCanonicalForm: string | null;
   grantId?: string | null;
 }) {
@@ -717,6 +727,8 @@ export function formatContribution(c: {
     // One of the node's arguments, when the contribution is about it (#541).
     argument_id: c.argumentId ?? null,
     merge_target_argument_id: c.mergeTargetArgumentId ?? null,
+    // The published page on the node it was made through, where it was (docs/outward-acts.md).
+    about_published_page_id: c.aboutPublishedPageId ?? null,
     proposed_canonical_form: c.proposedCanonicalForm,
     // The node's page on the public site: the claim contributed to, or, for
     // an accepted proposal, the claim, question or quantity it became (which
@@ -786,4 +798,29 @@ export async function withAnsweredRequest(input: {
     };
   }
   return { ok: true, content: `Answers request ${requestId}.\n\n${input.content}` };
+}
+
+/**
+ * A contribution may be made through a published page on its node
+ * (docs/outward-acts.md, "What the public says back"): a challenge to the
+ * page, or a proposal about what the node rests on that only the graph
+ * which published the page can answer. The page must be one this graph
+ * holds for that node. Nothing else about the contribution changes: it is
+ * reviewed as any contribution on the node is.
+ */
+export async function checkAboutPublishedPage(
+  claimId: string | null,
+  aboutPublishedPageId: string | null | undefined
+): Promise<{ ok: true; publishedPageId: string | null } | { ok: false; message: string }> {
+  const id = aboutPublishedPageId?.trim() || null;
+  if (!id) return { ok: true, publishedPageId: null };
+  if (!claimId) {
+    return { ok: false, message: "about_published_page_id goes with claim_id: a published page is a page of one node, and the contribution is made on that node." };
+  }
+  const [page] = await rawQuery<{ node_id: string }>(`SELECT node_id FROM published_pages WHERE id = $1`, [id]);
+  if (!page) return { ok: false, message: "This graph holds no published page with that id. list_published_pages with the node's id gives the pages published on it." };
+  if (page.node_id !== claimId) {
+    return { ok: false, message: "That published page is a page of another node. A contribution made through a page is made on the page's own node." };
+  }
+  return { ok: true, publishedPageId: id };
 }

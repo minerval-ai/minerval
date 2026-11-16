@@ -7,7 +7,7 @@ import {
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { sinceAssessedLine } from "@/lib/since-assessed";
-import { evidenceNotShownLine, isExamined, notExaminedLine } from "@/lib/coverage";
+import { evidenceNotShownLine, isExamined, notExaminedLine, readerEvidenceLine } from "@/lib/coverage";
 import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import { modelDisplayName } from "@/lib/model-names";
 import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
@@ -35,6 +35,15 @@ import {
   QuantityHead, QuantityEstimates, QuantityReadings, QuantityCuts, ThresholdPanel,
 } from "./quantity/QuantitySections";
 import { PageHead } from "@/components/PageHead";
+import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
+import {
+  OtherVerdict, PublicationRecord, PublishedSaidBack, PublishedAssessment, PublishedDecomposition, PublishedGaps, PublishedIntro,
+  PublishedNotes, PublishedProvenance, TakenOut,
+} from "./claim/PublishedPage";
+import { isReadingAddress } from "@/lib/source-address";
+import { ShownIntro, ShownRecord } from "./claim/InsideVersions";
+import { importanceInEffect } from "@/lib/layers";
+import type { ValueByLabel } from "@/lib/types";
 
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
@@ -43,7 +52,9 @@ function InstanceCard({ inst }: { inst: Instance }) {
   // which holds the rest of its record (examinations, lineage, history);
   // the document itself is one link further along the byline.
   const byline = instanceByline(inst);
-  const original = inst.link || inst.source_url;
+  // A reading kept through a connection has an address no browser opens
+  // (lib/source-address.ts); its document is read on the source's page.
+  const original = [inst.link, inst.source_url].find((u) => u && !isReadingAddress(u)) ?? null;
   return (
     <div className="instance">
       <blockquote>{inst.verbatim_text}</blockquote>
@@ -115,11 +126,29 @@ function fmtDate(iso: string) {
 }
 
 export function ClaimView({
-  detail, fixture = false, features = ALL_FEATURES_ON,
+  detail, fixture = false, features = ALL_FEATURES_ON, publishedPages = [], published = null, judgedAbove = false, versionsAbove,
 }: {
+  /**
+   * Only inside a private deployment, for a reader who holds two labels
+   * that do not read each other: both assessments stand above this column
+   * (components/claim/InsideVersions.tsx), so it carries no verdict of its
+   * own and does not say the node is unassessed.
+   */
+  judgedAbove?: boolean;
+  /** Those assessments, drawn where this column's own verdict would stand. */
+  versionsAbove?: React.ReactNode;
   detail: ClaimDetail;
   fixture?: boolean;
   features?: Features;
+  /** The pages other graphs publish of this node (docs/published-pages.md), for the line under the public verdict. */
+  publishedPages?: PublishedPageSummary[];
+  /**
+   * The second tab: one published page, shown through this same page. The
+   * detail then carries that page's verdict, and its text comes as parts,
+   * with removals marked and held parts in place. What acts on the public
+   * node (ordering, contributing, citing) stays on the first tab.
+   */
+  published?: PublishedPageView | null;
 }) {
   const { claim, tree, instances, trajectory, record } = detail;
   // Views stated to the graph directly (§4) have a section of their own, so
@@ -178,8 +207,18 @@ export function ClaimView({
   const notShown = anyAssessment
     ? evidenceNotShownLine(detail.coverage, isQuantity ? "estimate" : "assessment")
     : null;
+  // In a deployment with more than one label, whether the judgment rests on
+  // evidence this reader cannot read. The public graph's API never says so.
+  const readerEvidence = anyAssessment
+    ? readerEvidenceLine(detail.coverage, isQuantity ? "estimate" : "assessment")
+    : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
+  // Inside a deployment with more than one label: the node's own label, so
+  // that a row another label added can say so, and whose importance the
+  // page shows where a label holds its own (lib/layers.ts).
+  const nodeLabel = (claim as { label?: string }).label ?? null;
+  const importanceHeld = importanceInEffect((claim as { importance_by_label?: ValueByLabel[] }).importance_by_label);
   // Canonical text for [[claim:<id>]] references in assessment prose (#203):
   // assessments cite subclaims, and subclaims live in the tree already held.
   const linkTexts = buildClaimTextMap(tree);
@@ -189,7 +228,7 @@ export function ClaimView({
       <PageHead
         back={{ href: "/claims", label: "claims" }}
         // kicker: type + state
-        kicker={isQuantity ? "Quantity" : "Claim"}
+        kicker={claim.kind === "quantity" ? "Quantity" : "Claim"}
         tags={
           <>
             {claimType ? (
@@ -208,6 +247,12 @@ export function ClaimView({
             {typeof claim.importance === "number" && (
               <span style={{ marginLeft: "auto" }}>
                 <Importance value={claim.importance} />
+                {/* Where a label the reader reads holds its own importance for the node: whose this is, and what the others hold. */}
+                {importanceHeld && (
+                  <span className="layer-mark" title={importanceHeld.title}>
+                    {importanceHeld.at}
+                  </span>
+                )}
               </span>
             )}
           </>
@@ -228,6 +273,9 @@ export function ClaimView({
         title={claim.text}
       />
 
+      {published && (published.inside ? <ShownIntro view={published} /> : <PublishedIntro view={published} />)}
+      {published && <OtherVerdict view={published} />}
+
       {/* A quantity's definition and the graph's estimate lead its page, where
           a claim's status would (§3, §10). */}
       {isQuantity && <QuantityHead detail={detail} aside={<Dispute value={claim.contestation} />} />}
@@ -242,7 +290,9 @@ export function ClaimView({
 
       {isQuantity && !qAssessment && <OrderAssessment claimId={claim.id} variant="unassessed" />}
 
-      {!isQuantity && !assessment && (
+      {versionsAbove}
+
+      {!published && !judgedAbove && !isQuantity && !assessment && (
         <>
           {/* The place a verdict would stand. An empty place is easy to
               read as nothing being wrong, so it says in words that there is
@@ -306,7 +356,7 @@ export function ClaimView({
               points, the dispute label comes from contestation. */}
           <span className="verdict-pair">
             <StatusBadge status={assessment.status} size="lg" />
-            <Dispute value={claim.contestation} />
+            {!published && <Dispute value={claim.contestation} />}
           </span>
           {/* The derived machine-checked badge (§2.3), beside the status
               rather than in place of it: the checker confirms the proof;
@@ -380,6 +430,17 @@ export function ClaimView({
         </p>
       )}
 
+      {readerEvidence && (
+        <p className="assess-reader-evidence" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
+          {readerEvidence}
+        </p>
+      )}
+
+      {/* What other graphs publish of this node, and whether the verdict
+          above has weighed it; on the second tab, what was taken out. */}
+      {!published && <PublishedNotes claimId={claim.id} published={publishedPages} />}
+      {published && <TakenOut view={published} />}
+
       {/* A claim about which side of a figure a quantity lies: where the
           quantity's estimate puts the value, against this claim's credence. */}
       {detail.threshold_of && (
@@ -390,8 +451,21 @@ export function ClaimView({
         />
       )}
 
+      {published?.page && (
+        <section>
+          <h2>Assessment</h2>
+          {assessment && (
+            <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+              {statusMeta(assessment.status).def}
+            </p>
+          )}
+          <PublishedAssessment view={published} />
+        </section>
+      )}
+      {published?.page && <PublishedGaps view={published} />}
+
       {/* reasoning trace */}
-      {anyAssessment && (
+      {!published && anyAssessment && (
         <section>
           <h2>Assessment</h2>
           <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
@@ -468,8 +542,30 @@ export function ClaimView({
       <AttemptLog claimId={claim.id} attempts={attempts} />
       <ResearchLog runs={detail.research_runs} />
 
+      {published?.page && (
+        <section>
+          <h2>Decomposition</h2>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+            {published.inside
+              ? "The arguments and subclaims the Steward recorded for this node at the label the page was written at, each as written."
+              : "The arguments and subclaims the publishing graph's Steward recorded for this claim, each as written."}
+          </p>
+          <PublishedDecomposition view={published} />
+        </section>
+      )}
+      {published?.page && (published.page.sources.length > 0 || published.page.readings.length > 0 || published.page.stated_views.length > 0) && (
+        <section>
+          <h2>Provenance</h2>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+            {published.inside ? "The sources read at the label the page was written at." : "The sources read in the publishing graph."} Each is
+            listed by kind and by who supplied it; what it says is not shown beyond the passages its readings quote.
+          </p>
+          <PublishedProvenance view={published} />
+        </section>
+      )}
+
       {/* decomposition */}
-      <section>
+      {!published && <section>
         <h2>Decomposition</h2>
         {hasTree ? (
           <>
@@ -480,7 +576,7 @@ export function ClaimView({
                 ? "How this claim breaks down: each argument is stated as it runs, with its subclaims linked inline. ↗\uFE0E opens a subclaim; the map shows how they fit together."
                 : "The claims this one rests on directly. ↗\uFE0E opens a subclaim; the map shows how they fit together."}
             </p>
-            <DecompositionTree tree={tree!} argumentChecks={argumentChecks} />
+            <DecompositionTree tree={tree!} argumentChecks={argumentChecks} nodeLabel={nodeLabel} />
           </>
         ) : (
           <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
@@ -529,7 +625,7 @@ export function ClaimView({
             or start a mandate for this whole area →
           </Link>
         </p>
-      </section>
+      </section>}
 
       {/* provenance */}
       {(voices.length > 0 || mentions.length > 0 || (detail.quantity?.readings.length ?? 0) > 0) && (
@@ -604,17 +700,24 @@ export function ClaimView({
       {/* cite this claim (#290) — the reading column's exit: a conventional
           citation pinned to the current assessment version, plus the evidence
           record for carrying the page's provenance out of the graph. */}
-      <div className="page-exits">
-        <CiteClaim claimId={claim.id} />
-        {/* its neighbour on the way out: the claim shown on another site,
-            with the judgment whole */}
-        <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
-      </div>
+      {!published && (
+        <div className="page-exits">
+          <CiteClaim claimId={claim.id} />
+          {/* its neighbour on the way out: the claim shown on another site,
+              with the judgment whole */}
+          <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+        </div>
+      )}
       {/* the Assistant, opened from this node (#646): it is told which page
           the question came from */}
-      <section className="ask-about">
-        <AskBox nodeId={claim.id} placeholder={`Ask the Assistant about this ${claim.kind ?? "claim"}…`} />
-      </section>
+      {!published && (
+        <section className="ask-about">
+          <AskBox nodeId={claim.id} placeholder={`Ask the Assistant about this ${claim.kind ?? "claim"}…`} />
+        </section>
+      )}
+      {/* How the published page was made, closed to one line like Full reasoning. */}
+      {published && !published.inside && <PublishedSaidBack view={published} claimId={detail.claim.id} />}
+      {published && (published.inside ? <ShownRecord view={published} /> : <PublicationRecord view={published} />)}
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content, behind a closed disclosure so no
@@ -626,7 +729,7 @@ export function ClaimView({
           above — the record shows past exchanges, this is where a new one
           starts. Kept at the end of the reading column so the page itself
           stays unmarked by the exchanges behind it. */}
-      <Contribute claimId={claim.id} />
+      {!published && <Contribute claimId={claim.id} />}
       {/* with none stated, only the invitation, at the foot */}
       {!fixture && statedViews.length === 0 && (
         <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={[]} />
@@ -670,11 +773,19 @@ export function ClaimView({
           may be biased about its own developer.
         </p>
       )}
-      <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
-        Created by {claim.created_by} · {fmtDate(claim.created_at)}.
-        {/* the last-assessed date moved into the assessment band (#196) */}
-        {" "}Every judgment on this page is accompanied by a reasoning trace.
-      </p>
+      {published ? (
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
+          {published.inside
+            ? "Contributing to this node, ordering an assessment of it and citing it are on the tabs of its own assessments."
+            : "Contributing to this claim, ordering an assessment of it and citing it are on the public assessment's tab."}
+        </p>
+      ) : (
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
+          Created by {claim.created_by} · {fmtDate(claim.created_at)}.
+          {/* the last-assessed date moved into the assessment band (#196) */}
+          {" "}Every judgment on this page is accompanied by a reasoning trace.
+        </p>
+      )}
     </article>
   );
 }

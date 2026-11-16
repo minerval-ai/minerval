@@ -4,6 +4,7 @@ import { EVENT_WORD, kindLabel, partialDate, when, type ExamView, type Group } f
 import { Prominence } from "./Prominence";
 import s from "./source.module.css";
 import { PageHead } from "@/components/PageHead";
+import { isReadingAddress } from "@/lib/source-address";
 
 // Identity, then what has happened to the document since: facts that need no
 // judgment, first on the page (#507).
@@ -50,7 +51,7 @@ export function SourceHead({
         {source.publisher && <span>{source.publisher}</span>}
         <span>{published ? `Published ${published}` : <span className={s.none}>Date not recorded</span>}</span>
         {source.doi && <a href={`https://doi.org/${source.doi}`}>doi {source.doi}</a>}
-        {source.url && <a href={source.url} rel="noopener noreferrer">Original&#xFE0E; ↗</a>}
+        {source.url && !isReadingAddress(source.url) && <a href={source.url} rel="noopener noreferrer">Original&#xFE0E; ↗</a>}
         {source.archived_url && <a href={source.archived_url} rel="noopener noreferrer">Archived copy</a>}
       </p>
 

@@ -46,6 +46,7 @@ import {
   type TagAssignment,
   resolveTagBySlug,
 } from "../services/tag-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 /** The provenance stamp the tagger's taggings carry. */
 export const TAGGER_SOURCE = "tagger";
@@ -346,7 +347,10 @@ export function startTaggingScheduler(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await taggingTick();
+      const result = await withSystemClearance(
+        "The tagging drain leases untagged claims at every label and tags each at the claim's label.",
+        () => taggingTick()
+      );
       // A lane that stays waiting says so when the wait begins or moves,
       // not on every tick.
       const waitKey = result.waiting ? `${result.waiting.reason}@${result.waiting.next_attempt_at}` : null;

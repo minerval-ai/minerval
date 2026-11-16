@@ -4,9 +4,13 @@ import { join, relative } from "node:path";
 import {
   AGENT_INPUTS,
   TOOL_READS,
+  REASONS_A_LABEL_COVERS,
+  REDACTION_CHECK_REASON,
   agentPrivateReason,
+  labelCoversReason,
   toolPrivateReason,
 } from "../../../src/llm/run-visibility.js";
+import { RESEARCH_REPORT_REASON } from "../../../src/services/session-service.js";
 
 const ROOT = join(__dirname, "../../..");
 
@@ -93,5 +97,63 @@ describe("run visibility", () => {
   it("makes unclassified tools and agents private", () => {
     expect(toolPrivateReason("no_such_tool")).toBe("tool:no_such_tool:unclassified");
     expect(agentPrivateReason("no_such_agent")).toBe("agent:no_such_agent:unclassified");
+  });
+
+  // In a members-only deployment a member who reads a run's label reads a
+  // run whose every private reason that label covers (run-view-service.ts).
+  describe("the reasons a label covers", () => {
+    it("are private reasons that exist, each with why", () => {
+      for (const [reason, why] of Object.entries(REASONS_A_LABEL_COVERS)) {
+        expect(why.trim().length, reason).toBeGreaterThan(0);
+        const [kind, name] = reason.split(":") as [string, string];
+        if (kind === "tool") expect(TOOL_READS[name]?.reads, reason).toBe("private");
+        else if (kind === "agent") expect(AGENT_INPUTS[name]?.reads, reason).toBe("private");
+        else expect([REDACTION_CHECK_REASON, RESEARCH_REPORT_REASON], reason).toContain(reason);
+      }
+    });
+
+    it("are the organization's material at the run's label, and nothing that is a person's, a funder's or the operator's", () => {
+      expect(Object.keys(REASONS_A_LABEL_COVERS).sort()).toEqual([
+        "agent:redactor",
+        "input:redaction-check",
+        "input:research-report",
+        "tool:delay_part",
+        "tool:finish_redaction",
+        "tool:get_page_to_redact",
+        "tool:get_redaction_policies",
+        "tool:get_redaction_policy",
+        "tool:get_redaction_to_check",
+        "tool:hold_part",
+        "tool:keep_analysis",
+        "tool:keep_file",
+        "tool:keep_reading",
+        "tool:lift_hold",
+        "tool:look_at_destination",
+        "tool:notebook_read",
+        "tool:notebook_write",
+        "tool:open_output",
+        "tool:open_reading",
+        "tool:record_fidelity_outcome",
+        "tool:redact",
+        "tool:restore",
+        "tool:run_command",
+      ]);
+      const all = ["tool:warehouse__run_query"];
+      expect(labelCoversReason("tool:warehouse__run_query", all)).toBe(true);
+      for (const reason of [
+        "agent:assistant", "agent:grantmaker", "agent:program_officer", "agent:math_solver", "agent:extension",
+        "tool:raise_issue", "tool:get_issue", "tool:get_research_run", "tool:get_report_to_redact", "tool:cost_sheet",
+        "tool:get_contributor_profile", "tool:get_prize_claim", "tool:delegate", "tool:grant_overview",
+        "input:grantmaker-brief", "input:audit-brief", "input:lookout-poke-note", "input:readers-own-content",
+        "tool:no_such_tool:unclassified", "agent:no_such_agent:unclassified",
+      ]) {
+        expect(labelCoversReason(reason, [reason]), reason).toBe(false);
+      }
+    });
+
+    it("cover an Audit run only where it says its context was a page to check", () => {
+      expect(labelCoversReason("agent:audit", ["agent:audit"])).toBe(false);
+      expect(labelCoversReason("agent:audit", ["agent:audit", REDACTION_CHECK_REASON])).toBe(true);
+    });
   });
 });

@@ -23,9 +23,11 @@
  *    payer (a mandate's stays the mandate's, a person's the person's) and
  *    parent_action_id records the chain a petition is later routed along.
  */
+import { publicGraphJudges, publicWorkMessageForAgent } from "./mirrored-node-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions, joinFaultWait } from "./action-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { committerFor, paceRefusal, paceRoom, type PaceCommitter } from "./pace-service.js";
 import { enqueueSteward, type StewardMessage } from "./queue-service.js";
 import type { MessageSender } from "./inbox-service.js";
@@ -122,6 +124,7 @@ export type CommissionResult =
       ok: false;
       code:
         | "BAD_AMOUNT"
+        | "PUBLIC_GRAPH_NODE"
         | "NOT_FOUND"
         | "OVER_PACE"
         | "OVER_ESCROW"
@@ -161,14 +164,14 @@ type Query = <T>(text: string, params?: unknown[]) => Promise<T[]>;
 async function groupLive(q: Query, group: string): Promise<LiveRow | null> {
   const [row] = await q<LiveRow>(
     `SELECT a.id AS action_id, a.status,
-            (SELECT MAX(al.created_at) FROM action_allocations al
+            (SELECT MAX(al.created_at) FROM minerval_whole.allocation_money al
               WHERE al.exclusion_group = $1
                 AND al.released_at IS NULL
                 AND al.spent_micro_usd < al.amount_micro_usd) AS commissioned_at
        FROM actions a
       WHERE a.exclusion_group = $1
         AND (a.status = 'running'
-             OR EXISTS (SELECT 1 FROM action_allocations al
+             OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = $1
                            AND al.released_at IS NULL
                            AND al.commissioned_by IS NOT NULL
@@ -207,6 +210,11 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
   if (!(budget > 0)) {
     return { ok: false, code: "BAD_AMOUNT", message: "A commission needs a budget above zero." };
   }
+  // A pass on a mirrored node at its own label is the public graph's to
+  // run (mirrored-node-service.ts): refused before anything is placed.
+  if (await publicGraphJudges(input.claimId)) {
+    return { ok: false, code: "PUBLIC_GRAPH_NODE", message: publicWorkMessageForAgent() };
+  }
   const [claim] = await rawQuery<{
     id: string;
     steward_state: string;
@@ -214,8 +222,11 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     stewarded_at: Date | null;
     steward_attempts: number;
   }>(
-    `SELECT id, steward_state, steward_error_reason, stewarded_at, steward_attempts
-       FROM claims WHERE id = $1 AND state = 'active'`,
+    `SELECT c.id, ${slotColumnSql("steward_state", "c")} AS steward_state,
+            ${slotColumnSql("steward_error_reason", "c")} AS steward_error_reason,
+            ${slotColumnSql("stewarded_at", "c")} AS stewarded_at,
+            ${slotColumnSql("steward_attempts", "c")} AS steward_attempts
+       FROM claims c WHERE c.id = $1 AND c.state = 'active'`,
     [input.claimId]
   );
   if (!claim) {
@@ -509,9 +520,6 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
-        // The brief and the reason are the commissioning run's words, so
-        // the row carries that run's label (src/labels.ts). More money on
-        // a placement already there leaves its label as it was.
         [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
       );
       return { ok: true, allocationId: row!.id } as const;
@@ -555,7 +563,7 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
     const sources = await tx.query<{ id: string; grant_id: string | null; user_id: string | null; unspent: number }>(
       `SELECT al.id, al.grant_id, al.user_id,
               (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent
-         FROM action_allocations al
+         FROM minerval_whole.allocation_money al
          JOIN actions a ON a.id = $1
         WHERE al.exclusion_group = a.exclusion_group
           AND al.released_at IS NULL
@@ -584,7 +592,7 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
       // lowers its amount. Either way the payer's committed total is unchanged.
       if (take === Number(src.unspent)) {
         await tx.query(
-          `UPDATE action_allocations
+          `UPDATE minerval_whole.allocation_money
               SET amount_micro_usd = CASE WHEN spent_micro_usd > 0 THEN spent_micro_usd ELSE amount_micro_usd END,
                   released_at = now()
             WHERE id = $1`,
@@ -592,7 +600,7 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
         );
       } else {
         await tx.query(
-          `UPDATE action_allocations SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`,
+          `UPDATE minerval_whole.allocation_money SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`,
           [src.id, take]
         );
       }
@@ -626,7 +634,7 @@ export async function originalPayer(): Promise<CommissionPayer | null> {
   if (!funding) return null;
   if (funding.actionId) {
     const [row] = await rawQuery<{ grant_id: string | null; user_id: string | null }>(
-      `SELECT grant_id, user_id FROM action_allocations
+      `SELECT grant_id, user_id FROM minerval_whole.allocation_money
         WHERE action_id = $1 OR exclusion_group = (SELECT exclusion_group FROM actions WHERE id = $1)
         ORDER BY amount_micro_usd DESC LIMIT 1`,
       [funding.actionId]

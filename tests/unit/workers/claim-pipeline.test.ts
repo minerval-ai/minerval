@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   labelIsDefined: vi.fn(async () => true),
   enqueueSteward: vi.fn(async () => {}),
   ranAt: [] as string[],
+  /** The label of the work in progress, set once the module that knows it is loaded. */
+  labelNow: (): string => "public",
 }));
 
 vi.mock("../../../src/services/label-service.js", () => ({
@@ -21,9 +23,17 @@ vi.mock("../../../src/services/label-service.js", () => ({
 }));
 vi.mock("../../../src/services/queue-service.js", () => ({ enqueueSteward: mocks.enqueueSteward }));
 vi.mock("../../../src/db/client.js", () => {
-  const rows = [{ id: "c-1", decompositionStatus: "pending" }];
+  // The node is at the label of the work that reads it: onboarding is the
+  // node's own label's work, and a message at another label does not do it.
+  const row = {
+    id: "c-1",
+    decompositionStatus: "pending",
+    get label() {
+      return mocks.labelNow();
+    },
+  };
   const db = {
-    select: () => ({ from: () => ({ where: () => ({ limit: async () => rows }) }) }),
+    select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
     update: () => ({ set: () => ({ where: async () => {} }) }),
   };
   return { getDb: () => db, rawQuery: vi.fn(async () => []) };
@@ -35,6 +45,7 @@ import type { ClaimPipelineMessage } from "../../../src/services/queue-service.j
 import { handleClaimPipeline } from "../../../src/workers/claim-pipeline.js";
 
 beforeEach(() => {
+  mocks.labelNow = currentLabel;
   mocks.publicIsTheOnlyLabel.mockReset().mockResolvedValue(true);
   mocks.labelIsDefined.mockReset().mockResolvedValue(true);
   mocks.ranAt = [];

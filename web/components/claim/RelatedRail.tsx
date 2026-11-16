@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ClaimLinkKind, RelatedClaim } from "@/lib/types";
 import { nodeStatusMeta } from "@/lib/ontology";
+import { SeveralAssessments } from "@/components/SeveralAssessments";
 import styles from "./margins.module.css";
 
 // How each lateral link kind reads on the page (#436). These are see-alsos,
@@ -60,6 +61,7 @@ export function RelatedRail({ related }: { related: RelatedClaim[] }) {
                 <span className={`swatch ${st.cls}`} title={`${st.label}: ${st.def}`} aria-hidden />
                 <span className="relation" title={kind.gloss}>{kind.label}</span>
                 <span className={styles.depConf}>{st.label}</span>
+                <SeveralAssessments id={r.id} n={r.judgments_in_force} />
                 {r.reasoning && (
                   <button
                     type="button"

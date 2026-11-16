@@ -16,6 +16,7 @@
 import { rawQuery } from "../db/client.js";
 import { microUsdToOwls } from "./owl.js";
 import { getMandatePipeline } from "./mandate-service.js";
+import { importanceSql } from "./overlay-service.js";
 
 /** The kinds of completed work a mandate's page lists. */
 export const MANDATE_WORK_KINDS = [
@@ -133,7 +134,8 @@ export async function listMandateWork(m: MandateRef, q: MandateWorkQuery): Promi
     const node = q.node ?? null;
     const order =
       q.order === "importance"
-        ? "c.importance DESC NULLS LAST, l.assessed_at DESC"
+        ? // The node's importance as the reader's label holds it (overlay-service.ts).
+          `${importanceSql("c")} DESC NULLS LAST, l.assessed_at DESC`
         : "l.assessed_at DESC";
     const latest = `
       WITH judged AS (${JUDGED}),
@@ -156,7 +158,7 @@ export async function listMandateWork(m: MandateRef, q: MandateWorkQuery): Promi
       }>(
         `${latest}
          SELECT l.claim_id, l.kind, l.verdict, l.confidence, l.assessed_at, l.passes,
-                c.text, c.importance
+                c.text, ${importanceSql("c")} AS importance
            FROM latest l JOIN claims c ON c.id = l.claim_id
           WHERE ($2::text IS NULL OR l.kind = $2)
           ORDER BY ${order}

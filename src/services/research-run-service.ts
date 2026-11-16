@@ -15,6 +15,8 @@ import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { resolveProvider } from "../llm/providers/routing.js";
+import { providerClearedFor } from "../provider-labels.js";
 import { owlsToMicroUsd } from "./owl.js";
 
 export const RESEARCHER_AGENT = "researcher";
@@ -35,6 +37,33 @@ export type ResearchRunStatus = (typeof RESEARCH_RUN_STATUSES)[number];
 
 export const RESEARCH_MODEL_TIERS = ["strong", "standard", "cheap"] as const;
 export type ResearchModelTier = (typeof RESEARCH_MODEL_TIERS)[number];
+
+/**
+ * The tier the full work on a request runs at, at `label`: the strong tier
+ * where the deployment can send that label's text to the strong tier's
+ * provider (a key for it, and cleared for the label: provider-labels.ts),
+ * and the standard tier where it cannot. A deployment that has not
+ * configured the strong tier's provider, or has not cleared it for the
+ * label, still has the work done, on the Researcher model it configured for
+ * the standard tier. Each run is told its model, and the scoping quote
+ * prices the tier chosen here.
+ */
+export function requestWorkTier(
+  label: string,
+  config: Pick<
+    ReturnType<typeof loadConfig>,
+    "researcherStrongModel" | "anthropicApiKey" | "openaiApiKey" | "openrouterApiKey" | "providerLabels"
+  > = loadConfig()
+): "strong" | "standard" {
+  const provider = resolveProvider(config.researcherStrongModel);
+  if (!provider) return "standard";
+  const keyed =
+    provider === "anthropic" ? !!config.anthropicApiKey
+    : provider === "openai" ? !!config.openaiApiKey
+    : provider === "openrouter" ? !!config.openrouterApiKey
+    : true; // A declared endpoint is the deployment's own, checked when the configuration loads.
+  return keyed && providerClearedFor(provider, label, config) ? "strong" : "standard";
+}
 
 /** The model each tier resolves to in this deployment. */
 export function modelForTier(tier: ResearchModelTier): string {

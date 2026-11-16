@@ -101,10 +101,12 @@ vi.mock("../../src/services/source-facts-service.js", async (orig) => ({
   refreshSourceFactsOnce: vi.fn(async () => {}),
 }));
 
+import { ClearanceError } from "../../src/db/clearance.js";
 import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { currentLabel, runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { withSystemClearance } from "../../src/db/clearance.js";
 import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import { executeKindTool } from "../../src/llm/tools/kind-tools.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
@@ -152,7 +154,7 @@ import { setSubjectTags } from "../../src/services/tag-service.js";
 import { processNextStewardTask } from "../../src/workers/steward-pipeline.js";
 import { processNextTaggingTask } from "../../src/workers/tagging-pipeline.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
-import { OWL, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, asGiven, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -189,7 +191,9 @@ async function labelsWhere(table: string, where: string, params: unknown[]): Pro
 const labelOf = async (table: string, id: string) => (await labelsWhere(table, "id = $1", [id]))[0];
 
 /** The labels on a claim's assess rows. */
-const assessLabels = (claimId: string) => labelsWhere("actions", "exclusion_group = $1", [ASSESS_GROUP(claimId)]);
+// Work at each label on a node has its own assess group (groupAtLabel), so
+// a node's rows are found by the node and the kind of work.
+const assessLabels = (claimId: string) => labelsWhere("actions", "claim_id = $1 AND kind IN ('assess', 'reassess')", [claimId]);
 
 async function setLabel(claimId: string, label: string): Promise<void> {
   await rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [claimId, label]);
@@ -224,7 +228,7 @@ const fake = new FakeLeanCheckerClient();
  */
 async function writeOneOfEach(): Promise<Record<string, { where: string; params: unknown[] }>> {
   const tag = randomUUID().slice(0, 8);
-  const source = await getOrCreateSource({ url: `https://dbtest.example/graph/${randomUUID()}`, title: "A document" });
+  const source = await getOrCreateSource({ url: await asGiven(`https://dbtest.example/graph/${randomUUID()}`), title: "A document" });
 
   // A node, proposed the way the service route proposes one.
   const { claim } = await proposeClaim({ claim: `The grid is fragile (${tag}).`, createdBy: "service" });
@@ -421,11 +425,16 @@ const everyTableAt = (label: string) => Object.fromEntries(CONTENT_TABLES.map((t
  */
 async function runFundedPass(claimId: string, alsoWaiting: string[] = []) {
   const funder = await seedUser("graph-funder");
-  await seedAllocation({ group: ASSESS_GROUP(claimId), claimId, userId: funder, amountMicroUsd: 500 * OWL });
+  // The group of the row that is open on the node, at whatever label it was opened.
+  const [open] = await rawQuery<{ exclusion_group: string }>(
+    `SELECT exclusion_group FROM actions WHERE claim_id = $1 AND kind IN ('assess', 'reassess') AND status = 'open' LIMIT 1`,
+    [claimId]
+  );
+  await seedAllocation({ group: open?.exclusion_group ?? ASSESS_GROUP(claimId), claimId, userId: funder, amountMicroUsd: 500 * OWL });
   await rawQuery(
     `UPDATE actions SET status = 'cancelled'
-      WHERE status = 'open' AND kind IN ('assess', 'reassess') AND NOT (exclusion_group = ANY($1))`,
-    [[claimId, ...alsoWaiting].map((id) => ASSESS_GROUP(id))]
+      WHERE status = 'open' AND kind IN ('assess', 'reassess') AND NOT (claim_id = ANY($1::uuid[]))`,
+    [[claimId, ...alsoWaiting]]
   );
   return processNextStewardTask();
 }
@@ -477,7 +486,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every table of the graph's content, default to the connection's label, and point at labels", async () => {
+  it("are on every table of the graph's content, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -494,8 +503,6 @@ describe("the columns", () => {
       [CONTENT_TABLES]
     );
     expect(rows).toEqual(
-      // The default is the function 0130 gave every labelled table: the
-      // connection's label, which is 'public' wherever it is the only one.
       CONTENT_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
@@ -581,10 +588,45 @@ describe("a row of the graph's content", () => {
     const first = await write();
     const asWritten = await read(first);
     expect(new Set(Object.values(asWritten).flat())).toEqual(new Set([PUBLIC_LABEL]));
-    // The same writes again, from a run at another label: each lands on the row already there.
-    const again = await inRunAt(INTERNAL, write);
-    expect(again).toEqual(first);
-    expect(await read(again)).toEqual(asWritten);
+    // The same writes again, from a run at the rows' own label: each lands on the row already there.
+    expect(await write()).toEqual(first);
+    // From a run at another label, the ones that only find the row (an
+    // edge, a link, a tag) land on it and write nothing of the run's.
+    await inRunAt(INTERNAL, async () => {
+      const edge = await insertRelationshipEdge({
+        parentId: parent, childId: child, relationType: "requires", reasoning: "A restricted reasoning.", createdBy: "claim_steward",
+      });
+      const link = await linkClaims({ claimId: parent, otherClaimId: child, kind: "related", reasoning: "A restricted reasoning.", createdBy: "curator" });
+      expect({ edge: edge.id, link: link.id }).toEqual({ edge: first.edge, link: first.link });
+      await setSubjectTags({ kind: "claim", subjectId: parent, source: "steward", assignments: [{ name }] });
+      // The two that would change the row (a quantity's definition, an
+      // answer's reasoning) are refused, and say why.
+      for (const write of [
+        () => defineQuantity({ claimId: quantity, definition: { ...DEFINITION, measures: "A restricted definition." }, createdBy: "claim_steward" }),
+        () => addAnswer({ questionId: question, answerId: child, basis: "quality", reasoning: "A restricted reasoning.", createdBy: "question_steward" }),
+      ]) {
+        const err = await write().then(
+          () => null,
+          (e: unknown) => e
+        );
+        expect(err).toBeInstanceOf(ClearanceError);
+        expect((err as Error).message).toMatch(/already exists at another label than this work's/);
+      }
+    });
+    expect(await read(first)).toEqual(asWritten);
+    // A cut is the label's own judgment of where the claim cuts the
+    // quantity: one recorded at another label is a row of its own beside
+    // the first, which stays as written (services/overlay-service.ts).
+    await inRunAt(INTERNAL, () => recordCut({ claimId: parent, quantityId: quantity, direction: "below", value: 4, createdBy: "claim_steward" }));
+    expect((await labelsWhere("quantity_cuts", "claim_id = $1", [parent])).sort()).toEqual([PUBLIC_LABEL, INTERNAL].sort());
+    expect((await rawQuery<{ value: number }>(`SELECT value FROM quantity_cuts WHERE claim_id = $1 AND sensitivity_label = $2`, [parent, PUBLIC_LABEL]))[0]!.value).toBe(3);
+    const words = await rawQuery<{ text: string }>(
+      `SELECT measures AS text FROM quantity_definitions WHERE claim_id = $1
+       UNION ALL SELECT reasoning FROM claim_relationships WHERE id = ANY($2::uuid[])
+       UNION ALL SELECT reasoning FROM claim_links WHERE id = $3`,
+      [quantity, [first.edge, first.answer], first.link]
+    );
+    expect(words.filter((w) => /restricted/i.test(w.text ?? ""))).toEqual([]);
   });
 });
 
@@ -595,6 +637,7 @@ describe("a row of the graph's content", () => {
 describe("a node minted by a worker", () => {
   async function ingested(label: string | null): Promise<string> {
     const url = `https://dbtest.example/graph/${randomUUID()}`;
+    if (label) await asGiven(url, label);
     const submit = () => submitSource({ url, content: "<p>An essay about the grid.</p>" });
     const { jobId, sourceId } = label ? await inRunAt(label, submit) : await submit();
     const queue = getLocalQueue("urlExtraction");
@@ -669,19 +712,25 @@ describe("work that starts from a claim", () => {
     }
   });
 
-  it("is reopened by the sweep at the claim's label, whatever label its finished row had", async () => {
+  it("is opened by the sweep in the claim's own label's group, and a finished row at another label stays as it was", async () => {
     const claim = await seedClaim("graph swept again");
     await setLabel(claim, INTERNAL);
-    // A row from an earlier pass, finished, at public.
+    // A row from an earlier pass, finished, at public, under the public key.
     await seedAction({ group: ASSESS_GROUP(claim), claimId: claim, costMicroUsd: 1, status: "done" });
     expect(await assessLabels(claim)).toEqual([PUBLIC_LABEL]);
     await onlyPending([claim]);
     await reconcileActions();
-    const rows = await rawQuery<{ status: string; sensitivity_label: string }>(
-      `SELECT status, sensitivity_label FROM actions WHERE exclusion_group = $1 AND variant = 'standard'`,
-      [ASSESS_GROUP(claim)]
+    const rows = await rawQuery<{ exclusion_group: string; status: string; sensitivity_label: string }>(
+      `SELECT exclusion_group, status, sensitivity_label FROM actions
+        WHERE claim_id = $1 AND kind IN ('assess', 'reassess') AND variant = 'standard' ORDER BY status`,
+      [claim]
     );
-    expect(rows).toEqual([{ status: "open", sensitivity_label: INTERNAL }]);
+    // A row's label never changes: the claim's pass has a row in its own
+    // label's group, and the public row is not reopened or relabelled.
+    expect(rows).toEqual([
+      { exclusion_group: ASSESS_GROUP(claim), status: "done", sensitivity_label: PUBLIC_LABEL },
+      { exclusion_group: ASSESS_GROUP(claim, INTERNAL), status: "open", sensitivity_label: INTERNAL },
+    ]);
   });
 
   it("is run by the Steward's fallback lane at the claim's label", async () => {
@@ -735,28 +784,49 @@ describe("work that starts from a claim", () => {
     expect(await processNextTaggingTask()).toEqual({ status: "empty" });
   });
 
+  // A mandate's plan is the mandate's work, not the claim's: since mandates
+  // carry a label of their own, the order takes it (label-governance.test.ts
+  // has the mandate at a second label). The claim's label no longer stands in.
   it("is ordered for a mandate's plan at the mandate's label when the scheduler places the order, and at the run's when a run does", async () => {
     const funder = await seedUser("graph-plan");
     const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500 * OWL, dailyBudgetMicroUsd: 100 * OWL });
-    // The mandate decides for its plan rows, whatever label the claim it names carries.
-    await rawQuery(`UPDATE grants SET sensitivity_label = $2 WHERE id = $1`, [grantId, INTERNAL]);
     const swept = await seedClaim("graph plan item, swept");
     await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
       grantId,
       JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", variant: "standard", budget_owls: 3 }] }),
     ]);
-    // The scheduler materializes the plan outside any run.
+    // The scheduler materializes the plan outside any run. The mandate is public.
     await materializePlanItems(grantId);
-    expect(await assessLabels(swept)).toEqual([INTERNAL]);
+    expect(await assessLabels(swept)).toEqual([PUBLIC_LABEL]);
 
-    // An order placed from inside a run is that run's work, like everything a run opens.
+    // An order placed from inside a run is that run's work, like everything
+    // a run opens: on a public claim, from a run at another label, it is
+    // the run's and not the claim's.
     const inRun = await seedClaim("graph plan item, in a run");
-    await setLabel(inRun, INTERNAL);
-    const placed = await inRunAt(PUBLIC_LABEL, () =>
+    const placed = await inRunAt(INTERNAL, () =>
       placeStandingOrder({ grantId, claimId: inRun, tier: "standard", budgetMicroUsd: 3 * OWL, brief: "A funded mandate scheduled a pass." })
     );
     expect(placed.state).toBe("placed");
-    expect(await assessLabels(inRun)).toEqual([PUBLIC_LABEL]);
+    expect(await assessLabels(inRun)).toEqual([INTERNAL]);
+  });
+
+  // Reads are held to a clearance (tests/db/enforcement.test.ts), so a
+  // mandate's plan cannot order work on a claim its own label does not
+  // read. Before, the pass was opened at the mandate's label, public, on a
+  // claim that was not. Now the claim is not there for the plan, and the
+  // item says so on the plan's own ledger, where its Grantmaker reads it.
+  it("is not ordered by a mandate's plan on a claim the mandate's label does not read", async () => {
+    const funder = await seedUser("graph-plan-unreadable");
+    const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 500 * OWL, dailyBudgetMicroUsd: 100 * OWL });
+    const swept = await seedClaim("graph plan item, out of reach");
+    await setLabel(swept, INTERNAL);
+    await rawQuery(`UPDATE grants SET plan = $2::jsonb, plan_cursor = 0 WHERE id = $1`, [
+      grantId,
+      JSON.stringify({ strategy: "s", items: [{ action: "assess", claim_id: swept, rationale: "first", budget_owls: 3 }] }),
+    ]);
+    const [item] = await materializePlanItems(grantId);
+    expect(item!.ledger).toMatchObject({ status: "blocked", reason: `claim ${swept} does not exist` });
+    expect(await assessLabels(swept)).toEqual([]);
   });
 
   it("is raised by the reconcile-candidate scan at the anchor claim's label", async () => {
@@ -774,7 +844,7 @@ describe("work that starts from a claim", () => {
       await scanReconcileCandidates({ reconcile_candidates_max_per_sweep: 5, reconcile_candidate_min_similarity: 0.92 })
     ).toBe(2);
     const curateLabels = (pair: string[]) =>
-      labelsWhere("actions", "kind = 'curate' AND exclusion_group = ANY($1)", [pair.map((id) => CURATE_GROUP(id))]);
+      labelsWhere("actions", "kind = 'curate' AND claim_id = ANY($1::uuid[])", [pair]);
     expect(await curateLabels(restricted)).toEqual([INTERNAL]);
     expect(await curateLabels(open)).toEqual([PUBLIC_LABEL]);
     await rawQuery(`UPDATE claims SET embedding = NULL`);
@@ -793,47 +863,95 @@ describe("work that starts from a claim", () => {
   });
 
   it("is asked of the Steward at the claim's label when a notice is found against a source it rests on, whoever found it", async () => {
-    const restricted = await settledClaim("graph notice restricted");
-    const open = await settledClaim("graph notice public");
-    await setLabel(restricted, INTERNAL);
-    const letters = (doi: string) =>
+    // A public document with a passage on each node, each passage at its
+    // node's label. A letter says how the notice reaches the node as the
+    // node's own label reads it (source-notice-service.ts), so the document
+    // and the passages are real rows.
+    const noticed = async (claimsOnIt: Array<[claim: string, label: string]>) => {
+      const doi = `10.5555/${randomUUID()}`;
+      const [source] = await rawQuery<{ id: string }>(
+        `INSERT INTO sources (url, title, doi, sensitivity_label) VALUES ($1, 'A paper', $2, $3) RETURNING id`,
+        [`https://doi.org/${doi}`, doi, PUBLIC_LABEL]
+      );
+      for (const [claim, label] of claimsOnIt) {
+        await rawQuery(
+          `INSERT INTO claim_instances (claim_id, source_id, verbatim_text, sensitivity_label) VALUES ($1, $2, 'It found the effect.', $3)`,
+          [claim, source!.id, label]
+        );
+      }
+      return { doi, sourceId: source!.id, claimIds: claimsOnIt.map(([claim]) => claim) };
+    };
+    const tell = (n: Awaited<ReturnType<typeof noticed>>, type: string) =>
       tellStewardsOfSourceEvents(
         [
           {
-            source: { source_id: randomUUID(), url: `https://doi.org/${doi}`, title: "A paper", claim_ids: [restricted, open] },
-            notice: { type: "retraction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
+            source: { source_id: n.sourceId, url: `https://doi.org/${n.doi}`, title: "A paper", claim_ids: n.claimIds },
+            notice: { type, title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${n.doi}.n1` },
           },
         ],
         []
       );
+
+    const restricted = await settledClaim("graph notice restricted");
+    const open = await settledClaim("graph notice public");
+    await setLabel(restricted, INTERNAL);
     // The Crossref poll finds the notice outside any run.
     expect(currentLabel()).toBe(PUBLIC_LABEL);
-    expect(await letters(`10.5555/${randomUUID()}`)).toBe(2);
+    expect(await tell(await noticed([[restricted, INTERNAL], [open, PUBLIC_LABEL]]), "retraction")).toBe(2);
     expect(await assessLabels(restricted)).toEqual([INTERNAL]);
     expect(await assessLabels(open)).toEqual([PUBLIC_LABEL]);
+    // The letter itself, waiting in each node's inbox, is at the node's label too.
+    expect(await labelsWhere("node_messages", "node_id = $1", [restricted])).toEqual([INTERNAL]);
+    expect(await labelsWhere("node_messages", "node_id = $1", [open])).toEqual([PUBLIC_LABEL]);
 
     // A run's first fetch of the document finds it: each letter is still at
     // its node's label and not at the label of the run that fetched.
     const restrictedAgain = await settledClaim("graph notice restricted, found in a run");
     const openAgain = await settledClaim("graph notice public, found in a run");
     await setLabel(restrictedAgain, INTERNAL);
-    for (const finder of [INTERNAL, PUBLIC_LABEL]) {
-      const doi = `10.5555/${randomUUID()}`;
-      const told = await inRunAt(finder, () =>
-        tellStewardsOfSourceEvents(
-          [
-            {
-              source: { source_id: randomUUID(), url: `https://doi.org/${doi}`, title: "A paper", claim_ids: [restrictedAgain, openAgain] },
-              notice: { type: "correction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
-            },
-          ],
-          []
-        )
-      );
-      expect(told).toBe(2);
-      expect(await assessLabels(restrictedAgain)).toEqual([INTERNAL]);
-      expect(await assessLabels(openAgain)).toEqual([PUBLIC_LABEL]);
-    }
+    const again = await noticed([[restrictedAgain, INTERNAL], [openAgain, PUBLIC_LABEL]]);
+    expect(await inRunAt(INTERNAL, () => tell(again, "correction"))).toBe(2);
+    expect(await assessLabels(restrictedAgain)).toEqual([INTERNAL]);
+    expect(await assessLabels(openAgain)).toEqual([PUBLIC_LABEL]);
+    expect(await labelsWhere("node_messages", "node_id = $1", [restrictedAgain])).toEqual([INTERNAL]);
+    expect(await labelsWhere("node_messages", "node_id = $1", [openAgain])).toEqual([PUBLIC_LABEL]);
+
+    // A run at public cannot read the restricted node, so it tells the
+    // public one alone, and writes nothing about the other: not at public,
+    // where a letter would say that the node exists and what it rests on.
+    const unreadable = await settledClaim("graph notice restricted, found by a public run");
+    const readable = await settledClaim("graph notice public, found by a public run");
+    await setLabel(unreadable, INTERNAL);
+    const byPublic = await noticed([[unreadable, INTERNAL], [readable, PUBLIC_LABEL]]);
+    expect(await inRunAt(PUBLIC_LABEL, () => tell(byPublic, "correction"))).toBe(1);
+    expect(await labelsWhere("node_messages", "node_id = $1", [unreadable])).toEqual([]);
+    expect(await labelsWhere("node_messages", "node_id = $1", [readable])).toEqual([PUBLIC_LABEL]);
+  });
+
+  // The other way round: a node whose only tie to a document is a passage
+  // its own label does not read is not told about the document.
+  it("is not told of a notice against a document it is tied to only by rows its label does not read", async () => {
+    const open = await settledClaim("graph notice, tied by a restricted passage");
+    const doi = `10.5555/${randomUUID()}`;
+    const [source] = await rawQuery<{ id: string }>(
+      `INSERT INTO sources (url, title, doi, sensitivity_label) VALUES ($1, 'A restricted paper', $2, $3) RETURNING id`,
+      [`https://doi.org/${doi}`, doi, INTERNAL]
+    );
+    await rawQuery(
+      `INSERT INTO claim_instances (claim_id, source_id, verbatim_text, sensitivity_label) VALUES ($1, $2, 'A restricted passage.', $3)`,
+      [open, source!.id, INTERNAL]
+    );
+    const told = await tellStewardsOfSourceEvents(
+      [
+        {
+          source: { source_id: source!.id, url: `https://doi.org/${doi}`, title: "A restricted paper", claim_ids: [open] },
+          notice: { type: "retraction", title: null, updated: "2026-09-10T00:00:00Z", notice_doi: `${doi}.n1` },
+        },
+      ],
+      []
+    );
+    expect(told).toBe(0);
+    expect(await labelsWhere("node_messages", "node_id = $1", [open])).toEqual([]);
   });
 
   it("takes the claim's label over the one in the air", async () => {
@@ -841,7 +959,15 @@ describe("work that starts from a claim", () => {
     await setLabel(claim, INTERNAL);
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtClaimLabel(claim, at)).toBe(INTERNAL);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabel(claim, at))).toBe(INTERNAL);
+    // A sweep sees every label (withSystemClearance), whatever label is in the air around it.
+    expect(
+      await withSystemClearance("A test stands in for a sweep.", () =>
+        runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtClaimLabel(claim, at))
+      )
+    ).toBe(INTERNAL);
+    // Work that does not read the claim's label cannot move itself to it:
+    // the claim is not there for that work, and it runs as it would have.
+    expect(await runAtLabel(PUBLIC_LABEL, "a public run", () => runAtClaimLabel(claim, at))).toBe(PUBLIC_LABEL);
     // A claim that does not exist has nothing to run at: the work runs as it would have.
     expect(await runAtClaimLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
   });

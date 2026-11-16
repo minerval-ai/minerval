@@ -13,10 +13,12 @@
  * The view carries no count of instances outside the instances section:
  * how widely an argument is made is not a measure of its standing (§7).
  */
+import { evaluationsInForce, severalEvaluationsNote } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { EVALUATION_STALE_SQL, getArgument, hasWrittenForm, parseClaimLinks } from "./argument-service.js";
 import { listArgumentInstances } from "./argument-instance-service.js";
+import { withLayer, withSetAside } from "./overlay-service.js";
 
 export const ARGUMENT_VIEW_INCLUDES = ["evaluation", "premises", "instances"] as const;
 export type ArgumentViewInclude = (typeof ARGUMENT_VIEW_INCLUDES)[number];
@@ -72,9 +74,15 @@ export async function getArgumentView(
     [argument.claimId]
   );
 
+  // On a graph with more than one label: the label the argument is at,
+  // and where a label the reader reads has set it aside, that it has.
+  const [placed] = await withSetAside("arguments", await withLayer("arguments", [{ id: argument.id }], (a) => a.id), (a) => a.id);
+
   const payload: Record<string, unknown> = {
     argument: {
       id: argument.id,
+      ...(placed?.label ? { label: placed.label } : {}),
+      ...(placed?.set_aside ? { set_aside: placed.set_aside } : {}),
       // The argument's own page (#541), a permanent URL as a claim's is.
       page_url: `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/arguments/${argument.id}`,
       conclusion: conclusion
@@ -103,12 +111,15 @@ export async function getArgumentView(
           decisive: boolean;
           content: string;
           is_current: boolean;
+          in_force: boolean;
           stale: boolean;
           assessment_id: string | null;
           estimate_id: string | null;
           created_at: Date;
         }>(
           `SELECT ae.verdict, ae.decisive, ae.content, ae.is_current,
+                  ae.id = (SELECT f.id FROM argument_evaluations_in_force f
+                            WHERE f.argument_id = ae.argument_id) AS in_force,
                   ${EVALUATION_STALE_SQL} AS stale,
                   ae.assessment_id, ae.estimate_id, ae.created_at
              FROM argument_evaluations ae
@@ -129,9 +140,21 @@ export async function getArgumentView(
           estimate_id: r.estimate_id,
           created_at: iso(r.created_at),
         });
-        const current = rows.find((r) => r.is_current);
+        // The evaluation a reader goes by is the one in force for them
+        // (db/schema.ts, argument_evaluations_in_force): where a label that
+        // reads another's has its own, that one, whichever was made last.
+        const current = rows.find((r) => r.in_force);
         payload.evaluation = current ? shape(current) : null;
         payload.evaluation_history = rows.filter((r) => !r.is_current).map(shape);
+        // An argument can carry a current evaluation at each label. Where
+        // more than one is in force for the asker, say how many and give
+        // each: the one above is the most recently made of them.
+        const inForce = (await evaluationsInForce([argumentId]).catch(() => new Map<string, number>())).get(argumentId.toLowerCase());
+        if (inForce) {
+          payload.evaluations_in_force = inForce;
+          payload.evaluations_in_force_note = severalEvaluationsNote(inForce);
+          payload.evaluations = rows.filter((r) => r.is_current).map(shape);
+        }
       })()
     );
   }
@@ -201,8 +224,9 @@ export async function getArgumentView(
           limit: opts.instancesLimit ?? DEFAULT_INSTANCES_PAGE,
           offset: opts.instancesOffset ?? 0,
         });
-        payload.instances = items.map((i) => ({
+        payload.instances = (await withLayer("argument_instances", items, (i) => i.id)).map((i) => ({
           id: i.id,
+          ...(i.label ? { label: i.label } : {}),
           source: { id: i.source_id, url: i.source_url, title: i.source_title },
           verbatim_text: i.verbatim_text,
           context: i.context,

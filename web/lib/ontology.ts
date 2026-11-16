@@ -1,6 +1,7 @@
 import type {
   ArgumentVerdict, AssessmentStatus, CheckKind, ClaimType, LeanCheckSummary,
   QuestionStanding, RelationType, RequestOutcome, RequestState, Stance, TreeNode, ValueShown,
+  SetAside,
 } from "./types";
 import { orderByMention } from "./claim-links";
 
@@ -657,7 +658,10 @@ export function effectCounts(scored: ScoredNode[]): Record<Effect, number> {
   const counts: Record<Effect, number> = {
     supports: 0, against: 0, uncertain: 0, weak: 0, unassessed: 0,
   };
-  for (const s of scored) counts[s.effect] += 1;
+  // A premise a label the reader reads has set aside, or one under an
+  // argument it has set aside, is listed but not counted: the assessment at
+  // that label does not rest on it.
+  for (const s of scored) if (!s.node.set_aside && !s.node.argument_set_aside) counts[s.effect] += 1;
   return counts;
 }
 
@@ -694,6 +698,10 @@ export interface ArgumentGroup {
   // The checker record when the argument is machine-checked (mathematics);
   // null for every other argument.
   leanCheck: LeanCheckSummary | null;
+  // Inside a deployment with more than one label: the label the argument is
+  // recorded at, and the label that has set it aside for its readers.
+  label?: string;
+  setAside?: SetAside;
   named: boolean;
   nodes: ScoredNode[];
   counts: Record<Effect, number>;
@@ -721,6 +729,8 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
         evaluation: s.node.argument_evaluation ?? null,
         shows: s.node.argument_shows ?? null,
         leanCheck: s.node.argument_lean_check ?? null,
+        ...(id && s.node.argument_label ? { label: s.node.argument_label } : {}),
+        ...(id && s.node.argument_set_aside ? { setAside: s.node.argument_set_aside } : {}),
         named: Boolean(s.node.argument_name),
         nodes: [],
         counts: { supports: 0, against: 0, uncertain: 0, weak: 0, unassessed: 0 },
@@ -730,7 +740,7 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
       groups.push(g);
     }
     g.nodes.push(s);
-    g.counts[s.effect] += 1;
+    if (!s.node.set_aside) g.counts[s.effect] += 1;
   }
   for (const g of groups) {
     g.net = netEffect(g.counts);

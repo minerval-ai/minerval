@@ -19,6 +19,7 @@
  *   review is worth asking for; there is no threshold.
  * - History: a dated log of what has been done to and about the document.
  */
+import { oneReadingForInstanceSql } from "./layer-service.js";
 import { rawQuery } from "../db/client.js";
 import { getProvenanceStory } from "./provenance-story-service.js";
 
@@ -270,7 +271,7 @@ export async function getSourceProminence(sourceId: string): Promise<SourcePromi
          FROM claim_instance_readings r
          JOIN claim_instances ci ON ci.id = r.instance_id AND ci.detached_at IS NULL
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
-        WHERE ci.source_id = $1
+        WHERE ci.source_id = $1${oneReadingForInstanceSql("r")}
         GROUP BY r.support`,
       [sourceId]
     ),
@@ -290,7 +291,7 @@ export async function getSourceProminence(sourceId: string): Promise<SourcePromi
          FROM claim_instance_readings r
          JOIN claim_instances ci ON ci.id = r.instance_id AND ci.detached_at IS NULL
          JOIN claims c ON c.id = ci.claim_id AND c.state = 'active'
-        WHERE ci.source_id = $1 AND r.note IS NOT NULL AND r.note <> ''
+        WHERE ci.source_id = $1 AND r.note IS NOT NULL AND r.note <> ''${oneReadingForInstanceSql("r")}
         ORDER BY r.updated_at DESC
         LIMIT 20`,
       [sourceId]
@@ -594,7 +595,7 @@ export async function listDocumentsForReview(opts: {
      readings AS (
        SELECT li.source_id, COUNT(*)::int AS n, COUNT(DISTINCT r.support)::int AS kinds,
               COUNT(*) FILTER (WHERE r.source_read)::int AS whole
-         FROM claim_instance_readings r JOIN live_instances li ON li.id = r.instance_id
+         FROM claim_instance_readings r JOIN live_instances li ON li.id = r.instance_id${oneReadingForInstanceSql("r")}
         GROUP BY li.source_id
      ),
      reviews AS (

@@ -20,6 +20,9 @@
  * model's call into a service call and a refusal into a message the agent
  * can act on. `executeKindTool` returns null for a name it does not own.
  */
+import { oneSourceForAddressSql } from "../../services/layer-service.js";
+import { refusalForCaller } from "../../db/clearance.js";
+import { mirroredNode, mirroredRefusalForAgent, mirroredRowMessage } from "../../services/mirrored-node-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { mergedAliasRefusal } from "../../services/claim-alias-service.js";
 type Tool = Anthropic.Tool;
@@ -29,6 +32,7 @@ import { claims } from "../../db/schema.js";
 import { loadConfig } from "../../config.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { getOrCreateSource, type SourceKindOutcome } from "../../services/source-service.js";
+import { sourceAddressProblem } from "../../services/reading-address.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { insertRelationshipEdge } from "../../services/relationship-service.js";
 import { enqueueClaimPipeline, enqueueSteward } from "../../services/queue-service.js";
@@ -58,6 +62,7 @@ import {
   setRequestState,
   setRequestTargets,
 } from "../../services/request-service.js";
+import { requestToActOn } from "../../services/request-adoption-service.js";
 import { changeNodeKind } from "../../services/reconciliation-service.js";
 import {
   DOCUMENT_REVIEW_ORDERS,
@@ -849,7 +854,9 @@ async function sourceFor(
   input: Record<string, unknown>
 ): Promise<{ id: string; kind: SourceKindOutcome | Record<string, never> } | { error: string }> {
   const url = str(input.url);
-  if (!/^https?:\/\//i.test(url)) return { error: "url must be the http(s) URL of the source you read." };
+  // An http(s) URL, or the address of a reading kept from a connection.
+  const addressProblem = await sourceAddressProblem(url, "url must be the http(s) URL of the source you read.");
+  if (addressProblem) return { error: addressProblem };
   const kindRefusal = sourceKindRefusal(input.source_kind);
   if (kindRefusal) return { error: kindRefusal };
   const source = await getOrCreateSource({ url, title: optStr(input.title) });
@@ -917,10 +924,17 @@ export async function executeKindTool(
       const notOwn = await ownershipRefusal(name, input);
       if (notOwn) return notOwn;
     }
+    // A mirrored quantity's definition is the public graph's, whatever the
+    // run's label (services/mirrored-node-service.ts): the one refusal.
+    if (name === "set_quantity_definition" && (await mirroredNode(str(input.claim_id)))) {
+      return refuse(mirroredRowMessage("the quantity's definition"));
+    }
     return await executeKindToolImpl(name, input, ctx);
   } catch (err) {
     if (err instanceof ZodError) return refuse(`Not recorded: ${zodMessage(err)}.`);
     if (err instanceof KindError || err instanceof RequestError) return refuse(err.message);
+    const refusal = mirroredRefusalForAgent(err) ?? refusalForCaller(err);
+    if (refusal) return refuse(refusal);
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
@@ -1319,7 +1333,7 @@ async function executeKindToolImpl(
       let sourceId = str(input.source_id);
       if (!sourceId && str(input.url)) {
         const [row] = await rawQuery<{ id: string }>(
-          `SELECT id FROM sources WHERE url = $1 ORDER BY retrieved_at LIMIT 1`,
+          `SELECT id FROM sources WHERE url = $1${oneSourceForAddressSql() || " ORDER BY retrieved_at LIMIT 1"}`,
           [str(input.url)]
         );
         if (!row) return refuse(`The graph holds no source at ${str(input.url)}.`);
@@ -1356,11 +1370,17 @@ async function executeKindToolImpl(
     }
 
     case "revise_request": {
-      const requestId = str(input.request_id);
-      const denied = await mayKeep(requestId, ctx);
+      // A request filed at a label below is that label's row. Its keeper
+      // here keeps this label's take-up of it (request-adoption-service.ts).
+      const denied = await mayKeep(str(input.request_id), ctx);
       if (denied) return refuse(denied);
       const rewords = ["ask", "why", "satisfied_by", "who_could", "addressed_to"].some((k) => input[k] !== undefined);
       if (!rewords && input.budget_usd === undefined) return refuse("Nothing to revise.");
+      const { id: requestId, note: takenUp } = await requestToActOn(str(input.request_id), {
+        kind: "admin",
+        agent: ctx.role,
+        runId: usage.runId ?? null,
+      });
       if (rewords) {
         await reviseRequest({
           requestId,
@@ -1374,17 +1394,23 @@ async function executeKindToolImpl(
       if (input.budget_usd !== undefined) {
         await setRequestBudget({ requestId, budgetUsd: Number(input.budget_usd) });
       }
-      return ok(`Request ${requestId} revised.`);
+      return ok(`Request ${requestId} revised.${takenUp ? ` ${takenUp}` : ""}`, takenUp ? { request_id: requestId } : {});
     }
 
     case "close_request": {
-      const requestId = str(input.request_id);
-      const denied = await mayKeep(requestId, ctx);
+      const denied = await mayKeep(str(input.request_id), ctx);
       if (denied) return refuse(denied);
       const state = str(input.state);
       if (!["met", "declined", "moot"].includes(state)) return refuse("state must be met, declined, or moot.");
+      if (!str(input.note).trim() && state !== "met") return refuse(`A request ${state} says why.`);
+      // As for revise_request: what is closed is this label's own request.
+      const { id: requestId, note: takenUp } = await requestToActOn(str(input.request_id), {
+        kind: "admin",
+        agent: ctx.role,
+        runId: usage.runId ?? null,
+      });
       await setRequestState({ requestId, state: state as never, note: str(input.note) });
-      return ok(`Request ${requestId} closed as ${state}.`);
+      return ok(`Request ${requestId} closed as ${state}.${takenUp ? ` ${takenUp}` : ""}`, takenUp ? { request_id: requestId } : {});
     }
 
     case "set_request_targets": {

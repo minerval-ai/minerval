@@ -286,6 +286,12 @@ function buildGraphs(
         o: lit(record.assessment.model),
       });
     }
+    // More than one assessment in force for the caller: the assertion states
+    // the pinned one, and the publication info names every one in force, so
+    // a reader of the nanopublication knows the pinned one is not alone.
+    for (const other of record.assessments_in_force ?? []) {
+      pubinfo.push({ s: npUri, p: "mv:assessmentInForce", o: lit(other.id) });
+    }
   }
 
   return { head, assertion, provenance, pubinfo };

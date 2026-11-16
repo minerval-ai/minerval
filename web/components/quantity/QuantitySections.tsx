@@ -8,6 +8,7 @@ import { StatusBadge, Swatch, Unassessed } from "@/components/Assessment";
 import { Term } from "@/components/Term";
 import { EstimateStrip, ValueAxis } from "./EstimateStrip";
 import styles from "./quantity.module.css";
+import { sourceHref } from "@/lib/source-address";
 
 // The quantity's page (constitution §2, §3, §4, §7, §10): its definition,
 // the graph's estimate, every figure a source states grouped under the
@@ -203,7 +204,7 @@ export function QuantityReadings({ detail }: { detail: ClaimDetail }) {
       {readings.map((r) => (
         <div className={styles.reading} key={r.id}>
           <div className={styles.readingHead}>
-            {r.source_url ? <a href={r.source_url}>{r.source_title}</a> : <span>{r.source_title}</span>}
+            {sourceHref(r.source_url) ? <a href={sourceHref(r.source_url)!}>{r.source_title}</a> : <span>{r.source_title}</span>}
             <span className={styles.readingFigure}>{r.figure}</span>
           </div>
           <dl className={styles.readingDl}>

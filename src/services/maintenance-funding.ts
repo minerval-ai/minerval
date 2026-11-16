@@ -16,6 +16,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { getGeneralMandate } from "./allocation-policy-service.js";
+import { labelInContext, runAtLabel } from "../llm/usage-context.js";
 import { raiseToMandate } from "./mandate-inbox-service.js";
 import {
   describeCurationRequest,
@@ -29,28 +30,41 @@ interface Row {
   claim_id: string | null;
   target_ref: string | null;
   label: string;
+  /** The row's own label: its work runs there, so the General mandate at that label is the one asked. */
+  sensitivity_label: string;
 }
 
 async function row(actionId: string): Promise<Row | null> {
   const [r] = await rawQuery<Row>(
-    `SELECT id, kind, claim_id, target_ref, label FROM actions WHERE id = $1`,
+    `SELECT id, kind, claim_id, target_ref, label, sensitivity_label FROM actions WHERE id = $1`,
     [actionId]
   );
   return r ?? null;
 }
 
-async function raise(grantId: string, r: Row, summary: string): Promise<void> {
-  await raiseToMandate({
-    grantId,
-    targetNodeId: r.claim_id,
-    targetRef: r.claim_id ? null : r.target_ref,
-    source: "the system",
-    summary,
-    detail: { action_id: r.id, kind: r.kind },
-  });
+/**
+ * Raise at the row's label where no run or request is in progress (a sweep
+ * found the row): the item is then read by the officers of the General
+ * mandate at that label, who work only what is raised at it. Inside a run
+ * the item carries the run's label, as everything it writes does.
+ */
+function atRowLabel<T>(r: Row, fn: () => Promise<T>): Promise<T> {
+  return labelInContext() === null ? runAtLabel(r.sensitivity_label, `raising ledger row ${r.id} to its label's General mandate`, fn) : fn();
 }
 
-/** How much of one concern an inbox item carries; the Curator reads it whole. */
+async function raise(grantId: string, r: Row, summary: string): Promise<void> {
+  await atRowLabel(r, () =>
+    raiseToMandate({
+      grantId,
+      targetNodeId: r.claim_id,
+      targetRef: r.claim_id ? null : r.target_ref,
+      source: "the system",
+      summary,
+      detail: { action_id: r.id, kind: r.kind },
+    })
+  );
+}
+
 const INBOX_CONCERN_CHARS = 800;
 
 /**
@@ -110,19 +124,21 @@ async function liveRequestsFor(anchorClaimId: string, requestId: string | null):
  */
 export async function fundCurationNow(actionId: string, opts: { requestId?: string | null } = {}): Promise<void> {
   try {
-    const general = await getGeneralMandate();
     const r = await row(actionId);
+    const general = r ? await getGeneralMandate(r.sensitivity_label) : null;
     if (!general || !r) return;
     const requests = r.claim_id ? await liveRequestsFor(r.claim_id, opts.requestId ?? null) : [];
     if (r.claim_id && requests.length === 0) return;
-    await raiseToMandate({
-      grantId: general.grantId,
-      targetNodeId: r.claim_id,
-      targetRef: r.claim_id ? null : r.target_ref,
-      source: "the system",
-      summary: curationSummary(r, requests),
-      detail: curationDetail(r, requests),
-    });
+    await atRowLabel(r, () =>
+      raiseToMandate({
+        grantId: general.grantId,
+        targetNodeId: r.claim_id,
+        targetRef: r.claim_id ? null : r.target_ref,
+        source: "the system",
+        summary: curationSummary(r, requests),
+        detail: curationDetail(r, requests),
+      })
+    );
   } catch (err) {
     console.warn(`[maintenance] raising curate ${actionId} failed:`, err instanceof Error ? err.message : err);
   }
@@ -167,7 +183,7 @@ export async function refreshCurationInboxItems(
     [grantId, CURATION_ITEM_RETIRED_REASON]
   );
   const waiting = await rawQuery<Row & { item_id: string; summary: string }>(
-    `SELECT i.id AS item_id, i.summary, a.id, a.kind, a.claim_id, a.target_ref, a.label
+    `SELECT i.id AS item_id, i.summary, a.id, a.kind, a.claim_id, a.target_ref, a.label, a.sensitivity_label
        FROM mandate_inbox i JOIN actions a ON a.id::text = i.detail->>'action_id'
       WHERE i.handled_at IS NULL AND a.kind = 'curate' AND a.claim_id IS NOT NULL
         AND ($1::uuid IS NULL OR i.grant_id = $1::uuid)`,
@@ -201,7 +217,7 @@ export async function fundAuditNow(actionId: string, opts: { note?: string } = {
       `SELECT subject_grant_id FROM audit_runs WHERE id::text = $1`,
       [r.target_ref ?? ""]
     );
-    const general = await getGeneralMandate();
+    const general = await getGeneralMandate(r.sensitivity_label);
     if (!general || general.grantId === (run?.subject_grant_id ?? null)) return;
     const summary = `An audit is wanted: ${r.label}` + (opts.note ? ` ${opts.note}` : "");
     await raise(general.grantId, r, summary);
@@ -213,8 +229,8 @@ export async function fundAuditNow(actionId: string, opts: { note?: string } = {
 /** A fresh request row: to the General mandate's officers. */
 export async function fundRequestNow(actionId: string): Promise<void> {
   try {
-    const general = await getGeneralMandate();
     const r = await row(actionId);
+    const general = r ? await getGeneralMandate(r.sensitivity_label) : null;
     if (!general || !r) return;
     await raise(general.grantId, r, `Work on a request is wanted: ${r.label}`);
   } catch (err) {

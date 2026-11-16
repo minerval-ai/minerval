@@ -108,6 +108,7 @@ vi.mock("../../../src/services/curation-service.js", async (importOriginal) => (
 }));
 
 vi.mock("../../../src/services/allocation-policy-service.js", () => ({
+  AT_ANY_LABEL: Symbol("any label"),
   getGeneralMandate: vi.fn(async () => state.generalMandate),
 }));
 

@@ -25,7 +25,7 @@ export async function regrantsOutMicroUsd(grantId: string): Promise<number> {
   const [row] = await rawQuery<{ total: number }>(
     `SELECT COALESCE(SUM(amount_micro_usd - refunded_micro_usd), 0)::bigint
        AS total
-       FROM regrants WHERE from_grant_id = $1`,
+       FROM minerval_whole.regrant_money WHERE from_grant_id = $1`,
     [grantId]
   );
   return Number(row?.total ?? 0);
@@ -112,7 +112,7 @@ const ESCROW_TERMS_SQL = `
       SELECT grant_id,
              SUM(spent_micro_usd) AS shares,
              SUM(amount_micro_usd - spent_micro_usd) FILTER (WHERE released_at IS NULL) AS outstanding
-        FROM action_allocations
+        FROM minerval_whole.allocation_money
        WHERE grant_id = ANY($1::uuid[])
        GROUP BY grant_id
     ) al ON al.grant_id = ge.grant_id
@@ -124,7 +124,7 @@ const ESCROW_TERMS_SQL = `
     ) u ON u.job_id = ge.job_id
     LEFT JOIN (
       SELECT from_grant_id, SUM(amount_micro_usd - refunded_micro_usd) AS total
-        FROM regrants
+        FROM minerval_whole.regrant_money
        WHERE from_grant_id = ANY($1::uuid[])
        GROUP BY from_grant_id
     ) rg ON rg.from_grant_id = ge.grant_id`;
@@ -201,14 +201,16 @@ export async function regrantEdges(grantId: string): Promise<{
     `SELECT 'in' AS direction, g.id AS grant_id,
             COALESCE(g.mandate->>'title', g.name) AS title,
             SUM(r.amount_micro_usd)::bigint AS amount,
-            MIN(r.note) AS note
-       FROM regrants r JOIN grants g ON g.id = r.from_grant_id
+            -- The note is read from the table, at the labels this reader holds.
+            (SELECT MIN(n.note) FROM regrants n WHERE n.from_grant_id = g.id AND n.to_grant_id = $1) AS note
+       FROM minerval_whole.regrant_money r JOIN grants g ON g.id = r.from_grant_id
       WHERE r.to_grant_id = $1
       GROUP BY g.id, g.mandate->>'title', g.name
      UNION ALL
      SELECT 'out', g.id, COALESCE(g.mandate->>'title', g.name),
-            SUM(r.amount_micro_usd)::bigint, MIN(r.note)
-       FROM regrants r JOIN grants g ON g.id = r.to_grant_id
+            SUM(r.amount_micro_usd)::bigint,
+            (SELECT MIN(n.note) FROM regrants n WHERE n.from_grant_id = $1 AND n.to_grant_id = g.id)
+       FROM minerval_whole.regrant_money r JOIN grants g ON g.id = r.to_grant_id
       WHERE r.from_grant_id = $1
       GROUP BY g.id, g.mandate->>'title', g.name`,
     [grantId]
@@ -338,8 +340,6 @@ export async function createRegrant(input: {
       };
     }
     const [row] = await tx.query<{ id: string }>(
-      // The note is the regranting run's words, so the row carries that
-      // run's label (src/labels.ts).
       `INSERT INTO regrants (from_grant_id, to_grant_id, amount_micro_usd, note, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING id`,
@@ -372,6 +372,8 @@ export async function spawnFundedMandate(input: {
   objective: string;
   owls: number;
   note?: string;
+  /** Where the mandate came from, when that changes how it starts (grants.mandate.origin). */
+  origin?: string;
 }): Promise<SpawnMandateResult> {
   const [source] = await rawQuery<{
     id: string;
@@ -404,6 +406,7 @@ export async function spawnFundedMandate(input: {
     plan: null,
     expected_cost_owls: input.owls,
     notes: input.note ?? null,
+    ...(input.origin ? { origin: input.origin } : {}),
     // Its money is the source mandate's, so its funder disclosure is too.
     ...(source.mandate?.funder_named !== undefined
       ? { funder_named: source.mandate.funder_named, funder_stake: source.mandate.funder_stake ?? null }

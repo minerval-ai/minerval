@@ -16,6 +16,7 @@
 import { correspondentPublic, listCorrespondents, type CorrespondentPublic } from "./correspondent-service.js";
 import { rawQuery } from "../db/client.js";
 import { microUsdToOwls } from "./owl.js";
+import { membersOnly } from "../permissions.js";
 import {
   contributeToBudgetJob,
   getJobContributions,
@@ -33,6 +34,7 @@ import type { MandateListDetail } from "./read-detail.js";
 export { DETAIL_QUERY_PROPERTIES, MANDATE_LIST_DETAILS, READ_DETAILS, shapeMandateDetail, type DetailOptions, type MandateListDetail, type ReadDetail } from "./read-detail.js";
 import { summarizeLookouts, type LookoutSummary } from "./lookout-service.js";
 import type { PlatformApproval } from "./platform-mandate-service.js";
+import { contestationSql, importanceSql } from "./overlay-service.js";
 import { mandateFunderUrl, mandatePageUrl } from "./mandate-urls.js";
 
 export interface MandateSummary {
@@ -99,7 +101,10 @@ function actionMix(plan: GrantRow["plan"]): Record<string, number> {
 }
 
 /**
- * How a mandate's funder is shown. The platform is Minerval. A funder who
+ * How a mandate's funder is shown. The platform is Minerval, except in a
+ * members-only deployment, where the standing mandates are the
+ * organization's own and are shown under the name its own account carries
+ * (owl-creation-service.ts, deploymentOwnAccountId). A funder who
  * chose not to be named is "an anonymous funder", or "a reader" for a
  * decomposition (one reader buying depth on one claim); their stake, if
  * they declared one, is shown either way. A mandate funded before funders
@@ -114,7 +119,9 @@ export function funderDisclosure(row: {
   const declared = m?.funder_named !== undefined;
   const named = row.is_platform || !declared || m!.funder_named === true;
   const shown_as = row.is_platform
-    ? "Minerval"
+    ? membersOnly()
+      ? row.manager_name
+      : "Minerval"
     : named
       ? row.manager_name
       : m?.origin === "deep_decomposition"
@@ -513,18 +520,18 @@ export async function getMandatePipeline(
             COUNT(DISTINCT ci.claim_id)::int AS claims_linked,
             COUNT(DISTINCT ci.claim_id)
               FILTER (WHERE a.id IS NOT NULL)::int AS claims_assessed,
-            AVG(cl.importance)::real AS avg_importance,
-            MAX(cl.importance)::real AS max_importance,
+            AVG(${importanceSql("cl")})::real AS avg_importance,
+            MAX(${importanceSql("cl")})::real AS max_importance,
             COUNT(DISTINCT ci.claim_id)
-              FILTER (WHERE cl.contestation >= 0.5)::int AS contested_claims,
+              FILTER (WHERE ${contestationSql("cl")} >= 0.5)::int AS contested_claims,
             COUNT(DISTINCT ci.claim_id)
-              FILTER (WHERE cl.importance < 0.25)::int AS b1,
+              FILTER (WHERE ${importanceSql("cl")} < 0.25)::int AS b1,
             COUNT(DISTINCT ci.claim_id) FILTER
-              (WHERE cl.importance >= 0.25 AND cl.importance < 0.5)::int AS b2,
+              (WHERE ${importanceSql("cl")} >= 0.25 AND ${importanceSql("cl")} < 0.5)::int AS b2,
             COUNT(DISTINCT ci.claim_id) FILTER
-              (WHERE cl.importance >= 0.5 AND cl.importance < 0.75)::int AS b3,
+              (WHERE ${importanceSql("cl")} >= 0.5 AND ${importanceSql("cl")} < 0.75)::int AS b3,
             COUNT(DISTINCT ci.claim_id)
-              FILTER (WHERE cl.importance >= 0.75)::int AS b4
+              FILTER (WHERE ${importanceSql("cl")} >= 0.75)::int AS b4
        FROM grant_sources gs
        JOIN sources s ON s.id = gs.source_id
        LEFT JOIN jobs j ON j.id = gs.job_id
@@ -1153,13 +1160,13 @@ export async function getMandateAllocationView(
                    AND al.spent_micro_usd = al.amount_micro_usd) AS overage,
                   CASE WHEN al.commissioned_by IS NULL AND al.released_at IS NOT DISTINCT FROM al.created_at
                             AND al.spent_micro_usd = al.amount_micro_usd
-                       THEN COALESCE((SELECT p.commissioned_by IS NOT NULL AND p.commissioned_by <> 'mandate' FROM action_allocations p
+                       THEN COALESCE((SELECT p.commissioned_by IS NOT NULL AND p.commissioned_by <> 'mandate' FROM minerval_whole.allocation_money p
                                        WHERE p.grant_id = al.grant_id AND p.action_id = al.action_id
                                          AND p.created_at < al.created_at
                                        ORDER BY p.created_at DESC LIMIT 1), false)
                        -- The mandate's own upkeep (commissioned_by 'mandate') is self-funded.
                        ELSE al.commissioned_by IS NOT NULL AND al.commissioned_by <> 'mandate' END AS commissioned
-             FROM action_allocations al JOIN actions a ON a.id = al.action_id
+             FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
             WHERE al.grant_id = $1 AND al.created_at >= ${window}
          ) x
         GROUP BY kind, commissioned
@@ -1350,5 +1357,66 @@ export function mandateText(mandate: GrantMandate | null): MandateText {
     attempt_policy: str("attempt_policy"),
     refusals: str("refusals"),
     disclosure: str("disclosure"),
+  };
+}
+
+/** What a mandate's officers are told when one of its funders raises a node: fixed words, so the route carries nothing a funder wrote. */
+export const FUNDER_RAISE_SUMMARY = "A funder of this mandate asks for a fresh assessment of this node.";
+
+/**
+ * A funder puts a node in front of a mandate's officers
+ * (docs/outward-acts.md, "Keeping the public version current"; constitution
+ * §19: "the work the system puts in front of it"). Money moves between
+ * funders and mandates and command never does, so this asks: the officers
+ * decide under the operating policy. Only an account with money held in
+ * the mandate may ask, and the item is fixed words with the node: nothing
+ * the funder wrote reaches the officers this way.
+ */
+export async function raiseNodeToMandate(input: {
+  grantId: string;
+  userId: string;
+  nodeId: string;
+}): Promise<
+  | { ok: true; folded: boolean; in_words: string }
+  | { ok: false; code: "NOT_FOUND" | "NOT_OPEN" | "NOT_A_FUNDER" | "NODE_NOT_FOUND"; message: string }
+> {
+  const [row] = await rawQuery<GrantRow>(`${GRANT_SELECT} WHERE g.id = $1`, [input.grantId]);
+  if (!row) return { ok: false, code: "NOT_FOUND", message: "Mandate not found" };
+  if (row.status !== "active") return { ok: false, code: "NOT_OPEN", message: `This mandate is ${row.status} and takes nothing new` };
+  const [held] = await rawQuery<{ held: string | null }>(
+    `SELECT -SUM(amount_micro_usd)::bigint AS held FROM owl_ledger WHERE job_id = $1 AND user_id = $2 AND reason = 'escrow_hold'`,
+    [row.budget_job_id, input.userId]
+  );
+  if (!(Number(held?.held ?? 0) > 0)) {
+    return {
+      ok: false,
+      code: "NOT_A_FUNDER",
+      message: "Only an account with money in this mandate may put a node in front of its officers. Anyone may fund the node's assessment directly, or contribute to the mandate first.",
+    };
+  }
+  const [node] = await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id = $1 AND state = 'active'`, [input.nodeId]);
+  if (!node) return { ok: false, code: "NODE_NOT_FOUND", message: "No active node has that id." };
+  const { ensureAssessActions } = await import("./action-service.js");
+  await ensureAssessActions(node.id).catch(() => undefined);
+  const [action] = await rawQuery<{ id: string }>(
+    `SELECT id FROM actions WHERE claim_id = $1 AND kind IN ('assess', 'reassess') AND status = 'open' ORDER BY created_at DESC LIMIT 1`,
+    [node.id]
+  );
+  const { raiseToMandate } = await import("./mandate-inbox-service.js");
+  const raised = await raiseToMandate({
+    grantId: input.grantId,
+    kind: "raised",
+    targetNodeId: node.id,
+    source: "a funder of this mandate",
+    summary: FUNDER_RAISE_SUMMARY,
+    detail: { asked: "a fresh assessment", ...(action ? { action_id: action.id } : {}) },
+  });
+  if (!raised) return { ok: false, code: "NOT_FOUND", message: "Mandate not found" };
+  return {
+    ok: true,
+    folded: raised.folded,
+    in_words: raised.folded
+      ? "This node was already waiting in front of the mandate's officers. Nothing new was added."
+      : "The node is in front of the mandate's officers, who decide under its operating policy whether its money pays for a fresh assessment. The request and their decision are on the mandate's page.",
   };
 }

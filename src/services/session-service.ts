@@ -31,6 +31,7 @@
  * resumes only a session of the label it is running at.
  */
 import { rawQuery, withTransaction } from "../db/client.js";
+import { severalInForceForRun } from "./judgment-version-service.js";
 import { loadConfig } from "../config.js";
 import { currentLabel, getUsageContext, runAtLabel } from "../llm/usage-context.js";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -645,12 +646,15 @@ export async function resumeMessages(
             (SELECT count(*)::int FROM agent_runs WHERE claim_id = $1 AND agent = 'steward' AND started_at > $2::timestamptz) AS passes`,
     [s.node_id, s.suspended_at ?? new Date().toISOString()]
   ).catch(() => [{ assessed_at: null, status: null, passes: 0 }]);
+  // The status above is one judgment's. Where the run reads two in force, it is told.
+  const several = changed?.assessed_at && changed.status ? await severalInForceForRun(s.node_id) : "";
   const since = (s.suspended_at ?? "").slice(0, 16).replace("T", " ");
   const changes = !nodeScoped
     ? `You were paused since ${since} UTC; the graph may have moved meanwhile, so read again what you rely on before you record anything.`
     : changed?.assessed_at
     ? `While you were paused (since ${since} UTC), another pass on this node recorded a new assessment` +
-      `${changed.status ? ` (now ${changed.status})` : ""}. Read the node again before you record anything, and reconcile with it.`
+      `${changed.status ? ` (now ${changed.status})` : ""}. Read the node again before you record anything, and reconcile with it.` +
+      (several ? ` ${several}` : "")
     : `Nothing on this node's assessment changed while you were paused (since ${since} UTC).`;
   const text =
     `## Your session resumes\n\nYou paused waiting. Here is what came.\n\n${renderReplies(replies)}\n\n` +

@@ -9,6 +9,7 @@
  */
 import { loadConfig } from "../config.js";
 import { graphChangeScanTick } from "../services/correspondent-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export function startCorrespondentTriggers(options: {
   intervalMs?: number;
@@ -24,7 +25,10 @@ export function startCorrespondentTriggers(options: {
     if (busy) return;
     busy = true;
     try {
-      const r = await graphChangeScanTick();
+      const r = await withSystemClearance(
+        "The change scan checks every correspondent, whatever its label, and wakes each at its own.",
+        () => graphChangeScanTick()
+      );
       if (r.queued > 0) {
         options.logger.info(`Correspondent change scan: ${r.checked} checked, ${r.queued} woken`);
       }

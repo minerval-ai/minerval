@@ -69,6 +69,9 @@ async function buildApp(isService: boolean) {
       return reply.code(403).send({ error: "nope", code: "SERVICE_KEY_REQUIRED" });
     }
   });
+  app.decorate("requireUser", async (request: any, reply: any) => {
+    if (!request.auth?.userId) return reply.code(401).send({ error: "nope", code: "USER_REQUIRED" });
+  });
   await app.register(reportRoutes, { prefix: "/reports" });
   return app;
 }

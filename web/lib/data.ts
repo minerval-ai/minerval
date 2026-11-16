@@ -2,8 +2,9 @@ import { cache } from "react";
 import {
   apiConfigured, fetchArgumentPage, fetchAttempt, fetchClaimCard, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
   fetchFeatures, fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
-  fetchTag, fetchTags,
+  fetchTag, fetchTags, fetchPublishedPage, fetchPublishedPages,
 } from "./api";
+import type { PublishedPageSummary, PublishedPageView } from "./published";
 import { claimWithoutOffFeatures, listWithoutOffFeatures } from "./features";
 import { membersOnly } from "./members";
 import { refusedByMembersOnly } from "./viewer";
@@ -324,5 +325,26 @@ export async function loadArgument(
     }
     console.error("[minerval] live argument fetch failed, using fixture:", err);
     return { page: getArgumentPageFixture(id), source: "fixture" };
+  }
+}
+
+// The pages other graphs publish of a node (docs/published-pages.md). There
+// is no sample of one: without the API, or when the read fails, a claim page
+// simply has none.
+export async function loadPublishedPages(nodeId: string): Promise<PublishedPageSummary[]> {
+  if (!apiConfigured()) return [];
+  try {
+    return await fetchPublishedPages(nodeId);
+  } catch {
+    return [];
+  }
+}
+
+export async function loadPublishedPage(id: string, pkg?: number): Promise<PublishedPageView | null> {
+  if (!apiConfigured()) return null;
+  try {
+    return await fetchPublishedPage(id, pkg);
+  } catch {
+    return null;
   }
 }

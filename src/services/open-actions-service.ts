@@ -35,7 +35,7 @@ export async function openActionsForNodes(
     commissioned: boolean;
   }>(
     `SELECT a.claim_id, a.id AS action_id, a.kind, a.variant,
-            EXISTS (SELECT 1 FROM action_allocations al
+            EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                      WHERE al.exclusion_group = a.exclusion_group
                        AND al.released_at IS NULL
                        AND al.commissioned_by IS NOT NULL

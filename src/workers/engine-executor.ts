@@ -56,6 +56,8 @@ import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
 import { runGrantor } from "../llm/agents/grantor.js";
+import { ASKED_FROM_BELOW } from "../services/ask-above-service.js";
+import { offerMandateBelow } from "../services/gate-handoff.js";
 import { mandateEventsTick } from "../services/mandate-event-service.js";
 import { routeEvents } from "../services/subscription-router.js";
 import { microUsdToOwls } from "../services/owl.js";
@@ -72,12 +74,14 @@ import { partitionFromRef } from "../services/consistency-service.js";
 import { runConsistencySweep } from "./consistency-sweep.js";
 import { runCurator } from "../llm/agents/curator.js";
 import { runAudit } from "../llm/agents/audit-agent.js";
+import { runRedactor } from "../llm/agents/redactor.js";
 import {
   consumeCurationRequests,
   describeCurationRequests,
   liveCurationRequests,
 } from "../services/curation-service.js";
 import {
+  AT_ANY_LABEL,
   getGeneralMandate,
 } from "../services/allocation-policy-service.js";
 import { getPlatformAccountId, getReserveJob } from "../services/bounty-service.js";
@@ -95,6 +99,7 @@ import {
   closeResearchRun,
   latestRequestRun,
   modelForTier,
+  requestWorkTier,
   openResearchRun,
   getResearchRun,
   readResearcherPaused,
@@ -208,6 +213,7 @@ export async function processNextEngineAction(
       "consistency_sweep",
       "curate",
       "audit",
+      "redact",
       "ingest",
       "formalize",
       ...(researcherOn ? (["request", "research"] as const) : []),
@@ -248,6 +254,7 @@ async function runEngineAction(action: RunnableAction, opts: { model?: string })
     if (action.kind === "consistency_sweep") return runConsistencySweepAction(action);
     if (action.kind === "curate") return runCurateAction(action);
     if (action.kind === "audit") return runAuditAction(action);
+    if (action.kind === "redact") return runRedactAction(action);
     if (action.kind === "request") return runRequestAction(action);
     if (action.kind === "research") return runResearchAction(action);
     if (action.kind === "resume") return runResumeAction(action);
@@ -274,7 +281,7 @@ async function nextFallbackAction(): Promise<RunnableAction | null> {
   if (!config.backgroundFallbackLaneEnabled) return null;
   const kinds: string[] = [];
   const curatorCap = config.curatorMaxRuns ?? 0;
-  const general = await getGeneralMandate();
+  const general = await getGeneralMandate(AT_ANY_LABEL);
   if (!general && (curatorCap <= 0 || fallbackCuratorRuns < curatorCap)) {
     kinds.push("curate");
   }
@@ -289,7 +296,7 @@ async function nextFallbackAction(): Promise<RunnableAction | null> {
         -- Not inside the wait a platform fault put on it (action-service.ts,
         -- NOT_WAITING_ON_FAULT_SQL).
         AND (a.retry_after IS NULL OR a.retry_after <= now())
-        AND NOT EXISTS (SELECT 1 FROM action_allocations al
+        AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.released_at IS NULL)
         -- A prize audit is the bounty reserve's to fund, never the lane's.
@@ -840,8 +847,12 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   const ceiling = actionBudgetMicroUsd(action);
   const tier = scoping ? "standard" : "strong";
   // The tier and effort the full work runs on, which a scoping run prices
-  // (#732): fixed here, so the quote is for the run it funds.
-  const fullWork = { tier: "strong", model: modelForTier("strong"), effort: "high" } as const;
+  // (#732): fixed here, so the quote is for the run it funds. The strong
+  // tier where this deployment can send this label's text to its provider,
+  // and the standard tier where it cannot (requestWorkTier), so that work
+  // asked of a label never needs a provider the deployment has not set up.
+  const fullTier = requestWorkTier(action.sensitivity_label);
+  const fullWork = { tier: fullTier, model: modelForTier(fullTier), effort: "high" } as const;
   // What the full work was priced at, the row's cost (the scoping quote or
   // its keeper's figure), beside the budget this run was given (#885). A
   // commission's budget is its payer's choice and may be below it; the run
@@ -1073,6 +1084,62 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
     ok: !failure && !!report,
     ...(failure ? { error: failure instanceof Error ? failure.message : String(failure) } : {}),
   };
+}
+
+/**
+ * redact: one Redactor run on the page in target_ref (showing-service.ts),
+ * at the page's label, under its largest funder and to the budget its
+ * allocations give it. The run finishes the redaction itself, by a tool
+ * call that fingerprints the page and asks for Audit's check, or says the
+ * page cannot be shown. A run that ends having done neither leaves the page
+ * waiting, and the row is opened again so that it can be paid for again:
+ * nothing is shown from a redaction nobody finished.
+ */
+async function runRedactAction(action: RunnableAction): Promise<EngineProcessResult> {
+  const pageId = action.target_ref ?? "";
+  const [page] = pageId
+    ? await rawQuery<{ id: string; stage: string; node_id: string }>(
+        `SELECT id, stage, node_id FROM showing_pages WHERE id = $1`,
+        [pageId]
+      )
+    : [];
+  if (!page || page.stage !== "to_redact") {
+    await cancelGroup(action.exclusion_group);
+    return { status: "empty" };
+  }
+  const context = await funderContext(action);
+  const close = (billedMicroUsd: number) =>
+    completeAction(action.id, billedMicroUsd, { meteredJobId: context.jobId }).catch((err) =>
+      console.error(`[engine] completeAction failed for ${action.id}: ${err instanceof Error ? err.message : err}`)
+    );
+  try {
+    const { billedMicroUsd } = await runWithUsageContext(
+      { userId: context.userId, jobId: context.jobId },
+      () =>
+        withPassBudget(actionBudget(action, "the allocations funding this redaction"), () =>
+          runRedactor({ pageId: page.id })
+        )
+    );
+    await close(billedMicroUsd);
+    const [after] = await rawQuery<{ stage: string }>(`SELECT stage FROM showing_pages WHERE id = $1`, [page.id]);
+    if (after?.stage === "to_redact") {
+      const { ensureRedactAction } = await import("../services/showing-service.js");
+      await ensureRedactAction(page.id, page.node_id);
+    }
+    return { status: "processed", actionId: action.id, kind: "redact", grantId: context.grantId, ok: after?.stage !== "to_redact" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (err instanceof LlmBudgetExceededError) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "budget", actionId: action.id, error: msg };
+    }
+    if (isTransientApiError(err)) {
+      await releaseAction(action.id).catch(() => {});
+      return { status: "transient", actionId: action.id, kind: "redact", grantId: context.grantId, error: msg };
+    }
+    await close(0);
+    return { status: "processed", actionId: action.id, kind: "redact", grantId: context.grantId, ok: false, error: msg };
+  }
 }
 
 /**
@@ -1610,13 +1677,19 @@ async function runGrantAgentAction(
             // with a fresh pass on the claim it is about.
             const decomposition = grant.mandate?.origin === "deep_decomposition";
             if (decomposition) plan = withOpeningPass(plan, grant.scope_claim_id);
+            // A mandate asked for from a label below (ask-above-service.ts)
+            // was approved the same way: its asker paid for its terms, and
+            // does not read this label, so the plan is not sent down to be
+            // approved. It is this Grantmaker's, and runs as drafted.
+            const askedFromBelow = grant.mandate?.origin === ASKED_FROM_BELOW;
             await rawQuery(
               `UPDATE grants
                   SET plan = $2::jsonb, status = $3,
                       plan_cursor = 0, updated_at = now()
                 WHERE id = $1 AND status = 'planning'`,
-              [grant.id, JSON.stringify(plan), decomposition ? "active" : "pending_approval"]
+              [grant.id, JSON.stringify(plan), decomposition || askedFromBelow ? "active" : "pending_approval"]
             );
+            if (askedFromBelow) await offerMandateBelow(grant.id);
           } else {
             const review = await runMandateReview({
               grantId: grant.id,

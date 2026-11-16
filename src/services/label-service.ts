@@ -1,4 +1,5 @@
-import { rawQuery } from "../db/client.js";
+import { enforcementLastKnown } from "../db/clearance.js";
+import { currentReadClearance, rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 
@@ -21,6 +22,37 @@ import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
 export async function publicIsTheOnlyLabel(): Promise<boolean> {
   const others = await rawQuery(`SELECT 1 FROM labels WHERE name <> $1 LIMIT 1`, [PUBLIC_LABEL]);
   return others.length === 0;
+}
+
+/**
+ * Every label this deployment has, `public` first: for a sweep that works
+ * label by label. A sweep that looks for something to say about a node
+ * (a candidate for audit, a partition due a consistency sweep, how many
+ * reports are waiting) and then writes it down has to find it with the
+ * clearance of the label it writes at, or the words it writes are made of
+ * rows that label's readers may not read. So it does not look once with
+ * every label in sight: it looks once for each label, inside that label
+ * (runAtLabel), and writes there what it found there.
+ *
+ * Where this process knows of no label but `public` nothing is asked.
+ */
+export async function everyLabel(): Promise<string[]> {
+  if (enforcementLastKnown() !== true) return [PUBLIC_LABEL];
+  const rows = await rawQuery<{ name: string }>(`SELECT name FROM labels`);
+  const names = rows.map((r) => r.name).filter((name) => name !== PUBLIC_LABEL);
+  return [PUBLIC_LABEL, ...names.sort()];
+}
+
+/**
+ * A key that says which piece of work something is, at a label: the plain
+ * key at `public`, and the key with the label after it elsewhere, as a
+ * ledger group has (groupAtLabel in ingest-focus-service.ts). For a key
+ * that is unique across a table whatever the labels (an audit's dedupe
+ * key), so that one label's work neither stands in for another's nor
+ * collides with it.
+ */
+export function keyAtLabel(key: string, label: string): string {
+  return label === PUBLIC_LABEL ? key : `${key} @${label}`;
 }
 
 /**
@@ -55,12 +87,10 @@ export async function labelIsDefined(name: string): Promise<boolean> {
  * was. The claim is the only thing that says what the work is about, so its
  * label is the one the work runs at, whatever context the sweep itself is in.
  *
- * This is a floor and not the whole rule. It keeps work on a restricted
- * claim from being written as public. It does not by itself cover
- * restricted work on a public claim. Where that work left messages waiting
- * on the claim, their label is used (pendingPassLabel below); where it did
- * not, the claim's pending slot cannot say what label the work was asked
- * for at, which takes a slot, or a judgment, per label.
+ * This is the label of the node's own work. Work asked for at another
+ * label that reads the node (an internal pass on a public claim) does not
+ * come this way: it waits in its own slot and its own ledger row, each at
+ * its label (services/steward-lease.ts), and runs at that row's label.
  *
  * A claim that does not exist has nothing to run at: `fn` runs as it would
  * have and finds that out for itself.
@@ -147,14 +177,15 @@ export async function runAtMandateLabelOutsideAnyRun<T>(grantId: string, fn: () 
 }
 
 /**
- * Run `fn` at a lookout's label, where nothing has set one: for the feed
- * poll, which a timer runs for the lookout outside any run. What the poll
- * records (the items it sees, the wake it queues, the ingests an
- * auto_ingest feed raises) is the lookout's work. Inside a run (a
- * Grantmaker adding a feed, the lookout reading one) the run's label stays.
+ * Run `fn` at a lookout's label: for the feed poll, which a timer runs for
+ * the lookout outside any run, and which a run that reads the lookout may
+ * also start. What the poll records (the items it sees, the wake it
+ * queues, the ingests an auto_ingest feed raises, the feed's own
+ * bookkeeping) is the lookout's work and is the same whoever started it,
+ * so it is written at the lookout's label. A lookout the work in progress
+ * may not read has nothing to run at: `fn` runs as it would have.
  */
-export async function runAtLookoutLabelOutsideAnyRun<T>(lookoutId: string, fn: () => Promise<T>): Promise<T> {
-  if (getUsageContext().label !== undefined) return fn();
+export async function runAtLookoutLabel<T>(lookoutId: string, fn: () => Promise<T>): Promise<T> {
   const [lookout] = await rawQuery<{ sensitivity_label: string }>(
     `SELECT sensitivity_label FROM lookouts WHERE id = $1`,
     [lookoutId]
@@ -163,31 +194,88 @@ export async function runAtLookoutLabelOutsideAnyRun<T>(lookoutId: string, fn: (
   return runAtLabel(lookout.sensitivity_label, `lookout ${lookoutId}`, fn);
 }
 
-/**
- * The label a pending claim's next pass is opened at, when no ledger row
- * says: for the sweeps that find a claim pending and start its pass there
- * and then (the reconcile sweep, the Steward's fallback lane).
- *
- * A claim is usually pending because messages wait in its inbox, and a
- * message carries the label of whoever sent it. When every unread message
- * on the claim carries the same label, the pass is theirs and is opened at
- * that label: a pass asked for at a restricted label on a public claim is
- * no longer taken up as public once its row has closed. When there is no
- * unread message, or the unread messages carry more than one label, the
- * claim's own label is used, as before (runAtClaimLabel): the claim has one
- * pending slot, not one per label, and it cannot say which of two labels
- * the next pass is for. That pass reads every unread message, whatever its
- * label, and marks them all read. Telling them apart takes a slot, or a
- * judgment, per label, which is later work.
- */
-export async function pendingPassLabel(claimId: string, claimLabel: string): Promise<string> {
-  const waiting = await rawQuery<{ sensitivity_label: string }>(
-    `SELECT DISTINCT sensitivity_label FROM node_messages
-      WHERE node_id = $1 AND read_at IS NULL
-      LIMIT 2`,
-    [claimId]
+/** One label as the place where a label is chosen shows it. */
+export interface ChoosableLabel {
+  name: string;
+  description: string;
+  /** The other labels whose material a reader of this one also reads. */
+  reads: string[];
+  /** Every member of the deployment reads it. True of `public` alone. */
+  read_by_everyone: boolean;
+  /**
+   * The other labels whose readers also read this one, as far as the asker
+   * may know them: only labels the asker reads are named.
+   */
+  also_read_from: string[];
+  /** How many more labels read this one that the asker may not read, and so are not named. */
+  also_read_from_others: number;
+  /** The same, as a sentence or two a person can be shown. */
+  who_reads: string;
+}
+
+const quotedList = (labels: readonly string[]): string => {
+  const names = labels.map((l) => `"${l}"`);
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
+};
+
+/** Who reads material filed at a label, in words (the `who_reads` of a ChoosableLabel). */
+export function whoReads(label: Pick<ChoosableLabel, "name" | "also_read_from" | "also_read_from_others">): string {
+  if (label.name === PUBLIC_LABEL) {
+    return "Every member of this deployment can read it and can open its sources.";
+  }
+  const also: string[] = [];
+  if (label.also_read_from.length > 0) also.push(`at ${quotedList(label.also_read_from)}`);
+  if (label.also_read_from_others > 0) {
+    const n = label.also_read_from_others;
+    also.push(`at ${n} ${also.length > 0 ? "more " : ""}label${n === 1 ? "" : "s"} you are not cleared to read`);
+  }
+  return (
+    `People granted the permission to read at "${label.name}" can read it` +
+    (also.length > 0 ? `, and so can people granted it ${also.join(" and ")}, which read${label.also_read_from.length + label.also_read_from_others === 1 ? "s" : ""} "${label.name}"` : "") +
+    `. A source filed here can be opened in full only by people who also hold the permission to ` +
+    `open raw sources at "${label.name}". The others read what the agents wrote from it.`
   );
-  return waiting.length === 1 ? waiting[0]!.sensitivity_label : claimLabel;
+}
+
+/**
+ * The labels the work in progress may file new material at, with what a
+ * page or an agent needs to say what each one means: its description, what
+ * it reads, and who reads it. They are the labels the request reads: a
+ * person's clearance, or for a key, a token or the Assistant, what that
+ * credential's one label reads within it.
+ *
+ * Which labels read a label is worked out for every label the deployment
+ * has, and then only the ones the asker reads are named: the name of a
+ * label a person may not read is not theirs to learn (as in the
+ * administrators' log), and the count says that there are some.
+ */
+export async function choosableLabels(): Promise<ChoosableLabel[]> {
+  const readable = (await currentReadClearance()) ?? [PUBLIC_LABEL];
+  const rows = await rawQuery<{ name: string; description: string; reads: string[] }>(
+    `SELECT l.name, l.description, minerval_labels_readable_from(ARRAY[l.name]) AS reads FROM labels l`
+  );
+  const mine = new Set(readable);
+  const byName = new Map(rows.map((r) => [r.name, r]));
+  return readable
+    .filter((name) => byName.has(name))
+    .sort((a, b) => (a === PUBLIC_LABEL ? -1 : b === PUBLIC_LABEL ? 1 : a < b ? -1 : 1))
+    .map((name) => {
+      const row = byName.get(name)!;
+      const readers = rows.filter((r) => r.name !== name && r.reads.includes(name)).map((r) => r.name);
+      const facts = {
+        name,
+        also_read_from: name === PUBLIC_LABEL ? [] : readers.filter((r) => mine.has(r)).sort(),
+        also_read_from_others: name === PUBLIC_LABEL ? 0 : readers.filter((r) => !mine.has(r)).length,
+      };
+      return {
+        ...facts,
+        description: row.description,
+        reads: row.reads.filter((r) => r !== name).sort(),
+        read_by_everyone: name === PUBLIC_LABEL,
+        who_reads: whoReads(facts),
+      };
+    });
 }
 
 /**

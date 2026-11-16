@@ -133,6 +133,9 @@ it uses:
 | `mv:evidence` | `mv:Instance` → the MIRA Evidence recording it, where the instance states a claim. |
 | `mv:RequestRecord` | A request's terms beside the MIRA Request (`mv:request`): `mv:bearsOn` (every node and source), `mv:satisfiedBy`, `mv:state`, `mv:stateNote`, `mv:addressedTo`, `mv:whoCould`, `mv:bearsOnText`, `mv:filerKind`, `mv:keeper`. |
 | `mv:RequestWork` | Work recorded on a request: `mv:request`, `mv:by`, `mv:outcome`, `rdfs:comment`, `prov:generatedAtTime`. |
+| `mv:Assessment` | One assessment of the exported node, where more than one is in force for whoever asked for the export (a private deployment's reader who holds two labels that do not read each other). Each is a node of its own: `mv:assesses` (the node), `mv:assessmentId`, `mv:label` (the label it was made at), `mv:status` and `mv:confidence` with `mv:credence` where stated, or `mv:standing` and `mv:favors` for a question, `rdfs:comment`, `mv:reasoningTrace`, `mv:assessedAt`, `mv:assessmentModel`. Never present on the public graph, where a node has one. |
+| `mv:assessmentInForce` | Node record → each `mv:Assessment` in force. The record's own status is the most recently made of them; none replaces another. In a nanopublication's publication info, the id of each assessment in force. |
+| `mv:judgmentsInForce` | `xsd:integer`, on a neighbouring node's record: how many judgments of it are in force for whoever asked, where that is more than one. Its `mv:status` or `mv:standing` is then the most recently made. |
 
 ## What is not exported
 

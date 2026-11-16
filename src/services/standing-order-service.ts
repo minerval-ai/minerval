@@ -42,6 +42,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions } from "./action-service.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { commissionNodePass, liveNodeCommission, type CommissionTier } from "./commission-service.js";
 import { stewardTierCostEstimates } from "./cost-estimate-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
@@ -49,6 +50,7 @@ import { enqueueSteward } from "./queue-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 import { describePace, paceRoom, parsePace } from "./pace-service.js";
 import { runAtMandateLabelOutsideAnyRun } from "./label-service.js";
+import { importanceSql } from "./overlay-service.js";
 
 /** Who placed it, on the allocation and in the mandate's commission list. */
 export const PLAN_ORDER_COMMISSIONER = "plan";
@@ -178,7 +180,7 @@ async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
     // executor retires a group whose node is not queued and leaves the money
     // on it). Queue the node, once, so the money that is there runs.
     const [claim] = await rawQuery<{ steward_state: string }>(
-      `SELECT steward_state FROM claims WHERE id = $1 AND state = 'active'`,
+      `SELECT ${slotColumnSql("steward_state", "c")} AS steward_state FROM claims c WHERE c.id = $1 AND c.state = 'active'`,
       [input.claimId]
     );
     if (claim && claim.steward_state !== "pending" && claim.steward_state !== "running") {
@@ -307,7 +309,7 @@ async function placeOrder(input: StandingOrderInput): Promise<OrderStanding> {
  */
 export async function releaseStandingOrder(grantId: string, claimId: string): Promise<number> {
   const rows = await rawQuery<{ amount: string }>(
-    `UPDATE action_allocations al SET released_at = now()
+    `UPDATE minerval_whole.allocation_money al SET released_at = now()
       WHERE al.grant_id = $1 AND al.exclusion_group = $2
         AND al.commissioned_by = $3
         AND al.released_at IS NULL AND al.spent_micro_usd = 0
@@ -343,10 +345,10 @@ export interface DeepenChildren {
 export async function deepenChildren(parentId: string, already: readonly string[] = []): Promise<DeepenChildren> {
   const rows = await rawQuery<{ id: string; assessed: boolean }>(
     `SELECT c.id, ${ASSESSED_SQL} AS assessed FROM claims c
-      WHERE c.state = 'active' AND c.steward_state IN ('pending', 'deferred')
+      WHERE c.state = 'active' AND ${slotColumnSql("steward_state", "c")} IN ('pending', 'deferred')
         AND c.id IN (SELECT child_claim_id FROM claim_relationships WHERE parent_claim_id = $1)
         AND NOT (c.id = ANY($2::uuid[]))
-      ORDER BY c.importance DESC NULLS LAST, c.created_at ASC`,
+      ORDER BY ${importanceSql("c")} DESC NULLS LAST, c.created_at ASC`,
     [parentId, [...already]]
   );
   return {

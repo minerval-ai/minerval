@@ -22,6 +22,7 @@
  * only lever is `withdraw`.
  */
 import { rawQuery } from "../db/client.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { findingStatusEnum } from "../schemas/common.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -286,15 +287,27 @@ export async function noteFinding(input: NoteFindingInput): Promise<NoteFindingR
     // Joining a finding on record: a sighting, no new row.
     const joins = uuidOrNull(input.joins);
     if (joins) {
+      // The finding's own count moves only for a sighting at the finding's
+      // label: a finding at another label is not this work's to change
+      // (db/clearance.ts). Such a sighting is still recorded, below, as a
+      // row at this work's label.
       const rows = await rawQuery<{ id: string; sighting_count: number }>(
         `UPDATE agent_findings
             SET sighting_count = sighting_count + 1,
                 last_noted_at = now()
-          WHERE id = $1 AND status = 'published'
+          WHERE id = $1 AND status = 'published' AND sensitivity_label = $2
           RETURNING id, sighting_count`,
-        [joins]
+        [joins, currentLabel()]
       );
-      const row = rows[0];
+      const row =
+        rows[0] ??
+        (
+          await rawQuery<{ id: string; sighting_count: number }>(
+            `SELECT id, sighting_count FROM agent_findings
+              WHERE id = $1 AND status = 'published' AND sensitivity_label <> $2`,
+            [joins, currentLabel()]
+          )
+        )[0];
       if (!row) {
         return {
           outcome: "not_recorded",
@@ -512,9 +525,12 @@ function findingWhere(
   }
   if (filters.claimStatus && without !== "claimStatus") {
     add(
+      // Any judgment in force for the reader: where two are (labels that do
+      // not read each other), the finding is found under either's status
+      // and neither is chosen. One is in force everywhere else.
       (n) => `EXISTS (
-        SELECT 1 FROM assessments_in_force a
-         WHERE a.claim_id = f.claim_id AND a.status = $${n})`,
+        SELECT 1 FROM assessments_versions a
+         WHERE a.claim_id = f.claim_id AND a.in_force AND a.status = $${n})`,
       filters.claimStatus
     );
   }
@@ -595,6 +611,8 @@ export async function listFindings(
  * What each value of a filter would leave, counted under the other filters
  * in force: the numbers a reader sees beside the choices on the findings
  * page. Tags are the commonest dozen; the page links to the full vocabulary.
+ * A finding whose claim has two judgments in force for the reader is counted
+ * under the status of each, which is what choosing that status then lists.
  */
 export interface FindingFacets {
   agents: Array<{ agent: string; count: number }>;
@@ -622,7 +640,7 @@ async function findingFacets(
     ),
     rawQuery<{ status: string; count: string }>(
       `SELECT a.status, count(*) AS count ${FINDING_FROM}
-         JOIN assessments_in_force a ON a.claim_id = f.claim_id
+         JOIN assessments_versions a ON a.claim_id = f.claim_id AND a.in_force
         ${statuses.where}
         GROUP BY a.status ORDER BY count(*) DESC, a.status`,
       statuses.values
@@ -686,8 +704,14 @@ export interface FindingAssessmentRef {
   claim_text: string;
   status: string;
   confidence: number | null;
-  /** False once the claim has been assessed again. */
+  /**
+   * False once the claim has been assessed again at the label this was made
+   * at. A judgment at another label does not replace it.
+   */
   current: boolean;
+  /** Present only where more than one judgment of the claim is in force for the asker (judgment-version-service.ts). */
+  judgments_in_force?: number;
+  judgments_in_force_note?: string;
 }
 
 export async function describeAssessmentRefs(refs: FindingRef[]): Promise<FindingAssessmentRef[]> {
@@ -702,17 +726,19 @@ export async function describeAssessmentRefs(refs: FindingRef[]): Promise<Findin
     current: boolean;
   }>(
     `SELECT a.id, a.claim_id, c.text AS claim_text, a.status, a.confidence,
-            EXISTS (SELECT 1 FROM assessments_in_force inf WHERE inf.id = a.id) AS current
+            EXISTS (SELECT 1 FROM assessments_versions v WHERE v.id = a.id) AS current
        FROM assessments a
        JOIN claims c ON c.id = a.claim_id
       WHERE a.id = ANY($1::uuid[])`,
     [ids]
   );
-  return rows.map((r) => ({
+  const described: FindingAssessmentRef[] = rows.map((r) => ({
     ...r,
     confidence: r.confidence == null ? null : Number(r.confidence),
     current: r.current === true,
   }));
+  await markSeveralInForce(described, (r) => r.claim_id);
+  return described;
 }
 
 export async function getFindingById(id: string): Promise<AgentFindingRow | null> {

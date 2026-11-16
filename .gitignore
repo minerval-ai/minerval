@@ -52,3 +52,6 @@ which
 # Local scratch — Playwright screenshots & snapshots from dev iteration
 .playwright-mcp/
 /*.png
+
+# The packaged deployment keeps settings the API reads, beyond deploy/.env (docs/self-hosting.md)
+deploy/api.env

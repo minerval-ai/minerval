@@ -31,6 +31,8 @@ export const createContributionBody = z
     proposed_canonical_form: z.string().max(2000).optional(),
     // answer_request only: the request the material is offered for (#723).
     request_id: uuidSchema.optional(),
+    // A published page on the node, when the contribution is made through it (docs/outward-acts.md).
+    about_published_page_id: uuidSchema.optional(),
   })
   .refine((b) => b.claim_id !== undefined || contributionMayOmitClaim(b.contribution_type), {
     message: CLAIM_ID_REQUIRED_MESSAGE,
@@ -80,6 +82,7 @@ export const contributionResponse = z.object({
   merge_target_claim_id: uuidSchema.nullable(),
   argument_id: uuidSchema.nullable().optional(),
   merge_target_argument_id: uuidSchema.nullable().optional(),
+  about_published_page_id: uuidSchema.nullable().optional(),
   proposed_canonical_form: z.string().nullable(),
 });
 

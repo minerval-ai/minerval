@@ -23,6 +23,11 @@
  *    (set_feed_rule); read_listing for an archive or index;
  *  - the graph feed: what changed in its territory since its last run, and
  *    query_sql over the public views;
+ *  - where the deployment is connected to an organization's systems and
+ *    the lookout's label reads a connection's: that connection's reading
+ *    tools, the ones its administrator picked, under the limits every run
+ *    is told (tools/connection-tools.ts). Nothing else tells the graph that
+ *    data behind a connection changed. It keeps no reading as a source;
  *  - three ways to act: flag_reassessment (a pass, commissioned within its
  *    limit or raised to the officers), propose_ingest (the same for a
  *    source), leave_note (for the next review);
@@ -57,6 +62,7 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { createMandateTools } from "../tools/mandate-tools.js";
+import { createConnectionTools } from "../tools/connection-tools.js";
 import {
   consumeLookoutEvents,
   countPendingLookoutEvents,
@@ -253,6 +259,10 @@ async function runLookoutImpl(input: {
   // (#691). No grantId: the lookout's workspace is its own, not the
   // mandate's, and is written by its own tool below.
   const mandateTools = createMandateTools();
+  // The connections at this lookout's label, to look and not to keep: a
+  // lookout records nothing on the graph, and what it raises says what it
+  // called so that a Steward can make the call itself.
+  const connectionTools = await createConnectionTools({ config, keeps: false });
 
   // Queued inputs in full, up to EVENTS_FULL_CHARS; the rest one line each.
   const shownInFull: string[] = [];
@@ -280,6 +290,7 @@ async function runLookoutImpl(input: {
     getSqlToolDefinition(),
     ...contributionTools.definitions,
     ...mandateTools.definitions,
+    ...connectionTools.definitions,
     ...(summarized.length > 0
       ? [
           {
@@ -534,6 +545,7 @@ async function runLookoutImpl(input: {
     (feeds.length > 0
       ? `### Your feeds and what is waiting in your inbox\n\n${feedsText}\n\n`
       : "") +
+    (connectionTools.note ? `### Systems you can read\n\n${connectionTools.note}\n\n` : "") +
     `### Your recent flags and what became of them\n\n` +
     (recentFlags.length >= RECENT_FLAGS_SHOWN && Number(lookout.flags) > recentFlags.length
       ? `The ${recentFlags.length} most recent of the ${lookout.flags} you have raised; keep what matters about older ones in your workspace.\n\n`
@@ -585,6 +597,8 @@ async function runLookoutImpl(input: {
 
           const mandateTool = await mandateTools.execute(name, toolInput);
           if (mandateTool !== null) return mandateTool;
+          const connection = await connectionTools.execute(name, toolInput);
+          if (connection !== null) return connection;
 
           if (name === "read_event") {
             const e = eventsById.get(String(toolInput.event_id ?? ""));

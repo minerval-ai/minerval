@@ -26,7 +26,7 @@ import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
-import { claimAction, completeAction, releaseAction } from "../../services/action-service.js";
+import { LABEL_ON_REOPEN_SQL, claimAction, completeAction, releaseAction } from "../../services/action-service.js";
 import { commissionAction, commissionNodePass, commissionNoteText, placeCommission } from "../../services/commission-service.js";
 import { describePace, paceRoom, parsePace, validatePace } from "../../services/pace-service.js";
 import { grantCommittedMicroUsd } from "../../services/regrant-service.js";
@@ -50,6 +50,7 @@ import {
   type PolicySection,
 } from "../../services/operating-policy-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
+import { contestationSql, importanceSql } from "../../services/overlay-service.js";
 
 type Tool = Anthropic.Tool;
 type Role = "officer" | "grantmaker";
@@ -350,7 +351,7 @@ async function petitionsFor(grantId: string, role: Role): Promise<PetitionRow[]>
 async function itemsFor(grantId: string, role: Role): Promise<InboxItem[]> {
   return rawQuery<InboxItem>(
     `SELECT i.id, i.kind, i.target_node_id, i.target_ref, i.source, i.summary, i.detail,
-            i.created_at, i.escalation_note, c.text AS node_text, c.importance, c.contestation
+            i.created_at, i.escalation_note, c.text AS node_text, ${importanceSql("c")} AS importance, ${contestationSql("c")} AS contestation
        FROM mandate_inbox i LEFT JOIN claims c ON c.id = i.target_node_id
       WHERE i.grant_id = $1 AND i.handled_at IS NULL AND i.held_until IS NULL
         AND (i.escalated_at IS ${role === "officer" ? "NULL" : "NOT NULL"})
@@ -364,7 +365,7 @@ async function itemsFor(grantId: string, role: Role): Promise<InboxItem[]> {
 async function describePetition(p: PetitionRow, label: string): Promise<string> {
   const [node] = p.requester_node_id
     ? await rawQuery<{ text: string; importance: number | null; contestation: number | null }>(
-        `SELECT text, importance, contestation FROM claims WHERE id = $1`,
+        `SELECT c.text, ${importanceSql("c")} AS importance, ${contestationSql("c")} AS contestation FROM claims c WHERE c.id = $1`,
         [p.requester_node_id]
       )
     : [];
@@ -399,7 +400,7 @@ async function describePetition(p: PetitionRow, label: string): Promise<string> 
   const bought = p.requester_action_id
     ? await rawQuery<{ kind: string; status: string; amount: number; spent: number }>(
         `SELECT a.kind, a.status, al.amount_micro_usd AS amount, al.spent_micro_usd AS spent
-           FROM action_allocations al JOIN actions a ON a.id = al.action_id
+           FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
           WHERE al.parent_action_id = $1 ORDER BY al.created_at`,
         [p.requester_action_id]
       )
@@ -505,7 +506,7 @@ async function buildBrief(
   const [deciding] = await rawQuery<{ deciding: number; spent: number }>(
     `SELECT COALESCE(SUM(al.spent_micro_usd) FILTER (WHERE al.exclusion_group LIKE 'officer:%' OR al.exclusion_group LIKE 'escalation:%'), 0)::bigint AS deciding,
             COALESCE(SUM(al.spent_micro_usd), 0)::bigint AS spent
-       FROM action_allocations al
+       FROM minerval_whole.allocation_money al
       WHERE al.grant_id = $1 AND al.created_at > now() - interval '7 days'`,
     [grant.id]
   );
@@ -539,17 +540,17 @@ async function buildBrief(
     [grant.id, items.length]
   );
   const openWork = await rawQuery<{ id: string; kind: string; claim_id: string; text: string; importance: number | null; est: number }>(
-    `SELECT DISTINCT ON (a.claim_id) a.id, a.kind, a.claim_id, left(c.text, 80) AS text, c.importance,
+    `SELECT DISTINCT ON (a.claim_id) a.id, a.kind, a.claim_id, left(c.text, 80) AS text, ${importanceSql("c")} AS importance,
             a.cost_est_micro_usd AS est
        FROM actions a JOIN claims c ON c.id = a.claim_id
       WHERE a.status = 'open' AND a.kind IN ('assess', 'reassess')
-        AND c.id IN (SELECT al.claim_id FROM action_allocations al WHERE al.grant_id = $1 AND al.claim_id IS NOT NULL
+        AND c.id IN (SELECT al.claim_id FROM minerval_whole.allocation_money al WHERE al.grant_id = $1 AND al.claim_id IS NOT NULL
                      UNION SELECT cr.child_claim_id FROM claim_relationships cr
-                            WHERE cr.parent_claim_id IN (SELECT al.claim_id FROM action_allocations al
+                            WHERE cr.parent_claim_id IN (SELECT al.claim_id FROM minerval_whole.allocation_money al
                                                           WHERE al.grant_id = $1 AND al.claim_id IS NOT NULL))
-        AND NOT EXISTS (SELECT 1 FROM action_allocations x WHERE x.exclusion_group = a.exclusion_group
+        AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money x WHERE x.exclusion_group = a.exclusion_group
                          AND x.released_at IS NULL AND x.commissioned_by IS NOT NULL)
-      ORDER BY a.claim_id, c.importance DESC NULLS LAST
+      ORDER BY a.claim_id, ${importanceSql("c")} DESC NULLS LAST
       LIMIT 30`,
     [grant.id]
   ).then((rows) => rows.sort((x, y) => Number(y.importance ?? 0) - Number(x.importance ?? 0)).slice(0, 8));
@@ -625,8 +626,11 @@ async function buildBrief(
  *
  * The sitting runs here, as soon as the row is claimed: no executor picks
  * this row up later. So the row records the label the sitting runs at
- * (src/labels.ts), which is the mandate's (workMandateInbox), and a row left
- * open by a sitting that could not be funded takes this one's.
+ * (src/labels.ts), which is the mandate's (workMandateInbox). A row left
+ * open by a sitting that could not be funded already has it: every sitting
+ * of a mandate is at the mandate's label, so the common rule for a reused
+ * row (an open one keeps its label, a finished one takes the reopener's)
+ * says the same here.
  */
 async function commissionSitting(grant: GrantRow, role: Role): Promise<string | null> {
   const config = loadConfig();
@@ -639,8 +643,7 @@ async function commissionSitting(grant: GrantRow, role: Role): Promise<string | 
      VALUES ($1, $2, 'standard', $3, $4, $5, $6)
      ON CONFLICT (exclusion_group, variant) DO UPDATE
        SET status = CASE WHEN actions.status = 'running' THEN actions.status ELSE 'open' END,
-           sensitivity_label = CASE WHEN actions.status = 'running'
-                                    THEN actions.sensitivity_label ELSE EXCLUDED.sensitivity_label END,
+           ${LABEL_ON_REOPEN_SQL},
            updated_at = now()
      RETURNING id, status`,
     [kind, group, grant.id, "Program officer sitting", budget, currentLabel()]

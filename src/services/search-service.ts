@@ -1,10 +1,19 @@
-import { rawQuery } from "../db/client.js";
+import { rawQuery, searchableClaims } from "../db/client.js";
+import { oneDefinitionForQuantitySql, taggedWithSql } from "./layer-service.js";
+import { markSeveralInForce } from "./judgment-version-service.js";
+
+/** Rows of a search, each saying how many judgments of its node are in force for the reader where that is more than one. */
+async function markedRows<T extends { id: string }>(rows: T[]): Promise<T[]> {
+  await markSeveralInForce(rows, (r) => r.id);
+  return rows;
+}
 import { generateEmbedding } from "./embedding-service.js";
 import type { NodeKind } from "../schemas/kinds.js";
 import {
   checkedKindSql,
   liveBountySql,
 } from "./formalization-service.js";
+import { importanceSql } from "./overlay-service.js";
 
 // All search paths below (browse search, matcher candidates, MCP, agent graph
 // tools) serve ONLY state='active' claims — an allowlist on purpose: archived
@@ -64,8 +73,9 @@ const PRIZE_SELECT_SQL = `pb.amount_micro_usd AS prize_micro_usd, ${checkedKindS
 // The kinds' verdicts (constitution §2, §7a), joined as the tree joins them:
 // at most one current estimate and one current standing per node, by their
 // partial unique indexes, and one definition per quantity.
-const KIND_JOIN_SQL = `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
-    LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id
+// (Where two layers each hold a definition, the join takes one: layer-service.ts.)
+const kindJoinSql = () => `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
+    LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
     LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id`;
 const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit`;
 const ASSESSED_SQL = `(CASE c.kind WHEN 'question' THEN qa.id IS NOT NULL
@@ -80,7 +90,7 @@ function filterClauses(filters: SearchFilters, params: unknown[]): string {
   else if (filters.assessed === "unassessed") sql += `\n      AND NOT ${ASSESSED_SQL}`;
   if (filters.minImportance && filters.minImportance > 0) {
     params.push(filters.minImportance);
-    sql += `\n      AND c.importance >= $${params.length}`;
+    sql += `\n      AND ${importanceSql("c")} >= $${params.length}`;
   }
   if (filters.withPrizes) sql += "\n      AND pb.id IS NOT NULL";
   if (filters.claimType) {
@@ -90,7 +100,7 @@ function filterClauses(filters: SearchFilters, params: unknown[]): string {
   if (filters.tagId) {
     params.push(filters.tagId);
     sql += `\n      AND EXISTS (SELECT 1 FROM taggings tg WHERE tg.subject_kind = 'claim'
-                       AND tg.subject_id = c.id AND tg.tag_id = $${params.length})`;
+                       AND tg.subject_id = c.id AND ${taggedWithSql("tg", `$${params.length}::uuid`)})`;
   }
   if (filters.kind) {
     params.push(filters.kind);
@@ -182,6 +192,7 @@ async function hybridSearchWithEmbedding(
   const filterSql = filterClauses(filters, params);
   params.push(limit);
   const limitIdx = params.length;
+  const claimsTable = await searchableClaims();
 
   // Order by semantic proximity, not a keyword/semantic blend: ts_rank and
   // cosine similarity live on different scales, so blending scrambled the
@@ -192,15 +203,15 @@ async function hybridSearchWithEmbedding(
     SearchResult & { text_rank: number; semantic_score: number }
   >(
     `
-    SELECT c.id, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       1 - (c.embedding <=> $2::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
       ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
-    ${KIND_JOIN_SQL}
+    ${kindJoinSql()}
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND (c.text_search @@ websearch_to_tsquery('english', $1)
            OR 1 - (c.embedding <=> $2::vector) > $3)${filterSql}
@@ -224,6 +235,7 @@ async function hybridSearchWithEmbedding(
     ...prizeFields(r),
   }));
 
+  await markSeveralInForce(results, (r) => r.id);
   return { results, total: results.length };
 }
 
@@ -236,17 +248,18 @@ async function keywordSearch(
   const filterSql = filterClauses(filters, params);
   params.push(limit);
   const limitIdx = params.length;
+  const claimsTable = await searchableClaims();
 
   const rows = await rawQuery<SearchResult & { text_rank: number }>(
     `
-    SELECT c.id, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence,
       ${PRIZE_SELECT_SQL}, ${KIND_SELECT_SQL}
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     ${PRIZE_JOIN_SQL}
-    ${KIND_JOIN_SQL}
+    ${kindJoinSql()}
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND c.text_search @@ websearch_to_tsquery('english', $1)${filterSql}
     ORDER BY text_rank DESC
@@ -268,6 +281,7 @@ async function keywordSearch(
     ...prizeFields(r),
   }));
 
+  await markSeveralInForce(results, (r) => r.id);
   return { results, total: results.length };
 }
 
@@ -290,12 +304,13 @@ export async function keywordClaimSearch(
     excludeClause = "AND c.id != $3";
     params.push(excludeId);
   }
+  const claimsTable = await searchableClaims();
   const rows = await rawQuery<SearchResult & { text_rank: number }>(
     `
-    SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.kind, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       ts_rank(c.text_search, websearch_to_tsquery('english', $1)) AS text_rank,
       a.status AS assessment_status, a.confidence AS assessment_confidence
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND c.text_search @@ websearch_to_tsquery('english', $1)
@@ -305,7 +320,7 @@ export async function keywordClaimSearch(
     `,
     params
   );
-  return rows.map((r) => ({
+  return markedRows(rows.map((r) => ({
     id: r.id,
     kind: r.kind,
     text: r.text,
@@ -315,7 +330,7 @@ export async function keywordClaimSearch(
     importance: r.importance,
     assessment_status: r.assessment_status,
     assessment_confidence: r.assessment_confidence,
-  }));
+  })));
 }
 
 /**
@@ -334,13 +349,14 @@ export async function findSimilarClaims(
     excludeClause = "AND c.id != $4";
     params.push(excludeId);
   }
+  const claimsTable = await searchableClaims();
 
   const rows = await rawQuery<SearchResult & { semantic_score: number }>(
     `
-    SELECT c.id, c.kind, c.text, c.claim_type, c.state, c.importance,
+    SELECT c.id, c.kind, c.text, c.claim_type, c.state, ${importanceSql("c")} AS importance,
       1 - (c.embedding <=> $1::vector) AS semantic_score,
       a.status AS assessment_status, a.confidence AS assessment_confidence
-    FROM claims c
+    FROM ${claimsTable} c
     LEFT JOIN assessments_in_force a ON a.claim_id = c.id
     WHERE c.state = 'active' AND c.merged_into IS NULL
       AND 1 - (c.embedding <=> $1::vector) > $2
@@ -351,7 +367,7 @@ export async function findSimilarClaims(
     params
   );
 
-  return rows.map((r) => ({
+  return markedRows(rows.map((r) => ({
     id: r.id,
     kind: r.kind,
     text: r.text,
@@ -361,5 +377,5 @@ export async function findSimilarClaims(
     importance: r.importance,
     assessment_status: r.assessment_status,
     assessment_confidence: r.assessment_confidence,
-  }));
+  })));
 }

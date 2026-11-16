@@ -29,9 +29,10 @@
  * Between sweeps, on every tick (STANDING_ORDER_RETRY_MINUTES apart by
  * default), a new mandate's first sitting is opened, the lookouts and
  * Correspondents that have fallen due get their rows, the plans' standing
- * orders are asked for again and the mandates no agent ends are tended
- * (betweenSweeps). Nothing an agent is told runs on its own cadence waits
- * for the sweep.
+ * orders are asked for again, the mandates no agent ends are tended, and
+ * the gates and what passes to and from the public graph are followed
+ * (betweenSweeps, followTheGates). Nothing an agent is told runs on its own
+ * cadence waits for the sweep.
  *
  * The last-sweep timestamp rides in memory: an extra sweep after a restart
  * is harmless (every job is idempotent).
@@ -54,6 +55,78 @@ import { scanReconcileCandidates } from "../services/curation-service.js";
 import { refreshPendingQueuePriorities } from "../services/priority-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
 import { runAtLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "../services/judgment-version-service.js";
+import { slotColumnSql } from "../services/steward-lease.js";
+import { importanceSql } from "../services/overlay-service.js";
+import { followShowings, retryGatePayments } from "../services/showing-service.js";
+import { settleWaiting } from "../services/release-gate-service.js";
+import { offerMandatesWhereEverythingFlows } from "../services/gate-service.js";
+
+async function gateUpkeep(): Promise<void> {
+  if (oneLabelOnly()) return;
+  await offerMandatesWhereEverythingFlows();
+  await retryGatePayments();
+  await settleWaiting();
+}
+import { followOutbound } from "../services/outbound-service.js";
+import { followOutwardActs } from "../services/outward-follow.js";
+import {
+  openReassessmentsForVersionsMadeBesideEarlier,
+  openReassessmentsForJudgmentsLeftStanding,
+} from "../services/version-upkeep.js";
+import { withSystemClearance } from "../db/clearance.js";
+
+/**
+ * The gates and what passes between this deployment and the public graph,
+ * on every tick and not only at the sweep: none of it runs a model, each
+ * step is idempotent, and what it moves is waited on (a page released, a
+ * redaction whose budget could not pay at first, a contribution from the
+ * public graph). Each also happens when its cause does: a release outside
+ * sends its package at once (release-gate-service.ts), and a mirror batch
+ * brings in what the public graph said back (mirror-upkeep.ts). This is
+ * the backstop for both, and the only way for what waits on time or money:
+ * a delay running out, a pace's window or an escrow opening.
+ */
+async function followTheGates(): Promise<void> {
+  // Standing showings of a page below its label (showing-service.ts):
+  // a page is opened for each new version, with its redaction on the ledger,
+  // and nodes that came under a shown node or left it are recorded. Opening
+  // a redaction runs nothing; it runs when it is paid for.
+  await followShowings().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // The rest of the gate's own upkeep (docs/the-gate.md): pay again
+  // for work whose budget could not pay, let through what a delay or a
+  // changed setting was keeping, and offer mandates where everything flows.
+  await gateUpkeep().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] the gate's upkeep failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // What passes between this deployment and the public graph besides
+  // pages (docs/outward-acts.md), before the packages are built so that a
+  // package says what is now so. Contributions the mirror brought about a
+  // page this deployment published are taken in and their reading opened on
+  // the ledger; summaries already written are given to the node's Steward
+  // at the page's label. Requests on the public graph addressed to a
+  // mandate this deployment published are put in its inbox. Changed
+  // versions are offered to each gate that names a mandate to keep the other
+  // side current, agents' reports about Minerval's machinery are offered to
+  // the gate to outside, published mandates are restated where a setting
+  // changed, and what the gate to outside has let through is sent. None of
+  // it runs an agent here, and on a graph with one label none of it does
+  // anything.
+  await followOutwardActs().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following outward acts failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+
+  // Pages shown outside (outbound-service.ts): a signed package is
+  // built for each change in what the outside would read, and sent where
+  // the person who asked for the showing chose that. It runs no agent.
+  await followOutbound().catch((err: unknown) =>
+    console.error(`[allocation-scheduler] following pages shown outside failed: ${err instanceof Error ? err.message : String(err)}`)
+  );
+}
 
 export interface AllocationTickResult {
   actionsReconciled: number;
@@ -112,6 +185,7 @@ async function betweenSweeps(): Promise<void> {
     )
   );
   await tend();
+  await followTheGates();
 }
 
 /** One scheduler pass; exported separately so tests can drive the clock. */
@@ -166,6 +240,26 @@ export async function allocationSchedulerTick(
       )
   );
 
+  // 1c. Versions of a judgment made beside one that has since been replaced
+  // (version-upkeep.ts): the reassessment is opened on the ledger at the
+  // version's own label. Opening it runs nothing; a mandate funds it or not.
+  await openReassessmentsForVersionsMadeBesideEarlier().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] version upkeep failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+  // And judgments a label left standing that have since been replaced: the
+  // question is open again at that label.
+  await openReassessmentsForJudgmentsLeftStanding().catch((err: unknown) =>
+    console.error(
+      `[allocation-scheduler] version upkeep (left standing) failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+
+  // 1d. The gates and what passes to and from the public graph
+  // (followTheGates), as on every tick.
+  await followTheGates();
+
   // 2. The pending list's order, for display and the fallback lane. It
   // decides no funding: mandates fund work through their agents and their
   // written operating policies.
@@ -196,8 +290,14 @@ export async function allocationSchedulerTick(
   const policy = await getEffectiveAllocationPolicy();
   if (policy.staleness_base_days > 0) {
     // Most-overdue first, judged against each claim's own cadence.
+    // Where a node carries a version at more than one label, each is
+    // checked against its own age and its pass is asked for at its own
+    // label, with that label's slot: a version is kept current on its own
+    // inputs, whatever another label's has done since. With one label it is
+    // the one statement it always was.
     const due = await rawQuery<{ id: string; sensitivity_label: string; days_old: number }>(
-      `SELECT c.id, c.sensitivity_label,
+      oneLabelOnly()
+        ? `SELECT c.id, c.sensitivity_label,
               FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at)) / 86400)::int
                 AS days_old
          FROM claims c
@@ -206,13 +306,25 @@ export async function allocationSchedulerTick(
           AND c.steward_state = 'done'
           AND a.assessed_at < now() - make_interval(days =>
                 ($1::real / GREATEST(0.25, LEAST(2.0, c.queue_priority)))::int)
+        ORDER BY a.assessed_at ASC`
+        : `SELECT c.id, a.sensitivity_label,
+              FLOOR(EXTRACT(EPOCH FROM (now() - a.assessed_at)) / 86400)::int
+                AS days_old
+         FROM claims c
+         JOIN assessments_versions a ON a.claim_id = c.id
+        WHERE c.state = 'active'
+          AND ${slotColumnSql("steward_state", "c", "a.sensitivity_label")} = 'done'
+          AND a.assessed_at < now() - make_interval(days =>
+                ($1::real / GREATEST(0.25, LEAST(2.0,
+                  CASE WHEN a.sensitivity_label = c.sensitivity_label THEN c.queue_priority
+                       ELSE COALESCE(${importanceSql("c", "a.sensitivity_label")}, 0) END)))::int)
         ORDER BY a.assessed_at ASC`,
       [policy.staleness_base_days]
     );
     for (const claim of due) {
-      // The check starts from the claim, outside any run, so the pass it
-      // asks for is opened at the claim's label (runAtClaimLabel in
-      // label-service.ts says what that does and does not cover).
+      // The check starts from the version, outside any run, so the pass it
+      // asks for is opened at the version's label, which for a node with
+      // one version is the node's own.
       await runAtLabel(claim.sensitivity_label, `claim ${claim.id}`, () =>
         enqueueSteward({
           claimId: claim.id,
@@ -242,7 +354,10 @@ export function startAllocationScheduler(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await allocationSchedulerTick();
+      const result = await withSystemClearance(
+        "The scheduler reconciles the ledger and looks for stale or pending work at every label; each piece it starts runs at its own row's label.",
+        () => allocationSchedulerTick()
+      );
       if (result.prioritiesRefreshed > 0 || result.stalenessEnqueued > 0) {
         options.logger.info(
           `Allocation scheduler: actions reconciled=${result.actionsReconciled}, ` +

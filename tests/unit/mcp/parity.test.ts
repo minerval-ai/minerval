@@ -6,18 +6,20 @@
  * ROUTE_TOOLS in src/mcp/route-tools.ts, or, if MCP genuinely should not
  * have it, to MCP_EXCLUDED_ROUTES with the reason.
  *
- * The app is built with every feature on, which is what the tables
- * decide for the public graph, and with every feature off
- * (src/features.ts), to check that a feature's routes and tools go
- * together and nothing else goes with them.
+ * The app is built three times: with every feature on, which is what the
+ * tables decide for the public graph; with every feature off
+ * (src/features.ts), to check that a feature's routes and tools go together
+ * and nothing else goes with them; members-only (src/permissions.ts),
+ * which mounts the routes for permissions, parties, labels, the standing
+ * mandates and the outgoing usage reports that the public graph does not
+ * have; and members-only creating its own owls (OWLS=created), which
+ * mounts the routes for created owls and none that sell them.
  *
- * Both of those are built as a deployment that publishes the mirror feed
+ * All of those are built as a deployment that publishes the mirror feed
  * and applies one (src/services/mirror-roles.ts), because the mirror's
  * routes are mounted only where it is configured and the tables decide them
- * too. A third build, with the mirror not configured, checks that nothing
- * of it is there by default. A fourth, members-only (src/permissions.ts),
- * mounts the routes for permissions, parties and labels that the public
- * graph does not have.
+ * too. A fourth build, with the mirror not configured, checks that nothing
+ * of it is there by default.
  */
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
@@ -63,8 +65,14 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$/;
-const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(key.slice(key.indexOf(" ") + 1));
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|asks|showings|gates?|redaction-policies|outbound|outside|connections|file-sets|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$|^\/setup\/checklist$|^\/requests\/:request_id\/adopt$/;
+/** Mounted only by a members-only deployment that creates its own owls. */
+const CREATED_OWLS_ROUTE = /^\/owls\/created$/;
+/** Not mounted where owls are created: the routes that sell them. */
+const SELLS_OWLS_ROUTE = /^\/billing\/(packs|checkout|webhook)$/;
+const urlOf = (key: string) => key.slice(key.indexOf(" ") + 1);
+const createdOwlsRoute = (key: string) => CREATED_OWLS_ROUTE.test(urlOf(key));
+const membersOnlyRoute = (key: string) => MEMBERS_ONLY_ROUTE.test(urlOf(key)) || createdOwlsRoute(key);
 const openRouteTools = () =>
   Object.entries(ROUTE_TOOLS)
     .filter(([key]) => !membersOnlyRoute(key))
@@ -411,75 +419,6 @@ describe("with every feature switched off", () => {
 });
 
 /**
- * The same app on a deployment that has set nothing for the mirror
- * (src/services/mirror-roles.ts), which is every deployment until someone
- * configures a side. None of the mirror's routes is mounted and none of its
- * tools is offered; every other route and tool is exactly as it was.
- */
-describe("with the mirror not configured", () => {
-  const isMirror = (key: string) => key.slice(key.indexOf(" ") + 1).startsWith("/mirror");
-  const AUTH = {
-    method: "api_key" as const,
-    userId: "u",
-    apiKeyId: "k",
-    contributorExternalId: "x:u",
-    isService: false,
-    isSession: false,
-  };
-  const MIRROR_TOOLS = ["get_mirror_feed_key", "list_mirror_batches", "get_mirror_status"];
-
-  let plainApp: FastifyInstance;
-  let plainKeys: string[];
-  let plainTools: string[];
-  let allTools: string[];
-  let saved: Record<string, string | undefined>;
-
-  beforeAll(async () => {
-    const full = buildMcpServer({ auth: AUTH, requestId: "r", app });
-    allTools = Object.keys((full as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
-
-    saved = Object.fromEntries(Object.keys(MIRROR_ENV).map((name) => [name, process.env[name]]));
-    for (const name of Object.keys(MIRROR_ENV)) delete process.env[name];
-    vi.resetModules();
-    const { buildApp } = await import("../../../src/server/app.js");
-    const mcp = await import("../../../src/mcp/server.js");
-    plainApp = await buildApp();
-    await plainApp.ready();
-    plainKeys = plainApp.routeCatalog.map((r) => routeKey(r.method, r.url));
-    const server = mcp.buildMcpServer({ auth: AUTH, requestId: "r", app: plainApp });
-    plainTools = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
-  });
-
-  afterAll(async () => {
-    for (const [name, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-    await plainApp?.close();
-  });
-
-  it("finds the mirror's routes and tools in the app that has it configured", () => {
-    expect(keys.filter(isMirror).sort()).toEqual([
-      "GET /mirror/feed",
-      "GET /mirror/feed/:sequence",
-      "GET /mirror/feed/key",
-      "GET /mirror/status",
-    ]);
-    for (const name of MIRROR_TOOLS) expect(allTools, name).toContain(name);
-  });
-
-  it("mounts none of them, and every other route", () => {
-    expect(plainKeys.filter(isMirror)).toEqual([]);
-    expect([...plainKeys].sort()).toEqual(keys.filter((key) => !isMirror(key)).sort());
-  });
-
-  it("offers none of the mirror's tools, and every other tool", () => {
-    for (const name of MIRROR_TOOLS) expect(plainTools, name).not.toContain(name);
-    expect([...plainTools].sort()).toEqual(allTools.filter((name) => !MIRROR_TOOLS.includes(name)).sort());
-  });
-});
-
-/**
  * The same app as a members-only deployment (src/permissions.ts). It mounts
  * everything the public graph does and the routes for permissions, parties
  * and labels besides, each decided in the tables. A tool whose route asks
@@ -547,6 +486,8 @@ describe("in a members-only deployment", () => {
     const own = membersKeys.filter(membersOnlyRoute);
     expect(own.length).toBeGreaterThan(10);
     expect(membersKeys.filter((key) => !membersOnlyRoute(key)).sort()).toEqual([...keys].sort());
+    // Creating owls is a second setting: without it the routes are absent.
+    expect(membersKeys.filter(createdOwlsRoute)).toEqual([]);
   });
 
   it("decides each of its own routes once, and the tables name no other", () => {
@@ -559,18 +500,21 @@ describe("in a members-only deployment", () => {
       ...Object.keys(ROUTE_TOOLS),
       ...Object.keys(NATIVE_TOOL_ROUTES),
       ...Object.keys(MCP_EXCLUDED_ROUTES),
-    ].filter(membersOnlyRoute);
+    ].filter((key) => membersOnlyRoute(key) && !createdOwlsRoute(key));
     expect(named.sort()).toEqual([...own].sort());
   });
 
   it("offers a caller who holds every permission every tool", () => {
-    const tools = toolsOf(["direct", "fund", "administer"]);
-    for (const tool of Object.values(ROUTE_TOOLS)) expect(tools, tool.name).toContain(tool.name);
+    const tools = toolsOf(["direct", "fund", "administer", "release"]);
+    for (const [key, tool] of Object.entries(ROUTE_TOOLS)) {
+      if (createdOwlsRoute(key)) expect(tools, tool.name).not.toContain(tool.name);
+      else expect(tools, tool.name).toContain(tool.name);
+    }
     expect(new Set(tools).size).toBe(tools.length);
   });
 
   it("leaves out the tools of a permission the caller lacks, and nothing else", () => {
-    const all = toolsOf(["direct", "fund", "administer"]);
+    const all = toolsOf(["direct", "fund", "administer", "release"]);
     const needing = (permission: string) =>
       membersApp.routeCatalog
         .filter((r) => r.permissions.includes(permission as "direct"))
@@ -583,11 +527,177 @@ describe("in a members-only deployment", () => {
     expect(needing("administer").length).toBeGreaterThan(3);
 
     const reader = toolsOf([]);
-    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer")]);
+    expect(needing("release").sort()).toEqual(["decide_at_gate", "get_gate_queue"]);
+    // A route that any one of several permissions opens (the reads of the
+    // file sets, for a person who directs or an administrator) is left out
+    // for a caller who holds none of them, and offered to one who holds any.
+    const needingAnyOf = membersApp.routeCatalog
+      .filter((r) => (r.anyPermissions ?? []).length > 0)
+      .flatMap((r) => {
+        const tool = ROUTE_TOOLS[routeKey(r.method, r.url)];
+        return tool ? [tool.name] : [];
+      });
+    // The reads of file sets, and the parties by name, which a person who directs reads to say whose material a set is.
+    expect(needingAnyOf.sort()).toEqual(["get_file_set", "list_file_set_commands", "list_file_set_files", "list_file_sets", "list_parties"]);
+    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("release"), ...needingAnyOf]);
     expect([...reader].sort()).toEqual(all.filter((name) => !gone.has(name)).sort());
+    for (const holding of [["direct"], ["administer"]]) {
+      const tools = toolsOf(holding);
+      for (const name of needingAnyOf) expect(tools, `${name} for a holder of ${holding[0]}`).toContain(name);
+    }
+    for (const name of needingAnyOf) expect(toolsOf(["fund"]), name).not.toContain(name);
 
     const funder = toolsOf(["fund"]);
     for (const name of needing("fund")) expect(funder, name).toContain(name);
     for (const name of needing("direct")) expect(funder, name).not.toContain(name);
+  });
+});
+
+/**
+ * A members-only deployment that creates its own owls (OWLS=created,
+ * src/services/owl.ts). It mounts the routes for created owls, and none of
+ * the routes that sell owls, so the tools go the same way.
+ */
+describe("in a deployment that creates its own owls", () => {
+  let createdApp: FastifyInstance;
+  let createdKeys: string[];
+  let tools: string[];
+  let saved: Record<string, string | undefined>;
+
+  beforeAll(async () => {
+    saved = { READS: process.env.READS, OWLS: process.env.OWLS, API_KEYS: process.env.API_KEYS };
+    process.env.READS = "members";
+    process.env.OWLS = "created";
+    process.env.API_KEYS = "parity-created-key";
+    vi.resetModules();
+    const { buildApp } = await import("../../../src/server/app.js");
+    const mcp = await import("../../../src/mcp/server.js");
+    createdApp = await buildApp();
+    await createdApp.ready();
+    createdKeys = createdApp.routeCatalog.map((r) => routeKey(r.method, r.url));
+    tools = Object.keys(
+      (
+        mcp.buildMcpServer({
+          auth: {
+            method: "api_key" as const,
+            userId: "u",
+            apiKeyId: "k",
+            contributorExternalId: "x:u",
+            isService: false,
+            isSession: false,
+            standing: {
+              member: true,
+              grants: [{ permission: "administer" as const, label: null, partyId: null, group: null }],
+              clearance: ["public"],
+              rawSourceLabels: ["public"],
+              groups: [],
+            },
+          },
+          requestId: "r",
+          app: createdApp,
+        }) as unknown as { _registeredTools: Record<string, unknown> }
+      )._registeredTools
+    );
+  });
+
+  afterAll(async () => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await createdApp?.close();
+  });
+
+  it("mounts the routes for created owls, each decided in the tables", () => {
+    const own = createdKeys.filter(createdOwlsRoute).sort();
+    expect(own).toEqual(["GET /owls/created", "POST /owls/created"]);
+    expect("GET /owls/created" in ROUTE_TOOLS).toBe(true);
+    expect("POST /owls/created" in MCP_EXCLUDED_ROUTES).toBe(true);
+    const named = [...Object.keys(ROUTE_TOOLS), ...Object.keys(MCP_EXCLUDED_ROUTES)].filter(createdOwlsRoute);
+    expect(named.sort()).toEqual(own);
+  });
+
+  it("mounts no route that sells owls, and every other route the public graph has", () => {
+    expect(createdKeys.filter((key) => SELLS_OWLS_ROUTE.test(urlOf(key)))).toEqual([]);
+    expect(createdKeys.filter((key) => !membersOnlyRoute(key)).sort()).toEqual(
+      keys.filter((key) => !SELLS_OWLS_ROUTE.test(urlOf(key))).sort()
+    );
+    // An account's own owl history is not a sale and stays.
+    expect(createdKeys).toContain("GET /billing/ledger");
+  });
+
+  it("offers the tool that reads created owls and not the one that lists packs", () => {
+    expect(tools).toContain("get_created_owls");
+    expect(tools).toContain("get_owl_ledger");
+    expect(tools).not.toContain("list_owl_packs");
+  });
+});
+
+/**
+ * The same app on a deployment that has set nothing for the mirror
+ * (src/services/mirror-roles.ts), which is every deployment until someone
+ * configures a side. None of the mirror's routes is mounted and none of its
+ * tools is offered; every other route and tool is exactly as it was.
+ */
+describe("with the mirror not configured", () => {
+  const isMirror = (key: string) => key.slice(key.indexOf(" ") + 1).startsWith("/mirror");
+  const AUTH = {
+    method: "api_key" as const,
+    userId: "u",
+    apiKeyId: "k",
+    contributorExternalId: "x:u",
+    isService: false,
+    isSession: false,
+  };
+  const MIRROR_TOOLS = ["get_mirror_feed_key", "list_mirror_batches", "get_mirror_status"];
+
+  let plainApp: FastifyInstance;
+  let plainKeys: string[];
+  let plainTools: string[];
+  let allTools: string[];
+  let saved: Record<string, string | undefined>;
+
+  beforeAll(async () => {
+    const full = buildMcpServer({ auth: AUTH, requestId: "r", app });
+    allTools = Object.keys((full as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
+
+    saved = Object.fromEntries(Object.keys(MIRROR_ENV).map((name) => [name, process.env[name]]));
+    for (const name of Object.keys(MIRROR_ENV)) delete process.env[name];
+    vi.resetModules();
+    const { buildApp } = await import("../../../src/server/app.js");
+    const mcp = await import("../../../src/mcp/server.js");
+    plainApp = await buildApp();
+    await plainApp.ready();
+    plainKeys = plainApp.routeCatalog.map((r) => routeKey(r.method, r.url));
+    const server = mcp.buildMcpServer({ auth: AUTH, requestId: "r", app: plainApp });
+    plainTools = Object.keys((server as unknown as { _registeredTools: Record<string, unknown> })._registeredTools);
+  });
+
+  afterAll(async () => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await plainApp?.close();
+  });
+
+  it("finds the mirror's routes and tools in the app that has it configured", () => {
+    expect(keys.filter(isMirror).sort()).toEqual([
+      "GET /mirror/feed",
+      "GET /mirror/feed/:sequence",
+      "GET /mirror/feed/key",
+      "GET /mirror/status",
+    ]);
+    for (const name of MIRROR_TOOLS) expect(allTools, name).toContain(name);
+  });
+
+  it("mounts none of them, and every other route", () => {
+    expect(plainKeys.filter(isMirror)).toEqual([]);
+    expect([...plainKeys].sort()).toEqual(keys.filter((key) => !isMirror(key)).sort());
+  });
+
+  it("offers none of the mirror's tools, and every other tool", () => {
+    for (const name of MIRROR_TOOLS) expect(plainTools, name).not.toContain(name);
+    expect([...plainTools].sort()).toEqual(allTools.filter((name) => !MIRROR_TOOLS.includes(name)).sort());
   });
 });

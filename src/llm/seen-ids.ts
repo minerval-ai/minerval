@@ -353,3 +353,12 @@ export function observeRun(
     },
   };
 }
+
+/**
+ * Whether a thrown error is the database refusing a malformed uuid (22P02). The query builder wraps the
+ * database's error in its own, with the code on the cause, so both places are looked at.
+ */
+export function isMalformedIdError(err: unknown): boolean {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  return e?.code === "22P02" || e?.cause?.code === "22P02";
+}

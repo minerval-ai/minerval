@@ -49,7 +49,7 @@ import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { loadConfig } from "../config.js";
 import { checkBudget } from "../llm/budget-tracker.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
-import { getGeneralMandate } from "../services/allocation-policy-service.js";
+import { AT_ANY_LABEL, getGeneralMandate } from "../services/allocation-policy-service.js";
 import {
   actionBudgetMicroUsd,
   actionWaitingOn,
@@ -61,7 +61,6 @@ import {
   type RunnableAction,
 } from "../services/action-service.js";
 import { runAtLabel, runWithUsageContext, withPassBudget, type RunFunding } from "../llm/usage-context.js";
-import { pendingPassLabel } from "../services/label-service.js";
 import { commissionFollowUps } from "../services/petition-service.js";
 
 /** The budget a lane sets on a Steward pass, or none. */
@@ -76,14 +75,15 @@ import {
   parksAtOnce,
   reportStewardPark,
   stewardReleaseSet,
+  stewardSlot,
   withStewardLease,
+  type StewardSlot,
 } from "../services/steward-lease.js";
 
 interface StewardTaskRow {
   id: string;
   steward_trigger: string | null;
   steward_attempts: number | null;
-  queue_priority: number;
 }
 
 /** A claim the fallback lane took, with the label its pass runs at. */
@@ -162,7 +162,7 @@ export async function processNextStewardTask(
   // consulted before a covered action: that run carries its funder, and the
   // breaker exempts it. (Checked here, outside any usage context, it read
   // the unattributed counters and stalled funded work along with them.)
-  const mandate = await getGeneralMandate();
+  const mandate = await getGeneralMandate(AT_ANY_LABEL);
 
   // The ledger's verdict first — the engine's only execution rule. What
   // runs is what some payer commissioned; with a mandate in place, nothing
@@ -206,15 +206,10 @@ export async function processNextStewardTask(
     const pending = await pendingStewardCount();
     return { status: pending > 0 ? "budget" : "empty" };
   }
-  // This lane picks a claim, not a piece of work: no row here says what
-  // label the pending pass was asked for at. The messages waiting on the
-  // claim do, when they agree on one, and the pass runs at that label;
-  // otherwise it runs at the claim's own, so a restricted claim is never
-  // stewarded as public (pendingPassLabel in label-service.ts, below).
-  // With messages of two labels waiting, the pass runs at the claim's label
-  // and reads them all: the pending slot is one per claim, and one per
-  // label is later work. A deployment with more than one label should
-  // leave the lane off until then.
+  // This lane picks a node's own row, which is its slot for work at its own
+  // label, and the pass runs at that label. Work asked for at another label
+  // waits in steward_slots (steward-lease.ts) and is run when a ledger row
+  // at that label is funded; this lane does not drain it.
   // The fallback lane IS unattributed work, so the breaker applies: don't
   // even claim a task if it is already spent this window.
   try {
@@ -252,9 +247,9 @@ export async function processNextStewardTask(
   if (rows.length === 0) return { status: "empty" };
   const task = rows[0]!;
   // The run and the bookkeeping after it are inside the pass's label, as a
-  // covered action's are inside its row's.
-  const label = await pendingPassLabel(task.id, task.sensitivity_label);
-  return runAtLabel(label, `claim ${task.id}`, () =>
+  // covered action's are inside its row's. The row claimed is the node's
+  // own slot, which is for work at the node's own label.
+  return runAtLabel(task.sensitivity_label, `claim ${task.id}`, () =>
     runStewardOnClaim(task, {
       model: opts.model ?? config.stewardModel,
       passBudget,
@@ -278,23 +273,26 @@ async function runCoveredAction(
     return { status: "empty" };
   }
 
-  // Claim the claim row, guarding against a concurrent express-lane run.
+  // Claim the node's slot for this label, guarding against a concurrent
+  // express-lane run. It is the node's own row where the pass is at the
+  // node's label, and this label's row in steward_slots otherwise
+  // (steward-lease.ts), so a pass at one label never waits on another's.
+  const slot = await stewardSlot(action.claim_id, { ensure: true });
   const rows = await rawQuery<StewardTaskRow>(
-    `UPDATE claims
+    `UPDATE ${slot.rel}
         SET steward_state = 'running', stewarded_at = now(),
             steward_requeued = false
-      WHERE id = $1 AND state = 'active'
+      WHERE ${slot.is("$1")} AND ${slot.active()}
         AND (steward_state = 'pending'
              OR (steward_state = 'running'
                  AND stewarded_at < now()
                        - make_interval(mins => ${STEWARD_LEASE_STALE_MINUTES})))
-      RETURNING id, steward_trigger, steward_attempts,
-                queue_priority`,
+      RETURNING ${slot.key} AS id, steward_trigger, steward_attempts`,
     [action.claim_id]
   );
   if (rows.length === 0) {
     const [claim] = await rawQuery<{ steward_state: string }>(
-      `SELECT steward_state FROM claims WHERE id = $1 AND state = 'active'`,
+      `SELECT steward_state FROM ${slot.rel} WHERE ${slot.is("$1")} AND ${slot.active()}`,
       [action.claim_id]
     );
     if (
@@ -333,7 +331,7 @@ async function runCoveredAction(
     source: action.commissioned ? "a commission" : "the allocations funding this pass",
     funding: { actionId: action.id },
   };
-  return runStewardOnClaim(rows[0]!, { model, usageCtx, action, passBudget });
+  return runStewardOnClaim(rows[0]!, { model, usageCtx, action, passBudget, slot });
 }
 
 /**
@@ -348,15 +346,18 @@ async function runStewardOnClaim(
     usageCtx?: { jobId?: string; userId?: string };
     action?: RunnableAction;
     passBudget?: PassBudgetInput;
+    /** The slot the caller claimed; the node's own row where it is left out. */
+    slot?: StewardSlot;
   }
 ): Promise<StewardProcessResult> {
   const trigger = task.steward_trigger ?? "structure_and_assess";
   const attempts = task.steward_attempts ?? 0;
   const action = input.action;
+  const slot = input.slot ?? (await stewardSlot(task.id));
 
   try {
     const { billedMicroUsd } = await withStewardLease(
-      { claimId: task.id, ...(action ? { actionId: action.id } : {}) },
+      { claimId: task.id, slot, ...(action ? { actionId: action.id } : {}) },
       () =>
         runWithUsageContext(input.usageCtx ?? {}, () =>
           withPassBudget(input.passBudget ?? null, () =>
@@ -398,10 +399,10 @@ async function runStewardOnClaim(
     // arrived mid-run (#182) turns the release into 'pending' rather than
     // 'done' (#482) — the message would otherwise be silently lost.
     await rawQuery(
-      `UPDATE claims
+      `UPDATE ${slot.rel}
           SET ${stewardReleaseSet("'done'")},
               ${STEWARD_SUCCESS_CLEAR_SET}
-        WHERE id = $1`,
+        WHERE ${slot.is("$1")}`,
       [task.id]
     );
     return { status: "processed", claimId: task.id, trigger, ok: true };
@@ -420,20 +421,20 @@ async function runStewardOnClaim(
     // rather than being re-picked immediately.
     if (err instanceof LlmBudgetExceededError) {
       await rawQuery(
-        `UPDATE claims
+        `UPDATE ${slot.rel}
             SET steward_state = 'pending', steward_requeued = false,
                 updated_at = now()
-          WHERE id = $1`,
+          WHERE ${slot.is("$1")}`,
         [task.id]
       );
       return { status: "budget", claimId: task.id };
     }
     if (isTransientApiError(err)) {
       await rawQuery(
-        `UPDATE claims
+        `UPDATE ${slot.rel}
             SET steward_state = 'pending', steward_requeued = false,
                 updated_at = now()
-          WHERE id = $1`,
+          WHERE ${slot.is("$1")}`,
         [task.id]
       );
       console.warn(
@@ -457,11 +458,11 @@ async function runStewardOnClaim(
       // a genuinely poisoned claim converges to 'error' anyway after its
       // retriggered runs also fail.
       await rawQuery(
-        `UPDATE claims
+        `UPDATE ${slot.rel}
             SET ${stewardReleaseSet("'error'")},
                 steward_error = $2, steward_attempts = $3,
                 steward_error_reason = $4
-          WHERE id = $1`,
+          WHERE ${slot.is("$1")}`,
         [task.id, msg, nextAttempts, reason]
       );
       // A parked claim is out of the candidate set; retire its group so
@@ -481,11 +482,11 @@ async function runStewardOnClaim(
       await reportStewardPark(task.id, "steward-pipeline");
     } else {
       await rawQuery(
-        `UPDATE claims
+        `UPDATE ${slot.rel}
             SET steward_state = 'pending', steward_requeued = false,
                 steward_error = $2, steward_attempts = $3,
                 steward_error_reason = $4, updated_at = now()
-          WHERE id = $1`,
+          WHERE ${slot.is("$1")}`,
         [task.id, msg, nextAttempts, reason]
       );
       console.warn(

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { SourcePage } from "@/lib/types";
 import { agentName, EVENT_WORD, kindLabel, partialDate, when, type Group } from "./model";
 import s from "./source.module.css";
+import { isReadingAddress } from "@/lib/source-address";
 
 // Every recorded fact about the document in full, each saying plainly when it
 // was not found rather than leaving a gap (#507).
@@ -28,7 +29,17 @@ export function SourceRecord({ page, groups }: { page: SourcePage; groups: Group
         <dt>DOI</dt>
         <dd>{source.doi ? <a href={`https://doi.org/${source.doi}`}>{source.doi}</a> : none("None")}</dd>
         <dt>Link</dt>
-        <dd>{source.url ? <a href={source.url} rel="noopener noreferrer">{source.url}</a> : none()}</dd>
+        <dd>
+          {source.url ? (
+            isReadingAddress(source.url) ? (
+              <code>{source.url}</code>
+            ) : (
+              <a href={source.url} rel="noopener noreferrer">{source.url}</a>
+            )
+          ) : (
+            none()
+          )}
+        </dd>
         <dt>Archived copy</dt>
         <dd>{source.archived_url ? <a href={source.archived_url} rel="noopener noreferrer">{source.archived_url}</a> : none("None found")}</dd>
         <dt>Stored text</dt>

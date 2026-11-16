@@ -1,7 +1,9 @@
+import { layered } from "./layer-service.js";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction } from "../db/client.js";
 import { arguments_, argumentEvaluations, argumentEvaluationsInForce } from "../db/schema.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { recordMadeBeside } from "./judgment-version-service.js";
 
 /**
  * Inline claim reference inside an argument's written form:
@@ -112,8 +114,8 @@ export async function getRetiredArgumentsForClaim(claimId: string) {
 export async function getArgumentSubclaims(
   argumentId: string
 ): Promise<{ id: string; text: string }[]> {
-  return rawQuery<{ id: string; text: string }>(
-    `SELECT c.id, c.text
+  const rows = await rawQuery<{ id: string; text: string; premise: string }>(
+    `SELECT c.id, c.text, cr.child_claim_id || ':' || cr.relation_type AS premise
        FROM argument_subclaims am
        JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claims c ON c.id = cr.child_claim_id
@@ -121,6 +123,14 @@ export async function getArgumentSubclaims(
       ORDER BY am.created_at, cr.id`,
     [argumentId]
   );
+  // An edge's grouping recorded at two layers, or the same edge recorded
+  // at two layers and each grouped here, is two rows and one premise
+  // (layer-service.ts). Only a graph with more than one layer can hold
+  // such a pair.
+  const seen = new Set<string>();
+  return rows
+    .filter((r) => !layered() || (!seen.has(r.premise) && Boolean(seen.add(r.premise))))
+    .map(({ id, text }) => ({ id, text }));
 }
 
 /** Overwrite an argument's written form (its `content`). */
@@ -186,10 +196,18 @@ export async function setArgumentEvaluation(input: {
   createdBy?: string;
 }) {
   const db = getDb();
+  // This label's current evaluation is retired, and no other label's: an
+  // argument may carry one at each label (db/schema.ts).
   await db
     .update(argumentEvaluations)
     .set({ isCurrent: false })
-    .where(eq(argumentEvaluations.argumentId, input.argumentId));
+    .where(
+      and(
+        eq(argumentEvaluations.argumentId, input.argumentId),
+        eq(argumentEvaluations.isCurrent, true),
+        eq(argumentEvaluations.sensitivityLabel, currentLabel())
+      )
+    );
   const [evaluation] = await db
     .insert(argumentEvaluations)
     .values({
@@ -205,6 +223,8 @@ export async function setArgumentEvaluation(input: {
       sensitivityLabel: currentLabel(),
     })
     .returning();
+  // The evaluations at the labels this one's label reads, as they stood.
+  await recordMadeBeside(rawQuery, "argument_evaluations", "argument_evaluation", evaluation!.id, input.argumentId);
   return evaluation!;
 }
 
@@ -280,8 +300,8 @@ export async function reviseArgument(input: {
     await tx.query(`UPDATE arguments SET stance = $2 WHERE id = $1`, [input.argumentId, input.stance]);
     const retired = await tx.query<{ id: string }>(
       `UPDATE argument_evaluations SET is_current = false
-        WHERE argument_id = $1 AND is_current = true RETURNING id`,
-      [input.argumentId]
+        WHERE argument_id = $1 AND is_current = true AND sensitivity_label = $2 RETURNING id`,
+      [input.argumentId, currentLabel()]
     );
     return { evaluationRetired: retired.length > 0 };
   });

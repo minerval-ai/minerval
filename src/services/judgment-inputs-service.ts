@@ -30,6 +30,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { notSetAsideSql } from "./overlay-service.js";
 
 export type JudgmentKind = "assessment" | "quantity_estimate" | "question_assessment";
 
@@ -70,7 +71,7 @@ export async function recordJudgmentInputs(
        (judgment_kind, judgment_id, input_kind, node_id, relation_type, input_judgment_id, sensitivity_label)
      SELECT $1::text, $2::uuid, 'premise', r.child_claim_id, r.relation_type, ${IN_FORCE_ID_SQL("r.child_claim_id")}, $4
        FROM claim_relationships r
-      WHERE r.parent_claim_id = $3`,
+      WHERE r.parent_claim_id = $3${notSetAsideSql("claim_relationships", "r.id")}`,
     [kind, judgmentId, nodeId, label]
   );
   await query(
@@ -101,15 +102,15 @@ export async function recordJudgmentInputs(
  * means the same judgment by it.
  */
 export const JUDGED_CTE = `judged AS (
-    SELECT DISTINCT ON (node_id) node_id, kind, id, assessed_at, inputs_recorded
+    SELECT DISTINCT ON (node_id) node_id, kind, id, assessed_at, inputs_recorded, label
       FROM (
-        SELECT claim_id AS node_id, 'assessment'::text AS kind, id, assessed_at, inputs_recorded
+        SELECT claim_id AS node_id, 'assessment'::text AS kind, id, assessed_at, inputs_recorded, sensitivity_label AS label
           FROM assessments_in_force WHERE claim_id = ANY($1::uuid[])
         UNION ALL
-        SELECT claim_id, 'quantity_estimate', id, assessed_at, inputs_recorded
+        SELECT claim_id, 'quantity_estimate', id, assessed_at, inputs_recorded, sensitivity_label
           FROM quantity_estimates_in_force WHERE claim_id = ANY($1::uuid[])
         UNION ALL
-        SELECT claim_id, 'question_assessment', id, assessed_at, inputs_recorded
+        SELECT claim_id, 'question_assessment', id, assessed_at, inputs_recorded, sensitivity_label
           FROM question_assessments_in_force WHERE claim_id = ANY($1::uuid[])
       ) j
      ORDER BY node_id, assessed_at DESC, kind
@@ -122,7 +123,9 @@ export const JUDGED_CTE = `judged AS (
  * rejudged (the premise's judgment in force is a different row, which
  * includes a first judgment), or unchanged.
  */
-const PREMISE_ROWS_CTE = `premise_rows AS (
+// A function, so that the fragment is built when the read is made: whether an edge is set aside is asked only on a
+// graph with more than one label, which a process learns with its first query (overlay-service.ts).
+const premiseRowsCte = () => `premise_rows AS (
     SELECT COALESCE(t.parent_id, n.parent_id) AS parent_id,
            COALESCE(t.node_id, n.node_id) AS node_id,
            COALESCE(t.relation_type, n.relation_type) AS relation,
@@ -142,7 +145,7 @@ const PREMISE_ROWS_CTE = `premise_rows AS (
                    ${IN_FORCE_ID_SQL("r.child_claim_id")} AS in_force_now
               FROM judged j
               JOIN claim_relationships r ON r.parent_claim_id = j.node_id
-             WHERE j.inputs_recorded) n
+             WHERE j.inputs_recorded${notSetAsideSql("claim_relationships", "r.id", "j.label")}) n
         ON n.parent_id = t.parent_id AND n.node_id = t.node_id AND n.relation_type = t.relation_type
   )`;
 
@@ -293,7 +296,7 @@ export async function getJudgmentInputs(nodeId: string): Promise<JudgmentInputsV
       in_force_now: string | null;
       state: PremiseInput["state"] | "added";
     }>(
-      `WITH ${JUDGED_CTE}, ${PREMISE_ROWS_CTE}
+      `WITH ${JUDGED_CTE}, ${premiseRowsCte()}
        SELECT node_id, relation, judged_against, in_force_now, state FROM premise_rows ORDER BY 1, 2`,
       [[nodeId]]
     ),
@@ -388,7 +391,7 @@ export async function summarizeJudgmentChanges(
   );
   if (ids.length === 0) return out;
   const rows = await rawQuery<{ node_id: string; recorded: boolean } & JudgmentChangeCounts>(
-    `WITH ${JUDGED_CTE}, ${PREMISE_ROWS_CTE}, ${SOURCE_ROWS_CTE}, ${EVENT_ROWS_CTE}
+    `WITH ${JUDGED_CTE}, ${premiseRowsCte()}, ${SOURCE_ROWS_CTE}, ${EVENT_ROWS_CTE}
      SELECT j.node_id, j.inputs_recorded AS recorded,
             COALESCE(p.rejudged, 0)::int AS premises_rejudged,
             COALESCE(p.added, 0)::int AS premises_added,

@@ -9,7 +9,7 @@
  * and the agents that judge the graph are never told which mandate pays.
  */
 import type Anthropic from "@anthropic-ai/sdk";
-import { getUsageContext } from "../usage-context.js";
+import { currentLabel, getUsageContext } from "../usage-context.js";
 import { debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
 import { commissionNodePass, commissionNoteText } from "../../services/commission-service.js";
 import { filePetition, routePetition, takeInboxLease, releaseInboxLease } from "../../services/petition-service.js";
@@ -86,6 +86,15 @@ export function getSpendToolDefinitions(): Tool[] {
             description: "For research: true (the default) to have the report return into this session; false to send it to this node's inbox.",
           },
           follow_up_of: { type: "string", description: "For research: the id of an earlier research run this continues." },
+          ask_of: {
+            type: "string",
+            description:
+              "For research: the id of a label above this one that can be asked, where your label note lists one. " +
+              "The question is recorded as a request on this node, addressed there and paid for from your budget, " +
+              "and an agent that reads what that label reads takes it up. You do not wait for it: what it finds " +
+              "comes back through that label's gate, redacted or held as its policy says, as work on the request " +
+              "for a later pass to weigh. With ask_of, brief is the request: state it so that it stands on its own.",
+          },
           examine_source_id: {
             type: "string",
             description:
@@ -172,6 +181,12 @@ export function getSpendToolDefinitions(): Tool[] {
 }
 
 const owls = (micro: number) => microUsdToOwls(micro);
+
+/** What a run paid for from a label below is told when it petitions. */
+export const PETITION_BELOW_MESSAGE =
+  "Recorded. This run was asked for and paid for from a label that does not read this one, so the petition reaches " +
+  "its payer only through this label's gate, and no answer may come while this run lasts. Carry on with the budget " +
+  "you have, and record what you could and could not establish.";
 
 /**
  * Work the deciding mandate's inbox: the program officer, then the
@@ -292,6 +307,33 @@ export async function executeSpendTool(name: string, input: Record<string, unkno
           `to petition. Work with the budget you have and record what you could and couldn't establish.`,
       });
     }
+    // A run asked for from below is paid by a mandate at a label that does
+    // not read this one. Its officers work only what is at their own label,
+    // and a petition is this label's words going down, which is the gate's
+    // to pass. So it is recorded here, nothing waits on it, and the run is
+    // told (as its task already said: request-service.ts paidFromBelowNote).
+    const [payerAt] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM grants WHERE id = $1`, [grantId]);
+    if (payerAt && payerAt.label !== currentLabel()) {
+      const petitionId = await filePetition({
+        grantId,
+        kind,
+        askedMicroUsd: asked,
+        plan,
+        why: input.why ? String(input.why) : null,
+        ifRefused: input.if_refused ? String(input.if_refused) : null,
+        requesterAgent: ctx.agent ?? null,
+        requesterActionId: funding?.actionId ?? null,
+        requesterNodeId: ctx.claimId ?? null,
+        spentMicroUsd: ctx.passBudget?.meter.billedMicroUsd,
+        waiting: false,
+        doneSoFar: input.done_so_far ? String(input.done_so_far) : null,
+      });
+      // The petition is this label's words going down: it is offered to the gate, and reaches the payer's officers when it is through.
+      await import("../../services/gate-handoff.js")
+        .then((handoff) => handoff.offerPetitionBelow(petitionId, { grantId, label: payerAt.label }, currentLabel()))
+        .catch((err: unknown) => console.error(`[gate] could not offer petition ${petitionId}: ${err instanceof Error ? err.message : String(err)}`));
+      return JSON.stringify({ success: true, petition_id: petitionId, message: PETITION_BELOW_MESSAGE });
+    }
     // A petition never blocks: the decision returns into the asking session,
     // shown in its next tool result, or resuming it if it paused
     // (session-service.ts). A run with no session cannot receive it, so it
@@ -365,6 +407,9 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
         `commissioned. Commission with less, or petition for more and commission once it is granted.`,
     });
   }
+  if (typeof input.ask_of === "string" && input.ask_of.trim()) {
+    return askResearchAbove(input.ask_of.trim(), brief, budget, payer);
+  }
   const ctx = getUsageContext();
   // Only a Steward's research serves its node: the Curator's session is
   // anchored on a node it is curating, but what it asks is about structure,
@@ -422,4 +467,56 @@ async function commissionResearchTool(input: Record<string, unknown>): Promise<s
           ? `This run can't pause to wait for it, so its report goes to this node's inbox for its next pass.`
           : `Its report goes to this node's inbox for its next pass.`),
   });
+}
+
+/**
+ * commission kind research with ask_of: the same act as any work asked for
+ * from below (ask-above-service.ts), from a run and paid from its budget.
+ * The run does not wait: an answer is information going down, and comes
+ * back through the gate onto the request this records, or is held there.
+ */
+async function askResearchAbove(
+  faceId: string,
+  brief: string,
+  budget: number,
+  payer: NonNullable<ReturnType<typeof runPayer>>
+): Promise<string> {
+  const ctx = getUsageContext();
+  const nodeId = ctx.agent === "curator" ? null : ctx.session?.nodeId ?? ctx.claimId ?? null;
+  const { askAbove } = await import("../../services/ask-above-service.js");
+  const res = await askAbove({
+    faceId,
+    as: "work",
+    ask: brief,
+    why: nodeId
+      ? "The run assessing the node this bears on needs it and cannot read what would answer it."
+      : "The run that asked needs it and cannot read what would answer it.",
+    satisfiedBy: "A report of what was found, with what it rests on, whichever way it comes out.",
+    claimIds: nodeId ? [nodeId] : [],
+    bearsOnText: nodeId ? null : "What the request describes.",
+    budgetMicroUsd: budget,
+    payer,
+    filer: { kind: "admin", agent: ctx.agent === "steward" || !ctx.agent ? "claim_steward" : ctx.agent, runId: ctx.runId ?? null },
+  });
+  if (!res.ok) return JSON.stringify({ success: false, message: res.message });
+  debitRunBudget(budget);
+  const after = runBudgetLeft();
+  return JSON.stringify({
+    success: true,
+    request_id: res.request_id,
+    message: askedAboveMessage(res.face.name, res.request_id, owls(budget), after === null ? null : owls(after)),
+  });
+}
+
+/** What a run is told when it has asked for research at a label above. */
+export function askedAboveMessage(face: string, requestId: string, budgetOwls: number, leftOwls: number | null): string {
+  return (
+    `Asked "${face}" for this, as request ${requestId}, with a budget of ${budgetOwls} owls from your budget` +
+    (leftOwls !== null ? ` (you have ${leftOwls} left)` : "") +
+    `. An agent that reads what that label reads takes it up. This run is not told whether it was taken up or what ` +
+    `it found, and does not wait: conclude now on what you can read, and say in your reasoning what was asked and ` +
+    `not yet answered. What comes back passes that label's gate, where it may be redacted or held, and arrives as ` +
+    `work on request ${requestId}, which a later pass on this node reads as a source to weigh. What is not spent ` +
+    `returns to whoever paid for this run.`
+  );
 }

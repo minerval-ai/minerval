@@ -35,6 +35,7 @@ import {
   updateArgumentInstance,
 } from "../../services/argument-instance-service.js";
 import { getOrCreateSource } from "../../services/source-service.js";
+import { sourceAddressProblem } from "../../services/reading-address.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { rawQuery } from "../../db/client.js";
 import { notYourNode } from "./steward-ownership.js";
@@ -297,9 +298,12 @@ export async function executeArgumentInstanceTool(
 
   // ---- recording a new instance -------------------------------------------
   const url = optText(input.url) ?? "";
-  if (!/^https?:\/\//i.test(url)) {
-    return refuse("url must be the http(s) URL of the source you read; an instance without provenance is not recordable.");
-  }
+  // An http(s) URL, or the address of a reading kept from a connection.
+  const addressProblem = await sourceAddressProblem(
+    url,
+    "url must be the http(s) URL of the source you read; an instance without provenance is not recordable."
+  );
+  if (addressProblem) return refuse(addressProblem);
   const verbatimText = optText(input.verbatim_text) ?? "";
   if (!verbatimText) return refuse("verbatim_text is required: the passage, verbatim.");
   if (verbatimText.length > 2000) {

@@ -372,10 +372,16 @@ async function runMandateReviewImpl(input: {
         type: "object" as const,
         properties: {
           to_mandate_id: { type: "string" },
+          to_asked_request_id: {
+            type: "string",
+            description:
+              "In place of to_mandate_id: the request by which this mandate asked for a mandate at a label above " +
+              "(spawn_mandate with ask_of). The money goes to that mandate, which this one cannot read.",
+          },
           owls: { type: "number" },
           note: { type: "string" },
         },
-        required: ["to_mandate_id", "owls", "note"],
+        required: ["owls", "note"],
       },
     },
     {
@@ -395,6 +401,15 @@ async function runMandateReviewImpl(input: {
           },
           owls: { type: "number" },
           note: { type: "string" },
+          ask_of: {
+            type: "string",
+            description:
+              "The id of a label above this one that can be asked, where your label note lists one: the new " +
+              "mandate is created there, with these terms and this budget, and its Grantmaker reads what that " +
+              "label reads. You are given the id of a request at your own label that records what you asked. " +
+              "The mandate, its plan and what it finds are not shown here except through that label's gate; " +
+              "what it does not spend returns.",
+          },
         },
         required: ["title", "objective", "owls", "note"],
       },
@@ -725,7 +740,7 @@ async function runMandateReviewImpl(input: {
     }
     const [today] = await rawQuery<{ moved: number }>(
       `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS moved
-         FROM regrants
+         FROM minerval_whole.regrant_money
         WHERE from_grant_id = $1
           AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
       [grant.id]
@@ -906,6 +921,17 @@ async function runMandateReviewImpl(input: {
         if (!cap.allowed) {
           return JSON.stringify({ ok: false, code: "MOVE_CAP", problem: cap.problem });
         }
+        if (typeof toolInput.to_asked_request_id === "string" && toolInput.to_asked_request_id.trim()) {
+          const { addToAsk } = await import("../../services/ask-above-service.js");
+          const res = await addToAsk({
+            requestId: toolInput.to_asked_request_id.trim(),
+            budgetMicroUsd: owlsToMicroUsd(owls),
+            payer: { kind: "grant", grantId: grant.id },
+            note: String(toolInput.note ?? ""),
+          });
+          if (res.ok) recordMove(owls);
+          return JSON.stringify(res);
+        }
         const res = await createRegrant({
           fromGrantId: grant.id,
           toGrantId: String(toolInput.to_mandate_id ?? ""),
@@ -920,6 +946,25 @@ async function runMandateReviewImpl(input: {
         const cap = await checkMoveCap(owls);
         if (!cap.allowed) {
           return JSON.stringify({ ok: false, code: "MOVE_CAP", problem: cap.problem });
+        }
+        if (typeof toolInput.ask_of === "string" && toolInput.ask_of.trim()) {
+          const { askAbove } = await import("../../services/ask-above-service.js");
+          const res = await askAbove({
+            faceId: toolInput.ask_of.trim(),
+            as: "mandate",
+            title: String(toolInput.title ?? ""),
+            ask: String(toolInput.objective ?? ""),
+            why: String(toolInput.note ?? ""),
+            satisfiedBy: "The mandate's mission, as its own Grantmaker judges it.",
+            bearsOnText: "What the mandate's objective describes.",
+            budgetMicroUsd: owlsToMicroUsd(owls),
+            payer: { kind: "grant", grantId: grant.id },
+            filer: { kind: "mandate", grantId: grant.id },
+          });
+          if (res.ok) recordMove(owls);
+          return JSON.stringify(
+            res.ok ? { ok: true, asked_request_id: res.request_id, asked_of: res.face.name, owls } : res
+          );
         }
         const res = await spawnFundedMandate({
           fromGrantId: grant.id,
@@ -1017,6 +1062,9 @@ async function runMandateReviewImpl(input: {
             WHERE id = $1`,
           [grant.id]
         );
+        // A mandate asked for from a label below: that it closed, and why,
+        // is for its asker only through the gate (gate-handoff.ts).
+        await (await import("../../services/gate-handoff.js")).offerMandateBelow(grant.id);
         freshStart = false;
         return JSON.stringify({
           success: true,

@@ -16,6 +16,8 @@
  * has, which is how the web app and outside agents learn it.
  */
 import { loadConfig } from "./config.js";
+import { labelOfWorkInProgress } from "./db/clearance.js";
+import { postureAt } from "./label-posture.js";
 
 interface FeatureDefinition {
   name: string;
@@ -128,8 +130,12 @@ export interface FeaturesConfig {
 }
 
 /** Whether a feature is on in this deployment. */
-export function featureOn(name: FeatureName, config: FeaturesConfig = loadConfig()): boolean {
-  return featureOnGiven(name, config?.featuresOff);
+export function featureOn(name: FeatureName, config?: FeaturesConfig): boolean {
+  if (config) return featureOnGiven(name, config.featuresOff);
+  // Asked of the deployment's own settings, inside a run: the run's label
+  // may switch more off for its own runs (src/label-posture.ts). Outside a
+  // run this is the deployment's list.
+  return featureOnGiven(name, postureAt(labelOfWorkInProgress()).featuresOff);
 }
 
 /**

@@ -253,7 +253,242 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   .masthead nav { order: 2; }
 }
 
+/* a members-only deployment's own line above each page
+   (components/MembersBand.tsx): the pages a person's permissions open. It
+   sits in the frame's top padding, so the page under it starts where it
+   always did. */
+.members-band {
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.2rem 1.15rem;
+  margin: -1.75rem 0 0.75rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--sans); font-size: 0.72rem; font-weight: 500; line-height: 1.4;
+}
+/* the Ask section fills the window with no frame padding, so there the line
+   takes a row of its own above the shell */
+.frame:has(.ask-shell):has(.members-band) { display: flex; flex-direction: column; }
+.frame:has(.ask-shell) .members-band { flex: none; margin: 0; padding: 0.35rem 1.6rem; }
+.frame:has(.ask-shell) .members-band + .ask-shell { flex: 1; height: auto; min-height: 0; }
+.members-band a, .members-band a:visited { color: var(--ink-soft); }
+.members-band a:hover { color: var(--link); text-decoration: none; }
+
 .frame { max-width: var(--frame); margin: 0 auto; padding: 2.6rem 1.6rem 5rem; }
+
+/* ---- the administration pages of a members-only deployment (app/admin) -----
+   The account page's sections, tables and hairlines, with three things of
+   their own: a line of links between the pages, the setup checklist's rows,
+   and forms. No colour: a state is said in words, with a square that is
+   filled, empty or ruled, so it cannot be read as a verdict. */
+.admin-page h3, .admin-item h3 { margin: 0; }
+.admin-page h3.acct-gap { margin-top: 1.8rem; }
+.admin-facts td:first-child {
+  white-space: nowrap; font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
+}
+.admin-nav span[aria-current] { color: var(--ink); font-weight: 600; }
+/* The administration pages' links run down the left side, beside the page,
+   wherever there is room for a column of them: the masthead is one line and
+   stays one. Each page puts the links among its own children, so the page is
+   a grid of two columns with the links in the first, kept in view as the
+   page scrolls. Below that width they are the line of links they were. */
+@media (min-width: 1001px) {
+  .admin-page:has(> .admin-nav) {
+    display: grid; grid-template-columns: 11.5rem minmax(0, 1fr); column-gap: 2.6rem; align-items: start;
+  }
+  .admin-page:has(> .admin-nav) > * { grid-column: 2; }
+  .admin-page > .admin-nav {
+    grid-column: 1; grid-row: 1 / span 60; position: sticky; top: 4.5rem;
+    flex-direction: column; flex-wrap: nowrap; gap: 0.55rem;
+    padding: 0.35rem 1rem 0.35rem 0; border-bottom: 0; border-right: 1px solid var(--rule);
+    font-size: 0.78rem; line-height: 1.3;
+  }
+  .admin-page > .admin-nav span[aria-current] { box-shadow: 2px 0 0 var(--ink); margin-right: -1rem; padding-right: 1rem; }
+}
+/* a setting that is shown and not offered for change, and who reads each label under a choice of label */
+.admin-kept { display: grid; gap: 0.2rem; margin: 0; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.admin-kept small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+.admin-labels-who { margin: 0.35rem 0 0; display: grid; gap: 0.5rem; }
+.admin-labels-who dt { color: var(--ink); }
+.admin-labels-who dd { margin: 0.1rem 0 0; color: var(--muted); line-height: 1.45; }
+.admin-first { margin-top: 2rem; }
+.admin-page .account-empty { margin-top: 0.8rem; }
+/* a long address, identity or path breaks where it must, and never widens the page */
+.admin-page code, .admin-page .admin-pre { overflow-wrap: anywhere; }
+/* a figure in a column that is not the table's last: right-aligned, with room after it */
+.admin-page th.admin-num, .admin-page td.admin-num {
+  text-align: right; white-space: nowrap; padding-right: 1.6rem;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.admin-page .acct-sub { margin-top: 1.1rem; }
+.admin-page .acct-sub.admin-gap { margin-top: 2rem; }
+.admin-next { margin: 0.9rem 0 0; padding-left: 1.3rem; max-width: 44rem; }
+.admin-next li { margin-bottom: 0.55rem; font-size: 0.92rem; }
+.admin-next li a { font-weight: 600; margin-right: 0.5rem; }
+.admin-next li span { color: var(--ink-soft); }
+.admin-items { margin-top: 0.4rem; }
+.admin-item {
+  display: grid; grid-template-columns: 8.2rem minmax(0, 1fr); gap: 0 1.4rem;
+  padding: 1.15rem 0 1rem; border-bottom: 1px solid var(--rule-soft);
+  scroll-margin-top: 4rem;
+}
+.admin-item-body { max-width: 40rem; }
+.admin-item-body p { margin: 0.35rem 0 0; font-size: 0.9rem; color: var(--ink-soft); }
+.admin-item-body p.admin-item-link {
+  margin-top: 0.55rem; font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
+.admin-item-next { color: var(--ink); }
+.admin-item-body p.admin-item-next { color: var(--ink); }
+.admin-item-next .sc { margin-right: 0.35rem; color: var(--ink-soft); }
+.admin-state {
+  font-family: var(--sans); font-size: 0.66rem; font-weight: 600; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--ink-soft); padding-top: 0.3rem; white-space: nowrap;
+}
+.admin-state::before {
+  content: ""; display: inline-block; width: 0.55rem; height: 0.55rem; margin-right: 0.45rem;
+  border: 1px solid var(--ink-soft); vertical-align: -0.02rem;
+}
+.admin-state-done { color: var(--muted); }
+.admin-state-done::before { background: var(--muted); border-color: var(--muted); }
+.admin-state-attention { color: var(--ink); }
+.admin-state-attention::before {
+  border-color: var(--ink);
+  background: repeating-linear-gradient(135deg, var(--ink) 0 1.5px, transparent 1.5px 3.5px);
+}
+.admin-state-to_do { color: var(--ink); }
+.admin-state-to_do::before { border-color: var(--ink); }
+.admin-state-optional, .admin-state-not_reported { color: var(--faint); }
+.admin-state-optional::before, .admin-state-not_reported::before { border-style: dashed; border-color: var(--faint); }
+.admin-checks { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.admin-checks li {
+  padding: 0.5rem 0; border-top: 1px solid var(--rule-soft); font-size: 0.86rem;
+  color: var(--ink-soft);
+}
+.admin-checks li strong { color: var(--ink); }
+.admin-notice {
+  max-width: 40rem; margin: 1rem 0 1.2rem; padding: 0.1rem 0 0.1rem 0.9rem;
+  border-left: 2px solid var(--rule-strong); font-size: 0.88rem; color: var(--ink-soft);
+}
+.admin-form { display: grid; gap: 0.7rem; max-width: 34rem; margin: 0.9rem 0 0; }
+.admin-form label { display: grid; gap: 0.2rem; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.admin-form label.admin-check { display: flex; align-items: baseline; gap: 0.45rem; }
+.admin-form label small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+.admin-form input:not([type="checkbox"]), .admin-form select, .admin-form textarea {
+  font-family: var(--sans); font-size: 0.84rem; padding: 0.4rem 0.55rem;
+  border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--paper-card); color: var(--ink); width: 100%;
+}
+.admin-form textarea { line-height: 1.45; resize: vertical; }
+.admin-fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 0.3rem; }
+.admin-fieldset legend { padding: 0; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); margin-bottom: 0.25rem; }
+.admin-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.7rem; }
+.admin-form-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.9rem; }
+.admin-form-said { font-family: var(--sans); font-size: 0.76rem; color: var(--ink-soft); }
+.admin-form-error { color: var(--st-contradicted); }
+.admin-form-inline { display: inline-flex; gap: 0; margin: 0; max-width: none; vertical-align: baseline; }
+.admin-form-inline .admin-form-foot { display: inline-flex; }
+.admin-form-inline .linklike { font-size: 0.72rem; }
+.admin-grants { list-style: none; margin: 0; padding: 0; }
+.admin-grants li { margin: 0 0 0.15rem; }
+.admin-grants li .admin-form-inline { margin-left: 0.5rem; }
+.admin-tool { padding: 0.8rem 0; border-top: 1px solid var(--rule-soft); font-size: 0.88rem; }
+.admin-tool > label { display: flex; align-items: baseline; gap: 0.5rem; font-family: var(--sans); font-size: 0.86rem; color: var(--ink); }
+.admin-tool code { font-size: 0.82rem; }
+.admin-tool p { margin: 0.3rem 0 0 1.6rem; color: var(--ink-soft); max-width: 40rem; }
+.admin-tool p.admin-tool-hint { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); }
+.admin-tool details { margin: 0.3rem 0 0 1.6rem; font-family: var(--sans); font-size: 0.72rem; }
+.admin-pre {
+  font-family: var(--mono); font-size: 0.74rem; line-height: 1.45; white-space: pre-wrap;
+  word-break: break-word; background: var(--paper-sunk); border: 1px solid var(--rule-soft);
+  border-radius: 4px; padding: 0.55rem 0.7rem; margin: 0.35rem 0; max-width: 46rem; overflow-x: auto;
+}
+.admin-report { padding: 0.4rem 0 0.9rem; border-bottom: 1px solid var(--rule-soft); }
+.admin-args { font-family: var(--sans); font-size: 0.7rem; }
+.admin-hash { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.admin-withheld { font-style: italic; color: var(--muted); }
+@media (max-width: 640px) {
+  .admin-item { grid-template-columns: minmax(0, 1fr); }
+  .admin-state { padding: 0 0 0.35rem; }
+}
+
+/* ---- inside a private deployment that holds material at more than one label:
+   a node's assessments by label (components/claim/InsideVersions.tsx), and
+   the pages for showings, the release queue, a boundary's policy, sending
+   outside and file sets (app/showings, app/release, app/redaction-policies,
+   app/outbound, app/file-sets). They take the administration pages' sections,
+   tables and forms; what is here is theirs alone. Ink only: a state is said
+   in words and never in a status colour, so it cannot be read as a verdict. */
+.version-note { margin: -0.5rem 0 1rem; max-width: 40rem; }
+.versions-several { margin: 0 0 1.4rem; }
+.versions-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.6rem 2rem; align-items: start; }
+.version-column { border-top: 2px solid var(--ink); padding-top: 0.6rem; min-width: 0; }
+.version-column h2.version-head { margin: 0 0 0.5rem; font-family: var(--sans); font-size: 0.82rem; font-weight: 600; letter-spacing: 0; }
+.version-column .claim-assess { margin-top: 0; }
+.inside-choices { gap: 0.7rem; margin-top: 0.4rem; }
+.inside-choices legend { font-weight: 600; color: var(--ink); font-size: 0.8rem; }
+.inside-choices label.admin-check { align-items: flex-start; font-size: 0.84rem; color: var(--ink); }
+.inside-choices label.admin-check input { margin-top: 0.25rem; flex: none; }
+.admin-form .inside-choices input[type="radio"] { width: auto; padding: 0; border: 0; background: none; }
+.inside-choices label.admin-check > span { min-width: 0; flex: 1; }
+.queue-item-head > span { min-width: 0; }
+.queue-item-head .tag { white-space: normal; }
+.inside-choices label.admin-check small { display: block; margin-top: 0.15rem; font-size: 0.72rem; }
+.inside-note { display: block; font-family: var(--sans); font-size: 0.7rem; color: var(--muted); line-height: 1.45; }
+.inside-next p { margin: 0 0 0.6rem; font-size: 0.86rem; }
+.inside-list { margin: 0.6rem 0 0; padding-left: 1.2rem; }
+.inside-list li { margin-bottom: 0.55rem; font-size: 0.9rem; color: var(--ink-soft); }
+.inside-list li strong { color: var(--ink); }
+.inside-line { display: block; margin-bottom: 0.25rem; }
+.inside-hash, .inside-hash-whole { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.inside-hash-whole { overflow-wrap: anywhere; }
+.inside-policy { max-width: 46rem; font-size: 0.78rem; }
+.inside-category { padding: 0.7rem 0 0.2rem; border-top: 1px solid var(--rule-soft); gap: 0.5rem; }
+.inside-node { margin-top: 1.2rem; }
+.inside-node h3 { font-size: 0.95rem; }
+.inside-proposal blockquote { margin: 0.4rem 0 0.6rem; padding-left: 0.9rem; border-left: 2px solid var(--rule); max-width: 40rem; }
+.admin-page .acct-table td .admin-form { margin-top: 0.5rem; max-width: 22rem; }
+.admin-page .acct-table td .acct-detail { display: block; margin: 0.2rem 0 0; }
+.inside-parts { list-style: none; margin: 0.9rem 0 0; padding: 0; max-width: 46rem; }
+.inside-part { padding: 0.75rem 0 0.7rem; border-top: 1px solid var(--rule-soft); }
+.inside-part-head { font-family: var(--sans); font-size: 0.78rem; color: var(--ink); }
+.inside-part-head .sc { margin-right: 0.4rem; color: var(--muted); }
+.inside-part-text p { margin: 0.4rem 0 0; font-size: 0.92rem; overflow-wrap: anywhere; }
+.inside-part-held-words { margin: 0.4rem 0 0; font-family: var(--sans); font-size: 0.82rem; color: var(--ink); }
+.inside-part > .acct-detail { display: block; margin: 0.3rem 0 0; }
+.queue-form { margin-top: 0.6rem; }
+.queue-limits > summary { cursor: pointer; }
+.several-assessments, .several-assessments:visited { color: var(--ink); text-decoration: none; }
+/* Under a summary that counts each node by one assessment, where some have more (SeveralAssessments.tsx). */
+.several-counted { margin: 0.45rem 0 0; font-size: 0.74rem; line-height: 1.4; color: var(--ink-soft, var(--ink)); }
+.queue-limits > summary h2 { display: inline; }
+.queue-page { border-top: 2px solid var(--ink); padding: 0.7rem 0 0.4rem; margin-bottom: 1.2rem; max-width: 46rem; }
+.queue-page-head { margin: 0 0 0.4rem; font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); }
+.queue-page-head strong { color: var(--ink); }
+.queue-item { padding: 0.7rem 0; border-top: 1px solid var(--rule-soft); }
+.queue-item-head { display: flex; align-items: baseline; gap: 0.55rem; font-family: var(--sans); font-size: 0.82rem; color: var(--ink); }
+.queue-item-head .sc { margin-right: 0.35rem; color: var(--muted); }
+.queue-item-head .tag { margin-left: 0.45rem; }
+.queue-text { margin: 0.45rem 0 0 1.55rem; font-size: 0.92rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.queue-removed { text-decoration: line-through; color: var(--muted); background: var(--paper-sunk); }
+.queue-text ins { text-decoration: none; margin-left: 0.25em; }
+.queue-fact { margin: 0.35rem 0 0 1.55rem; font-family: var(--sans); font-size: 0.72rem; color: var(--muted); line-height: 1.45; }
+.queue-unread { color: var(--ink); }
+.queue-foot {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem;
+  padding: 0.7rem 0; background: var(--paper); border-top: 1px solid var(--rule); max-width: 46rem;
+}
+.queue-ticks { font-family: var(--sans); font-size: 0.72rem; color: var(--muted); flex-basis: 100%; }
+.queue-reason { display: grid; gap: 0.15rem; font-family: var(--sans); font-size: 0.7rem; color: var(--ink-soft); }
+.queue-reason select { font: inherit; font-size: 0.78rem; padding: 0.25rem 0.3rem; max-width: 100%; min-width: 0; }
+/* The gate's other fields: the time a delay runs until, and the passage and category of a removal. */
+.queue-reason input { font: inherit; font-size: 0.78rem; padding: 0.25rem 0.3rem; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.queue-foot > * { max-width: 100%; min-width: 0; }
+.queue-foot .order-button { white-space: normal; }
+.uploader { display: grid; gap: 0.6rem; max-width: 40rem; margin-top: 0.6rem; }
+.uploader label { display: grid; gap: 0.25rem; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.uploader label small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+.uploader .order-button { justify-self: start; }
+.uploader-rows { list-style: none; margin: 0; padding: 0; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.uploader-rows li { padding: 0.3rem 0; border-top: 1px solid var(--rule-soft); overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .queue-text, .queue-fact { margin-left: 0; }
+}
 
 /* text column sits left within the frame; the right gap holds sidenotes */
 .col { max-width: var(--measure); }
@@ -458,6 +693,9 @@ footer.site .inner { max-width: var(--frame); margin: 0 auto; padding: 1.6rem; }
 .term:hover .term-pop,
 .term:focus-within .term-pop,
 .term.pinned .term-pop { opacity: 1; visibility: visible; }
+/* A closed popover takes no room, so one near the edge of a narrow screen does not widen the page. */
+.term:not(:hover):not(:focus-within):not(.pinned) .term-pop { display: none; }
+.term-pop { max-width: min(17rem, calc(100vw - 2rem)); }
 /* labels near a viewport edge pin the popover to one side instead */
 .term-pop.pop-start { left: 0; transform: none; }
 .term-pop.pop-end { left: auto; right: 0; transform: none; }
@@ -976,6 +1214,20 @@ a.fnd-card:hover, a.fnd-card:target {
 .basis-text.clickable { cursor: pointer; }
 .basis-text.clickable:hover { color: var(--link); }
 .basis-flag { color: var(--faint); font-size: 0.85em; font-style: italic; }
+/* Inside a deployment with more than one label: a row recorded at another
+   label than the node's own says which, quietly, and a row a label has set
+   aside is shown dimmed with the label's reason under it. */
+.layer-mark {
+  display: inline-block; margin-left: 0.4em; padding: 0 0.4em;
+  border: 1px solid var(--rule); border-radius: 0.7em;
+  color: var(--muted); font-family: var(--sans); font-size: 0.68rem; letter-spacing: 0.02em;
+  line-height: 1.5; vertical-align: 0.08em; white-space: nowrap;
+}
+.set-aside > .basis-row, .argblock.set-aside > .arghead, .argblock.set-aside > .argform,
+.argblock.set-aside > .argeval, .argblock.set-aside > .basis-list { opacity: 0.55; }
+.set-aside-note { margin: 0.15rem 0 0.35rem; color: var(--muted); font-family: var(--sans); font-size: 0.78rem; }
+.set-aside-note .sc { margin-right: 0.35em; }
+.set-aside-what { color: var(--faint); }
 
 /* End-of-section invitation into the map (#204, #192): a bordered, genuinely
    clickable affordance rather than the easy-to-miss small text beside it. */
@@ -2296,6 +2548,52 @@ select.ask-model:hover:not(:disabled) { color: var(--ink); background-color: var
   .ask-side-fold nav { padding: 0.4rem 0.8rem 1rem; display: flex; flex-direction: column; gap: 1rem; max-height: 60dvh; overflow-y: auto; }
   .ask-transcript, .ask-dock, .ask-bar { padding-left: 1rem; padding-right: 1rem; }
 }
+
+/* ----- a published page on a claim's page (docs/published-pages.md) ----- */
+/* The tab strip above the reading column: the public assessment first. */
+.claim-tabs {
+  display: flex; gap: 1.2rem; flex-wrap: wrap; margin: 0 0 1.1rem;
+  border-bottom: 1px solid var(--rule); font-family: var(--sans); font-size: 0.8rem;
+}
+.claim-tabs a { color: var(--muted); text-decoration: none; padding: 0.35rem 0; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.claim-tabs a:hover { color: var(--ink); }
+.claim-tabs a.on { color: var(--ink); border-bottom-color: var(--ink); }
+.published-intro { margin: -0.4rem 0 1rem; }
+.published-wording { margin-top: 0.7rem; border-left: 2px solid var(--rule); padding-left: 0.9rem; }
+.published-wording p { margin: 0.2rem 0 0; overflow-wrap: anywhere; }
+.published-sources, .record-rows dd, .check-page { overflow-wrap: anywhere; }
+/* A removal's mark, inline where the passage stood. Ink, never a status colour. */
+.redaction {
+  font-family: var(--mono, ui-monospace, monospace); font-size: 0.82em;
+  background: var(--paper-sunk); border: 1px solid var(--rule-strong, var(--rule)); padding: 0 0.3em; color: var(--ink-soft);
+}
+/* A held part, standing where the part stood. */
+.held-part {
+  display: flex; gap: 0.6rem; align-items: baseline; margin: 0.9rem 0 1.1rem;
+  padding: 0.55rem 0.8rem; border: 1px dashed var(--rule-heavy, var(--rule)); background: var(--paper-sunk);
+  font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft);
+}
+.held-mark { display: inline-block; width: 0.55rem; height: 0.55rem; background: var(--ink); flex: none; margin-right: 0.15rem; }
+.held-reason { color: var(--muted); font-size: 0.74rem; }
+.published-sources { list-style: none; padding: 0; margin: 0 0 1.2rem; font-family: var(--sans); font-size: 0.82rem; color: var(--ink-soft); }
+.published-sources li { margin: 0 0 0.6rem; }
+.published-supplier p { margin: 0.2rem 0 0; color: var(--muted); }
+.publication-record { margin-top: 1.6rem; }
+.record-rows { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.5rem 1rem; margin: 0.8rem 0; font-family: var(--sans); font-size: 0.8rem; }
+.record-rows dt { color: var(--muted); }
+.record-rows dd { margin: 0; color: var(--ink-soft); min-width: 0; }
+.record-list { list-style: none; padding: 0; margin: 0 0 0.3rem; }
+.record-list li { margin: 0 0 0.2rem; }
+.record-policy pre { white-space: pre-wrap; font-size: 0.72rem; max-height: 22rem; overflow: auto; background: var(--paper-sunk); padding: 0.6rem; }
+.record-policy summary { cursor: pointer; color: var(--muted); }
+.check-page ul { margin: 0.1rem 0 0.6rem; padding-left: 1.1rem; }
+.check-page p { margin: 0 0 0.3rem; }
+.check-page .linklike { background: none; border: 0; padding: 0; font: inherit; color: var(--link); cursor: pointer; text-decoration: underline; }
+@media (max-width: 640px) {
+  .record-rows { grid-template-columns: 1fr; gap: 0.1rem 0; }
+  .record-rows dd { margin-bottom: 0.6rem; }
+}
+
 /* a page's shared link, on its owner's view */
 .kept-share {
   font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);

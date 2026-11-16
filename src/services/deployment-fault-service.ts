@@ -291,7 +291,7 @@ export async function platformFaultBriefing(grantId: string, since: string | nul
               COALESCE(SUM(al.amount_micro_usd - al.spent_micro_usd), 0)::bigint AS held_micro_usd,
               MIN(a.fault_since) AS since, MIN(a.retry_after) AS next_attempt
          FROM actions a
-         JOIN action_allocations al ON al.exclusion_group = a.exclusion_group
+         JOIN minerval_whole.allocation_money al ON al.exclusion_group = a.exclusion_group
                                    AND al.grant_id = $1 AND al.released_at IS NULL
                                    AND (al.action_id IS NULL OR al.action_id = a.id)
         WHERE a.status = 'open' AND ${waitingOnFaultSql("a")}

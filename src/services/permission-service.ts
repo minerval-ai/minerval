@@ -7,8 +7,10 @@
  * graph the tables are empty and nothing calls this.
  */
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
+import { withSystemClearance } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
 import { PUBLIC_LABEL } from "../labels.js";
+import { microUsdToOwls } from "./owl.js";
 import {
   PERMISSION_DEFINITIONS,
   PERMISSIONS,
@@ -41,20 +43,20 @@ function sqlState(err: unknown): string | undefined {
  * Every label readable from `labels`: the labels themselves, and each label
  * one of them reads, followed through label_reads to the end. `public` is
  * always in the answer. Sorted.
+ *
+ * The answer is the database's (minerval_labels_readable_from), which is
+ * also what a run's label is turned into a clearance with
+ * (db/clearance.ts): one definition of what a label reads, for people and
+ * for runs.
  */
 export async function labelsReadableFrom(labels: readonly string[]): Promise<string[]> {
   const start = [...new Set([PUBLIC_LABEL, ...labels])];
   if (start.length === 1) return start;
-  const rows = await rawQuery<{ label: string }>(
-    `WITH RECURSIVE reach(label) AS (
-       SELECT unnest($1::text[])
-       UNION
-       SELECT lr.reads FROM label_reads lr JOIN reach r ON lr.label = r.label
-     )
-     SELECT label FROM reach ORDER BY label`,
+  const [row] = await rawQuery<{ labels: string[] }>(
+    `SELECT minerval_labels_readable_from($1::text[]) AS labels`,
     [start]
   );
-  return rows.map((r) => r.label);
+  return [...new Set(row?.labels ?? start)].sort();
 }
 
 /**
@@ -129,16 +131,24 @@ export function cleanGroupNames(groups: readonly unknown[]): string[] {
  */
 export async function recordSignInGroups(accountId: string, groups: readonly unknown[]): Promise<string[]> {
   const names = cleanGroupNames(groups);
-  await withTransaction(async (tx) => {
-    await tx.query(`DELETE FROM account_groups WHERE account_id = $1`, [accountId]);
-    if (names.length > 0) {
-      await tx.query(
-        `INSERT INTO account_groups (account_id, group_name)
-         SELECT $1, unnest($2::text[])`,
-        [accountId, names]
-      );
-    }
-  });
+  // The tables that say what a clearance is (the grants, these groups, the
+  // labels) can be read on a connection held to a clearance and written
+  // only on the owner's (db/clearance.ts): a connection that reads `public`
+  // alone must not be able to widen what anyone reads.
+  await withSystemClearance(
+    "The groups a verified sign-in carried decide what the account may read, so they are written on the owner's connection.",
+    () =>
+      withTransaction(async (tx) => {
+        await tx.query(`DELETE FROM account_groups WHERE account_id = $1`, [accountId]);
+        if (names.length > 0) {
+          await tx.query(
+            `INSERT INTO account_groups (account_id, group_name)
+             SELECT $1, unnest($2::text[])`,
+            [accountId, names]
+          );
+        }
+      })
+  );
   return names;
 }
 
@@ -159,7 +169,17 @@ export async function recordSignInGroups(accountId: string, groups: readonly unk
  * with no scope, the two reading permissions at each label that exists
  * besides `public`, and release for each party that exists. Each is a row
  * marked as granted by the setting. Returns whether it granted.
+ *
+ * The organization itself is a party from this moment: the row is made here
+ * if the deployment has none, under a placeholder name an administrator
+ * replaces (party-service.ts, addParty). A part of a page that rests on no
+ * outside party's material is the organization's to release
+ * (services/showing-service.ts), so without this row and the grant for it
+ * nobody could release anything until an administrator had thought to add
+ * both.
  */
+export const OWN_ORGANIZATION_SETUP_NAME = "This organization";
+
 export async function establishFirstAdministrator(account: {
   id: string;
   externalId: string | null;
@@ -169,6 +189,13 @@ export async function establishFirstAdministrator(account: {
   const named = config.firstAdministrator ?? "";
   if (!named || !account.externalId || named !== account.externalId) return false;
 
+  return withSystemClearance(
+    "The first administrator's grants say what that account may read, so they are written on the owner's connection.",
+    () => establish(account)
+  );
+}
+
+function establish(account: { id: string; externalId: string | null }): Promise<boolean> {
   return withTransaction(async (tx) => {
     await tx.query(ADMINISTRATOR_LOCK);
     const ever = await tx.query(
@@ -192,6 +219,14 @@ export async function establishFirstAdministrator(account: {
     for (const { name } of labels) {
       await insert("read", name, null);
       await insert("read_sources", name, null);
+    }
+    const [own] = await tx.query<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+    if (!own) {
+      const [made] = await tx.query<{ id: string }>(
+        `INSERT INTO parties (name, is_own_organization) VALUES ($1, true) RETURNING id`,
+        [OWN_ORGANIZATION_SETUP_NAME]
+      );
+      await logAdministrativeEvent(tx, "party_added", account.id, { party_id: made!.id });
     }
     const parties = await tx.query<{ id: string }>(`SELECT id FROM parties ORDER BY created_at, id`);
     for (const { id } of parties) await insert("release", null, id);
@@ -293,12 +328,16 @@ export async function grantPermission(input: GrantInput): Promise<Result<GrantRo
   }
 
   try {
-    const [row] = await rawQuery<GrantRow>(
-      `INSERT INTO permission_grants
-         (permission, account_id, group_name, label, party_id, granted_by, granted_via)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [permission, accountId, groupName, label, partyId, input.grantedBy, input.via]
+    const [row] = await withSystemClearance(
+      "A grant says who may read a label, so it is written on the owner's connection. The caller has checked that the actor may administer.",
+      () =>
+        rawQuery<GrantRow>(
+          `INSERT INTO permission_grants
+             (permission, account_id, group_name, label, party_id, granted_by, granted_via)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING *`,
+          [permission, accountId, groupName, label, partyId, input.grantedBy, input.via]
+        )
     );
     return { ok: true, value: row! };
   } catch (err) {
@@ -321,6 +360,13 @@ export async function removeGrant(input: {
   removedBy: string;
 }): Promise<Result<GrantRow, RemoveFailure>> {
   if (!UUID_RE.test(input.grantId)) return fail("NOT_FOUND", "No grant has that id.");
+  return withSystemClearance(
+    "Removing a grant changes who may read a label, so it is written on the owner's connection. The caller has checked that the actor may administer.",
+    () => remove(input)
+  );
+}
+
+function remove(input: { grantId: string; removedBy: string }): Promise<Result<GrantRow, RemoveFailure>> {
   return withTransaction(async (tx): Promise<Result<GrantRow, RemoveFailure>> => {
     await tx.query(ADMINISTRATOR_LOCK);
     const [grant] = await tx.query<GrantRow>(
@@ -524,16 +570,45 @@ export async function listAccounts(input: { q?: string; limit?: number } = {}): 
  * the entry says so: a label the reader is not cleared for, and a party
  * that is neither the organization itself nor one the reader holds release
  * for. A deployment may hold material from parties who are not to learn of
- * each other, and label and party names can say who they are. That an act
- * happened, who did it, to whom, and when, is never withheld.
+ * each other, and label and party names can say who they are. A connection
+ * is named, with its tools, only to a reader cleared for its label, for the
+ * same reason, and so is a file set. That an act happened, who did it, to
+ * whom, and when, is never withheld.
  */
 /** The administrative acts logged besides grants (administrative_events.action). */
 export type AdministrativeAction =
+  // A standing choice about what leaves the deployment with nobody acting
+  // was set or changed. Those choices are now settings of the gate to
+  // outside (gate-settings-service.ts); the value stays for the rows that
+  // were logged under it.
+  | "standing_choice_set"
   | "label_defined"
   | "label_read_added"
   | "label_read_removed"
+  | "label_face_shown"
+  | "label_face_withdrawn"
   | "party_added"
-  | "source_party_set";
+  // The organization's own party, made at setup under a placeholder name, was given its name.
+  | "own_organization_named"
+  | "source_party_set"
+  // Connections (src/connections.ts, services/connection-service.ts).
+  | "connection_added"
+  | "connection_changed"
+  | "connection_tools_offered"
+  | "connection_tool_withdrawn"
+  // File sets (src/file-sets.ts, services/file-set-service.ts). These are
+  // acts of a person who directs the graph, logged with the administrative
+  // ones because they change what agents may read.
+  | "file_set_added"
+  | "file_set_closed"
+  | "file_set_changed"
+  // In a deployment that creates its own owls: an administrator created
+  // owls into an account's balance or a mandate's budget
+  // (owl-creation-service.ts).
+  | "owls_created"
+  // An administrator set up the General mandate
+  // (standing-mandates.ts).
+  | "standing_mandate_created";
 
 export interface LogEntry {
   event: "granted" | "removed" | AdministrativeAction;
@@ -551,6 +626,30 @@ export interface LogEntry {
   party?: string | { withheld: true };
   previous_party?: string | { withheld: true } | null;
   source_id?: string;
+  /** The connection an act was about, by name. */
+  connection?: string | { withheld: true };
+  previous_label?: string | { withheld: true };
+  /** Which of a connection's settings a change touched, as the route names them. */
+  changed?: string[];
+  /** The tools an administrator picked for agents, and those no longer picked. */
+  offered?: string[];
+  no_longer_offered?: string[];
+  /** A tool withdrawn from agents, and why: changed, missing or address_changed. */
+  tool?: string;
+  reason?: string;
+  /** The file set an act was about, by name. */
+  file_set?: string | { withheld: true };
+  /** On a set's closing: how many files it holds, and the hash that fixes them. */
+  files?: number;
+  manifest_sha256?: string;
+  /** On a set switched off or on. */
+  enabled?: boolean;
+  /** Owls an administrator created, for owls_created and a standing mandate created with a budget. */
+  amount_owls?: number;
+  /** The mandate owls were created into, or the standing mandate that was set up. */
+  mandate?: { id: string; title: string; withheld?: true };
+  /** What the administrator wrote when creating owls. */
+  note?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -574,6 +673,33 @@ export async function permissionLog(
       )
     ).map((p) => [p.id, p])
   );
+  // A connection's name can say whose system it is, so it is shown to a
+  // reader cleared for the connection's label and withheld from the rest.
+  const connections = new Map(
+    (
+      await rawQuery<{ id: string; name: string; sensitivity_label: string }>(
+        `SELECT id, name, sensitivity_label FROM connections`
+      )
+    ).map((c) => [c.id, c])
+  );
+  const connectionName = (id: string) => {
+    const connection = connections.get(id);
+    if (!connection) return WITHHELD;
+    return administers || cleared.has(connection.sensitivity_label) ? connection.name : WITHHELD;
+  };
+  // A file set's name can say as much, and is shown on the same terms.
+  const fileSets = new Map(
+    (
+      await rawQuery<{ id: string; name: string; sensitivity_label: string }>(
+        `SELECT id, name, sensitivity_label FROM file_sets`
+      )
+    ).map((f) => [f.id, f])
+  );
+  const fileSetName = (id: string) => {
+    const set = fileSets.get(id);
+    if (!set) return WITHHELD;
+    return administers || cleared.has(set.sensitivity_label) ? set.name : WITHHELD;
+  };
   const labelName = (name: string) => (administers || cleared.has(name) ? name : WITHHELD);
   const partyName = (id: string) => {
     const party = parties.get(id);
@@ -621,6 +747,37 @@ export async function permissionLog(
     [limit, before]
   );
 
+  // The accounts and mandates the owl entries name, by id.
+  const namedIds = (key: string) => [
+    ...new Set(
+      rows
+        .map((r) => r.detail?.[key])
+        .filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
+    ),
+  ];
+  const accountIds = namedIds("account_id");
+  const grantIds = namedIds("grant_id");
+  const accountNames = new Map(
+    accountIds.length === 0
+      ? []
+      : (
+          await rawQuery<{ id: string; display_name: string }>(
+            `SELECT id, display_name FROM contributors WHERE id = ANY($1::uuid[])`,
+            [accountIds]
+          )
+        ).map((a) => [a.id, a.display_name])
+  );
+  const mandateTitles = new Map(
+    grantIds.length === 0
+      ? []
+      : (
+          await rawQuery<{ id: string; title: string }>(
+            `SELECT id, COALESCE(mandate->>'title', name) AS title FROM grants WHERE id = ANY($1::uuid[])`,
+            [grantIds]
+          )
+        ).map((g) => [g.id, g.title])
+  );
+
   return rows.map((r): LogEntry => {
     const entry: LogEntry = { event: r.event, at: r.at.toISOString(), by: r.by_name };
     if (r.event === "granted" || r.event === "removed") {
@@ -641,6 +798,45 @@ export async function permissionLog(
       entry.previous_party =
         typeof d.previous_party_id === "string" ? partyName(d.previous_party_id) : null;
     }
+    if (r.event === "owls_created" || r.event === "standing_mandate_created") {
+      const micro = Number(d.amount_micro_usd);
+      if (Number.isFinite(micro) && micro > 0) entry.amount_owls = microUsdToOwls(micro);
+      if (typeof d.account_id === "string") entry.account = accountNames.get(d.account_id) ?? "";
+      if (typeof d.grant_id === "string") {
+        // A mandate at a label the reader does not read is named by its id alone.
+        const title = mandateTitles.get(d.grant_id);
+        entry.mandate = title === undefined ? { id: d.grant_id, title: "", withheld: true } : { id: d.grant_id, title };
+      }
+      if (typeof d.note === "string" && d.note) entry.note = d.note;
+    }
+    if (typeof d.connection_id === "string") {
+      entry.connection = connectionName(d.connection_id);
+      if (typeof d.previous_label === "string") entry.previous_label = labelName(d.previous_label);
+      if (typeof d.previous_party_id === "string") entry.previous_party = partyName(d.previous_party_id);
+      // Lists are stored as one string, a name to a line: a tool's name may
+      // hold a comma.
+      const list = (value: string | null | undefined) =>
+        typeof value === "string" && value.length > 0 ? value.split("\n") : undefined;
+      const changed = list(d.changed);
+      if (changed) entry.changed = changed;
+      if (typeof d.reason === "string") entry.reason = d.reason;
+      // A tool's name can say as much about the system as the connection's
+      // own, so the two are shown or withheld together.
+      if (typeof entry.connection === "string") {
+        const offered = list(d.offered);
+        if (offered) entry.offered = offered;
+        const dropped = list(d.no_longer_offered);
+        if (dropped) entry.no_longer_offered = dropped;
+        if (typeof d.tool === "string") entry.tool = d.tool;
+      }
+    }
+    if (typeof d.file_set_id === "string") {
+      entry.file_set = fileSetName(d.file_set_id);
+      if (typeof d.files === "string") entry.files = Number(d.files);
+      if (typeof d.manifest_sha256 === "string") entry.manifest_sha256 = d.manifest_sha256;
+      if (typeof d.changed === "string" && d.changed.length > 0) entry.changed = d.changed.split("\n");
+      if (typeof d.enabled === "string") entry.enabled = d.enabled === "true";
+    }
     return entry;
   });
 }
@@ -649,7 +845,9 @@ export async function permissionLog(
 export async function logAdministrativeEvent(
   tx: TxQuery,
   action: AdministrativeAction,
-  actorId: string,
+  // Null for a change no person made: a connection's tool withdrawn because
+  // it changed at its server.
+  actorId: string | null,
   detail: Record<string, string | null>
 ): Promise<void> {
   await tx.query(

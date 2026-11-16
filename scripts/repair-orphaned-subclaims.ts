@@ -24,6 +24,7 @@
  */
 import "../src/load-env.js";
 import { closeDb, rawQuery, withTransaction } from "../src/db/client.js";
+import { runAtScriptLabel } from "../src/script-label.js";
 import { LACKS_WRITTEN_FORM_SQL } from "../src/services/argument-service.js";
 import {
   attachEdgeToArgument,
@@ -226,7 +227,10 @@ async function main(): Promise<void> {
   await closeDb();
 }
 
-main().catch((err) => {
+// On a deployment with more than one label, --label <name> says which label
+// the repair works at: it then repairs what that label reads and its audit
+// entries carry it (src/script-label.ts).
+runAtScriptLabel("repair-orphaned-subclaims", main).catch((err) => {
   console.error(err);
   process.exit(1);
 });

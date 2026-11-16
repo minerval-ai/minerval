@@ -27,7 +27,8 @@
 import { ACTIVITY_KEPT, aboutOf, type TurnStep } from "./turn-activity.js";
 import { and, desc, eq, getTableColumns, gt, isNull, lt, or, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { getDb, rawQuery } from "../db/client.js";
+import { deploymentHoldsLabels, getDb, rawQuery } from "../db/client.js";
+import { membersOnly } from "../permissions.js";
 import {
   assistantAllowances,
   assistantConversations,
@@ -36,6 +37,7 @@ import {
   type AssistantHeldAction,
 } from "../db/schema.js";
 import { loadConfig } from "../config.js";
+import { notePersonsAddresses } from "./given-addresses.js";
 import { currentLabel, runAtLabel, runWithUsageContext, untraced, withAgent } from "../llm/usage-context.js";
 import { complete } from "../llm/client.js";
 import { runAssistantTurn, type AssistantToolUse } from "../llm/agents/assistant.js";
@@ -330,7 +332,11 @@ export async function decideHeldAction(input: {
   }
   if (input.decision === "decline") return { ok: true, action: claimed };
 
-  const account = await openAccountTools(input.app, assistantAuth(input.user), `held:${claimed.id}`);
+  const account = await openAccountTools(
+    input.app,
+    assistantAuth(input.user, claimed.sensitivityLabel),
+    `held:${claimed.id}`
+  );
   let result: AccountToolResult;
   try {
     // The call is the one the Assistant made in its turn, run now. It runs
@@ -560,7 +566,7 @@ async function runTurn(
     return ran ?? null;
   };
 
-  const account = await openAccountTools(app, assistantAuth(user), `assistant:${convo.id}`);
+  const account = await openAccountTools(app, assistantAuth(user, convo.sensitivityLabel), `assistant:${convo.id}`);
   const stream = openAssistantStream(convo.id);
   try {
     const model = modelFor(convo);
@@ -586,6 +592,7 @@ async function runTurn(
           return `${heldSummary(h)} (${what})`;
         }),
       maxTurns: RUN_TURN_GUARD,
+      ...((await assistantShowsLabels()) ? { label: convo.sensitivityLabel } : {}),
     });
 
     const turn = await runWithUsageContext({ userId: user.id }, () =>
@@ -711,9 +718,25 @@ async function beginTurn(
         "read the conversation until its turn is idle, or stop the turn, then send it.",
     };
   }
-  const running = runTurn(app, user, claim.claimed, claim.startedAt).finally(() =>
-    pendingTurns.delete(running)
-  );
+  // A turn is a run, and a run works at one label: the conversation's,
+  // which is the label of the request that opened it (src/labels.ts). So
+  // the turn reads what that label reads, and its reply, the calls it holds
+  // and its log carry it. The request that sent this message may be
+  // cleared for more; that clearance does not carry into the turn, or text
+  // read with it would be kept in a conversation labeled for fewer readers.
+  // The tools the turn calls act as its user (openAccountTools), so they
+  // are held to the user's clearance as well as to the turn's label.
+  const running = runAtLabel(claim.claimed.sensitivityLabel, `conversation ${claim.claimed.id}`, async () => {
+    // Where the turn reads material that is not public, its tools take an
+    // address only as it came from outside (given-addresses.ts). An address
+    // the person wrote in this message is theirs, so it is recorded as
+    // given before the turn starts. If that fails the turn still runs, and
+    // a call with the address is refused and says why.
+    await notePersonsAddresses(message).catch((err) =>
+      console.warn(`[assistant] could not record the addresses in a message: ${err instanceof Error ? err.message : err}`)
+    );
+    return runTurn(app, user, claim.claimed, claim.startedAt);
+  }).finally(() => pendingTurns.delete(running));
   pendingTurns.add(running);
   return { ok: true, conversation: claim.claimed };
 }
@@ -987,7 +1010,7 @@ function serializeTurn(convo: AssistantConversation, now = Date.now()) {
     : { state: "idle" as const, error: null, ...idle };
 }
 
-function serializeHeld(row: AssistantHeldAction) {
+function serializeHeld(row: AssistantHeldAction, showLabels = false) {
   const kind = isHeldKind(row.kind) ? row.kind : null;
   return {
     id: row.id,
@@ -995,6 +1018,11 @@ function serializeHeld(row: AssistantHeldAction) {
     label: HELD_TOOL_LABELS[row.tool] ?? row.tool,
     kind: row.kind,
     kind_label: kind ? HELD_KINDS[kind] : row.kind,
+    // The label the action writes at if it runs: the label of the
+    // conversation it was prepared in. The card shows it, so the person
+    // pressing knows who will be able to read what it files. (`label` above
+    // is the card's title.)
+    ...(showLabels ? { writes_at: row.sensitivityLabel } : {}),
     input: row.input,
     status: row.status,
     ran_without_asking: row.auto,
@@ -1004,11 +1032,24 @@ function serializeHeld(row: AssistantHeldAction) {
   };
 }
 
-/** A conversation as a list shows it. */
-export function serializeAssistantSummary(convo: AssistantConversation) {
+/**
+ * Whether conversations and the cards in them say their label: where a
+ * members-only deployment holds material at more than one.
+ */
+export async function assistantShowsLabels(): Promise<boolean> {
+  return membersOnly() && (await deploymentHoldsLabels());
+}
+
+/**
+ * A conversation as a list shows it. `showLabels` is set where the
+ * deployment holds material at more than one label: the conversation then
+ * says which label it works at, which its owner chose when they started it.
+ */
+export function serializeAssistantSummary(convo: AssistantConversation, showLabels = false) {
   return {
     id: convo.id,
     title: convo.title,
+    ...(showLabels ? { label: convo.sensitivityLabel } : {}),
     spent_micro_usd: convo.spentMicroUsd,
     turn_state: serializeTurn(convo).state,
     created_at: convo.createdAt.toISOString(),
@@ -1018,19 +1059,20 @@ export function serializeAssistantSummary(convo: AssistantConversation) {
 
 /** A conversation in full: transcript, held actions, turn, bill and balance. */
 export async function serializeAssistantConversation(convo: AssistantConversation) {
-  const [held, account, entitlement] = await Promise.all([
+  const [held, account, entitlement, showLabels] = await Promise.all([
     heldActionsOf(convo.id),
     getAllowance(convo.userId),
     getEntitlement(convo.userId),
+    assistantShowsLabels(),
   ]);
   return {
-    ...serializeAssistantSummary(convo),
+    ...serializeAssistantSummary(convo, showLabels),
     surface: convo.surface,
     origin: convo.origin ?? null,
     model: modelFor(convo),
     models: assistantModels(),
     messages: (convo.messages ?? []) as AssistantMessage[],
-    held_actions: held.map(serializeHeld),
+    held_actions: held.map((h) => serializeHeld(h, showLabels)),
     allowed_kinds: {
       conversation: kindsOf(convo.allowedKinds),
       always: account,

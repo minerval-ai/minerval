@@ -15,7 +15,8 @@
  */
 import { createHash } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
-import { loadConfig } from "../../config.js";
+import { SOLVER_OFF_WITH_MATHEMATICS, loadConfig } from "../../config.js";
+import { featureOn } from "../../features.js";
 import { longRunToolLoop, type LongRunLoopState, type ToolCompletionResult } from "../client.js";
 import { LlmRefusalError } from "../errors.js";
 import { getUsageContext, withAgent } from "../usage-context.js";
@@ -465,6 +466,8 @@ async function runMathSolverImpl(input: MathSolverInput): Promise<MathSolverResu
   const config = loadConfig();
   const now = input.now ?? Date.now;
   const attempt = input.attempt;
+  // Mathematics off: the solver has no model, and none is defaulted.
+  if (!featureOn("mathematics", config)) throw new Error(SOLVER_OFF_WITH_MATHEMATICS);
   const model = input.model ?? attempt.model ?? config.solverModel;
   const runId = getUsageContext().runId ?? null;
   await stampAttemptRun(attempt.id, runId);

@@ -41,6 +41,7 @@ import { createHash } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { PUBLIC_LABEL } from "../labels.js";
 import {
   reportKindEnum,
   reportOriginEnum,
@@ -741,6 +742,20 @@ interface SightingInput extends ReportAttribution {
   origin: ReportOrigin;
 }
 
+/** What an agent is told when it tries to change a report that was filed at a label other than its own. */
+const OTHER_LABEL_REPORT =
+  "This report was filed by work at another label than yours, so you can add a note to it (update_issue with a note) " +
+  "and cannot re-rate, withdraw or triage it: what you write there would be read by that label's readers. Nothing was changed.";
+
+/** Whether the report is there for this work to read and was filed at a label other than this work's. */
+async function atAnotherLabel(reportId: string): Promise<boolean> {
+  const [row] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM agent_reports WHERE id = $1`,
+    [reportId]
+  );
+  return row !== undefined && row.sensitivity_label !== currentLabel();
+}
+
 /**
  * Record that a report on record was seen again: bump the count, keep the
  * freshest detail on the parent, write the sighting, and if the report had
@@ -749,28 +764,39 @@ interface SightingInput extends ReportAttribution {
  * report's history. Origin-checked: an external caller's `joins` cannot
  * land an account on an internal report (and from there in the tracker).
  * Returns null when no such report exists for this origin.
+ *
+ * A sighting by work at another label than the report's writes nothing of
+ * its own into the report's row: the row gets the count and the time, and
+ * the sighting's account, its references and its run are kept in the
+ * sighting's own row, at the sighting's label (src/labels.ts). A report at
+ * `public` is read by everyone and is filed in the tracker, outside the
+ * deployment, so words a private run wrote into it would leave by both.
+ * Nor does such a sighting reopen an actioned report: that is a change to
+ * the public record made on the strength of something its readers cannot
+ * see.
  */
 async function recordSighting(
   reportId: string,
   input: SightingInput
 ): Promise<{ row: AgentReportRow; reopened: boolean } | null> {
-  const rows = await rawQuery<AgentReportRow & { previous_status: string }>(
+  const rows = await rawQuery<AgentReportRow & { previous_status: string; own_label: boolean }>(
     `UPDATE agent_reports AS r
         SET occurrence_count = r.occurrence_count + 1,
             last_seen_at = now(),
-            -- The latest sighting's detail is the freshest evidence; keep it.
-            body = CASE WHEN $2::text <> '' THEN $2::text ELSE r.body END,
-            model = COALESCE($3::text, r.model),
-            context_refs = CASE WHEN $4::jsonb <> '{}'::jsonb THEN $4::jsonb
+            -- The latest sighting's detail is the freshest evidence; keep it,
+            -- where the sighting is at the report's own label ($9).
+            body = CASE WHEN r.sensitivity_label = $9 AND $2::text <> '' THEN $2::text ELSE r.body END,
+            model = CASE WHEN r.sensitivity_label = $9 THEN COALESCE($3::text, r.model) ELSE r.model END,
+            context_refs = CASE WHEN r.sensitivity_label = $9 AND $4::jsonb <> '{}'::jsonb THEN $4::jsonb
                                 ELSE r.context_refs END,
-            run_id = COALESCE($5::uuid, r.run_id),
-            job_id = COALESCE($6::uuid, r.job_id),
-            claim_id = COALESCE($7::uuid, r.claim_id),
-            status = CASE WHEN r.status = 'actioned' THEN 'new' ELSE r.status END
-       FROM (SELECT id, status AS previous_status FROM agent_reports
+            run_id = CASE WHEN r.sensitivity_label = $9 THEN COALESCE($5::uuid, r.run_id) ELSE r.run_id END,
+            job_id = CASE WHEN r.sensitivity_label = $9 THEN COALESCE($6::uuid, r.job_id) ELSE r.job_id END,
+            claim_id = CASE WHEN r.sensitivity_label = $9 THEN COALESCE($7::uuid, r.claim_id) ELSE r.claim_id END,
+            status = CASE WHEN r.sensitivity_label = $9 AND r.status = 'actioned' THEN 'new' ELSE r.status END
+       FROM (SELECT id, status AS previous_status, sensitivity_label = $9 AS own_label FROM agent_reports
               WHERE id = $1 AND origin = $8) AS prev
-      WHERE r.id = prev.id
-      RETURNING ${REPORT_COLUMNS_R}, prev.previous_status`,
+      WHERE r.id = prev.id AND r.sensitivity_label = $9
+      RETURNING ${REPORT_COLUMNS_R}, prev.previous_status, prev.own_label`,
     [
       reportId,
       input.body,
@@ -780,9 +806,22 @@ async function recordSighting(
       uuidOrNull(input.jobId),
       uuidOrNull(input.claimId),
       input.origin,
+      currentLabel(),
     ]
   );
-  const row = rows[0];
+  // A report at another label is not this work's to change, its count
+  // included (work changes only rows at its own label, db/clearance.ts).
+  // The sighting below is the whole record of it: a row at this work's
+  // label, read by this label's readers, and counted where they look.
+  const elsewhere =
+    rows.length > 0
+      ? []
+      : await rawQuery<AgentReportRow>(
+          `SELECT ${REPORT_COLUMNS_R} FROM agent_reports AS r
+            WHERE r.id = $1 AND r.origin = $2 AND r.sensitivity_label <> $3`,
+          [reportId, input.origin, currentLabel()]
+        );
+  const row = rows[0] ?? (elsewhere[0] ? { ...elsewhere[0], previous_status: elsewhere[0].status, own_label: false } : undefined);
   if (!row) return null;
   await rawQuery(
     `INSERT INTO agent_report_sightings
@@ -801,8 +840,11 @@ async function recordSighting(
       currentLabel(),
     ]
   );
-  const reopened = row.previous_status === "actioned";
-  const { previous_status: _previous, ...report } = row;
+  const reopened = row.own_label !== false && row.previous_status === "actioned";
+  const { previous_status: _previous, own_label: _own, ...report } = row;
+  // Nothing of a sighting at another label reaches the tracker: the
+  // report's row is unchanged, so there is nothing to sync.
+  if (rows.length === 0) return { row: report as AgentReportRow, reopened: false };
   background(
     "sighting sync",
     syncSightingToIssue(report, {
@@ -930,13 +972,24 @@ export async function raiseIssue(
        ON CONFLICT (dedupe_key) DO UPDATE SET
          occurrence_count = agent_reports.occurrence_count + 1,
          last_seen_at = now(),
-         body = CASE WHEN EXCLUDED.body <> '' THEN EXCLUDED.body
-                     ELSE agent_reports.body END,
-         model = COALESCE(EXCLUDED.model, agent_reports.model),
-         context_refs = EXCLUDED.context_refs,
-         run_id = COALESCE(EXCLUDED.run_id, agent_reports.run_id),
-         job_id = COALESCE(EXCLUDED.job_id, agent_reports.job_id),
-         claim_id = COALESCE(EXCLUDED.claim_id, agent_reports.claim_id)
+         -- The loser of a race collapses onto the winner's row. Its words go
+         -- into that row only where both are at one label (recordSighting
+         -- says why); otherwise the row gets the count and nothing else.
+         body = CASE WHEN agent_reports.sensitivity_label = EXCLUDED.sensitivity_label AND EXCLUDED.body <> ''
+                     THEN EXCLUDED.body ELSE agent_reports.body END,
+         model = CASE WHEN agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
+                      THEN COALESCE(EXCLUDED.model, agent_reports.model) ELSE agent_reports.model END,
+         context_refs = CASE WHEN agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
+                             THEN EXCLUDED.context_refs ELSE agent_reports.context_refs END,
+         run_id = CASE WHEN agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
+                       THEN COALESCE(EXCLUDED.run_id, agent_reports.run_id) ELSE agent_reports.run_id END,
+         job_id = CASE WHEN agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
+                       THEN COALESCE(EXCLUDED.job_id, agent_reports.job_id) ELSE agent_reports.job_id END,
+         claim_id = CASE WHEN agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
+                         THEN COALESCE(EXCLUDED.claim_id, agent_reports.claim_id) ELSE agent_reports.claim_id END
+       -- The count too is the row's own label's to move: a repeat at
+       -- another label changes nothing here and is recorded as a sighting.
+       WHERE agent_reports.sensitivity_label = EXCLUDED.sensitivity_label
        RETURNING ${REPORT_COLUMNS}, (xmax = 0) AS inserted`,
       [
         v.kind,
@@ -961,6 +1014,11 @@ export async function raiseIssue(
     );
     const row = rows[0];
     if (!row) {
+      // The row with this key is at another label (the race the upsert is
+      // there for, lost to a report at another label): a sighting of it.
+      const [there] = await rawQuery<{ id: string }>(`SELECT id FROM agent_reports WHERE dedupe_key = $1`, [dedupeKey]);
+      const seen = there ? await recordSighting(there.id, attribution) : null;
+      if (seen) return collapsed(seen.row, seen.reopened);
       return {
         acknowledged: true,
         reportId: null,
@@ -1063,6 +1121,10 @@ export async function updateReport(
               triaged_by = CASE WHEN $3::boolean THEN $5::text ELSE triaged_by END,
               triaged_at = CASE WHEN $3::boolean THEN now() ELSE triaged_at END
         WHERE id = $1 AND origin = $6
+          -- Re-rating or withdrawing changes the report's row, which only
+          -- work at the row's own label does: the row is read by that
+          -- label's readers. A note is the writer's own row, added below.
+          AND sensitivity_label = $7
         RETURNING ${REPORT_COLUMNS}`,
       [
         id,
@@ -1071,10 +1133,23 @@ export async function updateReport(
         note || "withdrawn by the reporter",
         `agent:${agent}`,
         input.origin ?? "internal",
+        currentLabel(),
       ]
     );
-    const row = rows[0];
-    if (!row) return nothing(`no report on record with id ${id}`);
+    // A note alone changes nothing on the report's row, so work at another
+    // label that reads the report may add one: the row is read, not written.
+    const noteOnly = !severity && !input.withdraw;
+    const row =
+      rows[0] ??
+      (noteOnly
+        ? (
+            await rawQuery<AgentReportRow>(
+              `SELECT ${REPORT_COLUMNS} FROM agent_reports WHERE id = $1 AND origin = $2`,
+              [id, input.origin ?? "internal"]
+            )
+          )[0]
+        : undefined);
+    if (!row) return nothing((await atAnotherLabel(id)) ? OTHER_LABEL_REPORT : `no report on record with id ${id}`);
 
     if (note) {
       await rawQuery(
@@ -1235,11 +1310,13 @@ export async function listReportSightings(
 }
 
 /** Count of reports in status 'new' seen since `since`. Feeds the triage gate. */
-export async function countNewReportsSince(since: Date): Promise<number> {
+export async function countNewReportsSince(since: Date, recordedAt?: string): Promise<number> {
+  // `recordedAt` narrows the count to the reports recorded at one label,
+  // for a sweep that asks about each label's own (workers/audit-scheduler.ts).
   const [row] = await rawQuery<{ count: number }>(
     `SELECT count(*)::int AS count FROM agent_reports
-     WHERE status = 'new' AND last_seen_at > $1`,
-    [since]
+     WHERE status = 'new' AND last_seen_at > $1${recordedAt === undefined ? "" : " AND sensitivity_label = $2"}`,
+    recordedAt === undefined ? [since] : [since, recordedAt]
   );
   return row?.count ?? 0;
 }
@@ -1261,6 +1338,11 @@ export const ISSUE_FILING_GRACE_SECONDS = 300;
  * backlog. Withdrawn reports are never filed; closed statuses are, so the
  * tracker carries the record, but after the open ones. A report raised in
  * the last ISSUE_FILING_GRACE_SECONDS is still its raise-time filing's.
+ *
+ * Only reports at `public` are ever selected, whoever asks: a tracker is
+ * outside the deployment, and a report a private run filed stays inside it.
+ * The condition is in the statement so that it holds on any connection,
+ * the owner's included.
  */
 export async function listReportsAwaitingIssue(
   limit: number,
@@ -1271,10 +1353,11 @@ export async function listReportsAwaitingIssue(
       WHERE github_issue_number IS NULL
         AND status <> 'withdrawn'
         AND ($2::boolean OR origin = 'internal')
-        AND first_seen_at < now() - make_interval(secs => $3)
+        AND sensitivity_label = $3
+        AND first_seen_at < now() - make_interval(secs => $4)
       ORDER BY (status IN ('new', 'triaged')) DESC, first_seen_at ASC
       LIMIT $1`,
-    [Math.max(1, limit), opts.includeExternal, ISSUE_FILING_GRACE_SECONDS]
+    [Math.max(1, limit), opts.includeExternal, PUBLIC_LABEL, ISSUE_FILING_GRACE_SECONDS]
   );
 }
 
@@ -1325,7 +1408,9 @@ export async function triageAgentReport(
          duplicate_of_id = $4,
          triaged_by = $5,
          triaged_at = now()
-     WHERE id = $1
+     -- A triage note is read by the readers of the report's label, so work
+     -- at another label does not write one.
+     WHERE id = $1 AND sensitivity_label = $6
      RETURNING ${REPORT_COLUMNS}`,
     [
       id,
@@ -1333,9 +1418,11 @@ export async function triageAgentReport(
       triageNote,
       duplicateOfId,
       input.triagedBy.slice(0, 128),
+      currentLabel(),
     ]
   );
   const row = rows[0] ?? null;
+  if (!row && (await atAnotherLabel(id))) throw new Error(OTHER_LABEL_REPORT);
   if (row) background("triage sync", syncTriageToIssue(row));
   return row;
 }

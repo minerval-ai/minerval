@@ -83,6 +83,19 @@ opt-in doc-checking hook — the repo doubles as its marketplace:
 
 See [plugin/README.md](../plugin/README.md) for auth and usage.
 
+### The label a connection works at
+
+In a members-only deployment that holds material at more than one label
+([accounts.md](accounts.md), "The label a request works at"), a key or a
+token works at one label, which the person chose when they minted the key
+or approved the client. The server's instructions say which, and
+`get_my_labels` says who reads it. Every call reads what that label reads
+and files what it adds there. No tool takes a label: a tool that starts
+something new files it at the connection's label, and a tool that acts on
+an existing thing is refused, with the reason, when that thing carries
+another label. The endpoint is not for a signed-in session, which has no
+label of its own.
+
 ## Metering
 
 Tool calls follow the same free-vs-metered split as the REST API (#70):
@@ -125,6 +138,18 @@ Their reads are tools; their writes are excluded, because a change to who
 may do what takes a signed-in session. In such a deployment a tool whose
 route needs a permission is offered only to a caller whose account holds
 it, and the server's instructions name the tools left out and say why.
+The routes for connections to an organization's systems
+(docs/connections.md) are in the same case: `list_connections`,
+`get_connection` and `list_connection_calls` are tools for a caller who
+holds `administer`, and adding a connection, changing one, and picking
+which of its tools the graph's agents are offered take a session. So are
+the routes for file sets (docs/file-sets.md): `list_file_sets`,
+`get_file_set`, `list_file_set_files` and `list_file_set_commands` are
+tools for a caller who holds `direct`, and adding a set, uploading into
+one, closing one and switching one off take a session. Registering a
+directory as a set takes a session and `administer`.
+`get_setup_checklist` is the administrators' read of how far the
+deployment's setup has got (docs/deployment.md, "The setup checklist").
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's

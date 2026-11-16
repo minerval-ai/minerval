@@ -23,8 +23,10 @@ import {
 } from "../../services/queue-service.js";
 import type { MessageSender } from "../../services/inbox-service.js";
 import { commissionNodePass, commissionNoteField } from "../../services/commission-service.js";
+import { publicGraphJudges, publicWorkMessageForAgent } from "../../services/mirrored-node-service.js";
 import { registerAwait } from "../../services/session-service.js";
 import { loadConfig } from "../../config.js";
+import { slotColumnSql } from "../../services/steward-lease.js";
 import { microUsdToOwls, owlsToMicroUsd } from "../../services/owl.js";
 import { debitRunBudget, runBudgetLeft, runPayer } from "../run-funding.js";
 
@@ -200,7 +202,7 @@ export async function executeNotifySteward(
     wellFormed.length === 0
       ? []
       : await rawQuery<{ id: string; kind: string; steward_state: string }>(
-          `SELECT id, kind, steward_state FROM claims WHERE id = ANY($1::uuid[])`,
+          `SELECT c.id, c.kind, ${slotColumnSql("steward_state", "c")} AS steward_state FROM claims c WHERE c.id = ANY($1::uuid[])`,
           [wellFormed]
         );
   const kindOf = new Map(found.map((r) => [r.id, r.kind]));
@@ -208,10 +210,19 @@ export async function executeNotifySteward(
   // A merged node has no Steward to read a notice (#884): refused, naming
   // the survivor, whose Steward is the one to tell.
   const merged = await mergedAliasRefusals(wellFormed.filter((id) => kindOf.has(id)));
+  // A mirrored node's Steward at the node's own label is the public
+  // graph's: no pass on it is opened or paid for here, and a note would
+  // wait for one that never comes (services/mirrored-node-service.ts).
+  const publicGraphs = new Set<string>();
+  for (const id of wellFormed) if (kindOf.has(id) && (await publicGraphJudges(id))) publicGraphs.add(id);
   const targets = wellFormed.filter((id) => {
     const alias = merged.get(id);
     if (alias) {
       refused.push({ id, reason: alias.message });
+      return false;
+    }
+    if (publicGraphs.has(id)) {
+      refused.push({ id, reason: publicWorkMessageForAgent() });
       return false;
     }
     if (kindOf.has(id)) return true;

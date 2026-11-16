@@ -110,6 +110,8 @@ function pathSegment(id: string): string {
   return encodeURIComponent(id);
 }
 
+import type { PublishedPageSummary, PublishedPageView } from "./published";
+
 async function apiGet<T>(path: string): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
   const res = await fetch(`${BASE}${path}`, await readOptions());
@@ -818,4 +820,77 @@ export async function fetchRunStep(id: string, seq: number): Promise<RunStep | n
     if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
+}
+
+// --- published pages (docs/published-pages.md) ---------------------------------
+
+// The pages other graphs publish of one node, each with its state and where
+// it stands on the node.
+export async function fetchPublishedPages(nodeId: string): Promise<PublishedPageSummary[]> {
+  const res = await apiGet<{ published_pages: PublishedPageSummary[] }>(`/published-pages?node_id=${encodeURIComponent(nodeId)}`);
+  return res.published_pages ?? [];
+}
+
+// One published page in the shape of a node's page, with its record.
+export async function fetchPublishedPage(id: string, pkg?: number): Promise<PublishedPageView> {
+  return apiGet<PublishedPageView>(`/published-pages/${pathSegment(id)}${pkg ? `?package=${pkg}` : ""}`);
+}
+
+// One package exactly as signed, with the publisher's key as the graph holds it.
+export async function fetchPublishedPackage(id: string, pkg?: number): Promise<{ sequence: number; package: unknown; publisher_key: string | null }> {
+  return apiGet(`/published-pages/${pathSegment(id)}/package${pkg ? `?package=${pkg}` : ""}`);
+}
+
+// A publisher's public record; null for an account that has registered no key.
+export async function fetchPublisher(accountId: string): Promise<PublisherRecord | null> {
+  try {
+    return await apiGet<PublisherRecord>(`/publishers/${pathSegment(accountId)}`);
+  } catch {
+    return null;
+  }
+}
+
+export interface PublishedMandateSetting {
+  what: string;
+  kind: string;
+  the_gate: "open" | "redactor" | "person";
+  in_words: string;
+  from: string;
+  set_on: string | null;
+  in_a_line: string;
+}
+
+export interface PublishedMandate {
+  face_id: string;
+  publisher: { account_id: string; name: string };
+  name: string;
+  terms: string;
+  withdrawn_at: string | null;
+  first_published_at: string;
+  last_changed_at: string;
+  gate: null | {
+    settings: PublishedMandateSetting[];
+    for_requests_under: Array<{ public_node_id: string; kind: string; the_gate: string; in_words: string; set_on: string }>;
+    narrower_settings_not_listed: number;
+    pages_flow: string;
+    other_parties: string;
+    money: string;
+  };
+  as_released: { parts_held: number; removals: Record<string, number> };
+  history: Array<{ package: number; received_at: string; changes: string[] }>;
+  requests_addressed_to_it: number;
+  note: string;
+}
+
+export interface PublisherRecord {
+  account_id: string;
+  name: string;
+  registrations: Array<{ key_id: string; public_key: string; runs_on: string; attested_by: string; declared_interest: string | null; registered_at: string; retired_at: string | null }>;
+  published_pages: PublishedPageSummary[];
+  /** The mandates it published, which a request here can be addressed to (docs/published-pages.md, "A published mandate"). */
+  published_mandates?: PublishedMandate[];
+  /** What this graph's own record holds of the publisher, as counts and dates in sentences (docs/outward-acts.md). */
+  record?: { in_words: string[] };
+  record_note?: string;
+  note: string;
 }

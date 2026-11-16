@@ -10,18 +10,37 @@
  *    shown in its next tool result if it is running; a `wake` delivery
  *    resumes it if it is paused, a `queue` one waits for its next turn;
  *  - a mandate's inbox: an item its program officers read.
- * A delivery carries an event's text only when the event is public or was
- * recorded at the subscriber's own label; otherwise it says only that
- * something happened that the subscriber may not read.
+ * Where a deployment holds material at more than one label, the router is
+ * system work: it runs on the engine's tick, which sees every label
+ * (src/workers/local-runner.ts), so it finds events and subscriptions at
+ * all of them. What reaches a subscriber is held to what the subscriber's
+ * own label reads, in three ways. An event recorded at a label the
+ * subscriber's label does not read is not delivered and nothing is said of
+ * it: that something happened on a node at another label is itself what
+ * that label keeps. Whether an event matches a filter that asks about the
+ * graph (under, over, tags) is asked at the subscriber's label, so an edge
+ * or a tag the subscriber cannot read matches nothing. And each delivery is
+ * written at the subscriber's label, from there (runAtLabel). The
+ * subscriber's label is the subscription's: a subscription is made by the
+ * run that wants it, at that run's label.
  */
 import { rawQuery } from "../db/client.js";
-import { PUBLIC_LABEL } from "../labels.js";
+import { runAtLabel } from "../llm/usage-context.js";
+import { labelsReadableFrom } from "./permission-service.js";
 import { EVENT_COLUMNS, type EventRow } from "./event-service.js";
 import { matches, type SubscriptionRow } from "./subscription-service.js";
 import { committedWithinMicroUsd } from "./pace-service.js";
 
 const SUB_COLUMNS = `id, subscriber_kind, subscriber_ref, filter, condition, due_at::text AS due_at, delivery, once,
-  reason, created_by, active, deliveries, created_at::text AS created_at`;
+  reason, created_by, active, deliveries, created_at::text AS created_at, sensitivity_label`;
+
+/** A subscription with the label it was made at, which is its subscriber's. */
+type RoutedSubscription = SubscriptionRow & { sensitivity_label: string };
+
+/** Run `fn` at the subscriber's label: what it reads and writes is held to that label. */
+function atSubscriber<T>(s: RoutedSubscription, fn: () => Promise<T>): Promise<T> {
+  return runAtLabel(s.sensitivity_label, `subscription ${s.id}`, fn);
+}
 
 let routing: Promise<number> | null = null;
 
@@ -58,16 +77,26 @@ async function routeOnce(): Promise<number> {
       `SELECT ${EVENT_COLUMNS} FROM events WHERE seq > $1 AND seq <= $2 ORDER BY seq`,
       [claim.from_seq, claim.to_seq]
     );
-    const subs = await rawQuery<SubscriptionRow>(
+    const subs = await rawQuery<RoutedSubscription>(
       `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND due_at IS NULL AND condition IS NULL`
     );
+    // What each subscriber's label reads, asked once for the batch.
+    const reads = new Map<string, Set<string>>();
+    for (const label of new Set(subs.map((s) => s.sensitivity_label))) {
+      reads.set(label, new Set(await labelsReadableFrom([label])));
+    }
     for (const e of batch) {
-      const graph = graphFor();
+      // The graph as each label reads it, cached for this event.
+      const graphs = new Map<string, ReturnType<typeof graphFor>>();
       for (const s of subs) {
         if (!s.active) continue;
-        if (await matches(e, s.filter ?? {}, graph)) {
-          if (await deliver(s, e).catch(() => false)) delivered++;
-        }
+        if (!reads.get(s.sensitivity_label)?.has(e.sensitivity_label)) continue;
+        const took = await atSubscriber(s, async () => {
+          if (!graphs.has(s.sensitivity_label)) graphs.set(s.sensitivity_label, graphFor());
+          if (!(await matches(e, s.filter ?? {}, graphs.get(s.sensitivity_label)!))) return false;
+          return deliver(s, e);
+        }).catch(() => false);
+        if (took) delivered++;
       }
     }
   }
@@ -78,21 +107,26 @@ async function routeOnce(): Promise<number> {
 /** Scheduled check-ins that are due, and thresholds that have been crossed. */
 async function deliverDue(): Promise<number> {
   let n = 0;
-  const due = await rawQuery<SubscriptionRow>(
+  const due = await rawQuery<RoutedSubscription>(
     `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND due_at IS NOT NULL AND due_at <= now()`
   );
   for (const s of due) {
     if (!(await claimEnd(s.id))) continue; // another router took it
-    if (await deliver({ ...s, once: false }, null, `The time you set has come (${s.due_at!.slice(0, 16).replace("T", " ")} UTC).`)) n++;
+    const text = `The time you set has come (${s.due_at!.slice(0, 16).replace("T", " ")} UTC).`;
+    if (await atSubscriber(s, () => deliver({ ...s, once: false }, null, text))) n++;
   }
-  const conditions = await rawQuery<SubscriptionRow>(`SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND condition IS NOT NULL`);
+  const conditions = await rawQuery<RoutedSubscription>(`SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND condition IS NOT NULL`);
   for (const s of conditions) {
     const c = s.condition!;
     if (c.kind === "work_settled") {
+      // Counted and delivered at the subscriber's label, as every delivery
+      // is: the work counted is the work that label reads, and the note is
+      // written there.
       const { mandateWorkInFlight } = await import("./action-service.js");
-      if ((await mandateWorkInFlight(c.grant_id)) > 0) continue;
+      if ((await atSubscriber(s, () => mandateWorkInFlight(c.grant_id))) > 0) continue;
       if (!(await claimEnd(s.id))) continue;
-      if (await deliver({ ...s, once: false }, null, `All the work your mandate set going is settled: no pass, ingest or other run it commissioned is waiting to run or running, and no plan item is waiting for its ingests (set ${c.since.slice(0, 16).replace("T", " ")} UTC).`)) n++;
+      const text = `All the work your mandate set going is settled: no pass, ingest or other run it commissioned is waiting to run or running, and no plan item is waiting for its ingests (set ${c.since.slice(0, 16).replace("T", " ")} UTC).`;
+      if (await atSubscriber(s, () => deliver({ ...s, once: false }, null, text))) n++;
       continue;
     }
     if (c.kind !== "committed_owls") continue;
@@ -100,7 +134,8 @@ async function deliverDue(): Promise<number> {
     const committed = await committedWithinMicroUsd(c.grant_id, Math.ceil(hours));
     if (committed >= c.at_least_micro_usd) {
       if (!(await claimEnd(s.id))) continue;
-      if (await deliver({ ...s, once: false }, null, `${committed / 1_000_000} owls have been committed since you set this (${c.since.slice(0, 16).replace("T", " ")} UTC), past the ${c.at_least_micro_usd / 1_000_000} you named.`)) n++;
+      const text = `${committed / 1_000_000} owls have been committed since you set this (${c.since.slice(0, 16).replace("T", " ")} UTC), past the ${c.at_least_micro_usd / 1_000_000} you named.`;
+      if (await atSubscriber(s, () => deliver({ ...s, once: false }, null, text))) n++;
     }
   }
   return n;
@@ -116,24 +151,26 @@ async function end(id: string): Promise<void> {
   await rawQuery(`UPDATE subscriptions SET active = false, ended_at = now() WHERE id = $1`, [id]);
 }
 
-/** The text a subscriber reads for one delivery. */
-function render(s: SubscriptionRow, e: EventRow | null, text: string | undefined, subscriberLabel: string): string {
+/** The text a subscriber reads for one delivery. The event is one its label reads (routeOnce). */
+function render(s: SubscriptionRow, e: EventRow | null, text: string | undefined): string {
   const head = `Your subscription ${s.id} (${s.reason})`;
   if (!e) return `${head}: ${text ?? "it has come due."}`;
-  const readable = e.sensitivity_label === PUBLIC_LABEL || e.sensitivity_label === subscriberLabel;
-  const body = readable
-    ? `${e.kind} — ${e.summary}` +
-      [e.action_id ? ` (run ${e.action_id})` : "", e.node_id ? ` (node ${e.node_id})` : ""].join("")
-    : `${e.kind}: something happened that this run may not read (it was recorded at another label).`;
+  const body =
+    `${e.kind} — ${e.summary}` +
+    [e.action_id ? ` (run ${e.action_id})` : "", e.node_id ? ` (node ${e.node_id})` : ""].join("");
   return `${head}: ${body} [event ${e.seq}, ${e.at.slice(0, 16).replace("T", " ")} UTC]`;
 }
 
-/** Deliver one event (or a due time or threshold) to one subscription; whether it was taken. */
+/**
+ * Deliver one event (or a due time or threshold) to one subscription;
+ * whether it was taken. Called at the subscriber's label (atSubscriber),
+ * with an event that label reads.
+ */
 async function deliver(s: SubscriptionRow, e: EventRow | null, text?: string): Promise<boolean> {
   let took = false;
   if (s.subscriber_kind === "session") {
-    const [session] = await rawQuery<{ sensitivity_label: string; status: string }>(
-      `SELECT sensitivity_label, status FROM agent_sessions WHERE id = $1`,
+    const [session] = await rawQuery<{ status: string }>(
+      `SELECT status FROM agent_sessions WHERE id = $1`,
       [s.subscriber_ref]
     );
     if (!session || session.status === "closed" || session.status === "expired") {
@@ -146,14 +183,13 @@ async function deliver(s: SubscriptionRow, e: EventRow | null, text?: string): P
       sessionId: s.subscriber_ref,
       kind: "subscription",
       ref: e ? `${s.id}:${e.seq}` : `${s.id}:due`,
-      text: render(s, e, text, session.sensitivity_label),
+      text: render(s, e, text),
       fallback: null,
       wake: s.delivery === "wake",
     });
     took = where === "session";
   } else if (s.subscriber_kind === "mandate_inbox") {
     if (e && e.kind === "inbox_item" && e.grant_id === s.subscriber_ref) return false; // its own item
-    if (e && e.sensitivity_label !== PUBLIC_LABEL) return false;
     const { raiseToMandate } = await import("./mandate-inbox-service.js");
     const raised = await raiseToMandate({
       grantId: s.subscriber_ref,
@@ -161,14 +197,14 @@ async function deliver(s: SubscriptionRow, e: EventRow | null, text?: string): P
       targetNodeId: e?.node_id ?? null,
       targetRef: e?.action_id ?? null,
       source: "a subscription",
-      summary: render(s, e, text, PUBLIC_LABEL),
+      summary: render(s, e, text),
       detail: { subscription_id: s.id, ...(e ? { event_seq: e.seq, event_kind: e.kind } : {}) },
     });
     took = Boolean(raised);
   } else {
     // node_inbox, lookout and correspondent deliveries are routed by their own services.
     const { deliverToAgentSink } = await import("./subscription-sinks.js");
-    took = await deliverToAgentSink(s, e, render(s, e, text, PUBLIC_LABEL));
+    took = await deliverToAgentSink(s, e, render(s, e, text));
   }
   if (took) {
     await rawQuery(

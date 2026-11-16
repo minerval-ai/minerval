@@ -48,6 +48,8 @@ const REASONS: Record<string, string> = {
   request_contribution: "Put toward the work on a request",
   escrow_refund: "Unspent escrow returned",
   admin_adjust: "Adjustment",
+  // Only in a deployment that creates its own owls (app/admin/owls).
+  owl_created: "Created by an administrator",
 };
 
 function reasonName(reason: string): string {

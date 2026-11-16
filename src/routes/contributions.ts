@@ -1,3 +1,4 @@
+import { publicContributionRefusal } from "../services/mirrored-node-service.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { mergedAliasRefusal } from "../services/claim-alias-service.js";
 import {
@@ -15,6 +16,7 @@ import {
   getReviewForContribution,
   formatContribution,
   withAnsweredRequest,
+  checkAboutPublishedPage,
   checkArgumentTarget,
 } from "../services/contribution-service.js";
 import { getClaimById } from "../services/claim-service.js";
@@ -63,6 +65,12 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
             format: "uuid",
             description:
               "Required with answer_request, and only with it: the request the material is offered for. It must bear on claim_id and be open.",
+          },
+          about_published_page_id: {
+            type: "string",
+            format: "uuid",
+            description:
+              "A published page on this node (get_published_page, or the second tab of the node's page), when the contribution is made through it: a challenge to what the page says or to how it was made, or a proposal about what the node rests on. It is reviewed as any contribution on the node is, and the graph that published the page learns of it from the public record.",
           },
         },
       },
@@ -192,6 +200,13 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         }
       }
 
+      // A mirrored node at its own label takes no contribution here
+      // (mirrored-node-service.ts); said before anything is counted.
+      const notTaken = await publicContributionRefusal(body.claim_id);
+      if (notTaken) {
+        return reply.code(409).send({ error: { code: "PUBLIC_GRAPH_NODE", message: notTaken } });
+      }
+
       const answered = await withAnsweredRequest({
         contributionType: body.contribution_type,
         claimId: body.claim_id,
@@ -217,6 +232,11 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      const aboutPage = await checkAboutPublishedPage(body.claim_id ?? null, body.about_published_page_id);
+      if (!aboutPage.ok) {
+        return reply.code(422).send({ error: { code: "PUBLISHED_PAGE", message: aboutPage.message } });
+      }
+
       // Shared gate (#71/#157): identity, suspension, standing, rate limit.
       const contributor = await gateContributor(request, reply, {
         displayName: body.contributor_display_name,
@@ -225,6 +245,7 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
 
       // Create contribution
       const contribution = await createContribution({
+        aboutPublishedPageId: aboutPage.publishedPageId,
         claimId: body.claim_id ?? null,
         contributorId: contributor.id,
         contributionType: body.contribution_type,
@@ -373,8 +394,13 @@ export async function contributionRoutes(app: FastifyInstance): Promise<void> {
           ? await statedViewForContribution(contribution.id)
           : null;
 
+      // Where it was made through a published page: what the graph that published the page has said became of it (publisher-record-service.ts).
+      const through = contribution.aboutPublishedPageId
+        ? await (await import("../services/publisher-record-service.js")).answerToContribution(contribution.id)
+        : null;
+
       return reply.send({
-        contribution: formatContribution(contribution),
+        contribution: { ...formatContribution(contribution), ...(through ? { through_published_page: through } : {}) },
         ...(statedView ? { stated_view: statedView } : {}),
         review: review
           ? {

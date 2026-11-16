@@ -25,8 +25,9 @@
  * hash in that bucket, and asks for an entry only on an exact match, which
  * by the rule above is a public page.
  */
+import { heldBelow, layered } from "./layer-service.js";
 import { eq, and, gte, lt, sql } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { sharedPageAnalyses } from "../db/schema.js";
 import { fetchPublicUrl } from "./url-guard.js";
@@ -39,6 +40,7 @@ import {
 import {
   AnalysisCache,
   loadMatchedClaim,
+  severalOnAnnotation,
   type AnnotationVerdict,
   type PageAnalysis,
   type PageAnnotation,
@@ -146,14 +148,22 @@ export function shareIfPublic(
       analyzedAt: new Date(analysis.analyzed_at),
       verifiedAt: new Date(),
     };
-    // A page's first entry takes the label of the request whose analysis
-    // it is. A later analysis replaces the entry in place and leaves that
-    // label as it was (src/labels.ts).
+    // A page has one entry at each label (db/schema.ts, "The layer"). An
+    // entry a label this request reads already holds is the page's entry
+    // for it, and nothing is stored beside it (layer-service.ts): an
+    // analysis names the nodes its reader could read, so the one made at
+    // the lower label is the one more readers can be served.
+    if (await heldBelow(rawQuery, "shared_page_analyses", { url_hash: urlHash }, "held.url_hash AS id")) {
+      return { shared: true, urlHash };
+    }
+    // A page's first entry at a label takes the label of the request whose
+    // analysis it is, and a later analysis at that label replaces it in
+    // place (src/labels.ts).
     await getDb()
       .insert(sharedPageAnalyses)
       .values({ ...row, sensitivityLabel: currentLabel() })
       .onConflictDoUpdate({
-        target: sharedPageAnalyses.urlHash,
+        target: [sharedPageAnalyses.urlHash, sharedPageAnalyses.sensitivityLabel],
         set: {
           url: row.url,
           annotations: row.annotations,
@@ -161,6 +171,12 @@ export function shareIfPublic(
           analyzedAt: row.analyzedAt,
           verifiedAt: row.verifiedAt,
         },
+        // Only an entry at this request's own label is replaced. An
+        // analysis names the nodes its reader could read, so one made for a
+        // reader of another label must not take the place of the entry
+        // that label's readers are served (db/clearance.ts, sameLabelOnly).
+        // The page keeps the entry it has.
+        setWhere: sql`${sharedPageAnalyses.sensitivityLabel} = excluded.sensitivity_label`,
       });
     return { shared: true, urlHash };
   })()
@@ -184,7 +200,8 @@ const MAX_BUCKET = 1_000;
 export async function listSharedHashes(prefix: string): Promise<string[]> {
   if (!PREFIX_RE.test(prefix)) throw new Error("invalid prefix");
   const rows = await getDb()
-    .select({ urlHash: sharedPageAnalyses.urlHash })
+    // Each hash once: a page may have an entry at more than one label.
+    .selectDistinct({ urlHash: sharedPageAnalyses.urlHash })
     .from(sharedPageAnalyses)
     .where(
       and(
@@ -209,11 +226,18 @@ export interface SharedPageAnalysis extends PageAnalysis {
  */
 export async function getSharedAnalysis(urlHash: string): Promise<SharedPageAnalysis | null> {
   if (!HASH_RE.test(urlHash)) return null;
-  const [row] = await getDb()
-    .select()
-    .from(sharedPageAnalyses)
-    .where(eq(sharedPageAnalyses.urlHash, urlHash))
-    .limit(1);
+  // Where the page has an entry at more than one label the reader may
+  // read, the one at the reader's own label is served where there is one,
+  // else the lowest layer's (layer-service.ts).
+  const read = getDb().select().from(sharedPageAnalyses).where(eq(sharedPageAnalyses.urlHash, urlHash));
+  const [row] = layered()
+    ? await read
+        .orderBy(
+          sql`(${sharedPageAnalyses.sensitivityLabel} = minerval_write_label()) DESC`,
+          sql`minerval_layer_depth(${sharedPageAnalyses.sensitivityLabel}, 'local')`
+        )
+        .limit(1)
+    : await read.limit(1);
   if (!row) return null;
 
   const stored = row.annotations as StoredAnnotation[];
@@ -253,6 +277,7 @@ export async function getSharedAnalysis(urlHash: string): Promise<SharedPageAnal
         status_confidence: matched.statusConfidence,
         subclaim_count: matched.subclaimCount,
         url: matched.claimUrl,
+        ...(matched.judgmentsInForce ? severalOnAnnotation(matched.judgmentsInForce) : {}),
       },
     };
   });

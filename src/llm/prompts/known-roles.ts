@@ -26,6 +26,7 @@ import { getLookoutSystemPromptBlocks } from "./lookout.js";
 import { getMatcherSystemPromptBlocks } from "./matcher.js";
 import { getMathSolverSystemPromptBlocks } from "./math-solver.js";
 import { getQuestionStewardSystemPromptBlocks } from "./question-steward.js";
+import { getRedactorSystemPromptBlocks } from "./redactor.js";
 import { getResearcherSystemPromptBlocks } from "./researcher.js";
 import { getTaggerSystemPrompt } from "./tagger.js";
 
@@ -45,6 +46,7 @@ export const KNOWN_ROLES: readonly KnownRole[] = [
   { name: "contribution-reviewer", sourcePath: "src/llm/prompts/contribution-reviewer.ts", blocks: getContributionReviewerSystemPromptBlocks },
   { name: "dispute-arbitrator", sourcePath: "src/llm/prompts/dispute-arbitrator.ts", blocks: getDisputeArbitratorSystemPromptBlocks },
   { name: "audit-agent", sourcePath: "src/llm/prompts/audit-agent.ts", blocks: getAuditAgentSystemPromptBlocks },
+  { name: "redactor", sourcePath: "src/llm/prompts/redactor.ts", blocks: getRedactorSystemPromptBlocks },
   { name: "grantmaker", sourcePath: "src/llm/prompts/grantmaker.ts", blocks: getGrantmakerSystemPromptBlocks },
   { name: "lookout", sourcePath: "src/llm/prompts/lookout.ts", blocks: getLookoutSystemPromptBlocks },
   { name: "correspondent", sourcePath: "src/llm/prompts/correspondent.ts", blocks: getCorrespondentSystemPromptBlocks },

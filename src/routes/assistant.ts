@@ -27,6 +27,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   addAssistantMessage,
+  assistantShowsLabels,
   assistantModels,
   decideHeldAction,
   deleteAssistantConversation,
@@ -190,13 +191,14 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     preHandler: guards,
     handler: async (request, reply) => {
       const userId = request.auth!.userId!;
-      const [rows, entitlement, always] = await Promise.all([
+      const [rows, entitlement, always, showLabels] = await Promise.all([
         listAssistantConversations(userId, request.query.limit ?? 50, request.query.offset ?? 0),
         getEntitlement(userId),
         getAllowance(userId),
+        assistantShowsLabels(),
       ]);
       return reply.send({
-        conversations: rows.map(serializeAssistantSummary),
+        conversations: rows.map((c) => serializeAssistantSummary(c, showLabels)),
         // What a new conversation would start with.
         models: assistantModels(),
         balance_micro_usd: entitlement.owlBalanceMicroUsd,

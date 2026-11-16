@@ -60,6 +60,8 @@ import {
 import { mandateFunderUrl, mandatePageUrl } from "../services/mandate-urls.js";
 import { getPublicPlatformConversation } from "../services/platform-mandate-service.js";
 import { requirePermission } from "../server/require-permission.js";
+import { deploymentHoldsLabels } from "../db/client.js";
+import { membersOnly } from "../permissions.js";
 
 const MESSAGE_BODY = {
   type: "object",
@@ -68,6 +70,16 @@ const MESSAGE_BODY = {
     message: { type: "string", minLength: 1, maxLength: 8000 },
   },
 } as const;
+
+/**
+ * Whether a conversation says which label it works at: where a members-only
+ * deployment holds material at more than one, its owner chose the label
+ * when they started it (server/request-labels.ts), and the mandate drafted
+ * in it takes the same one. Nowhere else is the field served.
+ */
+async function conversationsShowLabels(): Promise<boolean> {
+  return membersOnly() && (await deploymentHoldsLabels());
+}
 
 export async function grantConversationRoutes(
   app: FastifyInstance
@@ -123,8 +135,12 @@ export async function grantConversationRoutes(
     handler: async (request, reply) => {
       const q = request.query as { status?: string; limit?: number };
       const rows = await listConversations(request.auth!.userId!, q.limit ?? 50, q.status);
+      const showLabels = await conversationsShowLabels();
       return reply.send({
-        conversations: rows.map(serializeConversationSummary),
+        conversations: rows.map((c) => ({
+          ...serializeConversationSummary(c),
+          ...(showLabels ? { label: c.sensitivityLabel } : {}),
+        })),
       });
     },
   });
@@ -247,10 +263,13 @@ export async function grantConversationRoutes(
           .send({ error: "Conversation not found", code: "NOT_FOUND" });
       }
       return reply.send({
-        conversation: serializeConversation(convo, {
-          after,
-          mandateSha256: mandate_sha256,
-        }),
+        conversation: {
+          ...serializeConversation(convo, {
+            after,
+            mandateSha256: mandate_sha256,
+          }),
+          ...((await conversationsShowLabels()) ? { label: convo.sensitivityLabel } : {}),
+        },
       });
     },
   });

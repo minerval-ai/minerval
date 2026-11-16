@@ -21,6 +21,7 @@
  * exists.
  */
 import { rawQuery } from "../db/client.js";
+import { readerKey } from "../db/clearance.js";
 import { microUsdToOwls } from "./owl.js";
 import type { AttemptOutcome } from "./claim-extras-types.js";
 
@@ -396,7 +397,9 @@ export async function getAttemptStats(
   opts: { now?: Date } = {}
 ): Promise<AttemptStats> {
   const now = opts.now ?? new Date();
-  const key = grantId ?? "";
+  // The record is counted over the attempts this reader may read, so it is
+  // kept for readers of the same clearance only (readerKey).
+  const key = `${readerKey()}:${grantId ?? ""}`;
   const hit = cache.get(key);
   if (hit && hit.expiresAt > now.getTime()) return hit.value;
   const rows = await loadAttemptStatRows(grantId);

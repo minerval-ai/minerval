@@ -28,6 +28,7 @@ import { openrouterWebSearch } from "../providers/openrouter.js";
 import { resolveProvider } from "../providers/routing.js";
 import { ANTHROPIC_WEB_SEARCH_MICRO_USD } from "../pricing.js";
 import { budgetRefusal } from "../usage-context.js";
+import { addressesIn, noteGiven } from "../../services/given-addresses.js";
 
 /** The tool's name as the model sees it (and as skill-tools' collision check lists it). */
 export const WEB_SEARCH_TOOL_NAME = "web_search";
@@ -90,6 +91,16 @@ export function createWebSearch(model: string): WebSearch {
       if (refusal) return refusal;
       try {
         const hits = await openrouterWebSearch(query, CLIENT_SEARCH_RESULTS);
+        // Where the run is held to addresses it was given, the hits' are
+        // given now, with any written out in the excerpts
+        // (services/given-addresses.ts). The query is the run's own words:
+        // it is not read for addresses, and one it wrote is not taken from
+        // an excerpt that repeats it.
+        await noteGiven(hits.map((hit) => hit.url), "search");
+        await noteGiven(
+          addressesIn(hits.map((hit) => hit.excerpt).join("\n")).filter((address) => !query.includes(address)),
+          "search"
+        );
         return JSON.stringify({ query, hits });
       } catch (err) {
         return JSON.stringify({
