@@ -303,7 +303,7 @@ export async function getSubmissionProgress(
       canonical_form: detail.claim.text,
       // Not yet assessed is not an assessed "unknown"; say which it is.
       status: detail.assessment?.status ?? "unassessed",
-      status_confidence: detail.assessment?.confidence ?? 0,
+      status_confidence: detail.assessment?.confidence ?? null,
       subclaim_count: detail.subclaim_count ?? 0,
       url: c.page_url ?? `${WEB_BASE}/claims/${detail.claim.id}`,
     },

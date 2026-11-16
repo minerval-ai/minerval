@@ -18,7 +18,8 @@ export interface AnnotationClaim {
   id: string;
   canonical_form: string;
   status: string;
-  status_confidence: number;
+  /** Null while the claim has no assessment: not yet assessed is not 0. */
+  status_confidence: number | null;
   subclaim_count: number;
   url: string;
   /** claim, quantity or question. Present on passages the graph recorded. */
@@ -58,7 +59,8 @@ export interface PageAnnotation {
   source_location: string | null;
   verdict: Verdict;
   why: string;
-  confidence: number;
+  /** The assessor's confidence in the verdict; null where nothing was judged. */
+  confidence: number | null;
   /**
    * affirms or denies from an analysis; a recorded passage carries whatever
    * its instance records (also poses, mentions, states, asks, answers).

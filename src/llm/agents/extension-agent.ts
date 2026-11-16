@@ -51,7 +51,8 @@ export interface ClaimForAssessment {
     kind: NodeKind;
     /** A claim's status; "unknown" when no verdict is recorded, or for another kind. */
     status: string;
-    confidence: number;
+    /** Null when the node has not been assessed: there is no confidence to give. */
+    confidence: number | null;
     /** The reader-facing summary of the current assessment, estimate or standing. */
     summary: string | null;
     /** What a quantity measures, of what population, in what unit. */
