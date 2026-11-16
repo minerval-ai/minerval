@@ -1051,8 +1051,12 @@ describe("opening raw sources", () => {
     const steps = await rawQuery<{ seq: number; kind: string }>(`SELECT seq, kind FROM agent_steps WHERE run_id = $1 ORDER BY seq`, [id]);
     return { id, toolStep: steps.find((s) => s.kind === "tool_results")!.seq, sayStep: steps.find((s) => s.kind === "assistant")!.seq };
   }
-  const ROWS = JSON.stringify({ rows: [["units", 4112]] });
-  const PRINTED = JSON.stringify({ stdout: "4112 units in runs/run-7.jsonl" });
+  const ROWS = JSON.stringify({ rows: [["widgets-sold", 4112]] });
+  const PRINTED = JSON.stringify({ stdout: "4112 widgets-sold in runs/run-7.jsonl" });
+  // What a withheld listing must not carry is looked for by a word no hash, id
+  // or timestamp can hold: a run's step hashes are hex, and once in a few
+  // hundred runs one of them contained "4112".
+  const CAME_BACK = "widgets-sold";
 
   it("serves the log of a run that read an organization's data to a member who reads the run's label, with what came back held to read_sources", async () => {
     const run = await privateRun("steward", ["tool:warehouse__run_query", "tool:run_command", "tool:keep_reading", "tool:notebook_write"], [
@@ -1074,7 +1078,7 @@ describe("opening raw sources", () => {
     expect(step.content[1].output).toEqual(withheldRunSourceText(A, [A]));
     expect(step.content[2].output).toBe(JSON.stringify({ address: "reading:1" }));
     const listed = JSON.stringify((await as(reader, { url: `/runs/${run.id}/steps` })).json());
-    expect(listed).not.toContain("4112");
+    expect(listed).not.toContain(CAME_BACK);
     expect((await as(reader, { url: `/runs/${run.id}/verify` })).json()).toMatchObject({ run_id: run.id, intact: true });
 
     // One who may open raw sources at rl-a reads what came back too.
@@ -1126,7 +1130,7 @@ describe("opening raw sources", () => {
         expect(summary.private_reasons).toEqual(expect.arrayContaining(reasons));
         const step = (await as(who, { url: `/runs/${run.id}/steps/${run.toolStep}` })).json();
         expect(step.withheld).toBe(true);
-        expect(JSON.stringify(step)).not.toContain("4112");
+        expect(JSON.stringify(step)).not.toContain(CAME_BACK);
         expect((await as(who, { url: `/runs/${run.id}/verify` })).json().withheld).toBe(true);
       }
     }
