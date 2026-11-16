@@ -231,6 +231,8 @@ export interface ApiKeyMeta {
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
+  /** The label the key works at, where the deployment holds more than one (fixed when made). */
+  label?: string;
 }
 
 export interface UsageBucket {
@@ -339,11 +341,14 @@ export async function listApiKeys(externalId: string): Promise<ApiKeyMeta[]> {
 
 export async function createApiKey(
   externalId: string,
-  name: string
+  name: string,
+  label?: string
 ): Promise<ApiKeyMeta & { key: string }> {
   return accountFetch("/api-keys", {
     method: "POST",
-    body: { name },
+    // Where the deployment holds material at more than one label, the key
+    // works at the one named here, fixed for its life (docs/accounts.md).
+    body: { name, ...(label ? { label } : {}) },
     actingUser: externalId,
   });
 }
@@ -406,11 +411,17 @@ export interface AssessmentOrderView {
 /** Order a (re)assessment of a claim. Charged when the run starts. */
 export async function createAssessmentOrder(
   externalId: string,
-  claimId: string
+  claimId: string,
+  /**
+   * A label the person holds that reads the node's label: the assessment is
+   * made and read there, beside the node's own judgment (docs/accounts.md,
+   * "The label a request works at"). Left out, the node's own label.
+   */
+  label?: string
 ): Promise<AssessmentOrderView> {
   const r = await accountFetch<{ order: AssessmentOrderView }>(
     `/claims/${pathSegment(claimId)}/order`,
-    { method: "POST", actingUser: externalId }
+    { method: "POST", actingUser: externalId, ...(label ? { body: { label } } : {}) }
   );
   return r.order;
 }
@@ -696,14 +707,14 @@ export async function submitContribution(
 /** Intake (#157): propose a claim not yet in the graph; reviewed before it materializes. */
 export async function proposeClaimIntake(
   externalId: string,
-  input: { claim: string }
+  input: { claim: string; label?: string }
 ): Promise<{ id: string; review_status: string }> {
   const r = await accountFetch<{
     contribution: { id: string; review_status: string };
   }>("/claims/propose", {
     method: "POST",
     actingUser: externalId,
-    body: { claim: input.claim },
+    body: { claim: input.claim, ...(input.label ? { label: input.label } : {}) },
   });
   return r.contribution;
 }
@@ -821,11 +832,13 @@ export interface GrantSentMessageView {
 
 export async function startGrantConversation(
   externalId: string,
-  message: string
+  message: string,
+  /** The label the conversation and its mandate work at, where the deployment holds more than one. */
+  label?: string
 ): Promise<GrantSentMessageView> {
   const r = await accountFetch<{ conversation: GrantSentMessageView }>(
     "/grant-conversations",
-    { method: "POST", body: { message }, actingUser: externalId }
+    { method: "POST", body: { message, ...(label ? { label } : {}) }, actingUser: externalId }
   );
   return r.conversation;
 }
@@ -1557,7 +1570,7 @@ type AssistantConvo = { conversation: AssistantConversationView };
 
 export async function startAssistantConversation(
   externalId: string,
-  input: { message: string; model?: string; node_id?: string }
+  input: { message: string; model?: string; node_id?: string; label?: string }
 ): Promise<AssistantConversationView> {
   const r = await accountFetch<AssistantConvo>("/assistant/conversations", {
     method: "POST",

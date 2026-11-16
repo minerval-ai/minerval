@@ -5,6 +5,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { MandateProposal, type MandateView } from "../../components/account/MandateProposal";
 import { failedTurnMessage, waitForReply, type GrantTurn } from "../../lib/grant-turn";
+import { StartAtLabel, labelReady } from "../../components/inside/StartAtLabel";
+import type { MyLabels } from "../../lib/admin-api";
 
 // A conversation with a Grantmaker, in the Ask section's shell. It is one
 // conversation from the first sentence on: the funder describes what they
@@ -42,6 +44,7 @@ export function GrantmakerConversation({
   initialDraft = "",
   suggestions = [],
   panel,
+  labels,
   children,
 }: {
   /** The conversation to open; absent for one not yet started. */
@@ -57,6 +60,8 @@ export function GrantmakerConversation({
   suggestions?: Array<{ label: string; text: string }>;
   /** The mandate at a glance, beside the conversation. */
   panel?: ReactNode;
+  /** Where the deployment holds material at more than one label: the labels a new conversation may start at. */
+  labels?: MyLabels | null;
   /** Shown in place of a transcript before the first message. */
   children?: ReactNode;
 }) {
@@ -66,6 +71,7 @@ export function GrantmakerConversation({
   const [draft, setDraft] = useState(initialDraft);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [label, setLabel] = useState("");
   const endRef = useRef<HTMLDivElement | null>(null);
   const boxRef = useRef<HTMLTextAreaElement | null>(null);
   const mounted = useRef(true);
@@ -117,6 +123,10 @@ export function GrantmakerConversation({
   const send = async () => {
     const message = draft.trim();
     if (!message || busy) return;
+    if (!convo && !labelReady(labels, label)) {
+      setError("Choose the label this mandate works at first.");
+      return;
+    }
     setBusy(true);
     setError(null);
     // The funder's message shows at once, while the Grantmaker thinks.
@@ -130,7 +140,7 @@ export function GrantmakerConversation({
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message }),
+          body: JSON.stringify(convo || !label ? { message } : { message, label }),
         }
       );
       const data = await res.json();
@@ -247,6 +257,15 @@ export function GrantmakerConversation({
             </p>
           ) : (
             <div className="ask-composer">
+              {!convo && !conversationId && (
+                <StartAtLabel
+                  mine={labels}
+                  value={label}
+                  onChange={setLabel}
+                  disabled={busy}
+                  what="The mandate works at this label: its Grantmaker reads what the label reads, and the work it pays for is filed there."
+                />
+              )}
               {suggestions.length > 0 && (
                 <div className="askm-suggest">
                   {suggestions.map((s) => (

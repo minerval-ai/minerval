@@ -8,6 +8,8 @@ import {
 } from "../../lib/account-api";
 import { PageHead } from "@/components/PageHead";
 import { AssistantConversation } from "./AssistantConversation";
+import { fetchMyLabels, type MyLabels } from "../../lib/admin-api";
+import { loadStanding } from "../../lib/standing";
 
 export const metadata: Metadata = {
   title: "Ask · Minerval",
@@ -38,8 +40,12 @@ export default async function AskPage({
   const session = await auth();
 
   let home: AssistantHome | null = null;
+  let labels: MyLabels | null = null;
   if (session?.externalId && accountApiConfigured()) {
     home = await getAssistantHome(session.externalId).catch(() => null);
+    // A members-only deployment with more than one label asks which one the conversation works at.
+    const standing = await loadStanding();
+    if (standing.state === "signed_in") labels = await fetchMyLabels(session.externalId).catch(() => null);
   }
   // Where signing in returns to: the question written on another page.
   const here = `/ask${
@@ -71,6 +77,7 @@ export default async function AskPage({
       balanceMicroUsd={home.balance_micro_usd}
       allowedAlways={home.allowed_kinds.always}
       kindLabels={home.allowed_kinds.labels}
+      startLabels={labels}
       {...(node && /^[0-9a-f-]{36}$/i.test(node) ? { nodeId: node } : {})}
       {...(q ? { question: q.slice(0, 2000) } : {})}
     >

@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
   }
   const body = (await request.json().catch(() => ({}))) as {
     message?: string;
+    label?: string;
   };
   if (!body.message?.trim()) {
     return NextResponse.json(
@@ -36,7 +37,8 @@ export async function POST(request: NextRequest) {
   try {
     const conversation = await startGrantConversation(
       session.externalId,
-      body.message.trim()
+      body.message.trim(),
+      typeof body.label === "string" && body.label ? body.label : undefined
     );
     return NextResponse.json({ conversation }, { status: 201 });
   } catch (err) {
