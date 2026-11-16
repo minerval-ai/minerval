@@ -524,11 +524,39 @@ export interface SinceAssessed {
   changed: boolean | null;
   note?: string;
   premises_rejudged?: number;
+  // Of those, the ones whose verdict is not the one the judgment was made
+  // against. Absent from an API that predates it.
+  premises_moved?: number;
   premises_added?: number;
   premises_removed?: number;
   sources_added?: number;
   sources_removed?: number;
   source_events?: number;
+}
+
+/**
+ * The whole record behind `since_assessed` (GET /claims/:id/judgment-inputs),
+ * as much of it as the claim page reads: which premises changed and how.
+ * `verdict_then` and `verdict_now` are a claim's status or a question's
+ * standing, null for a quantity or for no judgment.
+ */
+export interface JudgmentInputs {
+  recorded: boolean;
+  premises: Array<{
+    node_id: string;
+    relation: string;
+    state: "unchanged" | "rejudged" | "removed";
+    moved?: boolean;
+    text?: string | null;
+    verdict_then?: string | null;
+    verdict_now?: string | null;
+  }>;
+  premises_added: Array<{
+    node_id: string;
+    relation: string;
+    text?: string | null;
+    verdict_now?: string | null;
+  }>;
 }
 
 /**
@@ -624,6 +652,9 @@ export interface ClaimDetail {
   // Beside the judgment, whichever kind keeps it; absent when the node has
   // none in force or the API predates the field.
   since_assessed?: SinceAssessed | null;
+  // Which premises moved, read only when `since_assessed` says something
+  // did (lib/since-assessed.ts); absent otherwise.
+  judgment_inputs?: JudgmentInputs | null;
   subclaim_count: number;
   // Steward-seeded prior (#285); absent when the claim is assessed, unseeded,
   // or the API predates the field.

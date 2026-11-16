@@ -17,7 +17,12 @@
  * matters, and whether it is worth a reassessment, is a judgment for the
  * Steward and the Grantmaker; this module only says what changed. A premise
  * judged again to the same verdict still counts as judged again: the record
- * is of versions, and comparing verdicts is the reader's business.
+ * is of versions. Beside that count it says how many of those premises
+ * moved: their verdict differs from the one the judgment was made against
+ * (a claim's status, a quantity's estimate, a question's standing and the
+ * answers it favors). Judgments are written all the time under a busy node,
+ * and most leave the verdict where it was; a reader of the page wants to
+ * hear only of the ones that did not (VERDICT_KEY_SQL below).
  *
  * Judgments written before the record existed have `inputs_recorded` false
  * and are reported as not recorded, never as fresh.
@@ -48,6 +53,31 @@ const IN_FORCE_ID_SQL = (alias: string) => `COALESCE(
     (SELECT j.id FROM assessments_in_force j WHERE j.claim_id = ${alias}),
     (SELECT j.id FROM quantity_estimates_in_force j WHERE j.claim_id = ${alias}),
     (SELECT j.id FROM question_assessments_in_force j WHERE j.claim_id = ${alias}))`;
+
+/**
+ * What a judgment says, as one text that is equal for two judgments exactly
+ * when they reach the same verdict: a claim's status; a quantity's estimate
+ * (the figures, compared whole); a question's standing with the answers it
+ * favors. Null for no judgment. Read from the tables by id, not from the
+ * views of what is in force, because the judgment a parent was made against
+ * is usually one that has since been superseded. The kind prefix keeps a
+ * claim's status from ever equalling a question's standing of the same name.
+ */
+const VERDICT_KEY_SQL = (id: string) => `COALESCE(
+    (SELECT 'claim:' || v.status FROM assessments v WHERE v.id = ${id}),
+    (SELECT 'quantity:' || v.estimate::text FROM quantity_estimates v WHERE v.id = ${id}),
+    (SELECT 'question:' || v.standing || ':' ||
+            array_to_string(ARRAY(SELECT f::text FROM unnest(v.favored_claim_ids) f ORDER BY 1), ',')
+       FROM question_assessments v WHERE v.id = ${id}))`;
+
+/**
+ * The verdict of a judgment in words a page can show beside a premise: a
+ * claim's status, a question's standing. Null for a quantity, whose estimate
+ * has no one word, and for no judgment.
+ */
+const VERDICT_WORD_SQL = (id: string) => `COALESCE(
+    (SELECT v.status FROM assessments v WHERE v.id = ${id}),
+    (SELECT v.standing FROM question_assessments v WHERE v.id = ${id}))`;
 
 /**
  * Record what the judgment `judgmentId` of node `nodeId` was made against:
@@ -121,7 +151,10 @@ export const JUDGED_CTE = `judged AS (
  * against joined to the edges as they stand, both ways. `state` is the rule:
  * added (an edge that was not there), removed (an edge that is gone),
  * rejudged (the premise's judgment in force is a different row, which
- * includes a first judgment), or unchanged.
+ * includes a first judgment), or unchanged. `moved` is whether a premise
+ * judged again reached a different verdict from the one the judgment was
+ * made against (VERDICT_KEY_SQL); a first judgment, or a premise's judgment
+ * going out of force, is a move. False for every other state.
  */
 // A function, so that the fragment is built when the read is made: whether an edge is set aside is asked only on a
 // graph with more than one label, which a process learns with its first query (overlay-service.ts).
@@ -134,7 +167,10 @@ const premiseRowsCte = () => `premise_rows AS (
            CASE WHEN t.node_id IS NULL THEN 'added'
                 WHEN n.node_id IS NULL THEN 'removed'
                 WHEN t.input_judgment_id IS DISTINCT FROM n.in_force_now THEN 'rejudged'
-                ELSE 'unchanged' END AS state
+                ELSE 'unchanged' END AS state,
+           (t.node_id IS NOT NULL AND n.node_id IS NOT NULL
+             AND t.input_judgment_id IS DISTINCT FROM n.in_force_now
+             AND ${VERDICT_KEY_SQL("t.input_judgment_id")} IS DISTINCT FROM ${VERDICT_KEY_SQL("n.in_force_now")}) AS moved
       FROM (SELECT j.node_id AS parent_id, i.node_id, i.relation_type, i.input_judgment_id
               FROM judged j
               JOIN judgment_inputs i
@@ -191,6 +227,8 @@ const EVENT_ROWS_CTE = `event_rows AS (
 /** How many of each kind of change a judgment's inputs have seen. */
 export interface JudgmentChangeCounts {
   premises_rejudged: number;
+  /** Of the premises judged again, those whose verdict is not the one the judgment was made against. */
+  premises_moved: number;
   premises_added: number;
   premises_removed: number;
   sources_added: number;
@@ -200,6 +238,7 @@ export interface JudgmentChangeCounts {
 
 const NO_CHANGES: JudgmentChangeCounts = {
   premises_rejudged: 0,
+  premises_moved: 0,
   premises_added: 0,
   premises_removed: 0,
   sources_added: 0,
@@ -228,6 +267,13 @@ export interface PremiseInput {
   in_force_now: string | null;
   /** unchanged: the same judgment; rejudged: a different one; removed: no longer under this node. */
   state: "unchanged" | "rejudged" | "removed";
+  /** Judged again to a different verdict (a first judgment included). False unless `state` is rejudged. */
+  moved: boolean;
+  /** The premise's statement, so that a reader can be told which it is. */
+  text: string | null;
+  /** The verdict then and now in a word: a claim's status, a question's standing; null for a quantity or no judgment. */
+  verdict_then: string | null;
+  verdict_now: string | null;
 }
 
 export interface JudgmentInputsView {
@@ -238,7 +284,13 @@ export interface JudgmentInputsView {
   recorded: boolean;
   premises: PremiseInput[];
   /** Nodes under this one now that were not when the judgment was written. */
-  premises_added: Array<{ node_id: string; relation: string; in_force_now: string | null }>;
+  premises_added: Array<{
+    node_id: string;
+    relation: string;
+    in_force_now: string | null;
+    text: string | null;
+    verdict_now: string | null;
+  }>;
   sources: {
     /** How many sources the judgment was made against. */
     recorded: number;
@@ -295,9 +347,17 @@ export async function getJudgmentInputs(nodeId: string): Promise<JudgmentInputsV
       judged_against: string | null;
       in_force_now: string | null;
       state: PremiseInput["state"] | "added";
+      moved: boolean;
+      text: string | null;
+      verdict_then: string | null;
+      verdict_now: string | null;
     }>(
       `WITH ${JUDGED_CTE}, ${premiseRowsCte()}
-       SELECT node_id, relation, judged_against, in_force_now, state FROM premise_rows ORDER BY 1, 2`,
+       SELECT p.node_id, p.relation, p.judged_against, p.in_force_now, p.state, p.moved,
+              (SELECT c.text FROM claims c WHERE c.id = p.node_id) AS text,
+              ${VERDICT_WORD_SQL("p.judged_against")} AS verdict_then,
+              ${VERDICT_WORD_SQL("p.in_force_now")} AS verdict_now
+         FROM premise_rows p ORDER BY 1, 2`,
       [[nodeId]]
     ),
     rawQuery<{ source_id: string; recorded: boolean; state: "added" | "removed" | "kept" }>(
@@ -321,11 +381,21 @@ export async function getJudgmentInputs(nodeId: string): Promise<JudgmentInputsV
           judged_against: r.judged_against,
           in_force_now: r.in_force_now,
           state: r.state,
+          moved: r.moved === true,
+          text: r.text,
+          verdict_then: r.verdict_then,
+          verdict_now: r.verdict_now,
         }]
   );
   const premisesAdded = premiseRows
     .filter((r) => r.state === "added")
-    .map((r) => ({ node_id: r.node_id, relation: r.relation, in_force_now: r.in_force_now }));
+    .map((r) => ({
+      node_id: r.node_id,
+      relation: r.relation,
+      in_force_now: r.in_force_now,
+      text: r.text,
+      verdict_now: r.verdict_now,
+    }));
   const sources = {
     recorded: sourceRows.filter((r) => r.recorded).length,
     added: sourceRows.filter((r) => r.state === "added").map((r) => r.source_id),
@@ -354,6 +424,7 @@ export function countJudgmentChanges(
 ): JudgmentChangeCounts {
   return {
     premises_rejudged: view.premises.filter((p) => p.state === "rejudged").length,
+    premises_moved: view.premises.filter((p) => p.moved).length,
     premises_added: view.premises_added.length,
     premises_removed: view.premises.filter((p) => p.state === "removed").length,
     sources_added: view.sources.added.length,
@@ -394,6 +465,7 @@ export async function summarizeJudgmentChanges(
     `WITH ${JUDGED_CTE}, ${premiseRowsCte()}, ${SOURCE_ROWS_CTE}, ${EVENT_ROWS_CTE}
      SELECT j.node_id, j.inputs_recorded AS recorded,
             COALESCE(p.rejudged, 0)::int AS premises_rejudged,
+            COALESCE(p.moved, 0)::int AS premises_moved,
             COALESCE(p.added, 0)::int AS premises_added,
             COALESCE(p.removed, 0)::int AS premises_removed,
             COALESCE(s.added, 0)::int AS sources_added,
@@ -402,6 +474,7 @@ export async function summarizeJudgmentChanges(
        FROM judged j
        LEFT JOIN (SELECT parent_id,
                          count(*) FILTER (WHERE state = 'rejudged') AS rejudged,
+                         count(*) FILTER (WHERE moved) AS moved,
                          count(*) FILTER (WHERE state = 'added') AS added,
                          count(*) FILTER (WHERE state = 'removed') AS removed
                     FROM premise_rows GROUP BY parent_id) p ON p.parent_id = j.node_id
@@ -449,6 +522,7 @@ export function sinceAssessed(summary: JudgmentChangeSummary | undefined): Since
     recorded: true,
     changed: summary.changed,
     premises_rejudged: summary.premises_rejudged,
+    premises_moved: summary.premises_moved,
     premises_added: summary.premises_added,
     premises_removed: summary.premises_removed,
     sources_added: summary.sources_added,
@@ -490,7 +564,9 @@ export function sinceAssessedRow(summary: JudgmentChangeSummary | undefined): Si
 export const SINCE_ASSESSED_DESCRIPTION =
   "what has changed under the judgment in force since it was written, as counts: " +
   "`premises_rejudged` (nodes under it whose own judgment in force is a newer one, whether or " +
-  "not the verdict moved), `premises_added`, `premises_removed`, `sources_added`, " +
+  "not the verdict moved), `premises_moved` (of those, the ones whose verdict is not the one " +
+  "the judgment was made against: a claim's status, a quantity's estimate, a question's standing " +
+  "or favored answers), `premises_added`, `premises_removed`, `sources_added`, " +
   "`sources_removed`, and `source_events` (corrections, retractions and other notices on the " +
   "sources it was made against); `changed` is true when any count is above zero; " +
   "`recorded: false` with `changed: null` and no counts means the judgment predates this " +
@@ -500,7 +576,8 @@ export const SINCE_ASSESSED_DESCRIPTION =
 export const SINCE_ASSESSED_ROW_DESCRIPTION =
   "what has changed under its judgment since it was written, kept short: `changed`, and " +
   "when it is true only the counts above zero (`premises_rejudged`, nodes under it with a " +
-  "newer judgment of their own, whether or not the verdict moved; `premises_added`; " +
+  "newer judgment of their own, whether or not the verdict moved; `premises_moved`, those of " +
+  "them whose verdict is not the one it was made against; `premises_added`; " +
   "`premises_removed`; `sources_added`; `sources_removed`; `source_events`, corrections, " +
   "retractions and other notices on its sources), counts that are zero being left out; " +
   "`recorded: false` means the judgment predates this record, which is unknown, not " +

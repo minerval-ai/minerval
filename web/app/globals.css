@@ -1084,6 +1084,24 @@ a.fnd-card:hover, a.fnd-card:target {
 .reasoning-detail[open] > summary::before { transform: rotate(90deg); }
 .reasoning-detail > summary:hover { color: var(--ink-soft); }
 .reasoning-detail .reasoning { margin-top: 0.6rem; margin-bottom: 0; }
+/* What moved under the judgment since it was written (#566): shown only
+   when something did, so a little stronger than the quiet notes beside it,
+   and it opens onto the premises that moved. */
+.assess-changed-since { margin: .35rem 0 0; font-family: var(--sans); font-size: .8rem; color: var(--ink-soft); }
+.assess-changed-since > summary { cursor: pointer; list-style: none; user-select: none; }
+.assess-changed-since > summary::-webkit-details-marker { display: none; }
+.assess-changed-since > summary::before {
+  content: "▸"; display: inline-block; margin-right: 0.4rem;
+  color: var(--faint); transition: transform 0.15s;
+}
+.assess-changed-since[open] > summary::before { transform: rotate(90deg); }
+.assess-changed-since-body { margin: .4rem 0 0 1rem; color: var(--muted); }
+.assess-changed-since-body ul { margin: 0 0 .4rem; padding-left: 1rem; }
+.assess-changed-since-body li { margin: .15rem 0; }
+.assess-changed-since-body li a { color: var(--ink-soft); }
+.assess-changed-since-how { margin-left: .4rem; white-space: nowrap; }
+.assess-changed-since-how::before { content: "· "; }
+.assess-changed-since-body p { margin: 0 0 .3rem; }
 /* The page's exits (cite, embed): their own block, clear of whatever precedes
    them. The negative top margin above tucks a fold under the text it
    explains; here there is no such text, and it ran the first fold into the

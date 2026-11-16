@@ -206,9 +206,11 @@ value the discourse estimates, assessed with an estimate), and a question
 is). search_claims and get_claim report each node's kind; a plan item's
 claim_id is the id of any of them. For a node that has been judged they
 also report \`since_assessed\`: what has changed under that judgment since
-it was written (premises judged again, added or removed, sources added or
-removed, corrections or retractions on its sources), or that the judgment
-predates the record of such changes.
+it was written (premises judged again, and of those how many reached a
+different verdict, premises added or removed, sources added or removed,
+corrections or retractions on its sources), or that the judgment predates
+the record of such changes. A premise judged again to the verdict it had is
+the graph at work, and on its own is seldom a reason to reassess.
 
 - assess: one Steward pass on an unassessed node. On a claim it reaches a
   verdict; on a quantity it completes the definition and sets an estimate

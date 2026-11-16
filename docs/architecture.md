@@ -361,7 +361,14 @@ judged again, a premise or a source added or removed, a correction or a
 retraction on one of its sources. `GET /claims/:claim_id/judgment-inputs`
 (`get_judgment_inputs`) serves it. It reports changes of version, not of
 verdict: a premise judged again to the same status still counts, and whether
-that warrants a reassessment is for the Steward and the Grantmaker. A
+that warrants a reassessment is for the Steward and the Grantmaker. Beside
+it, each premise judged again says whether it `moved`: whether its verdict
+(a claim's status, a quantity's estimate compared whole, a question's
+standing with the answers it favors) differs from the one the judgment was
+made against, counted as `premises_moved`. Under a busy node some premise
+has nearly always been judged again, so the claim page says only what moved
+(`web/lib/since-assessed.ts`), lists those premises with their verdict then
+and now, and offers a fresh assessment beside them. A
 judgment written before the record existed has `inputs_recorded` false and
 is reported as not recorded, never as unchanged.
 

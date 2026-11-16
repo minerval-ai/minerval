@@ -49,12 +49,12 @@ async function seedEdge(parent: string, child: string, relation = "requires"): P
 }
 
 /** Supersede the claim's assessment and write a new one, as the Steward's write does; returns its id. */
-async function assess(claimId: string, opts: { record?: boolean } = {}): Promise<string> {
+async function assess(claimId: string, opts: { record?: boolean; status?: string } = {}): Promise<string> {
   await rawQuery(`UPDATE assessments SET is_current = false WHERE claim_id = $1`, [claimId]);
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace)
-     VALUES ($1, 'supported', 0.7, 'dbtest') RETURNING id`,
-    [claimId]
+     VALUES ($1, $2, 0.7, 'dbtest') RETURNING id`,
+    [claimId, opts.status ?? "supported"]
   );
   if (opts.record !== false) await recordJudgmentInputs(rawQuery, "assessment", row!.id, claimId);
   return row!.id;
@@ -91,6 +91,7 @@ describe("what a judgment was made against", () => {
     const byNode = new Map(v.premises.map((p) => [p.node_id, p]));
     expect(byNode.get(c.a)).toEqual({
       node_id: c.a, relation: "requires", judged_against: c.aJudgment, in_force_now: c.aJudgment, state: "unchanged",
+      moved: false, text: expect.stringContaining("inputs premise a"), verdict_then: "supported", verdict_now: "supported",
     });
     expect(byNode.get(c.b)).toMatchObject({ relation: "supports", judged_against: c.bJudgment, state: "unchanged" });
     // A premise with no judgment is recorded as such, and is unchanged while it has none.
@@ -117,6 +118,68 @@ describe("what a judgment was made against", () => {
     expect(byNode.get(c.b)!.state).toBe("unchanged");
   });
 
+  it("says which premises judged again reached a different verdict", async () => {
+    const c = await seedCase();
+    // Judged again to the verdict it had: a new version, no move.
+    await assess(c.a);
+    // Judged again to another verdict, and judged for the first time: both moves.
+    await assess(c.b, { status: "doubtful" });
+    await assess(c.unjudged, { status: "verified" });
+    const v = await view(c.parent);
+    const byNode = new Map(v.premises.map((p) => [p.node_id, p]));
+    expect(byNode.get(c.a)).toMatchObject({ state: "rejudged", moved: false, verdict_then: "supported", verdict_now: "supported" });
+    expect(byNode.get(c.b)).toMatchObject({ state: "rejudged", moved: true, verdict_then: "supported", verdict_now: "doubtful" });
+    expect(byNode.get(c.unjudged)).toMatchObject({ state: "rejudged", moved: true, verdict_then: null, verdict_now: "verified" });
+    expect(countJudgmentChanges(v)).toMatchObject({ premises_rejudged: 3, premises_moved: 2 });
+    expect((await summarizeJudgmentChanges([c.parent])).get(c.parent)).toMatchObject({
+      premises_rejudged: 3, premises_moved: 2,
+    });
+
+    // Judged back to the verdict the parent was made against: a version, not a move.
+    await assess(c.b);
+    expect((await summarizeJudgmentChanges([c.parent])).get(c.parent)).toMatchObject({
+      premises_rejudged: 3, premises_moved: 1,
+    });
+  });
+
+  it("compares a quantity's estimate whole and a question's standing with its answers", async () => {
+    const parent = await seedClaim("verdict parent");
+    const quantity = await seedClaim("verdict quantity");
+    await defineQuantity({
+      claimId: quantity,
+      definition: { measures: "Tests run", population: "This suite", unit: { kind: "count", noun: "tests", min: 0 } },
+      createdBy: "dbtest",
+    });
+    const question = await seedClaim("verdict question");
+    await markQuestion(question);
+    const [answer, other] = await Promise.all([seedClaim("verdict answer"), seedClaim("verdict other answer")]);
+    await seedEdge(question, answer, "answers");
+    await seedEdge(question, other, "answers");
+    await seedEdge(parent, quantity);
+    await seedEdge(parent, question, "supports");
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 1, high: 5 }, work: "counted" });
+    await recordQuestionAssessment({ claimId: question, standing: "leaning", favoredClaimIds: [answer], reasoningTrace: "t" });
+    await assess(parent);
+    const moved = async () =>
+      new Map((await view(parent)).premises.map((p) => [p.node_id, { moved: p.moved, then: p.verdict_then, now: p.verdict_now }]));
+
+    // The same figures and the same standing, written again: versions, no move.
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 1, high: 5 }, work: "recounted" });
+    await recordQuestionAssessment({ claimId: question, standing: "leaning", favoredClaimIds: [answer], reasoningTrace: "again" });
+    let m = await moved();
+    expect(m.get(quantity)).toEqual({ moved: false, then: null, now: null });
+    expect(m.get(question)).toEqual({ moved: false, then: "leaning", now: "leaning" });
+
+    // Other figures, and the same standing favoring another answer as well: moves.
+    await recordEstimate({ claimId: quantity, estimate: { form: "interval", low: 2, high: 4 }, work: "narrowed" });
+    await recordQuestionAssessment({
+      claimId: question, standing: "leaning", favoredClaimIds: [other, answer], reasoningTrace: "both",
+    });
+    m = await moved();
+    expect(m.get(quantity)!.moved).toBe(true);
+    expect(m.get(question)!.moved).toBe(true);
+  });
+
   it("shows a premise added and a premise removed", async () => {
     const c = await seedCase();
     const added = await seedClaim("inputs premise added");
@@ -125,7 +188,10 @@ describe("what a judgment was made against", () => {
     await rawQuery(`DELETE FROM claim_relationships WHERE parent_claim_id = $1 AND child_claim_id = $2`, [c.parent, c.b]);
     const v = await view(c.parent);
     expect(v.changed).toBe(true);
-    expect(v.premises_added).toEqual([{ node_id: added, relation: "contradicts", in_force_now: addedJudgment }]);
+    expect(v.premises_added).toEqual([{
+      node_id: added, relation: "contradicts", in_force_now: addedJudgment,
+      text: expect.stringContaining("inputs premise added"), verdict_now: "supported",
+    }]);
     expect(v.premises.find((p) => p.node_id === c.b)).toMatchObject({ state: "removed", in_force_now: null });
   });
 
@@ -266,7 +332,7 @@ describe("the summary of what changed, for many nodes at once", () => {
     if (!v || !v.judgment) {
       return {
         judged: false, recorded: false, changed: null,
-        premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+        premises_rejudged: 0, premises_moved: 0, premises_added: 0, premises_removed: 0,
         sources_added: 0, sources_removed: 0, source_events: 0,
       };
     }
@@ -365,15 +431,16 @@ describe("the summary of what changed, for many nodes at once", () => {
       return rest;
     };
     const none = {
-      premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+      premises_rejudged: 0, premises_moved: 0, premises_added: 0, premises_removed: 0,
       sources_added: 0, sources_removed: 0, source_events: 0,
     };
     expect(summary.get(fresh.parent)).toEqual({ judged: true, recorded: true, changed: false, ...none });
-    expect(counts(rejudged.parent)).toEqual({ ...none, premises_rejudged: 2 });
+    // One judged again to the verdict it had, one judged for the first time: one move.
+    expect(counts(rejudged.parent)).toEqual({ ...none, premises_rejudged: 2, premises_moved: 1 });
     expect(counts(edges.parent)).toEqual({ ...none, premises_added: 1, premises_removed: 1 });
     expect(counts(sources.parent)).toEqual({ ...none, sources_added: 1, sources_removed: 1, source_events: 1 });
     expect(counts(all.parent)).toEqual({
-      premises_rejudged: 1, premises_added: 1, premises_removed: 1,
+      premises_rejudged: 1, premises_moved: 0, premises_added: 1, premises_removed: 1,
       sources_added: 1, sources_removed: 0, source_events: 1,
     });
     expect(summary.get(all.parent)!.changed).toBe(true);
@@ -381,8 +448,9 @@ describe("the summary of what changed, for many nodes at once", () => {
     expect(summary.get(unrecorded)).toEqual({ judged: true, recorded: false, changed: null, ...none });
     expect(summary.get(never)).toEqual({ judged: false, recorded: false, changed: null, ...none });
     expect(summary.get(nowhere)).toEqual({ judged: false, recorded: false, changed: null, ...none });
-    expect(counts(quantity)).toEqual({ ...none, premises_rejudged: 1 });
-    expect(counts(question)).toEqual({ ...none, premises_rejudged: 1 });
+    // The quantity's premise judged for the first time; the question's premise estimated to other figures.
+    expect(counts(quantity)).toEqual({ ...none, premises_rejudged: 1, premises_moved: 1 });
+    expect(counts(question)).toEqual({ ...none, premises_rejudged: 1, premises_moved: 1 });
 
     expect(await summarizeJudgmentChanges([])).toEqual(new Map());
   });
@@ -397,7 +465,7 @@ describe("the summary of what changed, for many nodes at once", () => {
 
     expect(sinceAssessed(summary.get(c.parent))).toEqual({
       recorded: true, changed: true,
-      premises_rejudged: 1, premises_added: 0, premises_removed: 0,
+      premises_rejudged: 1, premises_moved: 0, premises_added: 0, premises_removed: 0,
       sources_added: 0, sources_removed: 0, source_events: 0,
     });
     // No counts beside "not recorded": zeros there would read as "nothing changed".
@@ -447,7 +515,7 @@ async function claimsApp() {
  */
 describe("what changed since the judgment, where readers already look", () => {
   const none = {
-    premises_rejudged: 0, premises_added: 0, premises_removed: 0,
+    premises_rejudged: 0, premises_moved: 0, premises_added: 0, premises_removed: 0,
     sources_added: 0, sources_removed: 0, source_events: 0,
   };
 
@@ -512,7 +580,7 @@ describe("what changed since the judgment, where readers already look", () => {
     await seedEdge(quantity, await seedClaim("read quantity premise added later"));
     for (const [id, counts] of [
       [quantity, { premises_added: 1 }],
-      [question, { premises_rejudged: 1 }],
+      [question, { premises_rejudged: 1, premises_moved: 1 }],
     ] as const) {
       const want = { recorded: true, changed: true, ...none, ...counts };
       expect((await app.inject({ url: `/claims/${id}?information_depth=cursory` })).json().since_assessed).toEqual(want);
