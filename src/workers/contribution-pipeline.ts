@@ -10,6 +10,11 @@
  *  - budget errors release the claim and refund the attempt (the work stopped
  *    for lack of budget, not because it is poisoned; the local runner
  *    re-queues the message and retries next window);
+ *  - a platform fault (deployment-fault.ts: a provider out of credits, a
+ *    rejected key, a provider down through its retries) refunds the attempt
+ *    and KEEPS the claim, restamped: the work is not poisoned, so the fault
+ *    must never park it (#980, #996), and the reclaim window is the wait
+ *    before it is tried again;
  *  - other errors KEEP the claim, so the retry waits out the reclaim window —
  *    a natural backoff — and the attempt stays spent, so the recovery sweep
  *    parks the row after MAX_REVIEW_ATTEMPTS instead of hot-looping on a
@@ -20,6 +25,7 @@ import { runContributionReview } from "../llm/agents/contribution-reviewer.js";
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { runAtLabel, runWithUsageContext } from "../llm/usage-context.js";
+import { platformFaultOf } from "../services/deployment-fault.js";
 
 /**
  * Who this review is for. A contribution exists because one contributor
@@ -47,6 +53,28 @@ async function reviewSubject(
 export const REVIEW_RECLAIM_MINUTES = 15;
 /** Attempt cap per phase; the recovery sweep stops re-driving a row past it. */
 export const MAX_REVIEW_ATTEMPTS = 3;
+
+/**
+ * The SQL that gives back an attempt a platform fault stopped, keeping the
+ * claim with a fresh stamp. Before #980 a fault spent the attempt like a
+ * genuine error, so three runs during the 2026-11-12 credits outage parked
+ * a contribution as 'pending' with nothing left to re-drive it (#996).
+ *
+ * The claim is kept rather than released because nothing else paces the
+ * retry: a call the provider refuses for credits or credentials is answered
+ * before anything is billed, so money cannot (CLAUDE.md, "Constraints on
+ * agents"), and a released row is re-enqueued by the recovery sweep every
+ * minute. Kept, the row is tried again once the reclaim window has passed,
+ * for as long as the fault lasts: a wait, not a limit, and one refused call
+ * per contribution per window. `claimAt` and `attempts` name the row's
+ * columns; `guard` keeps a row the run had already decided untouched.
+ */
+export function faultRefundSql(table: string, claimAt: string, attempts: string, guard: string): string {
+  return `UPDATE ${table}
+             SET ${claimAt} = now(),
+                 ${attempts} = GREATEST(${attempts} - 1, 0)
+           WHERE id = $1 AND ${guard}`;
+}
 
 /**
  * A prize claim's review is the prize-check worker's (docs/mathematics.md
@@ -99,6 +127,14 @@ export async function handleContributionMessage(
             SET review_claimed_at = NULL,
                 review_attempts = review_attempts - 1
           WHERE id = $1 AND review_status = 'pending'`,
+        [message.contributionId]
+      );
+    } else if (platformFaultOf(err)) {
+      // Raised by the Reviewer's own model call, or by a tool it called
+      // (record_review_decision accepting an intake proposal runs the
+      // Matcher), which ends the run with PlatformFaultStop.
+      await rawQuery(
+        faultRefundSql("contributions", "review_claimed_at", "review_attempts", "review_status = 'pending'"),
         [message.contributionId]
       );
     }

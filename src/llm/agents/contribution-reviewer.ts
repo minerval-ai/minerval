@@ -30,6 +30,11 @@ import { createFindingTools } from "../tools/finding-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { executeReadPage, getReadPageToolDefinition } from "../tools/read-page-tool.js";
+import {
+  isPlatformFaultReason,
+  PlatformFaultStop,
+  type PlatformFaultReason,
+} from "../../services/deployment-fault.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site. A review works to a
@@ -102,6 +107,14 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
   // GLM 5.3 Flash corpus scenario ended in prose instead). One nudge, only
   // while no decision has been recorded.
   let decisionRecorded = false;
+  // A platform fault that stopped record_review_decision (#980: the
+  // Matcher's provider out of credits on an intake accept). Nothing was
+  // recorded and the next attempt is the queue's, not this run's: the run
+  // ends before another turn, and the pipeline gives the attempt back.
+  let fault: PlatformFaultReason | null = null;
+  const stopOnFault = () => {
+    if (fault && !decisionRecorded) throw new PlatformFaultStop(fault, "contribution review");
+  };
 
   await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
@@ -112,11 +125,12 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
     maxIterations: REVIEW_MAX_TURNS,
     finalToolNudge: {
       max: 1,
-      when: () => !decisionRecorded,
+      when: () => !decisionRecorded && !fault,
       message:
         "No review decision has been recorded for this contribution. Call " +
         "record_review_decision now (accept, reject, or escalate) with your reasoning.",
     },
+    beforeTurn: stopOnFault,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const page = await executeReadPage(name, toolInput);
@@ -136,7 +150,9 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
       const output = await executeReviewerTool(name, toolInput);
       if (name === "record_review_decision") {
         try {
-          decisionRecorded = (JSON.parse(output) as { success?: boolean }).success !== false;
+          const parsed = JSON.parse(output) as { success?: boolean; platform_fault?: unknown };
+          decisionRecorded = parsed.success !== false;
+          if (isPlatformFaultReason(parsed.platform_fault)) fault = parsed.platform_fault;
         } catch {
           decisionRecorded = true;
         }
@@ -144,4 +160,6 @@ ${turnBudgetLine(REVIEW_MAX_TURNS)}${skillLoader.pointerNote}`;
       return output;
     },
   }));
+  // The fault came on the run's last turn, so no turn followed to stop it.
+  stopOnFault();
 }

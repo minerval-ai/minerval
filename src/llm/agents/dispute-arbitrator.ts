@@ -29,6 +29,11 @@ import {
 } from "../tools/skill-tools.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { executeReadPage, getReadPageToolDefinition } from "../tools/read-page-tool.js";
+import {
+  isPlatformFaultReason,
+  PlatformFaultStop,
+  type PlatformFaultReason,
+} from "../../services/deployment-fault.js";
 
 // Tag every LLM call in this agent for the per-token meter (#70); the
 // wrapper keeps attribution correct for any call site.
@@ -106,6 +111,16 @@ Trigger: ${input.trigger}`;
 
 ${turnBudgetLine(ARBITRATION_MAX_TURNS)}${skillLoader.pointerNote}`;
 
+  // A platform fault that stopped record_arbitration_decision (#980: the
+  // Matcher's provider out of credits on an overturn's intake
+  // materialization). Nothing was recorded and the next attempt is the
+  // queue's, not this run's: the run ends before another turn, and the
+  // pipeline gives the attempt back.
+  let fault: PlatformFaultReason | null = null;
+  const stopOnFault = () => {
+    if (fault) throw new PlatformFaultStop(fault, "arbitration");
+  };
+
   await withSkills([], () => toolUseLoop({
     initialMessages: [{ role: "user", content: userMessage }],
     tools,
@@ -118,6 +133,7 @@ ${turnBudgetLine(ARBITRATION_MAX_TURNS)}${skillLoader.pointerNote}`;
     // budget notice, not this cap.
     maxTokens: 16384,
     maxIterations: ARBITRATION_MAX_TURNS,
+    beforeTurn: stopOnFault,
     executeTool: async (name, toolInput) => {
       if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
       const page = await executeReadPage(name, toolInput);
@@ -134,7 +150,18 @@ ${turnBudgetLine(ARBITRATION_MAX_TURNS)}${skillLoader.pointerNote}`;
       if (governanceTools.includes(name)) {
         return executeGovernanceTool(name, toolInput);
       }
-      return executeArbitratorTool(name, toolInput);
+      const output = await executeArbitratorTool(name, toolInput);
+      if (name === "record_arbitration_decision") {
+        try {
+          const parsed = JSON.parse(output) as { platform_fault?: unknown };
+          fault = isPlatformFaultReason(parsed.platform_fault) ? parsed.platform_fault : null;
+        } catch {
+          fault = null;
+        }
+      }
+      return output;
     },
   }));
+  // The fault came on the run's last turn, so no turn followed to stop it.
+  stopOnFault();
 }

@@ -2219,6 +2219,21 @@ tells its agent so by class and says what to do: `match_claim` returns
 to mint nothing on it or on an embedding search alone, and to keep the
 premise in prose.
 
+A contribution's review and an arbitration are never parked for a fault
+either (#980, #996). Their rows carry an attempt count that parks poisoned
+work after three runs (`contribution-pipeline.ts`), and on 2026-11-12 a
+Reviewer accepting an intake proposal met the Matcher's provider out of
+credits three times, nothing was recorded, and the contribution read
+`pending` for good. Now a run a platform fault stops gives its attempt back,
+whether the fault met the agent's own call or the Matcher inside
+`record_review_decision` or `record_arbitration_decision`. Such a tool
+answers with `platform_fault` and its class in place of the provider's text,
+says that nothing was recorded, and the agent's run ends before another turn
+(`PlatformFaultStop`). The claim is kept with a fresh stamp rather than
+released, so the row is tried again once the 15-minute reclaim window has
+passed, for as long as the fault lasts: these rows have no `retry_after`,
+and a released row would be re-enqueued by the recovery sweep every minute.
+
 Maintainers are told once. Each deployment fault is one open row per class
 and provider (`deployment_faults`), opened with an error line in the log and
 one report on the agents' channel at severity blocking, and shown with the

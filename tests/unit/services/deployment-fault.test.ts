@@ -16,10 +16,12 @@ import {
   PLATFORM_FAULT_REASONS,
   deploymentFaultOf,
   faultRetrySeconds,
+  faultStopNote,
   faultToolNote,
   faultWait,
   faultWaitSentence,
   platformFaultOf,
+  PlatformFaultStop,
 } from "../../../src/services/deployment-fault.js";
 import { classifyStewardFailure } from "../../../src/services/steward-park-reason.js";
 import { parksAtOnce, StewardBusyError } from "../../../src/services/steward-lease.js";
@@ -139,6 +141,13 @@ describe("platformFaultOf", () => {
     expect(isTransientApiError(busy)).toBe(true);
     expect(platformFaultOf(busy)).toBeNull();
   });
+
+  it("reads the class a tool's fault ended an agent's run with (#980)", () => {
+    expect(platformFaultOf(new PlatformFaultStop("credits_fault", "contribution review"))).toBe("credits_fault");
+    expect(platformFaultOf(new PlatformFaultStop("provider_unavailable", "arbitration"))).toBe(
+      "provider_unavailable"
+    );
+  });
 });
 
 describe("the public class and what it keeps out", () => {
@@ -165,6 +174,20 @@ describe("the public class and what it keeps out", () => {
     expect(note).toContain("do not raise_issue");
     expect(note).not.toMatch(/402|max_tokens/);
     expect(faultToolNote("provider_unavailable", "The Matcher")).toContain("One retry is reasonable");
+  });
+
+  it("tells a deciding agent that nothing was recorded and the work waits in its queue (#980)", () => {
+    const note = faultStopNote("credits_fault", "Recording this review decision", "the contribution goes back");
+    expect(note).toContain("Nothing was recorded");
+    expect(note).toContain("do not raise_issue");
+    expect(note).toContain("the contribution goes back once the fault clears");
+    expect(note).toContain("not counted against it");
+    expect(note).not.toMatch(/402|max_tokens/);
+    // A provider down through its retries is nobody's to be told of, and
+    // no retry in the run is invited either.
+    const down = faultStopNote("provider_unavailable", "Recording this review decision", "q");
+    expect(down).not.toContain("raise_issue");
+    expect(down).not.toContain("One retry is reasonable");
   });
 });
 

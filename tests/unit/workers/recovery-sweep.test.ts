@@ -62,6 +62,7 @@ import { getLocalQueue } from "../../../src/services/queue-service.js";
 import { runContributionReview } from "../../../src/llm/agents/contribution-reviewer.js";
 import { runArbitration } from "../../../src/llm/agents/dispute-arbitrator.js";
 import { LlmBudgetExceededError } from "../../../src/llm/errors.js";
+import { PlatformFaultStop } from "../../../src/services/deployment-fault.js";
 
 const CONTRIB = "11111111-1111-1111-1111-111111111111";
 const APPEAL = "22222222-2222-2222-2222-222222222222";
@@ -103,6 +104,20 @@ describe("handleContributionMessage claim guard", () => {
     expect(release.q).toContain("review_attempts = review_attempts - 1");
   });
 
+  it.each([
+    ["a tool's fault that ended the run", new PlatformFaultStop("credits_fault", "contribution review")],
+    ["the Reviewer's own call refused for credits", Object.assign(new Error("402 Insufficient credits"), { status: 402 })],
+  ])("refunds the attempt and keeps the claim on a platform fault: %s (#980)", async (_, err) => {
+    state.reviewError = err;
+    await expect(handleContributionMessage({ contributionId: CONTRIB })).rejects.toBe(err);
+    const refund = state.queries.at(-1)!;
+    expect(refund.q).toContain("review_attempts = GREATEST(review_attempts - 1, 0)");
+    // Restamped, not released: the reclaim window paces the retry.
+    expect(refund.q).toContain("review_claimed_at = now()");
+    expect(refund.q).toContain("review_status = 'pending'");
+    expect(refund.params).toEqual([CONTRIB]);
+  });
+
   it("never claims a claim_prize contribution: its review is the prize-check worker's", async () => {
     await handleContributionMessage({ contributionId: CONTRIB });
     expect(state.queries[0].q).toContain("contribution_type <> 'claim_prize'");
@@ -120,6 +135,8 @@ describe("handleContributionMessage claim guard", () => {
     expect(
       state.queries.filter((q) => q.q.includes("review_claimed_at = NULL"))
     ).toEqual([]);
+    // ...and the attempt stays spent.
+    expect(state.queries.filter((q) => q.q.includes("review_attempts - 1"))).toEqual([]);
   });
 });
 
@@ -165,6 +182,28 @@ describe("handleArbitrationMessage claim guard", () => {
     const release = state.queries.at(-1)!;
     expect(release.q).toContain("UPDATE appeals");
     expect(release.q).toContain("claimed_at = NULL");
+  });
+
+  it("refunds the appeal's attempt and keeps its claim on a platform fault (#980)", async () => {
+    state.arbitrationError = new PlatformFaultStop("credits_fault", "arbitration");
+    await expect(
+      handleArbitrationMessage({ contributionId: CONTRIB, trigger: "appeal", appealId: APPEAL })
+    ).rejects.toBeInstanceOf(PlatformFaultStop);
+    const refund = state.queries.at(-1)!;
+    expect(refund.q).toContain("UPDATE appeals");
+    expect(refund.q).toContain("claimed_at = now()");
+    expect(refund.q).toContain("arbitration_attempts = GREATEST(arbitration_attempts - 1, 0)");
+    expect(refund.params).toEqual([APPEAL]);
+  });
+
+  it("refunds an escalation's attempt on a platform fault, leaving a decided row alone (#980)", async () => {
+    state.arbitrationError = Object.assign(new Error("402 Insufficient credits"), { status: 402 });
+    await expect(
+      handleArbitrationMessage({ contributionId: CONTRIB, trigger: "escalated_review" })
+    ).rejects.toThrow("402");
+    const refund = state.queries.at(-1)!;
+    expect(refund.q).toContain("review_attempts = GREATEST(review_attempts - 1, 0)");
+    expect(refund.q).toContain("review_status = 'escalated'");
   });
 });
 

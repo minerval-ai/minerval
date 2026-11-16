@@ -112,6 +112,31 @@ describe("record_review_decision on intake contributions", () => {
     expect(mocks.applyReviewOutcome).not.toHaveBeenCalled();
   });
 
+  it("tells the reviewer of a platform fault by its class, and records nothing (#980)", async () => {
+    mocks.getContributionById.mockResolvedValue({
+      id: "contrib-1",
+      contributionType: "propose_claim",
+    });
+    // The Matcher's provider out of credits, as the OpenAI SDK throws it
+    // for OpenRouter.
+    mocks.materializeAcceptedIntake.mockRejectedValue(
+      Object.assign(new Error("402 Insufficient credits"), { status: 402 })
+    );
+
+    const raw = await executeReviewerTool("record_review_decision", DECISION_INPUT);
+    const result = JSON.parse(raw);
+
+    expect(result.success).toBe(false);
+    expect(result.platform_fault).toBe("credits_fault");
+    expect(result.error).toContain("Nothing was recorded");
+    expect(result.error).toContain("do not raise_issue");
+    expect(result.error).toContain("goes back to the review queue");
+    expect(raw).not.toMatch(/402|Insufficient credits/);
+    expect(mocks.insertValues).not.toHaveBeenCalled();
+    expect(mocks.updateWhere).not.toHaveBeenCalled();
+    expect(mocks.applyReviewOutcome).not.toHaveBeenCalled();
+  });
+
   it("does not materialize on reject", async () => {
     mocks.getContributionById.mockResolvedValue({
       id: "contrib-1",

@@ -7,15 +7,20 @@
  *  - reviewer escalation (no appealId) claims the contribution row
  *    (review_status='escalated').
  * Either way, duplicate messages no-op and a crashed run is reclaimable after
- * the window. Budget errors release the claim and refund the attempt; other
- * errors keep it (reclaim-window backoff, attempt cap parks poisoned rows).
+ * the window. Budget errors release the claim and refund the attempt; a
+ * platform fault refunds the attempt and keeps the claim, so the case waits
+ * out the reclaim window and is never parked for it (#980,
+ * contribution-pipeline.ts, faultRefundSql); other errors keep it
+ * (reclaim-window backoff, attempt cap parks poisoned rows).
  */
 import type { ArbitrationMessage } from "../services/queue-service.js";
 import { runArbitration } from "../llm/agents/dispute-arbitrator.js";
 import { rawQuery } from "../db/client.js";
 import { LlmBudgetExceededError } from "../llm/errors.js";
 import { runAtLabel, runWithUsageContext } from "../llm/usage-context.js";
+import { platformFaultOf } from "../services/deployment-fault.js";
 import {
+  faultRefundSql,
   MAX_REVIEW_ATTEMPTS,
   REVIEW_RECLAIM_MINUTES,
 } from "./contribution-pipeline.js";
@@ -77,6 +82,20 @@ async function releaseClaim(message: ArbitrationMessage): Promise<void> {
   );
 }
 
+/** Give back an attempt a platform fault stopped, keeping the claim (faultRefundSql). */
+async function refundFaultedAttempt(message: ArbitrationMessage): Promise<void> {
+  if (message.appealId) {
+    await rawQuery(faultRefundSql("appeals", "claimed_at", "arbitration_attempts", "status = 'pending'"), [
+      message.appealId,
+    ]);
+    return;
+  }
+  await rawQuery(
+    faultRefundSql("contributions", "review_claimed_at", "review_attempts", "review_status = 'escalated'"),
+    [message.contributionId]
+  );
+}
+
 /**
  * Whose dispute this is. An APPEAL is attributed to the appellant, who is not
  * necessarily the original contributor — someone else's rejected contribution
@@ -126,6 +145,7 @@ export async function handleArbitrationMessage(
     );
   } catch (err) {
     if (err instanceof LlmBudgetExceededError) await releaseClaim(message);
+    else if (platformFaultOf(err)) await refundFaultedAttempt(message);
     throw err;
   }
 }
