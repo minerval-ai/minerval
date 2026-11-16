@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import type {
   AttemptSummary, BountyStatus, OpenPrizeClaim, PrizeClaimStatus,
 } from "./types";
@@ -1565,6 +1566,12 @@ export interface AssistantHome {
 export function getAssistantHome(externalId: string): Promise<AssistantHome> {
   return accountFetch("/assistant/conversations", { actingUser: externalId });
 }
+
+/**
+ * The same, read once for each page render: the Ask section's sidebar and a
+ * new conversation's page both want it, and each read is a round trip.
+ */
+export const loadAssistantHome = cache(getAssistantHome);
 
 type AssistantConvo = { conversation: AssistantConversationView };
 

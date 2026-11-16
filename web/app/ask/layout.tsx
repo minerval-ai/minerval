@@ -2,7 +2,7 @@ import { Suspense, type ReactNode } from "react";
 import { auth } from "../../auth";
 import {
   accountApiConfigured,
-  getAssistantHome,
+  loadAssistantHome,
   listGrantConversations,
   listGrants,
   listPages,
@@ -35,7 +35,7 @@ export default async function AskLayout({ children }: { children: ReactNode }) {
 
 async function AskSidebarLists({ externalId }: { externalId: string }) {
   const [home, pages, grants, grantConversations] = await Promise.all([
-    getAssistantHome(externalId).catch(() => null),
+    loadAssistantHome(externalId).catch(() => null),
     listPages(externalId).catch(() => []),
     listGrants(externalId).catch(() => []),
     listGrantConversations(externalId).catch(() => []),

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "../../auth";
 import {
   accountApiConfigured,
-  getAssistantHome,
+  loadAssistantHome,
   type AssistantHome,
 } from "../../lib/account-api";
 import { PageHead } from "@/components/PageHead";
@@ -42,10 +42,16 @@ export default async function AskPage({
   let home: AssistantHome | null = null;
   let labels: MyLabels | null = null;
   if (session?.externalId && accountApiConfigured()) {
-    home = await getAssistantHome(session.externalId).catch(() => null);
-    // A members-only deployment with more than one label asks which one the conversation works at.
-    const standing = await loadStanding();
-    if (standing.state === "signed_in") labels = await fetchMyLabels(session.externalId).catch(() => null);
+    const externalId = session.externalId;
+    // Read side by side. The home is shared with the sidebar's read. A
+    // members-only deployment with more than one label asks which one the
+    // conversation works at.
+    [home, labels] = await Promise.all([
+      loadAssistantHome(externalId).catch(() => null),
+      loadStanding().then((standing) =>
+        standing.state === "signed_in" ? fetchMyLabels(externalId).catch(() => null) : null
+      ),
+    ]);
   }
   // Where signing in returns to: the question written on another page.
   const here = `/ask${
