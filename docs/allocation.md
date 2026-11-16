@@ -1583,7 +1583,11 @@ sitting does not have.
 A sitting is commissioned from the mandate on its own row
 (`officer:<grant>` at `OFFICER_RUN_BUDGET_OWLS`, 1), so deciding counts
 against the mandate's pace and escrow like any of its work and returns what
-it does not spend. The scheduler also holds sittings for inboxes no run is waiting on
+it does not spend. That budget pays only for the sitting's own reading and
+deciding; what the officer commits is paid from the mandate's escrow, bounded
+by its per-decision limit, the pace and the escrow, and the brief states the
+two figures apart so the one is not read as a cap on the other (#1049).
+The scheduler also holds sittings for inboxes no run is waiting on
 (`workWaitingInboxes`), when `OFFICER_SITTINGS_ENABLED` is true; it is a
 deployment switch, off by default, since sittings run models.
 
