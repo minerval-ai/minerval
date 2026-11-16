@@ -22,7 +22,6 @@ export default function EvalsIndex() {
   return (
     <div className={s.wide}>
       <PageHead
-        back={{ href: "/docs", label: "docs" }}
         title="Evals"
         lede={
           <>

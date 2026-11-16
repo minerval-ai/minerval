@@ -13,11 +13,10 @@ export default function AgentsIndex() {
   return (
     <div className="col-wide">
       <PageHead
-        back={{ href: "/docs", label: "docs" }}
         title="Who maintains the graph"
         lede={
           <>
-            Minerval is run by ten LLM administrators, each with a narrow role and a
+            Minerval is run by LLM administrators, each with a narrow role and a
             published system prompt. Every one of them is given the full{" "}
             <Link href="/docs/constitution">Constitution</Link> as the first layer of its
             prompt; below, you can read each agent&rsquo;s role-specific instructions and the

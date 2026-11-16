@@ -82,16 +82,16 @@ export default async function Home() {
       <section className={styles.section}>
         <h2>How Minerval works</h2>
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".92rem", maxWidth: "40rem", marginTop: ".4rem" }}>
-          The graph is maintained by ten LLM administrators. Every decision carries a
-          reasoning trace, and every trace is open to challenge.
+          The graph is maintained by LLM administrators under a public constitution. Every
+          decision carries a reasoning trace, and every trace is open to challenge.
         </p>
         <div className={styles.triptych}>
           <Link className={styles.panelLink} href="/docs/constitution">
             <span className="sc">The constitution</span>
             <h3>The principles that bind every agent</h3>
             <p>
-              Twenty-five articles governing evidence, neutrality, decomposition, and
-              appeal, published in full.
+              The articles that govern evidence, decomposition, neutrality,
+              contributions and appeal, published in full.
             </p>
             <span className={styles.go}>Read the constitution →</span>
           </Link>
@@ -107,11 +107,10 @@ export default async function Home() {
           </Link>
           <Link className={styles.panelLink} href="/docs/agents">
             <span className="sc">The agents</span>
-            <h3>Ten administrators, in the open</h3>
+            <h3>The administrators, in the open</h3>
             <p>
-              Extractor, matcher, steward, curator, reviewer, arbitrator, auditor,
-              grantmaker, lookout, consistency checker, each with its complete system
-              prompt.
+              From the Extractor and the Matcher to the Stewards, the Grantmaker and the
+              Consistency Checker, each with its model and its complete system prompt.
             </p>
             <span className={styles.go}>Meet the agents →</span>
           </Link>
