@@ -257,6 +257,12 @@
 .nread { margin: 0; line-height: 1.5; }
 .nread b { font-weight: 600; }
 .caution { color: var(--muted); font-style: italic; }
+.cuts { font-size: 0.72rem; line-height: 1.5; }
+.cuts summary { color: var(--link); cursor: pointer; }
+.cuts p { margin: 0.3rem 0 0; }
+.omitted { color: var(--muted); }
+.omitted::before { content: "[ "; }
+.omitted::after { content: " ]"; }
 
 .fcard {
   background: var(--paper-sunk); border-radius: 3px; padding: 0.4rem 0.55rem;

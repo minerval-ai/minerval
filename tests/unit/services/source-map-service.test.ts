@@ -33,6 +33,7 @@ import {
   looksLikeHtml,
   normalizeForQuoteCheck,
   quoteCheck,
+  cutQuoteProblem,
   readSourceContent,
   recordInstanceReading,
   recordProvenanceEdge,
@@ -123,6 +124,25 @@ describe("quoteCheck", () => {
     ).toBe("normalized_match");
     expect(quoteCheck("rose 7.1 percent", "Inflation rose 6.5 percent over the year.")).toBe("not_found");
     expect(quoteCheck("", "some text")).toBe("not_found");
+  });
+
+  it("checks a quotation with cuts piece by piece, in order, and says it was cut", () => {
+    const story =
+      "<p>Kress will become interim CEO, the board said in a statement.</p>" +
+      "<p>The board thanked Huang.</p><p>A spokesperson said Huang will not be working with Nvidia.</p>";
+    expect(quoteCheck("the board said in a statement. [...] A spokesperson said Huang", story)).toBe("elided_match");
+    expect(quoteCheck("the board said in a statement … a spokesperson said Huang", story)).toBe("elided_match");
+    // Out of order, or a piece that is not there, is not found.
+    expect(quoteCheck("A spokesperson said Huang [...] the board said", story)).toBe("not_found");
+    expect(quoteCheck("the board said [...] a spokesman said", story)).toBe("not_found");
+    // Math symbols stay strict within a piece (#483).
+    expect(quoteCheck("P = NP [...] proof", "We doubt P ≠ NP. Then a proof.")).toBe("not_found");
+    expect(quoteCheck("P ≠ NP [...] proof", "We doubt P ≠ NP. Then a proof.")).toBe("elided_match");
+    // A cut that does not hold is a reason to refuse; one that holds, or no cut, is not.
+    expect(cutQuoteProblem("the board said [...] a spokesman said", story)).toMatch(/piece "a spokesman said"/);
+    expect(cutQuoteProblem("the board said [...] A spokesperson said", story)).toBeNull();
+    expect(cutQuoteProblem("a spokesman said", story)).toBeNull();
+    expect(cutQuoteProblem("the board said [...] a spokesman said", null)).toBeNull();
   });
 
   it("looks through markup in the stored copy", () => {

@@ -21,6 +21,7 @@
  * message written for the agent; the tool executors turn that into a
  * structured refusal (§20).
  */
+import { MAX_CUT_CHARS, hasCut, placePieces, quotePieces, substringsFrom } from "./quote-elision.js";
 import { layered, oneForKeySql, oneReadingForInstanceSql, oneSourceForAddressSql, refuseWhereHeldBelow } from "./layer-service.js";
 import { overlaid } from "./overlay-service.js";
 import { sameLabelOnly, writtenAtOwnLabel } from "../db/clearance.js";
@@ -274,7 +275,9 @@ export function normalizeForQuoteCheck(text: string): string {
 /**
  * Whether `quote` appears in `content`: verbatim (in the stored copy, or in
  * its readable text with markup removed and entities decoded), after
- * normalization, or not at all. `no_stored_content` when there is nothing to check against.
+ * normalization, piece by piece where it has cuts in it ("[...]", "…": each
+ * piece after normalization, in order, with at most MAX_CUT_CHARS between
+ * two; quote-elision.ts), or not at all. `no_stored_content` when there is nothing to check against.
  * Mechanical, and the only judgment-free field on a reading.
  */
 export function quoteCheck(quote: string, content: string | null | undefined): QuoteCheckResult {
@@ -289,7 +292,52 @@ export function quoteCheck(quote: string, content: string | null | undefined): Q
   if (text.includes(dq)) return "verbatim";
   const nq = normalizeForQuoteCheck(dq);
   if (!nq) return "not_found";
-  return normalizeForQuoteCheck(text).includes(nq) ? "normalized_match" : "not_found";
+  const nt = normalizeForQuoteCheck(text);
+  if (nt.includes(nq)) return "normalized_match";
+  return cutPieceMissing(dq, nt) === null ? "elided_match" : "not_found";
+}
+
+/**
+ * For a quotation with cuts in it, the first piece that is not where it
+ * should be in the normalized text (the quotation as recorded, not
+ * normalized), or null when every piece is placed. Undefined when the
+ * quotation has no cut.
+ */
+function cutPieceMissing(quote: string, normalizedText: string): string | null | undefined {
+  const pieces = quotePieces(quote);
+  if (pieces.length < 2) return undefined;
+  const placed = placePieces(pieces.map(normalizeForQuoteCheck), (piece, from) =>
+    substringsFrom(normalizedText, piece, from)
+  );
+  return "spans" in placed ? null : pieces[placed.missing]!;
+}
+
+/**
+ * Why a quotation with cuts in it cannot be recorded against its source's
+ * stored copy, or null when it can: it has no cut, the copy holds it, or there is
+ * no copy to check against. A cut is the recorder's, so its pieces must be
+ * checkable; a quotation without one that is not in the copy is recorded and
+ * shows as not found (the copy may be another version of what was read).
+ */
+export async function recordedQuoteProblem(sourceId: string, quote: string): Promise<string | null> {
+  if (!hasCut(quote)) return null;
+  const [row] = await rawQuery<{ raw_content: string | null }>(`SELECT raw_content FROM sources WHERE id = $1`, [sourceId]);
+  return cutQuoteProblem(quote, row?.raw_content);
+}
+
+/** The pure half of recordedQuoteProblem, against a stored copy in hand. */
+export function cutQuoteProblem(quote: string, content: string | null | undefined): string | null {
+  if (!content || !content.trim()) return null;
+  const check = quoteCheck(quote, content);
+  if (check !== "not_found") return null;
+  const missing = cutPieceMissing(decodeEntities(quote.trim()), normalizeForQuoteCheck(htmlToText(content)));
+  if (missing === undefined || missing === null) return null;
+  return (
+    `verbatim_text leaves text out ("[...]"), and its piece "${missing.length > 120 ? missing.slice(0, 117) + "..." : missing}" ` +
+    `is not in the source's stored text after the piece before it, within ${MAX_CUT_CHARS.toLocaleString("en-US")} ` +
+    `characters. Each piece of a quotation with cuts must be the source's own words, in the source's order. ` +
+    `Quote the passage from the stored text, or record one passage without cuts.`
+  );
 }
 
 // ---------------------------------------------------------------------------

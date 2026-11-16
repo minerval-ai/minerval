@@ -1,4 +1,5 @@
 import type { Tool } from "@anthropic-ai/sdk/resources/messages";
+import { CUT_RULE_DOCUMENT } from "../../services/quote-elision.js";
 import { toolUseLoop } from "../client.js";
 import {
   getExtractorSystemPromptBlocks,
@@ -78,7 +79,7 @@ const ARGUMENT_PASSAGES_SCHEMA = {
   items: {
     type: "object",
     properties: {
-      verbatim_text: { type: "string", description: "The passage, verbatim, under 2,000 characters." },
+      verbatim_text: { type: "string", description: "The passage, verbatim, under 2,000 characters. " + CUT_RULE_DOCUMENT },
       context: { type: ["string", "null"], description: "What the document was doing there, when the passage alone does not say." },
       role: { type: "string", enum: [...ARGUMENT_PASSAGE_ROLES] },
     },
@@ -136,7 +137,7 @@ export function getExtractedClaimSchema(opts: { argumentPassages?: boolean } = {
 const EXTRACTED_CLAIM_SCHEMA = {
   type: "object" as const,
   properties: {
-    verbatim_text: { type: "string", description: "The exact span as this source states it: the author's wording, kept as provenance" },
+    verbatim_text: { type: "string", description: "The exact span as this source states it: the author's wording, kept as provenance. " + CUT_RULE_DOCUMENT },
     context: { type: ["string", "null"], description: "Surrounding text for disambiguation" },
     proposed_canonical_form: { type: "string", description: "The shortest neutral statement of the proposition, about fifteen words, stated at the precision the discourse debates it" },
     claim_type: { type: "string", enum: [...claimTypeEnum.options], description: "The claim's type, as your role description defines each" },

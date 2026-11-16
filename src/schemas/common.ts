@@ -550,6 +550,9 @@ export const INSTANCE_SUPPORT_GUIDANCE =
 export const QUOTE_CHECK_RESULTS = [
   "verbatim",
   "normalized_match",
+  // A quotation with cuts in it ("[...]"): each piece found, in order and
+  // close together, but the join is the recorder's (quote-elision.ts).
+  "elided_match",
   "not_found",
   "no_stored_content",
 ] as const;
