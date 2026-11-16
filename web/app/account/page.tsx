@@ -102,9 +102,36 @@ export default async function AccountPage({
   let usage: UsageSummary;
   let keys: ApiKeyMeta[];
   let prizeClaims: OpenPrizeClaim[];
+  // Everything the page reads is started at once: each read is a round trip
+  // to the API, and read one after another they added up to most of the
+  // page's wait. Only the contributor profile waits on another read (it is
+  // keyed by the account's own id), and it starts the moment that arrives.
+  // A ledger hiccup shouldn't take down the whole account page, and one
+  // list failing shouldn't take the others with it.
+  const accountRead = fetchAccount(externalId);
+  const profileRead: Promise<ContributorProfile | null> = accountRead.then(
+    (a) => fetchContributorProfile(a.user.id),
+    () => null
+  );
+  const listsRead = Promise.all([
+    fetchOwlLedger(externalId, LEDGER_ENTRIES).catch(() => [] as OwlLedgerEntry[]),
+    listAssessmentOrders(externalId).catch(() => [] as AssessmentOrderView[]),
+    listBudgetJobs(externalId).catch(() => [] as BudgetJobView[]),
+    listGrants(externalId).catch(() => [] as GrantView[]),
+  ]);
+  const featuresRead = loadFeatures();
+  // What the person holds in a members-only deployment, and, where it holds
+  // material at more than one label, the labels a new key may work at.
+  const standingRead = loadStanding().then(async (standing) => ({
+    standing,
+    myLabels:
+      standing.state === "signed_in" ? await fetchMyLabels(externalId).catch(() => null) : null,
+  }));
+  // Read whether or not the account read fails, so none is left unhandled.
+  for (const p of [profileRead, listsRead, featuresRead, standingRead]) p.catch(() => {});
   try {
     const [account, usageSummary, keyList] = await Promise.all([
-      fetchAccount(externalId),
+      accountRead,
       fetchUsage(externalId, 30),
       listApiKeys(externalId),
     ]);
@@ -129,25 +156,16 @@ export default async function AccountPage({
 
   // The user's own contribution history, from the same public profile data
   // anyone can see; absence (no contributions yet) just hides the table.
-  const profile: ContributorProfile | null = await fetchContributorProfile(
-    user.id
-  );
+  const [profile, [ledger, orders, jobs, grants], features, { standing, myLabels }] = await Promise.all([
+    profileRead,
+    listsRead,
+    featuresRead,
+    standingRead,
+  ]);
 
   // Purchases are possible only when the API deployment has Stripe on; the
   // ledger (grants, charges, awards) exists either way.
   const creditsEnabled = entitlement.credits_enabled === true;
-  let ledger: OwlLedgerEntry[] = [];
-  let orders: AssessmentOrderView[] = [];
-  let jobs: BudgetJobView[] = [];
-  let grants: GrantView[] = [];
-  // A ledger hiccup shouldn't take down the whole account page, and one
-  // list failing shouldn't take the others with it.
-  [ledger, orders, jobs, grants] = await Promise.all([
-    fetchOwlLedger(externalId, LEDGER_ENTRIES).catch(() => []),
-    listAssessmentOrders(externalId).catch(() => []),
-    listBudgetJobs(externalId).catch(() => []),
-    listGrants(externalId).catch(() => []),
-  ]);
 
   // Names for what the lists hold by id: a claim by its wording, a job by
   // its grant's name or by what it does to which claim.
@@ -188,7 +206,6 @@ export default async function AccountPage({
   // forms post to routes that do not exist where prizes are off. The ledger
   // below is left whole, because it is a record of what was charged and
   // paid, whatever is switched on today.
-  const features = await loadFeatures();
   const extensionOn = featureOn(features, "extension");
   const prizesOn = featureOn(features, "prizes");
 
@@ -206,13 +223,9 @@ export default async function AccountPage({
   const createdHere = entitlement.owls_created_here === true;
   const canBuy = !createdHere && creditsEnabled && packs.length > 0;
   // What the person holds in a members-only deployment. Nothing on the
-  // public graph, where this is not read.
-  const standing = await loadStanding();
+  // public graph, where this is not read. A new key names the label it works
+  // at only where there is more than one (LabelChoice asks only then).
   const held = standing.state === "signed_in" ? standing.mine.grants : [];
-  // Where a members-only deployment holds material at more than one label, a
-  // new key names the label it works at (LabelChoice asks only then).
-  const myLabels =
-    standing.state === "signed_in" ? await fetchMyLabels(externalId).catch(() => null) : null;
   const keyLabels = activeKeys.some((k) => k.label);
   const priceRows = [
     ["Propose a claim (reviewed, then assessed)", caps.claim_proposal],
