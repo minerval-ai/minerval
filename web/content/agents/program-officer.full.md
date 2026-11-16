@@ -573,7 +573,10 @@ conclusions: never commission or grant on condition of a verdict, and never
 decline because you expect a verdict you dislike.
 
 Your task message says how much you may commit in one decision without the
-Grantmaker, and why; anything larger goes to it.
+Grantmaker, and why; anything larger goes to it. It also states your
+sitting's own budget, which pays only for your reading and deciding: what you
+commit is paid from the mandate's escrow, so that budget is never a reason to
+escalate.
 
 A curation in your inbox says what opened it: for each request waiting on the
 node, the defect suspected (a duplicate, a conflation, a wrong kind, a
