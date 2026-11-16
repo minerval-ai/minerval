@@ -77,6 +77,8 @@ export function modelDisplayName(id: string): string {
 export const ASSISTANT_OP = "assistant";
 
 const HEARTBEAT_MS = 30_000;
+/** How often a running turn reads whether its user pressed stop. */
+const STOP_WATCH_MS = 1_000;
 const PARTIAL_FLUSH_MS = 1_000;
 /** A turn whose heartbeat is older than this has lost its process. */
 const TURN_LOST_AFTER_MS = 120_000;
@@ -513,6 +515,22 @@ async function runTurn(
   const partialTimer = setInterval(flush, PARTIAL_FLUSH_MS);
   partialTimer.unref?.();
 
+  // The stop button sets a flag on the row, which may be on another server
+  // than this turn. Read it often enough that a stop ends a waiting read
+  // within a second or so (assistant.ts, stopSignal).
+  const stopped = new AbortController();
+  const stopWatch = setInterval(() => {
+    void db
+      .select({ stop: assistantConversations.stopRequested })
+      .from(assistantConversations)
+      .where(holdsTurn)
+      .then(([row]) => {
+        if (!row || row.stop) stopped.abort();
+      })
+      .catch(() => undefined);
+  }, STOP_WATCH_MS);
+  stopWatch.unref?.();
+
   // What this reply has been charged so far. The run reports its metered
   // cost; the difference since the last report is debited, up to what the
   // balance holds.
@@ -608,6 +626,7 @@ async function runTurn(
         conversationMicroUsd: convo.spentMicroUsd,
         charge,
         hold,
+        stopSignal: stopped.signal,
         onText: (delta, t) => {
           if (t !== partialTurn) {
             partialTurn = t;
@@ -682,6 +701,7 @@ async function runTurn(
   } finally {
     clearInterval(heartbeat);
     clearInterval(partialTimer);
+    clearInterval(stopWatch);
     await account.close();
     // After the reply (or the failure) is saved, so a watcher told the turn
     // is done reads it finished.

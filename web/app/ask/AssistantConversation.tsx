@@ -366,6 +366,22 @@ function toolPhrase(tool: string): string {
   return tool.replace(/_/g, " ");
 }
 
+/**
+ * The latest steps, a run of the same call shown once with its count: a
+ * read that waits on the Grantmaker repeats until the reply lands.
+ */
+function collapsedSteps(
+  activity: Array<{ tool: string; about: string | null }>
+): Array<{ tool: string; about: string | null; times: number }> {
+  const out: Array<{ tool: string; about: string | null; times: number }> = [];
+  for (const a of activity) {
+    const last = out.at(-1);
+    if (last && last.tool === a.tool && last.about === a.about) last.times += 1;
+    else out.push({ ...a, times: 1 });
+  }
+  return out;
+}
+
 /** A running turn as its event stream reports it. */
 interface Live {
   partial: string;
@@ -412,6 +428,9 @@ export function AssistantConversation({
   );
   const [always, setAlways] = useState(initial?.allowed_kinds.always ?? allowedAlways);
   const [sending, setSending] = useState(false);
+  // A message written while a reply runs: kept here and sent when the turn
+  // ends, whether it finishes or is stopped, as chat composers do.
+  const [queued, setQueued] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The side panel: what is kept open there, and what a hovered citation
   // shows over it for as long as the pointer stays.
@@ -528,9 +547,14 @@ export function AssistantConversation({
     if (el && atBottom.current) el.scrollTop = el.scrollHeight;
   }, [convo?.messages.length, convo?.turn.partial, live?.partial, activityCount, replying]);
 
-  const send = async () => {
-    const message = draft.trim();
-    if (!message || sending || replying) return;
+  const send = async (text?: string) => {
+    const message = (text ?? draft).trim();
+    if (!message || sending) return;
+    if (replying) {
+      setQueued((q) => (q ? `${q}\n\n${message}` : message));
+      setDraft("");
+      return;
+    }
     if (!convo && !labelReady(startLabels, label)) {
       setError("Choose the label this conversation works at first.");
       return;
@@ -558,21 +582,32 @@ export function AssistantConversation({
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "Your message was not sent.");
+        // A queued message that did not go goes back to the composer.
+        if (text !== undefined) setDraft((d) => (d ? `${message}\n\n${d}` : message));
       } else if (!convo) {
         // The conversation has an address of its own from its first message.
         router.push(`/ask/c/${data.conversation.id}`);
         router.refresh();
         return;
       } else {
-        setDraft("");
+        if (text === undefined) setDraft("");
         setConvo(data.conversation);
       }
     } catch {
       setError("The Assistant could not be reached. Your message was not sent.");
+      if (text !== undefined) setDraft((d) => (d ? `${message}\n\n${d}` : message));
     } finally {
       setSending(false);
     }
   };
+
+  // The turn has ended: send what was written while it ran.
+  useEffect(() => {
+    if (replying || sending || !queued || !convo) return;
+    const message = queued;
+    setQueued(null);
+    void send(message);
+  }, [replying, sending, queued, convo?.id]);
 
   const stop = async () => {
     if (!convo) return;
@@ -713,17 +748,37 @@ export function AssistantConversation({
                 {/* what it is doing: its own line, then its latest steps */}
                 <ul className="ask-activity">
                   {runningNote && <li className="ask-activity-note">{runningNote}</li>}
-                  {activity.slice(-4).map((a, i) => (
-                    <li key={`${activity.length}-${i}`}>
-                      {toolPhrase(a.tool)}
-                      {a.about && <span> {a.about}</span>}
-                    </li>
-                  ))}
+                  {collapsedSteps(activity)
+                    .slice(-4)
+                    .map((a, i) => (
+                      <li key={`${activity.length}-${i}`}>
+                        {toolPhrase(a.tool)}
+                        {a.about && <span> {a.about}</span>}
+                        {a.times > 1 && <span className="ask-step-times"> ×{a.times}</span>}
+                      </li>
+                    ))}
                   {!runningNote && activity.length === 0 && !runningText && (
                     <li className="ask-activity-note">Starting…</li>
                   )}
                 </ul>
                 {runningText && <Prose content={runningText} />}
+              </div>
+            )}
+            {queued && (
+              <div className="ask-msg ask-msg-user ask-msg-queued">
+                <div className="ask-bubble">{queued}</div>
+                <p className="ask-queued-note">
+                  {convo?.turn.stopping ? "Sends once the reply has stopped" : "Sends when this reply ends"} ·{" "}
+                  <button
+                    className="linklike"
+                    onClick={() => {
+                      setDraft((d) => (d ? `${queued}\n\n${d}` : queued));
+                      setQueued(null);
+                    }}
+                  >
+                    Edit
+                  </button>
+                </p>
               </div>
             )}
             {convo?.turn.state === "failed" && (
@@ -763,7 +818,13 @@ export function AssistantConversation({
                   }
                 }}
                 rows={2}
-                placeholder={convo ? "Reply…" : "What do you want to know or do?"}
+                placeholder={
+                  replying
+                    ? "Reply… (sends when this reply ends)"
+                    : convo
+                      ? "Reply…"
+                      : "What do you want to know or do?"
+                }
                 aria-label="Your message"
                 autoFocus
               />
