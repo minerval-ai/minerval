@@ -72,6 +72,7 @@ export const DOCS_NAV: DocsNavGroup[] = [
     title: "Deployments",
     items: [
       { href: "/docs/self-hosting", title: "Self-hosting" },
+      { href: "/docs/running-a-private-graph", title: "Running a private graph" },
       { href: "/docs/members-only", title: "Members-only deployments" },
     ],
   },
