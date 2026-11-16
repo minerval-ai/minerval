@@ -244,7 +244,7 @@ export function VersionsInFull({
               </div>
               {more && more !== summary && (
                 <details className="reasoning-detail">
-                  <summary>Full reasoning: the evidence and decisions behind this verdict</summary>
+                  <summary>Full reasoning</summary>
                   <div className="reasoning">
                     <AssessmentText content={more} texts={texts} />
                   </div>

@@ -120,10 +120,6 @@ export function ContributionRecord({ record }: { record: ContributionExchange[] 
       <summary>
         Contribution record · {n} {n === 1 ? "exchange" : "exchanges"}
       </summary>
-      <p className="contribution-record-note">
-        Challenges and proposals from contributors, with the review each received.
-        Substantive exchanges stay on the claim&apos;s public record.
-      </p>
       {record.map((exchange) => (
         <Exchange key={exchange.contribution.id} exchange={exchange} />
       ))}
