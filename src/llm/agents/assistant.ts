@@ -70,6 +70,13 @@ export interface AssistantTurnInput {
   onNote?: (text: string) => void;
   /** A tool is about to run: its name and what it was called with. */
   onTool?: (tool: string, input: Record<string, unknown>) => void;
+  /**
+   * Aborted when the user presses stop. The check before each model turn
+   * catches a stop between steps; this one ends a read that is still
+   * running (get_grant_conversation waits up to two minutes for the
+   * Grantmaker), so a stop lands within a second rather than after it.
+   */
+  stopSignal?: AbortSignal;
 }
 
 export interface AssistantToolUse {
@@ -94,6 +101,32 @@ const GRANT_TOOLS = new Set([
   "send_grant_message",
   "get_grant_conversation",
 ]);
+
+/**
+ * The tool's answer, unless the stop comes first. Only a read is raced: a
+ * read left running changes nothing, while a write abandoned here would
+ * finish unrecorded in the reply.
+ */
+function unlessStopped<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    work.catch(() => undefined);
+    return Promise.reject(new AssistantStopped("user"));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new AssistantStopped("user"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (v) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(v);
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      }
+    );
+  });
+}
 
 /** The id of the granting conversation a grant tool's result names. */
 function grantConversationIn(tool: string, text: string): string | undefined {
@@ -170,7 +203,10 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
       (execute: (name: string, toolInput: Record<string, unknown>) => Promise<string>) =>
       (name: string, toolInput: Record<string, unknown>) => {
         input.onTool?.(name, toolInput);
-        return execute(name, toolInput);
+        const work = execute(name, toolInput);
+        return input.stopSignal && input.account.readOnly.has(name)
+          ? unlessStopped(work, input.stopSignal)
+          : work;
       };
 
     const system = getAssistantSystemPromptBlocks();

@@ -2502,6 +2502,9 @@ body:has(.ask-shell) footer.site { display: none; }
 .ask-activity li span { color: var(--faint); }
 .ask-activity li:last-child { color: var(--ink-soft); }
 .ask-activity li:last-child::after { content: "…"; }
+.ask-activity li span.ask-step-times { color: var(--faint); }
+.ask-msg-queued .ask-bubble { opacity: 0.6; }
+.ask-queued-note { margin: 4px 0 0; font-size: 0.8rem; color: var(--faint); }
 .ask-activity-note { font-style: italic; }
 
 .ask-dock { max-width: 44rem; width: 100%; margin: 0 auto; padding: 0.4rem 1.6rem 0.9rem; display: flex; flex-direction: column; gap: 0.4rem; }
