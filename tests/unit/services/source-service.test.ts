@@ -19,7 +19,12 @@ const state = vi.hoisted(() => ({
 vi.mock("../../../src/db/client.js", () => ({
   getDb: () => ({
     select: () => ({
-      from: () => ({ where: () => ({ limit: async () => state.existing }) }),
+      from: () => ({
+        where: () => ({
+          limit: async () => state.existing,
+          orderBy: () => ({ limit: async () => state.existing }),
+        }),
+      }),
     }),
     update: () => ({
       set: (values: Row) => {
@@ -40,7 +45,7 @@ vi.mock("../../../src/db/client.js", () => ({
   }),
 }));
 
-import { getOrCreateSource } from "../../../src/services/source-service.js";
+import { arxivSiblingStandsIn, getOrCreateSource } from "../../../src/services/source-service.js";
 
 beforeEach(() => {
   state.existing = [];
@@ -97,5 +102,32 @@ describe("getOrCreateSource", () => {
     expect(state.inserts[0]).toMatchObject({
       pageUrlHash: pageUrlHash("https://example.org/post"),
     });
+  });
+});
+
+describe("an arXiv paper's other addresses (#1047)", () => {
+  const abs = { key: "2401.01234v1", rendering: "abs" as const };
+  const pdf = { key: "2401.01234v1", rendering: "pdf" as const };
+  const row = (url: string, rawContent: string | null = "the paper") => ({ url, rawContent });
+
+  it("lets a row with text at another address of the same version stand in", () => {
+    expect(arxivSiblingStandsIn(abs, row("https://arxiv.org/pdf/2401.01234v1"))).toBe(true);
+    expect(arxivSiblingStandsIn(pdf, row("https://arxiv.org/html/2401.01234v1/"))).toBe(true);
+    expect(arxivSiblingStandsIn(abs, row("https://arxiv.org/pdf/2401.01234v2"))).toBe(false);
+    expect(arxivSiblingStandsIn(abs, row("https://arxiv.org/pdf/2401.01234"))).toBe(false);
+    expect(arxivSiblingStandsIn(abs, row("https://arxiv.org/pdf/2401.01234v1", null))).toBe(false);
+    // The abstract page never stands for the full text.
+    expect(arxivSiblingStandsIn(pdf, row("https://arxiv.org/abs/2401.01234v1"))).toBe(false);
+  });
+
+  it("takes the row the lookup ordered first among those that may stand in", async () => {
+    state.existing = [
+      { id: "abs-row", url: "https://arxiv.org/abs/2401.01234v1", rawContent: "long abstract page", sensitivityLabel: "public" },
+      { id: "pdf-row", url: "https://arxiv.org/pdf/2401.01234v1", rawContent: "paper", sensitivityLabel: "public" },
+    ];
+    expect((await getOrCreateSource({ url: "https://arxiv.org/abs/2401.01234v1" })).id).toBe("abs-row");
+    expect((await getOrCreateSource({ url: "https://arxiv.org/pdf/2401.01234v1" })).id).toBe("pdf-row");
+    expect((await getOrCreateSource({ url: "https://arxiv.org/html/2401.01234v1" })).id).toBe("pdf-row");
+    expect(state.inserts).toHaveLength(0);
   });
 });

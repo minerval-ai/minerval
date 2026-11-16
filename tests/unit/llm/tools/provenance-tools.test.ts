@@ -289,6 +289,16 @@ describe("the write tools", () => {
     expect(out.quote_check_note).toMatch(/NOT found/);
   });
 
+  it("record_reading says when the quote was checked in another record of the same arXiv paper (#1047)", async () => {
+    mocks.recordInstanceReading.mockResolvedValue({
+      id: "r1", quote_check: "verbatim", replaced: false,
+      quote_checked_in: { source_id: "s-pdf", url: "https://arxiv.org/pdf/2401.01234" },
+    });
+    const out = JSON.parse(await executeRecordReading({ instance_id: "i1", support: "supports" }, steward));
+    expect(out.quote_check_note).toMatch(/another record of the same paper and version: source s-pdf \(https:\/\/arxiv\.org\/pdf\/2401\.01234\)/);
+    expect(out.quote_check_note).toMatch(/is present in the stored text/);
+  });
+
   it("record_edge forwards the target by id or URL and reports whether the upstream instance was linked", async () => {
     mocks.recordProvenanceEdge.mockResolvedValue({ id: "e1", to_source_id: "s2", to_instance_id: null, replaced: false });
     const out = JSON.parse(

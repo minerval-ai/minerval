@@ -107,8 +107,8 @@ describe("an identifier's shape", () => {
     expect(resolveIdentifier("arxiv", "2401.01234")).toEqual({
       kind: "arxiv",
       id: "2401.01234",
-      address: "https://arxiv.org/abs/2401.01234",
-      also: { pdf: "https://arxiv.org/pdf/2401.01234" },
+      address: "https://arxiv.org/pdf/2401.01234",
+      also: { abs: "https://arxiv.org/abs/2401.01234" },
     });
     expect(resolveIdentifier("pmid", "31452104")?.address).toBe("https://pubmed.ncbi.nlm.nih.gov/31452104/");
     expect(resolveIdentifier("pmcid", "PMC7092803")?.address).toBe("https://pmc.ncbi.nlm.nih.gov/articles/PMC7092803/");

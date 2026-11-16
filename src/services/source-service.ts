@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, or, sql } from "drizzle-orm";
 import { rawQuery } from "../db/client.js";
 import { normalizePageUrl, pageUrlHash } from "./page-url.js";
 import { getDb } from "../db/client.js";
@@ -10,6 +10,7 @@ import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { layered } from "./layer-service.js";
 import { addressForRun } from "./given-addresses.js";
+import { arxivPaperAddress, arxivPaperAddresses, type ArxivRendering } from "./paper-files.js";
 
 /**
  * Find or create the source row for a URL, without enqueueing extraction.
@@ -34,19 +35,33 @@ export async function getOrCreateSource(input: {
   // One row for the address. Where more than one layer holds it, the one
   // this label wrote, else the lowest layer's: the public graph's, then a
   // label this work reads (layer-service.ts, oneSourceForAddressSql).
-  const [existing] = layered()
+  // An arXiv paper is one document at several addresses (#1047), so a row
+  // recorded at another of them can stand for this one: within a layer, the
+  // row with the most stored text, where arxivSiblingStandsIn allows it.
+  const paper = arxivPaperAddress(input.url);
+  const sameDocument = paper
+    ? or(eq(sources.url, input.url), inArray(sources.pageUrlHash, arxivPaperAddresses(paper.key).map(pageHashOf)))!
+    : eq(sources.url, input.url);
+  const mostText = sql`length(coalesce(${sources.rawContent}, '')) DESC`;
+  const candidates = layered()
     ? await db
         .select()
         .from(sources)
-        .where(eq(sources.url, input.url))
+        .where(sameDocument)
         .orderBy(
           sql`(${sources.origin} = 'local' AND ${sources.sensitivityLabel} = ${currentLabel()}) DESC`,
           sql`minerval_layer_depth(${sources.sensitivityLabel}, ${sources.origin})`,
+          ...(paper ? [mostText] : []),
           sources.retrievedAt,
           sources.id
         )
-        .limit(1)
-    : await db.select().from(sources).where(eq(sources.url, input.url)).limit(1);
+        .limit(paper ? ARXIV_CANDIDATES : 1)
+    : paper
+      ? await db.select().from(sources).where(sameDocument).orderBy(mostText, sources.retrievedAt, sources.id).limit(ARXIV_CANDIDATES)
+      : await db.select().from(sources).where(eq(sources.url, input.url)).limit(1);
+  const existing = paper
+    ? candidates.find((row) => row.url === input.url || arxivSiblingStandsIn(paper, row))
+    : candidates[0];
   if (existing) {
     // A row can exist with no content before anyone submits the document:
     // the Steward records the URLs it cites as sources. A later submission
@@ -92,6 +107,27 @@ export async function getOrCreateSource(input: {
     })
     .returning();
   return source!;
+}
+
+/** Enough rows for every spelling of one arXiv paper's addresses, at every layer. */
+const ARXIV_CANDIDATES = 50;
+
+/**
+ * Whether a row recorded at another address of an arXiv paper stands for
+ * the address asked for. The paper and its version must be the same, and
+ * the row must hold text: an empty row elsewhere is no reason not to record
+ * this address, which a worker can fetch. The abstract page holds the
+ * abstract, so a row at the abs address never takes the place of the full
+ * text a pdf or html address serves; the abs address takes either.
+ */
+export function arxivSiblingStandsIn(
+  asked: { key: string; rendering: ArxivRendering },
+  row: { url: string | null; rawContent: string | null }
+): boolean {
+  const at = row.url ? arxivPaperAddress(row.url) : null;
+  if (!at || at.key !== asked.key) return false;
+  if (!row.rawContent || !row.rawContent.trim()) return false;
+  return asked.rendering === "abs" || at.rendering !== "abs";
 }
 
 export interface SourceKindOutcome {
