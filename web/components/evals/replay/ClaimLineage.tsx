@@ -52,7 +52,6 @@ export function ClaimLineage({
       <p className={s.nowMeta}>
         <Swatch status={c.status} /> {meta.label}
         {c.credence != null ? <> · credence {c.credence.toFixed(2)}</> : null}
-        {c.confidence != null ? <> · verdict confidence {c.confidence.toFixed(2)}</> : null}
         {c.claimType ? <> · {c.claimType}</> : null}
         {c.importance != null ? <> · importance {c.importance.toFixed(2)}</> : null}
         {c.merged ? <> · <span className={s.flag}>merged into</span> <button type="button" className={s.linklike} onClick={() => nav.openClaim(arm.key, c.merged!)}>{text(c.merged) ?? c.merged}</button></> : null}
