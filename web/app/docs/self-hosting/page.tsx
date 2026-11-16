@@ -74,7 +74,7 @@ export default function Page() {
           <Code label="Shell">{`cd deploy
 cp env.example .env
 openssl rand -hex 32   # one per secret`}</Code>
-          <p>Every line of <code>env.example</code> that is not commented out must be filled in: the site's address (<code>SITE_URL</code>); two database passwords (<code>POSTGRES_PASSWORD</code>, <code>DB_OWNER_PASSWORD</code>); the web app's session secret (<code>AUTH_SECRET</code>); the key the web app presents to the API (<code>WEB_API_KEY</code>) and the token the API presents to the sandbox (<code>SANDBOX_TOKEN</code>); your identity provider's issuer, client id and secret; and the model for six roles (Steward, Steward strong, Curator, Extractor, Audit, Dispute Arbitrator). <code>DB_OWNER_PASSWORD</code> must be letters and digits only, which <code>openssl rand -hex</code> gives. With mathematics on, the solver's model is needed too. <code>docker compose</code> stops and names any required setting left empty.</p>
+          <p>Every line of <code>env.example</code> that is not commented out must be filled in: the site's address (<code>SITE_URL</code>); two database passwords (<code>POSTGRES_PASSWORD</code>, <code>DB_OWNER_PASSWORD</code>); the web app's session secret (<code>AUTH_SECRET</code>); the key the web app presents to the API (<code>WEB_API_KEY</code>) and the token the API presents to the sandbox (<code>SANDBOX_TOKEN</code>); your identity provider's issuer, client id and secret; and the model for six roles (Steward, Steward strong, Curator, Extractor, Audit, Dispute Arbitrator). <code>DB_OWNER_PASSWORD</code> must be letters and digits only, which <code>openssl rand -hex</code> gives. With mathematics on, the solver's model is needed too. <code>docker compose</code> stops and names any required setting left empty. Leave <code>RUN_LOG_MODE</code> as the package sets it, <code>record</code>: once you define a label, no agent work starts without it.</p>
         </li>
         <li>
           <strong>Build and start</strong>
@@ -89,7 +89,7 @@ docker compose logs -f api`}</Code>
         </li>
         <li>
           <strong>Follow the setup checklist</strong>
-          <p><code>/admin</code> says what needs someone now: the deployment's own checks of its configuration, then permissions, labels, the General mandate, owls and material. From there: set <code>RUN_LOG_MODE=record</code> (below), define labels (<code>/admin/labels</code>), clear model providers for them (<code>PROVIDER_LABELS</code>), grant permissions (<code>/admin/people</code>), set up the General mandate and owls, and add material.</p>
+          <p><code>/admin</code> says what needs someone now: the deployment's own checks of its configuration, then permissions, labels, the General mandate, owls and material. From there: define labels (<code>/admin/labels</code>), clear model providers for them (<code>PROVIDER_LABELS</code>), grant permissions (<code>/admin/people</code>), set up the General mandate and owls, and add material.</p>
         </li>
       </ol>
       <p>To stop: <code>docker compose down</code>; the database and file sets stay in Docker volumes. <code>docker compose down -v</code> deletes them. To upgrade: <code>git pull</code>, <code>docker compose build</code>, <code>docker compose up -d</code>.</p>
@@ -120,7 +120,7 @@ docker compose logs -f api`}</Code>
             </tr>
             <tr>
               <td><code>RUN_LOG_MODE</code></td>
-              <td><code>best_effort</code> (where it starts) or <code>record</code>, where every run is logged in full and does not finish until its log is sealed. Set <code>record</code> before you define a label: once one is defined, the blocking <code>run_log</code> check fails in best-effort mode and no agent work starts</td>
+              <td><code>record</code> (where this package starts it), where every run is logged in full and does not finish until its log is sealed, or <code>best_effort</code>. Keep <code>record</code>: once a label is defined, the blocking <code>run_log</code> check fails in best-effort mode and no agent work starts</td>
             </tr>
             <tr>
               <td><code>FEATURES_OFF</code></td>
@@ -178,15 +178,15 @@ docker compose logs -f api`}</Code>
           <tbody>
             <tr>
               <td><code>MIRROR_FEED_URL</code></td>
-              <td>The publishing graph's API address. Setting it makes the deployment a mirror</td>
+              <td>The publishing graph's API address. Setting it makes the deployment a mirror. For Minerval's public graph, <code>https://api.claimgraph.io</code></td>
             </tr>
             <tr>
               <td><code>MIRROR_FEED_API_KEY</code></td>
-              <td>The key presented to fetch a batch</td>
+              <td>The key presented to fetch a batch: an API key of your organisation's account on the public graph, made on its <a href="https://minerval.ai/account">account page</a></td>
             </tr>
             <tr>
               <td><code>MIRROR_FEED_PUBLIC_KEYS</code></td>
-              <td>The feed's public key or keys, comma-separated. A batch that does not verify is not applied</td>
+              <td>The feed's public key or keys, comma-separated. A batch that does not verify is not applied. For Minerval's public graph, the <code>public_key</code> that <code>https://api.claimgraph.io/mirror/feed/key</code> answers</td>
             </tr>
             <tr>
               <td><code>MIRROR_APPLY_INTERVAL_SECONDS</code></td>
@@ -195,7 +195,7 @@ docker compose logs -f api`}</Code>
           </tbody>
         </table>
       </div>
-      <p>With <code>MIRROR_FEED_URL</code> unset the deployment holds no copy of the public graph. <code>get_mirror_status</code> says how current the mirror is. The feed carries embeddings, so a mirror must embed with the same model as the publisher. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/mirror.md">docs/mirror.md</a> has what travels, the checks, and how mirrored and local rows live together.</p>
+      <p>Make that account for the organisation, not for a person: everything the deployment does on the public graph is shown under its name. With <code>MIRROR_FEED_URL</code> unset the deployment holds no copy of the public graph. <code>get_mirror_status</code> says how current the mirror is. The feed carries embeddings, so a mirror must embed with the same model as the publisher. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/mirror.md">docs/mirror.md</a> has what travels, the checks, and how mirrored and local rows live together.</p>
       <h2 id="publish">Publishing back</h2>
       <p>A deployment can put what an agent concluded from private evidence on the public graph without the evidence. A page is redacted under a policy, released part by part at the deployment's gate, and built into a package signed with the deployment's Ed25519 key. Anyone can check a package with no database and no network.</p>
       <ol className="dc-steps">
@@ -204,12 +204,12 @@ docker compose logs -f api`}</Code>
           <p><code>PUBLISH_SIGNING_KEY</code> (make one with <code>npx tsx scripts/published-page.ts keygen</code>, and keep a copy: a lost key breaks the record of what you published) and <code>DEPLOYMENT_HOSTING</code> (<code>own_machines</code>, <code>minerval</code> or <code>third_party</code>). No package is built until both are set.</p>
         </li>
         <li>
-          <strong>Register the key on the public graph</strong>
-          <p>An administrator signs the registration from the deployment; it is submitted with <code>register_publisher_key</code> (<code>POST /publishers</code>) from the organisation's account there. The registration and the key are public.</p>
+          <strong>Connect the organisation's account</strong>
+          <p>Set <code>PUBLIC_GRAPH_API_URL</code> (<code>https://api.claimgraph.io</code>) and <code>PUBLIC_GRAPH_API_KEY</code>, the organisation account's API key, which may be the same as <code>MIRROR_FEED_API_KEY</code>. Released packages are then sent as the gate's settings say. Without them, a package can be carried to the public graph as a file.</p>
         </li>
         <li>
-          <strong>Connect, or carry files</strong>
-          <p>With <code>PUBLIC_GRAPH_API_URL</code> and <code>PUBLIC_GRAPH_API_KEY</code> set, released packages are sent as the gate's settings say. Without them, a package can be carried to the public graph as a file.</p>
+          <strong>Register the key on the public graph</strong>
+          <p>An administrator presses <b>Register this deployment&rsquo;s key on the public graph</b> on <code>/outbound</code>. The deployment signs the registration for the organisation&rsquo;s account and sends it there. Without a connection, sign it with <code>POST /outbound/registration</code> and submit it from that account with <code>register_publisher_key</code> (<code>POST /publishers</code>). The registration and the key are public.</p>
         </li>
       </ol>
       <p>On the public graph a package is checked against the registered key, kept as signed, and the first one for a node files an ordinary contribution, reviewed like any other and charged as a source submission (refunded if not admitted). Once admitted it is a source on the node, weighed by that node's Steward. It gets no special trust. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/published-pages.md">docs/published-pages.md</a> has the package format and the check.</p>
@@ -219,8 +219,10 @@ docker compose logs -f api`}</Code>
         <li>One machine and one API process; more than one has not been tried.</li>
         <li>No model server and no identity provider: you bring both.</li>
         <li>No fully offline mode: open-web search, page reading and embeddings cannot be switched off yet.</li>
+        <li>No hosted option: Minerval does not yet run a private deployment for an organisation. Installing this package takes someone comfortable with a Linux server.</li>
         <li>Settings change by editing <code>.env</code> and starting again, not in the web app.</li>
       </ul>
+      <p>Once it runs, <Link href="/docs/running-a-private-graph">Running a private graph</Link> walks through what to decide, in the web app, in order: labels, people, budgets, material, and what to say outside.</p>
       <p>Further reading on GitHub: <a href="https://github.com/minerval-ai/minerval/blob/main/docs/self-hosting.md">self-hosting.md</a> (the steps in full), <a href="https://github.com/minerval-ai/minerval/blob/main/docs/deployment.md">deployment.md</a> (every setting and check), <a href="https://github.com/minerval-ai/minerval/blob/main/docs/mirror.md">mirror.md</a>, <a href="https://github.com/minerval-ai/minerval/blob/main/docs/published-pages.md">published-pages.md</a>, <a href="https://github.com/minerval-ai/minerval/blob/main/docs/file-sets.md">file-sets.md</a>, <a href="https://github.com/minerval-ai/minerval/blob/main/docs/connections.md">connections.md</a>.</p>
     </DocPage>
   );
