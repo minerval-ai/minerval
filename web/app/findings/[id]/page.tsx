@@ -151,9 +151,6 @@ export default async function FindingPage({ params }: { params: Promise<{ id: st
                 </div>
                 <div className="fnd-standing">
                   <StatusBadge status={a.status} />
-                  {typeof a.confidence === "number" && (
-                    <span className="fnd-credence">{a.confidence.toFixed(2)}</span>
-                  )}
                 </div>
               </div>
             ))}

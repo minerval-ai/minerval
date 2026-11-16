@@ -342,9 +342,7 @@ function showCard(box: HTMLElement, a: PageAnnotation): void {
         · graph status: <b class="ep-s-${esc(status)}">${esc(status)}</b></div>
       <div class="ep-canonical">${esc(a.claim.canonical_form)}</div>
       <div class="ep-why">${esc(a.why)}</div>
-      <div class="ep-hint">Click for evidence & decomposition · confidence ${Math.round(
-        a.confidence * 100
-      )}%</div>`;
+      <div class="ep-hint">Click for evidence & decomposition</div>`;
   } else {
     const submitted = state.claimSubmissions[a.verbatim_text];
     card.innerHTML = `

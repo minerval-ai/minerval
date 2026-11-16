@@ -71,7 +71,7 @@ const TIERS: { label: string; tools: { name: string; desc: string }[] }[] = [
     label: "Free reads · no LLM work",
     tools: [
       { name: "search_claims", desc: "Hybrid semantic + keyword search over Minerval’s canonical claims, quantities, and questions." },
-      { name: "get_claim", desc: "Fetch a canonical claim: its form, current assessment, confidence, and reasoning." },
+      { name: "get_claim", desc: "Fetch a canonical claim: its form, current assessment, credence where stated, and reasoning." },
       { name: "get_decomposition", desc: "Walk down: the subclaim tree a claim rests on, every node with its relation and verdict." },
       { name: "get_dependents", desc: "Walk up: what rests on a claim, and so what would move if its verdict changed." },
     ],
