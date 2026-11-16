@@ -1,5 +1,5 @@
 {
-  "id": "3f2b3b2c-7714-419c-98db-83060f3e50e6",
+  "id": "905927c1-48f2-4c23-9484-4efb9dc25ce7",
   "prevId": "4ec3f2a1-ef04-4c26-99ff-0bc3fc54e44d",
   "version": "7",
   "dialect": "postgresql",
@@ -165,12 +165,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "lookout_id": {
-          "name": "lookout_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "sensitivity_label": {
           "name": "sensitivity_label",
           "type": "text",
@@ -257,28 +251,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_action_allocations_lookout": {
-          "name": "idx_action_allocations_lookout",
-          "columns": [
-            {
-              "expression": "lookout_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "lookout_id IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -371,19 +343,6 @@
           "tableTo": "actions",
           "columnsFrom": [
             "parent_action_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "action_allocations_lookout_id_lookouts_id_fk": {
-          "name": "action_allocations_lookout_id_lookouts_id_fk",
-          "tableFrom": "action_allocations",
-          "tableTo": "lookouts",
-          "columnsFrom": [
-            "lookout_id"
           ],
           "columnsTo": [
             "id"
@@ -16175,20 +16134,6 @@
           "notNull": true,
           "default": 0
         },
-        "commission_window_micro_usd": {
-          "name": "commission_window_micro_usd",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "commission_window_hours": {
-          "name": "commission_window_hours",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 24
-        },
         "territory_claim_ids": {
           "name": "territory_claim_ids",
           "type": "uuid[]",
@@ -16354,10 +16299,6 @@
         "ck_lookouts_heartbeat": {
           "name": "ck_lookouts_heartbeat",
           "value": "\"lookouts\".\"heartbeat_hours\" >= 0"
-        },
-        "ck_lookouts_commission_window": {
-          "name": "ck_lookouts_commission_window",
-          "value": "\"lookouts\".\"commission_window_micro_usd\" >= 0 AND \"lookouts\".\"commission_window_hours\" >= 1"
         }
       },
       "isRLSEnabled": false

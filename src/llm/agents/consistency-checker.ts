@@ -262,7 +262,10 @@ async function runConsistencyCheckerImpl(input: {
           claim_ids: {
             type: "array",
             items: { type: "string" },
-            description: `Every node in the tension, the primary included (at most ${CONSISTENCY_BOUNDS.maxClaims}).`,
+            description:
+              `Every node in the tension, the primary included (at most ${CONSISTENCY_BOUNDS.maxClaims}). ` +
+              "A dependency_mismatch inside one judgment, a verdict that does not follow " +
+              "from its own reasoning and evidence, may name the primary alone.",
           },
           rationale: {
             type: "string",

@@ -68,6 +68,19 @@ describe("consistencyFlagContext", () => {
     expect(q).toContain("this quantity's estimate (a quantity, estimated)");
     expect(q).toContain("(a question, answered)");
   });
+
+  it("words a one-node flag as the verdict not following from its own reasoning (#997)", () => {
+    const ctx = consistencyFlagContext({
+      kind: "dependency_mismatch",
+      rationale: "The summary says the second component is unsupported, yet the conjunction stands supported.",
+      primary: { id: PRIMARY, kind: "claim", status: "supported", claim_credence: 0.8 },
+      others: [],
+    });
+    expect(ctx).toContain("does not follow from its own reasoning and evidence (dependency_mismatch)");
+    expect(ctx).not.toContain("about these claims");
+    expect(ctx).toContain("The checker's reading: The summary says the second component");
+    expect(ctx).toContain("a flag, not a verdict");
+  });
 });
 
 describe("checkFlagInput", () => {
@@ -102,6 +115,33 @@ describe("checkFlagInput", () => {
     // The read joins the estimate and standing tables, not assessments alone.
     expect(state.sql[0]).toContain("quantity_estimates");
     expect(state.sql[0]).toContain("question_assessments");
+  });
+
+  it("lets a dependency_mismatch name the primary alone (#997)", async () => {
+    state.rows = [
+      { id: PRIMARY, text: "A and B", kind: "claim", state: "active", status: "supported", claim_credence: 0.8, assessment_id: "a-1", summary: "s" },
+    ];
+    const res = await checkFlagInput({
+      kind: "dependency_mismatch",
+      primaryClaimId: PRIMARY,
+      claimIds: [],
+      rationale: "The summary admits B is unsupported, yet the conjunction stands supported.",
+    });
+    expect(res).toMatchObject({ ok: true, claimIds: [PRIMARY], others: [] });
+  });
+
+  it("still wants a second node for every other kind (#997)", async () => {
+    for (const kind of CONSISTENCY_FLAG_KINDS.filter((k) => k !== "dependency_mismatch")) {
+      const res = await checkFlagInput({
+        kind,
+        primaryClaimId: PRIMARY,
+        claimIds: [PRIMARY],
+        rationale: "A tension that names no node beside the primary.",
+      });
+      expect(res).toMatchObject({ ok: false, code: "CLAIMS" });
+      expect((res as { problem: string }).problem).toContain("dependency_mismatch");
+    }
+    expect(state.sql).toHaveLength(0);
   });
 
   it("says what a question lacks when it has no standing yet", async () => {

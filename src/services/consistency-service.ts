@@ -80,6 +80,9 @@ export const CONSISTENCY_FLAG_KINDS = [
 ] as const;
 export type ConsistencyFlagKind = (typeof CONSISTENCY_FLAG_KINDS)[number];
 
+/** The kinds a flag may raise on the primary alone (#997). */
+const SINGLE_NODE_FLAG_KINDS: ReadonlySet<string> = new Set<ConsistencyFlagKind>(["dependency_mismatch"]);
+
 /**
  * The checker is told each of these in its tool descriptions, and a note or
  * rationale over its limit is refused with a request for a shorter one,
@@ -846,6 +849,18 @@ export function consistencyFlagContext(input: {
         `whether they bear here is decided at this node, on the evidence and ` +
         `argument here.\n`
       : "";
+  if (input.others.length === 0) {
+    return (
+      `A consistency sweep finds that ${judgmentNoun(input.primary.kind)} (${describeAssessment(input.primary)}) ` +
+      `does not follow from its own reasoning and evidence (${input.kind}).\n` +
+      `The checker's reading: ${input.rationale}\n` +
+      `Reconcile it. The defect may be in this verdict (revise it), in the ` +
+      `reasoning (say what it missed), or in the node's structure (fix its ` +
+      `decomposition, or escalate to the Curator). Or the reasoning may ` +
+      `already support the verdict, and should say how. The checker's reading ` +
+      `is a flag, not a verdict: weigh it, verify what it turns on, and decide.`
+    );
+  }
   return (
     `A consistency sweep finds that ${judgmentNoun(input.primary.kind)} (${describeAssessment(input.primary)}) ` +
     `does not cohere with what the graph records about these claims (${input.kind}):\n${neighbors}\n` +
@@ -949,8 +964,19 @@ export async function checkFlagInput(
     return { ok: false, code: "CLAIM", problem: "primary_claim_id must be a claim id you saw in a tool result" };
   }
   const claimIds = normalizeClaimIds(input.primaryClaimId, input.claimIds);
-  if (claimIds.length < 2) {
-    return { ok: false, code: "CLAIMS", problem: "Name at least one other claim in the tension (claim_ids)" };
+  // A dependency mismatch can sit inside one judgment: a verdict that does
+  // not follow from its own direct evidence (§21). Requiring a second node
+  // there only invites one named for the sake of the rule (#997). Every
+  // other kind is a relation between nodes.
+  if (claimIds.length < 2 && !SINGLE_NODE_FLAG_KINDS.has(input.kind)) {
+    return {
+      ok: false,
+      code: "CLAIMS",
+      problem:
+        "Name at least one other claim in the tension (claim_ids). Only a " +
+        "dependency_mismatch may name the primary alone, where its verdict " +
+        "does not follow from its own reasoning and evidence.",
+    };
   }
   const rows = await rawQuery<{
     id: string;
