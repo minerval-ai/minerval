@@ -1,7 +1,7 @@
 import type { AssessmentStatus, QuestionStanding } from "@/lib/types";
 import {
   statusMeta, importanceLevel, IMPORTANCE, UNASSESSED_META, DEFINED_IN,
-  CREDENCE_GLOSS, VERDICT_CONFIDENCE_GLOSS, disputeMeta, QUESTION_STANDING, isStanding,
+  CREDENCE_GLOSS, OTHER_READING_GLOSS, disputeMeta, QUESTION_STANDING, isStanding, isStatus,
 } from "@/lib/ontology";
 import { Term } from "./Term";
 
@@ -107,13 +107,20 @@ export function Credence({ value }: { value: number | null | undefined }) {
   );
 }
 
-// Verdict confidence — how sure the Steward is of the status itself. Meta, so
-// it stays quiet: a small labelled figure, no meter, defined on hover/click.
-export function VerdictConfidence({ value }: { value: number | null | undefined }) {
-  if (typeof value !== "number") return null;
+// The other reading (§10): the status the evidence could otherwise be read
+// as, where the Steward named one, shown beside the verdict: "Inconclusive ·
+// could also be read as doubtful". It takes the place of the verdict
+// confidence figure, which said how sure the Steward was without saying which
+// way the doubt ran. Renders nothing when none was named, or when it repeats
+// the status or is not a status this build knows.
+export function OtherReading({
+  status, alternative,
+}: { status: AssessmentStatus | string | null; alternative: AssessmentStatus | string | null | undefined }) {
+  if (!isStatus(alternative) || alternative === status) return null;
+  const label = statusMeta(alternative).label.toLowerCase();
   return (
-    <Term gloss={VERDICT_CONFIDENCE_GLOSS} href={DEFINED_IN.confidence} className="conf-quiet">
-      verdict confidence {value.toFixed(2)}
+    <Term gloss={OTHER_READING_GLOSS} href={DEFINED_IN.confidence} className="other-reading" ariaLabel={`could also be read as ${label}`}>
+      <span className="dispute-sep" aria-hidden>·</span>could also be read as {label}
     </Term>
   );
 }

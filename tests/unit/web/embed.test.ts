@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 // site states the graph's judgment whole, in the claim page's own words.
 import {
   EMBED_HEIGHT_MESSAGE, badgeMarkdown, cardJudgment, claimIdFromPageUrl, iframeSnippet,
-  judgmentLine, scriptSnippet,
+  judgmentLine, judgmentSentence, scriptSnippet,
 } from "../../../web/lib/embed";
 import {
   EMBED_PALETTE, renderBadge, renderBadgeNotice, renderEmbedNotice, renderEmbedPage,
@@ -39,11 +39,26 @@ function card(over: Partial<ClaimCard> = {}): ClaimCard {
 }
 
 describe("the judgment an embed states", () => {
-  it("carries a status with its confidence and the dispute beside it", () => {
+  it("carries a status with the dispute beside it, and no verdict confidence figure", () => {
     const c = card({ assessment_status: "supported", assessment_confidence: 0.8, contestation: 0.4, assessed_at: NOW });
-    expect(judgmentLine(cardJudgment(c))).toBe("supported · 0.80 · disputed");
-    expect(judgmentLine(cardJudgment({ ...c, contestation: 0.7 }))).toBe("supported · 0.80 · actively disputed");
-    expect(judgmentLine(cardJudgment({ ...c, contestation: 0.1 }))).toBe("supported · 0.80");
+    expect(judgmentLine(cardJudgment(c))).toBe("supported · disputed");
+    expect(judgmentLine(cardJudgment({ ...c, contestation: 0.7 }))).toBe("supported · actively disputed");
+    expect(judgmentLine(cardJudgment({ ...c, contestation: 0.1 }))).toBe("supported");
+    expect(judgmentSentence(cardJudgment(c))).not.toContain("0.80");
+  });
+
+  it("names the other reading in the sentence, where the Steward gave one", () => {
+    const c = card({
+      assessment_status: "inconclusive", assessment_alternative_status: "doubtful",
+      assessment_confidence: 0.7, contestation: 0.7, assessed_at: NOW,
+    });
+    expect(judgmentSentence(cardJudgment(c))).toContain("Inconclusive · could also be read as doubtful · actively disputed");
+    // Too long for the badge, which carries the sentence as its title.
+    expect(judgmentLine(cardJudgment(c))).toBe("inconclusive · actively disputed");
+    // One that repeats the status, or is not a status, is not a reading.
+    for (const alt of ["inconclusive", "contested"]) {
+      expect(cardJudgment({ ...c, assessment_alternative_status: alt }).otherReading).toBeNull();
+    }
   });
 
   it("reads an unassessed claim as unassessed, with no verdict and no dispute label", () => {
@@ -58,7 +73,7 @@ describe("the judgment an embed states", () => {
 
   it("states a question by its standing and a quantity by its estimate", () => {
     const q = card({ kind: "question", standing: "leaning", assessment_confidence: 0.6, assessed_at: NOW });
-    expect(judgmentLine(cardJudgment(q))).toBe("leaning · 0.60");
+    expect(judgmentLine(cardJudgment(q))).toBe("leaning");
     expect(judgmentLine(cardJudgment({ ...q, standing: null }))).toBe("unassessed");
 
     const n = card({
@@ -79,7 +94,7 @@ describe("the judgment an embed states", () => {
 
   it("names a state that is not active", () => {
     const c = card({ state: "merged", assessment_status: "doubtful", assessment_confidence: 0.7 });
-    expect(judgmentLine(cardJudgment(c))).toBe("doubtful · 0.70 · merged");
+    expect(judgmentLine(cardJudgment(c))).toBe("doubtful · merged");
   });
 });
 
@@ -103,7 +118,7 @@ describe("the embed page", () => {
     expect(html).toContain(`href="https://minerval.ai/claims/${ID}" target="_blank" rel="noopener"`);
     expect(html).toContain("as of Nov 10, 2026");
     expect(html).toContain("last assessed Oct 2, 2026");
-    expect(html).toContain("verdict confidence 0.90");
+    expect(html).not.toContain("confidence 0.90");
     expect(html).toContain(`<meta name="robots" content="noindex">`);
   });
 

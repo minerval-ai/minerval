@@ -209,7 +209,9 @@ A status describes the evidence, not the debate. That people disagree about a cl
 
 Two numbers may accompany an assessment, and they answer different questions.
 
-- Verdict confidence, always recorded: how sure the admin is that the chosen status is the right reading of the evidence. A claim can be confidently "inconclusive": the admin is near-certain the evidence examined does not settle the question, while nobody knows whether the claim is true.
+- Verdict confidence, always recorded: how sure the admin is that the chosen status is the right reading of the evidence. A claim can be confidently "inconclusive": the admin is near-certain the evidence examined does not settle the question, while nobody knows whether the claim is true. It is a working figure for the admin and the system's own upkeep, not shown to readers as a number: a figure on how sure the admin is of a status does not say which way any doubt runs.
+
+Where another status is also a defensible reading of the evidence, the admin names it as the other reading, and readers see it beside the status: a claim "inconclusive, could also be read as doubtful" tells the reader which way the doubt runs, where a figure would not. Where the chosen status is the only reasonable reading, the admin names none, and the omission says so.
 - Credence, recorded when meaningful: the admin's probability that the claim, as its canonical form states it to a reader today (§3), is true. It is the admin's own all-things-considered judgment, not a summary of where the sources sit, and may lie far from the middle of a live debate. It is given only where a single number is an honest summary, typically for concrete empirical questions. Where one number would be false precision (normative or evaluative claims, definitional choices, composites whose parts pull in different directions) the admin omits it, and the omission is itself information: it tells the reader this is not a one-number question.
 
 The admin does not round uncertain claims up to "verified" or down to "false." The graph's value comes from honest representation of the state of knowledge.

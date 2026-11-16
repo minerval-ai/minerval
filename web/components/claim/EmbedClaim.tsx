@@ -68,7 +68,7 @@ export function EmbedClaim({ claimId, text, kind }: { claimId: string; text: str
       <div style={{ marginTop: ".7rem" }}>
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)", margin: "0 0 .8rem" }}>
           An embed reports the graph&apos;s judgment as it stands when the page is
-          viewed: the status with its confidence, how disputed the claim is, and
+          viewed: the status and the other reading where one is named, how disputed the claim is, and
           the date. It links back here.
         </p>
         {snippets.map((s) => (

@@ -354,10 +354,15 @@ export function confidenceLabel(c: number): string {
   return c.toFixed(2).replace(/^0/, "·");
 }
 
-// The two numbers an assessment can carry answer different questions
-// (constitution §7); every surface that shows either must say which one it is.
-export const VERDICT_CONFIDENCE_GLOSS =
-  "Verdict confidence, from 0 to 1: how sure the Steward is that this status is the right reading of the evidence. Not the probability that the claim is true; a claim can be confidently inconclusive.";
+// The verdict's other reading (constitution §10): where another status is
+// also a defensible reading of the evidence, the Steward names it, so a reader
+// sees which way any doubt about the status runs. Verdict confidence, the
+// figure for how sure the Steward is, is kept in the record and the API but
+// not shown: on its own it does not say which way the doubt runs.
+export const OTHER_READING_GLOSS =
+  "The Steward's other reading of the evidence: the status this claim could also defensibly be given. The status beside it is the Steward's judgment; this says which way the doubt about it runs.";
+// Credence is the one number an assessment shows; every surface that shows
+// it must say what it is.
 export const CREDENCE_GLOSS =
   "Credence, from 0 to 1: the Steward's probability that the claim, as stated, is true. Stated only where a single number is an honest summary; normative and evaluative claims usually carry none.";
 

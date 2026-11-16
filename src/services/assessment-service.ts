@@ -92,6 +92,7 @@ export function formatAssessmentHistoryRow(a: {
   claimId: string;
   status: string;
   confidence: number;
+  alternativeStatus?: string | null;
   claimCredence: number | null;
   summary: string | null;
   reasoningTrace: string;
@@ -108,6 +109,7 @@ export function formatAssessmentHistoryRow(a: {
     claim_id: a.claimId,
     status: a.status,
     confidence: a.confidence,
+    alternative_status: a.alternativeStatus ?? null,
     claim_credence: a.claimCredence ?? null,
     summary: a.summary ?? a.reasoningTrace,
     reasoning_trace: a.reasoningTrace,

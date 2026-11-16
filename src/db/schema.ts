@@ -863,6 +863,13 @@ export const assessments = pgTable(
     // reading of the evidence. Meta by design; NOT the probability that the
     // claim is true (a claim can be confidently inconclusive).
     confidence: real("confidence").notNull(),
+    // The other reading (§10): the status the evidence could otherwise be
+    // read as, named where another reading is live, so a reader of a status
+    // that is not certain sees which way the doubt runs. One of
+    // assessmentStatusEnum and never `status` itself. NULL = the Steward
+    // named none (the status is the only reasonable reading), or a row from
+    // before the column existed.
+    alternativeStatus: text("alternative_status"),
     // Credence: the Steward's probability that the claim, as stated, is true.
     // Nullable by design (constitution §7): where a single number would be
     // false precision (normative/evaluative claims, entangled composites) no

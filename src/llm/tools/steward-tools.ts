@@ -353,7 +353,24 @@ export function getStewardToolDefinitions(): Tool[] {
               "Verdict confidence (0.0-1.0): how sure you are that the status " +
               "you chose is the right reading of the evidence. Meta by design; " +
               "NOT the probability that the claim is true. A claim can be " +
-              "confidently inconclusive.",
+              "confidently inconclusive. It is kept with the verdict and " +
+              "read by monitors and later passes; the claim page does not " +
+              "show it, and shows alternative_status instead.",
+          },
+          alternative_status: {
+            type: "string",
+            enum: [...ASSESSMENT_STATUSES],
+            description:
+              "Optional: the other reading (§10), the status the evidence " +
+              "could otherwise most plausibly be read as. Name it whenever " +
+              "another reading is live, that is whenever your confidence is " +
+              "materially short of certain because a neighboring status is " +
+              "also defensible: for an inconclusive verdict, whether the doubt " +
+              "runs toward supported or toward doubtful. The claim page shows " +
+              "it beside the status (\"could also be read as doubtful\"), so a " +
+              "reader sees which way the doubt runs. Omit it when the status " +
+              "you chose is the only reasonable reading. Never the same as " +
+              "status.",
           },
           claim_credence: {
             type: "number",
@@ -1469,6 +1486,36 @@ export async function executeStewardTool(
           });
         }
         const confidence = input.confidence as number;
+        // The other reading (§10): optional, normalized like the status, and
+        // bounced back when it is not a status or repeats the one chosen, so
+        // the page never says "inconclusive, could also be read as
+        // inconclusive" or shows a word no reader knows.
+        const rawAlternative = input.alternative_status;
+        const alternativeStatus =
+          rawAlternative == null || String(rawAlternative).trim() === ""
+            ? null
+            : String(rawAlternative).trim().toLowerCase();
+        if (alternativeStatus !== null) {
+          if (!(ASSESSMENT_STATUSES as readonly string[]).includes(alternativeStatus)) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Assessment NOT recorded: alternative_status "${String(rawAlternative)}" is not one of ` +
+                `${ASSESSMENT_STATUSES.join(" | ")}. Call update_claim_assessment again with a valid ` +
+                `alternative_status, or without one if no other reading is live.`,
+            });
+          }
+          if (alternativeStatus === status) {
+            return JSON.stringify({
+              success: false,
+              message:
+                `Assessment NOT recorded: alternative_status is the status itself (${status}). ` +
+                `It names the other status the evidence could be read as; call ` +
+                `update_claim_assessment again with a different one, or without one if no ` +
+                `other reading is live.`,
+            });
+          }
+        }
         // Optional: only recorded where a probability of truth is meaningful
         // (constitution §10). null, not 0 — "no credence stated" is a distinct
         // signal from "credence that the claim is false".
@@ -1573,6 +1620,7 @@ export async function executeStewardTool(
           claimId,
           status,
           confidence,
+          alternativeStatus,
           claimCredence,
           marginalYield,
           summary,

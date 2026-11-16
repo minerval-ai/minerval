@@ -3,14 +3,14 @@ import type { ClaimDetail, Instance } from "@/lib/types";
 import { instanceByline, splitInstances, stanceTag } from "@/lib/instances";
 import {
   statusMeta, isStatus, claimTypeMeta, decompositionNote,
-  DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
+  DEFINED_IN, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { sinceAssessedLine } from "@/lib/since-assessed";
 import { evidenceNotShownLine, isExamined, notExaminedLine, readerEvidenceLine } from "@/lib/coverage";
 import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import { modelDisplayName } from "@/lib/model-names";
-import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
+import { StatusBadge, Dispute, Credence, OtherReading, Swatch, Importance } from "./Assessment";
 import { Term } from "./Term";
 import { TopicChips } from "./Topics";
 import { AssessmentText } from "./AssessmentText";
@@ -356,6 +356,10 @@ export function ClaimView({
               points, the dispute label comes from contestation. */}
           <span className="verdict-pair">
             <StatusBadge status={assessment.status} size="lg" />
+            {/* Which way the doubt about the status runs, where the Steward
+                named another reading (§10); in place of the verdict
+                confidence figure, which did not say. */}
+            <OtherReading status={assessment.status} alternative={assessment.alternative_status} />
             {!published && <Dispute value={claim.contestation} />}
           </span>
           {/* The derived machine-checked badge (§2.3), beside the status
@@ -366,10 +370,10 @@ export function ClaimView({
             <MachineChecked kind={verification.kind} size="lg" rules={featureOn(features, "prizes")} />
           )}
           {/* Credence (P(claim true)) gets the meter, when the Steward stated
-              one; verdict confidence is meta and stays a quiet labelled figure
-              so the two are never mistaken for each other (#160). */}
+              one. It is the only figure the band shows: verdict confidence
+              stays in the record and the API, where it was too easily read
+              as credence and said nothing about which way doubt ran. */}
           <Credence value={assessment.claim_credence} />
-          <VerdictConfidence value={assessment.confidence} />
           {/* The one date most readers want (#196). assessed_at, not
               updated_at: only the former honestly means "last assessed"
               (#160). The assessing model rides along (#294): a verdict is only
@@ -681,9 +685,6 @@ export function ClaimView({
                 <span className="traj-body">
                   <span className="sc" style={{ color: "var(--muted)" }}>{fmtDate(p.assessed_at)}</span>
                   {statusMeta(p.status).label}
-                  {typeof p.confidence === "number" && (
-                    <span title={VERDICT_CONFIDENCE_GLOSS}> · {p.confidence.toFixed(2)}</span>
-                  )}
                   {p.trigger && <em style={{ color: "var(--faint)" }}> · {p.trigger.replace(/_/g, " ")}</em>}
                 </span>
               </div>

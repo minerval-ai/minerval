@@ -45,6 +45,7 @@ export function assessmentOf(version: NodeVersion, served: Assessment | null): A
     id: version.id,
     status: version.status,
     confidence: version.confidence ?? 0,
+    alternative_status: version.alternative_status ?? null,
     claim_credence: version.claim_credence ?? null,
     summary: version.summary ?? version.reasoning_trace ?? "",
     reasoning_trace: version.reasoning_trace ?? "",

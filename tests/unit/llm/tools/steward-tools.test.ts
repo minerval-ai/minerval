@@ -795,6 +795,49 @@ describe("steward update_claim_assessment", () => {
     expect(insertedValues.find((r) => "reasoningTrace" in r)).toBeUndefined();
   });
 
+  // The other reading (§10): which way the doubt about the status runs,
+  // shown to readers in place of the verdict confidence figure.
+  it("records the other reading, normalized, and none when it is left out", async () => {
+    await executeStewardTool("update_claim_assessment", {
+      claim_id: "22222222-2222-2222-2222-222222222222",
+      status: "inconclusive",
+      alternative_status: "Doubtful",
+      confidence: 0.6,
+      assessment: "x",
+      reasoning_trace: "y",
+    });
+    expect(insertedValues.find((r) => "reasoningTrace" in r)?.alternativeStatus).toBe("doubtful");
+
+    insertedValues.length = 0;
+    await executeStewardTool("update_claim_assessment", {
+      claim_id: "22222222-2222-2222-2222-222222222222",
+      status: "verified",
+      confidence: 0.95,
+      assessment: "x",
+      reasoning_trace: "y",
+    });
+    expect(insertedValues.find((r) => "reasoningTrace" in r)?.alternativeStatus).toBeNull();
+  });
+
+  it.each([
+    ["probably", "is not one of"],
+    ["inconclusive", "is the status itself"],
+  ])("bounces the other reading %s and writes nothing", async (alternative, why) => {
+    const reply = JSON.parse(
+      await executeStewardTool("update_claim_assessment", {
+        claim_id: "22222222-2222-2222-2222-222222222222",
+        status: "inconclusive",
+        alternative_status: alternative,
+        confidence: 0.6,
+        assessment: "x",
+        reasoning_trace: "y",
+      })
+    );
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain(why);
+    expect(insertedValues.find((r) => "reasoningTrace" in r)).toBeUndefined();
+  });
+
   it("bounces an out-of-enum status", async () => {
     const reply = JSON.parse(
       await executeStewardTool("update_claim_assessment", {

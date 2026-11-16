@@ -4,6 +4,7 @@ import {
   EMBED_HEIGHT_MESSAGE, cardJudgment, embedDate, escapeHtml, judgmentLine, judgmentSentence,
 } from "./embed";
 import type { EmbedJudgment } from "./embed";
+import { OTHER_READING_GLOSS } from "./ontology";
 
 // What an embed looks like: the chrome-less card page and the SVG badge, both
 // rendered to a string. They are served into other people's pages, so each is
@@ -126,11 +127,8 @@ function judgmentHtml(j: EmbedJudgment): string {
       `<span class="glyph" aria-hidden="true">${escapeHtml(v.glyph)}</span>${escapeHtml(v.label)}</span>`,
     );
   }
-  if (j.verdictConfidence != null) {
-    const what = j.kind === "Question"
-      ? "How sure the Steward is that this standing is the right reading of the evidence, from 0 to 1."
-      : "How sure the Steward is that this status is the right reading of the evidence, from 0 to 1. Not the probability that the claim is true.";
-    out.push(`<span class="conf" title="${escapeHtml(what)}">${escapeHtml(j.confidenceLabel)} ${j.verdictConfidence.toFixed(2)}</span>`);
+  if (j.otherReading) {
+    out.push(`<span class="conf" title="${escapeHtml(OTHER_READING_GLOSS)}">could also be read as ${escapeHtml(j.otherReading)}</span>`);
   }
   if (j.dispute) {
     out.push(

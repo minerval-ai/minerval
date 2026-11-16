@@ -159,6 +159,7 @@ function formatAssessment(
   a: {
     status: string;
     confidence: number;
+    alternativeStatus?: string | null;
     claimCredence: number | null;
     summary: string | null;
     reasoningTrace: string;
@@ -172,6 +173,9 @@ function formatAssessment(
     status: a.status,
     // Verdict confidence — how sure the Steward is of the status, not P(true).
     confidence: a.confidence,
+    // The other reading (§10): the status the evidence could otherwise be
+    // read as; null where the Steward named none.
+    alternative_status: a.alternativeStatus ?? null,
     // Credence that the claim is true; null where one number would be false
     // precision (constitution §10).
     claim_credence: a.claimCredence ?? null,

@@ -1039,6 +1039,12 @@ a.fnd-card:hover, a.fnd-card:target {
   white-space: nowrap; cursor: help;
 }
 .dispute-label.dispute-active { font-weight: 600; }
+/* The verdict's other reading (§10), beside the status like the dispute
+   label and quieter than it: a qualification of the verdict, not a second one. */
+.other-reading {
+  font-family: var(--sans); font-size: 0.82rem; color: var(--muted);
+  white-space: nowrap; cursor: help;
+}
 .dispute-sep { color: var(--faint); margin-right: 0.45rem; }
 /* the last-assessed date, at the band's far end (#196): the one fact most
    readers want from the assessment history */

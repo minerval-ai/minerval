@@ -283,7 +283,11 @@ when the deployment has it; each call's price is in the tool's description. If
 a call fails or the provider is down, assess with what web_search gives you.
 
 Record the verdict with update_claim_assessment: a status, a confidence,
-claim_credence where appropriate (§10), and marginal_yield.
+claim_credence where appropriate (§10), and marginal_yield. Where another
+status is also a defensible reading of the evidence, name it as
+alternative_status: readers see it beside the verdict, and for an
+inconclusive claim it is what tells them whether the doubt runs toward
+supported or toward doubtful.
 
 Then bring the argument evaluations current: after recording the assessment,
 call evaluate_argument for each named argument. On a re-pass, re-evaluate the
