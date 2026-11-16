@@ -277,6 +277,7 @@ const sinceAssessedSchema = {
     changed: { type: "boolean", nullable: true },
     note: { type: "string" },
     premises_rejudged: { type: "integer" },
+    premises_moved: { type: "integer" },
     premises_added: { type: "integer" },
     premises_removed: { type: "integer" },
     sources_added: { type: "integer" },
@@ -1887,7 +1888,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       summary:
         "What a node's judgment in force was made against, and what has changed since: " +
         "each node under it with the judgment it had then and has now (unchanged, rejudged " +
-        "or removed), nodes added under it since, sources attached or detached since, and " +
+        "or removed, and for one judged again whether its verdict moved), nodes added under it since, sources attached or detached since, and " +
         "corrections or retractions on its sources since. changed is true when any of those " +
         "is non-empty; recorded is false for a judgment written before this was recorded, " +
         "about which nothing can be said",
@@ -1921,6 +1922,12 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                   judged_against: { type: "string", format: "uuid", nullable: true },
                   in_force_now: { type: "string", format: "uuid", nullable: true },
                   state: { type: "string", enum: ["unchanged", "rejudged", "removed"] },
+                  // Judged again to a different verdict; false unless rejudged.
+                  moved: { type: "boolean" },
+                  text: { type: "string", nullable: true },
+                  // A claim's status or a question's standing; null for a quantity or no judgment.
+                  verdict_then: { type: "string", nullable: true },
+                  verdict_now: { type: "string", nullable: true },
                 },
               },
             },
@@ -1932,6 +1939,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                   node_id: { type: "string", format: "uuid" },
                   relation: { type: "string" },
                   in_force_now: { type: "string", format: "uuid", nullable: true },
+                  text: { type: "string", nullable: true },
+                  verdict_now: { type: "string", nullable: true },
                 },
               },
             },

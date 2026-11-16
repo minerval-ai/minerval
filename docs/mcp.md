@@ -482,7 +482,8 @@ read of a claim, use a card.
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
   `get_judgment_inputs` (what a node's judgment in force was made against,
-  and what has changed since: premises judged again, added or removed,
+  and what has changed since: premises judged again (and whether each one's
+  verdict moved), added or removed,
   sources attached or detached, corrections and retractions on its sources;
   `get_claim` and `search_claims` carry its counts as `since_assessed`, so
   this is the read for which premises and which sources),

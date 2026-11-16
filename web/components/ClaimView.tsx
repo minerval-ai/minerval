@@ -23,6 +23,7 @@ import { CiteClaim } from "./claim/CiteClaim";
 import { EmbedClaim } from "./claim/EmbedClaim";
 import { AskBox } from "./AskBox";
 import { OrderAssessment } from "./claim/OrderAssessment";
+import { SinceAssessed } from "./claim/SinceAssessed";
 import { FundDecomposition } from "./claim/FundDecomposition";
 import { FormalStatement } from "./claim/FormalStatement";
 import { MachineChecked } from "./claim/MachineChecked";
@@ -419,12 +420,12 @@ export function ClaimView({
           Status carried over from the retired label &lsquo;{assessment.relabeled_from}&rsquo;; not yet re-judged.
         </p>
       )}
-      {/* Quiet, like the note above: a fact about the judgment's footing,
-          not a verdict on whether it still holds. */}
+      {/* Said only when a premise's verdict, a premise, a source or a
+          notice on one moved, never for a premise judged again to the
+          verdict it had: a fact about the judgment's footing, which opens
+          onto what moved and the way to have it judged again. */}
       {changedSince && (
-        <p className="assess-changed-since" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
-          {changedSince}
-        </p>
+        <SinceAssessed claimId={claim.id} line={changedSince} inputs={detail.judgment_inputs} judgment={isQuantity ? "estimate" : "assessment"} />
       )}
       {/* Quiet as well: what the judgment was made on, beside what it says. */}
       {notShown && (
@@ -488,8 +489,10 @@ export function ClaimView({
                 </div>
               </details>
             )}
-          {/* Reassessment on demand: quiet, but always available. */}
-          <OrderAssessment claimId={claim.id} variant="reassess" />
+          {/* Reassessment on demand: quiet, but always available. Where
+              something has moved under the judgment, it is offered beside
+              what moved instead, and once on the page is enough. */}
+          {!changedSince && <OrderAssessment claimId={claim.id} variant="reassess" />}
         </section>
       )}
 

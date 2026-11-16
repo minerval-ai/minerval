@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  JudgmentInputs,
   ArgumentPage,
   ClaimCard,
   AttemptStats,
@@ -40,6 +41,7 @@ import type {
 import { ALL_FEATURES_ON, featuresFromResponse, type Features } from "./features";
 import { membersOnly } from "./members";
 import { viewerExternalId } from "./viewer";
+import { sinceAssessedMoved } from "./since-assessed";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
 // environment and attached here, on the server — it is never shipped to the
@@ -210,8 +212,15 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
       `/stated-views?claim_id=${seg}&earlier=true`,
     ).catch(() => null),
   ]);
+  // Which premises moved, read only when the counts say something under the
+  // judgment did: most claims have nothing to say, and pay nothing for it.
+  // Absent rather than failing the page.
+  const judgmentInputs = sinceAssessedMoved(detail.since_assessed)
+    ? await apiGet<JudgmentInputs>(`/claims/${seg}/judgment-inputs`).catch(() => null)
+    : null;
   return {
     ...withMathDefaults(detail),
+    ...(judgmentInputs ? { judgment_inputs: judgmentInputs } : {}),
     provenance_story: provenanceStory,
     ...(trajectory ? { trajectory } : {}),
     ...(record ? { record: record.record } : {}),

@@ -268,7 +268,11 @@ support matters:
   detached, and corrections or retractions on its sources), with `changed`
   true when any of them is above zero. A premise judged again to the same
   verdict still counts, so `changed` says the verdict's footing moved, not
-  that the verdict is wrong. A `search_claims` result carries it in a short
+  that the verdict is wrong. `premises_moved` counts the premises judged
+  again whose verdict is not the one the judgment was made against (a
+  claim's status, a quantity's estimate, a question's standing or favored
+  answers); that, not `premises_rejudged`, is the sign that the ground
+  under a verdict has shifted. A `search_claims` result carries it in a short
   form: counts that are zero are left out, and a claim with no verdict has
   no `since_assessed` at all. `get_judgment_inputs` names the premises and
   sources. A verdict written before that was recorded answers
