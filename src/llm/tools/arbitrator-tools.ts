@@ -33,6 +33,7 @@ import {
 } from "../../services/contribution-acceptance.js";
 import { getContributionById } from "../../services/contribution-service.js";
 import { currentLabel } from "../usage-context.js";
+import { faultStopNote, platformFaultOf } from "../../services/deployment-fault.js";
 
 export function getArbitratorToolDefinitions(): Tool[] {
   return [
@@ -537,6 +538,22 @@ export async function executeArbitratorTool(
         return `Error: Unknown arbitrator tool: ${toolName}`;
     }
   } catch (err) {
+    // A platform fault (the Matcher's provider out of credits on an
+    // overturn's intake materialization, #980) is told by its class, not
+    // the provider's raw text; the case is arbitrated again once the fault
+    // clears (arbitration-pipeline.ts).
+    const fault = platformFaultOf(err);
+    if (fault) {
+      return JSON.stringify({
+        success: false,
+        platform_fault: fault,
+        error: faultStopNote(
+          fault,
+          toolName === "record_arbitration_decision" ? "Recording this arbitration decision" : `${toolName}`,
+          "the case goes back to the arbitration queue and is arbitrated again"
+        ),
+      });
+    }
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }

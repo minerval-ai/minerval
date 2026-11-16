@@ -76,11 +76,27 @@ export function deploymentFaultOf(err: unknown): DeploymentFaultReason | null {
 }
 
 /**
+ * Thrown by an agent whose run a platform fault stopped inside a tool, where
+ * the tool turned the provider's error into a result (record_review_decision,
+ * record_arbitration_decision): the run ends there, with nothing recorded,
+ * and the worker that claimed the work reads the fault from this as it would
+ * from the provider's own error, so the attempt is not counted against the
+ * work (contribution-pipeline.ts, arbitration-pipeline.ts).
+ */
+export class PlatformFaultStop extends Error {
+  constructor(public readonly reason: PlatformFaultReason, what: string) {
+    super(`${what} stopped on ${reason}`);
+    this.name = "PlatformFaultStop";
+  }
+}
+
+/**
  * The platform fault behind a failure: a deployment fault, any other
  * transient provider failure, or null for a failure that is the work's own
  * (a genuine error) or the run's own budget.
  */
 export function platformFaultOf(err: unknown): PlatformFaultReason | null {
+  if (err instanceof PlatformFaultStop) return err.reason;
   if (err instanceof LlmBudgetExceededError) return null;
   // A claim another Steward holds (steward-lease.ts) is retryable and is
   // nobody's fault: the row is simply open again.
@@ -196,5 +212,23 @@ export function faultToolNote(reason: PlatformFaultReason, what: string): string
     (isDeploymentFaultReason(reason)
       ? `The operator has been told; do not raise_issue for it, and retrying in this run will not help.`
       : `One retry is reasonable; if it fails again, go on without it.`)
+  );
+}
+
+/**
+ * What a decision tool tells its agent when a platform fault stopped the
+ * decision partway (#980): accepting an intake proposal runs the Matcher
+ * before anything is written, so a fault there leaves nothing recorded. The
+ * run ends with this result (the agent's wrapper throws PlatformFaultStop
+ * before its next turn) and the work goes back to its queue, uncounted, so
+ * no retry in the run and no report are wanted. `what` names the decision,
+ * `queue` where the work waits.
+ */
+export function faultStopNote(reason: PlatformFaultReason, what: string, queue: string): string {
+  return (
+    `${what} could not complete because of ${PLATFORM_FAULT_LABELS[reason]}. Nothing was recorded. ` +
+    (isDeploymentFaultReason(reason) ? `The operator has been told; do not raise_issue for it. ` : ``) +
+    `This run ends here: ${queue} once the fault clears, and this attempt is not counted against it. ` +
+    `Do not record a different decision to get around the fault, and do not retry.`
   );
 }

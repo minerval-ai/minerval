@@ -37,6 +37,7 @@ import {
   rejectPrizeClaimAtReview,
 } from "../../services/prize-claim-service.js";
 import { currentLabel } from "../usage-context.js";
+import { faultStopNote, platformFaultOf } from "../../services/deployment-fault.js";
 
 export function getReviewerToolDefinitions(): Tool[] {
   return [
@@ -383,6 +384,22 @@ export async function executeReviewerTool(
         return `Error: Unknown reviewer tool: ${toolName}`;
     }
   } catch (err) {
+    // A platform fault (the Matcher's provider out of credits on an intake
+    // accept, #980) is told by its class, not the provider's raw text: it
+    // is nothing about the contribution, and the review is tried again once
+    // the fault clears (contribution-pipeline.ts).
+    const fault = platformFaultOf(err);
+    if (fault) {
+      return JSON.stringify({
+        success: false,
+        platform_fault: fault,
+        error: faultStopNote(
+          fault,
+          toolName === "record_review_decision" ? "Recording this review decision" : `${toolName}`,
+          "the contribution goes back to the review queue and is reviewed again"
+        ),
+      });
+    }
     return `Error: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
