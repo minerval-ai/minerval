@@ -15,23 +15,58 @@ import { currentLabel } from "../llm/usage-context.js";
 
 const owls = (micro: number | string | null | undefined) => microUsdToOwls(Number(micro ?? 0));
 
+// The mandate's commissioned runs that settled since the last review ($2),
+// one row per commissioned allocation, as the review reads them back.
+//
+// Settled is what allocation_report means by it (mandate-service.ts):
+// released, or spent to the last micro-owl. completeAction stamps
+// released_at only on an allocation that has something left to return, so
+// a run that spent its whole budget keeps released_at NULL; it settled when
+// its action closed, and that is the time it is counted at. Filtering on
+// released_at alone left out exactly the runs that spent everything (#1027).
+//
+// A run's spend includes its overage: the allocation completeAction writes,
+// already spent and released in the same instant, for what the run metered
+// past its allocations. That row has no commissioned_by of its own and
+// belongs to the allocation the mandate placed on the same action just
+// before it, as allocation_report attributes it.
+const SETTLED_RUNS = `
+  WITH settled_runs AS (
+    SELECT * FROM (
+      SELECT al.action_id, a.kind, a.claim_id,
+             al.amount_micro_usd AS budget,
+             al.spent_micro_usd + COALESCE((
+               SELECT SUM(o.spent_micro_usd) FROM minerval_whole.allocation_money o
+                WHERE o.grant_id = al.grant_id AND o.action_id = al.action_id
+                  AND o.commissioned_by IS NULL AND o.released_at IS NOT DISTINCT FROM o.created_at
+                  AND o.spent_micro_usd = o.amount_micro_usd AND o.created_at > al.created_at
+                  AND NOT EXISTS (SELECT 1 FROM minerval_whole.allocation_money q
+                                   WHERE q.grant_id = o.grant_id AND q.action_id = o.action_id
+                                     AND q.created_at > al.created_at AND q.created_at < o.created_at)
+             ), 0) AS spent,
+             CASE WHEN al.released_at IS NOT NULL THEN al.released_at
+                  WHEN al.spent_micro_usd >= al.amount_micro_usd AND a.status NOT IN ('open', 'running') THEN a.updated_at
+             END AS settled_at
+        FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
+       WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL
+    ) r
+    WHERE r.settled_at >= $2::timestamptz
+  )`;
+
 export async function reflectionSections(grantId: string, sinceIso: string): Promise<string> {
   const [money] = await rawQuery<{ runs: number; spent: number; budget: number; heavy: number }>(
-    `SELECT count(*)::int AS runs,
-            COALESCE(SUM(spent_micro_usd), 0)::bigint AS spent,
-            COALESCE(SUM(amount_micro_usd), 0)::bigint AS budget,
-            count(*) FILTER (WHERE spent_micro_usd >= 0.9 * amount_micro_usd)::int AS heavy
-       FROM minerval_whole.allocation_money
-      WHERE grant_id = $1 AND commissioned_by IS NOT NULL AND released_at IS NOT NULL
-        AND released_at >= $2::timestamptz`,
+    `${SETTLED_RUNS}
+     SELECT count(*)::int AS runs,
+            COALESCE(SUM(spent), 0)::bigint AS spent,
+            COALESCE(SUM(budget), 0)::bigint AS budget,
+            count(*) FILTER (WHERE spent >= 0.9 * budget)::int AS heavy
+       FROM settled_runs`,
     [grantId, sinceIso]
   );
   const byKind = await rawQuery<{ kind: string; runs: number; spent: number; budget: number }>(
-    `SELECT a.kind, count(*)::int AS runs, SUM(al.spent_micro_usd)::bigint AS spent, SUM(al.amount_micro_usd)::bigint AS budget
-       FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
-      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.released_at IS NOT NULL
-        AND al.released_at >= $2::timestamptz
-      GROUP BY a.kind ORDER BY spent DESC`,
+    `${SETTLED_RUNS}
+     SELECT kind, count(*)::int AS runs, SUM(spent)::bigint AS spent, SUM(budget)::bigint AS budget
+       FROM settled_runs GROUP BY kind ORDER BY spent DESC`,
     [grantId, sinceIso]
   );
   const [outcomes] = await rawQuery<{ changed: number; stood: number }>(
@@ -58,13 +93,13 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
       GROUP BY requester_agent, kind, status ORDER BY n DESC`,
     [grantId, sinceIso]
   );
-  const short = await rawQuery<{ action_id: string; claim_id: string | null; kind: string; spent: number }>(
-    `SELECT a.id AS action_id, a.claim_id, a.kind, al.spent_micro_usd AS spent
-       FROM minerval_whole.allocation_money al JOIN actions a ON a.id = al.action_id
-      WHERE al.grant_id = $1 AND al.commissioned_by IS NOT NULL AND al.released_at >= $2::timestamptz
-        AND al.spent_micro_usd >= al.amount_micro_usd
-        AND NOT EXISTS (SELECT 1 FROM petitions p WHERE p.requester_action_id = a.id AND p.created_at >= $2::timestamptz)
-      ORDER BY al.released_at DESC LIMIT 10`,
+  const short = await rawQuery<{ action_id: string; claim_id: string | null; kind: string; spent: number; budget: number }>(
+    `${SETTLED_RUNS}
+     SELECT r.action_id, r.claim_id, r.kind, r.spent, r.budget
+       FROM settled_runs r
+      WHERE r.spent >= r.budget
+        AND NOT EXISTS (SELECT 1 FROM petitions p WHERE p.requester_action_id = r.action_id AND p.created_at >= $2::timestamptz)
+      ORDER BY r.settled_at DESC LIMIT 10`,
     [grantId, sinceIso]
   );
   const decisions = await rawQuery<{ decided_by: string; item_kind: string; n: number }>(
@@ -140,8 +175,10 @@ export async function reflectionSections(grantId: string, sinceIso: string): Pro
     `## Runs that ran short without asking\n\n` +
       (short.length === 0
         ? "None."
-        : `${short.length} run(s) spent their whole budget and did not petition: ` +
-          short.map((r) => `${r.kind}${r.claim_id ? ` on ${r.claim_id}` : ""} (${owls(r.spent)} owls)`).join("; ") +
+        : `${short.length} run(s) spent their whole budget, or went past it, and did not petition: ` +
+          short
+            .map((r) => `${r.kind}${r.claim_id ? ` on ${r.claim_id}` : ""} (${owls(r.spent)} of ${owls(r.budget)} owls)`)
+            .join("; ") +
           "."),
     `## Your program officers\n\n` +
       (decisions.length === 0

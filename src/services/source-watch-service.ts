@@ -21,7 +21,14 @@
  * read is capped in size.
  */
 import { rawQuery } from "../db/client.js";
-import { fetchPublicBytes, fetchPublicUrl, type PublicBody } from "./url-guard.js";
+import {
+  DOCUMENT_MAX_DOWNLOAD_BYTES,
+  DOCUMENT_MAX_DOWNLOAD_MB,
+  ResponseTooLargeError,
+  fetchPublicBytes,
+  fetchPublicUrl,
+  type PublicBody,
+} from "./url-guard.js";
 import { fetchRuleApplies, noteGiven, noteGivenIn } from "./given-addresses.js";
 import { parseDoi } from "./identifiers.js";
 import { bodyToText, looksLikePdf, windowText, type TextWindow } from "./document-text.js";
@@ -650,6 +657,21 @@ export async function pageText(body: PublicBody): Promise<string> {
 }
 
 /**
+ * What read_page says of a document over the limit: the limit, why, that an
+ * ingest meets the same one, and where else the text may be found.
+ */
+export function tooLargeToRead(url: string): string {
+  return (
+    `${url} is over ${DOCUMENT_MAX_DOWNLOAD_MB} MB and was not fetched. A fetched document is held whole ` +
+    `in the memory of the server every agent runs on, which no budget bounds, so the limit is a size; an ` +
+    `ingest of this URL fails at the same limit. Look for the same text in a smaller form: an HTML ` +
+    `version, the publisher's landing or abstract page, the document's parts published separately (a ` +
+    `chapter, an appendix, a summary), or, for an arXiv paper, its abs page or read_arxiv_source where ` +
+    `you have it. If the document matters and no smaller form exists, say so with raise_issue.`
+  );
+}
+
+/**
  * Fetch a public page and return one window of its text; errors as a
  * message. The window has the contract of provenance_read_source
  * (`offset`, `total_chars`, `truncated`, `next_offset`), so a long paper is
@@ -658,14 +680,15 @@ export async function pageText(body: PublicBody): Promise<string> {
  * agent that only looks (the Lookout, a Grantmaker) leaves the graph as it
  * found it. Each window fetches the page again; a paged read of one
  * document is a handful of fetches, which the guarded fetcher bounds in
- * size and time.
+ * size and time: a document up to DOCUMENT_MAX_DOWNLOAD_BYTES, the same
+ * limit an ingest of it meets.
  */
 export async function readPage(
   url: string,
   opts: { offset?: number; maxChars?: number } = {}
 ): Promise<ReadPageResult> {
   try {
-    const body = await fetchPublicBytes(url, { userAgent: USER_AGENT });
+    const body = await fetchPublicBytes(url, { userAgent: USER_AGENT, maxBytes: DOCUMENT_MAX_DOWNLOAD_BYTES });
     const full = await pageText(body);
     // Where the run is held to addresses it was given, the ones this page
     // carries are given now: the address it was served from after any
@@ -675,6 +698,7 @@ export async function readPage(
     const { content, ...window } = windowText(full, opts.offset, opts.maxChars);
     return { ok: true, url, text: content, chars: content.length, ...window };
   } catch (err) {
+    if (err instanceof ResponseTooLargeError) return { ok: false, problem: tooLargeToRead(err.url) };
     return { ok: false, problem: err instanceof Error ? err.message : String(err) };
   }
 }

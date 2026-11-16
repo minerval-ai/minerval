@@ -1202,8 +1202,15 @@
     {
       "idx": 171,
       "version": "7",
-      "when": 1794860741830,
-      "tag": "0171_lookout_commission_window",
+      "when": 1794860401484,
+      "tag": "0171_ledger_sweep_partition",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1794862104252,
+      "tag": "0172_lookout_commission_window",
       "breakpoints": true
     }
   ]

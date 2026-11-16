@@ -22,7 +22,8 @@ vi.mock("../../../src/db/client.js", () => ({
 vi.mock("../../../src/services/source-service.js", () => ({
   getOrCreateSource: mocks.getOrCreateSource,
 }));
-vi.mock("../../../src/services/url-guard.js", () => ({
+vi.mock("../../../src/services/url-guard.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   fetchPublicUrl: mocks.fetchPublicUrl,
 }));
 
