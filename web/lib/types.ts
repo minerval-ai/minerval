@@ -964,6 +964,14 @@ export interface RequestWork {
 }
 
 /** Something someone could do that would improve what the graph knows (Part VIII, Requests). */
+/** What each filter of the requests index would leave, under the others (GET /requests?facets=true). */
+export interface RequestFacets {
+  states: { state: RequestState; count: number }[];
+  tags: { slug: string; name: string; count: number }[];
+  asked: { anyone: number; named: number };
+  waiting: number;
+}
+
 export interface RequestItem {
   id: string;
   ask: string;
@@ -974,7 +982,12 @@ export interface RequestItem {
   who_could?: string | null;
   // Null when open to anyone.
   addressed_to: string | null;
-  bears_on: { id: string; text: string; kind: NodeKind }[];
+  // Each node with its importance, 0..1, where the API serves it.
+  bears_on: { id: string; text: string; kind: NodeKind; importance?: number | null }[];
+  // The importance of the most important node it bears on (null when it
+  // bears on none), and the topics of the nodes it bears on.
+  importance?: number | null;
+  tags?: { slug: string; name: string }[];
   // Sources it bears on: a document's full text, a corrected table.
   bears_on_sources?: { id: string; title: string; url?: string | null }[];
   // What it bears on that the graph does not yet hold, in words.

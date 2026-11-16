@@ -22,6 +22,7 @@ import {
   type RequestState,
 } from "../schemas/kinds.js";
 import { generateEmbedding } from "./embedding-service.js";
+import { importanceSql } from "./overlay-service.js";
 import {
   closeRequestActions,
   COVERAGE_SQL,
@@ -515,7 +516,12 @@ export interface RequestView {
   satisfied_by: string;
   who_could: string | null;
   addressed_to: string | null;
-  bears_on: { id: string; text: string; kind: NodeKind }[];
+  /** The nodes it bears on, each with its importance (0..1) as the reader's layer has it. */
+  bears_on: { id: string; text: string; kind: NodeKind; importance: number | null }[];
+  /** The importance of the most important node it bears on; null when it bears on none. */
+  importance: number | null;
+  /** The topics of the nodes it bears on. */
+  tags: { slug: string; name: string }[];
   bears_on_sources: { id: string; title: string; url: string | null }[];
   bears_on_text: string | null;
   filed_by: { kind: RequestFilerKind; label: string };
@@ -695,11 +701,20 @@ function addressedToMandate(r: RequestRowJoined, taken: TakenUp | null): NonNull
 async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const [nodes, sources, work, ledger] = await Promise.all([
-    rawQuery<{ request_id: string; id: string; text: string; kind: NodeKind }>(
-      `SELECT t.request_id, c.id, c.text, c.kind
+  const [nodes, tags, sources, work, ledger] = await Promise.all([
+    rawQuery<{ request_id: string; id: string; text: string; kind: NodeKind; importance: number | null }>(
+      `SELECT t.request_id, c.id, c.text, c.kind, ${importanceSql("c")} AS importance
          FROM request_targets t JOIN claims c ON c.id = t.claim_id
         WHERE t.request_id = ANY($1::uuid[]) ORDER BY t.id`,
+      [ids]
+    ),
+    // The topics of the nodes it bears on: what a reader browsing by subject finds it under.
+    rawQuery<{ request_id: string; slug: string; name: string }>(
+      `SELECT DISTINCT t.request_id, g.slug, g.name
+         FROM request_targets t
+         JOIN taggings tg ON tg.subject_kind = 'claim' AND tg.subject_id = t.claim_id
+         JOIN tags g ON g.id = tg.tag_id AND g.merged_into IS NULL
+        WHERE t.request_id = ANY($1::uuid[]) ORDER BY g.name`,
       [ids]
     ),
     rawQuery<{ request_id: string; id: string; title: string; url: string | null }>(
@@ -780,6 +795,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
     return m;
   };
   const nodesBy = group(nodes);
+  const tagsBy = group(tags);
   const sourcesBy = group(sources);
   const workBy = group(work);
   const ledgerBy = new Map(ledger.map((l) => [l.request_id, l]));
@@ -791,7 +807,17 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
     satisfied_by: r.satisfied_by,
     who_could: r.who_could,
     addressed_to: r.addressed_to,
-    bears_on: (nodesBy.get(r.id) ?? []).map(({ id, text, kind }) => ({ id, text, kind })),
+    bears_on: (nodesBy.get(r.id) ?? []).map(({ id, text, kind, importance }) => ({
+      id,
+      text,
+      kind,
+      importance: importance == null ? null : Number(importance),
+    })),
+    importance: (() => {
+      const xs = (nodesBy.get(r.id) ?? []).map((n) => n.importance).filter((x): x is number => x != null).map(Number);
+      return xs.length > 0 ? Math.max(...xs) : null;
+    })(),
+    tags: (tagsBy.get(r.id) ?? []).map(({ slug, name }) => ({ slug, name })),
     bears_on_sources: (sourcesBy.get(r.id) ?? []).map(({ id, title, url }) => ({ id, title, url })),
     bears_on_text: r.bears_on_text,
     filed_by: { kind: r.filer_kind, label: filerLabel(r) },
@@ -991,14 +1017,18 @@ export async function getRequest(id: string): Promise<RequestView | null> {
 }
 
 /**
- * Requests, newest first. `live` keeps the ones still open to work (open,
- * addressed, in progress); `claimId` keeps the ones that bear on that node.
+ * Requests, newest first unless ordered otherwise. `live` keeps the ones
+ * still open to work (open, addressed, in progress); `claimId` keeps the
+ * ones that bear on that node; `facets` counts what each filter would leave.
  */
 // The cosine similarity a request needs to match a query by meaning alone,
 // the same floor claim search defaults to (claimSearchParams.min_similarity).
 const REQUEST_MIN_SIMILARITY = 0.3;
 
-export async function listRequests(opts: {
+/** How a list of requests is ordered: newest, by the importance of what it bears on, or closest to a search. */
+export type RequestOrder = "recent" | "importance" | "relevance";
+
+export interface ListRequestsOptions {
   state?: RequestState;
   live?: boolean;
   claimId?: string;
@@ -1009,21 +1039,72 @@ export async function listRequests(opts: {
    * none) or a node's Steward (#764), so the Curator can list what it keeps.
    */
   keeper?: "curator" | "steward";
+  /** Keep the ones bearing on a node with this topic (a tag slug, or one merged into it). */
+  tag?: string;
+  /**
+   * Keep the ones open to anyone, or the ones put to a particular party
+   * (named in words, or a mandate another graph published here).
+   */
+  asked?: "anyone" | "named";
+  /** Keep the ones whose work is open on the ledger with nothing yet behind it. */
+  waiting?: boolean;
   /**
    * A search over what requests ask and why: by meaning, and by keyword
    * (web-search syntax) for exact terms, ranked by meaning.
    */
   q?: string;
+  /**
+   * 'recent' (newest first, the default without a search), 'importance'
+   * (the most important node it bears on first; a request bearing on no
+   * node last), or 'relevance' (closest to the search, the default with one).
+   */
+  order?: RequestOrder;
   limit?: number;
   offset?: number;
-} = {}): Promise<{ items: RequestView[]; total: number }> {
+}
+
+/** Counts of what each value of a filter would leave, under the other filters in force. */
+export interface RequestFacets {
+  states: { state: RequestState; count: number }[];
+  tags: { slug: string; name: string; count: number }[];
+  asked: { anyone: number; named: number };
+  waiting: number;
+}
+
+type RequestFilterKey = "state" | "tag" | "asked" | "waiting";
+
+// The importance of the most important node a request bears on, read as the
+// reader's layer has it (overlay-service.ts). Null for a request bearing on
+// no node: it sorts last under 'importance'.
+const requestImportanceSql = (): string =>
+  `(SELECT max(${importanceSql("c")}) FROM request_targets t JOIN claims c ON c.id = t.claim_id WHERE t.request_id = r.id)`;
+
+const NAMED_SQL = `(r.addressed_to IS NOT NULL OR r.asked_of_face_id IS NOT NULL)`;
+// Built when used, not at import: tests that mock the ledger stub it whole.
+const waitingSql = (): string => `EXISTS (SELECT 1 FROM actions a
+   WHERE a.kind = 'request' AND a.target_ref = r.id::text AND a.status = 'open' AND ${COVERAGE_SQL} <= 0)`;
+// How many topics the facet lists; the rest are reached from a request's own.
+const FACET_TAGS = 12;
+
+/**
+ * The WHERE clause for a list's filters, leaving out the one named in
+ * `without`: a facet counts what each of its values would leave, so it is
+ * counted under every filter but its own. The search is never left out.
+ */
+async function requestWhere(
+  opts: ListRequestsOptions,
+  embedding: number[] | null,
+  without?: RequestFilterKey
+): Promise<{ where: string[]; params: unknown[]; similarity: string | null; tsq: string | null }> {
   const where: string[] = [];
   const params: unknown[] = [];
-  if (opts.state) {
-    params.push(opts.state);
-    where.push(`r.state = $${params.length}`);
-  } else if (opts.live) {
-    where.push(`r.state IN ('open', 'addressed', 'in_progress')`);
+  if (without !== "state") {
+    if (opts.state) {
+      params.push(opts.state);
+      where.push(`r.state = $${params.length}`);
+    } else if (opts.live) {
+      where.push(`r.state IN ('open', 'addressed', 'in_progress')`);
+    }
   }
   if (opts.keeper) {
     params.push(opts.keeper);
@@ -1037,18 +1118,90 @@ export async function listRequests(opts: {
     params.push(opts.sourceId);
     where.push(`EXISTS (SELECT 1 FROM request_targets t WHERE t.request_id = r.id AND t.source_id = $${params.length})`);
   }
+  if (opts.tag && without !== "tag") {
+    params.push(opts.tag);
+    const n = params.length;
+    where.push(`EXISTS (
+      SELECT 1 FROM request_targets t
+        JOIN taggings tg ON tg.subject_kind = 'claim' AND tg.subject_id = t.claim_id
+        JOIN tags g ON g.id = tg.tag_id
+       WHERE t.request_id = r.id
+         AND (g.slug = $${n} OR g.merged_into IN (SELECT id FROM tags WHERE slug = $${n})))`);
+  }
+  if (opts.asked && without !== "asked") where.push(opts.asked === "named" ? NAMED_SQL : `NOT ${NAMED_SQL}`);
+  if (opts.waiting && without !== "waiting") where.push(waitingSql());
   // A search works as claim search does (search-service.ts): keyword OR
-  // semantic match for recall, ranked by cosine similarity to the query,
-  // keyword rank (the ask weighs most; see requests.text_search) and then
-  // recency breaking ties. A request with no embedding ranks after every
-  // scored one. Without an embedding of the query it falls back to keyword
-  // matching, loudly. Without a query the list is simply newest first.
-  let order = "r.created_at DESC, r.id";
+  // semantic match for recall. Without an embedding of the query it falls
+  // back to keyword matching, loudly (listRequests).
+  let similarity: string | null = null;
+  let tsq: string | null = null;
   const q = opts.q?.trim();
   if (q) {
     params.push(q);
-    const tsq = `websearch_to_tsquery('english', $${params.length})`;
-    let queryEmbedding: number[] | null = null;
+    tsq = `websearch_to_tsquery('english', $${params.length})`;
+    if (embedding) {
+      params.push(`[${embedding.join(",")}]`, REQUEST_MIN_SIMILARITY);
+      similarity = `1 - (r.embedding <=> $${params.length - 1}::vector)`;
+      where.push(`(r.text_search @@ ${tsq} OR ${similarity} > $${params.length})`);
+    } else {
+      where.push(await requestTextMatch("r", tsq));
+    }
+  }
+  return { where, params, similarity, tsq };
+}
+
+const whereClause = (where: string[]) => (where.length ? `WHERE ${where.join(" AND ")}` : "");
+
+async function requestFacets(opts: ListRequestsOptions, embedding: number[] | null): Promise<RequestFacets> {
+  const [states, tags, asked, waiting] = await Promise.all([
+    requestWhere(opts, embedding, "state"),
+    requestWhere(opts, embedding, "tag"),
+    requestWhere(opts, embedding, "asked"),
+    requestWhere(opts, embedding, "waiting"),
+  ]);
+  const [stateRows, tagRows, askedRows, waitingRows] = await Promise.all([
+    rawQuery<{ state: RequestState; n: number }>(
+      `SELECT r.state, count(*)::int AS n FROM requests r ${whereClause(states.where)} GROUP BY r.state`,
+      states.params
+    ),
+    rawQuery<{ slug: string; name: string; n: number }>(
+      `SELECT g.slug, g.name, count(DISTINCT r.id)::int AS n
+         FROM requests r
+         JOIN request_targets t ON t.request_id = r.id
+         JOIN taggings tg ON tg.subject_kind = 'claim' AND tg.subject_id = t.claim_id
+         JOIN tags g ON g.id = tg.tag_id AND g.merged_into IS NULL
+        ${whereClause(tags.where)}
+        GROUP BY g.slug, g.name ORDER BY count(DISTINCT r.id) DESC, g.name LIMIT ${FACET_TAGS}`,
+      tags.params
+    ),
+    rawQuery<{ named: boolean; n: number }>(
+      `SELECT ${NAMED_SQL} AS named, count(*)::int AS n FROM requests r ${whereClause(asked.where)} GROUP BY 1`,
+      asked.params
+    ),
+    rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM requests r ${whereClause([...waiting.where, waitingSql()])}`,
+      waiting.params
+    ),
+  ]);
+  return {
+    states: REQUEST_STATES.map((state) => ({ state, count: stateRows.find((s) => s.state === state)?.n ?? 0 })).filter(
+      (s) => s.count > 0
+    ),
+    tags: tagRows.map((t) => ({ slug: t.slug, name: t.name, count: t.n })),
+    asked: {
+      anyone: askedRows.find((a) => !a.named)?.n ?? 0,
+      named: askedRows.find((a) => a.named)?.n ?? 0,
+    },
+    waiting: waitingRows[0]?.n ?? 0,
+  };
+}
+
+export async function listRequests(
+  opts: ListRequestsOptions & { facets?: boolean } = {}
+): Promise<{ items: RequestView[]; total: number; facets: RequestFacets | null }> {
+  const q = opts.q?.trim();
+  let queryEmbedding: number[] | null = null;
+  if (q) {
     try {
       queryEmbedding = await generateEmbedding(q);
     } catch (err) {
@@ -1056,24 +1209,36 @@ export async function listRequests(opts: {
         `Request search embedding failed; falling back to keyword-only matching: ${err instanceof Error ? err.message : String(err)}`
       );
     }
-    if (queryEmbedding) {
-      params.push(`[${queryEmbedding.join(",")}]`, REQUEST_MIN_SIMILARITY);
-      const similarity = `1 - (r.embedding <=> $${params.length - 1}::vector)`;
-      where.push(`(r.text_search @@ ${tsq} OR ${similarity} > $${params.length})`);
-      order = `COALESCE(${similarity}, 0) DESC, ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
-    } else {
-      where.push(await requestTextMatch("r", tsq));
-      order = `ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
-    }
   }
-  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-  const [count] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM requests r ${clause}`, params);
+  const { where, params, similarity, tsq } = await requestWhere(opts, queryEmbedding);
+  // Under a search: cosine similarity to the query, then keyword rank (the
+  // ask weighs most; see requests.text_search), then recency; a request with
+  // no embedding ranks after every scored one. Without one, newest first.
+  // 'importance' puts the most important node a request bears on first and
+  // breaks ties the same way.
+  const recent = "r.created_at DESC, r.id";
+  const relevance = tsq
+    ? similarity
+      ? `COALESCE(${similarity}, 0) DESC, ts_rank(r.text_search, ${tsq}) DESC, ${recent}`
+      : `ts_rank(r.text_search, ${tsq}) DESC, ${recent}`
+    : recent;
+  const order =
+    opts.order === "importance"
+      ? `${requestImportanceSql()} DESC NULLS LAST, ${relevance}`
+      : opts.order === "recent"
+        ? recent
+        : relevance;
+  const clause = whereClause(where);
+  const [[count], facets] = await Promise.all([
+    rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM requests r ${clause}`, params),
+    opts.facets ? requestFacets(opts, queryEmbedding) : Promise.resolve(null),
+  ]);
   params.push(opts.limit ?? 50, opts.offset ?? 0);
   const rows = await rawQuery<RequestRowJoined>(
     `${REQUEST_SELECT} ${clause} ORDER BY ${order} LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
-  return { items: await assemble(rows), total: count?.n ?? 0 };
+  return { items: await assemble(rows), total: count?.n ?? 0, facets };
 }
 
 /**

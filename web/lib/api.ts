@@ -22,6 +22,7 @@ import type {
   TagSummary,
   TrajectoryPoint,
   ProvenanceStory,
+  RequestFacets,
   RequestItem,
   SourceFacts,
   SourceDocument,
@@ -224,11 +225,15 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
 // shows the ones still open to work first; a request with no node of its own
 // appears only here.
 // With `q`, a search by meaning and keyword, ranked by meaning.
-export async function fetchRequests(limit = 100, q?: string): Promise<RequestItem[]> {
-  const p = new URLSearchParams({ limit: String(limit) });
-  if (q) p.set("q", q);
-  const res = await apiGet<{ requests: RequestItem[] }>(`/requests?${p.toString()}`);
-  return res.requests;
+// One page of the requests index, with its total and the facets that count
+// what each filter would leave (web/lib/requests.ts builds the query).
+export async function fetchRequestsPage(
+  query: URLSearchParams,
+): Promise<{ requests: RequestItem[]; total: number; facets: RequestFacets | null }> {
+  const res = await apiGet<{ requests: RequestItem[]; total?: number; facets?: RequestFacets }>(
+    `/requests?${query.toString()}`,
+  );
+  return { requests: res.requests, total: res.total ?? res.requests.length, facets: res.facets ?? null };
 }
 
 export async function fetchRequest(id: string): Promise<RequestItem | null> {

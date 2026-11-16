@@ -28,7 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" className="wordmark plain">
               <span className="glyph" aria-hidden><Mark size="0.82em" /></span>Minerval
             </Link>
-            {/* Four routes carry the phone masthead; `findings` and `about` are
+            {/* Four routes carry the phone masthead; `findings`, `requests` and `about` are
                 marked wide-only and drop out below 640px, where the footer nav
                 carries both (#367). Anything added here should be weighed the same way:
                 the phone row is one line, and it stays one line. */}
@@ -38,6 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link href="/mandates">mandates</Link>
               <Link href="/docs">docs</Link>
               <Link className="wide-only" href="/findings">findings</Link>
+              <Link className="wide-only" href="/requests">requests</Link>
               <Link className="wide-only" href="/about">about</Link>
               <Link href="/account">account</Link>
             </nav>
@@ -66,6 +67,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {/* the findings feed (#394): the record of what the
                   administrators found worth telling people */}
               <Link href="/findings">findings</Link>
+              {/* open problems the graph wants worked on: to take up, fund or answer */}
+              <Link href="/requests">requests</Link>
               {/* what people and organisations have told the graph they hold,
                   beside what the graph assesses (constitution §4) */}
               <Link href="/stated-views">stated views</Link>

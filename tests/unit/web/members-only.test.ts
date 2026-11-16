@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { parseRequestsView } from "../../../web/lib/requests";
 
 // The web app's part in a members-only deployment (web/lib/members.ts):
 // every read names its reader and is kept for no one, no read is ever
@@ -207,7 +208,7 @@ describe("in a members-only deployment", () => {
     const { data } = await load("members", false);
     expect(await data.loadClaim("inflation-2022")).toEqual({ detail: null, source: "live" });
     expect((await data.loadClaims()).results).toEqual([]);
-    expect((await data.loadRequests()).requests).toEqual([]);
+    expect((await data.loadRequestsPage(parseRequestsView({}))).requests).toEqual([]);
     expect((await data.loadRequest("anything")).request).toBeNull();
     expect((await data.loadOpenPrizes()).prizes).toEqual([]);
     expect((await data.loadAttempt("inflation-2022", "a")).attempt).toBeNull();

@@ -21,7 +21,12 @@ const listRequestsParams = z.object({
   claim_id: z.guid().optional(),
   source_id: z.guid().optional(),
   keeper: z.enum(["curator", "steward"]).optional(),
+  tag: z.string().min(1).max(120).optional(),
+  asked: z.enum(["anyone", "named"]).optional(),
+  waiting: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
   q: z.string().max(500).optional(),
+  order: z.enum(["recent", "importance", "relevance"]).optional(),
+  facets: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -32,7 +37,14 @@ const nodeRef = {
     id: { type: "string", format: "uuid" },
     text: { type: "string" },
     kind: { type: "string" },
+    // How much it is worth getting right, 0..1 (constitution §19).
+    importance: { type: "number", nullable: true },
   },
+} as const;
+
+const tagRef = {
+  type: "object",
+  properties: { slug: { type: "string" }, name: { type: "string" } },
 } as const;
 
 export const REQUEST_SCHEMA = {
@@ -45,6 +57,10 @@ export const REQUEST_SCHEMA = {
     who_could: { type: "string", nullable: true },
     addressed_to: { type: "string", nullable: true },
     bears_on: { type: "array", items: nodeRef },
+    // The importance of the most important node it bears on; null when it bears on none.
+    importance: { type: "number", nullable: true },
+    // The topics of the nodes it bears on.
+    tags: { type: "array", items: tagRef },
     bears_on_sources: {
       type: "array",
       items: {
@@ -190,11 +206,41 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
               description:
                 "Who keeps it: the Curator (requests bearing on several nodes or on none) or a node's Steward",
             },
+            tag: {
+              type: "string",
+              maxLength: 120,
+              description: "Only requests bearing on a node with this topic (a tag slug)",
+            },
+            asked: {
+              type: "string",
+              enum: ["anyone", "named"],
+              description:
+                "Only requests open to anyone, or only those put to a particular party (named in words, or a mandate another graph published)",
+            },
+            waiting: {
+              type: "string",
+              enum: ["true", "false"],
+              description: "true: only requests whose work is open on the ledger and nobody has yet commissioned",
+            },
             q: {
               type: "string",
               maxLength: 500,
               description:
                 "Search what requests ask and why, by meaning and by keyword (web-search syntax); ranks by meaning",
+            },
+            order: {
+              type: "string",
+              enum: ["recent", "importance", "relevance"],
+              description:
+                "recent: newest first (the default without q). importance: the most important node each bears on first, " +
+                "so the requests whose answer matters most come first. relevance: closest to q (the default with q)",
+            },
+            facets: {
+              type: "string",
+              enum: ["true", "false"],
+              description:
+                "true: also count, under the other filters in force, the requests in each state, under each topic, " +
+                "open to anyone or put to a party, and waiting for funding",
             },
             limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
             offset: { type: "integer", minimum: 0, default: 0 },
@@ -206,23 +252,50 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               requests: { type: "array", items: REQUEST_SCHEMA },
               total: { type: "integer" },
+              facets: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  states: {
+                    type: "array",
+                    items: { type: "object", properties: { state: { type: "string" }, count: { type: "integer" } } },
+                  },
+                  tags: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: { slug: { type: "string" }, name: { type: "string" }, count: { type: "integer" } },
+                    },
+                  },
+                  asked: {
+                    type: "object",
+                    properties: { anyone: { type: "integer" }, named: { type: "integer" } },
+                  },
+                  waiting: { type: "integer" },
+                },
+              },
             },
           },
         },
       },
       handler: async (request, reply) => {
         const params = listRequestsParams.parse(request.query);
-        const { items, total } = await listRequests({
+        const { items, total, facets } = await listRequests({
           state: params.state === "live" ? undefined : params.state,
           live: params.state === "live",
           claimId: params.claim_id,
           sourceId: params.source_id,
           keeper: params.keeper,
+          tag: params.tag,
+          asked: params.asked,
+          waiting: params.waiting,
           q: params.q,
+          order: params.order,
+          facets: params.facets,
           limit: params.limit,
           offset: params.offset,
         });
-        return reply.send({ requests: items, total });
+        return reply.send({ requests: items, total, ...(facets ? { facets } : {}) });
       },
     }
   );

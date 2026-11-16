@@ -1330,6 +1330,18 @@ export async function allocateToRequest(
   });
 }
 
+// Say on a request's record, under the account's name, that it is taking the
+// request up (POST /requests/:id/take-up). `already` when it said so before.
+export async function takeUpRequest(
+  externalId: string,
+  requestId: string
+): Promise<{ work_id: string; already: boolean; in_words: string }> {
+  return accountFetch(`/requests/${pathSegment(requestId)}/take-up`, {
+    method: "POST",
+    actingUser: externalId,
+  });
+}
+
 // --- prize claims (docs/mathematics.md §8.4, §8.7) ---------------------------
 
 // What the filing returns (201): the new prize claim's id, the contribution
