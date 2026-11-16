@@ -112,9 +112,52 @@ export function splitAsk(ask: string): AskParts {
   return { ...headlineOf(lead), parts: parts.map(clean), marker: markers[0]!.kind, tail };
 }
 
-/** The headline of an ask alone: what a list or a margin shows. */
+/** `text` without its bracketed asides, "(...)" and "[...]", nested ones included. */
+function withoutAsides(text: string): string {
+  let out = "";
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === "(" || ch === "[") depth++;
+    else if ((ch === ")" || ch === "]") && depth > 0) depth--;
+    else if (depth === 0) out += ch;
+  }
+  return out.replace(/\s+([,.;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
+}
+
+// Past this many characters a first sentence is too long to read as a
+// headline in a list: it is shortened for display (shortHeadline).
+const HEADLINE_CHARS = 170;
+
+/**
+ * A first sentence as a headline a reader takes in at a glance. A trailing
+ * colon, which only introduces the list after it, is dropped; a sentence
+ * still too long loses its bracketed asides (citations, parameters), and
+ * then everything from its first colon or semicolon on, where that leaves a
+ * clause that stands on its own. The words kept are the filer's, in order;
+ * the whole sentence is on the request's page.
+ */
+export function shortHeadline(sentence: string): string {
+  let s = sentence.trim().replace(/\s*[:;,]$/, "");
+  if (s.length <= HEADLINE_CHARS) return s;
+  s = withoutAsides(s);
+  if (s.length <= HEADLINE_CHARS) return s;
+  const cut = /[:;] /g;
+  for (let m = cut.exec(s); m; m = cut.exec(s)) {
+    if (m.index >= 50) return s.slice(0, m.index);
+  }
+  return s;
+}
+
+/** The headline of an ask, as a list, a margin or a page's title shows it. */
 export function askHeadline(ask: string): string {
-  return splitAsk(ask).headline;
+  return shortHeadline(splitAsk(ask).headline);
+}
+
+/** Whether the headline shown leaves out part of the ask's first sentence, which the page then gives whole. */
+export function headlineShortened(ask: string): boolean {
+  const full = splitAsk(ask).headline;
+  const bare = (s: string) => s.replace(/[\s.:;,]+$/, "");
+  return bare(shortHeadline(full)) !== bare(full);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,8 +191,19 @@ export function fundingWords(r: RequestItem): { words: string; waiting: boolean 
   if (!l) return r.state === "in_progress" ? { words: "under way", waiting: false } : null;
   if (l.status === "running") return { words: "funded and under way", waiting: false };
   if (l.backing_usd > 0) return { words: "commissioned, starting shortly", waiting: false };
-  if (l.variant === "scope") return { words: "not yet priced: a short scoping pass comes first", waiting: true };
-  return { words: `${usd(l.cost_usd)} to do, waiting for a funder`, waiting: true };
+  // In progress with its row open again: a stage is done or taken up, and
+  // the work's next stage is what waits.
+  const next = r.state === "in_progress";
+  if (l.variant === "scope") {
+    return {
+      words: next ? "next stage not yet priced" : "not yet priced: a short scoping pass comes first",
+      waiting: true,
+    };
+  }
+  return {
+    words: next ? `next stage ${usd(l.cost_usd)}, waiting for a funder` : `${usd(l.cost_usd)} to do, waiting for a funder`,
+    waiting: true,
+  };
 }
 
 // ---------------------------------------------------------------------------

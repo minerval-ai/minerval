@@ -8,6 +8,7 @@ import {
   askHeadline,
   fundingWords,
   hasRequestFilters,
+  headlineShortened,
   importanceOutOfTen,
   isLive,
   requestsHref,
@@ -45,10 +46,17 @@ function fmtDate(iso: string) {
     : d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-export function RequestState({ r }: { r: Pick<RequestItem, "state"> }) {
+export function RequestState({
+  r,
+  align,
+}: {
+  r: Pick<RequestItem, "state">;
+  /** Where the gloss opens from: "start" for a chip at the left edge of its line, so the gloss is not cut off. */
+  align?: "center" | "start" | "end";
+}) {
   const m = REQUEST_STATE[r.state];
   return (
-    <Term gloss={m.def} href={DEFINED_IN.request} className={`${styles.state} ${styles[`state_${r.state}`] ?? ""}`}>
+    <Term gloss={m.def} href={DEFINED_IN.request} align={align} className={`${styles.state} ${styles[`state_${r.state}`] ?? ""}`}>
       {m.label}
     </Term>
   );
@@ -101,6 +109,9 @@ export function RequestsRail({ requests }: { requests: RequestItem[] }) {
 
 /** The importance of what a request bears on, drawn as the findings index draws a finding's. */
 function ImportanceRail({ r }: { r: RequestItem }) {
+  // An API older than the importance order serves none: nothing is drawn,
+  // rather than a dash that would read as "bears on nothing".
+  if (r.importance === undefined) return null;
   const n = importanceOutOfTen(r.importance);
   if (n === null) {
     return (
@@ -182,7 +193,7 @@ export function RequestListItem({
         )}
         <p className="fnd-foot">
           <span>
-            <RequestState r={r} />
+            <RequestState r={r} align="start" />
             {r.addressed_to && (
               <>
                 {" "}
@@ -567,9 +578,12 @@ function ForAgents({ lines }: { lines: Array<[string, React.ReactNode]> }) {
 /** The ask past its headline: the rest of its opening, its parts as a list, and what is said of them all. */
 function AskBody({ ask }: { ask: string }) {
   const p = splitAsk(ask);
-  if (!p.rest && p.parts.length === 0 && !p.tail) return null;
+  // Where the title shortened the first sentence, the sentence is given whole here.
+  const whole = headlineShortened(ask);
+  if (!whole && !p.rest && p.parts.length === 0 && !p.tail) return null;
   return (
     <div className={styles.askBody}>
+      {whole && <p>{p.headline}</p>}
       {p.rest && <p>{p.rest}</p>}
       {p.parts.length > 0 && (
         <ol type={p.marker === "a" ? "a" : "1"} className={styles.parts}>

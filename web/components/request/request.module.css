@@ -118,7 +118,8 @@ a.way:hover { border-color: var(--ink-soft); background: var(--paper-sunk); text
 
 .box :global(.key-create) { margin: 0.7rem 0 0; }
 .box :global(.key-create input) { flex: 0 0 4.5rem; width: 4.5rem; min-width: 0; }
-.box :global(.key-create button) { flex: 1 1 auto; }
+.box :global(.key-create) { flex-wrap: wrap; }
+.box :global(.key-create button) { flex: 1 1 8rem; min-width: 0; white-space: normal; }
 @media (max-width: 640px) {
   .ways { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
   a.way { padding: 0.55rem 0.65rem; }

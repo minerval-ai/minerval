@@ -4,7 +4,9 @@ import { describe, it, expect } from "vitest";
 // as a headline and its parts, what the index's URL says and how a filter
 // changes it, and how a request's funding is put in words.
 import {
+  askHeadline,
   firstSentenceEnd,
+  headlineShortened,
   fundingWords,
   importanceOutOfTen,
   parseRequestsView,
@@ -68,6 +70,40 @@ describe("reading an ask", () => {
     expect(words([p.headline, p.rest, ...p.parts, p.tail].filter(Boolean).join(" "))).toBe(
       words(ask.replace(/\(\d\)/g, "")).replace(/\s+/g, " ")
     );
+  });
+});
+
+describe("a headline from a long first sentence", () => {
+  it("drops a colon that only introduces the list", () => {
+    const ask =
+      "For the question of when dictionary methods outperform alternatives at discovering unspecified model properties: (1) full-text reads of four studies; (2) the win rates.";
+    expect(askHeadline(ask)).toBe(
+      "For the question of when dictionary methods outperform alternatives at discovering unspecified model properties"
+    );
+    expect(headlineShortened(ask)).toBe(false);
+  });
+
+  it("drops bracketed asides, then everything past the first colon or semicolon", () => {
+    expect(
+      askHeadline(
+        "Run the noise-injection protocol of Tice et al. (direct Gaussian weight noise, sigma sweep 0 to 0.01, five seeds, maximum improvement ratio) and the cross-context consistency check of Lin et al. on the public UK AISI auditing-game models: the prompt-distilled sandbagger Tarun, the imitation-trained Beren, Cedar and Oak, and the unmodified Llama-3.3-70B. Report per-model ratios."
+      )
+    ).toBe(
+      "Run the noise-injection protocol of Tice et al. and the cross-context consistency check of Lin et al. on the public UK AISI auditing-game models"
+    );
+    const sars =
+      "A targeted search for any report, from mid-2025 onward, that a natural progenitor virus or a confirmed infected intermediate host of SARS-CoV-2 has been identified; and recording of the key source instances (WHO SAGO 2025 report, Crits-Christoph et al. 2024, the BANAL and RaTG13 genome papers) on this claim.";
+    expect(askHeadline(sars)).toBe(
+      "A targeted search for any report, from mid-2025 onward, that a natural progenitor virus or a confirmed infected intermediate host of SARS-CoV-2 has been identified"
+    );
+    // The page then gives the sentence whole.
+    expect(headlineShortened(sars)).toBe(true);
+  });
+
+  it("leaves a sentence short enough alone", () => {
+    const ask = "Independently replicate the CC-Delta vs CAA comparison from arXiv 2602.12418 on at least two of its four models. Report seeds.";
+    expect(askHeadline(ask)).toBe("Independently replicate the CC-Delta vs CAA comparison from arXiv 2602.12418 on at least two of its four models.");
+    expect(headlineShortened(ask)).toBe(false);
   });
 });
 
@@ -137,6 +173,10 @@ describe("a request's figures", () => {
     );
     expect(fundingWords({ ...base, ledger: { action_id: "a", variant: "full", status: "running", cost_usd: 4, backing_usd: 4 } })?.waiting).toBe(false);
     expect(fundingWords({ ...base, state: "in_progress" })?.words).toBe("under way");
+    // In progress with its row open again: the next stage is what waits, not the request.
+    expect(
+      fundingWords({ ...base, state: "in_progress", ledger: { action_id: "a", variant: "full", status: "open", cost_usd: 4, backing_usd: 0 } })
+    ).toEqual({ words: "next stage $4.00, waiting for a funder", waiting: true });
     expect(fundingWords({ ...base, state: "met" })).toBeNull();
   });
 
