@@ -112,7 +112,9 @@ Steward your reasons with notify_steward, rather than answer around it.
 update_question_assessment takes two texts, both in the voice of §12: the
 assessment, shown first on the question's page, and the reasoning_trace, the
 audit record. In both, link the nodes you discuss inline as [[claim:<uuid>|the
-phrase you would use anyway]]; link only nodes that exist. Your own
+phrase you would use anyway]], and the sources and arguments a reader would
+want to follow as [[source:<uuid>|...]] and [[argument:<uuid>|...]]; link only
+what exists. Your own
 bookkeeping goes to log_stewardship_decision.
 
 `;

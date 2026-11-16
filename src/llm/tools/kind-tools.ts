@@ -269,7 +269,8 @@ export function getQuantityToolDefinitions(): Tool[] {
         "over its value, all things considered, not an average of the sources (§10), at the " +
         "resolution the evidence supports. State intervals as 90% intervals. assessment is the " +
         "reader-facing account; work shows which figures and arguments the estimate rests on, how " +
-        "you combined them, and the arithmetic. Both may link nodes as [[claim:<uuid>|phrase]].",
+        "you combined them, and the arithmetic. Both may link nodes as [[claim:<uuid>|phrase]], " +
+        "and sources and arguments as [[source:<uuid>|phrase]] and [[argument:<uuid>|phrase]].",
       input_schema: {
         type: "object" as const,
         properties: {

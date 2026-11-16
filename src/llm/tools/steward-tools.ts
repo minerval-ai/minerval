@@ -381,8 +381,10 @@ export function getStewardToolDefinitions(): Tool[] {
               "canonical-form edits, importance changes go in " +
               "log_stewardship_decision). When a sentence references a subclaim, " +
               "link it inline as [[claim:<uuid>|the phrase you would use anyway]] " +
-              "(same syntax as argument written forms); renderers turn it into a " +
-              "link to that claim's page.",
+              "(same syntax as argument written forms), and a source or argument " +
+              "the same way, as [[source:<uuid>|...]] or [[argument:<uuid>|...]]; " +
+              "renderers turn each into a link to its page. Link what a reader " +
+              "would want to follow.",
           },
           reasoning_trace: {
             type: "string",
@@ -393,7 +395,8 @@ export function getStewardToolDefinitions(): Tool[] {
               "the CLAIM'S TRUTH: keep structural bookkeeping out of it. Refer to " +
               "subclaims by their text (quoted or paraphrased), never by bare UUID; " +
               "ids are opaque to the human readers this trace exists for. To make a " +
-              "reference followable, link it inline as [[claim:<uuid>|its text]]. " +
+              "reference followable, link it inline as [[claim:<uuid>|its text]], or " +
+              "a source or argument as [[source:<uuid>|...]] or [[argument:<uuid>|...]]. " +
               "Bare source URLs render as links; cite them where the evidence rests " +
               "on them.",
           },
