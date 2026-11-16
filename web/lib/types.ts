@@ -271,7 +271,7 @@ export type InstanceSupport =
   | "evidence_not_shown"
   | "contradicts_own_evidence"
   | "unclear";
-export type QuoteCheck = "verbatim" | "normalized_match" | "not_found" | "no_stored_content";
+export type QuoteCheck = "verbatim" | "normalized_match" | "elided_match" | "not_found" | "no_stored_content";
 
 // A stake recorded for a source (§9): who has it and what it is. A fact
 // about the source, never a finding against it: what the source says is
@@ -1762,6 +1762,8 @@ export interface DocumentInstance {
   verbatim_text: string;
   /** The claim Steward's reading of this appearance, in that claim's voice. */
   reading: { support: InstanceReading["support"]; note: string | null; source_read: boolean } | null;
+  /** A quotation with cuts in it: each piece as the document has it, and what each cut left out. */
+  quoted_parts?: Array<{ text: string; omitted?: true }>;
 }
 
 export interface DocumentSegment {

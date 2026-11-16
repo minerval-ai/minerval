@@ -52,7 +52,33 @@ export function ReadingNote({ inst }: { inst: DocumentInstance }) {
       ) : (
         <p className={`${s.nread} ${s.caution}`}>Not yet read by this claim&rsquo;s Steward.</p>
       )}
+      {inst.quoted_parts && <QuotedCuts parts={inst.quoted_parts} />}
     </div>
+  );
+}
+
+// A quotation with cuts in it ("[...]"): the pieces the claim quotes, and
+// between them, bracketed and muted, what each cut left out. The cut is the
+// recorder's, so the page shows what it skipped beside what it joined.
+function QuotedCuts({ parts }: { parts: NonNullable<DocumentInstance["quoted_parts"]> }) {
+  const cuts = parts.filter((p) => p.omitted).length;
+  return (
+    <details className={s.cuts}>
+      <summary>
+        Quoted with {cuts === 1 ? "a cut" : `${cuts} cuts`}: what {cuts === 1 ? "it leaves" : "they leave"} out
+      </summary>
+      <p>
+        {parts.map((p, i) =>
+          p.omitted ? (
+            <span key={i} className={s.omitted} title="Left out of the quotation">
+              {" "}{p.text}{" "}
+            </span>
+          ) : (
+            <span key={i}>{p.text}</span>
+          )
+        )}
+      </p>
+    </details>
   );
 }
 

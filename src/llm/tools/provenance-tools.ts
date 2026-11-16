@@ -268,6 +268,8 @@ export const executeRecordReading: SkillToolExecutor = async (input, ctx) =>
       quote_check_note:
         result.quote_check === "verbatim" || result.quote_check === "normalized_match"
           ? "The recorded passage is present in the stored text of its source."
+          : result.quote_check === "elided_match"
+            ? "The recorded passage leaves text out (\"[...]\"); each piece is in the stored text of its source, in order. Read what the cuts left out before relying on the quote: if a cut changes what the source says, say so in your reasoning."
           : result.quote_check === "not_found"
             ? "The recorded passage was NOT found in the stored text of its source. Read the source before relying on the quote; if the instance misquotes it, say so in your reasoning."
             : "The graph holds no text for this source, so the quote could not be checked; provenance_read_source fetches and stores it.",

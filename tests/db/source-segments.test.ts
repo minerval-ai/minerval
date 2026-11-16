@@ -90,4 +90,31 @@ describe("segmentSource", () => {
     expect((await getSourceDocument(empty))!).toMatchObject({ segmented: false, segments: [], total_chars: 0 });
     expect(await getSourceDocument(randomUUID())).toBeNull();
   });
+
+  it("anchors a quotation with cuts at its first piece and shows the reader what each cut left out", async () => {
+    const source = await seedSource(HTML);
+    const claim = await seedClaim("night work and metabolic risk");
+    const cut = await seedInstance(
+      claim,
+      source,
+      "Shift workers have long been suspected of higher metabolic risk. [...] Rotating night work was associated with a 1.4-fold higher risk."
+    );
+    const swapped = await seedInstance(
+      claim,
+      source,
+      "Rotating night work was associated with a 1.4-fold higher risk. [...] Shift workers have long been suspected"
+    );
+    await segmentSource(source);
+    const doc = (await getSourceDocument(source))!;
+    const at = doc.segments.find((s) => s.instances.some((i) => i.instance_id === cut))!;
+    expect(at.text).toMatch(/^Shift workers/);
+    const parts = at.instances.find((i) => i.instance_id === cut)!.quoted_parts!;
+    expect(parts.map((p) => !!p.omitted)).toEqual([false, true, false]);
+    expect(parts[0]!.text).toBe("Shift workers have long been suspected of higher metabolic risk.");
+    expect(parts[1]!.text).toBe("Results");
+    expect(parts[2]!.text).toMatch(/^Rotating night work was associated with a 1\.4.fold higher risk\.$/);
+    // Out of order is not the source's text.
+    expect(doc.unanchored.map((i) => i.instance_id)).toEqual([swapped]);
+    expect(doc.unanchored[0]!.quoted_parts).toBeUndefined();
+  });
 });

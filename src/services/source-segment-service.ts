@@ -25,6 +25,7 @@ import { mayOpenRawSources, withheldSourceText, type WithheldSourceText } from "
 import { htmlToText } from "./source-map-service.js";
 import { sourceExtractions, type ExtractionRecord } from "./ingest-focus-service.js";
 import type { SourceSegmentKind } from "../schemas/common.js";
+import { placePieces, quotePieces, quotedParts, type Span } from "./quote-elision.js";
 
 /** Segments beyond this are not recorded; a book is segmented up to here. */
 export const MAX_SEGMENTS = 5000;
@@ -140,21 +141,53 @@ export function segmentText(text: string): DraftSegment[] {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** A piece's words in order, across any punctuation and whitespace between them. */
+function looseQuoteRe(quote: string, flags: string): RegExp | null {
+  const words = quote.normalize("NFKC").match(/[\p{L}\p{N}]+/gu);
+  if (!words || words.length === 0) return null;
+  return new RegExp(words.map(escapeRe).join("[^\\p{L}\\p{N}]+"), flags);
+}
+
 /**
  * Where a quotation sits in the text: exactly, or with its words in order
  * across any punctuation and whitespace (curly quotes, a soft hyphen, a line
- * break). Null when it is not there.
+ * break). A quotation with cuts in it ("[...]", "…") that is not there whole
+ * is found piece by piece, each after the one before (quote-elision.ts);
+ * `parts` then holds where each piece is, and the span runs from the first
+ * to the last. Null when it is not there.
  */
-export function locateQuote(text: string, quote: string): { start: number; end: number } | null {
+export function locateQuote(text: string, quote: string): (Span & { parts?: Span[] }) | null {
   const q = quote.trim();
   if (!q) return null;
   const exact = text.indexOf(q);
   if (exact >= 0) return { start: exact, end: exact + q.length };
-  const words = q.normalize("NFKC").match(/[\p{L}\p{N}]+/gu);
-  if (!words || words.length === 0) return null;
-  const re = new RegExp(words.map(escapeRe).join("[^\\p{L}\\p{N}]+"), "iu");
-  const m = re.exec(text);
-  return m ? { start: m.index, end: m.index + m[0].length } : null;
+  const re = looseQuoteRe(q, "iu");
+  const m = re?.exec(text);
+  if (m) return { start: m.index, end: m.index + m[0].length };
+  const pieces = quotePieces(q);
+  if (pieces.length < 2) return null;
+  const placed = placePieces(pieces, (piece, from) => looseFrom(text, piece, from));
+  if (!("spans" in placed)) return null;
+  const parts = placed.spans;
+  return { start: parts[0]!.start, end: parts[parts.length - 1]!.end, parts };
+}
+
+/**
+ * Where a piece occurs at or after `from`, its words in order. The match
+ * covers words only, so a piece's closing punctuation (the full stop before
+ * a cut) is taken in where the document has it there too, and is not shown
+ * as part of what the cut left out.
+ */
+function* looseFrom(text: string, piece: string, from: number): Iterable<Span> {
+  const re = looseQuoteRe(piece, "giu");
+  if (!re) return;
+  const closing = piece.match(/[^\p{L}\p{N}\s]+$/u)?.[0] ?? "";
+  re.lastIndex = from;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const end = m.index + m[0].length;
+    yield { start: m.index, end: closing && text.startsWith(closing, end) ? end + closing.length : end };
+    re.lastIndex = m.index + 1;
+  }
 }
 
 /** The leaf segment holding an offset, or the innermost section when no leaf does. */
@@ -320,6 +353,14 @@ export interface DocumentInstanceView {
   verbatim_text: string;
   /** The claim Steward's reading of this appearance, in that claim's voice. */
   reading: { support: string; note: string | null; source_read: boolean } | null;
+  /**
+   * Present when the quotation has cuts in it ("[...]") and its pieces were
+   * found in the document: each piece as the document has it, and between
+   * them what the cut left out, so a reader can tell whether the cut changed
+   * what was said. The document's own text, so only for a reader who may
+   * open it (src/raw-sources.ts).
+   */
+  quoted_parts?: Array<{ text: string; omitted?: true }>;
 }
 
 export interface DocumentSegmentView {
@@ -438,12 +479,18 @@ export async function getSourceDocument(
     const n = several.get(claimId.toLowerCase());
     return n ? { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) } : {};
   };
+  const cutsOf = (quote: string): Pick<DocumentInstanceView, "quoted_parts"> => {
+    if (!open) return {};
+    const parts = locateQuote(text, quote)?.parts;
+    return parts ? { quoted_parts: quotedParts(text, parts) } : {};
+  };
   const view = (i: (typeof instances)[number]): DocumentInstanceView => ({
     instance_id: i.id,
     claim: { id: i.claim_id, text: i.claim_text, status: i.status, ...severalOf(i.claim_id) },
     stance: i.stance,
     verbatim_text: i.verbatim_text,
     reading: i.support ? { support: i.support, note: i.note, source_read: i.source_read === true } : null,
+    ...cutsOf(i.verbatim_text),
   });
   const bySegment = new Map<string, DocumentInstanceView[]>();
   const unanchored: DocumentInstanceView[] = [];

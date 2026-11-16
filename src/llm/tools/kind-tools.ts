@@ -20,6 +20,8 @@
  * model's call into a service call and a refusal into a message the agent
  * can act on. `executeKindTool` returns null for a name it does not own.
  */
+import { CUT_RULE } from "../../services/quote-elision.js";
+import { recordedQuoteProblem } from "../../services/source-map-service.js";
 import { oneSourceForAddressSql } from "../../services/layer-service.js";
 import { refusalForCaller } from "../../db/clearance.js";
 import { mirroredNode, mirroredRefusalForAgent, mirroredRowMessage } from "../../services/mirrored-node-service.js";
@@ -254,7 +256,7 @@ export function getQuantityToolDefinitions(): Tool[] {
           ...SOURCE_PROPERTIES,
           verbatim_text: {
             type: "string",
-            description: "The passage that states the figure, verbatim, under 2,000 characters.",
+            description: "The passage that states the figure, verbatim, under 2,000 characters. " + CUT_RULE,
           },
           stated: ESTIMATE_SCHEMA,
           argument_id: { type: "string" },
@@ -468,7 +470,7 @@ export function getQuestionToolDefinitions(): Tool[] {
           instance_id: { type: "string" },
           ...SOURCE_PROPERTIES,
           role: { type: "string", enum: ["asks", "answers"] },
-          verbatim_text: { type: "string", description: "The passage, verbatim, under 2,000 characters." },
+          verbatim_text: { type: "string", description: "The passage, verbatim, under 2,000 characters. " + CUT_RULE },
           answer_id: { type: "string" },
         },
         required: ["question_id", "role"],
@@ -991,6 +993,9 @@ async function executeKindToolImpl(
         sourceKind = source.kind;
         const verbatim = str(input.verbatim_text);
         if (verbatim.length > 2000) return refuse("verbatim_text must stay under 2000 characters: the passage, not the document.");
+        // A quotation with cuts must hold piece by piece against the stored copy.
+        const cutProblem = await recordedQuoteProblem(source.id, verbatim);
+        if (cutProblem) return refuse(cutProblem);
         instanceId = await insertInstance({
           claimId: quantityId,
           sourceId: source.id,
@@ -1226,6 +1231,9 @@ async function executeKindToolImpl(
         sourceKind = source.kind;
         const verbatim = str(input.verbatim_text);
         if (verbatim.length > 2000) return refuse("verbatim_text must stay under 2000 characters: the passage, not the document.");
+        // A quotation with cuts must hold piece by piece against the stored copy.
+        const cutProblem = await recordedQuoteProblem(source.id, verbatim);
+        if (cutProblem) return refuse(cutProblem);
         instanceId = await insertInstance({
           claimId: questionId,
           sourceId: source.id,

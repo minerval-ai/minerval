@@ -4,6 +4,8 @@
  * These let the steward update assessments, modify canonical forms,
  * add decomposition edges, log decisions, and notify dependent stewards.
  */
+import { CUT_RULE } from "../../services/quote-elision.js";
+import { recordedQuoteProblem } from "../../services/source-map-service.js";
 import { refusalForCaller } from "../../db/clearance.js";
 import { placementOf, recordOverlay, setAsideFor } from "../../services/overlay-service.js";
 import {
@@ -466,7 +468,7 @@ export function getStewardToolDefinitions(): Tool[] {
               "The passage as this source states the claim (or its " +
               "negation, or where it mentions it), verbatim — the statement " +
               "itself, not your paraphrase. Under 2,000 characters: the " +
-              "passage, not the document.",
+              "passage, not the document. " + CUT_RULE,
           },
           context: {
             type: "string",
@@ -594,7 +596,7 @@ export function getStewardToolDefinitions(): Tool[] {
             description:
               "Corrected passage, verbatim, where the recorded one is not " +
               "the statement that carries the stance, under 2,000 " +
-              "characters. Omit to leave as is.",
+              "characters. Omit to leave as is. " + CUT_RULE,
           },
           context: {
             type: "string",
@@ -1820,6 +1822,11 @@ export async function executeStewardTool(
         // What kind of document it is, where the agent said: filled in where
         // the source has none more specific, and reported back either way.
         const sourceKind = await applyStatedSourceKind(source.id, input.source_kind);
+        // A quotation with cuts must hold piece by piece against the stored
+        // copy: the cut is the recorder's, and the reader must be able to
+        // check it (quote-elision.ts).
+        const cutProblem = await recordedQuoteProblem(source.id, verbatimText);
+        if (cutProblem) return JSON.stringify({ ...sourceKind, success: false, message: cutProblem });
 
         // Dedup on (claim, source, speaker) so re-assessments that reread the
         // same source don't pile up duplicate instances (#278), while a
@@ -2052,9 +2059,10 @@ export async function executeStewardTool(
           stance: string;
           confidence: number;
           speaker: string | null;
+          source_id: string;
           source_url: string | null;
         }>(
-          `SELECT ci.id, ci.stance, ci.confidence, ci.speaker, s.url AS source_url
+          `SELECT ci.id, ci.stance, ci.confidence, ci.speaker, ci.source_id, s.url AS source_url
            FROM claim_instances ci
            JOIN sources s ON s.id = ci.source_id
            WHERE ci.id = $1 AND ci.claim_id = $2
@@ -2087,6 +2095,11 @@ export async function executeStewardTool(
               (existing.stance === "states" ? "record_estimate" : "record_question_instance") +
               `.`,
           });
+        }
+
+        if (patch.verbatimText !== undefined) {
+          const cutProblem = await recordedQuoteProblem(existing.source_id, patch.verbatimText);
+          if (cutProblem) return JSON.stringify({ success: false, message: cutProblem });
         }
 
         const db = getDb();

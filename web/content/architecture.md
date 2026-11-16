@@ -707,7 +707,13 @@ reader-facing `note`; `worth_reading` with its reason; `source_read`, whether
 the text was actually opened; and `quote_check`, the one mechanical field,
 computed by normalized substring matching of the instance's `verbatim_text`
 against the source's stored text (`verbatim`, `normalized_match`,
-`not_found`, `no_stored_content`) and never written by a model. One reading
+`elided_match`, `not_found`, `no_stored_content`) and never written by a
+model. `elided_match` is a quotation with cuts in it (`[...]`, `…`): each
+piece is in the text, in order, with at most 3,000 characters left out at
+each cut, and the join is the recorder's (`src/services/quote-elision.ts`).
+The recording tools refuse a quotation with cuts whose pieces are not in a
+stored copy, and the source page shows, beside the claim's reading, what
+each cut left out. One reading
 per instance, replaced in place. `claim_provenance_edges` is the load-bearing
 edge: from one source's assertion of the claim (an instance) to the document
 that assertion draws on (a source, which need not assert the claim itself;
