@@ -825,7 +825,8 @@ item first opened its rows, whoever funded that sweep, and a re-sweep is
 another item. The reconcile sweep leaves open the rows a live sweep item
 names even when the partition is not due. A mandate's agents may also
 commission an open sweep row directly (`commission`, with its action id;
-`query_sql` shows the open rows), and `cost_sheet` prices sweeps by the
+`query_sql` shows the open rows, the ledger view's `partition` naming
+each row's tag slug or `residual`), and `cost_sheet` prices sweeps by the
 rule below: per assessed node, a floor and a ceiling. Flags a mandate's
 sweep raises are the same flags: the passes they ask for go to the
 General mandate's officers like any other, unless someone commissions
