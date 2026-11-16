@@ -39,6 +39,7 @@ import {
 } from "./formalization-service.js";
 import { getQuantityDetail, getThresholdOf } from "./quantity-service.js";
 import { getQuestionDetail } from "./question-service.js";
+import { getListDetail } from "./artifact-service.js";
 import { listRequests } from "./request-service.js";
 import { countClaimInstances } from "./claim-instance-service.js";
 import { listUnplacedPassages } from "./argument-instance-service.js";
@@ -95,7 +96,7 @@ const REQUESTS_LIMIT = 20;
 
 /** The tool description every surface shares (agents and MCP alike). */
 export const CLAIM_VIEW_DESCRIPTION =
-  "Open one node (a claim, a quantity or a question) as the graph records " +
+  "Open one node (a claim, a quantity, a question or a list) as the graph records " +
   "it. Every read returns: `claim` (its `kind`, canonical form, type, " +
   "state, importance, contestation, tags, page_url, and Steward state: " +
   "`stewarded_at` null means no Steward has worked it yet, whatever " +
@@ -112,6 +113,9 @@ export const CLAIM_VIEW_DESCRIPTION =
   "`question`: standing with its confidence and marginal_yield " +
   "(`assessment.id` is what a finding cites, `assessment.run_id` the run that wrote it), answers, presuppositions, " +
   "subquestions; " +
+  "`list` on a list (§7b): its specification, its entries in order with each entry's verdict and why it qualifies, " +
+  "what was considered and left out, its fidelity with the assessment (`assessment.id` is what a finding cites), " +
+  "and `stale`, true when an entry moved, joined or left since the list was judged; a list's fidelity is never a verdict on its entries; " +
   "`threshold_of` on a claim that cuts a quantity); `coverage`, " +
   COVERAGE_DESCRIPTION +
   "; `since_assessed` (once " +
@@ -274,6 +278,7 @@ export async function getClaimView(
     quantity,
     thresholdOf,
     question,
+    list,
     requests,
     subclaimCount,
     instanceCount,
@@ -296,6 +301,7 @@ export async function getClaimView(
     kind === "quantity" ? getQuantityDetail(claimId) : null,
     kind === "claim" ? getThresholdOf(claimId) : null,
     kind === "question" ? getQuestionDetail(claimId) : null,
+    kind === "artifact" ? getListDetail(claimId) : null,
     // Requests degrade to none rather than failing the read, as tags do.
     listRequests({ claimId, limit: REQUESTS_LIMIT }).catch(() => ({ items: [], total: 0 })),
     getSubclaimCount(claimId),
@@ -419,6 +425,7 @@ export async function getClaimView(
     quantity: quantity ? { ...quantity, ...kindJudgment } : quantity,
     threshold_of: thresholdOf,
     question: question ? { ...question, ...kindJudgment } : question,
+    ...(list ? { list: { ...list, ...kindJudgment } } : {}),
     ...formalizationRecord,
     waiting_messages: waiting,
     requests: requests.items.map((r) => ({
@@ -663,9 +670,9 @@ async function kindJudgmentFields(
     ).catch(() => []);
     return { marginal_yield: row?.marginal_yield ?? null };
   }
-  if (kind === "question") {
+  if (kind === "question" || kind === "artifact") {
     const [row] = await rawQuery<{ confidence: number | null; marginal_yield: number | null }>(
-      `SELECT confidence, marginal_yield FROM question_assessments_in_force WHERE claim_id = $1`,
+      `SELECT confidence, marginal_yield FROM ${kind === "question" ? "question" : "artifact"}_assessments_in_force WHERE claim_id = $1`,
       [claimId]
     ).catch(() => []);
     return { confidence: row?.confidence ?? null, marginal_yield: row?.marginal_yield ?? null };

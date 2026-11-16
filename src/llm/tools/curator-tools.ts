@@ -45,7 +45,7 @@ import {
 } from "../../schemas/common.js";
 
 import { claimTypeEnum } from "../../schemas/common.js";
-import { NODE_KINDS, type QuantityDefinitionInput } from "../../schemas/kinds.js";
+import { TEXT_NODE_KINDS, type QuantityDefinitionInput } from "../../schemas/kinds.js";
 import { knownDomains } from "../prompts/skills.js";
 import { DEFINITION_PROPERTIES, ESTIMATE_SCHEMA } from "./kind-tools.js";
 
@@ -179,7 +179,7 @@ export function getCuratorToolDefinitions(): Tool[] {
           text: { type: "string", description: "Canonical text of the new node" },
           kind: {
             type: "string",
-            enum: [...NODE_KINDS],
+            enum: [...TEXT_NODE_KINDS],
             description: "The node's kind (default claim).",
           },
           claim_type: {
@@ -548,8 +548,8 @@ export async function executeCuratorTool(
 
       case "create_claim": {
         const kind = input.kind === undefined ? "claim" : String(input.kind);
-        if (!(NODE_KINDS as readonly string[]).includes(kind)) {
-          return JSON.stringify({ success: false, message: `Unknown kind "${kind}". Use one of: ${NODE_KINDS.join(", ")}.` });
+        if (!(TEXT_NODE_KINDS as readonly string[]).includes(kind)) {
+          return JSON.stringify({ success: false, message: `Unknown kind "${kind}". Use one of: ${TEXT_NODE_KINDS.join(", ")}.` });
         }
         const claimType = input.claim_type ? String(input.claim_type) : undefined;
         if (claimType !== undefined && !(CLAIM_TYPES as readonly string[]).includes(claimType)) {

@@ -1,7 +1,8 @@
 /**
  * A node's current judgment lives in the table its kind keeps (§10): a
  * proposition's verdict in `assessments`, a quantity's estimate in
- * `quantity_estimates`, a question's standing in `question_assessments`.
+ * `quantity_estimates`, a question's standing in `question_assessments`,
+ * an artifact's fidelity in `artifact_assessments`.
  * Each table has a view of the judgment in force (`assessments_in_force`
  * and its siblings, #566), and that view is what is read here.
  * The allocation SQL reads two things from it, the Steward's recorded
@@ -21,6 +22,7 @@ function currentJudgmentColumnSql(column: "marginal_yield" | "assessed_at", alia
   return `(CASE ${alias}.kind
     WHEN 'quantity' THEN ${pick("quantity_estimates_in_force")}
     WHEN 'question' THEN ${pick("question_assessments_in_force")}
+    WHEN 'artifact' THEN ${pick("artifact_assessments_in_force")}
     ELSE ${pick("assessments_in_force")} END)`;
 }
 

@@ -1774,6 +1774,14 @@ describe("every route that writes, driven against a private target", () => {
     },
     "POST /claims/propose": async () => () =>
       post(both, "/claims/propose", { claim: `The first partner renewed ${randomUUID()}`, label: A }),
+    "POST /claims/propose-list": async () => () =>
+      post(both, "/claims/propose-list", {
+        title: `The first partner's renewals ${randomUUID()}`,
+        purpose: "Which renewals the first partner made.",
+        inclusion: "A claim that the first partner renewed a named contract.",
+        confirm_new: true,
+        label: A,
+      }),
     "POST /sources": async () => () =>
       post(both, "/sources", { url: `https://example.org/request-labels/sweep/${randomUUID()}`, content: "Text.", label: A }),
     "POST /contributions": async () => () =>
@@ -1831,6 +1839,7 @@ describe("every route that writes, driven against a private target", () => {
     "POST /assistant/conversations/:id/held/:action_id",
     "DELETE /pages/:id",
     "POST /claims/propose",
+    "POST /claims/propose-list",
     "POST /sources",
     "POST /grants",
     "POST /grant-conversations",

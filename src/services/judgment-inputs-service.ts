@@ -37,12 +37,13 @@ import { rawQuery } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { notSetAsideSql } from "./overlay-service.js";
 
-export type JudgmentKind = "assessment" | "quantity_estimate" | "question_assessment";
+export type JudgmentKind = "assessment" | "quantity_estimate" | "question_assessment" | "artifact_assessment";
 
 const JUDGMENT_TABLE: Record<JudgmentKind, string> = {
   assessment: "assessments",
   quantity_estimate: "quantity_estimates",
   question_assessment: "question_assessments",
+  artifact_assessment: "artifact_assessments",
 };
 
 /** Anything that runs a query: `rawQuery`, or a transaction's `tx.query`. */
@@ -52,7 +53,8 @@ type Query = <R>(text: string, params?: unknown[]) => Promise<R[]>;
 const IN_FORCE_ID_SQL = (alias: string) => `COALESCE(
     (SELECT j.id FROM assessments_in_force j WHERE j.claim_id = ${alias}),
     (SELECT j.id FROM quantity_estimates_in_force j WHERE j.claim_id = ${alias}),
-    (SELECT j.id FROM question_assessments_in_force j WHERE j.claim_id = ${alias}))`;
+    (SELECT j.id FROM question_assessments_in_force j WHERE j.claim_id = ${alias}),
+    (SELECT j.id FROM artifact_assessments_in_force j WHERE j.claim_id = ${alias}))`;
 
 /**
  * What a judgment says, as one text that is equal for two judgments exactly
@@ -68,7 +70,8 @@ const VERDICT_KEY_SQL = (id: string) => `COALESCE(
     (SELECT 'quantity:' || v.estimate::text FROM quantity_estimates v WHERE v.id = ${id}),
     (SELECT 'question:' || v.standing || ':' ||
             array_to_string(ARRAY(SELECT f::text FROM unnest(v.favored_claim_ids) f ORDER BY 1), ',')
-       FROM question_assessments v WHERE v.id = ${id}))`;
+       FROM question_assessments v WHERE v.id = ${id}),
+    (SELECT 'artifact:' || v.fidelity FROM artifact_assessments v WHERE v.id = ${id}))`;
 
 /**
  * The verdict of a judgment in words a page can show beside a premise: a
@@ -77,7 +80,8 @@ const VERDICT_KEY_SQL = (id: string) => `COALESCE(
  */
 const VERDICT_WORD_SQL = (id: string) => `COALESCE(
     (SELECT v.status FROM assessments v WHERE v.id = ${id}),
-    (SELECT v.standing FROM question_assessments v WHERE v.id = ${id}))`;
+    (SELECT v.standing FROM question_assessments v WHERE v.id = ${id}),
+    (SELECT v.fidelity FROM artifact_assessments v WHERE v.id = ${id}))`;
 
 /**
  * Record what the judgment `judgmentId` of node `nodeId` was made against:
@@ -142,6 +146,9 @@ export const JUDGED_CTE = `judged AS (
         UNION ALL
         SELECT claim_id, 'question_assessment', id, assessed_at, inputs_recorded, sensitivity_label
           FROM question_assessments_in_force WHERE claim_id = ANY($1::uuid[])
+        UNION ALL
+        SELECT claim_id, 'artifact_assessment', id, assessed_at, inputs_recorded, sensitivity_label
+          FROM artifact_assessments_in_force WHERE claim_id = ANY($1::uuid[])
       ) j
      ORDER BY node_id, assessed_at DESC, kind
   )`;

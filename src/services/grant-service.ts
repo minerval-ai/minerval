@@ -23,7 +23,7 @@ import { budgetJobs, grants, type Grant } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
 import { withOwlBalanceLock } from "./owl-ledger-service.js";
 import type { PlanItemLedger } from "./action-service.js";
-import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
+import { TEXT_NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { grantEscrowBreakdown, grantEscrowBreakdowns } from "./regrant-service.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
@@ -350,7 +350,7 @@ export const PLAN_ITEM_SCHEMA = {
     },
     kind: {
       type: "string",
-      enum: [...NODE_KINDS],
+      enum: [...TEXT_NODE_KINDS],
       description: "Required for propose: the kind you propose. The Matcher settles the node's kind.",
     },
     text: {
@@ -485,8 +485,8 @@ export function validatePlanItems(
       return `${item.action} item needs a rationale`;
     }
     if (item.action === "propose") {
-      if (!(NODE_KINDS as readonly unknown[]).includes(item.kind)) {
-        return `propose item needs a kind: ${NODE_KINDS.join(", ")} (got: ${String(item.kind ?? "none")})`;
+      if (!(TEXT_NODE_KINDS as readonly unknown[]).includes(item.kind)) {
+        return `propose item needs a kind: ${TEXT_NODE_KINDS.join(", ")} (got: ${String(item.kind ?? "none")})`;
       }
       const text = typeof item.text === "string" ? item.text.trim() : "";
       if (!text) return "propose item needs text: the wording you propose";

@@ -43,7 +43,7 @@ export interface ScaspOptions {
 interface FlatNode {
   id: string;
   text: string;
-  kind: "claim" | "quantity" | "question";
+  kind: "claim" | "quantity" | "question" | "artifact";
   status: string | null;
 }
 

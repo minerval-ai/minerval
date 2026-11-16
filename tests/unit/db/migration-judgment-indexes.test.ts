@@ -9,7 +9,9 @@
  * that drops, recreates or alters one of these by name would fail on one
  * kind of deployment or the other, and one that needs to change them has
  * to change the step. This reads every migration after the one that
- * introduced the swap and fails on one that names them.
+ * introduced the swap and fails on one that names them, outside a
+ * redefinition of the step itself (as 0173 made it again, to add the
+ * artifacts' table of judgments to its list).
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -22,6 +24,11 @@ const INDEXES = [
   "idx_quantity_estimates_current",
   "idx_question_assessments_current",
 ];
+
+/** A migration's text less any redefinition of the step, whose list names every such index. */
+function outsideTheStep(sql: string): string {
+  return sql.replace(/CREATE OR REPLACE FUNCTION minerval_enforcement_sync\([\s\S]*?\n\$\$;/g, "");
+}
 
 describe("the indexes that say a node has one current judgment", () => {
   const journal = JSON.parse(readFileSync(join(MIGRATIONS, "meta", "_journal.json"), "utf8")) as {
@@ -43,11 +50,19 @@ describe("the indexes that say a node has one current judgment", () => {
   it("are named by no later migration", () => {
     const wrong: string[] = [];
     for (const entry of journal.entries.slice(swap + 1)) {
-      const sql = readFileSync(join(MIGRATIONS, `${entry.tag}.sql`), "utf8");
+      const sql = outsideTheStep(readFileSync(join(MIGRATIONS, `${entry.tag}.sql`), "utf8"));
       for (const index of INDEXES) {
         if (new RegExp(`\\b${index}(?:_at_label)?\\b`).test(sql)) wrong.push(`${entry.tag}.sql names ${index}`);
       }
     }
     expect(wrong).toEqual([]);
+  });
+
+  it("include the artifacts' index, which the migration that brought it names in the step's list", () => {
+    const entry = journal.entries.find((e) => e.tag.endsWith("_artifacts_lists"));
+    expect(entry).toBeDefined();
+    const sql = readFileSync(join(MIGRATIONS, `${entry!.tag}.sql`), "utf8");
+    expect(sql).toContain("'artifact_assessments', 'idx_artifact_assessments_current', 'claim_id'");
+    for (const index of INDEXES) expect(sql, index).toContain(`'${index}'`);
   });
 });

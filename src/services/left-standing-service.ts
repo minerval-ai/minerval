@@ -53,6 +53,7 @@ const JUDGMENT_OF: Record<string, { table: JudgmentTable; tool: string; noun: st
   claim: { table: "assessments", tool: "update_claim_assessment", noun: "assessment" },
   quantity: { table: "quantity_estimates", tool: "update_quantity_estimate", noun: "estimate" },
   question: { table: "question_assessments", tool: "update_question_assessment", noun: "assessment" },
+  artifact: { table: "artifact_assessments", tool: "update_list_assessment", noun: "assessment" },
 };
 
 const tick = (label: string) => `\`${label}\``;
@@ -62,15 +63,17 @@ function listed(labels: readonly string[]): string {
   return names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
 }
 
-/** The three views of a node's current judgments, as one relation. */
+/** The views of a node's current judgments, as one relation. */
 const CURRENT_VERSIONS = `(SELECT id, claim_id, sensitivity_label, assessed_at FROM assessments_versions
         UNION ALL SELECT id, claim_id, sensitivity_label, assessed_at FROM quantity_estimates_versions
-        UNION ALL SELECT id, claim_id, sensitivity_label, assessed_at FROM question_assessments_versions)`;
+        UNION ALL SELECT id, claim_id, sensitivity_label, assessed_at FROM question_assessments_versions
+        UNION ALL SELECT id, claim_id, sensitivity_label, assessed_at FROM artifact_assessments_versions)`;
 
 /** Every judgment of a node, past and current, with when it was made. */
 const EVERY_JUDGMENT = `(SELECT claim_id, sensitivity_label, assessed_at FROM assessments
         UNION ALL SELECT claim_id, sensitivity_label, assessed_at FROM quantity_estimates
-        UNION ALL SELECT claim_id, sensitivity_label, assessed_at FROM question_assessments)`;
+        UNION ALL SELECT claim_id, sensitivity_label, assessed_at FROM question_assessments
+        UNION ALL SELECT claim_id, sensitivity_label, assessed_at FROM artifact_assessments)`;
 
 /**
  * Whether the entry `a` of audit_log is the record that stands at its label

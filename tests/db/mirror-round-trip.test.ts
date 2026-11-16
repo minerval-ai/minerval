@@ -169,6 +169,7 @@ const id = {
   cutClaim: randomUUID(),
   doomed: randomUUID(),
   doomedReferenced: randomUUID(),
+  list: randomUUID(),
   // structure
   edgeChild: randomUUID(),
   edgeAbsorbed: randomUUID(),
@@ -193,6 +194,7 @@ const id = {
   verdict: randomUUID(),
   estimate: randomUUID(),
   standing: randomUUID(),
+  listJudgment: randomUUID(),
   evaluation: randomUUID(),
   interest: randomUUID(),
   inputPremise: randomUUID(),
@@ -228,6 +230,15 @@ async function seedPublicGraph(): Promise<void> {
   await claim("cutClaim", "More than half of the resected zebrafish ventricle regrows within 60 days", 5);
   await claim("doomed", "A claim the public graph will delete", 6);
   await claim("doomedReferenced", "A claim the public graph will delete while a private edge points to it", 7);
+  await claim("list", "Studies of heart regeneration in zebrafish after resection", 8, { kind: "artifact" });
+  await ins(pub, "artifact_specs", {
+    claim_id: id.list,
+    subtype: "list",
+    purpose: "Which studies have measured regrowth after ventricular resection.",
+    inclusion: "A claim reporting regrowth measured after resection in adult zebrafish.",
+    entry_kinds: ["claim"],
+    created_by: "user",
+  });
 
   await ins(pub, "quantity_definitions", {
     claim_id: id.quantity,
@@ -387,6 +398,15 @@ async function seedPublicGraph(): Promise<void> {
     favored_claim_ids: [id.child],
     reasoning_trace: "The evidence favors proliferation.",
     confidence: 0.7,
+  });
+  await ins(pub, "artifact_assessments", {
+    id: id.listJudgment,
+    claim_id: id.list,
+    fidelity: "incomplete",
+    reasoning_trace: "One study is not yet in the graph.",
+    gaps: "Poss et al. 2002 has no node yet.",
+    left_out: JSON.stringify([{ node_id: id.absorbed, reason: "About cell division, not regrowth." }]),
+    funded_by_job_id: randomUUID(),
   });
   await ins(pub, "argument_evaluations", {
     id: id.evaluation,
@@ -583,7 +603,7 @@ describe("applying: a mirror from nothing", () => {
       feed_id: last.feed_id,
       key_id: keyIdOf(publicKeyString(signing.publicKey)),
       public_web_base_url: "https://public.example",
-      searchable_claims: 8,
+      searchable_claims: 9,
       last_refusal: null,
     });
     expect(Date.parse(status.applied_at!)).toBeGreaterThanOrEqual(Date.parse(last.cut_at));

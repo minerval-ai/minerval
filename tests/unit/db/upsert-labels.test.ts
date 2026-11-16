@@ -95,7 +95,7 @@ describe("an upsert onto a labelled table", () => {
   const tables = labelledTables();
 
   it("writes its words only into a row at its writer's own label, or is listed here with why it writes none", () => {
-    expect(tables.sql.size).toBe(142);
+    expect(tables.sql.size).toBe(144);
     const unheld = new Set<string>();
     let held = 0;
     for (const path of sourceFiles(join(repo, "src"))) {
@@ -107,8 +107,8 @@ describe("an upsert onto a labelled table", () => {
     expect([...unheld].sort()).toEqual(Object.keys(OTHERWISE).sort());
     // The quantity's definition (three writers), a claim's cut of a
     // quantity, the three question edges, the five rows of a node's source
-    // map, and a page's shared analysis.
-    expect(held).toBe(13);
+    // map, a page's shared analysis, and a list's specification and entries.
+    expect(held).toBe(15);
   });
 
   it("never takes a row's label from the incoming row: a ledger row reopened takes the new work's text and target, and keeps its label", () => {

@@ -47,6 +47,7 @@ import { getMatcherSystemPrompt } from "../src/llm/prompts/matcher.js";
 import { getContributionReviewerSystemPrompt } from "../src/llm/prompts/contribution-reviewer.js";
 import { getClaimStewardSystemPrompt } from "../src/llm/prompts/claim-steward.js";
 import { getQuestionStewardSystemPrompt } from "../src/llm/prompts/question-steward.js";
+import { getArtifactStewardSystemPrompt } from "../src/llm/prompts/artifact-steward.js";
 import { getCuratorSystemPrompt } from "../src/llm/prompts/curator.js";
 import { getDisputeArbitratorSystemPrompt } from "../src/llm/prompts/dispute-arbitrator.js";
 import { getAuditAgentSystemPrompt } from "../src/llm/prompts/audit-agent.js";
@@ -151,6 +152,10 @@ const AGENTS: AgentMeta[] = [
     tagline: "The owner of a question: it keeps the question's wording and presuppositions, gathers its candidate answers and subquestions, and gives the best answer it can with how well answered the question is.",
     invokedWhen: "When a question is first onboarded, one of its answers or subquestions changes, a request it keeps returns, or on periodic refresh.",
     model: "Claude Opus 5.5", fn: getQuestionStewardSystemPrompt },
+  { key: "artifact-steward", name: "Artifact Steward", stage: 4, group: "governance",
+    tagline: "The owner of a list: it keeps the list's criteria clear and checkable, finds the nodes that meet them, says why each is on the list and what was left out, and judges the list's fidelity, never the truth of its entries.",
+    invokedWhen: "When a list is first proposed, a node it draws on changes, a request it keeps returns, or on periodic refresh.",
+    model: "Claude Opus 5.5", fn: getArtifactStewardSystemPrompt },
   { key: "curator", name: "Curator", stage: 5, group: "governance",
     tagline: "The graph-level counterpart to the Steward. It owns the connective tissue between claims, merging duplicates and counterparts, splitting conflations, and suggesting cross-claim edges for Stewards to adopt.",
     invokedWhen: "When a Steward escalates a structural concern (and, as a follow-up, on new-claim neighborhood sweeps).",

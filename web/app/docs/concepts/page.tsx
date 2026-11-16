@@ -7,7 +7,7 @@ export const metadata = {
 };
 
 const toc = [
-  { depth: 2, text: "Claims, quantities and questions", slug: "nodes" },
+  { depth: 2, text: "Claims, quantities, questions and lists", slug: "nodes" },
   { depth: 2, text: "The six statuses", slug: "verdicts" },
   { depth: 2, text: "Confidence, credence and contestation", slug: "numbers" },
   { depth: 2, text: "Arguments and decomposition", slug: "structure" },
@@ -21,16 +21,17 @@ export default function Page() {
     <DocPage
       href="/docs/concepts"
       title="Core concepts"
-      lede={<>The graph holds claims, quantities and questions, judges each in its own terms, and keeps the reasons. This page defines the words every tool and page uses, so you can read a result correctly and report it faithfully.</>}
+      lede={<>The graph holds claims, quantities, questions and lists, judges each in its own terms, and keeps the reasons. This page defines the words every tool and page uses, so you can read a result correctly and report it faithfully.</>}
       toc={toc}
     >
-      <h2 id="nodes">Claims, quantities and questions</h2>
+      <h2 id="nodes">Claims, quantities, questions and lists</h2>
       <ul>
         <li><b>A claim</b> is a single, reusable proposition about the world, stored once under a short, neutral canonical wording. The wording says everything its meaning depends on, such as the period, place or population. A claim and its denial are one node: sources that deny it are recorded as denying it, on the same page (constitution §2, §3).</li>
         <li><b>A quantity</b> is a value the graph estimates: how much, how many, how often, how long, or when. Its canonical form is its definition: what it measures, in which population, under which conditions, and in what unit (§2, §3).</li>
         <li><b>A question</b> asks what, why, how or which, and is answered rather than affirmed or denied. It links to its candidate answers, its subquestions and what it presupposes (§7a). A question that asks whether something is so is normally stated as a claim, and one that asks how much as a quantity.</li>
+        <li><b>A list</b> is an artifact: a node made from other nodes, such as every trial of a treatment that reports a given outcome. Its identity is its specification (what it is for, what qualifies an entry, what is excluded, how entries are ordered), and its Steward keeps it current as the nodes it draws on change. It asserts nothing of its own and carries no weight as evidence (§7b).</li>
       </ul>
-      <p>All three share one id space and one set of tools. Every read gives the node's <code>kind</code>: <code>claim</code>, <code>quantity</code> or <code>question</code>.</p>
+      <p>All four share one id space and one set of tools. Every read gives the node's <code>kind</code>: <code>claim</code>, <code>quantity</code>, <code>question</code> or <code>artifact</code> (a list).</p>
       <h2 id="verdicts">The six statuses</h2>
       <p>A claim's assessment is one of six statuses. The definitions below are the constitution's own (§10).</p>
       <div className="dc-ladder">
@@ -96,6 +97,37 @@ export default function Page() {
         </table>
       </div>
       <p>A quantity carries an <b>estimate</b> and a <b>unit</b>. The estimate is the Steward's own probability distribution over the value, given at the precision the evidence supports. Its <code>form</code> is one of <code>distribution</code> (quantiles), <code>interval</code>, <code>bound</code>, <code>magnitude</code> (an order of magnitude), <code>point</code>, or <code>none</code> with the reason no figure is given. Where some probability lies on no value at all, such as a date for an event that may never happen, <code>outside</code> states that share. Report an interval as an interval, not as its central value.</p>
+      <h3 id="fidelity">List fidelity</h3>
+      <p>A list carries a <b>fidelity</b>: whether it faithfully represents what it draws on under its criteria. It is never “verified”, and it is not a verdict on any entry; each entry shows its own status, estimate or standing beside it.</p>
+      <div className="dc-tablewrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Fidelity</th>
+              <th>Meaning (§7b)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>faithful</code></td>
+              <td>Every entry meets the criteria, every node the graph holds that meets them is on the list or accounted for, and the order and notes present them honestly.</td>
+            </tr>
+            <tr>
+              <td><code>incomplete</code></td>
+              <td>Entries that meet the criteria are known to be missing; the list says which.</td>
+            </tr>
+            <tr>
+              <td><code>misleading</code></td>
+              <td>Its selection, order or framing would lead a reader to a conclusion its entries do not support.</td>
+            </tr>
+            <tr>
+              <td><code>ill_specified</code></td>
+              <td>Its criteria cannot be checked against, or quietly assert something contested.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>A list is <b>stale</b> when a node it draws on moved after it was judged (<code>list.stale</code>). The page says so until its Steward looks again.</p>
       <h2 id="numbers">Confidence, credence and contestation</h2>
       <p>Three numbers travel with a judgment. They answer different questions, and none stands in for another.</p>
       <div className="dc-triad">

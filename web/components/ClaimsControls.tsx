@@ -24,10 +24,11 @@ const PRIZE_SEGMENTS: { value: PrizeFilter; label: string; title: string }[] = [
 type KindFilter = "all" | NodeKind;
 
 const KIND_SEGMENTS: { value: KindFilter; label: string; title: string }[] = [
-  { value: "all", label: "All", title: "Claims, questions and quantities" },
+  { value: "all", label: "All", title: "Claims, questions, quantities and lists" },
   { value: "claim", label: "Claims", title: "Propositions the graph affirms or denies" },
   { value: "question", label: "Questions", title: "Questions the graph answers, with their candidate answers" },
   { value: "quantity", label: "Quantities", title: "Values the graph estimates" },
+  { value: "artifact", label: "Lists", title: "Lists made from the graph's nodes, under criteria a reader can check" },
 ];
 
 // The count's noun follows the kind filter; a mixed list is "results".
@@ -36,6 +37,7 @@ const COUNT_NOUN: Record<KindFilter, [string, string]> = {
   claim: ["claim", "claims"],
   question: ["question", "questions"],
   quantity: ["quantity", "quantities"],
+  artifact: ["list", "lists"],
 };
 
 const ASSESSED_SEGMENTS: { value: AssessedFilter; label: string; title: string }[] = [

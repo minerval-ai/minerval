@@ -105,7 +105,7 @@ describe("the label column, in the catalog", () => {
         WHERE c.table_schema = 'public' AND c.column_name = 'sensitivity_label' AND t.table_type = 'BASE TABLE'
         ORDER BY c.table_name`
     );
-    expect(columns).toHaveLength(142);
+    expect(columns).toHaveLength(144);
     for (const column of columns) {
       expect(column, column.table_name).toMatchObject({ column_default: "minerval_default_label()", is_nullable: "NO", data_type: "text" });
     }
@@ -160,6 +160,8 @@ describe("the label column, in the catalog", () => {
     expect(views.map((v) => v.view).sort()).toEqual([
       "public.argument_evaluations_in_force",
       "public.argument_evaluations_versions",
+      "public.artifact_assessments_in_force",
+      "public.artifact_assessments_versions",
       "public.assessments_in_force",
       "public.assessments_versions",
       "public.quantity_estimates_in_force",

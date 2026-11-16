@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { NodeKind } from "./kinds.js";
+import type { TextNodeKind } from "./kinds.js";
 
 export const uuidSchema = z.guid();
 
@@ -159,8 +159,8 @@ export const STATED_VIEW_STANCES = {
   claim: ["affirms", "denies", "qualifies", "gives_probability", "open"],
   quantity: ["states", "open"],
   question: ["answers", "open"],
-} as const satisfies Record<NodeKind, readonly string[]>;
-export type StatedViewStance = (typeof STATED_VIEW_STANCES)[NodeKind][number];
+} as const satisfies Record<TextNodeKind, readonly string[]>;
+export type StatedViewStance = (typeof STATED_VIEW_STANCES)[TextNodeKind][number];
 
 /**
  * The stance the instance of a stated view carries. A view that treats the
@@ -170,7 +170,7 @@ export type StatedViewStance = (typeof STATED_VIEW_STANCES)[NodeKind][number];
  * like posing and mentioning, they take no side, and nothing that counts
  * affirming and denying sources counts them.
  */
-export function instanceStanceForStatedView(kind: NodeKind, stance: StatedViewStance): string {
+export function instanceStanceForStatedView(kind: TextNodeKind, stance: StatedViewStance): string {
   if (stance === "open") return kind === "question" ? "asks" : "poses";
   return stance;
 }
@@ -262,11 +262,11 @@ export const PROPOSAL_TYPE_FOR_KIND = {
   claim: "propose_claim",
   question: "propose_question",
   quantity: "propose_quantity",
-} as const satisfies Record<NodeKind, string>;
+} as const satisfies Record<TextNodeKind, string>;
 
-/** The kind a node proposal proposes; null for any other contribution type. */
-export function proposedNodeKind(type: string): NodeKind | null {
-  const hit = (Object.entries(PROPOSAL_TYPE_FOR_KIND) as Array<[NodeKind, string]>).find(([, t]) => t === type);
+/** The kind a node proposal proposes; null for any other contribution type. An artifact is proposed by its specification (proposeList), never as a contribution's wording. */
+export function proposedNodeKind(type: string): TextNodeKind | null {
+  const hit = (Object.entries(PROPOSAL_TYPE_FOR_KIND) as Array<[TextNodeKind, string]>).find(([, t]) => t === type);
   return hit ? hit[0] : null;
 }
 

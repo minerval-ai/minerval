@@ -19,7 +19,7 @@ import {
 import { validateMandate, type GrantMandate } from "../../../src/llm/agents/grantmaker.js";
 import { GRANTMAKER_CONTRIBUTION_TYPES } from "../../../src/services/contribution-service.js";
 import { PROPOSAL_TYPE_FOR_KIND, intakeContributionTypeEnum, proposedNodeKind } from "../../../src/schemas/common.js";
-import { NODE_KINDS } from "../../../src/schemas/kinds.js";
+import { TEXT_NODE_KINDS } from "../../../src/schemas/kinds.js";
 
 const WHY = "The graph holds this in no wording, and the mandate is about it.";
 const CLAIM_ID = "00000000-0000-4000-8000-000000000000";
@@ -33,12 +33,12 @@ const propose = (extra: Record<string, unknown> = {}) => ({
 });
 
 describe("propose plan items", () => {
-  it("is a plan kind the Grantmaker's tools offer, for every node kind alike", () => {
+  it("is a plan kind the Grantmaker's tools offer, for every kind of node minted from text alike", () => {
     const props = PLAN_ITEM_SCHEMA.properties as Record<string, { enum?: string[] }>;
     expect(props.action!.enum).toContain("propose");
-    expect(props.kind!.enum).toEqual([...NODE_KINDS]);
+    expect(props.kind!.enum).toEqual([...TEXT_NODE_KINDS]);
     expect(PLAN_KIND_RULES).toContain("propose:");
-    for (const kind of NODE_KINDS) {
+    for (const kind of TEXT_NODE_KINDS) {
       expect(validatePlanItems(items(propose({ kind })))).toBeNull();
       // Each kind has its own intake type, which a mandate may submit.
       const type = PROPOSAL_TYPE_FOR_KIND[kind];

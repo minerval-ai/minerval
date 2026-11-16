@@ -489,7 +489,10 @@ read of a claim, use a card.
   this is the read for which premises and which sources),
   `get_claim_events`, `propose_claim` (a claim, a question or a quantity by
   its optional `kind`, reviewed by the Contribution Reviewer before anything
-  enters the graph).
+  enters the graph), `propose_list` (a list by its specification, constitution
+  §7b: its Steward finds the entries and judges the list's fidelity; a list
+  whose specification reads very close to one the graph holds is shown back
+  instead of minted, unless `confirm_new`).
 - **Funding:** `order_assessment`, `fund_claim_assessment` (commission a
   claim's next assessment whole, at a budget you choose; what it does not
   spend comes back),

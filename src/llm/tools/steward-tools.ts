@@ -90,7 +90,7 @@ import {
   ANSWER_BASES,
   KIND_INSTANCE_STANCES,
   KIND_RELATION_TYPES,
-  NODE_KINDS,
+  TEXT_NODE_KINDS,
   quantityDefinitionSchema,
   valueShownSchema,
   type AnswerBasis,
@@ -1093,7 +1093,7 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           kind: {
             type: "string",
-            enum: [...NODE_KINDS],
+            enum: [...TEXT_NODE_KINDS],
             description:
               "The new node's kind (§2, §7a): claim (the default), quantity " +
               "when the premise is about a value (link the quantity itself, " +
@@ -1144,7 +1144,7 @@ export function getStewardToolDefinitions(): Tool[] {
           },
           kind: {
             type: "string",
-            enum: [...NODE_KINDS],
+            enum: [...TEXT_NODE_KINDS],
             description:
               "The new parent's kind (§2, §7a): claim (the default); quantity " +
               "when your node bears on what a value is (pass definition); or " +
@@ -3041,8 +3041,8 @@ export async function executeStewardTool(
         // The new node's kind (§2, §7a), and a quantity's definition, checked
         // before anything is written.
         const childKind = typeof input.kind === "string" && input.kind.trim() ? input.kind.trim().toLowerCase() : "claim";
-        if (!(NODE_KINDS as readonly string[]).includes(childKind)) {
-          return JSON.stringify({ success: false, message: `Unknown kind "${childKind}". Use one of: ${NODE_KINDS.join(", ")}.` });
+        if (!(TEXT_NODE_KINDS as readonly string[]).includes(childKind)) {
+          return JSON.stringify({ success: false, message: `Unknown kind "${childKind}". Use one of: ${TEXT_NODE_KINDS.join(", ")}.` });
         }
         let childDefinition: ReturnType<typeof quantityDefinitionSchema.parse> | null = null;
         if (childKind === "quantity") {
@@ -3221,10 +3221,10 @@ export async function executeStewardTool(
         const parentKind = (
           typeof input.kind === "string" && input.kind.trim() ? input.kind.trim().toLowerCase() : "claim"
         ) as NodeKind;
-        if (!(NODE_KINDS as readonly string[]).includes(parentKind)) {
+        if (!(TEXT_NODE_KINDS as readonly string[]).includes(parentKind)) {
           return JSON.stringify({
             success: false,
-            message: `Unknown kind "${parentKind}". Use one of: ${NODE_KINDS.join(", ")}.`,
+            message: `Unknown kind "${parentKind}". Use one of: ${TEXT_NODE_KINDS.join(", ")}.`,
           });
         }
         let parentDefinition: ReturnType<typeof quantityDefinitionSchema.parse> | null = null;

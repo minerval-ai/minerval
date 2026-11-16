@@ -23,8 +23,13 @@ import { PUBLIC_LABEL } from "../labels.js";
 import { currentLabel } from "../llm/usage-context.js";
 import type { LeftStanding } from "./left-standing-service.js";
 
-/** The four tables that hold judgments, by the name the database's rule knows them by. */
-export type JudgmentTable = "assessments" | "quantity_estimates" | "question_assessments" | "argument_evaluations";
+/** The five tables that hold judgments, by the name the database's rule knows them by. */
+export type JudgmentTable =
+  | "assessments"
+  | "quantity_estimates"
+  | "question_assessments"
+  | "artifact_assessments"
+  | "argument_evaluations";
 
 /**
  * Whether this process has no reason to think the deployment has a second
@@ -81,7 +86,7 @@ export function anotherLabelsNodeMessage(at: { label: string; nodeLabel: string 
 export async function recordMadeBeside(
   query: <R>(text: string, params?: unknown[]) => Promise<R[]>,
   table: JudgmentTable,
-  kind: "assessment" | "quantity_estimate" | "question_assessment" | "argument_evaluation",
+  kind: "assessment" | "quantity_estimate" | "question_assessment" | "artifact_assessment" | "argument_evaluation",
   judgmentId: string,
   nodeId: string
 ): Promise<void> {
@@ -115,7 +120,7 @@ export interface MadeBeside {
  */
 export async function madeBesideOf(
   table: JudgmentTable,
-  kind: "assessment" | "quantity_estimate" | "question_assessment" | "argument_evaluation",
+  kind: "assessment" | "quantity_estimate" | "question_assessment" | "artifact_assessment" | "argument_evaluation",
   judgmentIds: readonly string[]
 ): Promise<Map<string, { beside: MadeBeside[]; since_added: string[] }>> {
   const out = new Map<string, { beside: MadeBeside[]; since_added: string[] }>();
@@ -194,7 +199,10 @@ export interface NodeVersion extends Record<string, unknown> {
   made_against_earlier: boolean;
 }
 
-const VERSION_FIELDS: Record<"claim" | "quantity" | "question", { table: JudgmentTable; kind: "assessment" | "quantity_estimate" | "question_assessment"; select: string }> = {
+const VERSION_FIELDS: Record<
+  "claim" | "quantity" | "question" | "artifact",
+  { table: JudgmentTable; kind: "assessment" | "quantity_estimate" | "question_assessment" | "artifact_assessment"; select: string }
+> = {
   claim: {
     table: "assessments",
     kind: "assessment",
@@ -211,6 +219,11 @@ const VERSION_FIELDS: Record<"claim" | "quantity" | "question", { table: Judgmen
     kind: "question_assessment",
     select: `v.standing, v.favored_claim_ids AS favored_answer_ids, v.summary, v.reasoning_trace, v.incomplete,
              v.confidence, v.model, v.run_id`,
+  },
+  artifact: {
+    table: "artifact_assessments",
+    kind: "artifact_assessment",
+    select: `v.fidelity, v.summary, v.reasoning_trace, v.gaps, v.confidence, v.model, v.run_id`,
   },
 };
 
@@ -372,6 +385,8 @@ export async function judgmentsInForce(nodeIds: readonly (string | null | undefi
        SELECT claim_id FROM quantity_estimates_versions WHERE claim_id = ANY($1::uuid[]) AND in_force
        UNION ALL
        SELECT claim_id FROM question_assessments_versions WHERE claim_id = ANY($1::uuid[]) AND in_force
+       UNION ALL
+       SELECT claim_id FROM artifact_assessments_versions WHERE claim_id = ANY($1::uuid[]) AND in_force
      ) v GROUP BY node_id HAVING count(*) > 1`,
     [ids]
   );

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { NodeKind } from "@/lib/types";
 import Link from "next/link";
 import { figureWords, stanceWords } from "@/lib/stated-views";
 import { notFound } from "next/navigation";
@@ -188,7 +189,7 @@ export default async function ContributionPage({
               {sv.speaker.verified
                 ? ", an account Minerval has verified"
                 : ". The name is the account\u2019s own, and nobody has checked who is behind it"}
-              . It {stanceWords(sv.stance, claim?.claim.kind ?? "claim")}
+              . It {stanceWords(sv.stance, statedOn(claim?.claim.kind))}
               {sv.probability != null ? `, with a probability of ${sv.probability.toFixed(2)}` : ""}
               {figureWords(sv.figure) ? `: ${figureWords(sv.figure)}` : ""}.
             </p>
@@ -349,4 +350,10 @@ export default async function ContributionPage({
       </p>
     </div>
   );
+}
+
+// A view is stated of a claim, a quantity or a question; a list asserts
+// nothing, so none is ever stated of one (constitution §7b).
+function statedOn(kind: NodeKind | undefined): Exclude<NodeKind, "artifact"> {
+  return kind && kind !== "artifact" ? kind : "claim";
 }

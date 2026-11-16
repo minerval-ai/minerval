@@ -43,6 +43,8 @@ export interface SearchResult {
   standing?: string | null;
   estimate?: unknown | null;
   unit?: unknown | null;
+  // A list's fidelity to its criteria (§7b): never a verdict on its entries.
+  fidelity?: string | null;
 }
 
 // Filter on whether a node carries a current assessment. "unassessed" matches
@@ -76,10 +78,11 @@ const PRIZE_SELECT_SQL = `pb.amount_micro_usd AS prize_micro_usd, ${checkedKindS
 // (Where two layers each hold a definition, the join takes one: layer-service.ts.)
 const kindJoinSql = () => `LEFT JOIN quantity_estimates_in_force qe ON qe.claim_id = c.id
     LEFT JOIN quantity_definitions qd ON qd.claim_id = c.id${oneDefinitionForQuantitySql("qd")}
-    LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id`;
-const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit`;
+    LEFT JOIN question_assessments_in_force qa ON qa.claim_id = c.id
+    LEFT JOIN artifact_assessments_in_force aa ON aa.claim_id = c.id`;
+const KIND_SELECT_SQL = `c.kind, qa.standing, qe.estimate, qd.unit, aa.fidelity`;
 const ASSESSED_SQL = `(CASE c.kind WHEN 'question' THEN qa.id IS NOT NULL
-      WHEN 'quantity' THEN qe.id IS NOT NULL ELSE a.status IS NOT NULL END)`;
+      WHEN 'quantity' THEN qe.id IS NOT NULL WHEN 'artifact' THEN aa.id IS NOT NULL ELSE a.status IS NOT NULL END)`;
 
 // Build the extra WHERE clauses for the assessment/importance filters, appending
 // any bound params to `params` and referencing them by position. The assessment
@@ -114,11 +117,13 @@ interface KindRow {
   standing?: string | null;
   estimate?: unknown;
   unit?: unknown;
+  fidelity?: string | null;
 }
 
 /** The kind, and the verdict fields of that kind only (a claim carries none). */
-export function kindFields(r: KindRow): Pick<SearchResult, "kind" | "standing" | "estimate" | "unit"> {
+export function kindFields(r: KindRow): Pick<SearchResult, "kind" | "standing" | "estimate" | "unit" | "fidelity"> {
   if (r.kind === "question") return { kind: "question", standing: r.standing ?? null };
+  if (r.kind === "artifact") return { kind: "artifact", fidelity: r.fidelity ?? null };
   if (r.kind === "quantity") {
     return { kind: "quantity", estimate: r.estimate ?? null, unit: r.unit ?? null };
   }

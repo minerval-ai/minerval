@@ -16,7 +16,7 @@ import {
   isMatchedInstanceStance,
   type MatchedInstanceStance,
 } from "../../schemas/common.js";
-import { NODE_KINDS, type NodeKind } from "../../schemas/kinds.js";
+import { TEXT_NODE_KINDS, type NodeKind } from "../../schemas/kinds.js";
 
 /**
  * How the Matcher's run ended (#419). `match` and `new` are verdicts the
@@ -77,7 +77,7 @@ const MATCH_DECISION_SCHEMA = {
     new_canonical_form: { type: ["string", "null"], description: "Proposed canonical form if is_match is False" },
     instance_stance: { type: "string", enum: [...MATCHED_INSTANCE_STANCES], description: "Whether this source asserts the canonical claim as stated (affirms), asserts its negation (denies), or states the proposition as an open question without endorsing either side (poses: a conjecture as a survey states it, 'problem X asks whether...'). Judged against the canonical direction, not assumed from the source" },
     direction_note: { type: ["string", "null"], description: "For a new claim: one sentence on why the canonical form is stated in this direction (the affirmative form of the question as the discourse poses it). Stored with the claim so a later rewording does not silently invert it." },
-    kind: { type: ["string", "null"], enum: [...NODE_KINDS, null], description: "For a new node: its kind (claim, quantity, or question), when it differs from the kind proposed; null to keep the proposed kind. A question that asks whether X is so is the claim X; one that asks how much, how many, how often, or when is a quantity." },
+    kind: { type: ["string", "null"], enum: [...TEXT_NODE_KINDS, null], description: "For a new node: its kind (claim, quantity, or question), when it differs from the kind proposed; null to keep the proposed kind. A question that asks whether X is so is the claim X; one that asks how much, how many, how often, or when is a quantity." },
     confidence: { type: "number", description: "Confidence in the matching decision (0.0-1.0)" },
     reasoning: { type: "string", description: "Detailed explanation of the decision" },
     alternative_matches: { type: "array", items: { type: "string" }, description: "IDs of other claims considered, each copied exactly from a search_similar_claims result" },
@@ -276,7 +276,7 @@ async function matchClaimImpl(input: {
     if (!isMatchedInstanceStance(raw.instance_stance)) {
       return 'instance_stance must be "affirms", "denies", or "poses"';
     }
-    if (raw.kind != null && !(NODE_KINDS as readonly unknown[]).includes(raw.kind)) {
+    if (raw.kind != null && !(TEXT_NODE_KINDS as readonly unknown[]).includes(raw.kind)) {
       return 'kind must be "claim", "quantity", "question", or null';
     }
     return null;

@@ -644,6 +644,7 @@ interface RequestRowJoined {
 const AGENT_LABELS: Record<string, string> = {
   claim_steward: "Claim Steward",
   question_steward: "Question Steward",
+  artifact_steward: "Artifact Steward",
   curator: "Curator",
   reviewer: "Reviewer",
   consistency_checker: "Consistency Checker",

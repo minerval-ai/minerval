@@ -185,7 +185,7 @@ describe("the labels table", () => {
         "action_allocations", "actions", "adopted_requests", "agent_finding_sightings", "agent_findings",
         "agent_report_sightings", "agent_reports", "agent_runs", "agent_sessions", "agent_steps",
         "answer_relations", "appeals", "arbitration_results", "argument_evaluations", "argument_evidence_backlog",
-        "argument_instances", "argument_subclaims", "arguments", "assessment_orders", "assessments",
+        "argument_instances", "argument_subclaims", "arguments", "artifact_assessments", "artifact_specs", "assessment_orders", "assessments",
         "assistant_conversations", "assistant_held_actions", "assistant_pages", "attachments", "audit_findings",
         "audit_log", "audit_notes", "audit_runs", "bounties", "budget_jobs",
         "claim_formalizations", "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",

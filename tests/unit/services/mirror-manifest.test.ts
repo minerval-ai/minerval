@@ -34,6 +34,7 @@ describe("the mirror manifest", () => {
     expect(names).toEqual([
       "claims",
       "quantity_definitions",
+      "artifact_specs",
       "quantity_cuts",
       "claim_relationships",
       "claim_links",
@@ -48,6 +49,7 @@ describe("the mirror manifest", () => {
       "assessments",
       "quantity_estimates",
       "question_assessments",
+      "artifact_assessments",
       "argument_evaluations",
       "source_interests",
       "judgment_inputs",
@@ -124,7 +126,7 @@ describe("the mirror manifest", () => {
     // key names other rows: there a deployment can hold a row of its own
     // with the same key, beside the mirrored one.
     for (const table of tables) expect(table.key, table.name).not.toContain("origin");
-    expect(tables.filter((t) => t.keyPerGraph).map((t) => t.name).sort()).toEqual(["argument_subclaims", "quantity_cuts", "quantity_definitions"]);
+    expect(tables.filter((t) => t.keyPerGraph).map((t) => t.name).sort()).toEqual(["argument_subclaims", "artifact_specs", "quantity_cuts", "quantity_definitions"]);
     expect(tables.find((t) => t.name === "quantity_cuts")!.key).toEqual(["claim_id"]);
     expect(tables.find((t) => t.name === "argument_subclaims")!.key).toEqual(["argument_id", "relationship_id"]);
     // Every other key besides an id that a replicated table has is unique

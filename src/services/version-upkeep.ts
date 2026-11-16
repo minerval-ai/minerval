@@ -36,11 +36,12 @@ import { oneLabelOnly } from "./judgment-version-service.js";
 const REASON =
   "The upkeep of versions finds, at every label, the versions made beside one that has since been replaced; each node's reassessment is then opened at its own version's label.";
 
-/** The three tables that hold a node's judgment (an argument's evaluation follows its claim's). */
+/** The tables that hold a node's judgment (an argument's evaluation follows its claim's). */
 const NODE_JUDGMENTS = [
   { table: "assessments", kind: "assessment" },
   { table: "quantity_estimates", kind: "quantity_estimate" },
   { table: "question_assessments", kind: "question_assessment" },
+  { table: "artifact_assessments", kind: "artifact_assessment" },
 ] as const;
 
 /** How many versions one sweep opens a reassessment for. The rest are found by the next. */

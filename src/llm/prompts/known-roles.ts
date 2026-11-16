@@ -26,6 +26,7 @@ import { getLookoutSystemPromptBlocks } from "./lookout.js";
 import { getMatcherSystemPromptBlocks } from "./matcher.js";
 import { getMathSolverSystemPromptBlocks } from "./math-solver.js";
 import { getQuestionStewardSystemPromptBlocks } from "./question-steward.js";
+import { getArtifactStewardSystemPromptBlocks } from "./artifact-steward.js";
 import { getRedactorSystemPromptBlocks } from "./redactor.js";
 import { getResearcherSystemPromptBlocks } from "./researcher.js";
 import { getTaggerSystemPrompt } from "./tagger.js";
@@ -40,6 +41,7 @@ export interface KnownRole {
 export const KNOWN_ROLES: readonly KnownRole[] = [
   { name: "claim-steward", sourcePath: "src/llm/prompts/claim-steward.ts", blocks: getClaimStewardSystemPromptBlocks },
   { name: "question-steward", sourcePath: "src/llm/prompts/question-steward.ts", blocks: getQuestionStewardSystemPromptBlocks },
+  { name: "artifact-steward", sourcePath: "src/llm/prompts/artifact-steward.ts", blocks: getArtifactStewardSystemPromptBlocks },
   { name: "curator", sourcePath: "src/llm/prompts/curator.ts", blocks: getCuratorSystemPromptBlocks },
   { name: "extractor", sourcePath: "src/llm/prompts/extractor.ts", blocks: () => getExtractorSystemPromptBlocks() },
   { name: "matcher", sourcePath: "src/llm/prompts/matcher.ts", blocks: getMatcherSystemPromptBlocks },

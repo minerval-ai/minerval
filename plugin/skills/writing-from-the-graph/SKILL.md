@@ -22,9 +22,13 @@ Facts specific to Minerval that bear on making a document from it.
   great deal and score low, and dependent counts over-rate niche claims.
   `marginal_yield` on an assessment is the Steward's estimate of how
   much another pass would add.
-- **Three kinds, three judgments.** A claim has a status, a quantity an
-  estimate with an interval, a question a standing and best answer.
-  Normative claims are assessed like any other (§8, §25).
+- **Four kinds, four judgments.** A claim has a status, a quantity an
+  estimate with an interval, a question a standing and best answer, and a
+  list (kind `artifact`, §7b) a fidelity to its stated criteria, which is
+  never a verdict on its entries. Normative claims are assessed like any
+  other (§8, §25). A list is a ready-made table for a document: its
+  entries come in its Steward's order with why each qualifies and what was
+  left out, and `{{nodes ...}}` of its entries shows their verdicts live.
 - **Pinned citations.** `cite_claim` returns a citation tied to the
   assessment version, so a document can say what the graph held on the
   day it was written. A status read later may differ.

@@ -82,6 +82,8 @@ import {
 import { originalPayer } from "../../services/commission-service.js";
 import { executeSessionTool, getSessionToolDefinitions, takeArrivals } from "../tools/session-tools.js";
 import { getQuestionStewardSystemPromptBlocks } from "../prompts/question-steward.js";
+import { getArtifactStewardSystemPromptBlocks } from "../prompts/artifact-steward.js";
+import { executeListTool, getListToolDefinitions, LIST_ASSESSMENT_TOOL } from "../tools/list-tools.js";
 import {
   executeKindTool,
   getQuantityToolDefinitions,
@@ -117,7 +119,28 @@ const CLAIM_ONLY_TOOLS = new Set([
  */
 const PROPOSITION_ONLY_TOOLS = new Set(["update_claim_assessment", "record_claim_instance"]);
 
+/**
+ * The Steward's tools withheld from a list's Steward (§7b): a list has no
+ * verdict, no arguments, no decomposition and no instances of its own. It
+ * draws on its entries through its own tools (list-tools.ts), and an edge
+ * that would make it rest on a node, or a node rest on it, would give it the
+ * evidential weight it must not carry.
+ */
+const ARTIFACT_WITHHELD_TOOLS = new Set([
+  ...CLAIM_ONLY_TOOLS,
+  "add_decomposition_edge",
+  "add_relationship_edge",
+  "add_parent_claim",
+  "propose_parent_edge",
+  "add_related_claim",
+  "update_claim_instance",
+  "detach_claim_instance",
+  "reattach_claim_instance",
+  "set_instance_order",
+]);
+
 function withheldFor(kind: NodeKind): Set<string> {
+  if (kind === "artifact") return ARTIFACT_WITHHELD_TOOLS;
   if (kind === "question") return CLAIM_ONLY_TOOLS;
   if (kind === "quantity") return PROPOSITION_ONLY_TOOLS;
   return new Set();
@@ -134,6 +157,7 @@ const ASSESSMENT_TOOL: Record<NodeKind, string> = {
   claim: "update_claim_assessment",
   quantity: "update_quantity_estimate",
   question: "update_question_assessment",
+  artifact: LIST_ASSESSMENT_TOOL,
 };
 
 const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -159,6 +183,7 @@ const JUDGMENT_IN_FORCE_VIEW: Record<NodeKind, string> = {
   claim: "assessments_in_force",
   quantity: "quantity_estimates_in_force",
   question: "question_assessments_in_force",
+  artifact: "artifact_assessments_in_force",
 };
 
 /** Whether the node has a current assessment (or estimate, or standing). A failed read counts as none, which asks for one. */
@@ -175,6 +200,7 @@ const JUDGMENT_VERSIONS_VIEW: Record<NodeKind, string> = {
   claim: "assessments_versions",
   quantity: "quantity_estimates_versions",
   question: "question_assessments_versions",
+  artifact: "artifact_assessments_versions",
 };
 
 /**
@@ -267,7 +293,7 @@ it.`;
  * mark every argument evaluation stale and ask for each to be re-recorded.
  */
 export function defaultTask(passNote: string, kind: NodeKind, mustRecord: boolean, readsAnothers = false): PassTask {
-  const noun = kind === "claim" ? "claim" : kind;
+  const noun = kind === "artifact" ? "list" : kind;
   const tool = ASSESSMENT_TOOL[kind];
   const record =
     kind === "quantity"
@@ -277,10 +303,25 @@ of each named argument`
       : kind === "question"
         ? `the assessment
 (update_question_assessment, with its standing and both texts)`
-        : `the assessment
+        : kind === "artifact"
+          ? `the assessment
+(${LIST_ASSESSMENT_TOOL}, with its fidelity, both texts, the entries' order and
+what you left out)`
+          : `the assessment
 (update_claim_assessment, with both texts and marginal_yield), an evaluation
 of each named argument`;
-  const opening = `You own this ${noun}: its structure and its assessment. Your role describes
+  const opening =
+    kind === "artifact"
+      ? `You own this list: its specification, its entries and its assessment. Your
+role describes what that involves. How you go about this pass is your judgment.
+
+${passNote}
+
+Read the list with get_claim: its specification, its entries with their
+current verdicts, what was left out, and whether anything it draws on moved
+since it was judged. Start from the specification: form your own view of what
+it admits before you rely on the entries already there.`
+      : `You own this ${noun}: its structure and its assessment. Your role describes
 what that involves. How you go about this pass is your judgment.
 
 ${passNote}
@@ -686,7 +727,8 @@ async function runClaimStewardImpl(input: {
   // The node's kind decides the role (a question has a Steward of its own,
   // §7a), the tools, and what the pass must leave on the record.
   const kind = (claimRow?.kind ?? "claim") as NodeKind;
-  const kindRole = kind === "question" ? "question_steward" : "claim_steward";
+  const kindRole =
+    kind === "question" ? "question_steward" : kind === "artifact" ? "artifact_steward" : "claim_steward";
   const elicitTools = await getElicitToolDefinitions(config);
   // Pangram (AI-writing detection, original-source search), priced per
   // word against the run's budget inside the bundle.
@@ -767,7 +809,11 @@ async function runClaimStewardImpl(input: {
     // outcome on a node at a label it reads (label-note.ts). Not on the
     // public graph.
     ...(oneLabelOnly() ? [] : [getLeaveStandingToolDefinition()]),
-    ...(kind === "question" ? getQuestionToolDefinitions() : getQuantityToolDefinitions()),
+    ...(kind === "question"
+      ? getQuestionToolDefinitions()
+      : kind === "artifact"
+        ? getListToolDefinitions()
+        : getQuantityToolDefinitions()),
     ...getRequestToolDefinitions(kindRole),
     getMatcherToolDefinition(),
     ...elicitTools,
@@ -782,7 +828,7 @@ async function runClaimStewardImpl(input: {
     ...(sandbox ? [CODE_EXECUTION_TOOL] : []),
   ];
 
-  const noun = kind === "claim" ? "claim" : kind;
+  const noun = kind === "artifact" ? "list" : kind;
   const [judged, structured] = await Promise.all([
     hasCurrentJudgment(input.claimId, kind),
     hasStructure(input.claimId),
@@ -863,7 +909,7 @@ a cent.`
 
 Today's date: ${today}
 Trigger: ${input.trigger}
-${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : "Question"} ID: ${input.claimId}
+${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : kind === "artifact" ? "List" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
 ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
@@ -873,7 +919,9 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
   const system =
     kind === "question"
       ? getQuestionStewardSystemPromptBlocks()
-      : getClaimStewardSystemPromptBlocks();
+      : kind === "artifact"
+        ? getArtifactStewardSystemPromptBlocks()
+        : getClaimStewardSystemPromptBlocks();
 
   // A run that ends its turn with nothing recorded (GLM 5.3 Flash has
   // returned an empty end_turn after seventeen steps of structuring) loses
@@ -1027,6 +1075,15 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     // Elicit calls cost real money, not just tokens (#299/#300); the
     // executor declines a call the run's budget cannot cover.
     if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
+    if (kind === "artifact") {
+      const listOutput = await executeListTool(name, toolInput, {
+        claimId: input.claimId,
+        model,
+        trigger: input.trigger,
+        context: input.context,
+      });
+      if (listOutput !== null) return listOutput;
+    }
     const kindOutput = await executeKindTool(name, toolInput, {
       role: kindRole,
       claimId: input.claimId,
