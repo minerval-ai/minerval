@@ -366,3 +366,11 @@
   .hist li { grid-template-columns: 5.2rem minmax(0, 1fr); gap: 0.1rem 0.6rem; }
   .hist li > span:last-child { grid-column: 2; }
 }
+
+/* ----- a quiet page (#507): no rail, and one line for what has not happened ----- */
+/* Without the rail the column lines up with the masthead, as other pages do. */
+.norail { grid-template-columns: minmax(0, 1fr); max-width: var(--frame); }
+.absent {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+  margin: 1.4rem 0 0; max-width: 38rem;
+}

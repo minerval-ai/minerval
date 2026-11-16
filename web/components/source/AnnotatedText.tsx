@@ -14,7 +14,7 @@ type Findings = Map<string, Array<{ f: ExaminationFinding; ev: ExamView }>>;
 // fold. A scraped page is mostly its site's navigation; drawn section by
 // section, it buried one quoted passage under dozens of empty headings.
 export function AnnotatedText({
-  doc, groups, exams, findings, names, shown, setShown,
+  doc, groups, exams, findings, names, shown, setShown, map = true,
 }: {
   doc: SourceDocument | null;
   groups: Group[];
@@ -23,6 +23,12 @@ export function AnnotatedText({
   names: Map<string, string>;
   shown: string | null;
   setShown: (id: string | null) => void;
+  /**
+   * The passage map and its legend. Left out when there is no examination and
+   * at most one marked passage: a strip with one cell marked says nothing the
+   * passage below it does not.
+   */
+  map?: boolean;
 }) {
   const [whole, setWhole] = useState(false);
   const only = exams.find((e) => e.exam.id === shown) ?? null;
@@ -78,6 +84,7 @@ export function AnnotatedText({
               ))}
             </div>
           )}
+          {map && <>
           <CoverageStrip groups={groups} exams={exams} only={only} />
           <div className={s.stripl}>
             {exams.length > 0 ? (
@@ -96,6 +103,7 @@ export function AnnotatedText({
               Marked passage
             </span>
           </div>
+          </>}
 
           {lead.length === 0 && <p className={s.empty} style={{ margin: ".6rem 0" }}>No claim quotes it yet.</p>}
           {lead.map(({ g, l }) => (

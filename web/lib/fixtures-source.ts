@@ -12,8 +12,9 @@ import type {
 
 // Sample source pages for the offline preview (#507): a corrected paper with
 // two examinations, a think-tank report with copies and a later edition but no
-// examination, and a transcript with almost nothing recorded. Invented
-// examples, written so each state of the page has something to show.
+// examination, a transcript with almost nothing recorded, and a post quoted
+// once for one claim (the quiet page). Invented examples, written so each
+// state of the page has something to show.
 
 type Leaf = {
   id: string;
@@ -404,6 +405,71 @@ function councilTranscript(): SourcePage {
   };
 }
 
+// --- a post quoted once, and nothing else ----------------------------------------
+// The common case: a scraped page that is mostly its site's own text, one
+// passage quoted for one claim, no examination and no lineage.
+
+const OUTAGE = {
+  id: "signal-fault-closed-line",
+  text: "A signalling fault closed the whole Riverside line on the morning of 4 March 2025.",
+  status: "inconclusive" as AssessmentStatus,
+};
+
+function transitPost(): SourcePage {
+  const id = "transit-post";
+  return {
+    facts: {
+      source: {
+        id,
+        url: "https://social.example/@citytransit/112233445566",
+        title: "City Transit on Social",
+        source_type: "social_media_post",
+        authors: [],
+        publisher: "Social (example network)",
+        published_date: "2025-03-04",
+        doi: null,
+        archived_url: null,
+        retrieved_at: "2025-03-04T11:00:00Z",
+        facts_checked_at: "2025-03-04T11:05:00Z",
+      },
+      versions: [],
+      copies: [],
+      copy_of: [],
+      events: [],
+    },
+    document: buildDocument(id, [
+      { id: "tp-nav", section: "Log in · Sign up", children: [
+        { id: "tp-post", kind: "passage", text: "Service on the whole Riverside line is suspended this morning after a signalling fault affecting every station. Engineers are on site. We will post updates as we have them.",
+          instances: [inst(OUTAGE, "Service on the whole Riverside line is suspended this morning after a signalling fault affecting every station.", null)] },
+        { id: "tp-n1", kind: "passage", text: "Don't miss what's happening. People on Social are the first to know." },
+        { id: "tp-n2", kind: "passage", text: "New to Social? Sign up now to get your own timeline." },
+      ] },
+      { id: "tp-foot", section: "Terms of Service", children: [
+        { id: "tp-n3", kind: "passage", text: "Terms of Service · Privacy Policy · Cookie Policy · Accessibility" },
+      ] },
+    ]),
+    examinations: [],
+  };
+}
+
+function transitContext(): SourceContext {
+  const empty = { total: 0, entries: [], rest: [] };
+  return {
+    lineage: { draws_on: empty, drawn_on_by: empty },
+    prominence: {
+      reach: { copies: 0, direct_copies: 0 },
+      structure: { claims: 1, origin_on: 0, origin_by_steward: 0, underlying_on: 0, downstream: 0, claims_read: 1 },
+      evidence: { readings_by_support: {}, read_whole: 0, claims_citing_findings: 0, notes: [] },
+    },
+    reviews: { document_reviews: [], claim_examinations: 0, segments: 4, requests: [] },
+    history: [
+      { at: "2025-03-04T11:06:00Z", kind: "segmented", by: "segmenter", text: "Divided into 6 parts by its own structure", claim: null },
+      { at: "2025-03-04T11:05:00Z", kind: "facts", by: "facts_fetcher", text: "Facts looked up", claim: null },
+      { at: "2025-03-04T11:00:00Z", kind: "retrieved", by: "graph", text: "Entered the graph; copy stored", claim: null },
+    ],
+  };
+}
+
 // --- context: lineage, prominence, history ------------------------------------------
 
 const src = (id: string, title: string, source_type: string, published_date: string | null) =>
@@ -578,9 +644,10 @@ export function getSourcePageFixture(id: string): SourcePage | null {
     case "registry-study": return { ...registryStudy(), context: registryContext() };
     case "think-tank-report": return { ...thinkTankReport(), context: thinkTankContext() };
     case "council-transcript": return { ...councilTranscript(), context: councilContext() };
+    case "transit-post": return { ...transitPost(), context: transitContext() };
     default: return null;
   }
 }
 
 /** The sample ids, for the not-found page of the offline preview. */
-export const SOURCE_FIXTURE_IDS = ["registry-study", "think-tank-report", "council-transcript"] as const;
+export const SOURCE_FIXTURE_IDS = ["registry-study", "think-tank-report", "council-transcript", "transit-post"] as const;
