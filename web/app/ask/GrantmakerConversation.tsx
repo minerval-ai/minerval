@@ -7,6 +7,7 @@ import { MandateProposal, type MandateView } from "../../components/account/Mand
 import { failedTurnMessage, waitForReply, type GrantTurn } from "../../lib/grant-turn";
 import { StartAtLabel, labelReady } from "../../components/inside/StartAtLabel";
 import type { MyLabels } from "../../lib/admin-api";
+import { Prose } from "./prose";
 
 // A conversation with a Grantmaker, in the Ask section's shell. It is one
 // conversation from the first sentence on: the funder describes what they
@@ -186,7 +187,7 @@ export function GrantmakerConversation({
   const closed = convo?.status === "declined" || convo?.status === "abandoned";
 
   return (
-    <div className="ask-chat">
+    <div className={`ask-chat${panel ? "" : " ask-chat-no-panel"}`}>
       <div className="ask-col">
         <div className="ask-bar">
           <span className="ask-bar-title" title={title}>
@@ -218,7 +219,7 @@ export function GrantmakerConversation({
               ) : (
                 <div key={`${m.at}-${i}`} className="ask-msg ask-msg-assistant">
                   <span className="sc convo-who">grantmaker</span>
-                  <div className="convo-body">{m.content}</div>
+                  <Prose content={m.content} />
                 </div>
               )
             )}
@@ -226,7 +227,7 @@ export function GrantmakerConversation({
               <div className="ask-msg ask-msg-assistant" aria-live="polite">
                 <span className="sc convo-who">grantmaker</span>
                 {convo?.turn?.partial ? (
-                  <div className="convo-body">{convo.turn.partial}</div>
+                  <Prose content={convo.turn.partial} />
                 ) : (
                   <div className="convo-body convo-thinking">
                     {convo?.turn?.progress?.steps
@@ -330,9 +331,11 @@ export function GrantmakerConversation({
         </div>
       </div>
 
-      <aside className="ask-panel askm-panel" aria-label="The mandate">
-        {panel}
-      </aside>
+      {panel && (
+        <aside className="ask-panel askm-panel" aria-label="The mandate">
+          {panel}
+        </aside>
+      )}
     </div>
   );
 }
