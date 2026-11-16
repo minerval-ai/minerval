@@ -351,6 +351,43 @@ prize checks are DB-backed jobs with their own workers, never SQS messages:
 the two queues' 120-second visibility timeout (`infra/lib/queue-stack.ts`)
 is unsuitable for either.
 
+## The mirror feed
+
+A private deployment holds the public graph as a read-only copy, kept from
+a feed of signed batches the public graph publishes (docs/mirror.md). The
+API publishes it when `mirrorPublish` in `infra/cdk.json` is `"true"`: the
+task then runs with `MIRROR_PUBLISH=true` and reads `MIRROR_SIGNING_KEY`
+from the Secrets Manager entry `episteme/mirror-signing-key`. It starts
+`"false"`, and while it is, `/mirror/feed` is not mounted and a private
+deployment cannot mirror the public graph, which also means it cannot
+publish a page to it (a page goes to the node the mirror gave it).
+
+To turn it on:
+
+1. Make the key, on a machine with the repository:
+   `npx tsx scripts/mirror.ts keygen`. It prints a private key (PEM) and
+   its public half. Keep a copy of the private key in the password
+   manager: a new key starts a feed every mirror has to be told about.
+2. Create the entry by hand, so the key never passes through
+   CloudFormation: `aws secretsmanager create-secret --name
+   episteme/mirror-signing-key --secret-string file://mirror-key.pem`.
+3. Set `"mirrorPublish": "true"` in `infra/cdk.json` and merge. The API
+   refuses to start with the feed on and no key, so the entry must exist
+   before this deploys.
+4. Check: `GET https://api.claimgraph.io/mirror/feed/key` answers with the
+   public key, and the API's log shows `Mirror feed publisher started` and
+   then the first cut, a snapshot of every public row in batches of at most
+   `MIRROR_BATCH_MAX_BYTES`.
+
+Each cut reads and hashes the replicated tables, every
+`MIRROR_PUBLISH_INTERVAL_SECONDS` (900 by default), so the feed costs the
+primary database that read. Batches are kept in the database. A deployment
+that mirrors fetches them with an ordinary account's API key; nothing
+charges for the feed yet.
+
+To stop publishing, set it back to `"false"` and merge. Mirrors keep what
+they applied and stop moving.
+
 ## The extraction lane
 
 Reading a source (an ingest) is a message on the URL extraction queue,
@@ -456,6 +493,10 @@ storage past about 5 GB, or a second region.
   (`MINERVAL_OPERATOR_KEY`) for the Platform mandates workflow, which
   presents it only to `POST /operator/platform-mandates/fund`, to fund a
   draft that a merged pull request pinned (#529).
+- `episteme/mirror-signing-key`: the Ed25519 key the mirror feed is signed
+  with, read by the API task only while `mirrorPublish` is on. Created by
+  hand and imported by name, like the operator key ("The mirror feed",
+  above).
 - Nothing else is baked into the checker image or its environment, because
   the cold lane runs a claimant's code.
 - A payout provider's key arrives only with cash payouts, in its own entry,

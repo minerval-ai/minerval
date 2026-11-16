@@ -48,6 +48,15 @@ export interface ApiStackProps extends cdk.StackProps {
   githubAppPrivateKeySecret: secretsmanager.ISecret;
   operatorKeySecret: secretsmanager.ISecret;
   leanChecker?: LeanCheckerWiring;
+  /**
+   * Publish the mirror feed (docs/mirror.md): signed batches of every public
+   * row, which a private deployment applies to hold a copy of the public
+   * graph. Off unless the context flag is "true" (cdk.json); on, the API
+   * reads the signing key from episteme/mirror-signing-key, which the
+   * operator creates by hand first (docs/infrastructure.md, "The mirror
+   * feed"), since the API refuses to start with the feed on and no key.
+   */
+  mirrorPublish?: boolean;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -85,6 +94,13 @@ export class ApiStack extends cdk.Stack {
     props.githubAppPrivateKeySecret.grantRead(taskDef.taskRole);
     props.operatorKeySecret.grantRead(taskDef.taskRole);
     props.stripeWebhookSecretSecret.grantRead(taskDef.taskRole);
+    // Imported, not created, like the operator key: its value is an Ed25519
+    // private key the operator makes with `npx tsx scripts/mirror.ts keygen`,
+    // and it never passes through CloudFormation.
+    const mirrorSigningKeySecret = props.mirrorPublish
+      ? secretsmanager.Secret.fromSecretNameV2(this, "MirrorSigningKeySecret", "episteme/mirror-signing-key")
+      : undefined;
+    mirrorSigningKeySecret?.grantRead(taskDef.taskRole);
 
     // Lean checker (docs/mathematics.md 5.3): the API reaches the checker's
     // service over private DNS, and the checker's own queue runs the cold
@@ -324,6 +340,9 @@ export class ApiStack extends cdk.Stack {
         GITHUB_ISSUES_INCLUDE_EXTERNAL: "true",
         GITHUB_APP_ID: "4911585",
         GITHUB_APP_INSTALLATION_ID: "160924398",
+        // The mirror feed (docs/mirror.md): served at /mirror/feed, a cut
+        // every MIRROR_PUBLISH_INTERVAL_SECONDS (900 by default).
+        ...(mirrorSigningKeySecret ? { MIRROR_PUBLISH: "true" } : {}),
       },
       secrets: {
         DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
@@ -374,6 +393,9 @@ export class ApiStack extends cdk.Stack {
         // LeanCheckerStack and shared with the checker tasks.
         ...(props.leanChecker
           ? { LEAN_CHECKER_TOKEN: ecs.Secret.fromSecretsManager(props.leanChecker.tokenSecret) }
+          : {}),
+        ...(mirrorSigningKeySecret
+          ? { MIRROR_SIGNING_KEY: ecs.Secret.fromSecretsManager(mirrorSigningKeySecret) }
           : {}),
       },
     });
