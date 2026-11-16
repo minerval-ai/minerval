@@ -454,6 +454,38 @@ describe("a page shown outside, to begin from", () => {
   });
 });
 
+describe("registering the deployment's key from inside", () => {
+  it("is an administrator's act: the deployment signs for the account its public key belongs to, sends it through that account, and logs it", async () => {
+    // A person who directs the graph does not decide who speaks for it outside.
+    expect((await as("director", { method: "POST", url: "/outbound/registration/send", payload: {} })).status).toBe(403);
+
+    const said = await as("admin", {
+      method: "POST",
+      url: "/outbound/registration/send",
+      payload: { declared_interest: `We run the plant (${tag}).` },
+    });
+    expect(said.status, JSON.stringify(said.json)).toBe(201);
+    // The account is read from the public graph, not named by anyone here.
+    expect(said.json.account.external_id).toBe(orgAccount);
+    expect(said.json.hosting).toBe("own_machines");
+
+    const [live] = await pubRows<{ account_id: string; declared_interest: string | null }>(
+      `SELECT account_id, declared_interest FROM publishers WHERE retired_at IS NULL AND account_id = $1`,
+      [id.orgAccount]
+    );
+    expect(live?.declared_interest).toBe(`We run the plant (${tag}).`);
+
+    const [logged] = await system(() =>
+      rawQuery<{ acted_by: string; holding: string[]; result: string; sent: Record<string, unknown> }>(
+        `SELECT acted_by, holding, result, sent FROM outward_acts WHERE kind = 'register_publisher' ORDER BY at DESC LIMIT 1`
+      )
+    );
+    expect(logged).toMatchObject({ acted_by: people.admin!.id, holding: ["administer"], result: "done" });
+    // What was sent is the statement and nothing else of the deployment's.
+    expect(Object.keys(logged!.sent).sort()).toEqual(["declared_interest", "hosting", "public_key", "signature"]);
+  });
+});
+
 describe("taking up a request in public", () => {
   it("reads the public graph's requests from the mirror, which tells the public graph nothing", async () => {
     const listed = await as("reader", { url: `/outside/requests?node_id=${id.p}` });

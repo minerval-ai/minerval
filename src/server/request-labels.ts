@@ -408,6 +408,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /outbound/packages/:package_id/file": { rule: "none", why: OUTBOUND },
   "POST /outbound/proposals": { rule: "none", why: OUTBOUND },
   "POST /outbound/registration": { rule: "none", why: "Signs a statement with the deployment's key and writes nothing." },
+  "POST /outbound/registration/send": { rule: "none", why: OUTWARD },
   "POST /outside/requests/:public_request_id/adopt": { rule: "none", why: OUTWARD },
   "POST /requests/:request_id/adopt": {
     rule: "none",

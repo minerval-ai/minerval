@@ -566,6 +566,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /outbound/proposals": OUTBOUND_SESSION,
   "POST /outbound/packages/:package_id/file": OUTBOUND_SESSION,
   "POST /outbound/registration": OUTBOUND_SESSION,
+  "POST /outbound/registration/send": OUTBOUND_SESSION,
   "POST /file-sets/register": FILE_SET_REGISTER_SESSION,
   "POST /file-sets/:file_set_id/rehash": FILE_SET_REGISTER_SESSION,
   "POST /file-sets": FILE_SET_SESSION,

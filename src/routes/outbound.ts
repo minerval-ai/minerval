@@ -18,6 +18,9 @@
  *   POST /outbound/registration: the signed statement the organization's
  *     account presents on the public graph to register this deployment's
  *     key (administer, session).
+ *   POST /outbound/registration/send: the same statement, sent by this
+ *     deployment through the organization's account (PUBLIC_GRAPH_API_KEY),
+ *     so that nobody has to carry it there by hand (administer, session).
  *
  * Where the line is. Everything a package carries has already passed the
  * release gate for outside. Sending it is still an outward act: it tells
@@ -48,6 +51,7 @@ import {
   signedRegistration,
   writeProposal,
 } from "../services/outbound-service.js";
+import { OutwardError, registerPublisherOutside } from "../services/outward-acts-service.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
 
@@ -204,6 +208,32 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
       try {
         return reply.send({ ...signedRegistration(request.body.account), key_id: publisherIdentity().key_id, how_packages_are_sent: SEND_CHOICES });
       } catch (err) {
+        return refuse(reply, err);
+      }
+    },
+  });
+
+  app.post<{ Body: { declared_interest?: string } }>("/outbound/registration/send", {
+    schema: {
+      tags: ["showings"],
+      summary:
+        "Register this deployment's signing key to the organization's account on the public graph, through that account (administrators, from a signed-in session)",
+      description:
+        "Reads which account PUBLIC_GRAPH_API_KEY belongs to, signs the registration statement for it with the deployment's key, and sends it to the " +
+        "public graph's POST /publishers. `declared_interest` is what the organization says of its own interest in what it publishes, shown with every " +
+        "page. The registration, the key and the hosting words are a public record there; registering again retires the earlier registration. " +
+        "Recorded on the log of acts on the public graph (GET /outside/log).",
+      body: {
+        type: "object",
+        properties: { declared_interest: { type: "string", maxLength: 1000 } },
+      },
+    },
+    preHandler: session("administer"),
+    handler: async (request, reply) => {
+      try {
+        return reply.code(201).send(await registerPublisherOutside({ declaredInterest: request.body?.declared_interest ?? null, actor: await actorOf(request) }));
+      } catch (err) {
+        if (err instanceof OutwardError) return reply.code(err.status).send({ error: err.message, code: err.code });
         return refuse(reply, err);
       }
     },

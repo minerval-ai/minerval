@@ -5,7 +5,7 @@ import { ActionForm } from "@/components/admin/ActionForm";
 import { can, viewer, when } from "@/components/admin/access";
 import { WorkNav, day } from "@/components/inside/nav";
 import { fetchOutbound, type OutboundNode, type OutboundPackage } from "@/lib/inside-api";
-import { sendOutsideAction, writeProposalAction } from "../showings/actions";
+import { registerPublisherAction, sendOutsideAction, writeProposalAction } from "../showings/actions";
 
 export const metadata: Metadata = { title: "Pages sent outside · Minerval" };
 export const dynamic = "force-dynamic";
@@ -93,6 +93,7 @@ export default async function OutboundPage() {
   if (!who) return null;
   const overview = await fetchOutbound(who.externalId);
   const mayDirect = can(who, "direct");
+  const mayAdminister = can(who, "administer");
   const showings = [...new Set(overview.nodes.map((n) => n.showing_id))];
 
   return (
@@ -133,6 +134,36 @@ export default async function OutboundPage() {
           a receipt for one: that is read on the public graph.
         </p>
       </section>
+
+      {mayAdminister && (
+        <section className="acct-section" id="register">
+          <div className="acct-head">
+            <h2>Who publishes these pages</h2>
+          </div>
+          <p className="acct-prose acct-measure">
+            The public graph takes a package only from the account this deployment&rsquo;s signing key is registered to. Registering
+            names the organisation&rsquo;s account there (the one this deployment acts through) as the publisher of what this deployment
+            signs, and says where the deployment runs. It is done once, and again if the key or where the deployment runs changes;
+            registering again retires the earlier registration, which stays on the public record.
+          </p>
+          <ActionForm action={registerPublisherAction} submit="Register this deployment's key on the public graph">
+            <label>
+              What the organisation says of its own interest in what it publishes (optional)
+              <textarea name="declared_interest" rows={2} maxLength={1000} />
+              <small>
+                Shown whole beside every page the organisation publishes. A sentence or two: what it stands to gain or lose from how
+                the nodes it publishes on are judged.
+              </small>
+            </label>
+            <p className="admin-kept">
+              <small>
+                The registration, the key and where the deployment runs are public on the publisher&rsquo;s record. It is recorded here
+                with your name and the permissions you hold.
+              </small>
+            </p>
+          </ActionForm>
+        </section>
+      )}
 
       <p className="acct-prose acct-measure">
         This page is for pages. What else passes between this deployment and the public graph (the organisation&rsquo;s account there,
