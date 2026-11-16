@@ -2607,13 +2607,22 @@ select.ask-model:hover:not(:disabled) { color: var(--ink); background-color: var
 }
 
 /* ---------------------------------------------------------------- a mandate
-   The mandate's page. The mandate itself is a document, set on a sheet with
-   a byline; the page reports on it in the account page's sections. A sheet
-   is always text someone wrote; everything off a sheet is the page's own. */
+   The mandate's page: its title and figures first, then the account page's
+   sections. A sheet is always text someone wrote; the mandate's own text is
+   a section whose head carries its byline. */
 .mnd h3.mnd-h3 { margin: 0; font-size: 1.02rem; font-weight: 600; }
 .mnd h3.mnd-h3-gap { margin-top: 1.8rem; }
 .mnd-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.9rem; margin-bottom: 0.9rem; }
 .mnd-top > p { margin: 0; }
+.mnd-title { margin-bottom: 1.6rem; }
+.mnd-title .page-head { margin: 0 0 0.55rem; padding: 0; border: 0; }
+.mnd-title .page-title.statement { max-width: 48rem; margin: 0; }
+.mnd-funder { max-width: 48rem; margin: 0; }
+details.mnd-funder > summary { cursor: pointer; list-style: none; }
+details.mnd-funder > summary::-webkit-details-marker { display: none; }
+.mnd-funder-open { color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+details.mnd-funder[open] .mnd-funder-open { color: var(--muted); }
+details.mnd-funder > p { margin: 0.35rem 0 0; }
 .mnd-chip {
   font-family: var(--sans); font-size: 0.66rem; font-weight: 600; white-space: nowrap;
   padding: 0.1rem 0.45rem; border-radius: 3px;
@@ -2627,14 +2636,22 @@ select.ask-model:hover:not(:disabled) { color: var(--ink); background-color: var
 
 /* what only the manager sees */
 .mnd-strip {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.8rem 1.5rem;
-  margin-bottom: 1.2rem; padding: 0.85rem 1.1rem;
-  border: 1px solid var(--rule-strong); border-left: 3px solid var(--ink); border-radius: 3px;
-  background: var(--paper-sunk);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1.5rem;
+  padding: 0.7rem 0; border-bottom: 1px solid var(--rule);
+  font-family: var(--sans); font-size: 0.8rem;
 }
-.mnd-strip p { margin: 0.2rem 0 0; }
-.mnd-strip-say { flex: 1 1 18rem; min-width: 0; }
-.mnd-strip-only { margin-left: 0.5rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--faint); }
+.mnd-strip p { margin: 0; }
+.mnd-strip p + .acct-note, .mnd-strip-note { margin: 0.2rem 0 0; }
+.mnd-strip-say { flex: 999 1 22rem; min-width: 0; }
+.mnd-strip-who { margin-right: 0.6rem; color: var(--muted); }
+.mnd-strip-note > summary { cursor: pointer; list-style: none; }
+.mnd-strip-note > summary::-webkit-details-marker { display: none; }
+.mnd-strip-more { margin-left: 0.3rem; color: var(--link); text-decoration: underline; text-underline-offset: 2px; }
+.mnd-strip-note[open] .mnd-strip-head { display: none; }
+.mnd-strip-more::after { content: attr(data-closed); }
+.mnd-strip-note[open] .mnd-strip-more { margin-left: 0; color: var(--muted); }
+.mnd-strip-note[open] .mnd-strip-more::after { content: attr(data-open); }
+.mnd-strip-note > p { margin: 0.25rem 0 0; max-width: 46rem; }
 .mnd-strip-do { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0.5rem; }
 .mnd-button, a.mnd-button, a.mnd-button:visited {
   display: inline-flex; align-items: center; min-height: 2.3rem; padding: 0 0.95rem;
@@ -2642,7 +2659,7 @@ select.ask-model:hover:not(:disabled) { color: var(--ink); background-color: var
   font-family: var(--sans); font-size: 0.74rem; font-weight: 600; cursor: pointer; list-style: none;
 }
 .mnd-button:hover { background: var(--paper-sunk); text-decoration: none; }
-.mnd-strip .mnd-button:hover { background: var(--paper); }
+.mnd-strip .mnd-button:hover { background: var(--paper-sunk); }
 .mnd-button-main, a.mnd-button-main, a.mnd-button-main:visited { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 .mnd-button-main:hover, .mnd-strip .mnd-button-main:hover { background: var(--ink-soft); }
 summary.mnd-button::-webkit-details-marker { display: none; }
@@ -2686,24 +2703,25 @@ summary.mnd-button::-webkit-details-marker { display: none; }
 .mnd-more-list { margin-top: 1rem; }
 .mnd-sub { margin: 0.9rem 0 0.3rem; }
 
-/* the mandate's own sheet: the objective is the body, the strategy a note
-   in its margin */
-.mnd-mandate .mnd-sheet-body { padding: 1.5rem 1.7rem 0.9rem; }
-.mnd-mandate .page-head { margin: 0 0 1.1rem; padding: 0; border: 0; }
-.mnd-mandate .page-title.statement { max-width: 44rem; margin: 0; }
-.mnd-mandate-cols { display: flex; flex-wrap: wrap; gap: 1.4rem 2.6rem; }
-.mnd-objective { flex: 2 1 26rem; min-width: 0; font-size: 1.06rem; line-height: 1.58; }
+/* the mandate's own text: the objective at reading width, the rest and the
+   strategy folded under it in the same type */
+.mnd-objective { max-width: var(--measure); margin-top: 1.1rem; font-size: 1.06rem; line-height: 1.6; }
 .mnd-objective p { margin: 0 0 0.9rem; }
-.mnd-rest { font-size: 0.92rem; line-height: 1.55; }
-.mnd-strategy {
-  flex: 1 1 15rem; min-width: 0; align-self: flex-start;
-  padding-left: 1.1rem; border-left: 1px solid var(--rule);
-  font-family: var(--sans); font-size: 0.78rem; line-height: 1.55; color: var(--ink-soft);
+p.mnd-tagline { margin: 0 0 1.4rem; }
+.mnd-fold { max-width: var(--measure); border-top: 1px solid var(--rule); }
+.mnd-fold:last-child { border-bottom: 1px solid var(--rule); }
+.mnd-fold > summary {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+  padding: 0.8rem 0; cursor: pointer; list-style: none;
+  font-family: var(--sans); font-size: 0.82rem; color: var(--ink);
 }
-.mnd-strategy .sc { margin-bottom: 0.45rem; }
-.mnd-strategy p { margin: 0 0 0.65rem; }
-.mnd-strategy-how { margin-left: 0.4rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--faint); }
-p.mnd-tagline { margin: 0.7rem 0 1.5rem; }
+.mnd-fold > summary::-webkit-details-marker { display: none; }
+.mnd-fold > summary::after { content: "Show"; flex: none; color: var(--link); }
+.mnd-fold[open] > summary::after { content: "Hide"; }
+.mnd-fold-what { color: var(--muted); }
+.mnd-fold-what::before { content: "· "; }
+.mnd-fold-body { padding-bottom: 1rem; font-size: 1rem; line-height: 1.6; color: var(--ink-soft); }
+.mnd-fold-body p { margin: 0 0 0.8rem; }
 
 /* the figures */
 .mnd-figures .acct-balance { font-size: 2rem; flex-wrap: wrap; }
@@ -2832,10 +2850,8 @@ p.mnd-fault { color: var(--st-inconclusive); }
 .mnd-ask .ask-box { margin: 0.5rem 0 0; max-width: none; }
 
 @media (max-width: 640px) {
-  .mnd-mandate .mnd-sheet-body { padding: 1.1rem 1rem 0.6rem; }
   .mnd-byline, .mnd-sheet-body { padding-left: 1rem; padding-right: 1rem; }
   .mnd-objective { font-size: 1rem; }
-  .mnd-strategy { padding-left: 0; padding-top: 0.9rem; border-left: 0; border-top: 1px solid var(--rule); }
   .mnd-strip-do, .mnd-strip-do > * { flex: 1 1 100%; }
   .mnd-strip-do .mnd-button { width: 100%; justify-content: center; }
   .mnd-do-body { position: static; width: auto; margin-top: 0.4rem; }
@@ -2844,7 +2860,7 @@ p.mnd-fault { color: var(--st-inconclusive); }
   .mnd-action { grid-template-columns: minmax(0, 1fr); }
   .mnd-action > .acct-detail { margin-left: 0; text-align: left; }
   .mnd-standing { grid-column: 1; }
-  .mnd-mandate .page-title.statement { font-size: 1.45rem; line-height: 1.25; }
+  .mnd-title .page-title.statement { font-size: 1.45rem; line-height: 1.25; }
   .mnd-kindbar { grid-template-columns: minmax(0, 1fr) auto; }
   .mnd-kindbar .mnd-bar { grid-column: 1 / -1; grid-row: 2; }
   .mnd-agent-open { margin-left: 0; flex: 1 1 100%; }

@@ -42,32 +42,6 @@ export function Prose({ text }: { text: string }) {
 }
 
 /**
- * Prose with its first paragraphs shown and the rest one click away. The
- * fold is a <details>, so it opens without scripts and a search in the page
- * finds what is folded.
- */
-export function FoldedProse({ text, keep = 2, more = "Read the rest" }: { text: string; keep?: number; more?: string }) {
-  const all = paragraphs(text);
-  const head = all.slice(0, keep);
-  const rest = all.slice(keep);
-  return (
-    <>
-      {head.map((p, i) => (
-        <p key={i}>{p}</p>
-      ))}
-      {rest.length > 0 && (
-        <details className="mnd-more">
-          <summary>{more}</summary>
-          {rest.map((p, i) => (
-            <p key={i}>{p}</p>
-          ))}
-        </details>
-      )}
-    </>
-  );
-}
-
-/**
  * A note written in Markdown (a Grantmaker's update, its direction), cut at
  * a paragraph when it is long. The cut is made between blocks, so a list or
  * a heading is never split.
