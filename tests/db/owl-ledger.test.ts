@@ -12,6 +12,7 @@ import {
 } from "../../src/services/owl-ledger-service.js";
 import { listOrders, orderCostsMicroUsd } from "../../src/services/order-service.js";
 import { rawQuery } from "../../src/db/client.js";
+import { chargeAgenticOp } from "../../src/server/plugins/quota.js";
 import { seedUser, seedClaim, creditOwls, owlBalance, OWL } from "./helpers.js";
 
 describe("chargeOwls", () => {
@@ -82,6 +83,18 @@ describe("chargeOwls", () => {
 // The account page reads a hold and the return from it as one piece of work
 // (web/lib/owl-history.ts). The ledger says which charge a return settles,
 // from the settlement's own idempotency key; nothing else is stored.
+describe("chargeAgenticOp", () => {
+  // In the second run with real models the organization's account on the public graph first acted by submitting
+  // a published page, a route that charges without reading the balance first. The free grants land on the first
+  // read of an account's balance, so the charge saw none and the page was refused "with a balance of 6".
+  it("lands an account's free grants before charging it, so its first priced act is not refused", async () => {
+    const userId = await seedUser("first-priced-act");
+    const decision = await chargeAgenticOp({ userId, apiKeyId: null, method: "api_key" }, "source_ingest");
+    expect(decision.allowed).toBe(true);
+    expect(decision.entryId).toBeTruthy();
+  });
+});
+
 describe("listOwlLedger: which charge a return settles", () => {
   it("names the charge for a settlement keyed by entry id and by order", async () => {
     const userId = await seedUser("ledger-pairs");

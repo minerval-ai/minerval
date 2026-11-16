@@ -322,7 +322,7 @@ describe("questions", () => {
     expect(detail.subquestions.map((x) => x.id)).toEqual([sub]);
     expect(detail.presuppositions.map((x) => x.id)).toEqual([presupposition]);
     expect(detail.depended_on_by.map((x) => x.id)).toEqual([dependent]);
-    expect(detail.relations).toEqual([{ ...orderedPair(a, b), relation: "excludes" }]);
+    expect(detail.relations.map(({ label: _label, ...r }: { label?: string }) => r)).toEqual([{ ...orderedPair(a, b), relation: "excludes" }]);
 
     // A question depends on its answers: the question shows among an answer's dependents.
     const deps = await getClaimDependents(a);

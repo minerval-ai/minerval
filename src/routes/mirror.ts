@@ -166,7 +166,9 @@ export async function mirrorRoutes(app: FastifyInstance): Promise<void> {
           "the mirrored claims, sources and assessments here are shown as of: when the public graph cut " +
           "the newest batch this deployment has applied. Also that batch's sequence and hash, when it " +
           "was applied, whether a snapshot is only partly applied (complete is then false), how many " +
-          "mirrored claims a search can find, and the last batch refused since, with the reason",
+          "mirrored claims a search can find, and the last batch refused since, with the reason. Where the " +
+          "reason is a row of this deployment's own, the message says only that a row could not be " +
+          "written; the operator reads which with scripts/mirror.ts status",
         response: {
           200: {
             type: "object",

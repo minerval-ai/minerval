@@ -27,6 +27,7 @@ import {
   deleteEdges,
   detachEdgeFromArgument,
   getEdgesBetween,
+  insertRelationshipEdge,
   retypeEdge,
   setEdgeReasoning,
   type EdgeRecord,
@@ -34,6 +35,14 @@ import {
 import { notYourNode } from "./steward-ownership.js";
 import { writeIdCandidates } from "./id-repair.js";
 import { currentLabel } from "../usage-context.js";
+import {
+  overlaid,
+  ownOverlay,
+  placementOf,
+  recordOverlay,
+  setAsideFor,
+  takeBackOverlay,
+} from "../../services/overlay-service.js";
 
 export const STEWARD_STRUCTURE_TOOL_NAMES = [
   "remove_subclaim_edge",
@@ -46,7 +55,32 @@ export const STEWARD_STRUCTURE_TOOL_NAMES = [
 /** The structure tools that act on arguments, which a question does not have (§7a). */
 export const ARGUMENT_STRUCTURE_TOOL_NAMES = new Set(["ungroup_subclaim", "revise_argument", "retire_argument"]);
 
-const NAMES = new Set<string>(STEWARD_STRUCTURE_TOOL_NAMES);
+/**
+ * The tool that takes back what a label holds over a row below it
+ * (services/overlay-service.ts). Offered only where a deployment has more
+ * than one label: elsewhere there is no layer below, and the Steward's
+ * tools are the list they were.
+ */
+export const RESTORE_BELOW_TOOL = "restore_below";
+
+const NAMES = new Set<string>([...STEWARD_STRUCTURE_TOOL_NAMES, RESTORE_BELOW_TOOL]);
+
+const tick = (label: string) => `\`${label}\``;
+
+/** Where the row below is, in the words a result uses: a label's name, or the public graph. */
+const where = (below: string) => (below === "the public graph" ? below : tick(below));
+
+/**
+ * What a run is told when an edge or an argument it would remove is at a
+ * layer below its own, and so was set aside at its own label instead.
+ */
+export function setAsideMessage(what: string, own: string, below: string): string {
+  return (
+    `Set aside at ${tick(own)}: ${what}. It is at ${where(below)}, which this run reads and does not change, and ` +
+    `readers there see no difference. At ${tick(own)} it is shown as set aside with your reason, and the ` +
+    `judgment at ${tick(own)} does not rest on it. restore_below takes this back.`
+  );
+}
 
 export function getStewardStructureToolDefinitions(): Tool[] {
   return [
@@ -166,8 +200,30 @@ export function getStewardStructureToolDefinitions(): Tool[] {
         required: ["argument_id", "reasoning"],
       },
     },
+    ...(overlaid() ? [RESTORE_BELOW_DEFINITION] : []),
   ];
 }
+
+const RESTORE_BELOW_DEFINITION: Tool = {
+  name: RESTORE_BELOW_TOOL,
+  description:
+    "Take back what this run's label holds over a row at a label it reads, so that its readers and its " +
+    "judgment go by the layer below again. With claim_id alone: the label's own importance and " +
+    "contestation for the node. With child_id: an edge it set aside. With argument_id: an argument it " +
+    "set aside. An edge or argument that a label this one reads set aside is counted at this label the " +
+    "same way. Logged with your reasoning.",
+  input_schema: {
+    type: "object" as const,
+    properties: {
+      claim_id: { type: "string", description: "The UUID of the node you steward" },
+      child_id: { type: "string", description: "The UUID of the subclaim whose edge was set aside" },
+      relation: { type: "string", description: "The edge's relation. Needed only when the child is joined to your node by more than one edge." },
+      argument_id: { type: "string", description: "The UUID of the argument that was set aside" },
+      reasoning: { type: "string", description: "Why the layer below is right for this label after all" },
+    },
+    required: ["claim_id", "reasoning"],
+  },
+};
 
 function refuse(message: string): string {
   return JSON.stringify({ success: false, message });
@@ -265,6 +321,30 @@ export async function executeStewardStructureTool(
         return refuse("That edge makes the node a candidate answer; remove it with remove_answer.");
       }
       const described = await describeEdge(edge);
+      // An edge at a layer below this run's label is not this run's to
+      // remove. What its label says of it is its own row: the edge is set
+      // aside at the label, with the reason (services/overlay-service.ts).
+      const edgeAt = await placementOf("claim_relationships", edge.id);
+      if (edgeAt?.below) {
+        const recorded = await recordOverlay({
+          table: "claim_relationships",
+          id: edge.id,
+          kind: "set_aside",
+          value: 1,
+          reason: reasoning,
+          createdBy: "claim_steward",
+        });
+        await logStructureChange(
+          parentId,
+          "remove_subclaim_edge",
+          `Set aside at ${recorded.label} the ${described}, to ${childId}, which is at ${recorded.below}: ${reasoning}`
+        );
+        return JSON.stringify({
+          success: true,
+          message: setAsideMessage(`the ${described}, from ${parentId} to ${childId}`, recorded.label, recorded.below),
+          set_aside_relationship_id: edge.id,
+        });
+      }
       await deleteEdges([edge.id]);
       await logStructureChange(
         parentId,
@@ -305,6 +385,42 @@ export async function executeStewardStructureTool(
           `A ${edge.relation_type} edge is part of a question's structure (§7a); it changes through ` +
             `the question tools, not by retyping.`
         );
+      }
+      // An edge at a layer below this run's label keeps its relation and
+      // its note there. Where this label reads the dependency differently,
+      // it records its own edge with the relation it means and sets the
+      // one below aside: two rows of its own, and no change below.
+      const retypedAt = await placementOf("claim_relationships", edge.id);
+      if (retypedAt?.below) {
+        if (edge.relation_type === relation) {
+          return refuse(
+            `Not changed: this ${relation} edge is at ${where(retypedAt.origin === "mirror" ? "the public graph" : retypedAt.label)}, ` +
+              `which this run reads and does not change, and its note is that label's words. Say how you ` +
+              `read the dependency in your own judgment.`
+          );
+        }
+        const own = await insertRelationshipEdge({ parentId, childId, relationType: relation, reasoning, createdBy: "claim_steward" });
+        const recorded = await recordOverlay({
+          table: "claim_relationships",
+          id: edge.id,
+          kind: "set_aside",
+          value: 1,
+          reason: `Read at ${currentLabel()} as ${relation}: ${reasoning}`,
+          createdBy: "claim_steward",
+        });
+        await logStructureChange(
+          parentId,
+          "set_edge_relation",
+          `At ${recorded.label}, the edge to ${childId} is ${relation}; the ${edge.relation_type} edge at ${recorded.below} is set aside: ${reasoning}`
+        );
+        return JSON.stringify({
+          success: true,
+          message:
+            `At ${tick(recorded.label)} the edge from ${parentId} to ${childId} is now ${relation}, a row of its own. ` +
+            setAsideMessage(`the ${edge.relation_type} edge`, recorded.label, recorded.below),
+          relationship_id: own.id,
+          set_aside_relationship_id: edge.id,
+        });
       }
       if (edge.relation_type === relation) {
         // Same relation: the call corrects the edge's reasoning note (#833).
@@ -410,6 +526,29 @@ export async function executeStewardStructureTool(
     case "retire_argument": {
       const argument = await liveArgument(String(input.argument_id ?? ""));
       if (typeof argument === "string") return argument;
+      // An argument at a layer below this run's label is set aside at the
+      // label, as an edge is: it stays where it is for the readers below.
+      const argumentAt = await placementOf("arguments", argument.id);
+      if (argumentAt?.below) {
+        const recorded = await recordOverlay({
+          table: "arguments",
+          id: argument.id,
+          kind: "set_aside",
+          value: 1,
+          reason: reasoning,
+          createdBy: "claim_steward",
+        });
+        await logStructureChange(
+          argument.claimId,
+          "retire_argument",
+          `Set aside at ${recorded.label} argument "${argument.name ?? argument.id}" (${argument.id}), which is at ${recorded.below}: ${reasoning}`
+        );
+        return JSON.stringify({
+          success: true,
+          message: setAsideMessage(`argument "${argument.name ?? argument.id}"`, recorded.label, recorded.below),
+          set_aside_argument_id: argument.id,
+        });
+      }
       const { released } = await retireArgument({ argumentId: argument.id, reason: reasoning });
       await logStructureChange(
         argument.claimId,
@@ -427,6 +566,61 @@ export async function executeStewardStructureTool(
               `their other arguments: ${released.map((r) => `${r.id} ("${r.text.slice(0, 60)}")`).join("; ")}. ` +
               `Remove any that no longer belong with remove_subclaim_edge.`
             : ""),
+      });
+    }
+
+    case RESTORE_BELOW_TOOL: {
+      const nodeId = String(input.claim_id ?? "");
+      const foreign = notYourNode(nodeId, "that");
+      if (foreign) return foreign;
+      const own = currentLabel();
+      const argumentId = input.argument_id ? String(input.argument_id) : null;
+      const childId = input.child_id ? String(input.child_id) : null;
+      if (!argumentId && !childId) {
+        const took = [
+          (await takeBackOverlay("claims", nodeId, "importance")) ? "importance" : null,
+          (await takeBackOverlay("claims", nodeId, "contestation")) ? "contestation" : null,
+        ].filter(Boolean);
+        if (took.length === 0) {
+          return refuse(`${tick(own)} holds no importance or contestation of its own for ${nodeId}; nothing to take back.`);
+        }
+        await logStructureChange(nodeId, RESTORE_BELOW_TOOL, `Took back the ${took.join(" and ")} held at ${own}: ${reasoning}`);
+        return JSON.stringify({
+          success: true,
+          message: `${tick(own)} no longer holds its own ${took.join(" and ")} for ${nodeId}; its readers and work go by the layer below.`,
+        });
+      }
+      let table: "claim_relationships" | "arguments";
+      let id: string;
+      let what: string;
+      if (argumentId) {
+        const argument = await getArgument(argumentId);
+        if (!argument || argument.claimId !== nodeId) return refuseMissingArgument(argumentId);
+        table = "arguments";
+        id = argument.id;
+        what = `argument "${argument.name ?? argument.id}"`;
+      } else {
+        const relation = input.relation ? String(input.relation).toLowerCase() : null;
+        const edge = pickEdge(await getEdgesBetween(nodeId, childId!), relation, nodeId, childId!, "relation");
+        if (typeof edge === "string") return edge;
+        table = "claim_relationships";
+        id = edge.id;
+        what = `the ${edge.relation_type} edge to ${childId}`;
+      }
+      const standing = await setAsideFor(table, id);
+      if (!standing?.set_aside) return refuse(`Nothing to take back: ${what} is not set aside at a label this run reads.`);
+      if (await ownOverlay(table, id, "set_aside")) {
+        await takeBackOverlay(table, id, "set_aside");
+      } else {
+        // A label this one reads set it aside: this label counts it, as a row of its own over that one.
+        await recordOverlay({ table, id, kind: "set_aside", value: 0, reason: reasoning, createdBy: "claim_steward" });
+      }
+      await logStructureChange(nodeId, RESTORE_BELOW_TOOL, `Counted again at ${own}: ${what}: ${reasoning}`);
+      return JSON.stringify({
+        success: true,
+        message:
+          `${what[0]!.toUpperCase()}${what.slice(1)} counts again at ${tick(own)}` +
+          (standing.label === own ? "." : `; it stays set aside at ${tick(standing.label)}, whose readers see no difference.`),
       });
     }
   }

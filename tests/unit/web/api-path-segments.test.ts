@@ -111,7 +111,7 @@ const FETCHERS: Array<{
     call: (a, id) => a.fetchSourcePage(id),
     paths: (s) => [
       `/sources/${s}`,
-      `/sources/${s}/document`,
+      `/sources/${s}/document?detail=full`,
       `/sources/${s}/examinations`,
       `/sources/${s}/context`,
     ],

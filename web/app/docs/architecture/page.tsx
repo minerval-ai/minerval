@@ -2,7 +2,6 @@ import { getDoc } from "@/lib/content";
 import { Markdown } from "@/components/Markdown";
 import { DocLayout } from "@/components/DocLayout";
 import { extractToc } from "@/lib/toc";
-import { PageBack } from "@/components/PageHead";
 
 export const metadata = { title: "Architecture & policies · Minerval" };
 
@@ -21,7 +20,6 @@ export default function ArchitecturePage() {
 
   return (
     <div>
-      <PageBack href="/docs" label="docs" />
       <DocLayout toc={toc}>
         <Markdown>{architecture}</Markdown>
         <hr className="thin" />

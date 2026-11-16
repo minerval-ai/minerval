@@ -39,10 +39,8 @@ export function FormalStatement({
     <section className="formal">
       <h2>Formal statement</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-        The claim as a Lean 4 proposition, checked against Mathlib at the pinned
-        revision. A proof of this statement is a proof of the claim as far as the
-        statement is faithful to the wording above; the note beneath it says how
-        the two correspond.
+        A proof of this proves the claim only as far as the statement is faithful
+        to its wording; the note beneath says how they correspond.
       </p>
       <div className="formal-block">
         <pre className="formal-src" tabIndex={0}><code>{f.statement_source}</code></pre>

@@ -1,14 +1,16 @@
 "use client";
 
+import { SeveralCounted } from "@/components/SeveralAssessments";
 import { useEffect, useState } from "react";
 import type { TreeNode } from "@/lib/types";
 import {
   decompositionEffects, effectCounts, topLevelEffects, groupByArgument,
   unassessedTintOf, EFFECT, EFFECT_ORDER,
   UNASSESSED_TINT, UNASSESSED_TINT_ORDER, type UnassessedTint,
-  DEFINED_IN, BASIS, STATUS, STATUS_ORDER, normalizeStatus, showsMark,
+  DEFINED_IN, BASIS, STATUS, STATUS_ORDER, normalizeStatus, showsMark, decompositionRailState,
 } from "@/lib/ontology";
 import { Term } from "@/components/Term";
+import { FundDecomposition } from "./FundDecomposition";
 import styles from "./margins.module.css";
 
 // Scrollspy at argument granularity (issues #202, #204). The centre column tags
@@ -109,22 +111,9 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
   })).filter((x) => x.n > 0);
   const unassessedN = scored.filter((s) => !s.node.assessment_status).length;
 
-  // Atomic claim: nothing to summarise. Show a quiet resting note, no bar.
-  if (total === 0) {
-    return (
-      <aside className={styles.rail} aria-label="Decomposition">
-        <div className={styles.railHead} style={{ cursor: "default" }}>
-          <span className="sc">Decomposition</span>
-          <span className={styles.railCount}>
-            0<span className={styles.railCountUnit}>subclaims</span>
-          </span>
-        </div>
-        <p className={styles.emptyNote}>
-          No subclaims are recorded beneath this claim.
-        </p>
-      </aside>
-    );
-  }
+  // No subclaims: the rail has nothing to summarise, and DecompositionState
+  // stands in its place (ClaimMargins).
+  if (total === 0) return null;
 
   return (
     <aside className={styles.rail} aria-label="Decomposition compass">
@@ -170,7 +159,6 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
               </li>
             )}
           </ul>
-          <p className={styles.compassNote}>premises by their own status; a quantity&apos;s arguments place its value</p>
         </>
       ) : (
       <>
@@ -210,9 +198,9 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
           </li>
         ))}
       </ul>
-      <p className={styles.compassNote}>by effect on this claim, not by subclaim status</p>
       </>
       )}
+      <SeveralCounted n={scored.filter((s) => (s.node.judgments_in_force ?? 0) > 1).length} of="premises" />
 
       {/* jump-list: the top-level lines of reasoning. Clicking scrolls the centre
           column to that block; the active one tracks the reading position. No
@@ -245,6 +233,34 @@ export function DecompositionCompass({ tree }: { tree: TreeNode }) {
           );
         })}
       </ul>
+    </aside>
+  );
+}
+
+// The rail when the claim has no rendered subclaims: why, in a word (atomic,
+// being decomposed, not yet recorded, awaits assessment), with the full
+// sentence as its gloss, and the way to fund a deeper pass. It takes the
+// place of a Decomposition section in the reading column that held a single
+// sentence and pushed what follows it down the page.
+export function DecompositionState({
+  claimId, decompositionStatus, assessed, stewardState,
+}: {
+  claimId: string;
+  decompositionStatus: string;
+  assessed: boolean;
+  stewardState?: string;
+}) {
+  const state = decompositionRailState({ decompositionStatus, assessed, stewardState });
+  return (
+    <aside className={styles.rail} aria-label="Decomposition">
+      <span className="sc">Decomposition</span>
+      <p className={styles.stateLabel}>
+        <Term gloss={state.gloss} href={DEFINED_IN.effect} align="start">
+          {state.label}
+        </Term>
+      </p>
+      <p className={styles.stateNote}>{state.note}</p>
+      <FundDecomposition claimId={claimId} compact />
     </aside>
   );
 }

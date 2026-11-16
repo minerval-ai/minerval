@@ -1,3 +1,4 @@
+import { SeveralAssessments, SeveralCounted, severalAmong } from "@/components/SeveralAssessments";
 import Link from "next/link";
 import type { ClaimDetail, QuestionAnswer, QuestionDetail } from "@/lib/types";
 import { DEFINED_IN, QUESTION_STANDING, isStanding, statusMeta, isStatus } from "@/lib/ontology";
@@ -14,6 +15,7 @@ import { CiteClaim } from "@/components/claim/CiteClaim";
 import { EmbedClaim } from "@/components/claim/EmbedClaim";
 import styles from "./question.module.css";
 import { PageHead } from "@/components/PageHead";
+import { sourceHref } from "@/lib/source-address";
 
 // A question's page (constitution §7a): first-class, like a claim's. It
 // leads with how well the question is answered and the Steward's best
@@ -30,17 +32,23 @@ function fmtDate(iso: string) {
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
-const BASIS: Record<NonNullable<QuestionAnswer["basis"]>, string> = {
-  quality: "a serious answer, whether or not anyone prominent holds it",
-  prominence: "widely held, so worth assessing",
-  both: "serious and widely held",
+// Why an answer is in the set: a short tag, with what it means on hover.
+const BASIS: Record<NonNullable<QuestionAnswer["basis"]>, { label: string; gloss: string }> = {
+  quality: { label: "serious", gloss: "In the set as a serious answer, whether or not anyone prominent holds it." },
+  prominence: { label: "widely held", gloss: "In the set because it is widely held, which makes it worth assessing." },
+  both: { label: "serious · widely held", gloss: "In the set as a serious answer, and because it is widely held." },
 };
 
 function AnswerMark({ a }: { a: QuestionAnswer }) {
   if (a.kind === "quantity" && a.estimate && a.unit) {
     return <span className="qty-chip">{describeEstimate(a.estimate, a.unit).lead}</span>;
   }
-  return a.status ? <StatusBadge status={a.status} /> : <Unassessed />;
+  return (
+    <>
+      {a.status ? <StatusBadge status={a.status} /> : <Unassessed />}
+      <SeveralAssessments id={a.id} n={a.judgments_in_force} />
+    </>
+  );
 }
 
 function Answers({ q }: { q: QuestionDetail }) {
@@ -58,13 +66,11 @@ function Answers({ q }: { q: QuestionDetail }) {
   return (
     <section id="answers">
       <h2>Answers</h2>
-      <p className={styles.intro}>
-        Each candidate answer is a claim or a quantity with a page of its own, in the set for its
-        quality or its prominence.{" "}
-        {allExclusive
-          ? "These answers rule one another out: at most one of them is true."
-          : "How the answers bear on one another is recorded pair by pair."}
-      </p>
+      {/* Where every answer excludes every other, one line says so in place
+          of a "rules out" on each row. Otherwise each row says its own. */}
+      {allExclusive && (
+        <p className={styles.intro}>These answers rule one another out: at most one of them is true.</p>
+      )}
       <ol className={styles.answers}>
         {q.answers.map((a) => {
           const ex = excludes(a.id);
@@ -79,7 +85,11 @@ function Answers({ q }: { q: QuestionDetail }) {
                 <div className={styles.answerMeta}>
                   <AnswerMark a={a} />
                   {a.favored && <span className={styles.favoredTag}>favored by the assessment</span>}
-                  {a.basis && <span className={styles.basis}>{BASIS[a.basis]}</span>}
+                  {a.basis && (
+                    <Term gloss={BASIS[a.basis].gloss} href={DEFINED_IN.question} className={styles.basis}>
+                      {BASIS[a.basis].label}
+                    </Term>
+                  )}
                   {!allExclusive && ex.length > 0 && (
                     <span className={styles.rel}>rules out {ex.map((x) => letter.get(x)).join(", ")}</span>
                   )}
@@ -155,6 +165,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
               <li key={p.id}>
                 {p.status ? <Swatch status={p.status} /> : <span className="swatch st-unassessed" />}{" "}
                 <Link href={`/claims/${p.id}`}>{p.text}</Link>
+                <SeveralAssessments id={p.id} n={p.judgments_in_force} />
                 {p.status && isStatus(p.status) && (
                   <span className={styles.presStatus}> · {statusMeta(p.status).label.toLowerCase()}</span>
                 )}
@@ -171,17 +182,14 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
 
       {a ? (
         <section>
+          {/* No caption: the standing's meaning is its badge's gloss. */}
           <h2>Assessment</h2>
-          <p className={styles.intro}>
-            The Steward&apos;s best answer, and how well answered the question is
-            {standing ? `: ${QUESTION_STANDING[standing].def.charAt(0).toLowerCase()}${QUESTION_STANDING[standing].def.slice(1)}` : "."}
-          </p>
           <div className="assessment-body">
             <AssessmentText content={a.summary} texts={texts} />
           </div>
           {a.reasoning_trace && a.reasoning_trace !== a.summary && (
             <details className="reasoning-detail">
-              <summary>Full reasoning: how the answers were weighed</summary>
+              <summary>Full reasoning</summary>
               <div className="reasoning">
                 <AssessmentText content={a.reasoning_trace} texts={texts} />
               </div>
@@ -199,14 +207,15 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
 
       {/* stated views (§4): what a person or an organisation has told the
           graph it holds, beside the assessment and never inside it. */}
-      {!fixture && <StatedViews claimId={claim.id} kind="question" views={detail.stated_views ?? []} />}
+      {!fixture && (detail.stated_views ?? []).length > 0 && (
+        <StatedViews claimId={claim.id} kind="question" views={detail.stated_views ?? []} />
+      )}
 
       {q.answers.length > 0 && <Answers q={q} />}
 
       {q.subquestions.length > 0 && (
         <section id="subquestions">
           <h2>Subquestions</h2>
-          <p className={styles.intro}>Questions whose answers this one needs.</p>
           <ul className={styles.subqs}>
             {q.subquestions.map((s) => (
               <li key={s.id}>
@@ -221,7 +230,6 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
       {(asks.length > 0 || answers.length > 0) && (
         <section id="instances">
           <h2>Provenance</h2>
-          <p className={styles.intro}>Where sources ask this question, and where they answer it.</p>
           {asks.length > 0 && (
             <>
               <h3 className={styles.instHead}>Asked</h3>
@@ -229,7 +237,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
                 <div className="instance" key={i.id}>
                   {i.verbatim_text && <blockquote>{i.verbatim_text}</blockquote>}
                   <div className="instance-cite">
-                    {i.source_url ? <a href={i.source_url}>{i.source_title}</a> : <span>{i.source_title}</span>}
+                    {sourceHref(i.source_url) ? <a href={sourceHref(i.source_url)!}>{i.source_title}</a> : <span>{i.source_title}</span>}
                     {i.source_type && <span className="tag">{i.source_type.replace(/_/g, " ")}</span>}
                   </div>
                 </div>
@@ -242,7 +250,7 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
               <ul className={styles.answeredBy}>
                 {answers.map((i) => (
                   <li key={i.id}>
-                    {i.source_url ? <a href={i.source_url}>{i.source_title}</a> : <span>{i.source_title}</span>}
+                    {sourceHref(i.source_url) ? <a href={sourceHref(i.source_url)!}>{i.source_title}</a> : <span>{i.source_title}</span>}
                     {i.answer_id && (
                       <span className={styles.answeredWith}>
                         {" "}answers <Link href={`/claims/${i.answer_id}`}>{answerText.get(i.answer_id) ?? "an answer"}</Link>
@@ -257,9 +265,15 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
         </section>
       )}
 
-      <CiteClaim claimId={claim.id} />
-      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      <div className="page-exits">
+        <CiteClaim claimId={claim.id} />
+        <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      </div>
       <Contribute claimId={claim.id} />
+      {/* with none stated, only the invitation, at the foot */}
+      {!fixture && (detail.stated_views ?? []).length === 0 && (
+        <StatedViews claimId={claim.id} kind="question" views={[]} />
+      )}
 
       <hr className="thin" />
       <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
@@ -278,12 +292,17 @@ export function QuestionView({ detail, fixture = false }: { detail: ClaimDetail;
 export function QuestionRail({ detail }: { detail: ClaimDetail }) {
   const q = detail.question!;
   const items: [string, string, number][] = [
-    ["answers", "answers", q.answers.length],
-    ["subquestions", "subquestions", q.subquestions.length],
-    ["presupposes", "presuppositions", q.presuppositions.length],
-    ["instances", "sources", q.instances.length],
+    ["answers", "answer", q.answers.length],
+    ["subquestions", "subquestion", q.subquestions.length],
+    ["presupposes", "presupposition", q.presuppositions.length],
+    ["instances", "source", q.instances.length],
   ];
   const standing = isStanding(q.standing) ? QUESTION_STANDING[q.standing] : null;
+  const listed = items.filter(([, , n]) => n > 0);
+  // An unassessed question with nothing under it has nothing to jump to, and
+  // its standing already heads the reading column: the rail would only say
+  // "unassessed" a third time.
+  if (!standing && listed.length === 0) return null;
   return (
     <aside className={styles.rail} aria-label="Question">
       <span className="sc">Question</span>
@@ -291,12 +310,13 @@ export function QuestionRail({ detail }: { detail: ClaimDetail }) {
         {standing ? <><span aria-hidden>{standing.glyph}</span> {standing.label.toLowerCase()}</> : "unassessed"}
       </p>
       <ul className={styles.railList}>
-        {items.filter(([, , n]) => n > 0).map(([id, label, n]) => (
+        {listed.map(([id, label, n]) => (
           <li key={id}>
-            <a href={`#${id}`}><span className={styles.railN}>{n}</span> {label}</a>
+            <a href={`#${id}`}><span className={styles.railN}>{n}</span> {label}{n === 1 ? "" : "s"}</a>
           </li>
         ))}
       </ul>
+      <SeveralCounted n={severalAmong([...q.answers, ...q.subquestions, ...q.presuppositions])} of="nodes" />
     </aside>
   );
 }

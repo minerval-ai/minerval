@@ -1,5 +1,6 @@
 import Link from "next/link";
-import type { ArgumentItem, ClaimDetail, QuantityDefinition, QuantityEstimate, ThresholdOf } from "@/lib/types";
+import type { ReactNode } from "react";
+import type { ArgumentItem, ClaimDetail, QuantityDefinition, QuantityEstimate, QuantityUnit, ThresholdOf } from "@/lib/types";
 import { argumentVerdictMeta, DEFINED_IN, showsMark } from "@/lib/ontology";
 import {
   describeCut, describeEstimate, makeScale, probAbove, valuesOf,
@@ -8,6 +9,7 @@ import { StatusBadge, Swatch, Unassessed } from "@/components/Assessment";
 import { Term } from "@/components/Term";
 import { EstimateStrip, ValueAxis } from "./EstimateStrip";
 import styles from "./quantity.module.css";
+import { sourceHref } from "@/lib/source-address";
 
 // The quantity's page (constitution §2, §3, §4, §7, §10): its definition,
 // the graph's estimate, every figure a source states grouped under the
@@ -116,12 +118,8 @@ export function QuantityEstimates({ detail }: { detail: ClaimDetail }) {
   if (!groups.length) return null;
 
   return (
-    <section>
+    <section id="estimates">
       <h2>Estimates</h2>
-      <p className={styles.intro}>
-        Each figure a source states for this quantity, in its own words, under the argument
-        it belongs to and read against the graph&apos;s estimate.
-      </p>
       <div className={styles.plot}>
         <div className={`${styles.row} ${styles.axisRow}`}>
           <span />
@@ -178,12 +176,7 @@ export function QuantityEstimates({ detail }: { detail: ClaimDetail }) {
           );
         })}
       </div>
-      <p className={styles.plotKey}>
-        Grey band: the graph&apos;s {est && est.form === "distribution" ? "90% interval" : "estimate"}, with
-        its central value as a line. Dark marks: each source&apos;s own figure. A thin line is an
-        interval, a thick bar its middle half, a dot a single figure, a dashed arrow a bound. An open
-        box is where an argument places the value.
-      </p>
+      <PlotKey unit={unit} graphLabel={est && est.form === "distribution" ? "the graph's 90% interval" : "the graph's estimate"} />
     </section>
   );
 }
@@ -195,15 +188,11 @@ export function QuantityReadings({ detail }: { detail: ClaimDetail }) {
   return (
     <div className={styles.readings}>
       <h3>Readings</h3>
-      <p className={styles.intro}>
-        Figures from instruments taken to indicate this quantity. Each is evidence about the
-        quantity, not its value: what was actually measured is stated with it, and how far it
-        speaks to the quantity is the Steward&apos;s judgment.
-      </p>
+      <p className={styles.intro}>Evidence about the quantity, not its value.</p>
       {readings.map((r) => (
         <div className={styles.reading} key={r.id}>
           <div className={styles.readingHead}>
-            {r.source_url ? <a href={r.source_url}>{r.source_title}</a> : <span>{r.source_title}</span>}
+            {sourceHref(r.source_url) ? <a href={sourceHref(r.source_url)!}>{r.source_title}</a> : <span>{r.source_title}</span>}
             <span className={styles.readingFigure}>{r.figure}</span>
           </div>
           <dl className={styles.readingDl}>
@@ -229,9 +218,8 @@ export function QuantityCuts({ detail }: { detail: ClaimDetail }) {
     <section>
       <h2>Claims about where the value lies</h2>
       <p className={styles.intro}>
-        Most statements about this value are estimates on the quantity itself. These few have
-        nodes of their own, because other claims rely on them directly. Each one&apos;s credence
-        has to agree with the estimate; the figure the estimate implies is shown beside it.
+        Each one&apos;s credence has to agree with the estimate; the figure the estimate implies
+        is shown beside it.
       </p>
       <ul className={styles.cuts}>
         {q.cuts.map((c) => {
@@ -297,5 +285,38 @@ export function ThresholdPanel({ t, credence, status }: {
         )}
       </p>
     </div>
+  );
+}
+
+// The plot's key, drawn with the marks themselves rather than described: each
+// a short strip on a scale of its own, with the word for it.
+function PlotKey({ unit, graphLabel }: { unit: QuantityUnit; graphLabel: string }) {
+  const scale = makeScale(unit, [0, 10], "linear");
+  const graph: QuantityEstimate = { form: "interval", low: 2, high: 8, central: 5 };
+  const marks: { label: string; strip: ReactNode }[] = [
+    { label: graphLabel, strip: <EstimateStrip scale={scale} context={graph} label="" /> },
+    { label: "a source's interval", strip: <EstimateStrip scale={scale} tone="source" estimate={{ form: "interval", low: 2, high: 8 }} label="" /> },
+    {
+      label: "its middle half",
+      strip: (
+        <EstimateStrip
+          scale={scale} tone="source" label=""
+          estimate={{ form: "distribution", quantiles: [{ p: 0.05, v: 1 }, { p: 0.25, v: 3.5 }, { p: 0.5, v: 5 }, { p: 0.75, v: 6.5 }, { p: 0.95, v: 9 }] }}
+        />
+      ),
+    },
+    { label: "a single figure", strip: <EstimateStrip scale={scale} tone="source" estimate={{ form: "point", central: 5 }} label="" /> },
+    { label: "a bound", strip: <EstimateStrip scale={scale} tone="source" estimate={{ form: "bound", bound: { side: "above", value: 4 } }} label="" /> },
+    { label: "where an argument places it", strip: <EstimateStrip scale={scale} range={{ side: "between", low: 3, high: 7 }} label="" /> },
+  ];
+  return (
+    <ul className={styles.plotKey} aria-label="Key to the plot">
+      {marks.map((m) => (
+        <li key={m.label}>
+          <span className={styles.plotKeyMark} aria-hidden>{m.strip}</span>
+          {m.label}
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -18,7 +18,8 @@
  *     owls (contribution-award-service).
  *
  * Whether owls can be PURCHASED depends on Stripe being configured; the free
- * signup/monthly grants work either way.
+ * signup/monthly grants work either way. A deployment that creates its own
+ * owls (OWLS=created, src/services/owl-creation-service.ts) sells none.
  */
 import { loadConfig } from "../config.js";
 import {
@@ -26,8 +27,10 @@ import {
   getOwlBalanceMicroUsd,
 } from "./owl-ledger-service.js";
 import {
+  CREATED_OWLS_STATEMENT,
   microUsdToOwls,
   owlPacks,
+  owlsCreatedHere,
   capListOwls,
   capOwls,
   type PricedOp,
@@ -42,7 +45,11 @@ import {
  * scoped to Checkout Sessions: Write, the only Stripe API call we make.
  */
 export function stripeConfigured(): boolean {
-  const key = loadConfig().stripeSecretKey;
+  const config = loadConfig();
+  // A deployment that creates its own owls sells none, whatever keys its
+  // environment holds (config loading refuses the two together).
+  if (owlsCreatedHere(config)) return false;
+  const key = config.stripeSecretKey;
   return key.startsWith("sk_") || key.startsWith("rk_");
 }
 
@@ -60,6 +67,11 @@ export interface Entitlement {
   capsOwls: Record<PricedOp, number>;
   /** Whether this deployment can sell owls (drives the 402 message + UI). */
   creditsEnabled: boolean;
+  /**
+   * Whether this deployment creates its own owls (OWLS=created): nothing
+   * is sold, and its administrators add to a balance.
+   */
+  owlsCreatedHere: boolean;
   signupGrantOwls: number;
   monthlyGrantOwls: number;
 }
@@ -73,6 +85,8 @@ export function serializeEntitlement(e: Entitlement) {
     owl_cost_micro_usd: e.owlCostMicroUsd,
     caps_owls: e.capsOwls,
     credits_enabled: e.creditsEnabled,
+    // Only where it is true, so the public graph's response is as it was.
+    ...(e.owlsCreatedHere ? { owls_created_here: true, owls_statement: CREATED_OWLS_STATEMENT } : {}),
     signup_grant_owls: e.signupGrantOwls,
     monthly_grant_owls: e.monthlyGrantOwls,
   };
@@ -85,15 +99,19 @@ export function serializeEntitlement(e: Entitlement) {
  */
 export async function getEntitlement(userId: string): Promise<Entitlement> {
   const config = loadConfig();
+  const created = owlsCreatedHere(config);
   await ensureFreeGrants(userId);
   const balanceMicro = await getOwlBalanceMicroUsd(userId);
   return {
     owlBalance: microUsdToOwls(balanceMicro),
     owlBalanceMicroUsd: balanceMicro,
-    owlPriceMicroUsd: config.owlPriceMicroUsd,
+    // Where owls are created and not sold there is no purchase price: an
+    // owl is the dollar of metered cost it covers.
+    owlPriceMicroUsd: created ? config.owlCostMicroUsd : config.owlPriceMicroUsd,
     owlCostMicroUsd: config.owlCostMicroUsd,
     capsOwls: capListOwls(),
     creditsEnabled: stripeConfigured(),
+    owlsCreatedHere: created,
     signupGrantOwls: config.signupGrantOwls,
     monthlyGrantOwls: config.monthlyGrantOwls,
   };

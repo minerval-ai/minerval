@@ -1,9 +1,10 @@
 import { cache } from "react";
 import {
   apiConfigured, fetchArgumentPage, fetchAttempt, fetchClaimCard, fetchClaimDetail, fetchClaimEvents, fetchClaimTree,
-  fetchFeatures, fetchList, fetchOpenPrizes, fetchRequest, fetchRequests, fetchSearch, fetchSourcePage,
-  fetchTag, fetchTags,
+  fetchFeatures, fetchList, fetchOpenPrizes, fetchRequest, fetchRequestsPage, fetchSearch, fetchSourcePage,
+  fetchTag, fetchTags, fetchPublishedPage, fetchPublishedPages,
 } from "./api";
+import type { PublishedPageSummary, PublishedPageView } from "./published";
 import { claimWithoutOffFeatures, listWithoutOffFeatures } from "./features";
 import { membersOnly } from "./members";
 import { refusedByMembersOnly } from "./viewer";
@@ -15,11 +16,14 @@ import {
 } from "./fixtures";
 import type {
   ArgumentPage, AttemptSummary, ClaimDetail, ClaimEventsPage, ClaimFilters, PrizeListItem, PrizeMandateNumbers,
-  RequestItem, ResolvedFrom, SearchResultItem, SourcePage, TagSummary,
+  RequestFacets, RequestItem, ResolvedFrom, SearchResultItem, SourcePage, TagSummary,
 } from "./types";
 import {
   TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
 } from "./territories";
+import {
+  REQUESTS_PER_PAGE, fundingWords, isLive, requestsApiQuery, requestsOrderInForce, type RequestsView,
+} from "./requests";
 
 // Whether a node carries a current verdict of its kind: a claim's status, a
 // question's standing, a quantity's estimate (the backend's ASSESSED_SQL).
@@ -121,20 +125,66 @@ function matchesRequest(r: RequestItem, q: string): boolean {
   return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
 }
 
+// The API's filters, order and facets over the fixtures, so the index can be
+// seen offline as it works live.
+function fixtureRequestsPage(view: RequestsView): { requests: RequestItem[]; total: number; facets: RequestFacets } {
+  const named = (r: RequestItem) => !!(r.addressed_to || r.addressed_to_mandate);
+  const waiting = (r: RequestItem) => fundingWords(r)?.waiting === true;
+  const keep = (r: RequestItem, without?: "stands" | "tag" | "asked" | "waiting") =>
+    (!view.q || matchesRequest(r, view.q)) &&
+    (without === "stands" || view.stands === "any" || (view.stands === "live" ? isLive(r) : r.state === view.stands)) &&
+    (without === "tag" || !view.tag || (r.tags ?? []).some((t) => t.slug === view.tag)) &&
+    (without === "asked" || !view.asked || (view.asked === "named") === named(r)) &&
+    (without === "waiting" || !view.waiting || waiting(r));
+  const order = requestsOrderInForce(view);
+  const kept = REQUESTS.filter((r) => keep(r)).sort((a, b) =>
+    order === "importance"
+      ? (b.importance ?? -1) - (a.importance ?? -1) || b.filed_at.localeCompare(a.filed_at)
+      : b.filed_at.localeCompare(a.filed_at),
+  );
+  const count = <K extends string>(rs: RequestItem[], key: (r: RequestItem) => K[]) => {
+    const m = new Map<K, number>();
+    for (const r of rs) for (const k of key(r)) m.set(k, (m.get(k) ?? 0) + 1);
+    return m;
+  };
+  const tags = new Map(REQUESTS.flatMap((r) => (r.tags ?? []).map((t) => [t.slug, t.name] as const)));
+  const byTag = count(REQUESTS.filter((r) => keep(r, "tag")), (r) => (r.tags ?? []).map((t) => t.slug));
+  const byState = count(REQUESTS.filter((r) => keep(r, "stands")), (r) => [r.state]);
+  const asked = REQUESTS.filter((r) => keep(r, "asked"));
+  const from = (view.page - 1) * REQUESTS_PER_PAGE;
+  return {
+    requests: kept.slice(from, from + REQUESTS_PER_PAGE),
+    total: kept.length,
+    facets: {
+      states: (["open", "addressed", "in_progress", "met", "declined", "withdrawn", "moot"] as const)
+        .filter((st) => byState.has(st))
+        .map((state) => ({ state, count: byState.get(state)! })),
+      tags: [...byTag].sort((a, b) => b[1] - a[1]).map(([slug, n]) => ({ slug, name: tags.get(slug) ?? slug, count: n })),
+      asked: { anyone: asked.filter((r) => !named(r)).length, named: asked.filter(named).length },
+      waiting: REQUESTS.filter((r) => keep(r, "waiting") && waiting(r)).length,
+    },
+  };
+}
+
 // Requests (Part VIII). Offline, the fixtures stand in so the pages can be
 // seen. Live, a failure shows none rather than the design fixtures, which
-// would read as real requests.
-export async function loadRequests(q?: string): Promise<{ requests: RequestItem[]; source: DataSource }> {
-  const query = q?.trim() || undefined;
+// would read as real requests; `failed` says so.
+export async function loadRequestsPage(view: RequestsView): Promise<{
+  requests: RequestItem[];
+  total: number;
+  facets: RequestFacets | null;
+  failed: boolean;
+  source: DataSource;
+}> {
   if (!apiConfigured()) {
-    if (fixturesOff()) return { requests: [], source: "live" };
-    return { requests: query ? REQUESTS.filter((r) => matchesRequest(r, query)) : REQUESTS, source: "fixture" };
+    if (fixturesOff()) return { requests: [], total: 0, facets: null, failed: false, source: "live" };
+    return { ...fixtureRequestsPage(view), failed: false, source: "fixture" };
   }
   try {
-    return { requests: await fetchRequests(100, query), source: "live" };
+    return { ...(await fetchRequestsPage(requestsApiQuery(view))), failed: false, source: "live" };
   } catch (err) {
     console.error("[minerval] live requests fetch failed:", err);
-    return { requests: [], source: "live" };
+    return { requests: [], total: 0, facets: null, failed: true, source: "live" };
   }
 }
 
@@ -324,5 +374,26 @@ export async function loadArgument(
     }
     console.error("[minerval] live argument fetch failed, using fixture:", err);
     return { page: getArgumentPageFixture(id), source: "fixture" };
+  }
+}
+
+// The pages other graphs publish of a node (docs/published-pages.md). There
+// is no sample of one: without the API, or when the read fails, a claim page
+// simply has none.
+export async function loadPublishedPages(nodeId: string): Promise<PublishedPageSummary[]> {
+  if (!apiConfigured()) return [];
+  try {
+    return await fetchPublishedPages(nodeId);
+  } catch {
+    return [];
+  }
+}
+
+export async function loadPublishedPage(id: string, pkg?: number): Promise<PublishedPageView | null> {
+  if (!apiConfigured()) return null;
+  try {
+    return await fetchPublishedPage(id, pkg);
+  } catch {
+    return null;
   }
 }

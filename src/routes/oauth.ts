@@ -22,6 +22,9 @@
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { loadConfig } from "../config.js";
+import { deploymentHoldsLabels } from "../db/client.js";
+import { membersOnly } from "../permissions.js";
+import { LABEL_FIELD, chooseLabel } from "../server/plugins/request-label.js";
 import {
   approveAuthorizationRequest,
   createAuthorizationRequest,
@@ -478,13 +481,30 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         required: ["request_id"],
         properties: { request_id: { type: "string", format: "uuid" } },
       },
+      // The label the issued tokens will work at. Only a members-only
+      // deployment has the field: the public graph has one label.
+      ...(membersOnly() ? { body: { type: "object", properties: { label: LABEL_FIELD } } } : {}),
     },
     preHandler: [app.authenticate, app.requireSession, app.requireUser],
     handler: async (request, reply) => {
       const { request_id } = request.params as { request_id: string };
+      // The person approving says which label the client's tokens work at,
+      // among the labels they may read: the client is an agent, and an agent
+      // holding a token never chooses one (server/request-labels.ts).
+      let workLabel: string | undefined;
+      if (membersOnly()) {
+        const named = (request.body as { label?: unknown } | null | undefined)?.label;
+        const chosen = chooseLabel(request.auth, named, await deploymentHoldsLabels());
+        if ("refusal" in chosen) {
+          const { status, ...body } = chosen.refusal;
+          return reply.code(status).send(body);
+        }
+        workLabel = chosen.label;
+      }
       const outcome = await approveAuthorizationRequest({
         requestId: request_id,
         userId: request.auth!.userId!,
+        ...(workLabel !== undefined ? { workLabel } : {}),
       });
       if (!outcome) {
         return reply.code(410).send({

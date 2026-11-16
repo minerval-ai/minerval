@@ -23,14 +23,35 @@ import { microUsdToOwls } from "../services/owl.js";
 import { requirePermission } from "../server/require-permission.js";
 
 export async function budgetJobRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/", {
+  app.get<{ Querystring: { kind?: string; status?: string; offset?: number; limit?: number } }>("/", {
     schema: {
       tags: ["budget-jobs"],
-      summary: "List the authenticated user's budget jobs",
+      summary: "List the authenticated user's budget jobs, newest first, a page at a time",
+      querystring: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            maxLength: 64,
+            description: "Only jobs of this kind (grant, deep_decomposition, request_work, …).",
+          },
+          status: {
+            type: "string",
+            maxLength: 64,
+            description: "Only jobs in this state (running, paused_budget, completed, cancelled, …).",
+          },
+          offset: { type: "integer", minimum: 0, default: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+        },
+      },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const jobs = await listBudgetJobs(request.auth!.userId!);
+      const jobs = await listBudgetJobs(request.auth!.userId!, request.query.limit ?? 50, {
+        offset: request.query.offset,
+        kind: request.query.kind,
+        status: request.query.status,
+      });
       return reply.send({
         jobs: await Promise.all(jobs.map(serializeBudgetJob)),
       });

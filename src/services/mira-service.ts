@@ -1,5 +1,6 @@
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
+import { markSeveralInForce, questionAssessmentsInForce, type QuestionJudgmentInForce } from "./judgment-version-service.js";
 import {
   CITATION_AUTHOR,
   assembleEvidenceRecord,
@@ -52,6 +53,8 @@ export interface AnsweredQuestion {
   id: string;
   text: string;
   standing: string | null;
+  /** Present only where more than one judgment of the question is in force for the caller. */
+  judgments_in_force?: number;
 }
 
 export interface MiraInput {
@@ -59,6 +62,8 @@ export interface MiraInput {
   /** Present exactly when the node is a question. */
   question: QuestionDetailView | null;
   answers_questions: AnsweredQuestion[];
+  /** A question's assessments in force for the caller, where more than one (judgment-version-service.ts). */
+  question_assessments_in_force?: QuestionJudgmentInForce[];
   requests: RequestView[];
 }
 
@@ -85,6 +90,7 @@ const STANCE_RELATION: Record<string, "supports" | "opposes" | null> = {
 const ref = (iri: string) => ({ "@id": iri });
 const iso = (d: Date | string) => (d instanceof Date ? d.toISOString() : new Date(d).toISOString());
 const decimal = (n: number) => ({ "@value": String(n), "@type": "xsd:decimal" });
+const integer = (n: number) => ({ "@value": String(n), "@type": "xsd:integer" });
 const dateTime = (d: Date | string) => ({ "@value": iso(d), "@type": "xsd:dateTime" });
 
 export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocument {
@@ -203,6 +209,27 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
     rootRecord["mv:assessedAt"] = dateTime(a.assessed_at);
     if (a.model) rootRecord["mv:assessmentModel"] = a.model;
   }
+  // More than one assessment in force for the caller (labels that do not
+  // read each other): the export carries each as a node of its own, whole.
+  // The root record's status is the first of them, the most recently made,
+  // and nothing here chooses between them.
+  for (const j of record.assessments_in_force ?? []) {
+    const assessmentIri = `${rootUri}#assessment-${j.id}`;
+    node(assessmentIri, {
+      "@type": "mv:Assessment",
+      "mv:assesses": ref(rootUri),
+      "mv:assessmentId": j.id,
+      "mv:label": j.label,
+      "mv:status": j.status,
+      "mv:confidence": decimal(j.confidence),
+      ...(j.claim_credence != null ? { "mv:credence": decimal(j.claim_credence) } : {}),
+      "rdfs:comment": prose(j.summary),
+      "mv:reasoningTrace": prose(j.reasoning_trace),
+      "mv:assessedAt": dateTime(j.assessed_at),
+      ...(j.model ? { "mv:assessmentModel": j.model } : {}),
+    });
+    add(rootRecord, "mv:assessmentInForce", ref(assessmentIri));
+  }
 
   if (question) {
     const qa = question.assessment;
@@ -215,10 +242,30 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
       if (qa.model) rootRecord["mv:assessmentModel"] = qa.model;
       if (question.incomplete) rootRecord["mv:incomplete"] = prose(question.incomplete);
     }
+    // More than one assessment of the question in force for the caller:
+    // each is a node of its own, as for a claim above.
+    for (const j of input.question_assessments_in_force ?? []) {
+      const assessmentIri = `${rootUri}#assessment-${j.id}`;
+      const assessmentNode = node(assessmentIri, {
+        "@type": "mv:Assessment",
+        "mv:assesses": ref(rootUri),
+        "mv:assessmentId": j.id,
+        "mv:label": j.label,
+        "mv:standing": j.standing,
+        ...(j.summary ? { "rdfs:comment": prose(j.summary) } : {}),
+        "mv:reasoningTrace": prose(j.reasoning_trace),
+        "mv:assessedAt": dateTime(j.assessed_at),
+        ...(j.model ? { "mv:assessmentModel": j.model } : {}),
+        ...(j.incomplete ? { "mv:incomplete": prose(j.incomplete) } : {}),
+      });
+      for (const id of j.favored_ids) add(assessmentNode, "mv:favors", ref(nodeUri(id)));
+      add(rootRecord, "mv:assessmentInForce", ref(assessmentIri));
+    }
     // An answer addresses its question, in MIRA's own relation; why it is in
     // the set rides on the edge.
     for (const a of question.answers) {
       add(neighbour(a.id, a.text, a.kind, { status: a.status }), "addresses", rootUri);
+      if (a.judgments_in_force) nodeRecord(a.id, a.kind)["mv:judgmentsInForce"] = integer(a.judgments_in_force);
       if (a.credence != null) nodeRecord(a.id, a.kind)["mv:credence"] = decimal(a.credence);
       edge(record.claim.id, a.id, "answers", a.basis ? { "mv:answerBasis": a.basis } : {});
     }
@@ -232,6 +279,7 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
     }
     for (const q of question.subquestions) {
       neighbour(q.id, q.text, q.kind, q);
+      if (q.judgments_in_force) nodeRecord(q.id, q.kind)["mv:judgmentsInForce"] = integer(q.judgments_in_force);
       edge(record.claim.id, q.id, "part_of");
     }
     for (const p of question.presuppositions) {
@@ -262,12 +310,14 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
     for (const s of arg.subclaims) {
       add(argNode, "mv:hasPremise", ref(nodeUri(s.id)));
       add(neighbour(s.id, s.text, "claim", { status: s.status }), relation, rootUri);
+      if (s.judgments_in_force) nodeRecord(s.id, "claim")["mv:judgmentsInForce"] = integer(s.judgments_in_force);
       edge(record.claim.id, s.id, s.relation);
     }
   });
 
   for (const q of input.answers_questions) {
     neighbour(q.id, q.text, "question", { standing: q.standing });
+    if (q.judgments_in_force) nodeRecord(q.id, "question")["mv:judgmentsInForce"] = integer(q.judgments_in_force);
     add(root, "addresses", nodeUri(q.id));
   }
 
@@ -394,11 +444,20 @@ export async function assembleClaimMira(
     ),
     listRequests({ claimId, limit: 100 }),
   ]);
+  await markSeveralInForce(answersQuestions, (q) => q.id);
+  const questionInForce =
+    record.claim.kind === "question" ? await questionAssessmentsInForce(claimId).catch(() => []) : [];
 
   const config = loadConfig();
   const web = config.publicWebBaseUrl.replace(/\/$/, "");
   return buildMiraDocument(
-    { record, question, answers_questions: answersQuestions, requests: requests.items },
+    {
+      record,
+      question,
+      answers_questions: answersQuestions,
+      requests: requests.items,
+      ...(questionInForce.length > 1 ? { question_assessments_in_force: questionInForce } : {}),
+    },
     {
       webBaseUrl: web,
       pageUrl: `${web}/claims/${record.claim.id}`,

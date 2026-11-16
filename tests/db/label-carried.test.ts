@@ -42,7 +42,8 @@ const stage = vi.hoisted(() => {
       await withAgent(agent, async () => {
         const trace = getUsageContext().trace!;
         await trace.ready;
-        const source = await getOrCreateSource({ url: `https://dbtest.example/carried/${uuid()}` });
+        const { asGiven } = await import("./helpers.js");
+        const source = await getOrCreateSource({ url: await asGiven(`https://dbtest.example/carried/${uuid()}`) });
         const seen: Seen = { agent, label: currentLabel(), runId: trace.runId, sourceId: source.id, input };
         stage.seen.push(seen);
         const during = stage.during;
@@ -98,7 +99,7 @@ vi.mock("../../src/services/source-facts-service.js", async (orig) => ({
 import { rawQuery } from "../../src/db/client.js";
 import { MissingLabelError, PUBLIC_LABEL, UndefinedLabelError } from "../../src/labels.js";
 import { currentLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
-import { claimAction } from "../../src/services/action-service.js";
+import { ASSESS_GROUP, claimAction } from "../../src/services/action-service.js";
 import { resetAllocationPolicyCache } from "../../src/services/allocation-policy-service.js";
 import { createDeepDecompositionJob } from "../../src/services/budget-job-service.js";
 import { createAppeal, createContribution } from "../../src/services/contribution-service.js";
@@ -124,7 +125,7 @@ import { processNextOrderTask } from "../../src/workers/order-pipeline.js";
 import { sweepStalledReviewWork } from "../../src/workers/recovery-sweep.js";
 import { processNextStewardTask } from "../../src/workers/steward-pipeline.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
-import { OWL, creditOwls, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, asGiven, creditOwls, seedAction, seedAllocation, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -149,9 +150,11 @@ async function labelOf(table: string, id: string): Promise<string | undefined> {
 
 /** The labels on a claim's assess rows, one per variant. */
 async function assessLabels(claimId: string): Promise<string[]> {
+  // Work at each label on a node has its own assess group, so the rows
+  // are found by the node and the kind of work.
   const rows = await rawQuery<{ sensitivity_label: string }>(
-    `SELECT sensitivity_label FROM actions WHERE exclusion_group = $1`,
-    [`assess:${claimId}`]
+    `SELECT sensitivity_label FROM actions WHERE claim_id = $1 AND kind IN ('assess', 'reassess')`,
+    [claimId]
   );
   return rows.map((r) => r.sensitivity_label);
 }
@@ -174,13 +177,14 @@ function takePipelineMessage(claimId: string): ClaimPipelineMessage | undefined 
 }
 
 /** Cover a claim's assess group and run the Steward lane on it alone. */
-async function runFundedPass(claimId: string) {
+async function runFundedPass(claimId: string, label: string = PUBLIC_LABEL) {
   const funder = await seedUser("carried-funder");
-  await seedAllocation({ group: `assess:${claimId}`, claimId, userId: funder, amountMicroUsd: 500 * OWL });
+  const group = ASSESS_GROUP(claimId, label);
+  await seedAllocation({ group, claimId, userId: funder, amountMicroUsd: 500 * OWL });
   await rawQuery(
     `UPDATE actions SET status = 'cancelled'
       WHERE status = 'open' AND kind IN ('assess', 'reassess') AND exclusion_group <> $1`,
-    [`assess:${claimId}`]
+    [group]
   );
   return processNextStewardTask();
 }
@@ -271,7 +275,10 @@ describe("a ledger action", () => {
 
     // The executor picks the row up from outside any run.
     expect(currentLabel()).toBe(PUBLIC_LABEL);
+    // The subclaim a pass mints is at the pass's label; its onboarding is
+    // that label's work. The neighbor is a public node the pass writes to.
     const child = await seedClaim("carried subclaim");
+    await rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [child, INTERNAL]);
     const neighbor = await seedClaim("carried neighbor");
     let jobId = "";
     stage.during = async () => {
@@ -279,9 +286,9 @@ describe("a ledger action", () => {
       // onboarded, writes to another node's Steward, submits a document.
       await enqueueClaimPipeline({ claimId: child, jobId: "steward" });
       await enqueueSteward({ claimId: neighbor, trigger: "steward_note", context: "A note from the pass." });
-      jobId = (await submitSource({ url: `https://dbtest.example/carried/${randomUUID()}`, content: "A page." })).jobId;
+      jobId = (await submitSource({ url: await asGiven(`https://dbtest.example/carried/${randomUUID()}`), content: "A page." })).jobId;
     };
-    expect(await runFundedPass(claim)).toMatchObject({ status: "processed", claimId: claim, ok: true });
+    expect(await runFundedPass(claim, INTERNAL)).toMatchObject({ status: "processed", claimId: claim, ok: true });
 
     expect(stage.seen).toHaveLength(1);
     expect(await written(stage.seen[0]!)).toEqual(all(INTERNAL));
@@ -312,24 +319,31 @@ describe("a ledger action", () => {
     expect(takePipelineMessage(child)).toMatchObject({ label: PUBLIC_LABEL });
   });
 
-  it("keeps its label while it waits, and takes the label of the work that reopens it once finished", async () => {
+  it("keeps its label for good: work at another label on the same node has a row of its own", async () => {
     const claim = await seedClaim("carried reopen");
     await enqueueSteward({ claimId: claim, trigger: "structure_and_assess", context: "First, a public request." });
-    // Work at another label arriving on the open row joins it; the row is
-    // still the public request's.
-    await inRunAt(INTERNAL, () => enqueueSteward({ claimId: claim, trigger: "steward_note", context: "A note at the internal label." }));
     expect(new Set(await assessLabels(claim))).toEqual(new Set([PUBLIC_LABEL]));
+    // Work at another label on the node does not join the public row, and
+    // does not wait on it: it opens its own, in its own group.
+    await inRunAt(INTERNAL, () => enqueueSteward({ claimId: claim, trigger: "steward_note", context: "A note at the internal label." }));
+    expect(new Set(await assessLabels(claim))).toEqual(new Set([PUBLIC_LABEL, INTERNAL]));
 
+    // Each is funded and run for itself, at its own label.
     expect(await runFundedPass(claim)).toMatchObject({ status: "processed", ok: true });
     expect(stage.seen[0]!.label).toBe(PUBLIC_LABEL);
-
-    // The row is finished. The next piece of work on the claim reopens it,
-    // and it is that work's row now.
-    await inRunAt(INTERNAL, () => enqueueSteward({ claimId: claim, trigger: "steward_note", context: "Asked again, at the internal label." }));
-    expect(new Set(await assessLabels(claim))).toEqual(new Set([INTERNAL]));
     stage.seen = [];
-    expect(await runFundedPass(claim)).toMatchObject({ status: "processed", ok: true });
+    await inRunAt(INTERNAL, () => enqueueSteward({ claimId: claim, trigger: "steward_note", context: "Asked again, at the internal label." }));
+    expect(await runFundedPass(claim, INTERNAL)).toMatchObject({ status: "processed", ok: true });
     expect(await written(stage.seen[0]!)).toEqual(all(INTERNAL));
+    // The public row finished as public and is still public.
+    const rows = await rawQuery<{ exclusion_group: string; sensitivity_label: string }>(
+      `SELECT DISTINCT exclusion_group, sensitivity_label FROM actions WHERE claim_id = $1 AND kind IN ('assess', 'reassess')`,
+      [claim]
+    );
+    expect(rows.sort((a, b) => (a.exclusion_group < b.exclusion_group ? -1 : 1))).toEqual([
+      { exclusion_group: `assess:${claim}`, sensitivity_label: PUBLIC_LABEL },
+      { exclusion_group: `assess:${claim} @${INTERNAL}`, sensitivity_label: INTERNAL },
+    ]);
   });
 
   it("is not claimed at a label it no longer has", async () => {
@@ -502,6 +516,7 @@ describe("a job", () => {
   /** Submit a document, then run the extraction the way the worker gets it: the queued message, no context. */
   async function submitAndExtract(label: string | null) {
     const url = `https://dbtest.example/carried/${randomUUID()}`;
+    if (label) await asGiven(url, label);
     const submit = () => submitSource({ url, content: "<p>An essay about the grid.</p>" });
     const { jobId, sourceId } = label ? await inRunAt(label, submit) : await submit();
     const queue = getLocalQueue("urlExtraction");
@@ -603,6 +618,9 @@ describe("a budget job", () => {
     const funder = await seedUser("carried-deep");
     await creditOwls(funder, 500 * OWL);
     const claim = await seedClaim("carried deep decomposition");
+    // This lane takes a node's own row, which is its slot for work at its
+    // own label, so the job and the node are at one label.
+    if (label) await rawQuery(`UPDATE claims SET sensitivity_label = $2 WHERE id = $1`, [claim, label]);
     const fund = () => createDeepDecompositionJob({ userId: funder, claimId: claim, budgetOwls: 20 });
     const funded = label ? await inRunAt(label, fund) : await fund();
     if (!funded.ok) throw new Error(funded.message);
@@ -798,9 +816,13 @@ describe("a research commission and a paused session", () => {
     const grantId = await mandate();
     const anchor = await seedClaim("carried cross-label anchor");
     const { sessionId, researchGroup, actionId } = await pauseOnResearch(INTERNAL, grantId, anchor);
-    // The research row is moved to public, standing in for an answer that
-    // comes from other work: a different run, or the sweep.
+    // The research is moved to public, its ledger row and its own record,
+    // standing in for an answer that comes from other work: a different
+    // run, or the sweep.
     await rawQuery(`UPDATE actions SET sensitivity_label = 'public' WHERE id = $1`, [actionId]);
+    await rawQuery(`UPDATE research_runs SET sensitivity_label = 'public' WHERE id = $1`, [
+      researchGroup.slice("research:".length),
+    ]);
     expect(await runOnly(researchGroup)).toMatchObject({ status: "processed", kind: "research" });
     expect(stage.seen[0]!.label).toBe(PUBLIC_LABEL);
 

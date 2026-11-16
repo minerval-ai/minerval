@@ -240,7 +240,7 @@
     "stage": 7,
     "group": "governance",
     "tagline": "Quality control over the governance system itself: flags issues, adjusts reputation, suspends bad actors.",
-    "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, and the prize decisions (a large bounty, an accepted prize claim, a checker failure). Each is a ledger action the General mandate funds.",
+    "invokedWhen": "Every bad-faith flag a reviewer raises, an overturned decision on appeal, a periodic sweep of recent decisions, a suspension left standing, a production monitor's anomaly, triage of the agents' own reports, the prize decisions (a large bounty, an accepted prize claim, a checker failure), and, in a deployment that holds material at more than one label, the check of each redaction before a page is shown to readers who do not read its label. Each is a ledger action the General mandate funds.",
     "model": "Claude Opus 5.5",
     "hasConstitution": true,
     "skills": [
@@ -504,6 +504,17 @@
         ]
       }
     ]
+  },
+  {
+    "key": "redactor",
+    "name": "Redactor",
+    "stage": 10,
+    "group": "governance",
+    "tagline": "Works at the gate where something written at one label goes to readers who may not read that label: a node's page, an answer, a mandate's terms or funding. Under the policy for that boundary it removes the passages a category covers and marks each removal in place, and may hold or delay a part. Its tools change no word. What it lets through goes once Audit has checked its work, unless the gate is set for a person to decide as well.",
+    "invokedWhen": "In a deployment that holds material at more than one label: when a page a flow covers has a new version, when work on a request taken up from another label has a result, when a message from another label is answered, or when a mandate or its funding is offered to a gate, unless the gate is open for it. Each run is a ledger action paid from the budget of the work whose result is going down. The public graph has one label and no Redactor runs there.",
+    "model": "Claude Opus 5.5 (the Steward's model, unless REDACTOR_MODEL names another)",
+    "hasConstitution": true,
+    "skills": []
   },
   {
     "key": "math-solver",

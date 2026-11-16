@@ -20,15 +20,25 @@ import { assessmentOrders } from "../db/schema.js";
 import { and, eq } from "drizzle-orm";
 
 export async function orderRoutes(app: FastifyInstance): Promise<void> {
-  app.get<{ Querystring: { claim_id?: string } }>("/", {
+  app.get<{ Querystring: { claim_id?: string; status?: string; offset?: number; limit?: number } }>("/", {
     schema: {
       tags: ["orders"],
       summary:
-        "List the authenticated user's assessment orders (claim_id filters " +
-        "to the open order for that claim, for the claim-page poll)",
+        "List the authenticated user's assessment orders, newest first, a page " +
+        "at a time (claim_id filters to the open order for that claim, for the " +
+        "claim-page poll; status to orders in one state)",
       querystring: {
         type: "object",
-        properties: { claim_id: { type: "string", format: "uuid" } },
+        properties: {
+          claim_id: { type: "string", format: "uuid" },
+          status: {
+            type: "string",
+            enum: ["pending", "running", "done", "failed", "cancelled"],
+            description: "Only orders in this state.",
+          },
+          offset: { type: "integer", minimum: 0, default: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+        },
       },
     },
     preHandler: [app.authenticate, app.requireUser],
@@ -38,7 +48,10 @@ export async function orderRoutes(app: FastifyInstance): Promise<void> {
         const order = await getOpenOrderForClaim(userId, request.query.claim_id);
         return reply.send({ orders: order ? await serializeOrders([order]) : [] });
       }
-      const orders = await listOrders(userId);
+      const orders = await listOrders(userId, request.query.limit ?? 50, {
+        offset: request.query.offset,
+        status: request.query.status,
+      });
       return reply.send({ orders: await serializeOrders(orders) });
     },
   });

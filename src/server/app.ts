@@ -14,6 +14,7 @@ import { registerPublicRead } from "./plugins/public-read.js";
 import { registerClaimAliasResolution } from "./plugins/claim-alias.js";
 import { registerAnonymousRateLimit } from "./plugins/anonymous-rate-limit.js";
 import { registerMembersOnly } from "./plugins/members-only.js";
+import { registerRequestLabel } from "./plugins/request-label.js";
 import { membersOnly } from "../permissions.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
@@ -55,8 +56,19 @@ import { findingRoutes } from "../routes/findings.js";
 import { tagRoutes } from "../routes/tags.js";
 import { requestRoutes } from "../routes/requests.js";
 import { permissionRoutes } from "../routes/permissions.js";
+import { showingRoutes } from "../routes/showings.js";
+import { outboundRoutes } from "../routes/outbound.js";
+import { outwardRoutes } from "../routes/outward.js";
+import { askRoutes } from "../routes/asks.js";
+import { publishedPageRoutes } from "../routes/published-pages.js";
 import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
+import { connectionRoutes } from "../routes/connections.js";
+import { fileSetRoutes } from "../routes/file-sets.js";
+import { setupChecklistRoutes } from "../routes/setup-checklist.js";
+import { createdOwlRoutes, standingMandateRoutes } from "../routes/owls.js";
+import { usageReportReceivingRoutes, usageReportSendingRoutes } from "../routes/usage-reports.js";
+import { owlsCreatedHere } from "../services/owl.js";
 import { statedViewRoutes } from "../routes/stated-views.js";
 
 export async function buildApp() {
@@ -104,6 +116,11 @@ export async function buildApp() {
   // Before any route too: it classifies each route as it registers and
   // attaches the cache policy (public reads cacheable, the rest no-store).
   await registerPublicRead(app);
+  // After the catalog, so the MCP tool built from a route has no `label`
+  // parameter: gives each request that writes the label it works at, in a
+  // members-only deployment (server/request-labels.ts). On the public graph
+  // this registers nothing.
+  await registerRequestLabel(app);
 
   // Routes
   await app.register(healthRoutes);
@@ -166,7 +183,41 @@ export async function buildApp() {
   // these routes, so it has none of their tools either.
   if (membersOnly(config)) {
     await app.register(permissionRoutes);
+    // Showing a page below its label needs a second label and the
+    // permissions that say who may ask and who may release.
+    await app.register(showingRoutes);
+    // A page shown outside leaves from here (docs/published-pages.md).
+    await app.register(outboundRoutes);
+    await app.register(outwardRoutes);
+    // Asking for work at a label above needs a second label and the
+    // permission to fund (services/ask-above-service.ts).
+    await app.register(askRoutes);
+    // Connections to an organization's own systems are an administrator's
+    // to add (src/connections.ts), so they exist where administrators do.
+    await app.register(connectionRoutes);
+    // Sets of files are added by people who hold the permission to direct
+    // (src/file-sets.ts), so they exist where permissions do.
+    await app.register(fileSetRoutes);
+    // The deployment's own standing mandates, set up by an administrator
+    // in place of the seed script (routes/owls.ts), and what it reports of
+    // its own owl spend (routes/usage-reports.ts).
+    await app.register(standingMandateRoutes);
+    await app.register(usageReportSendingRoutes);
+    // Creating owls exists only where the deployment creates its own
+    // (OWLS=created, which needs READS=members).
+    if (owlsCreatedHere(config)) await app.register(createdOwlRoutes);
+    // What the administrators read to see how far setup has got, the
+    // preflight's report included (routes/setup-checklist.ts).
+    await app.register(setupChecklistRoutes);
   }
+  // Every graph admits pages other graphs publish, as sources their
+  // publishers submit (docs/published-pages.md). It is the public graph
+  // that these are built for and tested on.
+  await app.register(publishedPageRoutes);
+  // Where a private deployment's usage report is received. On every
+  // deployment, and of use on the public graph, which private deployments
+  // report to.
+  await app.register(usageReportReceivingRoutes);
   // The route groups of a feature are mounted only while it is on
   // (src/features.ts). A route that is not mounted is not an MCP tool
   // either: the tools are built from the catalog of mounted routes.

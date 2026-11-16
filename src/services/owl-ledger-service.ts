@@ -12,7 +12,7 @@
  * and each guard sees every earlier one — parallel requests cannot overdraw
  * a balance — and every path that fails after charging refunds explicitly.
  */
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb, rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { owlLedger } from "../db/schema.js";
 import { loadConfig } from "../config.js";
@@ -34,6 +34,12 @@ export const OWL_REASONS = {
   escrowHold: "escrow_hold",
   escrowRefund: "escrow_refund",
   adminAdjust: "admin_adjust",
+  /**
+   * Owls an administrator created, in a deployment that creates its own
+   * (owl-creation-service.ts): into an account's balance, or into the
+   * deployment's own account on their way into a mandate's budget.
+   */
+  owlCreated: "owl_created",
   /**
    * A prize paid in owls (docs/mathematics.md §8.7): promotional credit
    * granted at one owl per dollar, net of withholding, never expiring and
@@ -417,8 +423,13 @@ export function settledChargeRef(
 /** The user's owl history, newest first — powers the account-page table. */
 export async function listOwlLedger(
   userId: string,
-  limit = 50
+  limit = 50,
+  opts: { offset?: number; jobId?: string; since?: Date; until?: Date } = {}
 ): Promise<OwlLedgerEntryView[]> {
+  const conditions = [eq(owlLedger.userId, userId)];
+  if (opts.jobId) conditions.push(eq(owlLedger.jobId, opts.jobId));
+  if (opts.since) conditions.push(gte(owlLedger.createdAt, opts.since));
+  if (opts.until) conditions.push(lte(owlLedger.createdAt, opts.until));
   const db = getDb();
   const rows = await db
     .select({
@@ -433,9 +444,10 @@ export async function listOwlLedger(
       createdAt: owlLedger.createdAt,
     })
     .from(owlLedger)
-    .where(eq(owlLedger.userId, userId))
+    .where(and(...conditions))
     .orderBy(sql`${owlLedger.createdAt} desc`)
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, opts.offset ?? 0));
 
   const refs = rows.map((r) =>
     r.reason === OWL_REASONS.meterSettlement ? settledChargeRef(r.idempotencyKey) : null

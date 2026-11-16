@@ -14,6 +14,7 @@
  * executeArgumentInstanceTool returns null for a name it does not own, so
  * executeStewardTool can delegate to it.
  */
+import { CUT_RULE } from "../../services/quote-elision.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import {
@@ -35,6 +36,8 @@ import {
   updateArgumentInstance,
 } from "../../services/argument-instance-service.js";
 import { getOrCreateSource } from "../../services/source-service.js";
+import { recordedQuoteProblem } from "../../services/source-map-service.js";
+import { sourceAddressProblem } from "../../services/reading-address.js";
 import { SOURCE_KIND_PROPERTY, applyStatedSourceKind, sourceKindRefusal } from "./source-kind.js";
 import { rawQuery } from "../../db/client.js";
 import { notYourNode } from "./steward-ownership.js";
@@ -86,7 +89,7 @@ const PROPERTIES = {
     type: "string",
     description:
       "The passage where the source makes, attacks or mentions the argument, verbatim. Under " +
-      "2,000 characters: the passage, not the document.",
+      "2,000 characters: the passage, not the document. " + CUT_RULE,
   },
   context: { type: "string", description: "Briefly, what the source was doing when it made the passage." },
   stance: {
@@ -297,9 +300,12 @@ export async function executeArgumentInstanceTool(
 
   // ---- recording a new instance -------------------------------------------
   const url = optText(input.url) ?? "";
-  if (!/^https?:\/\//i.test(url)) {
-    return refuse("url must be the http(s) URL of the source you read; an instance without provenance is not recordable.");
-  }
+  // An http(s) URL, or the address of a reading kept from a connection.
+  const addressProblem = await sourceAddressProblem(
+    url,
+    "url must be the http(s) URL of the source you read; an instance without provenance is not recordable."
+  );
+  if (addressProblem) return refuse(addressProblem);
   const verbatimText = optText(input.verbatim_text) ?? "";
   if (!verbatimText) return refuse("verbatim_text is required: the passage, verbatim.");
   if (verbatimText.length > 2000) {
@@ -313,6 +319,9 @@ export async function executeArgumentInstanceTool(
   if (kindRefusal) return refuse(kindRefusal);
   const source = await getOrCreateSource({ url, title: optText(input.title) });
   const sourceKind = await applyStatedSourceKind(source.id, input.source_kind);
+  // A quotation with cuts must hold piece by piece against the stored copy.
+  const cutProblem = await recordedQuoteProblem(source.id, verbatimText);
+  if (cutProblem) return JSON.stringify({ ...sourceKind, success: false, message: cutProblem });
   const speaker = optText(input.speaker) ?? null;
   const existing = await findArgumentInstance({ argumentId, sourceId: source.id, speaker });
   if (existing) {

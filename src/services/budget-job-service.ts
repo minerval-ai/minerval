@@ -10,7 +10,7 @@
  * budget floor the job PAUSES with a progress checkpoint and waits for a
  * top-up — it never silently dies mid-run (src/workers/budget-job-pipeline.ts).
  */
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb, rawQuery } from "../db/client.js";
 import { budgetJobs, type BudgetJob } from "../db/schema.js";
 import { owlsToMicroUsd, microUsdToOwls } from "./owl.js";
@@ -254,6 +254,23 @@ export async function getJobContributions(
   }));
 }
 
+/**
+ * How many people have put owls behind each of these jobs: the length of
+ * getJobContributions for each, in one statement. A job no one has backed
+ * is absent from the map.
+ */
+export async function getJobContributorCounts(jobIds: string[]): Promise<Map<string, number>> {
+  if (jobIds.length === 0) return new Map();
+  const rows = await rawQuery<{ job_id: string; n: string | number }>(
+    `SELECT job_id, count(DISTINCT user_id) AS n
+       FROM owl_ledger
+      WHERE job_id = ANY($1::uuid[]) AND reason = 'escrow_hold'
+      GROUP BY job_id`,
+    [jobIds]
+  );
+  return new Map(rows.map((r) => [r.job_id, Number(r.n)]));
+}
+
 /** A job's budget less its metered spend, in micro-USD (0 for no such job). */
 export async function getJobRemainingMicroUsd(jobId: string): Promise<number> {
   const [row] = await rawQuery<{ budget: string }>(`SELECT budget_micro_usd::bigint AS budget FROM budget_jobs WHERE id = $1`, [jobId]);
@@ -326,7 +343,7 @@ export async function refundUnspentBudget(job: {
     // nor be refunded twice. (Only unspent remainders release; consumed
     // shares stay counted as spend.)
     await rawQuery(
-      `UPDATE action_allocations SET released_at = now()
+      `UPDATE minerval_whole.allocation_money SET released_at = now()
         WHERE grant_id = $1 AND released_at IS NULL
           AND spent_micro_usd < amount_micro_usd`,
       [grant.id]
@@ -338,7 +355,7 @@ export async function refundUnspentBudget(job: {
       prizes: number;
     }>(
       `SELECT
-         COALESCE((SELECT SUM(spent_micro_usd) FROM action_allocations
+         COALESCE((SELECT SUM(spent_micro_usd) FROM minerval_whole.allocation_money
                     WHERE grant_id = $1), 0)::bigint AS shares,
          GREATEST(0,
            COALESCE((SELECT SUM(cost_micro_usd) FROM llm_usage
@@ -346,7 +363,7 @@ export async function refundUnspentBudget(job: {
            - COALESCE((SELECT SUM(metered_cost_micro_usd) FROM actions
                         WHERE metered_job_id = $2), 0))::bigint AS nonledger,
          COALESCE((SELECT SUM(amount_micro_usd - refunded_micro_usd)
-                     FROM regrants WHERE from_grant_id = $1), 0)::bigint
+                     FROM minerval_whole.regrant_money WHERE from_grant_id = $1), 0)::bigint
            AS regrants,
          ${prizeCommitmentSql("$1")} AS prizes`,
       [grant.id, job.id]
@@ -377,7 +394,7 @@ export async function refundUnspentBudget(job: {
     amount: number;
   }>(
     `SELECT r.id, r.from_grant_id, r.amount_micro_usd::bigint AS amount
-       FROM regrants r
+       FROM minerval_whole.regrant_money r
        JOIN grants g ON g.id = r.to_grant_id
       WHERE g.budget_job_id = $1`,
     [job.id]
@@ -437,9 +454,9 @@ export async function refundUnspentBudget(job: {
     // and the `prior < target` guard makes it a no-op. What actually
     // moved this call is the delta over the prior stamp.
     const stamped = await rawQuery<{ prior: number }>(
-      `UPDATE regrants r
+      `UPDATE minerval_whole.regrant_money r
           SET refunded_micro_usd = $2
-         FROM (SELECT refunded_micro_usd AS prior FROM regrants
+         FROM (SELECT refunded_micro_usd AS prior FROM minerval_whole.regrant_money
                 WHERE id = $1 FOR UPDATE) p
         WHERE r.id = $1 AND p.prior < $2 AND $2 <= r.amount_micro_usd
         RETURNING p.prior::bigint AS prior`,
@@ -536,15 +553,20 @@ export async function cancelBudgetJob(input: {
 
 export async function listBudgetJobs(
   userId: string,
-  limit = 50
+  limit = 50,
+  opts: { offset?: number; kind?: string; status?: string } = {}
 ): Promise<BudgetJob[]> {
   const db = getDb();
+  const conditions = [eq(budgetJobs.userId, userId)];
+  if (opts.kind) conditions.push(eq(budgetJobs.kind, opts.kind));
+  if (opts.status) conditions.push(eq(budgetJobs.status, opts.status));
   return db
     .select()
     .from(budgetJobs)
-    .where(eq(budgetJobs.userId, userId))
+    .where(and(...conditions))
     .orderBy(desc(budgetJobs.createdAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, opts.offset ?? 0));
 }
 
 export async function getBudgetJob(jobId: string): Promise<BudgetJob | null> {

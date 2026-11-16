@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.js";
 import { assessmentsInForce } from "../db/schema.js";
 import { claimSearchParams, claimListParams, claimGetParams, claimDependentsParams, claimProposeBody, claimPatchBody, assessmentHistoryParams, claimEventsParams } from "../schemas/claim.js";
-import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory } from "../services/assessment-service.js";
+import { formatAssessmentHistoryRow, getAssessmentHistory, getAssessmentTrajectory, getKindJudgmentHistory } from "../services/assessment-service.js";
 import {
   SINCE_ASSESSED_DESCRIPTION,
   getJudgmentInputs,
@@ -14,11 +14,13 @@ import {
 import { getClaimEvents } from "../services/claim-events-service.js";
 import { hybridSearch } from "../services/search-service.js";
 import { NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
-import { COVERAGE_DESCRIPTION, COVERAGE_EVIDENCE, coverage, summarizeCoverage } from "../services/coverage-service.js";
+import { membersOnly } from "../permissions.js";
+import { COVERAGE_DESCRIPTION, COVERAGE_EVIDENCE, READER_COVERAGE_EVIDENCE, coverage, summarizeCoverage } from "../services/coverage-service.js";
 import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDependents, listClaimDependents } from "../services/tree-service.js";
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
 import { getQuestionDetail } from "../services/question-service.js";
+import { JUDGMENTS_IN_FORCE_DESCRIPTION, nodeVersions, severalInForceNote } from "../services/judgment-version-service.js";
 import { listRequests } from "../services/request-service.js";
 import { REQUEST_SCHEMA } from "./requests.js";
 import { waitingMessages } from "../services/inbox-service.js";
@@ -58,6 +60,9 @@ import { attachClaimTags, getTagsForSubject, resolveTagBySlug } from "../service
 import { CLAIM_CARDS_MAX_IDS, getClaimCard, getClaimCards } from "../services/claim-card-service.js";
 import { RESOLVED_FROM_SCHEMA } from "../services/claim-alias-service.js";
 import { requirePermission } from "../server/require-permission.js";
+import { MIRRORED_SCHEMA, mirroredFacts, refusePublicWorkOnMirroredNode } from "../services/mirrored-node-service.js";
+import { mirrorRoles } from "../services/mirror-roles.js";
+import { valuesByLabelOf, withLayer, withSetAside } from "../services/overlay-service.js";
 
 // The mathematics read models beside the claim (docs/mathematics.md §11.1):
 // composed from the formalization, prize, and attempt slices. A failure in
@@ -118,6 +123,9 @@ const kindItemProperties = {
   standing: { type: "string", nullable: true },
   estimate: looseObject,
   unit: looseObject,
+  // Only where more than one judgment of the node is in force for the reader (judgment-version-service.ts).
+  judgments_in_force: { type: "integer", description: JUDGMENTS_IN_FORCE_DESCRIPTION },
+  judgments_in_force_note: { type: "string" },
 } as const;
 const kindFilterProperties = {
   kind: { type: "string", enum: [...NODE_KINDS], description: "Only nodes of this kind" },
@@ -181,6 +189,9 @@ export const assessmentSchema = {
     status: { type: "string" },
     // Verdict confidence — how sure the Steward is of the status, not P(true).
     confidence: { type: "number" },
+    // The other reading (§10): the status the evidence could otherwise be
+    // read as; null where the Steward named none.
+    alternative_status: { type: "string", nullable: true },
     // Credence that the claim is true; null where one number would be false
     // precision (constitution §7).
     claim_credence: { type: "number", nullable: true },
@@ -269,6 +280,7 @@ const sinceAssessedSchema = {
     changed: { type: "boolean", nullable: true },
     note: { type: "string" },
     premises_rejudged: { type: "integer" },
+    premises_moved: { type: "integer" },
     premises_added: { type: "integer" },
     premises_removed: { type: "integer" },
     sources_added: { type: "integer" },
@@ -293,11 +305,19 @@ export const claimCardSchema = {
       description:
         "A claim's current status; null when it has not been assessed, and for a quantity or question.",
     },
+    judgments_in_force: { type: "integer", description: JUDGMENTS_IN_FORCE_DESCRIPTION },
+    judgments_in_force_note: { type: "string" },
     assessment_confidence: {
       type: "number",
       nullable: true,
       description:
         "How sure the Steward is of the status (for a question, of the standing), 0..1. Not the probability that the claim is true.",
+    },
+    assessment_alternative_status: {
+      type: "string",
+      nullable: true,
+      description:
+        "The other reading: the status the evidence could otherwise be read as, where the Steward named one (for an inconclusive claim, whether the doubt runs toward supported or doubtful). Null when none was named, and for a quantity or question.",
     },
     standing: {
       type: "string",
@@ -337,6 +357,7 @@ export const claimCardSchema = {
     "state",
     "assessment_status",
     "assessment_confidence",
+    "assessment_alternative_status",
     "standing",
     "estimate",
     "unit",
@@ -666,8 +687,23 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               claim: claimSchema,
               assessment: assessmentSchema,
-              coverage: coverageSchema,
+              // A members-only deployment can hold more than one label, and coverage is
+              // then said to its reader, in words of its own (coverage-service.ts).
+              coverage: membersOnly()
+                ? {
+                    ...coverageSchema,
+                    properties: {
+                      ...coverageSchema.properties,
+                      on: { type: "array", items: { type: "string", enum: [...COVERAGE_EVIDENCE, ...READER_COVERAGE_EVIDENCE] } },
+                    },
+                  }
+                : coverageSchema,
               since_assessed: sinceAssessedSchema,
+              // On a deployment that mirrors the public graph: that this
+              // node is the public graph's, and as of when. The schema has
+              // the field only there, so every other deployment's document
+              // is what it was.
+              ...(mirrorRoles().applier ? { mirrored: MIRRORED_SCHEMA } : {}),
               subclaim_count: { type: "integer" },
               // Steward-seeded prior (#285): the parent claim's Steward's
               // preliminary credence/note, served only while this claim has
@@ -839,9 +875,26 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         ]);
         const since = sinceAssessed(changes?.get(claim.id));
         const examination = coverage(covered?.get(claim.id));
+        // Where the deployment has more than one label: the node's own, and
+        // the versions of its judgment the reader may read. Null elsewhere,
+        // and the response is then what it always was.
+        const labelled = await nodeVersions(claim.id, claim.kind ?? "claim");
+        // Where the node is the public graph's, read through the mirror:
+        // that it is, and as of when. Null elsewhere.
+        const mirrored = await mirroredFacts(claim.id);
 
         const response: Record<string, unknown> = {
-          claim: formatClaim(claim),
+          claim: labelled ? { ...formatClaim(claim), ...valuesByLabelOf(claim), label: labelled.label } : formatClaim(claim),
+          ...(labelled ? { versions: labelled.versions } : {}),
+          // Where a label the reader reads examined the node and left the
+          // judgment it reads standing, and where one has not examined it.
+          ...(labelled && labelled.left_standing.length > 0 ? { left_standing: labelled.left_standing } : {}),
+          ...(labelled && labelled.not_examined_at.length > 0 ? { not_examined_at: labelled.not_examined_at } : {}),
+          // Where more than one of them is in force for the reader, `assessment` below is only the most recently made.
+          ...(labelled && labelled.in_force > 1
+            ? { judgments_in_force: labelled.in_force, judgments_in_force_note: severalInForceNote(labelled.in_force) }
+            : {}),
+          ...(mirrored ? { mirrored } : {}),
           assessment: assessment ? formatAssessment(assessment) : null,
           // Beside the judgment, and present where there is none: it is
           // what says a quantity or a question has not been judged, which a
@@ -863,6 +916,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             description: t.description,
             source: t.source,
             confidence: t.confidence,
+            ...(t.label ? { label: t.label } : {}),
           })),
         };
 
@@ -912,7 +966,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
 
         // Lateral links, at every depth: cheap, and the see-also belongs on
         // the page whatever else was asked for.
-        response.related = (await listRelatedClaims(claim_id)).map((r) => ({
+        response.related = (await withLayer("claim_links", await listRelatedClaims(claim_id), (r) => r.link_id)).map((r) => ({
+          ...(r.label ? { label: r.label } : {}),
           link_id: r.link_id,
           kind: r.kind,
           reasoning: r.reasoning,
@@ -952,7 +1007,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             );
             return new Map();
           });
-          response.arguments = args.map((a) => ({
+          const listedArguments = args.map((a) => ({
             id: a.id,
             name: a.name,
             description: a.description,
@@ -966,6 +1021,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             shows: a.shows ?? null,
             lean_check: checkByArgument.get(a.id) ?? null,
           }));
+          // Which layer each argument is at, and which a label the reader
+          // reads has set aside (services/overlay-service.ts). Nothing is
+          // added on a graph with one label.
+          response.arguments = await withSetAside("arguments", await withLayer("arguments", listedArguments, (a) => a.id), (a) => a.id);
           // Retired arguments keep their pages (§7: retiring preserves the
           // name, page and record); the claim page lists them apart.
           const retired = await getRetiredArgumentsForClaim(claim_id);
@@ -992,10 +1051,14 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
             );
             return null;
           });
-          response.instances = instances.map((inst) => ({
-            ...inst,
-            reading: sourceMap?.readings[inst.id] ?? null,
-          }));
+          response.instances = await withLayer(
+            "claim_instances",
+            instances.map((inst) => ({
+              ...inst,
+              reading: sourceMap?.readings[inst.id] ?? null,
+            })),
+            (inst) => inst.id
+          );
           response.source_map = sourceMap?.map ?? null;
           response.provenance_edges = sourceMap?.edges ?? [];
           response.source_relationships = sourceMap?.source_relationships ?? [];
@@ -1295,6 +1358,9 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessment_status: { type: "string", nullable: true },
                     assessment_confidence: { type: "number", nullable: true },
                     assessment_credence: { type: "number", nullable: true },
+                    // Only where more than one judgment of the dependent is in force for the reader.
+                    judgments_in_force: { type: "integer", description: JUDGMENTS_IN_FORCE_DESCRIPTION },
+                    judgments_in_force_note: { type: "string" },
                     // How many edges up this dependent sits: 1 is direct.
                     depth: { type: "integer" },
                     // Mathematics (§8.3): the live bounty, the derived
@@ -1701,7 +1767,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
         const status =
           result.code === "CLAIM_NOT_FOUND"
             ? 404
-            : result.code === "ORDER_ALREADY_OPEN"
+            : result.code === "ORDER_ALREADY_OPEN" || result.code === "PUBLIC_GRAPH_NODE"
               ? 409
               : 400;
         return reply.code(status).send({
@@ -1741,6 +1807,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       },
       preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
+        // Not on a mirrored node at its own label, where the assessment is
+        // the public graph's: refused before any owl moves, with where a
+        // public assessment is funded (services/mirrored-node-service.ts).
+        await refusePublicWorkOnMirroredNode(request.params.claim_id);
         const result = await allocateToClaimAssessment({
           userId: request.auth!.userId!,
           claimId: request.params.claim_id,
@@ -1797,6 +1867,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       },
       preHandler: [app.authenticate, app.requireUser, requirePermission("fund")],
       handler: async (request, reply) => {
+        // A mandate on a mirrored node at the node's own label would open
+        // with a pass that is the public graph's to run: refused before
+        // anything is escrowed (services/mirrored-node-service.ts).
+        await refusePublicWorkOnMirroredNode(request.params.claim_id);
         const result = await createClaimMandate({
           userId: request.auth!.userId!,
           claimId: request.params.claim_id,
@@ -1824,7 +1898,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
       summary:
         "What a node's judgment in force was made against, and what has changed since: " +
         "each node under it with the judgment it had then and has now (unchanged, rejudged " +
-        "or removed), nodes added under it since, sources attached or detached since, and " +
+        "or removed, and for one judged again whether its verdict moved), nodes added under it since, sources attached or detached since, and " +
         "corrections or retractions on its sources since. changed is true when any of those " +
         "is non-empty; recorded is false for a judgment written before this was recorded, " +
         "about which nothing can be said",
@@ -1858,6 +1932,12 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                   judged_against: { type: "string", format: "uuid", nullable: true },
                   in_force_now: { type: "string", format: "uuid", nullable: true },
                   state: { type: "string", enum: ["unchanged", "rejudged", "removed"] },
+                  // Judged again to a different verdict; false unless rejudged.
+                  moved: { type: "boolean" },
+                  text: { type: "string", nullable: true },
+                  // A claim's status or a question's standing; null for a quantity or no judgment.
+                  verdict_then: { type: "string", nullable: true },
+                  verdict_now: { type: "string", nullable: true },
                 },
               },
             },
@@ -1869,6 +1949,8 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                   node_id: { type: "string", format: "uuid" },
                   relation: { type: "string" },
                   in_force_now: { type: "string", format: "uuid", nullable: true },
+                  text: { type: "string", nullable: true },
+                  verdict_now: { type: "string", nullable: true },
                 },
               },
             },
@@ -1915,7 +1997,15 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
     {
       schema: {
         tags: ["claims"],
-        summary: "Get paginated assessment history for a claim",
+        summary:
+          "A node's judgments, newest first, a page at a time: a claim's assessments, a quantity's " +
+          "estimates, or a question's assessments of its standing",
+        description:
+          "Each row carries is_current and the run that wrote it (run_id, for get_run). A claim's " +
+          "rows carry status, confidence and claim_credence; a quantity's carry `estimate` and its " +
+          "work as reasoning_trace; a question's carry standing, confidence and favored_claim_ids. " +
+          "`kind` says which. reasoning_trace is long: leave it out with " +
+          "fields=assessments.id,assessments.status,assessments.assessed_at,assessments.run_id,total.",
         params: {
           type: "object",
           properties: {
@@ -1943,10 +2033,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     id: { type: "string", format: "uuid" },
                     claim_id: { type: "string", format: "uuid" },
                     status: { type: "string" },
-                    confidence: { type: "number" },
+                    confidence: { type: "number", nullable: true },
+                    alternative_status: { type: "string", nullable: true },
                     claim_credence: { type: "number", nullable: true },
-                    summary: { type: "string" },
-                    reasoning_trace: { type: "string" },
+                    summary: { type: "string", nullable: true },
+                    reasoning_trace: { type: "string", nullable: true },
                     is_current: { type: "boolean" },
                     subclaim_summary: { type: "object", additionalProperties: true },
                     trigger: { type: "string", nullable: true },
@@ -1954,10 +2045,18 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     assessed_at: { type: "string", format: "date-time" },
                     model: { type: "string", nullable: true },
                     run_id: { type: "string", nullable: true },
+                    // A quantity's estimate and a question's standing.
+                    kind: { type: "string" },
+                    estimate: { type: "object", nullable: true, additionalProperties: true },
+                    standing: { type: "string", nullable: true },
+                    favored_claim_ids: { type: "array", nullable: true, items: { type: "string" } },
+                    incomplete: { type: "string", nullable: true },
+                    marginal_yield: { type: "number", nullable: true },
                   },
                 },
               },
               total: { type: "integer" },
+              kind: { type: "string" },
             },
           },
           404: errorEnvelope,
@@ -1978,16 +2077,24 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
-        const result = await getAssessmentHistory(claim_id, {
+        const range = {
           limit: params.limit,
           offset: params.offset,
           since: params.since,
           until: params.until,
-        });
+        };
+        // A quantity's and a question's judgments live in their own tables;
+        // the route used to read only a claim's and answered them empty.
+        if (claim.kind === "quantity" || claim.kind === "question") {
+          const history = await getKindJudgmentHistory(claim_id, claim.kind, range);
+          return reply.send({ assessments: history.rows, total: history.total, kind: claim.kind });
+        }
+        const result = await getAssessmentHistory(claim_id, range);
 
         return reply.send({
-          assessments: result.assessments.map(formatAssessmentHistoryRow),
+          assessments: result.assessments.map((a) => ({ ...formatAssessmentHistoryRow(a), kind: "claim" })),
           total: result.total,
+          kind: "claim",
         });
       },
     }
@@ -2089,6 +2196,16 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             limit: { type: "integer", minimum: 1, maximum: 200, default: 100 },
             offset: { type: "integer", minimum: 0, default: 0 },
+            kinds: {
+              type: "string",
+              maxLength: 300,
+              description:
+                "Only events of these kinds, comma-separated (created, assessment, contribution, " +
+                "review, appeal, arbitration, steward_note, state_change, formalization, " +
+                "lean_check, prize, attempt).",
+            },
+            since: { type: "string", format: "date-time", description: "Only events at or after this time." },
+            until: { type: "string", format: "date-time", description: "Only events at or before this time." },
           },
         },
         response: {
@@ -2151,9 +2268,13 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           });
         }
 
+        const q = request.query as { kinds?: string; since?: string; until?: string };
         const result = await getClaimEvents(claim, {
           limit: params.limit,
           offset: params.offset,
+          kinds: q.kinds ? q.kinds.split(",").map((k) => k.trim()).filter(Boolean) : undefined,
+          since: q.since ? new Date(q.since) : undefined,
+          until: q.until ? new Date(q.until) : undefined,
         });
 
         return reply.send(result);
@@ -2300,12 +2421,14 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
   };
 }
 
-export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null; relabeledFrom?: string | null }) {
+export function formatAssessment(a: { id: string; status: string; confidence: number; alternativeStatus?: string | null; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null; relabeledFrom?: string | null }) {
   return {
     id: a.id,
     status: a.status,
     // Verdict confidence — how sure the Steward is of the status, not P(true).
     confidence: a.confidence,
+    // The other reading (§10); null where the Steward named none.
+    alternative_status: a.alternativeStatus ?? null,
     // Credence that the claim is true; null where one number would be false
     // precision (constitution §7).
     claim_credence: a.claimCredence ?? null,

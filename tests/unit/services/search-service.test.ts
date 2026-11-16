@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock dependencies
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(),
+  // Where reads are not held to a clearance, which is every deployment whose
+  // only label is public, search reads the claims table itself (the other
+  // form is driven against a database in tests/db/enforcement.test.ts).
+  searchableClaims: async () => "claims",
 }));
 
 vi.mock("../../../src/services/embedding-service.js", () => ({

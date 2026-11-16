@@ -20,6 +20,8 @@ describe("formatAssessment", () => {
       id: base.id,
       status: "supported",
       confidence: 0.8,
+      // No other reading named (§10).
+      alternative_status: null,
       claim_credence: 0.9,
       summary: "The evidence favours this claim.",
       reasoning_trace: "because",
@@ -46,6 +48,7 @@ describe("formatAssessment", () => {
 
   it("keeps an unstated credence null — distinct from credence 0 (constitution §7)", () => {
     expect(formatAssessment({ ...base, claimCredence: null }).claim_credence).toBeNull();
+    expect(formatAssessment({ ...base, alternativeStatus: "inconclusive" }).alternative_status).toBe("inconclusive");
   });
 
   it("falls back to the reasoning trace when summary is null (pre-split rows)", () => {

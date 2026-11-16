@@ -26,6 +26,9 @@ import { getDb, rawQuery } from "../db/client.js";
 import { claims, tags, taggings, TAG_SUBJECT_KINDS, type TagSubjectKind } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
 import { currentLabel } from "../llm/usage-context.js";
+import { layered, oneTagForSlugSql, taggedWithSql } from "./layer-service.js";
+import { overlaid } from "./overlay-service.js";
+import { currentTaggingLaneWait, type TaggingLaneWait } from "./tagging-lane.js";
 
 /**
  * Cosine similarity above which a proposed tag is the same topic as an
@@ -68,6 +71,8 @@ export interface SubjectTag extends TagRef {
   source: string;
   confidence: number | null;
   reasoning: string | null;
+  /** On a graph with more than one label: the label the tagging is recorded at. */
+  label?: string;
 }
 
 /** A tag to attach, by existing id or by a name to find-or-create. */
@@ -154,16 +159,26 @@ export async function getTagById(id: string): Promise<TagRecord | null> {
 }
 
 /**
+ * The tag a slug names. Where more than one layer holds the slug (a tag
+ * minted at one label, and later at a label that one reads), the lowest
+ * layer's is the tag (layer-service.ts): it is the one every reader of
+ * the slug shares. On a graph with one label the read is what it was.
+ */
+function tagForSlug(slug: string) {
+  const db = getDb();
+  const read = db.select().from(tags).where(eq(tags.slug, slug));
+  return layered()
+    ? read.orderBy(sql`minerval_layer_depth(${tags.sensitivityLabel}, 'local')`, tags.createdAt).limit(1)
+    : read.limit(1);
+}
+
+/**
  * Resolve a slug to its tag, following a merge to the survivor so an old
  * link or filter keeps working after the vocabulary is tidied.
  */
 export async function resolveTagBySlug(slug: string): Promise<TagRecord | null> {
   const db = getDb();
-  const [row] = await db
-    .select()
-    .from(tags)
-    .where(eq(tags.slug, slugifyTag(slug)))
-    .limit(1);
+  const [row] = await tagForSlug(slugifyTag(slug));
   if (!row) return null;
   if (row.status === "merged" && row.mergedInto) {
     // One hop is enough: mergeTags rewrites chains so a survivor is never
@@ -207,10 +222,10 @@ export async function listTags(opts: {
               t.created_by, t.created_at,
               (SELECT count(*)::int FROM taggings tg
                  JOIN claims c ON c.id = tg.subject_id
-                WHERE tg.tag_id = t.id AND tg.subject_kind = 'claim'
+                WHERE ${taggedWithSql("tg", "t.id")} AND tg.subject_kind = 'claim'
                   AND c.state = 'active' AND c.merged_into IS NULL) AS claim_count
          FROM tags t
-        WHERE ${where}
+        WHERE ${where}${oneTagForSlugSql("t")}
      ) counted
      ${opts.includeUnused ? "" : "WHERE claim_count > 0"}
      ORDER BY claim_count DESC, name ASC
@@ -261,10 +276,10 @@ async function searchTagsByEmbedding(
             1 - (t.embedding <=> $1::vector) AS similarity,
             (SELECT count(*)::int FROM taggings tg
                JOIN claims c ON c.id = tg.subject_id
-              WHERE tg.tag_id = t.id AND tg.subject_kind = 'claim'
+              WHERE ${taggedWithSql("tg", "t.id")} AND tg.subject_kind = 'claim'
                 AND c.state = 'active' AND c.merged_into IS NULL) AS claim_count
        FROM tags t
-      WHERE t.status = 'active'
+      WHERE t.status = 'active'${oneTagForSlugSql("t")}
         AND ((t.embedding IS NOT NULL AND 1 - (t.embedding <=> $1::vector) > $2)${lexical})
       ORDER BY similarity DESC NULLS LAST, claim_count DESC
       LIMIT $3`,
@@ -308,13 +323,14 @@ export async function getTagsForSubjects(
     source: string;
     confidence: number | null;
     reasoning: string | null;
+    label?: string;
   }>(
     `SELECT tg.subject_id,
             COALESCE(m.id, t.id) AS id,
             COALESCE(m.slug, t.slug) AS slug,
             COALESCE(m.name, t.name) AS name,
             COALESCE(m.description, t.description) AS description,
-            tg.source, tg.confidence, tg.reasoning
+            tg.source, tg.confidence, tg.reasoning${overlaid() ? ", tg.sensitivity_label AS label" : ""}
        FROM taggings tg
        JOIN tags t ON t.id = tg.tag_id
        LEFT JOIN tags m ON m.id = t.merged_into AND t.status = 'merged'
@@ -326,7 +342,9 @@ export async function getTagsForSubjects(
     const list = out.get(r.subject_id) ?? [];
     // A merge can leave the same survivor twice on one subject; keep the
     // first (highest-confidence) occurrence.
-    if (list.some((t) => t.id === r.id)) continue;
+    // So can the same slug held at two layers (layer-service.ts): the
+    // subject carries the tag once.
+    if (list.some((t) => t.id === r.id || t.slug === r.slug)) continue;
     list.push({
       id: r.id,
       slug: r.slug,
@@ -335,6 +353,7 @@ export async function getTagsForSubjects(
       source: r.source,
       confidence: r.confidence,
       reasoning: r.reasoning,
+      ...(r.label ? { label: r.label } : {}),
     });
     out.set(r.subject_id, list);
   }
@@ -398,7 +417,7 @@ export async function findOrCreateTag(input: {
   const description = normalizeTagDescription(input.description);
   const db = getDb();
 
-  const [bySlug] = await db.select().from(tags).where(eq(tags.slug, slug)).limit(1);
+  const [bySlug] = await tagForSlug(slug);
   if (bySlug) {
     const resolved = await resolveTagBySlug(slug);
     return { tag: resolved ?? tagRecord(bySlug), resolution: "slug" };
@@ -435,12 +454,16 @@ export async function findOrCreateTag(input: {
     // A tag is minted at the label of the run that first needed it
     // (src/labels.ts). A tag already in the vocabulary keeps its own.
     .values({ slug, name, description, embedding, createdBy: input.createdBy, sensitivityLabel: currentLabel() })
-    .onConflictDoNothing({ target: tags.slug })
+    .onConflictDoNothing({ target: [tags.slug, tags.sensitivityLabel] })
     .returning();
   if (inserted.length > 0) {
     return { tag: tagRecord(inserted[0]!), resolution: "created" };
   }
-  const [row] = await db.select().from(tags).where(eq(tags.slug, slug)).limit(1);
+  const [row] = await db
+    .select()
+    .from(tags)
+    .where(and(eq(tags.slug, slug), eq(tags.sensitivityLabel, currentLabel())))
+    .limit(1);
   if (!row) throw new Error(`tag "${slug}" vanished between insert and read`);
   return { tag: tagRecord(row), resolution: "slug" };
 }
@@ -517,11 +540,30 @@ export async function setSubjectTags(input: {
     )
     .returning({ id: taggings.id });
 
-  if (keep.length > 0) {
+  // A tagging a label this work reads already holds is the tagging
+  // (layer-service.ts): nothing is recorded beside it.
+  const heldBelowIds = new Set<string>();
+  if (layered() && keepIds.length > 0) {
+    const held = await db
+      .select({ tagId: taggings.tagId })
+      .from(taggings)
+      .where(
+        and(
+          eq(taggings.subjectKind, input.kind),
+          eq(taggings.subjectId, input.subjectId),
+          inArray(taggings.tagId, keepIds),
+          sql`minerval_layer_below(${taggings.sensitivityLabel}, 'local', ${currentLabel()}, 'local')`
+        )
+      );
+    for (const h of held) heldBelowIds.add(h.tagId);
+  }
+  const toRecord = keep.filter(({ tag }) => !heldBelowIds.has(tag.id));
+
+  if (toRecord.length > 0) {
     await db
       .insert(taggings)
       .values(
-        keep.map(({ tag, a }) => ({
+        toRecord.map(({ tag, a }) => ({
           tagId: tag.id,
           subjectKind: input.kind,
           subjectId: input.subjectId,
@@ -679,22 +721,34 @@ export async function resetClaimTagging(claimIds: string[]): Promise<number> {
   return rows.length;
 }
 
-/** Queue depth for /queue and the scheduler's log line. */
+/**
+ * The tagging lane for /queue and /monitors: its depth, and its wait when it
+ * is waiting. `waiting` is null unless the lane is holding off right now: on
+ * a platform fault (credits_fault, credentials_fault, provider_unavailable)
+ * or on the platform's spend breaker (spend_breaker), with since when and
+ * when it tries a claim next (services/tagging-lane.ts). Pending claims with
+ * `waiting` null are simply queued.
+ */
 export async function taggingQueueHealth(): Promise<{
   pending: number;
   parked: number;
   tagged: number;
+  waiting: TaggingLaneWait | null;
 }> {
-  const [row] = await rawQuery<{ pending: number; parked: number; tagged: number }>(
-    `SELECT
-       count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts < $1)::int AS pending,
-       count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts >= $1)::int AS parked,
-       count(*) FILTER (WHERE tagged_at IS NOT NULL)::int AS tagged
-       FROM claims
-      WHERE state = 'active' AND merged_into IS NULL AND embedding IS NOT NULL`,
-    [MAX_TAGGING_ATTEMPTS]
-  );
-  return row ?? { pending: 0, parked: 0, tagged: 0 };
+  const [[row], waiting] = await Promise.all([
+    rawQuery<{ pending: number; parked: number; tagged: number }>(
+      `SELECT
+         count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts < $1)::int AS pending,
+         count(*) FILTER (WHERE tagged_at IS NULL AND tagging_attempts >= $1)::int AS parked,
+         count(*) FILTER (WHERE tagged_at IS NOT NULL)::int AS tagged
+         FROM claims
+        WHERE state = 'active' AND merged_into IS NULL AND embedding IS NOT NULL`,
+      [MAX_TAGGING_ATTEMPTS]
+    ),
+    // The depth is still worth serving when the wait cannot be read.
+    currentTaggingLaneWait().catch(() => null),
+  ]);
+  return { ...(row ?? { pending: 0, parked: 0, tagged: 0 }), waiting };
 }
 
 /** Genuine failures before a claim parks out of the tagging drain. */

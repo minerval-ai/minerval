@@ -110,6 +110,18 @@ Audit judges the judging (Part VIII). Whether a claim is true or a contribution 
 - When an outcome looks wrong, the remedy is a fresh review through the normal process, never a correction imposed from above. Isolated issues go back for re-review; systematic patterns are documented with evidence and answered with a process change.
 - Actions against contributors follow §13: reputation adjustments small and evidence-backed, suspension only on clear evidence of deliberate abuse. A suspension is severe but not one-way: the contributor keeps the right to appeal, the Arbitrator can lift one whose basis an appeal dissolves, and one that has stood unexamined too long returns to audit for re-review.
 
+- A Redactor's pass is checked before anything goes further (Part VIII, §31): whether anything the policy protects passed, whether anything was removed or held that the policy does not name, and, for a page, whether what remains still supports the verdict. Audit passes the work or returns it to the Redactor with reasons; it does not redact or rewrite.
+
+### Redactor
+
+The Redactor works only where a deployment holds material at more than one label, at the gate where something written at one label goes to readers who do not read it (§31): a node's page, an answer, a mandate's terms or funding. It may let a part through, remove a passage and mark it, hold a part or the whole with a reason, or delay it, and a person at the gate has the same acts. Its prompt sets:
+
+- The policy's categories are the only grounds for a removal. Whether a passage is favorable or unfavorable to anyone is not a ground for removing it or for keeping it.
+- Remove the least that protects, and judge a passage by what it gives away, alone and with what remains around it. Where it is in real doubt whether a category covers a passage, remove it and mark it.
+- Its tools remove a passage and leave a mark; none changes a word. What is always shown with a page (the verdict among it) cannot be removed, and where that could not be shown under the policy the Redactor says the page cannot be shown.
+- The page is shown word for word, so its wording itself goes out, and text its author read could have told it to carry in the wording more than the page says. The Redactor is the reader placed to notice wording that looks arranged that way, and may not see it. Where a part looks that way, it leaves the part as it is and names it in what it was least sure of, which Audit and the people who release the part read first. It removes nothing without a category and does not reword.
+- Whether the page is right is its author's judgment, and which parts are released is decided afterwards by the people who hold the permission to release each party's material.
+
 ### Raising issues
 
 The issue tools (`raise_issue`, `update_issue`, `search_issues`, `get_issue`; #366) carry their own guidance in their descriptions: when to raise (a system failure, a gap in the agent's own tools, a concrete improvement), what a useful report contains (a title written as a claim, what was attempted and what happened, ids rather than content), how to join a known report, how to correct one (re-rate, add what was found, withdraw a mistake), and the rule that decides whether the channel is honest: raising is never a substitute for acting. Report and proceed, or report and escalate. There is no per-run cap on reports; repeats are folded together.

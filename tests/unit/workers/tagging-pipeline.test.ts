@@ -24,6 +24,11 @@ const { state } = vi.hoisted(() => ({
     throwWith: null as null | Error,
     applied: [] as Array<Record<string, unknown>>,
     existing: [] as Array<Record<string, unknown>>,
+    // The lane's wait, as its platform_flags row holds it (tagging-lane.ts).
+    flag: null as null | Record<string, unknown>,
+    flagWrites: 0,
+    // The process-wide breaker, spent or not.
+    breaker: null as null | Error,
   },
 }));
 
@@ -34,7 +39,21 @@ vi.mock("../../../src/db/client.js", () => ({
       const next = state.queue.shift();
       return next ? [next] : [];
     }
+    if (q.includes("platform_flags")) {
+      if (q.startsWith("SELECT")) return state.flag ? [{ value: state.flag }] : [];
+      if (q.startsWith("INSERT")) {
+        state.flag = JSON.parse(String(params[1]));
+        state.flagWrites++;
+      }
+      if (q.startsWith("DELETE")) state.flag = null;
+    }
     return [];
+  }),
+}));
+
+vi.mock("../../../src/llm/budget-tracker.js", () => ({
+  checkBudget: vi.fn(() => {
+    if (state.breaker) throw state.breaker;
   }),
 }));
 
@@ -82,6 +101,7 @@ import {
 import { MissingLabelError } from "../../../src/labels.js";
 import { tagClaim } from "../../../src/llm/agents/tagger.js";
 import { LlmBudgetExceededError } from "../../../src/llm/errors.js";
+import { breakerResetsAt, currentTaggingLaneWait } from "../../../src/services/tagging-lane.js";
 
 const row = (over: Partial<(typeof state.queue)[number]> = {}) => ({
   id: CLAIM,
@@ -102,6 +122,10 @@ beforeEach(() => {
   state.existing = [];
   state.taggedAt = [];
   state.appliedAt = [];
+  state.flag = null;
+  state.flagWrites = 0;
+  state.breaker = null;
+  vi.useRealTimers();
   vi.clearAllMocks();
 });
 
@@ -235,6 +259,161 @@ describe("taggingTick", () => {
     expect(tick).toMatchObject({ processed: 2, attached: 2, failed: 0, drained: false });
     const rest = await taggingTick({ batch: 5 });
     expect(rest).toMatchObject({ processed: 1, drained: true });
+  });
+});
+
+describe("the lane's wait on the spend breaker", () => {
+  // 2026-11-13: the tagger's calls are unattributed, so the process-wide
+  // breaker is theirs to meet. Met inside a run it was an agent error on
+  // the run log every 30 seconds.
+  it("a spent breaker ends the tick before a claim is leased or a run opened, and the lane says what it waits on", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-13T14:20:00Z") });
+    state.queue.push(row());
+    state.breaker = new LlmBudgetExceededError("hourly_call_count", 167, 167);
+    const tick = await taggingTick();
+    expect(tick).toMatchObject({ processed: 0, failed: 0, budget: true, drained: false });
+    expect(state.queue).toHaveLength(1);
+    expect(tagClaim).not.toHaveBeenCalled();
+    // Until the breaker's hour rolls over.
+    expect(tick.waiting).toMatchObject({ reason: "spend_breaker", since: "2026-11-13T14:20:00.000Z", next_attempt_at: "2026-11-13T15:00:00.000Z", attempts: 0 });
+    expect(tick.waiting!.reason_label).toContain("spend breaker");
+    expect(state.flag).toMatchObject({ reason: "spend_breaker", next_attempt_at: "2026-11-13T15:00:00.000Z" });
+
+    // The ticks that follow in the same window say the same and write nothing.
+    vi.setSystemTime(new Date("2026-11-13T14:20:30Z"));
+    expect((await taggingTick()).waiting).toMatchObject({ reason: "spend_breaker", since: "2026-11-13T14:20:00.000Z" });
+    expect(state.flagWrites).toBe(1);
+    expect(tagClaim).not.toHaveBeenCalled();
+  });
+
+  it("a daily limit waits until the next UTC day", () => {
+    const at = Date.parse("2026-11-13T14:20:00Z");
+    expect(new Date(breakerResetsAt("daily_token_count", at)).toISOString()).toBe("2026-11-14T00:00:00.000Z");
+    expect(new Date(breakerResetsAt("hourly_token_count", at)).toISOString()).toBe("2026-11-13T15:00:00.000Z");
+  });
+
+  it("the wait is over when the lane tags a claim again", async () => {
+    state.flag = { reason: "spend_breaker", since: "2026-11-13T14:20:00.000Z", next_attempt_at: "2026-11-13T15:00:00.000Z", attempts: 0 };
+    state.queue.push(row());
+    const tick = await taggingTick();
+    expect(tick).toMatchObject({ processed: 1, budget: false });
+    expect(tick.waiting).toBeUndefined();
+    expect(state.flag).toBeNull();
+  });
+
+  it("a breaker that trips inside a run stops the tick and records the same wait", async () => {
+    state.queue.push(row(), row({ id: "second" }));
+    state.throwWith = new LlmBudgetExceededError("daily_call_count", 1667, 1667);
+    const tick = await taggingTick();
+    expect(tick).toMatchObject({ processed: 0, budget: true });
+    expect(tick.waiting).toMatchObject({ reason: "spend_breaker" });
+    expect(state.queue).toHaveLength(1);
+  });
+});
+
+describe("the lane's wait on a platform fault", () => {
+  const overloaded = () => Object.assign(new Error("overloaded"), { status: 529 });
+
+  it("a transient failure ends the tick, counts nothing, and holds the lane 30 seconds", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-13T14:20:00Z") });
+    state.queue.push(row(), row({ id: "second" }), row({ id: "third" }));
+    state.throwWith = overloaded();
+    const tick = await taggingTick();
+    // It used to read as one processed and one failed, and go on to the next claim.
+    expect(tick).toMatchObject({ processed: 0, failed: 0, budget: false, drained: false });
+    expect(state.queue).toHaveLength(2);
+    expect(tagClaim).toHaveBeenCalledTimes(1);
+    expect(tick.waiting).toMatchObject({
+      reason: "provider_unavailable",
+      since: "2026-11-13T14:20:00.000Z",
+      next_attempt_at: "2026-11-13T14:20:30.000Z",
+      attempts: 1,
+    });
+    // The claim is back in the queue, uncounted.
+    const release = state.queries.find((c) => c.q.includes("SET tagging_leased_at = NULL"));
+    expect(release?.q).not.toContain("tagging_attempts");
+  });
+
+  it("no tick leases while the lane waits; one claim is tried when the wait ends, and a second failure doubles it", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-13T14:20:00Z") });
+    state.queue.push(row(), row({ id: "second" }));
+    state.throwWith = overloaded();
+    await taggingTick();
+    expect(state.queue).toHaveLength(1);
+
+    // The scheduler's next tick, and any other task's: still waiting.
+    vi.setSystemTime(new Date("2026-11-13T14:20:29Z"));
+    const held = await taggingTick();
+    expect(held).toMatchObject({ processed: 0, failed: 0, budget: false, drained: false });
+    expect(held.waiting).toMatchObject({ reason: "provider_unavailable", attempts: 1 });
+    expect(state.queue).toHaveLength(1);
+    expect(tagClaim).toHaveBeenCalledTimes(1);
+
+    // Due: one claim is tried, and the provider is still down.
+    vi.setSystemTime(new Date("2026-11-13T14:20:31Z"));
+    const again = await taggingTick();
+    expect(tagClaim).toHaveBeenCalledTimes(2);
+    expect(again.waiting).toMatchObject({
+      reason: "provider_unavailable",
+      since: "2026-11-13T14:20:00.000Z",
+      next_attempt_at: "2026-11-13T14:21:31.000Z",
+      attempts: 2,
+    });
+  });
+
+  it("doubles to ten minutes and no further", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-13T14:20:00Z") });
+    state.flag = { reason: "provider_unavailable", since: "2026-11-13T13:00:00.000Z", next_attempt_at: "2026-11-13T14:19:00.000Z", attempts: 9 };
+    state.queue.push(row());
+    state.throwWith = overloaded();
+    const tick = await taggingTick();
+    expect(tick.waiting).toMatchObject({ attempts: 10, since: "2026-11-13T13:00:00.000Z", next_attempt_at: "2026-11-13T14:30:00.000Z" });
+  });
+
+  it("names the class: an account out of credits is a deployment fault", async () => {
+    state.queue.push(row());
+    state.throwWith = Object.assign(new Error("402 This request's maximum cost exceeds your available credits."), { status: 402 });
+    const tick = await taggingTick();
+    expect(tick.waiting).toMatchObject({ reason: "credits_fault" });
+    expect(tick.waiting!.reason_label).toContain("out of credits");
+    // The provider's own words are not in what the lane publishes.
+    expect(JSON.stringify(state.flag)).not.toContain("402");
+  });
+
+  it("ends when a claim is tagged, and the rest of the batch runs", async () => {
+    state.flag = { reason: "provider_unavailable", since: "2026-11-13T13:00:00.000Z", next_attempt_at: "2026-11-13T13:10:00.000Z", attempts: 4 };
+    state.queue.push(row(), row({ id: "second" }));
+    const tick = await taggingTick();
+    expect(tick).toMatchObject({ processed: 2, failed: 0 });
+    expect(tick.waiting).toBeUndefined();
+    expect(state.flag).toBeNull();
+  });
+
+  it("ends when nothing is left to tag", async () => {
+    state.flag = { reason: "provider_unavailable", since: "2026-11-13T13:00:00.000Z", next_attempt_at: "2026-11-13T13:10:00.000Z", attempts: 4 };
+    const tick = await taggingTick();
+    expect(tick).toMatchObject({ processed: 0, drained: true });
+    expect(state.flag).toBeNull();
+  });
+
+  it("a genuine failure is the claim's own: it is counted and the lane goes on", async () => {
+    state.queue.push(row(), row({ id: "second" }));
+    state.throwWith = new Error("schema violation");
+    const tick = await taggingTick();
+    expect(tick).toMatchObject({ processed: 2, failed: 2 });
+    expect(tick.waiting).toBeUndefined();
+    expect(state.flag).toBeNull();
+  });
+
+  it("is shown only while the next attempt is ahead", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-13T14:20:00Z") });
+    state.flag = { reason: "credits_fault", since: "2026-11-13T14:00:00.000Z", next_attempt_at: "2026-11-13T14:25:00.000Z", attempts: 5 };
+    expect(await currentTaggingLaneWait()).toMatchObject({ reason: "credits_fault", attempts: 5, next_attempt_at: "2026-11-13T14:25:00.000Z" });
+    vi.setSystemTime(new Date("2026-11-13T14:25:00Z"));
+    expect(await currentTaggingLaneWait()).toBeNull();
+    // A row this module did not write is no wait.
+    state.flag = { reason: "something_else", since: "x", next_attempt_at: "2099-01-01T00:00:00.000Z" };
+    expect(await currentTaggingLaneWait()).toBeNull();
   });
 });
 

@@ -7,7 +7,7 @@ description: >-
   where it matters.
 metadata:
   minerval:
-    version: 10
+    version: 11
     since_epoch: 2026-09-domain-skills
     kind: method
     changelog:
@@ -19,6 +19,7 @@ metadata:
       7: "a source that reports a result from evidence it holds and has not published is read as evidence not shown (support evidence_not_shown), apart from one that asserts without evidence"
       8: "a source's interest, a stake its author or publisher has in what it says, is recorded with record_source_interest as a fact about the source, and is shown on each instance's source in provenance_get_map"
       10: "an examination is commissioned with commission (kind research), and its report returns into the Steward's session; delegate_research is retired for Stewards"
+      11: "a recorded passage may leave text out, marked [...]: each piece is checked on its own, in the source's order (quote check elided_match), and the reader is shown what each cut left out"
       9: A reading and an edge say what kind of document the source is (source_kind, to_source_kind), from one list; the kind recorded on a source decides whether it reads as an origin or as untraced, and an agent that read the document corrects a kind recorded by one that only cited it.
 ---
 
@@ -292,7 +293,10 @@ against the stored text of the source, and a passage the check cannot find
 casts doubt on the instance. Record the passage exactly as it appears:
 the source's own words, its punctuation, its spelling, no paraphrase, no
 silent trimming inside a sentence. Where a claim is asserted across two
-sentences, record both rather than a splice.
+sentences, record both. Where text between them does not bear on the claim,
+you may leave it out, marked `[...]`: each piece is then checked on its
+own, in the source's order, the reader is shown what the cut left out, and
+a cut that changes what the passage says misrepresents the source.
 
 ## For the researcher
 

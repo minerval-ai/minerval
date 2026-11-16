@@ -24,7 +24,7 @@
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
 import { runAtLabel, runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
-import { STEWARD_SUCCESS_CLEAR_SET, stewardReleaseSet, withStewardLease } from "../services/steward-lease.js";
+import { STEWARD_SUCCESS_CLEAR_SET, stewardReleaseSet, stewardSlot, withStewardLease } from "../services/steward-lease.js";
 import { loadConfig } from "../config.js";
 import { LlmBudgetExceededError, isTransientApiError } from "../llm/errors.js";
 import {
@@ -78,11 +78,12 @@ async function requeueOrder(orderId: string): Promise<void> {
  * pending slot (#182), same as the background drain's success path.
  */
 async function releaseClaim(claimId: string, state: string): Promise<void> {
+  const slot = await stewardSlot(claimId);
   await rawQuery(
-    `UPDATE claims
+    `UPDATE ${slot.rel}
         SET ${stewardReleaseSet("$2")},
             updated_at = now()
-      WHERE id = $1`,
+      WHERE ${slot.is("$1")}`,
     [claimId, state]
   );
 }
@@ -136,19 +137,34 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
   // (A slot stuck 'running' >15m is a crashed worker, reclaimable like the
   // background drain does.) The prior state rides along so paths that never
   // run the Steward can put the slot back exactly as found.
+  // The slot is the node's own row for an order at the node's label, and
+  // this label's row in steward_slots for an order at another label that
+  // reads the node (steward-lease.ts): an internal assessment of a public
+  // claim neither waits on a public pass nor holds one up.
+  const slot = await stewardSlot(order.claim_id, { ensure: true });
   const claimed = await rawQuery<{
     id: string;
     prior_state: string;
     decomposition_status: string;
   }>(
-    `UPDATE claims c
+    slot.own
+      ? `UPDATE claims c
         SET steward_state = 'running', stewarded_at = now(),
             steward_requeued = false
        FROM (SELECT id, steward_state AS prior_state FROM claims WHERE id = $1) prior
       WHERE c.id = prior.id AND c.state = 'active'
         AND (c.steward_state <> 'running'
              OR c.stewarded_at < now() - interval '15 minutes')
-      RETURNING c.id, prior.prior_state, c.decomposition_status`,
+      RETURNING c.id, prior.prior_state, c.decomposition_status`
+      : `UPDATE steward_slots c
+        SET steward_state = 'running', stewarded_at = now(),
+            steward_requeued = false
+       FROM (SELECT claim_id, steward_state AS prior_state FROM steward_slots WHERE ${slot.is("$1")}) prior
+      WHERE ${slot.is("prior.claim_id", "c")} AND ${slot.active("c")}
+        AND (c.steward_state <> 'running'
+             OR c.stewarded_at < now() - interval '15 minutes')
+      RETURNING c.claim_id AS id, prior.prior_state,
+                (SELECT node.decomposition_status FROM claims node WHERE node.id = c.claim_id) AS decomposition_status`,
     [order.claim_id]
   );
   if (claimed.length === 0) {
@@ -204,7 +220,9 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
   // A claim that was never stewarded needs its first full pass, not a
   // re-assessment — the order may arrive before the background lane ever
   // touched it (that's the point).
-  const virgin = claimed[0]!.decomposition_status === "pending";
+  // A first pass structures the node, which is its own label's Steward's to
+  // do: an order at another label is always a pass on the node as it stands.
+  const virgin = slot.own && claimed[0]!.decomposition_status === "pending";
   const trigger = virgin ? "structure_and_assess" : "user_order";
   const context = virgin
     ? "A user ordered an assessment of this claim (paid). This is its first " +
@@ -214,7 +232,7 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
 
   try {
     const { billedMicroUsd } = await withStewardLease(
-      { claimId: order.claim_id },
+      { claimId: order.claim_id, slot },
       () =>
         runWithUsageContext({ userId: order.user_id, jobId: order.id }, () =>
           // The pass works to the paid-assessment budget, not the buyer's
@@ -250,7 +268,7 @@ async function dispatchOrder(order: OrderRow, model: string): Promise<OrderProce
 
     await releaseClaim(order.claim_id, "done");
     await rawQuery(
-      `UPDATE claims SET ${STEWARD_SUCCESS_CLEAR_SET} WHERE id = $1`,
+      `UPDATE ${slot.rel} SET ${STEWARD_SUCCESS_CLEAR_SET} WHERE ${slot.is("$1")}`,
       [order.claim_id]
     );
     await rawQuery(

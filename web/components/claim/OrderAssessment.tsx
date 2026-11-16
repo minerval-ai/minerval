@@ -130,9 +130,7 @@ export function OrderAssessment({
   if (order?.status === "running") {
     return (
       <p className="order-line" role="status">
-        Assessment in progress: the Steward is examining evidence now. Up to
-        2 owls are held while it works; whatever the run doesn&rsquo;t use comes
-        back when it finishes. This page will update when the verdict lands.
+        Assessment in progress. This page updates when the verdict lands.
       </p>
     );
   }
@@ -151,7 +149,18 @@ export function OrderAssessment({
   return (
     <div className="order-line">
       {variant === "unassessed" ? (
-        <button className="order-button" onClick={place} disabled={busy}>
+        <button
+          className="order-button"
+          onClick={place}
+          disabled={busy}
+          // What the order does and costs, on the button rather than
+          // under it: the button already says "up to 2 owls".
+          title={
+            "Nothing has funded an assessment of this claim yet, and anyone can. " +
+            "A Steward examines the evidence and records a verdict, usually within minutes. " +
+            "The owls are held only when the run starts, and the unused part comes back."
+          }
+        >
           {busy ? (
             "placing order…"
           ) : (
@@ -165,13 +174,6 @@ export function OrderAssessment({
         <button className="linklike" onClick={place} disabled={busy}>
           {busy ? "placing order…" : "order a fresh assessment (up to 2 owls)"}
         </button>
-      )}
-      {variant === "unassessed" && (
-        <span className="order-caption">
-          A Steward agent examines the evidence and records a verdict,
-          usually within minutes. The owls are held only when the run starts,
-          and the unused part is returned when it finishes.
-        </span>
       )}
       {error && <p className="form-error">{error}</p>}
     </div>

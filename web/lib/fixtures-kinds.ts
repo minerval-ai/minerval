@@ -614,6 +614,47 @@ REQUESTS.push(
   },
 );
 
+// One that asks for several things at once, numbered, as many filed
+// requests do, and put to whoever holds the records.
+REQUESTS.push({
+  id: "req-flu-registers",
+  ask: "Recover the 1918–1919 death registers of the Indian provinces outside British administration. Still wanted: (1) monthly registered deaths by district for 1917 to 1920, from the princely states' published administration reports; (2) the registration completeness each report states or implies; and (3) any parish, mission or hospital series that overlaps a district, as a check on completeness. Record where each series is held and whether it has been digitised.",
+  why: "India's toll is the largest single input to the global estimate, and the provinces outside British administration are estimated by assuming British India's rates. Registers near those rates would narrow the estimate; registers well above or below them would move its centre by several million.",
+  satisfied_by: "District-level monthly series for states holding at least a third of the population outside British India, each with its source and a stated completeness.",
+  who_could: "Archivists at the national and state archives, or historians with access to the administration reports. Locating the published reports is within the graph's Researcher's reach; reading the unpublished registers is not.",
+  addressed_to: "The National Archives of India and the state archives",
+  bears_on: [QTY_REF],
+  filed_by: { kind: "admin", label: "Claim Steward" },
+  keeper: { kind: "steward", label: "the quantity's Steward" },
+  state: "addressed",
+  filed_at: "2026-11-02T08:40:00Z",
+  ledger: { action_id: "act-flu-registers", variant: "scope", status: "open", cost_usd: 0.4, backing_usd: 0 },
+});
+
+// The importance of what each bears on and the topics of its nodes, as the
+// API serves them with each request.
+const PANDEMIC = { slug: "1918-influenza-pandemic", name: "1918 influenza pandemic" };
+const DEMOGRAPHY = { slug: "historical-demography", name: "Historical demography" };
+const WORK = { slug: "work-and-employment", name: "Work and employment" };
+const EXTRAS: Record<string, Pick<RequestItem, "importance" | "tags"> & Partial<RequestItem>> = {
+  "req-flu-unregistered": {
+    importance: 0.72,
+    tags: [PANDEMIC, DEMOGRAPHY],
+    ledger: { action_id: "act-flu-unregistered", variant: "full", status: "open", cost_usd: 12, backing_usd: 0 },
+    budget_usd: 12,
+  },
+  "req-flu-trace-50m": { importance: 0.72, tags: [PANDEMIC] },
+  "req-flu-tissue": { importance: 0.61, tags: [PANDEMIC] },
+  "req-flu-compilation": { importance: null, tags: [] },
+  "req-flu-registers": { importance: 0.72, tags: [PANDEMIC, DEMOGRAPHY] },
+  "req-rs-review": { importance: null, tags: [] },
+  "req-tt-review": { importance: null, tags: [WORK] },
+};
+for (const r of REQUESTS) {
+  Object.assign(r, EXTRAS[r.id] ?? {});
+  r.bears_on = r.bears_on.map((b) => ({ ...b, importance: b.id === FLU_ORIGIN_ID ? 0.61 : b.kind === "question" ? 0.4 : 0.72 }));
+}
+
 export function getRequest(id: string): RequestItem | null {
   return REQUESTS.find((r) => r.id === id) ?? null;
 }

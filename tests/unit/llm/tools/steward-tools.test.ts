@@ -340,6 +340,51 @@ describe("steward record_claim_instance", () => {
     expect(vi.mocked(recordSourceKind)).not.toHaveBeenCalled();
   });
 
+  it("refuses a quotation with cuts whose pieces are not in the stored text, and records one whose are", async () => {
+    const stored =
+      "<p>Colette Kress will become interim CEO, the board said in a statement.</p>" +
+      "<p>The board thanked Huang for his service.</p>" +
+      "<p>A company spokesperson clarified that Huang will not be working with Nvidia.</p>";
+    vi.mocked(rawQuery).mockImplementation((async (sql: string) =>
+      /SELECT raw_content FROM sources/.test(sql)
+        ? [{ raw_content: stored }]
+        : /FROM claims WHERE id/.test(sql)
+          ? [{ id: CLAIM, kind: "claim" }]
+          : []) as never);
+    try {
+      const record = async (verbatim_text: string) =>
+        JSON.parse(
+          await executeStewardTool("record_claim_instance", {
+            claim_id: CLAIM,
+            url: "https://example.org/story",
+            verbatim_text,
+            stance: "affirms",
+          })
+        );
+      // Out of order: the second piece comes before the first in the story.
+      const swapped = await record(
+        "A company spokesperson clarified that Huang will not be working with Nvidia. [...] the board said in a statement."
+      );
+      expect(swapped.success).toBe(false);
+      expect(swapped.message).toMatch(/piece "the board said in a statement\." is not in the source's stored text/);
+      expect(insertedValues).toHaveLength(0);
+
+      const held = await record(
+        "Colette Kress will become interim CEO, the board said in a statement. [...] A company spokesperson clarified that Huang will not be working with Nvidia."
+      );
+      expect(held.success).toBe(true);
+      expect(insertedValues.find((r) => "verbatimText" in r)).toBeTruthy();
+    } finally {
+      vi.mocked(rawQuery).mockImplementation((async () => []) as never);
+    }
+  });
+
+  it("tells the recorder how a quotation may leave text out", () => {
+    const tool = getStewardToolDefinitions().find((t) => t.name === "record_claim_instance")!;
+    const props = (tool.input_schema as { properties: Record<string, { description?: string }> }).properties;
+    expect(props.verbatim_text!.description).toMatch(/mark each cut "\[\.\.\.\]"/);
+  });
+
   it("records a steward-encountered instance with provenance and metadata (#278)", async () => {
     claimExists();
     const out = await executeStewardTool("record_claim_instance", {
@@ -792,6 +837,49 @@ describe("steward update_claim_assessment", () => {
     );
     expect(reply.success).toBe(false);
     expect(reply.message).toContain("status is missing");
+    expect(insertedValues.find((r) => "reasoningTrace" in r)).toBeUndefined();
+  });
+
+  // The other reading (§10): which way the doubt about the status runs,
+  // shown to readers in place of the verdict confidence figure.
+  it("records the other reading, normalized, and none when it is left out", async () => {
+    await executeStewardTool("update_claim_assessment", {
+      claim_id: "22222222-2222-2222-2222-222222222222",
+      status: "inconclusive",
+      alternative_status: "Doubtful",
+      confidence: 0.6,
+      assessment: "x",
+      reasoning_trace: "y",
+    });
+    expect(insertedValues.find((r) => "reasoningTrace" in r)?.alternativeStatus).toBe("doubtful");
+
+    insertedValues.length = 0;
+    await executeStewardTool("update_claim_assessment", {
+      claim_id: "22222222-2222-2222-2222-222222222222",
+      status: "verified",
+      confidence: 0.95,
+      assessment: "x",
+      reasoning_trace: "y",
+    });
+    expect(insertedValues.find((r) => "reasoningTrace" in r)?.alternativeStatus).toBeNull();
+  });
+
+  it.each([
+    ["probably", "is not one of"],
+    ["inconclusive", "is the status itself"],
+  ])("bounces the other reading %s and writes nothing", async (alternative, why) => {
+    const reply = JSON.parse(
+      await executeStewardTool("update_claim_assessment", {
+        claim_id: "22222222-2222-2222-2222-222222222222",
+        status: "inconclusive",
+        alternative_status: alternative,
+        confidence: 0.6,
+        assessment: "x",
+        reasoning_trace: "y",
+      })
+    );
+    expect(reply.success).toBe(false);
+    expect(reply.message).toContain(why);
     expect(insertedValues.find((r) => "reasoningTrace" in r)).toBeUndefined();
   });
 

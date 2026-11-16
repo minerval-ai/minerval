@@ -12,19 +12,19 @@ const NOT_SHOWN = { examined: true, on: ["public_evidence", "evidence_not_shown"
 describe("notExaminedLine", () => {
   it("says there is no verdict and that this is not a finding, in each kind's words", () => {
     expect(notExaminedLine("claim")).toBe(
-      "Not yet assessed, so this page carries no verdict. That is not a finding for or against the claim."
+      "Not yet assessed. That is not a finding for or against the claim."
     );
     expect(notExaminedLine("quantity")).toBe(
-      "Not yet estimated, so this page carries no estimate from the graph. That is not a finding about the value."
+      "Not yet estimated. That is not a finding about the value."
     );
     expect(notExaminedLine("question")).toBe(
-      "Not yet assessed, so this page carries no answer from the graph. That is not a finding about the answer."
+      "Not yet assessed. That is not a finding about the answer."
     );
   });
 
   it("drops the lead where the page has just said it", () => {
     expect(notExaminedLine("quantity", { afterLead: true })).toBe(
-      "This page carries no estimate from the graph. That is not a finding about the value."
+      "That is not a finding about the value."
     );
   });
 

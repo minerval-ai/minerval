@@ -68,6 +68,7 @@ describe("POLICY_BOUNDS (mathematics keys, §10.5)", () => {
         ...MATH_KEYS,
         ...MAINTENANCE_KEYS,
         ...REQUEST_KEYS,
+        ...INGEST_KEYS,
       ].sort()
     );
   });
@@ -77,6 +78,8 @@ describe("POLICY_BOUNDS (mathematics keys, §10.5)", () => {
 // request's own budget; a request with none gets a scoping pass, and this
 // is that pass's cost prior.
 const REQUEST_KEYS = ["est_request_scope_cost_owls"];
+// An ingest row's cost prior, until the ledger holds enough finished ingests.
+const INGEST_KEYS = ["est_ingest_cost_owls"];
 
 describe("POLICY_BOUNDS (request keys, Part VIII)", () => {
   it("bounds the scoping pass's cost prior", () => {

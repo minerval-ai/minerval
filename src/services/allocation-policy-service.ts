@@ -39,7 +39,9 @@
  * policy cannot put a figure outside its range.
  */
 import { rawQuery } from "../db/client.js";
+import { readerKey } from "../db/clearance.js";
 import { loadConfig } from "../config.js";
+import { currentLabel } from "../llm/usage-context.js";
 
 export interface AllocationPolicy {
   /** Cost priors per Steward pass, in owls, until live averages exist. */
@@ -101,6 +103,9 @@ export interface AllocationPolicy {
   /** Cost prior for one scoping pass on a request with no budget, in owls,
    *  until the ledger holds enough completed scoping passes for the p80. */
   est_request_scope_cost_owls: number;
+  /** Cost prior for one ingest (the extraction and its Matcher runs), in
+   *  owls, until the ledger holds enough finished ingests for the p80. */
+  est_ingest_cost_owls: number;
 }
 
 /** The range each key is held to: a stored value outside it is clamped on
@@ -125,6 +130,7 @@ export const POLICY_BOUNDS: Record<
   reconcile_candidates_max_per_sweep: { min: 0, max: 200 },
   reconcile_candidate_min_similarity: { min: 0.5, max: 1 },
   est_request_scope_cost_owls: { min: 0.01, max: 20 },
+  est_ingest_cost_owls: { min: 0.01, max: 20 },
 };
 
 export interface GeneralMandate {
@@ -141,21 +147,43 @@ interface Cache<T> {
 }
 
 const CACHE_TTL_MS = 60_000;
-let mandateCache: Cache<GeneralMandate | null> | null = null;
+// One entry for each kind of reader (readerKey): the mandate is a labelled
+// row, and "there is none" is an answer too, which must not be handed from
+// a reader who cannot see the mandate to one who can, or the other way.
+const mandateCache = new Map<string, Cache<GeneralMandate | null>>();
 
 /** Test hook. */
 export function resetAllocationPolicyCache(): void {
-  mandateCache = null;
+  mandateCache.clear();
 }
 
+/** For a caller that asks whether the deployment has a General mandate at all, at whatever label. */
+export const AT_ANY_LABEL = Symbol("a General mandate at any label");
+
 /**
- * The platform's General mandate, if seeded (dev and tests run
- * without one and fall back to config alone). Cached for a minute — policy
- * changes land on the next drain pass, not the same tick.
+ * The General mandate at a label, if one is set up there (dev and tests
+ * run without one and fall back to config alone). Cached for a minute, so a
+ * policy change lands on the next drain pass, not the same tick.
+ *
+ * A mandate's work runs at its label, and its officers work only what is
+ * raised at it, so the upkeep of a label is its own General mandate's and
+ * no other's: `label` is the label of the work that wants paying for (the
+ * ledger row's, where there is one), and by default the label this work
+ * runs at. A label with no General mandate has none, even where a label it
+ * reads has one. Upkeep there waits, and the checklist says so
+ * (preflight-deployment.ts, standing_mandates). Where `public` is the only
+ * label this is the one General mandate, as it always was.
+ *
+ * AT_ANY_LABEL is for the two callers that ask whether the deployment has
+ * one at all (the fallback lane, which is for a deployment that has none):
+ * the oldest this work reads.
  */
-export async function getGeneralMandate(): Promise<GeneralMandate | null> {
-  if (mandateCache && mandateCache.expiresAt > Date.now()) {
-    return mandateCache.value;
+export async function getGeneralMandate(label: string | typeof AT_ANY_LABEL = currentLabel()): Promise<GeneralMandate | null> {
+  const at = label === AT_ANY_LABEL ? null : label;
+  const reader = `${readerKey()}|${at ?? "*"}`;
+  const kept = mandateCache.get(reader);
+  if (kept && kept.expiresAt > Date.now()) {
+    return kept.value;
   }
   let value: GeneralMandate | null = null;
   try {
@@ -171,8 +199,10 @@ export async function getGeneralMandate(): Promise<GeneralMandate | null> {
          FROM grants g JOIN budget_jobs j ON j.id = g.budget_job_id
         WHERE g.is_platform = true AND g.policy = 'general'
           AND g.status = 'active'
+          AND ($1::text IS NULL OR g.sensitivity_label = $1)
         ORDER BY g.created_at ASC
-        LIMIT 1`
+        LIMIT 1`,
+      [at]
     );
     if (row) {
       value = {
@@ -187,7 +217,7 @@ export async function getGeneralMandate(): Promise<GeneralMandate | null> {
     // Pre-migration databases (tests, fresh dev) have no mandate; config
     // defaults govern.
   }
-  mandateCache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
+  mandateCache.set(reader, { value, expiresAt: Date.now() + CACHE_TTL_MS });
   return value;
 }
 
@@ -229,6 +259,9 @@ function defaultsFromConfig(): AllocationPolicy {
     reconcile_candidate_min_similarity: 0.92,
     // Requests (Part VIII). The design's prior for a scoping pass.
     est_request_scope_cost_owls: 2,
+    // Ingests: what one extraction and its Matcher runs have cost (about
+    // half an owl to a few owls for a news article or paper, in Nov 2026).
+    est_ingest_cost_owls: 1,
   };
 }
 

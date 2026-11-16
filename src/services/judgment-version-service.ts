@@ -1,0 +1,534 @@
+/**
+ * A judgment at each label (src/labels.ts, db/schema.ts "The judgment in
+ * force, and a version at each label").
+ *
+ * A node may carry one current judgment at each label: a version. A run
+ * writes its own label's version and no other, and a version is replaced
+ * only by work at its own label. The database holds both (the unique
+ * index, minerval_judgment_label_guard). Whether a label records a version
+ * of its own on a node at a label it reads, or leaves the one it reads
+ * standing, is its Steward's judgment and nothing tests it
+ * (left-standing-service.ts). This module is the application's side: what
+ * a write seam asks before it writes, what it tells the agent when the
+ * answer is no, and the reads that show a node's versions side by side.
+ *
+ * On the public graph there is one label and one version. Every function
+ * here that would ask the database something about labels returns at once
+ * where this process knows that (enforcementLastKnown), so nothing the
+ * public graph does or serves changes.
+ */
+import { enforcementLastKnown } from "../db/clearance.js";
+import { rawQuery } from "../db/client.js";
+import { PUBLIC_LABEL } from "../labels.js";
+import { currentLabel } from "../llm/usage-context.js";
+import type { LeftStanding } from "./left-standing-service.js";
+
+/** The four tables that hold judgments, by the name the database's rule knows them by. */
+export type JudgmentTable = "assessments" | "quantity_estimates" | "question_assessments" | "argument_evaluations";
+
+/**
+ * Whether this process has no reason to think the deployment has a second
+ * label: it has asked and the answer was no, or it has not yet run a query
+ * at all. Nothing is asked here, so that the public graph pays nothing for
+ * the question and its statements stay word for word what they were.
+ *
+ * A process learns the answer with its first query (db/client.ts asks
+ * before it runs one) and the API asks at start, so "not yet asked" is the
+ * moment before a process has touched the database. A caller that took the
+ * one-label path in that moment on a deployment with more labels has done
+ * nothing the database does not catch: a write to a row at another label
+ * is refused there.
+ */
+export function oneLabelOnly(): boolean {
+  return enforcementLastKnown() !== true;
+}
+
+/**
+ * The node carries another label than the work in progress, so it is not
+ * this work's to change: null where it is the work's own (always, where
+ * `public` is the only label), else the two labels.
+ */
+export async function anotherLabelsNode(nodeId: string): Promise<{ label: string; nodeLabel: string } | null> {
+  if (oneLabelOnly()) return null;
+  const label = currentLabel();
+  const [row] = await rawQuery<{ node_label: string }>(
+    `SELECT sensitivity_label AS node_label FROM claims WHERE id = $1`,
+    [nodeId]
+  );
+  return !row || row.node_label === label ? null : { label, nodeLabel: row.node_label };
+}
+
+/** What an agent is told when it tries to change a node that carries another label. `what` names the thing, lower case. */
+export function anotherLabelsNodeMessage(at: { label: string; nodeLabel: string }, what: string): string {
+  return (
+    `Not changed. This node carries the label \`${at.nodeLabel}\` and this run works at \`${at.label}\`. ` +
+    `What this would change (the node's ${what}) is for the Steward that works at the node's own label to ` +
+    `change: this run has read material at \`${at.label}\`, and what it writes reaches readers who are not ` +
+    `cleared for \`${at.label}\` only as a page shown to them, with what was removed marked. What ` +
+    `\`${at.label}\` has to add to the node is recorded at \`${at.label}\`, beside what is there: an ` +
+    `argument, a subclaim, a source, a judgment of its own. If the node should change on grounds its ` +
+    `own label could see, record that as a request (file_request), which the people who direct this graph ` +
+    `can act on.`
+  );
+}
+
+/**
+ * Record the versions a new version was made beside: the current version
+ * of the same node at each other label the writer's label reads. Call it
+ * right after the version is inserted, through the same transaction where
+ * there is one. `nodeColumn` is the judgment table's column for its node.
+ */
+export async function recordMadeBeside(
+  query: <R>(text: string, params?: unknown[]) => Promise<R[]>,
+  table: JudgmentTable,
+  kind: "assessment" | "quantity_estimate" | "question_assessment" | "argument_evaluation",
+  judgmentId: string,
+  nodeId: string
+): Promise<void> {
+  if (oneLabelOnly()) return;
+  const label = currentLabel();
+  const nodeColumn = table === "argument_evaluations" ? "argument_id" : "claim_id";
+  await query(
+    `INSERT INTO judgment_inputs (judgment_kind, judgment_id, input_kind, input_judgment_id, input_label, sensitivity_label)
+     SELECT $1::text, $2::uuid, 'beside', v.id, v.sensitivity_label, $4
+       FROM ${table}_versions v
+      WHERE v.${nodeColumn} = $3 AND v.sensitivity_label <> $4
+        AND v.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$4::text]))`,
+    [kind, judgmentId, nodeId, label]
+  );
+}
+
+/** One version of a node's judgment that a version was made beside, and whether it still stands. */
+export interface MadeBeside {
+  label: string;
+  /** The version it was made beside. */
+  judgment_id: string;
+  /** True when that version has since been replaced or retired: this one was made against an earlier version. */
+  replaced: boolean;
+}
+
+/**
+ * For each of the given current versions (ids in `table`), the versions it
+ * was made beside and whether each still stands, and the labels it reads
+ * that have gained a version since. Read from the record alone; it writes
+ * nothing.
+ */
+export async function madeBesideOf(
+  table: JudgmentTable,
+  kind: "assessment" | "quantity_estimate" | "question_assessment" | "argument_evaluation",
+  judgmentIds: readonly string[]
+): Promise<Map<string, { beside: MadeBeside[]; since_added: string[] }>> {
+  const out = new Map<string, { beside: MadeBeside[]; since_added: string[] }>();
+  if (judgmentIds.length === 0 || oneLabelOnly()) return out;
+  const nodeColumn = table === "argument_evaluations" ? "argument_id" : "claim_id";
+  const rows = await rawQuery<{ judgment_id: string; label: string; beside_id: string | null; replaced: boolean }>(
+    // A version replaced only because its Steward took in a page this
+    // version's label had shown it is not read as a replacement: the page
+    // was in front of this version when it was made (showing-service.ts).
+    `SELECT i.judgment_id, i.input_label AS label, i.input_judgment_id AS beside_id,
+            NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)
+              AND NOT minerval_only_shown_pages_between(
+                    $1, i.input_judgment_id,
+                    (SELECT o.id FROM ${table}_versions o
+                       JOIN ${table}_versions mine ON mine.id = i.judgment_id
+                      WHERE o.${nodeColumn} = mine.${nodeColumn} AND o.sensitivity_label = i.input_label),
+                    i.sensitivity_label) AS replaced
+       FROM judgment_inputs i
+      WHERE i.judgment_kind = $1 AND i.judgment_id = ANY($2::uuid[]) AND i.input_kind = 'beside'
+     UNION ALL
+     SELECT v.id, o.sensitivity_label, NULL, false
+       FROM ${table}_versions v
+       JOIN ${table}_versions o
+         ON o.${nodeColumn} = v.${nodeColumn} AND o.sensitivity_label <> v.sensitivity_label
+        AND o.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[v.sensitivity_label]))
+      WHERE v.id = ANY($2::uuid[])
+        AND NOT EXISTS (SELECT 1 FROM judgment_inputs i
+                         WHERE i.judgment_kind = $1 AND i.judgment_id = v.id AND i.input_kind = 'beside'
+                           AND i.input_label = o.sensitivity_label)`,
+    [kind, [...judgmentIds]]
+  );
+  for (const id of judgmentIds) out.set(id, { beside: [], since_added: [] });
+  for (const r of rows) {
+    const entry = out.get(r.judgment_id) ?? { beside: [], since_added: [] };
+    if (r.beside_id) entry.beside.push({ label: r.label, judgment_id: r.beside_id, replaced: r.replaced });
+    else entry.since_added.push(r.label);
+    out.set(r.judgment_id, entry);
+  }
+  for (const entry of out.values()) {
+    entry.beside.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+    entry.since_added.sort();
+  }
+  return out;
+}
+
+/** Whether a version was made against an earlier version of one it reads, from madeBesideOf's entry. */
+export function madeAgainstEarlier(entry: { beside: MadeBeside[]; since_added: string[] } | undefined): boolean {
+  return !!entry && (entry.beside.some((b) => b.replaced) || entry.since_added.length > 0);
+}
+
+/** Labels in the order a reader is shown them: the given one first, `public` last, the rest by name. */
+export function labelOrder(first?: string): (a: string, b: string) => number {
+  const rank = (l: string) => (l === first ? 0 : l === PUBLIC_LABEL ? 2 : 1);
+  return (a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+// ---------------------------------------------------------------------------
+// What a reader gets: a node's versions, side by side.
+// ---------------------------------------------------------------------------
+
+/** One current version of a node's judgment, as a read of the node serves it. */
+export interface NodeVersion extends Record<string, unknown> {
+  /** The label the version was made at: who may read it. */
+  label: string;
+  /**
+   * Whether it is in force for this reader: no other version the reader may
+   * read was made at a label that reads this one's. A reader who holds two
+   * labels that do not read each other may have two in force.
+   */
+  in_force: boolean;
+  /** The versions it was made beside, at the labels its label reads, and whether each has since been replaced. */
+  made_beside: Array<{ label: string; replaced: boolean }>;
+  /** Labels its label reads that had no version when it was made and have one now. */
+  versions_since: string[];
+  /** True when a version it was made beside has been replaced, or a label it reads has gained one: it was made against an earlier state of what it reads. */
+  made_against_earlier: boolean;
+}
+
+const VERSION_FIELDS: Record<"claim" | "quantity" | "question", { table: JudgmentTable; kind: "assessment" | "quantity_estimate" | "question_assessment"; select: string }> = {
+  claim: {
+    table: "assessments",
+    kind: "assessment",
+    select: `v.status, v.confidence, v.claim_credence, COALESCE(v.summary, v.reasoning_trace) AS summary,
+             v.reasoning_trace, v.model, v.run_id`,
+  },
+  quantity: {
+    table: "quantity_estimates",
+    kind: "quantity_estimate",
+    select: `v.estimate, v.summary, v.work, v.model`,
+  },
+  question: {
+    table: "question_assessments",
+    kind: "question_assessment",
+    select: `v.standing, v.favored_claim_ids AS favored_answer_ids, v.summary, v.reasoning_trace, v.incomplete,
+             v.confidence, v.model, v.run_id`,
+  },
+};
+
+/**
+ * A node's label and the current versions of its judgment that the reader
+ * may read: those in force first (the one a single-judgment read serves
+ * first of all), then the ones beside them. Null on a deployment whose only
+ * label is `public`, where a read is what it always was, and for a node the
+ * reader may not read.
+ */
+export async function nodeVersions(
+  nodeId: string,
+  kind: string
+): Promise<{ label: string; in_force: number; versions: NodeVersion[]; left_standing: LeftStanding[]; not_examined_at: string[] } | null> {
+  if (oneLabelOnly()) return null;
+  const { deploymentHoldsLabels } = await import("../db/client.js");
+  if (!(await deploymentHoldsLabels())) return null;
+  const spec = VERSION_FIELDS[(kind as "claim" | "quantity" | "question")] ?? VERSION_FIELDS.claim;
+  const [node] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM claims WHERE id = $1`,
+    [nodeId]
+  );
+  if (!node) return null;
+  const rows = await rawQuery<Record<string, unknown> & { id: string; label: string; in_force: boolean; assessed_at: Date }>(
+    `SELECT v.id, v.sensitivity_label AS label, v.in_force, v.assessed_at, ${spec.select},
+            minerval_version_gone_by('${spec.table}', v.claim_id, v.sensitivity_label) AS leads
+       FROM ${spec.table}_versions v
+      WHERE v.claim_id = $1
+      ORDER BY leads DESC, v.in_force DESC, v.assessed_at DESC, v.id`,
+    [nodeId]
+  );
+  const beside = await madeBesideOf(spec.table, spec.kind, rows.map((r) => r.id));
+  const own = await perJudgment(nodeId, rows.map((r) => r.label));
+  // Where a label the reader reads examined the node and left the judgment
+  // it reads standing, and where one has not examined it at all. A failure
+  // loses the two fields, never the read: absent is "not said".
+  const { examinedAtLabels } = await import("./left-standing-service.js");
+  const examined = await examinedAtLabels(nodeId, node.sensitivity_label, rows.map((r) => r.label)).catch((err) => {
+    console.error(`[versions] what was left standing on ${nodeId} could not be read: ${err instanceof Error ? err.message : err}`);
+    return { left_standing: [], not_examined_at: [] };
+  });
+  return {
+    label: node.sensitivity_label,
+    ...examined,
+    in_force: rows.filter((r) => r.in_force).length,
+    versions: rows.map(({ leads: _leads, assessed_at, ...r }) => {
+      const record = beside.get(r.id);
+      return {
+        ...r,
+        ...(own.get(r.label) ?? {}),
+        assessed_at: new Date(assessed_at).toISOString(),
+        made_beside: (record?.beside ?? []).map((b) => ({ label: b.label, replaced: b.replaced })),
+        versions_since: record?.since_added ?? [],
+        made_against_earlier: madeAgainstEarlier(record),
+      };
+    }),
+  };
+}
+
+/**
+ * For the judgment of a node at each of the given labels: what it was made
+ * on, said to the reader asking (`coverage`), and what has changed beneath
+ * it since (`since_assessed`). A read of a node serves both beside the one
+ * judgment it names; a reader who may read several is given them for each.
+ *
+ * Each is read as a reader of that label alone would read it, since the
+ * judgment at a label is the one in force for exactly those readers: the
+ * work runs with the clearance narrowed to what the label reads, which is
+ * never more than the asker reads. Coverage is still said to the asker. A
+ * failure loses the two fields, never the read.
+ */
+async function perJudgment(nodeId: string, labels: readonly string[]): Promise<Map<string, Record<string, unknown>>> {
+  const out = new Map<string, Record<string, unknown>>();
+  try {
+    const [{ currentReadClearance }, { coverage, summarizeCoverage }, { sinceAssessed, summarizeJudgmentChanges }, { labelsReadableFrom }, { runWithUsageContext }] =
+      await Promise.all([
+        import("../db/client.js"),
+        import("./coverage-service.js"),
+        import("./judgment-inputs-service.js"),
+        import("./permission-service.js"),
+        import("../llm/usage-context.js"),
+      ]);
+    const asker = (await currentReadClearance()) ?? [PUBLIC_LABEL];
+    const id = nodeId.toLowerCase();
+    for (const label of new Set(labels)) {
+      const reads = await labelsReadableFrom([label]);
+      // Never wider than the asker reads: a label the asker reads brings only labels the asker reads.
+      if (!reads.every((l) => asker.includes(l))) continue;
+      const fields = await runWithUsageContext({ clearance: reads }, async () => {
+        const covered = (await summarizeCoverage([id], { saidTo: { reads: asker, outside: false } })).get(id);
+        const since = sinceAssessed((await summarizeJudgmentChanges([id])).get(id));
+        return { ...(covered ? { coverage: coverage(covered) } : {}), ...(since ? { since_assessed: since } : {}) };
+      });
+      out.set(label, fields);
+    }
+  } catch (err) {
+    console.error(`[versions] coverage and changes for each judgment failed for ${nodeId}: ${err instanceof Error ? err.message : err}`);
+  }
+  return out;
+}
+
+/** A source's label, for a read of the source on a deployment with more than one label; null elsewhere. */
+export async function sourceLabel(sourceId: string): Promise<string | null> {
+  if (oneLabelOnly()) return null;
+  const { deploymentHoldsLabels } = await import("../db/client.js");
+  if (!(await deploymentHoldsLabels())) return null;
+  const [row] = await rawQuery<{ sensitivity_label: string }>(
+    `SELECT sensitivity_label FROM sources WHERE id = $1`,
+    [sourceId]
+  );
+  return row?.sensitivity_label ?? null;
+}
+
+/** What a read's schema says of `versions`, where a deployment serves it. */
+export const VERSIONS_DESCRIPTION =
+  "the current versions of this node's judgment that the reader may read, one for each label that has one. " +
+  "A node can carry a judgment at each label, each made by a run at that label from what that label reads. " +
+  "Each entry has its `label`, the judgment itself, and `in_force`: whether it is in force for this reader, " +
+  "which it is unless another version the reader may read was made at a label that reads its label. The " +
+  "versions in force come first, and the first is the one served as the node's single judgment elsewhere " +
+  "in this read; a reader who holds two labels that do not read each other may have two in force, and " +
+  "nothing is merged. `made_beside` lists the versions it was made beside at the labels its own label " +
+  "reads, with `replaced` true for one that has since been replaced; `versions_since` lists labels it " +
+  "reads that have gained a version since; `made_against_earlier` is true when either has happened. Each entry " +
+  "also carries its own `coverage` and `since_assessed`, which the read gives at its top level only for the one " +
+  "judgment it names";
+
+/** What a read's schema says of a node's or a source's `label`. */
+export const LABEL_DESCRIPTION =
+  "the label this carries: who may read it. `public` is read by every member of the deployment; any other " +
+  "label by the people granted it (GET /labels/mine lists the labels the reader holds and who reads each)";
+
+// ---------------------------------------------------------------------------
+// More than one judgment in force for one reader.
+// ---------------------------------------------------------------------------
+
+/**
+ * For each of the given nodes, how many judgments of it are in force for
+ * the reader or the run asking, where that is more than one. A reader who
+ * holds two labels that do not read each other, each with a judgment of the
+ * node, has two in force, and so has a run at a label that reads both. A
+ * read that gives one judgment for a node gives such a reader the most
+ * recently made of them (the `*_in_force` views), so every such read says
+ * how many there are, and nothing chooses between them.
+ *
+ * Nodes with one judgment in force, or none, are not in the answer. On a
+ * deployment whose only label is `public` nothing is asked and the answer
+ * is empty, so nothing a read serves there changes.
+ */
+export async function judgmentsInForce(nodeIds: readonly (string | null | undefined)[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (oneLabelOnly()) return out;
+  const ids = [...new Set(nodeIds.filter((id): id is string => typeof id === "string" && id.length > 0).map((id) => id.toLowerCase()))];
+  if (ids.length === 0) return out;
+  const rows = await rawQuery<{ node_id: string; n: number }>(
+    `SELECT node_id, count(*)::int AS n FROM (
+       SELECT claim_id AS node_id FROM assessments_versions WHERE claim_id = ANY($1::uuid[]) AND in_force
+       UNION ALL
+       SELECT claim_id FROM quantity_estimates_versions WHERE claim_id = ANY($1::uuid[]) AND in_force
+       UNION ALL
+       SELECT claim_id FROM question_assessments_versions WHERE claim_id = ANY($1::uuid[]) AND in_force
+     ) v GROUP BY node_id HAVING count(*) > 1`,
+    [ids]
+  );
+  for (const r of rows) out.set(r.node_id, r.n);
+  return out;
+}
+
+/** The same for arguments: how many evaluations of each are in force for the asker, where more than one. */
+export async function evaluationsInForce(argumentIds: readonly (string | null | undefined)[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (oneLabelOnly()) return out;
+  const ids = [...new Set(argumentIds.filter((id): id is string => typeof id === "string" && id.length > 0).map((id) => id.toLowerCase()))];
+  if (ids.length === 0) return out;
+  const rows = await rawQuery<{ argument_id: string; n: number }>(
+    `SELECT argument_id, count(*)::int AS n FROM argument_evaluations_versions
+      WHERE argument_id = ANY($1::uuid[]) AND in_force GROUP BY argument_id HAVING count(*) > 1`,
+    [ids]
+  );
+  for (const r of rows) out.set(r.argument_id, r.n);
+  return out;
+}
+
+/** What a read says beside the one judgment it gives, where more than one is in force for the asker. */
+export function severalInForceNote(n: number): string {
+  return (
+    `${n} judgments of this node are in force for you, made at labels that do not read each other. ` +
+    `The one given here is the most recently made of them. None replaces another: get_claim on the node ` +
+    `lists each under versions, with its label.`
+  );
+}
+
+/** The same for an argument's evaluation. */
+export function severalEvaluationsNote(n: number): string {
+  return (
+    `${n} evaluations of this argument are in force for you, made at labels that do not read each other. ` +
+    `The one given here is the most recently made of them, and none replaces another.`
+  );
+}
+
+/**
+ * Add `judgments_in_force`, with one sentence, to each row whose node has
+ * more than one judgment in force for the asker. Rows are changed in place
+ * and returned; a row whose node has one is left exactly as it was. A read
+ * failure leaves every row as it was: absent is "not said".
+ */
+export async function markSeveralInForce<T extends object>(rows: readonly T[], idOf: (row: T) => string | null | undefined): Promise<readonly T[]> {
+  if (oneLabelOnly() || rows.length === 0) return rows;
+  const counts = await judgmentsInForce(rows.map(idOf)).catch(() => new Map<string, number>());
+  if (counts.size === 0) return rows;
+  for (const row of rows) {
+    const n = counts.get((idOf(row) ?? "").toLowerCase());
+    if (n) Object.assign(row, { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) });
+  }
+  return rows;
+}
+
+/** What a read's schema says of `judgments_in_force`. */
+export const JUDGMENTS_IN_FORCE_DESCRIPTION =
+  "present only where more than one judgment of the node is in force for the reader: how many. A reader who " +
+  "holds two labels that do not read each other may have a judgment in force at each, and a read that gives one " +
+  "judgment for a node then gives the most recently made. `judgments_in_force_note` says so in a sentence. " +
+  "Nothing chooses between them; get_claim lists each under `versions`";
+
+/**
+ * The count and its sentence for one node, as fields to spread into a read
+ * of it: empty where one judgment, or none, is in force for the asker, so
+ * the read is then exactly what it was.
+ */
+export async function severalInForceFields(
+  nodeId: string | null | undefined
+): Promise<{ judgments_in_force?: number; judgments_in_force_note?: string }> {
+  if (oneLabelOnly() || !nodeId) return {};
+  const n = (await judgmentsInForce([nodeId]).catch(() => new Map<string, number>())).get(nodeId.toLowerCase());
+  return n ? { judgments_in_force: n, judgments_in_force_note: severalInForceNote(n) } : {};
+}
+
+/** One judgment of a proposition in force for the asker, as an export carries it whole. */
+export interface JudgmentInForce {
+  id: string;
+  /** The label it was made at: who may read it. */
+  label: string;
+  status: string;
+  confidence: number;
+  claim_credence: number | null;
+  summary: string;
+  reasoning_trace: string;
+  model: string | null;
+  assessed_at: string;
+}
+
+/**
+ * Every assessment of a proposition in force for the asker, where that is
+ * more than one: most recently made first, which is the order a read that
+ * names one takes its one from. Empty where one is in force, or none, and
+ * on a deployment whose only label is `public`. A record made to be read
+ * away from the graph (a citation's evidence record, the MIRA export)
+ * carries these whole and not a count, since its reader cannot come back
+ * and ask for the others.
+ */
+export async function assessmentsInForce(nodeId: string): Promise<JudgmentInForce[]> {
+  if (oneLabelOnly()) return [];
+  const rows = await rawQuery<Omit<JudgmentInForce, "assessed_at" | "confidence" | "claim_credence"> & {
+    assessed_at: Date; confidence: number | string; claim_credence: number | string | null;
+  }>(
+    `SELECT v.id, v.sensitivity_label AS label, v.status, v.confidence, v.claim_credence,
+            COALESCE(v.summary, v.reasoning_trace) AS summary, v.reasoning_trace, v.model, v.assessed_at
+       FROM assessments_versions v
+      WHERE v.claim_id = $1 AND v.in_force
+      ORDER BY v.assessed_at DESC, v.id`,
+    [nodeId]
+  );
+  if (rows.length < 2) return [];
+  return rows.map((r) => ({
+    ...r,
+    confidence: Number(r.confidence),
+    claim_credence: r.claim_credence == null ? null : Number(r.claim_credence),
+    assessed_at: new Date(r.assessed_at).toISOString(),
+  }));
+}
+
+/**
+ * What a run is told beside a node's one status, where more than one
+ * judgment of the node is in force for the run. Empty where one is.
+ */
+export async function severalInForceForRun(nodeId: string | null | undefined): Promise<string> {
+  if (oneLabelOnly() || !nodeId) return "";
+  const n = (await judgmentsInForce([nodeId]).catch(() => new Map<string, number>())).get(nodeId.toLowerCase());
+  return n
+    ? `${n} judgments of this node are in force for this run, made at labels that do not read each other. ` +
+      `The status given here is that of the most recently made, and none replaces another.`
+    : "";
+}
+
+/** One assessment of a question in force for the asker, as an export carries it whole. */
+export interface QuestionJudgmentInForce {
+  id: string;
+  label: string;
+  standing: string;
+  favored_ids: string[];
+  summary: string | null;
+  reasoning_trace: string;
+  incomplete: string | null;
+  model: string | null;
+  assessed_at: string;
+}
+
+/** The same as assessmentsInForce for a question: every assessment in force for the asker, where more than one. */
+export async function questionAssessmentsInForce(nodeId: string): Promise<QuestionJudgmentInForce[]> {
+  if (oneLabelOnly()) return [];
+  const rows = await rawQuery<Omit<QuestionJudgmentInForce, "assessed_at"> & { assessed_at: Date }>(
+    `SELECT v.id, v.sensitivity_label AS label, v.standing, v.favored_claim_ids::text[] AS favored_ids,
+            v.summary, v.reasoning_trace, v.incomplete, v.model, v.assessed_at
+       FROM question_assessments_versions v
+      WHERE v.claim_id = $1 AND v.in_force
+      ORDER BY v.assessed_at DESC, v.id`,
+    [nodeId]
+  );
+  if (rows.length < 2) return [];
+  return rows.map((r) => ({ ...r, assessed_at: new Date(r.assessed_at).toISOString() }));
+}

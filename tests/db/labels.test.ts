@@ -37,7 +37,7 @@ import { defineQuantity, recordEstimate } from "../../src/services/quantity-serv
 import { markQuestion, recordQuestionAssessment } from "../../src/services/question-service.js";
 import { verifyRunLog, type RunLogCheck } from "../../src/services/run-view-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
-import { seedClaim } from "./helpers.js";
+import { asGiven, seedClaim } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -104,7 +104,7 @@ async function writeOneOfEach() {
   await markQuestion(question);
   const standing = await recordQuestionAssessment({ claimId: question, standing: "open", reasoningTrace: "dbtest" });
 
-  const source = await getOrCreateSource({ url: `https://dbtest.example/labels/${randomUUID()}`, title: "A document" });
+  const source = await getOrCreateSource({ url: await asGiven(`https://dbtest.example/labels/${randomUUID()}`), title: "A document" });
 
   return {
     claim,
@@ -174,38 +174,41 @@ describe("the labels table", () => {
     // steps of its transcript to the reports it files (label-runs.test.ts);
     // and the rows of work and governance, from requests and messages to
     // mandates, their lookouts and the audit trail
-    // (label-governance.test.ts), with the placements and regrants that
-    // carry a brief, a reason or a note, and a stated view; and
-    // claim_state_changes, the record of a node's archive, restore or merge,
-    // stamped by claim-lifecycle-service.ts. The tables that
-    // carry no label are listed in label-columns.test.ts, each with its
-    // reason.
-    // The tables of connections (connections, connection_tools,
-    // connection_calls) and of file sets (file_sets, file_set_files,
-    // file_set_keeps, sandbox_calls) were created with the column, and are
-    // empty until the code that writes them lands.
+    // (label-governance.test.ts). The tables that carry no label are listed
+    // there too, each with its reason. One more is the mirror's: what a
+    // batch changed on a mirrored node, which is the public graph's own
+    // text and is written as `public` by the applier
+    // (private-on-mirror.test.ts). And claim_state_changes, the record of a
+    // node's archive, restore or merge, stamped by claim-lifecycle-service.ts.
     expect(rows).toEqual(
       [
-        "action_allocations", "actions", "agent_finding_sightings", "agent_findings", "agent_report_sightings",
-        "agent_reports", "agent_runs", "agent_sessions", "agent_steps", "answer_relations", "appeals",
-        "arbitration_results", "argument_evaluations", "argument_evidence_backlog", "argument_instances",
-        "argument_subclaims", "arguments", "assessment_orders", "assessments", "assistant_conversations",
-        "assistant_held_actions", "assistant_pages", "attachments", "audit_findings", "audit_log", "audit_notes",
-        "audit_runs", "bounties", "budget_jobs", "claim_formalizations", "claim_instance_reading_log",
-        "claim_instance_readings", "claim_instances", "claim_links", "claim_predictions", "claim_provenance_edges",
-        "claim_provenance_roots", "claim_relationships", "claim_source_maps", "claim_state_changes", "claims", "connection_calls",
-        "connection_tools", "connections", "consistency_flags", "consistency_sweeps", "contribution_reviews",
-        "contributions", "correspondent_events", "correspondent_plan_items", "correspondent_updates",
-        "correspondents", "curation_requests", "enqueue_events", "events", "examination_coverage", "examination_findings",
-        "examinations", "file_set_files", "file_set_keeps", "file_sets", "grant_conversations", "grant_sources",
-        "grants", "ingest_focuses", "jobs", "judgment_inputs", "lean_checks", "llm_usage", "lookout_events",
-        "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions", "mandate_events",
-        "mandate_inbox", "mandate_policy_versions", "mandate_valuations", "node_messages", "petitions",
-        "prize_claims", "proof_attempts", "quantity_cuts", "quantity_definitions", "quantity_estimates",
-        "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events", "regrants",
-        "reputation_events", "request_targets", "request_work", "requests", "research_runs", "sandbox_calls",
-        "setup_parts", "shared_page_analyses", "source_events", "source_extractions", "source_interests",
-        "source_relationships", "source_segments", "sources", "stated_views", "subscriptions", "taggings", "tags",
+        "action_allocations", "actions", "adopted_requests", "agent_finding_sightings", "agent_findings",
+        "agent_report_sightings", "agent_reports", "agent_runs", "agent_sessions", "agent_steps",
+        "answer_relations", "appeals", "arbitration_results", "argument_evaluations", "argument_evidence_backlog",
+        "argument_instances", "argument_subclaims", "arguments", "assessment_orders", "assessments",
+        "assistant_conversations", "assistant_held_actions", "assistant_pages", "attachments", "audit_findings",
+        "audit_log", "audit_notes", "audit_runs", "bounties", "budget_jobs",
+        "claim_formalizations", "claim_instance_reading_log", "claim_instance_readings", "claim_instances", "claim_links",
+        "claim_predictions", "claim_provenance_edges", "claim_provenance_roots", "claim_relationships", "claim_source_maps",
+        "claim_state_changes", "claims", "connection_calls", "connection_tools", "connections", "consistency_flags",
+        "consistency_sweeps", "contribution_reviews", "contributions", "correspondent_events", "correspondent_plan_items",
+        "correspondent_updates", "correspondents", "curation_requests", "enqueue_events", "events", "examination_coverage",
+        "examination_findings", "examinations", "feed_contributions", "feed_request_targets", "feed_requests",
+        "file_set_files", "file_set_keeps", "file_sets", "gate_settings", "gates", "given_addresses", "grant_conversations", "grant_sources",
+        "grants", "inbound_contributions", "ingest_focuses", "jobs", "judgment_inputs",
+        "label_faces", "lean_checks", "llm_usage", "lookout_events",
+        "lookout_feed_items", "lookout_feeds", "lookout_flags", "lookouts", "mandate_decisions",
+        "mandate_events", "mandate_inbox", "mandate_policy_versions", "mandate_valuations", "node_changes",
+        "node_message_reads", "node_messages", "outbound_packages", "outbound_proposals", "outbound_sends", "outward_acts",
+        "overlays", "petitions", "prize_claims", "proof_attempts", "published_mandates", "published_page_packages",
+        "published_pages", "publishers", "quantity_cuts", "quantity_definitions", "quantity_estimates",
+        "quantity_readings", "question_assessments", "reading_citations", "reconciliation_events", "redaction_policies",
+        "regrants", "release_rules", "report_sendings", "reputation_events", "request_targets",
+        "request_work", "requests", "research_runs", "sandbox_calls", "setup_parts",
+        "shared_page_analyses", "showing_acts", "showing_pages", "showing_parts", "showing_removals",
+        "showings", "shown_nodes", "shown_pages", "shown_parts", "shown_showings",
+        "source_events", "source_extractions", "source_interests", "source_relationships", "source_segments",
+        "sources", "stated_views", "steward_slots", "subscriptions", "taggings", "tags",
       ].map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });

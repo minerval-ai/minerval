@@ -106,7 +106,7 @@ describe("buildAnnotations", () => {
       verdicts: new Map(),
     });
     expect(a!.verdict).toBe("fine");
-    expect(a!.confidence).toBe(0);
+    expect(a!.confidence).toBeNull();
   });
 
   it("marks unmatched claims 'unknown' with no claim payload", () => {

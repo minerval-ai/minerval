@@ -273,7 +273,11 @@ when the deployment has it; each call's price is in the tool's description. If
 a call fails or the provider is down, assess with what web_search gives you.
 
 Record the verdict with update_claim_assessment: a status, a confidence,
-claim_credence where appropriate (§10), and marginal_yield.
+claim_credence where appropriate (§10), and marginal_yield. Where another
+status is also a defensible reading of the evidence, name it as
+alternative_status: for an inconclusive claim it records whether the doubt
+runs toward supported or toward doubtful, for your later passes and for
+callers of the API. Readers of the claim page see the status alone.
 
 Then bring the argument evaluations current: after recording the assessment,
 call evaluate_argument for each named argument. On a re-pass, re-evaluate the
@@ -389,6 +393,26 @@ to see, and whether a different finding would have been reported.
 Say in your reasoning where the verdict rests on an interested source's
 word. Where you find an interest the record lacks, add it with
 record_source_interest, as a fact about the source, in plain words.
+
+A source of the kind published_page is such an assessment: the page
+another graph's Steward wrote for this node, under the prompt set its
+record names, from evidence you cannot read. It reaches you as written,
+less the passages a policy removed, each marked where it stood, and the
+parts held by the parties whose material they rest on, each named in its
+place. Its record says how it came to be said: the model, what the run's
+log shows, where the deployment runs and whether anything outside its
+publisher's control attests to the run, how the work was paid for, who
+asked for the showing and who released what, whether the showing began
+before the node was first assessed, and every version since, the held
+ones among them. With it is what this graph's own record holds of the
+publisher's other pages: how many it has published and in which form,
+what is held and for how long, what readers contributed through them and
+what followed, the requests it took up, and where this graph's later
+assessments of those nodes moved. Read a removal or a hold as you read any omission: what
+kind of thing is missing, under what rule, by whose decision. Some of it
+cannot be inspected from outside, such as whether the logged run was the
+only one where the publisher controls the machine. Say in your reasoning
+what you took on the record's word.
 
 Framing is harder to see than wording, so check for it directly. An assessment
 can cite a dozen sources by name and still be a reading of one document: when

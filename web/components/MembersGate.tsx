@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { auth, signOut } from "../auth";
-import { fetchMyPermissions } from "../lib/account-api";
+import { signOut } from "../auth";
 import { membersOnly } from "../lib/members";
+import { loadStanding } from "../lib/standing";
+import { MembersBand } from "./MembersBand";
 import { PageHead } from "./PageHead";
 import { signInOptions } from "./sign-in-options";
 
@@ -17,20 +18,27 @@ import { signInOptions } from "./sign-in-options";
 //   - signed in with no permission: who they are signed in as, the identity
 //     an administrator will know them by, and that there is nothing to show
 //     until one grants them something;
-//   - a member: the page.
+//   - a member: the page, under a line of links to the pages their
+//     permissions open in this deployment (components/MembersBand.tsx).
 //
 // The API is what refuses a read (it serves nothing to anyone who is not a
 // signed-in member); this is what tells a person why they see nothing and
 // what to do about it. It reads the session, which is also what makes every
 // page under it rendered for its reader and never ahead of time.
+//
+// It does not keep a page from being rendered: Next renders a page's content
+// whatever its layout shows. The proxy of a members-only build does that
+// (proxy.members.ts), by answering anyone who is not a member with a page
+// that has nothing in it, which this gate then stands in for.
 export function MembersGate({ children }: { children: ReactNode }) {
   if (!membersOnly()) return <>{children}</>;
   return <Gate>{children}</Gate>;
 }
 
 async function Gate({ children }: { children: ReactNode }) {
-  const session = await auth();
-  if (!session?.externalId) {
+  const standing = await loadStanding();
+  if (standing.state === "open") return <>{children}</>;
+  if (standing.state === "anonymous") {
     return (
       <div className="col">
         <PageHead
@@ -41,12 +49,7 @@ async function Gate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-
-  let mine;
-  try {
-    mine = await fetchMyPermissions(session.externalId);
-  } catch (err) {
-    console.error("[minerval] could not read the signed-in account's permissions:", err);
+  if (standing.state === "unavailable") {
     return (
       <div className="col">
         <PageHead
@@ -57,9 +60,17 @@ async function Gate({ children }: { children: ReactNode }) {
       </div>
     );
   }
-  if (mine.member) return <>{children}</>;
+  const { mine } = standing;
+  if (mine.member) {
+    return (
+      <>
+        <MembersBand mine={mine} />
+        {children}
+      </>
+    );
+  }
 
-  const identity = mine.account.external_id ?? session.externalId;
+  const identity = mine.account.external_id ?? standing.externalId;
   return (
     <div className="col">
       <PageHead

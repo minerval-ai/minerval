@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useViewerSession } from "./useViewerSession";
+import { LabelChoice } from "./admin/LabelChoice";
+import type { MyLabels } from "../lib/admin-api";
 
 // The claims-index contribution entry (#174): the "I know something the graph
 // is missing" path. Challenges and evidence about an existing claim belong on
@@ -24,7 +26,15 @@ type SubmitState =
   | { kind: "sent"; contributionId: string | null }
   | { kind: "error"; message: string };
 
-export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
+// `labels`: where a members-only deployment holds material at more than one
+// label, a proposed node is new material and names the label it is filed at.
+export function ProposeClaim({
+  searchQuery,
+  labels,
+}: {
+  searchQuery?: string;
+  labels?: MyLabels | null;
+}) {
   const [open, setOpen] = useState(false);
   const session = useViewerSession();
   const [prefill, setPrefill] = useState("");
@@ -98,6 +108,7 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           claim: data.get("claim"),
+          ...(data.get("label") ? { label: data.get("label") } : {}),
         }),
       });
       if (res.ok) {
@@ -239,6 +250,12 @@ export function ProposeClaim({ searchQuery }: { searchQuery?: string }) {
             defaultValue={initialText}
             required
           />
+          {labels && (
+            <LabelChoice
+              mine={labels}
+              what="Who may read the proposed node and everything the agents record on it. It is chosen now and the node keeps it."
+            />
+          )}
           <p className="contribute-hint">
             The best form is short and frame-free: it presupposes no answer.
             Whether it enters as a claim, a question or a quantity is decided

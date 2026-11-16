@@ -214,6 +214,10 @@ describe("htmlToText / readPage", () => {
     expect(htmlToText("<p>" + "a".repeat(50) + "</p>", 10)).toBe("aaaaaaaaaa\n[truncated]");
   });
 
+  it("decodes an entity once: an escaped entity stays as written", () => {
+    expect(htmlToText("<p>write &amp;lt;b&amp;gt; for bold</p>")).toBe("write &lt;b&gt; for bold");
+  });
+
   it("keeps the edge cases of its stripping: tag case, unclosed elements, `<>`", () => {
     expect(
       htmlToText("<div><SCRIPT type=x>if (a < b) {}</Script>Kept<scripts>gone</SCRIPT> <style>p{}</STYLE><noscript>x</noscript>.</div>")

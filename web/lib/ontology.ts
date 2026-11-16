@@ -1,6 +1,7 @@
 import type {
   ArgumentVerdict, AssessmentStatus, CheckKind, ClaimType, LeanCheckSummary,
   QuestionStanding, RelationType, RequestOutcome, RequestState, Stance, TreeNode, ValueShown,
+  SetAside,
 } from "./types";
 import { orderByMention } from "./claim-links";
 
@@ -353,10 +354,9 @@ export function confidenceLabel(c: number): string {
   return c.toFixed(2).replace(/^0/, "·");
 }
 
-// The two numbers an assessment can carry answer different questions
-// (constitution §7); every surface that shows either must say which one it is.
-export const VERDICT_CONFIDENCE_GLOSS =
-  "Verdict confidence, from 0 to 1: how sure the Steward is that this status is the right reading of the evidence. Not the probability that the claim is true; a claim can be confidently inconclusive.";
+// Credence is the one number an assessment shows; every surface that shows
+// it must say what it is. Verdict confidence and the other reading (§10) are
+// kept in the record and the API, not shown to readers.
 export const CREDENCE_GLOSS =
   "Credence, from 0 to 1: the Steward's probability that the claim, as stated, is true. Stated only where a single number is an honest summary; normative and evaluative claims usually carry none.";
 
@@ -403,7 +403,28 @@ export function decompositionNote(opts: {
       ? "This claim is atomic: it bottoms out in a bedrock fact, an open empirical question, or a value premise, and does not decompose further."
       : "This claim has been assessed but its decomposition is not yet recorded.";
   }
-  return "This claim has not been assessed yet. Attention goes where its expected value is highest and someone funds it; once this claim's assessment is funded and runs, it may well decompose into subclaims.";
+  return "This claim has not been assessed yet. Once its assessment is funded and runs, it may well decompose into subclaims.";
+}
+
+// The same state in the claim page's left rail, where the decomposition is
+// summarised when there is one. A claim with no rendered subclaims shows a
+// short label there, with the full sentence above as its gloss, instead of a
+// section in the reading column that held one sentence.
+export function decompositionRailState(opts: {
+  decompositionStatus: string;
+  assessed: boolean;
+  stewardState?: string;
+}): { label: string; note: string; gloss: string } {
+  const gloss = decompositionNote(opts);
+  if (opts.stewardState === "running") {
+    return { label: "being decomposed…", note: "Its subclaims are being worked out now.", gloss };
+  }
+  if (isProcessed(opts)) {
+    return isAtomic(opts.decompositionStatus)
+      ? { label: "atomic", note: "Bottoms out here; no subclaims.", gloss }
+      : { label: "not yet recorded", note: "Assessed, but no decomposition is on record.", gloss };
+  }
+  return { label: "awaits assessment", note: "Subclaims come with its first assessment.", gloss };
 }
 
 // Claim importance — how much it is worth spending scarce intelligence to get the
@@ -657,7 +678,10 @@ export function effectCounts(scored: ScoredNode[]): Record<Effect, number> {
   const counts: Record<Effect, number> = {
     supports: 0, against: 0, uncertain: 0, weak: 0, unassessed: 0,
   };
-  for (const s of scored) counts[s.effect] += 1;
+  // A premise a label the reader reads has set aside, or one under an
+  // argument it has set aside, is listed but not counted: the assessment at
+  // that label does not rest on it.
+  for (const s of scored) if (!s.node.set_aside && !s.node.argument_set_aside) counts[s.effect] += 1;
   return counts;
 }
 
@@ -694,6 +718,10 @@ export interface ArgumentGroup {
   // The checker record when the argument is machine-checked (mathematics);
   // null for every other argument.
   leanCheck: LeanCheckSummary | null;
+  // Inside a deployment with more than one label: the label the argument is
+  // recorded at, and the label that has set it aside for its readers.
+  label?: string;
+  setAside?: SetAside;
   named: boolean;
   nodes: ScoredNode[];
   counts: Record<Effect, number>;
@@ -721,6 +749,8 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
         evaluation: s.node.argument_evaluation ?? null,
         shows: s.node.argument_shows ?? null,
         leanCheck: s.node.argument_lean_check ?? null,
+        ...(id && s.node.argument_label ? { label: s.node.argument_label } : {}),
+        ...(id && s.node.argument_set_aside ? { setAside: s.node.argument_set_aside } : {}),
         named: Boolean(s.node.argument_name),
         nodes: [],
         counts: { supports: 0, against: 0, uncertain: 0, weak: 0, unassessed: 0 },
@@ -730,7 +760,7 @@ export function groupByArgument(scored: ScoredNode[]): ArgumentGroup[] {
       groups.push(g);
     }
     g.nodes.push(s);
-    g.counts[s.effect] += 1;
+    if (!s.node.set_aside) g.counts[s.effect] += 1;
   }
   for (const g of groups) {
     g.net = netEffect(g.counts);

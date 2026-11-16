@@ -20,6 +20,11 @@
  *
  * Invoices/receipts stay on Stripe-hosted surfaces (Checkout emails a receipt
  * when configured) — deliberately no invoice code here.
+ *
+ * A deployment that creates its own owls (OWLS=created; routes/owls.ts)
+ * sells none: the packs, the checkout and the webhook are not mounted
+ * there, so neither they nor the tools generated from them exist. The
+ * ledger is an account's own history and stays.
  */
 import type { FastifyInstance } from "fastify";
 import type Stripe from "stripe";
@@ -33,7 +38,7 @@ import {
   recordOwlEntry,
   OWL_REASONS,
 } from "../services/owl-ledger-service.js";
-import { getOwlPack, owlPacks, owlsToMicroUsd } from "../services/owl.js";
+import { getOwlPack, owlPacks, owlsCreatedHere, owlsToMicroUsd } from "../services/owl.js";
 import { getContributorById } from "../services/contributor-service.js";
 
 /** Credit a paid Checkout Session to its buyer's ledger. Idempotent. */
@@ -76,8 +81,13 @@ async function creditCheckoutSession(
 }
 
 export async function billingRoutes(app: FastifyInstance): Promise<void> {
+  // The routes that sell owls are mounted only where owls are sold. They
+  // keep their places in the file, so the public graph registers its
+  // routes in the order it always has.
+  const sold = !owlsCreatedHere();
+
   // GET /billing/packs — what owls cost here. Public.
-  app.get("/packs", {
+  if (sold) app.get("/packs", {
     schema: {
       tags: ["billing"],
       summary: "List purchasable owl packs (with bulk discounts)",
@@ -97,7 +107,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /billing/checkout — returns the Stripe-hosted payment page URL.
-  app.post("/checkout", {
+  if (sold) app.post("/checkout", {
     schema: {
       tags: ["billing"],
       summary: "Start a Stripe Checkout session for an owl pack",
@@ -146,7 +156,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // GET /billing/ledger — owl history for the dashboard.
-  app.get<{ Querystring: { limit?: number } }>("/ledger", {
+  app.get<{ Querystring: { limit?: number; offset?: number; job_id?: string; since?: string; until?: string } }>("/ledger", {
     schema: {
       tags: ["billing"],
       summary: "List the authenticated user's owl ledger entries",
@@ -165,12 +175,26 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
             default: 50,
             description: "How many entries to return, newest first.",
           },
+          offset: { type: "integer", minimum: 0, default: 0, description: "Entries to skip, for the next page." },
+          job_id: {
+            type: "string",
+            format: "uuid",
+            description: "Only entries on one funded job: a mandate's budget_job_id, an order's job.",
+          },
+          since: { type: "string", format: "date-time", description: "Only entries at or after this time." },
+          until: { type: "string", format: "date-time", description: "Only entries at or before this time." },
         },
       },
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const entries = await listOwlLedger(request.auth!.userId!, request.query.limit ?? 50);
+      const q = request.query;
+      const entries = await listOwlLedger(request.auth!.userId!, q.limit ?? 50, {
+        offset: q.offset,
+        jobId: q.job_id,
+        since: q.since ? new Date(q.since) : undefined,
+        until: q.until ? new Date(q.until) : undefined,
+      });
       return reply.send({
         entries: entries.map((e) => ({
           id: e.id,
@@ -189,7 +213,7 @@ export async function billingRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /billing/webhook — in its own scope so the raw-body content-type
   // parser (required for signature verification) applies to nothing else.
-  await app.register(async (scope) => {
+  if (sold) await app.register(async (scope) => {
     scope.addContentTypeParser(
       "application/json",
       { parseAs: "buffer" },

@@ -180,12 +180,18 @@ describe("the wait", () => {
   it("reads a row's columns, and nothing from a row that is not waiting", () => {
     expect(faultWait({ fault_reason: null })).toBeNull();
     expect(faultWait({ fault_reason: "something_else" })).toBeNull();
-    const w = faultWait({
+    const marked = {
       fault_reason: "credits_fault",
       fault_since: new Date("2026-11-12T01:12:00Z"),
       fault_attempts: 4,
       retry_after: "2026-11-12T01:20:00Z",
-    })!;
+    };
+    // Its next attempt has come: the row is due, and the fault still on it
+    // is not a wait (waitingOnFaultSql is the same test in SQL).
+    expect(faultWait(marked, Date.parse("2026-11-12T01:20:00Z"))).toBeNull();
+    expect(faultWait(marked, Date.parse("2026-11-13T09:00:00Z"))).toBeNull();
+    expect(faultWait({ ...marked, retry_after: null }, Date.parse("2026-11-12T01:15:00Z"))).toBeNull();
+    const w = faultWait(marked, Date.parse("2026-11-12T01:15:00Z"))!;
     expect(w).toMatchObject({
       reason: "credits_fault",
       since: "2026-11-12T01:12:00.000Z",

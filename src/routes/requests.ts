@@ -13,6 +13,7 @@ import { getRequest, listRequests } from "../services/request-service.js";
 import { allocateToRequest } from "../services/allocation-service.js";
 import { microUsdToOwls } from "../services/owl.js";
 import { requirePermission } from "../server/require-permission.js";
+import { DECLINE_REASONS, TakeUpError, declineTakenUpRequest, takeUpRequest } from "../services/request-take-up-service.js";
 
 const listRequestsParams = z.object({
   // One state, or "live" for every request still open to work.
@@ -20,7 +21,12 @@ const listRequestsParams = z.object({
   claim_id: z.guid().optional(),
   source_id: z.guid().optional(),
   keeper: z.enum(["curator", "steward"]).optional(),
+  tag: z.string().min(1).max(120).optional(),
+  asked: z.enum(["anyone", "named"]).optional(),
+  waiting: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
   q: z.string().max(500).optional(),
+  order: z.enum(["recent", "importance", "relevance"]).optional(),
+  facets: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
 });
@@ -31,7 +37,14 @@ const nodeRef = {
     id: { type: "string", format: "uuid" },
     text: { type: "string" },
     kind: { type: "string" },
+    // How much it is worth getting right, 0..1 (constitution §19).
+    importance: { type: "number", nullable: true },
   },
+} as const;
+
+const tagRef = {
+  type: "object",
+  properties: { slug: { type: "string" }, name: { type: "string" } },
 } as const;
 
 export const REQUEST_SCHEMA = {
@@ -44,6 +57,10 @@ export const REQUEST_SCHEMA = {
     who_could: { type: "string", nullable: true },
     addressed_to: { type: "string", nullable: true },
     bears_on: { type: "array", items: nodeRef },
+    // The importance of the most important node it bears on; null when it bears on none.
+    importance: { type: "number", nullable: true },
+    // The topics of the nodes it bears on.
+    tags: { type: "array", items: tagRef },
     bears_on_sources: {
       type: "array",
       items: {
@@ -99,6 +116,64 @@ export const REQUEST_SCHEMA = {
         },
       },
     },
+    // Where a deployment has more than one label, or mirrors the public
+    // graph: the request this one was taken up from, and the requests at
+    // labels the reader reads that took this one up
+    // (services/request-adoption-service.ts). Absent otherwise.
+    taken_up_from: {
+      type: "object",
+      properties: {
+        request_id: { type: "string", format: "uuid" },
+        label: { type: "string" },
+        public_request_id: { type: "string", format: "uuid" },
+      },
+    },
+    // That work at a label the reader may not read took the request up, as it came through the gate
+    // (docs/the-gate.md). Absent where nothing came.
+    taken_up_above: {
+      type: "object",
+      properties: { said_at: { type: "string" }, answer: { type: "string" }, answer_source_id: { type: "string", format: "uuid" } },
+    },
+    taken_up_at: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          request_id: { type: "string", format: "uuid" },
+          state: { type: "string" },
+        },
+      },
+    },
+    // Where the request was addressed to a mandate another graph published here (published-mandate-service.ts): the
+    // mandate, its publisher, and where the request stands with it, read from this graph's own record. Absent otherwise.
+    addressed_to_mandate: {
+      type: "object",
+      properties: {
+        face_id: { type: "string", format: "uuid" },
+        name: { type: "string" },
+        publisher: { type: "object", properties: { account_id: { type: "string", format: "uuid" }, name: { type: "string" } } },
+        withdrawn: { type: "boolean" },
+        stands: { type: "string" },
+        in_words: { type: "string" },
+      },
+    },
+    // Accounts that have said they are taking the request up, and what followed.
+    taken_up: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          by: { type: "string" },
+          account_id: { type: "string", format: "uuid" },
+          at: { type: "string", format: "date-time" },
+          followed: { type: "string" },
+          in_words: { type: "string" },
+          published_page_id: { type: "string", format: "uuid", nullable: true },
+          node_id: { type: "string", format: "uuid", nullable: true },
+        },
+      },
+    },
   },
 } as const;
 
@@ -131,11 +206,41 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
               description:
                 "Who keeps it: the Curator (requests bearing on several nodes or on none) or a node's Steward",
             },
+            tag: {
+              type: "string",
+              maxLength: 120,
+              description: "Only requests bearing on a node with this topic (a tag slug)",
+            },
+            asked: {
+              type: "string",
+              enum: ["anyone", "named"],
+              description:
+                "Only requests open to anyone, or only those put to a particular party (named in words, or a mandate another graph published)",
+            },
+            waiting: {
+              type: "string",
+              enum: ["true", "false"],
+              description: "true: only requests whose work is open on the ledger and nobody has yet commissioned",
+            },
             q: {
               type: "string",
               maxLength: 500,
               description:
                 "Search what requests ask and why, by meaning and by keyword (web-search syntax); ranks by meaning",
+            },
+            order: {
+              type: "string",
+              enum: ["recent", "importance", "relevance"],
+              description:
+                "recent: newest first (the default without q). importance: the most important node each bears on first, " +
+                "so the requests whose answer matters most come first. relevance: closest to q (the default with q)",
+            },
+            facets: {
+              type: "string",
+              enum: ["true", "false"],
+              description:
+                "true: also count, under the other filters in force, the requests in each state, under each topic, " +
+                "open to anyone or put to a party, and waiting for funding",
             },
             limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
             offset: { type: "integer", minimum: 0, default: 0 },
@@ -147,23 +252,50 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
             properties: {
               requests: { type: "array", items: REQUEST_SCHEMA },
               total: { type: "integer" },
+              facets: {
+                type: "object",
+                nullable: true,
+                properties: {
+                  states: {
+                    type: "array",
+                    items: { type: "object", properties: { state: { type: "string" }, count: { type: "integer" } } },
+                  },
+                  tags: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: { slug: { type: "string" }, name: { type: "string" }, count: { type: "integer" } },
+                    },
+                  },
+                  asked: {
+                    type: "object",
+                    properties: { anyone: { type: "integer" }, named: { type: "integer" } },
+                  },
+                  waiting: { type: "integer" },
+                },
+              },
             },
           },
         },
       },
       handler: async (request, reply) => {
         const params = listRequestsParams.parse(request.query);
-        const { items, total } = await listRequests({
+        const { items, total, facets } = await listRequests({
           state: params.state === "live" ? undefined : params.state,
           live: params.state === "live",
           claimId: params.claim_id,
           sourceId: params.source_id,
           keeper: params.keeper,
+          tag: params.tag,
+          asked: params.asked,
+          waiting: params.waiting,
           q: params.q,
+          order: params.order,
+          facets: params.facets,
           limit: params.limit,
           offset: params.offset,
         });
-        return reply.send({ requests: items, total });
+        return reply.send({ requests: items, total, ...(facets ? { facets } : {}) });
       },
     }
   );
@@ -252,4 +384,54 @@ export async function requestRoutes(app: FastifyInstance): Promise<void> {
       },
     }
   );
+
+  // POST /requests/:request_id/take-up: an account says, on the request's
+  // record, that it is taking the request up (request-take-up-service.ts).
+  app.post<{ Params: { request_id: string } }>("/:request_id/take-up", {
+    schema: {
+      tags: ["requests"],
+      summary: "Say on a request's record, under your account's name, that you are taking the request up",
+      description:
+        "A request may be addressed to whoever holds the evidence, and what becomes of it is part of its record. Any account may say it is taking a " +
+        "request up. The statement is public at once, in fixed words with your account's name and the date. It commits you to doing the work well, " +
+        "not to a result, and it funds nothing: the work is still paid for like any work. The record then shows what followed, read from the graph " +
+        "and not from you: a page your account publishes on a node the request bears on, your own later statement that you will not do the work, or " +
+        "nothing yet, with how long. The statement stays on the record.",
+      params: { type: "object", required: ["request_id"], properties: { request_id: { type: "string", format: "uuid" } } },
+    },
+    preHandler: [app.authenticate, app.requireUser],
+    handler: async (request, reply) => {
+      try {
+        const result = await takeUpRequest({ requestId: request.params.request_id, accountId: request.auth!.userId! });
+        return reply.code(result.already ? 200 : 201).send(result);
+      } catch (err) {
+        if (err instanceof TakeUpError) {
+          return reply.code(err.code === "REQUEST_NOT_FOUND" ? 404 : 409).send({ error: err.message, code: err.code });
+        }
+        throw err;
+      }
+    },
+  });
+
+  app.post<{ Params: { request_id: string }; Body: { reason: string } }>("/:request_id/take-up/decline", {
+    schema: {
+      tags: ["requests"],
+      summary: "Say on a request's record that you will not do the work you took up, with a reason from a fixed list",
+      description:
+        "A refusal is a complete answer to a request and part of its record. The reason is one of: " +
+        Object.entries(DECLINE_REASONS).map(([k, v]) => `${k} (${v})`).join("; ") +
+        ". It is your own statement and nobody checks it. That you took the request up, and when, stays on the record.",
+      params: { type: "object", required: ["request_id"], properties: { request_id: { type: "string", format: "uuid" } } },
+      body: { type: "object", required: ["reason"], properties: { reason: { type: "string", enum: Object.keys(DECLINE_REASONS) } } },
+    },
+    preHandler: [app.authenticate, app.requireUser],
+    handler: async (request, reply) => {
+      try {
+        return reply.send(await declineTakenUpRequest({ requestId: request.params.request_id, accountId: request.auth!.userId!, reason: request.body.reason }));
+      } catch (err) {
+        if (err instanceof TakeUpError) return reply.code(409).send({ error: err.message, code: err.code });
+        throw err;
+      }
+    },
+  });
 }

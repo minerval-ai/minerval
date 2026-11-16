@@ -48,6 +48,8 @@ const REASONS: Record<string, string> = {
   request_contribution: "Put toward the work on a request",
   escrow_refund: "Unspent escrow returned",
   admin_adjust: "Adjustment",
+  // Only in a deployment that creates its own owls (app/admin/owls).
+  owl_created: "Created by an administrator",
 };
 
 function reasonName(reason: string): string {
@@ -100,7 +102,7 @@ function describe(line: HistoryLine, names: Names): { what: ReactNode; detail: s
 
   if (line.reason === "escrow_hold" || line.reason === "escrow_refund") {
     const hold = line.reason === "escrow_hold";
-    const label = hold ? (job?.grant ? "Grant funded" : "Funded") : "Unspent escrow returned";
+    const label = hold ? (job?.grant ? "Mandate funded" : "Funded") : "Unspent escrow returned";
     return {
       what: job ? (
         <>

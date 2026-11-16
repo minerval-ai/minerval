@@ -17,6 +17,7 @@
  */
 import { loadConfig } from "../config.js";
 import { backfillReportEmbeddings } from "../services/report-service.js";
+import { withSystemClearance } from "../db/clearance.js";
 
 export interface ReportEmbeddingBackfillTickResult {
   pending: number;
@@ -58,7 +59,10 @@ export function startReportEmbeddingBackfill(options: {
     if (busy) return;
     busy = true;
     try {
-      const result = await reportEmbeddingBackfillTick();
+      const result = await withSystemClearance(
+        "The backfill gives a vector to reports at every label that lack one. It writes into the report's own row.",
+        () => reportEmbeddingBackfillTick()
+      );
       if (result.pending > 0) {
         options.logger.info(
           `Report embedding backfill: ${result.embedded} embedded, ` +

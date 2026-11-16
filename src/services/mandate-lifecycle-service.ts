@@ -32,11 +32,13 @@
  * (allocation-scheduler.ts). Every step is idempotent.
  */
 import { rawQuery } from "../db/client.js";
+import { slotColumnSql } from "./steward-lease.js";
 import { grantmakerShareLeftMicroUsd } from "./action-service.js";
 import { refundUnspentBudget } from "./budget-job-service.js";
 import { mandateClosureBlockers } from "./bounty-service.js";
 import { grantEscrowBreakdown } from "./regrant-service.js";
 import { PLAN_ORDER_COMMISSIONER, placeStandingOrder } from "./standing-order-service.js";
+import { importanceSql } from "./overlay-service.js";
 
 interface LifecycleGrant {
   id: string;
@@ -77,7 +79,7 @@ async function hasLiveLedgerWork(grantId: string, ownRows: boolean): Promise<boo
     `SELECT COUNT(*)::int AS n FROM actions a
       WHERE a.status IN ('open', 'running')
         AND (($2::boolean AND a.target_ref = $1::text)
-             OR EXISTS (SELECT 1 FROM action_allocations al
+             OR EXISTS (SELECT 1 FROM minerval_whole.allocation_money al
                          WHERE al.exclusion_group = a.exclusion_group
                            AND al.grant_id = $1::uuid AND al.released_at IS NULL
                            AND al.spent_micro_usd < al.amount_micro_usd))`,
@@ -93,11 +95,11 @@ async function hasLiveLedgerWork(grantId: string, ownRows: boolean): Promise<boo
  */
 async function releaseOrdersOnParkedNodes(grantId: string): Promise<void> {
   await rawQuery(
-    `UPDATE action_allocations al SET released_at = now()
+    `UPDATE minerval_whole.allocation_money al SET released_at = now()
       WHERE al.grant_id = $1 AND al.commissioned_by = $2
         AND al.released_at IS NULL AND al.spent_micro_usd = 0
         AND EXISTS (SELECT 1 FROM claims c
-                     WHERE c.id = al.claim_id AND c.steward_state = 'error')
+                     WHERE c.id = al.claim_id AND ${slotColumnSql("steward_state", "c")} = 'error')
         AND NOT EXISTS (SELECT 1 FROM actions a
                          WHERE a.exclusion_group = al.exclusion_group AND a.status = 'running')`,
     [grantId, PLAN_ORDER_COMMISSIONER]
@@ -113,11 +115,11 @@ async function orderDeepenScope(g: LifecycleGrant): Promise<boolean> {
   const waiting = await rawQuery<{ id: string }>(
     `${SCOPE_SQL}
      SELECT c.id FROM claims c JOIN scope ON scope.id = c.id
-      WHERE c.steward_state IN ('pending', 'deferred')
+      WHERE ${slotColumnSql("steward_state", "c")} IN ('pending', 'deferred')
         AND NOT EXISTS (SELECT 1 FROM assessments_in_force x WHERE x.claim_id = c.id)
         AND NOT EXISTS (SELECT 1 FROM quantity_estimates_in_force q WHERE q.claim_id = c.id)
         AND NOT EXISTS (SELECT 1 FROM question_assessments_in_force qa WHERE qa.claim_id = c.id)
-      ORDER BY (c.steward_state = 'pending') DESC, c.importance DESC NULLS LAST
+      ORDER BY (${slotColumnSql("steward_state", "c")} = 'pending') DESC, ${importanceSql("c")} DESC NULLS LAST
       LIMIT 100`,
     [g.scope_claim_id, g.scope_query]
   );

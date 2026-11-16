@@ -25,6 +25,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { bodyToText } from "./document-text.js";
 import { assertProviderCleared } from "../llm/provider-clearance.js";
+import { addressForRun } from "./given-addresses.js";
 
 const MAX_REDIRECTS = 5;
 const FETCH_TIMEOUT_MS = 60_000;
@@ -153,17 +154,29 @@ export interface PublicBody {
  * something larger (a paper's source archive).
  *
  * Being the one way, it is where the `web_pages` service is held to the
- * label of the run or request fetching (src/provider-labels.ts).
+ * label of the run or request fetching (src/provider-labels.ts), and where
+ * a run that reads material that is not public is held to addresses it was
+ * given (given-addresses.ts). Such a run's address is fetched as it was
+ * given, and one that was not given is refused with AddressNotGivenError
+ * before anything is sent. A caller whose address is not the run's words
+ * says so with `notFromTheRun`, giving the reason: an address this code
+ * built at a fixed host from an identifier whose shape it checked, or one
+ * it read from a row a feed or a person filled. A redirect is followed for
+ * every caller: where it leads is the answering server's choice.
  */
-export async function fetchPublicBytes(
-  rawUrl: string,
-  init: { userAgent?: string; maxBytes?: number } = {}
-): Promise<PublicBody> {
+export interface PublicFetchInit {
+  userAgent?: string;
+  maxBytes?: number;
+  /** Why this address is not something the run in progress wrote. Present, the address is fetched as passed. */
+  notFromTheRun?: string;
+}
+
+export async function fetchPublicBytes(rawUrl: string, init: PublicFetchInit = {}): Promise<PublicBody> {
   // An address is text too, and a run may have composed it: nothing is
   // fetched for a run at a label the open web is not cleared for.
   await assertProviderCleared("web_pages");
   const maxBytes = init.maxBytes ?? MAX_RESPONSE_BYTES;
-  let current = rawUrl;
+  let current = init.notFromTheRun ? rawUrl : await addressForRun(rawUrl);
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const url = await assertPublicHttpUrl(current);
     const response = await fetch(url, {
@@ -209,10 +222,7 @@ export async function fetchPublicBytes(
 }
 
 /** Fetch a public URL's body as text, under the same guard. */
-export async function fetchPublicUrl(
-  rawUrl: string,
-  init: { userAgent?: string } = {}
-): Promise<string> {
+export async function fetchPublicUrl(rawUrl: string, init: PublicFetchInit = {}): Promise<string> {
   const body = await fetchPublicBytes(rawUrl, init);
   // A PDF body is extracted to text; every body is scrubbed of the NUL
   // and control characters a text column refuses (#430).

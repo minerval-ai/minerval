@@ -398,12 +398,6 @@
   margin: 0 0 9px;
 }
 .previewRow { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
-/* verdict confidence, demoted beneath the badge/credence row (#238): meta
-   ("is the badge the right reading?"), so it whispers */
-.previewQuiet {
-  font-size: 0.6rem; letter-spacing: 0.03em; color: var(--faint);
-  margin: -3px 0 8px; cursor: help;
-}
 .previewMeter { flex: 1; height: 4px; background: var(--paper-sunk); border-radius: 1px; overflow: hidden; }
 .previewMeter i { display: block; height: 100%; background: currentColor; }
 .previewNote {

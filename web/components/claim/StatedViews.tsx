@@ -106,17 +106,26 @@ export function StatedViews({
 }) {
   const current = views.filter((v) => v.current);
   const earlier = views.filter((v) => !v.current);
-  const node = kindWord(kind);
+  // Most pages have none. Then there is no section to read, only an
+  // invitation, so it is drawn as one: a quiet line at the foot of the
+  // reading column (the callers place it there), not a heading in the middle
+  // of the page announcing that it is empty.
+  if (views.length === 0) {
+    return (
+      <div id="stated-views" className="stated-views-empty">
+        <p>
+          <span className="sc">Stated views</span> None yet. A stated view is shown as a source and
+          carries no weight in the assessment.
+        </p>
+        <StateView claimId={claimId} kind={kind} />
+      </div>
+    );
+  }
   return (
     <section id="stated-views" className="stated-views">
       <h2>Stated views</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem", maxWidth: "36rem" }}>
-        {views.length > 0
-          ? `What people and organisations have told the graph they hold about this ${node}, in their own words. `
-          : `Nobody has yet told the graph what they hold about this ${node}. `}
-        A stated view is a source like any other. It is shown here because it was stated to the graph
-        directly, and its place on the page gives it no weight in the assessment. Nobody edits an
-        assessment: reasons a statement gives are put to the Steward and answered.
+        In their speakers&rsquo; own words. Being shown here gives a view no weight in the assessment.
       </p>
       {current.map((v) => (
         <StatedViewCard key={v.id} v={v} />
@@ -126,10 +135,6 @@ export function StatedViews({
           <summary>
             {earlier.length === 1 ? "1 earlier statement" : `${earlier.length} earlier statements`}
           </summary>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem" }}>
-            Statements a speaker has since restated. A statement is never edited: the newer one is
-            shown as current and the earlier one stays, dated.
-          </p>
           {earlier.map((v) => (
             <StatedViewCard key={v.id} v={v} />
           ))}

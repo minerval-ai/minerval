@@ -47,7 +47,6 @@ export default async function SetupPage() {
   return (
     <div className="col-wide">
       <PageHead
-        back={{ href: "/docs", label: "docs" }}
         title="Setup versions"
         lede={
           <>

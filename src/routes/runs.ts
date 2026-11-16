@@ -1,7 +1,9 @@
 /**
  * /runs (#553): agent runs, read-only. A public run (one with no private
  * reasons, llm/run-visibility.ts) is served in full to anyone; any other run
- * answers with its id, agent and the reasons it is withheld. A direct service
+ * answers with its id, agent and the reasons it is withheld, except that in
+ * a members-only deployment a member who reads the run's label reads a run
+ * whose reasons that label covers (services/run-view-service.ts). A direct service
  * caller reads a private run only by asking for it (include_private=true):
  * the web tier holds a service key and renders pages for everyone, so a
  * service key alone must not open private runs.
@@ -25,6 +27,8 @@ import {
   listRunSteps,
   verifyRunLog,
 } from "../services/run-view-service.js";
+import { rawSourceLabelsOf } from "../raw-sources.js";
+import { membersOnly, standingOf } from "../permissions.js";
 
 const RUN_ID = { type: "string", pattern: "^[0-9a-fA-F-]{36}$" } as const;
 
@@ -42,6 +46,14 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     isDirectService(request.auth ?? null) &&
     (request.query as { include_private?: boolean }).include_private === true;
   const includePrivate = { include_private: { type: "boolean", default: false } } as const;
+  // Who is reading, as the service needs it: whether a direct service
+  // caller asked for private runs; the labels the request reads as a member
+  // of a members-only deployment; and the labels whose sources it may open.
+  const reader = (request: FastifyRequest) => ({
+    isService: isService(request),
+    memberReads: membersOnly() ? standingOf(request.auth).clearance : null,
+    rawSourceLabels: rawSourceLabelsOf(request.auth),
+  });
 
   app.get<{ Params: { run_id: string } }>("/:run_id", {
     schema: {
@@ -49,7 +61,9 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
       summary:
         "An agent run: its agent, times, outcome, cost, the commit it ran, and its setup " +
         "(constitution, role prompt, tools, model) by version. A run that read private " +
-        "data answers public: false with the reasons. run_id is a run's id, or a research " +
+        "data answers public: false with the reasons; where a deployment keeps its reads to " +
+        "members, a member who reads the run's label reads a run whose reasons are that it " +
+        "read or wrote material at that label. run_id is a run's id, or a research " +
         "run's (the research_run_id a request's work or a research report names), which " +
         "reads the Researcher's run",
       params: { type: "object", properties: { run_id: RUN_ID }, required: ["run_id"] },
@@ -57,7 +71,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: [optionalAuth],
     handler: async (request, reply) => {
-      const run = await getRunSummary(request.params.run_id, { isService: isService(request) });
+      const run = await getRunSummary(request.params.run_id, reader(request));
       if (!run) return notFound(reply, request, "Run");
       return reply.send(run);
     },
@@ -77,7 +91,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: [optionalAuth],
     handler: async (request, reply) => {
-      const check = await verifyRunLog(request.params.run_id, { isService: isService(request) });
+      const check = await verifyRunLog(request.params.run_id, reader(request));
       if (!check) return notFound(reply, request, "Run");
       return reply.send(check);
     },
@@ -112,7 +126,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
         limit,
         kind,
         tool,
-        isService: isService(request),
+        ...reader(request),
       });
       if (!page) return notFound(reply, request, "Run");
       return reply.send(page);
@@ -132,9 +146,9 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: [optionalAuth],
     handler: async (request, reply) => {
-      const step = await getRunStep(request.params.run_id, request.params.seq, {
-        isService: isService(request),
-      });
+      // Text a step holds from a source is a permission of its own in a
+      // members-only deployment (src/raw-sources.ts).
+      const step = await getRunStep(request.params.run_id, request.params.seq, reader(request));
       if (!step) return notFound(reply, request, "Step");
       return reply.send(step);
     },

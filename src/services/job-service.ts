@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
 import { jobs } from "../db/schema.js";
 import { currentLabel } from "../llm/usage-context.js";
 
@@ -16,7 +16,9 @@ export interface JobAttribution {
 export async function createJob(
   type: string,
   input: Record<string, unknown>,
-  attribution?: JobAttribution
+  attribution?: JobAttribution,
+  /** The ledger row this job executes, if one is behind it. */
+  actionId?: string | null
 ) {
   const db = getDb();
   const [job] = await db
@@ -26,6 +28,7 @@ export async function createJob(
       input,
       userId: attribution?.userId ?? null,
       apiKeyId: attribution?.apiKeyId ?? null,
+      actionId: actionId ?? null,
       // The worker that picks the job up runs at this (src/labels.ts).
       sensitivityLabel: currentLabel(),
     })
@@ -65,4 +68,42 @@ export async function updateJob(
     .where(eq(jobs.id, jobId))
     .returning();
   return updated ?? null;
+}
+
+/**
+ * A worker takes a job up: it is 'processing' from now, with its start,
+ * its attempt number and its first heartbeat stamped. Null when the job is
+ * not to be run: it completed already (a message delivered twice), or the
+ * recovery sweep gave up on it and its ledger row has submitted the source
+ * again under a new job (result.abandoned). The attempt number is the run's
+ * hold on the job (stillHoldsJob).
+ */
+export async function startJobAttempt(jobId: string): Promise<{ attempt: number } | null> {
+  const [row] = await rawQuery<{ attempts: number }>(
+    `UPDATE jobs
+        SET status = 'processing', attempts = attempts + 1,
+            started_at = now(), heartbeat_at = now()
+      WHERE id = $1
+        AND status <> 'completed'
+        AND NOT (status = 'failed' AND COALESCE(result->>'abandoned', '') = 'true')
+      RETURNING attempts`,
+    [jobId]
+  );
+  return row ? { attempt: Number(row.attempts) } : null;
+}
+
+/**
+ * Stamp progress on a job the run still holds, and say whether it does. A
+ * run loses its hold when a later attempt took the job up (the lane gave up
+ * on this one and the message was delivered again) or the job left
+ * 'processing' (the recovery sweep abandoned it).
+ */
+export async function stillHoldsJob(jobId: string, attempt: number): Promise<boolean> {
+  const rows = await rawQuery<{ id: string }>(
+    `UPDATE jobs SET heartbeat_at = now()
+      WHERE id = $1 AND attempts = $2 AND status = 'processing'
+      RETURNING id`,
+    [jobId, attempt]
+  );
+  return rows.length > 0;
 }

@@ -21,8 +21,9 @@ export function ImportanceTicks({ value }: { value: number }) {
 }
 
 /**
- * Where a node stands now: a claim's status with its credence, or a
- * question's standing. `plain` draws the same badge without its glossary
+ * Where a node stands now: a claim's status, or a question's standing.
+ * Verdict confidence is not shown: a bare figure beside a status read as a
+ * credence. `plain` draws the same badge without its glossary
  * link, for use inside something that is already a link (a margin card).
  */
 export function Standing({ card, plain = false }: { card: ClaimCard | undefined; plain?: boolean }) {
@@ -46,11 +47,6 @@ export function Standing({ card, plain = false }: { card: ClaimCard | undefined;
         </span>
       ) : (
         <StatusBadge status={card.assessment_status} />
-      )}
-      {typeof card.assessment_confidence === "number" && (
-        <span className="fnd-credence" title="How sure the Steward is of this status, from 0 to 1.">
-          {card.assessment_confidence.toFixed(2)}
-        </span>
       )}
     </span>
   );

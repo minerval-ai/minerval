@@ -23,6 +23,11 @@
  *    (set_feed_rule); read_listing for an archive or index;
  *  - the graph feed: what changed in its territory since its last run, and
  *    query_sql over the public views;
+ *  - where the deployment is connected to an organization's systems and
+ *    the lookout's label reads a connection's: that connection's reading
+ *    tools, the ones its administrator picked, under the limits every run
+ *    is told (tools/connection-tools.ts). Nothing else tells the graph that
+ *    data behind a connection changed. It keeps no reading as a source;
  *  - three ways to act: flag_reassessment (a pass, commissioned within its
  *    limit or raised to the officers), propose_ingest (the same for a
  *    source), leave_note (for the next review);
@@ -45,6 +50,7 @@ import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 const GRAPH_FEED_PER_RUN = 60;
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
+import { STANDING_ORDER_RETRY_MINUTES } from "../../services/standing-order-service.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
 import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
@@ -56,6 +62,7 @@ import {
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
 import { createMandateTools } from "../tools/mandate-tools.js";
+import { createConnectionTools } from "../tools/connection-tools.js";
 import {
   consumeLookoutEvents,
   countPendingLookoutEvents,
@@ -252,6 +259,10 @@ async function runLookoutImpl(input: {
   // (#691). No grantId: the lookout's workspace is its own, not the
   // mandate's, and is written by its own tool below.
   const mandateTools = createMandateTools();
+  // The connections at this lookout's label, to look and not to keep: a
+  // lookout records nothing on the graph, and what it raises says what it
+  // called so that a Steward can make the call itself.
+  const connectionTools = await createConnectionTools({ config, keeps: false });
 
   // Queued inputs in full, up to EVENTS_FULL_CHARS; the rest one line each.
   const shownInFull: string[] = [];
@@ -279,6 +290,7 @@ async function runLookoutImpl(input: {
     getSqlToolDefinition(),
     ...contributionTools.definitions,
     ...mandateTools.definitions,
+    ...connectionTools.definitions,
     ...(summarized.length > 0
       ? [
           {
@@ -509,12 +521,23 @@ async function runLookoutImpl(input: {
       : "") +
     `### Your brief\n\n${lookout.brief}\n\n` +
     `### Your delegated bounds\n\n` +
+    `These are the figures your Grantmaker set when it posted you, and the ones you are held to. Where your ` +
+    `brief names a different figure (a daily allowance, another amount), these govern.\n\n` +
     (Number(lookout.commission_limit_micro_usd ?? 0) > 0
-      ? `- You may commission work yourself up to ${Number(lookout.commission_limit_micro_usd ?? 0) / 1_000_000} owls an item ` +
-        `(name budget_owls); anything above that, or without a budget, goes to the mandate's program officers.\n`
-      : `- Everything you raise goes to the mandate's program officers, who decide under its operating policy.\n`) +
+      ? `- You may commission work yourself up to ${Number(lookout.commission_limit_micro_usd ?? 0) / 1_000_000} owls for ` +
+        `each item (name budget_owls). This is a per-item limit, not a daily one: you have no allowance per day ` +
+        `of your own, and what you commission comes out of the mandate's pace like the rest of its work, so a ` +
+        `commission the pace or the escrow has no room for goes to the officers instead. Anything above the limit, or raised ` +
+        `without a budget, goes to the mandate's program officers, who weigh it against everything else the ` +
+        `mandate could buy; the limit exists so that larger calls on the funder's money get that weighing.\n`
+      : `- Your commission limit is 0: everything you raise goes to the mandate's program officers, who decide ` +
+        `under its operating policy. Your Grantmaker kept every spending decision for them.\n`) +
     `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
-    `- Heartbeat: ${lookout.heartbeat_hours > 0 ? `every ${lookout.heartbeat_hours}h` : "none (event-driven)"}; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
+    `- Heartbeat: ${
+      lookout.heartbeat_hours > 0
+        ? `every ${lookout.heartbeat_hours}h (a run opens within about ${STANDING_ORDER_RETRY_MINUTES} minutes of falling due)`
+        : "none (event-driven)"
+    }; triggers: ${(lookout.triggers ?? []).join(", ") || "none"}.\n\n` +
     `### Inputs queued for this run\n\n${eventsText}\n\n` +
     (graphFeed
       ? `### What changed in your territory since your last run (${graphFeed.changes.length} entries)\n\n${graphFeedText}\n\n`
@@ -522,6 +545,7 @@ async function runLookoutImpl(input: {
     (feeds.length > 0
       ? `### Your feeds and what is waiting in your inbox\n\n${feedsText}\n\n`
       : "") +
+    (connectionTools.note ? `### Systems you can read\n\n${connectionTools.note}\n\n` : "") +
     `### Your recent flags and what became of them\n\n` +
     (recentFlags.length >= RECENT_FLAGS_SHOWN && Number(lookout.flags) > recentFlags.length
       ? `The ${recentFlags.length} most recent of the ${lookout.flags} you have raised; keep what matters about older ones in your workspace.\n\n`
@@ -573,6 +597,8 @@ async function runLookoutImpl(input: {
 
           const mandateTool = await mandateTools.execute(name, toolInput);
           if (mandateTool !== null) return mandateTool;
+          const connection = await connectionTools.execute(name, toolInput);
+          if (connection !== null) return connection;
 
           if (name === "read_event") {
             const e = eventsById.get(String(toolInput.event_id ?? ""));

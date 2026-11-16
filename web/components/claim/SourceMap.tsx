@@ -5,6 +5,7 @@ import type {
   SourceMapSummary,
   SourceRelationship,
 } from "@/lib/types";
+import { sourceHref } from "@/lib/source-address";
 
 // Source provenance (#286): what the claim's support rests on, as the
 // Steward recorded it. Three pieces, each rendering nothing until the API
@@ -44,7 +45,8 @@ const FIDELITY_CLAUSE: Record<ProvenanceEdge["fidelity"], string> = {
 };
 
 function sourceName(s: { title: string; url: string | null }) {
-  return s.url ? <a href={s.url}>{s.title}</a> : <span>{s.title}</span>;
+  const href = sourceHref(s.url);
+  return href ? <a href={href}>{s.title}</a> : <span>{s.title}</span>;
 }
 
 /** The Steward's account of what the support rests on, when it judged it worth showing. */
@@ -65,7 +67,8 @@ export function InstanceReadingLine({ reading }: { reading: InstanceReading | nu
   if (!reading) return null;
   const support = SUPPORT_LINE[reading.support] ?? null;
   const misquoted = reading.quote_check === "not_found";
-  if (!support && !reading.note && !misquoted && !reading.worth_reading) return null;
+  const elided = reading.quote_check === "elided_match";
+  if (!support && !reading.note && !misquoted && !elided && !reading.worth_reading) return null;
   return (
     <p className="instance-reading">
       {support && <span>{support} </span>}
@@ -76,6 +79,11 @@ export function InstanceReadingLine({ reading }: { reading: InstanceReading | nu
       {misquoted && (
         <span className="caution">
           The quoted passage was not found in the stored copy of this source.
+        </span>
+      )}
+      {elided && (
+        <span className="caution">
+          The quotation leaves text out; each piece is in the stored copy, in order. The source page shows what the cuts skip.
         </span>
       )}
     </p>

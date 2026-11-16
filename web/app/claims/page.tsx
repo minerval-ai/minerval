@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SeveralAssessments } from "@/components/SeveralAssessments";
 import { loadClaims, loadFeatures, loadOpenPrizes, loadTag, loadTags, loadTerritories } from "@/lib/data";
 import { featureOn } from "@/lib/features";
 import { claimTypeMeta, DEFINED_IN, IMPORTANCE_FLOORS, importanceFloorMin } from "@/lib/ontology";
@@ -14,6 +15,8 @@ import { MachineChecked } from "@/components/claim/MachineChecked";
 import { describeEstimate } from "@/lib/quantity";
 import type { AssessedFilter, ClaimType, NodeKind, SearchResultItem } from "@/lib/types";
 import { PageHead } from "@/components/PageHead";
+import { fetchMyLabels, type MyLabels } from "@/lib/admin-api";
+import { loadStanding } from "@/lib/standing";
 
 // How many newest claims the demoted "recently added" strip shows in the
 // overview. Small on purpose: it is orientation, not the feed.
@@ -91,6 +94,11 @@ export default async function ClaimsIndex({
   const tagSlug = tagRaw?.trim() || undefined;
   // One kind only (claims, questions, quantities); an unknown kind is ignored.
   const kind = NODE_KINDS.find((k) => k === kindRaw);
+  // A members-only deployment with more than one label asks which one a
+  // proposed node is filed at (null on the public graph, where nothing is asked).
+  const standing = await loadStanding();
+  const labels: MyLabels | null =
+    standing.state === "signed_in" ? await fetchMyLabels(standing.externalId).catch(() => null) : null;
   const filtersActive =
     assessed !== "assessed" || minImportance > 0 || withPrizes || !!claimType || !!tagSlug || !!kind;
 
@@ -149,7 +157,7 @@ export default async function ClaimsIndex({
           of micro black holes, and eggs and cardiovascular risk.
         </p>
 
-        <ProposeClaim />
+        <ProposeClaim labels={labels} />
       </div>
     );
   }
@@ -228,6 +236,7 @@ export default async function ClaimsIndex({
                 </Link>
                 <div className="card-foot">
                   <Verdict c={c} href={claimHref} />
+                  <SeveralAssessments id={c.id} n={c.judgments_in_force} />
                   {kindTag ? (
                     <Term gloss={kindTag.gloss} href={kindTag.href} linkTo={claimHref} className="tag kind">
                       {kindTag.label}
@@ -267,7 +276,7 @@ export default async function ClaimsIndex({
           contributions live on each claim's own page. It carries the search
           whether or not anything matched: results that are near the query
           but not it are the usual reason to propose. */}
-      <ProposeClaim searchQuery={q} />
+      <ProposeClaim searchQuery={q} labels={labels} />
     </div>
   );
 }

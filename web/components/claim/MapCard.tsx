@@ -9,11 +9,15 @@ import styles from "./margins.module.css";
 // colours its glyphs; an unassessed subclaim stays a hollow dashed dot, and a
 // subclaim with a live prize wears the map's double ring.
 const W = 208;
-const H = 88;
+const H_TREE = 88;
+// With nothing beneath the focus card, the figure is the card alone: the
+// row where subclaims would sit is left out rather than drawn empty.
+const H_LONE = 40;
 
 export function MapCard({ claimId, tree }: { claimId: string; tree?: TreeNode }) {
   const children = (tree?.children ?? []).slice(0, 7);
   const n = children.length;
+  const H = n === 0 ? H_LONE : H_TREE;
 
   const focusW = 84, focusH = 24;
   const focusX = (W - focusW) / 2, focusY = 8;

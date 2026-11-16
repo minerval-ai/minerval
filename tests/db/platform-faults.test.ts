@@ -65,6 +65,14 @@ import {
 } from "../../src/services/deployment-fault-service.js";
 import { collectMandateEvents, pendingMandateEvents } from "../../src/services/mandate-event-service.js";
 import { queueHealth } from "../../src/services/monitor-service.js";
+import { taggingQueueHealth } from "../../src/services/tag-service.js";
+import {
+  clearTaggingLaneWait,
+  currentTaggingLaneWait,
+  holdTaggingLaneOnBreaker,
+  holdTaggingLaneOnFault,
+  readTaggingLaneWait,
+} from "../../src/services/tagging-lane.js";
 import { createJob } from "../../src/services/job-service.js";
 import { getOrCreateSource } from "../../src/services/source-service.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
@@ -226,6 +234,11 @@ describe("a ledger row whose run a provider refuses for credits", () => {
     const otherTier = await fundedRow({ variant: tier(), status: "open" });
     // Not funded: it waits on money, as it did before, not on the fault.
     const unfunded = await seedAction({ group: `faulttest:${randomUUID()}`, kind: "lookout_run", variant, costMicroUsd: 10_000 });
+    // Money on it and no commission: no executor picks it, so it waits on a
+    // payer, not on the fault, and nothing would ever try it and clear a mark.
+    const looseGroup = `faulttest:${randomUUID()}`;
+    const loose = await seedAction({ group: looseGroup, kind: "lookout_run", variant, costMicroUsd: 10_000 });
+    await seedAllocation({ group: looseGroup, actionId: loose, userId: (payer ??= await seedUser("fault-payer")), amountMicroUsd: 50_000, commissionedBy: null });
 
     await releaseAction(a.id, refused());
     const first = await row(a.id);
@@ -234,6 +247,7 @@ describe("a ledger row whose run a provider refuses for credits", () => {
     expect(held.retry_after?.getTime()).toBe(first.retry_after?.getTime());
     expect((await row(otherTier.id)).fault_reason).toBeNull();
     expect((await row(unfunded)).fault_reason).toBeNull();
+    expect((await row(loose)).fault_reason).toBeNull();
 
     // The sibling is tried when the wait ends and is refused too: the count
     // is the kind's, so the wait doubles whichever row was tried.
@@ -286,6 +300,72 @@ describe("a ledger row whose run a provider refuses for credits", () => {
     const other = await row(elsewhere.id);
     expect(other.fault_reason).toBe("credits_fault");
     expect(other.wait_seconds).toBeLessThanOrEqual(0);
+  });
+
+  it("stops waiting when any row of its kind and tier runs, not only one that had waited", async () => {
+    // 2026-11-13: the row picked when a wait ended was one commissioned after
+    // the fault, never marked; nine such sweeps finished and thirteen rows
+    // went on reading as waiting.
+    const variant = tier();
+    const a = await fundedRow({ variant });
+    const sibling = await fundedRow({ variant, status: "open" });
+    const elsewhere = await fundedRow({ kind: "consistency_sweep", variant: tier() });
+    const otherClass = await fundedRow({ kind: "correspondent_run", variant: tier() });
+    await releaseAction(a.id, refused());
+    await releaseAction(elsewhere.id, refused());
+    await releaseAction(otherClass.id, Object.assign(new Error("503"), { status: 503 }));
+    // Placed after the fault, and not marked.
+    const fresh = await fundedRow({ variant });
+    expect((await row(fresh.id)).fault_reason).toBeNull();
+
+    // A row that closes having spent nothing says nothing about the provider.
+    const idle = await fundedRow({ variant });
+    await completeAction(idle.id, 0);
+    expect((await row(a.id)).fault_reason).toBe("credits_fault");
+    expect((await row(sibling.id)).fault_reason).toBe("credits_fault");
+
+    await completeAction(fresh.id, 12_000);
+    expect(await row(a.id)).toMatchObject({ status: "open", fault_reason: null, fault_since: null, fault_attempts: 0, retry_after: null });
+    expect(await row(sibling.id)).toMatchObject({ status: "open", fault_reason: null, retry_after: null });
+    // Another kind on the same class is tried now; one on another class waits on.
+    const other = await row(elsewhere.id);
+    expect(other.fault_reason).toBe("credits_fault");
+    expect(other.wait_seconds).toBeLessThanOrEqual(0);
+    expect((await row(otherClass.id)).wait_seconds).toBeGreaterThan(0);
+  });
+
+  it("reads as due, not waiting, once its next attempt has come", async () => {
+    const variant = tier();
+    const a = await fundedRow({ variant });
+    await releaseAction(a.id, refused());
+    const read = async () => {
+      const [pub] = await rawQuery<{ waiting_on: string | null; waiting_since: Date | null; next_attempt_at: Date | null }>(
+        `SELECT waiting_on, waiting_since, next_attempt_at FROM public_read.ledger WHERE action_id = $1`,
+        [a.id]
+      );
+      const mine = (await queueHealth()).waitingOnFault.filter((w) => w.kind === "lookout_run" && w.reason === "credits_fault");
+      return { pub: pub!, rows: mine.reduce((n, w) => n + w.rows, 0), due: mine.reduce((n, w) => n + w.due, 0) };
+    };
+    const waiting = await read();
+    expect(waiting.pub.waiting_on).toBe("credits_fault");
+    expect(waiting.rows).toBeGreaterThanOrEqual(1);
+
+    // The wait ends and nothing has picked the row yet. The fault stays on
+    // it (a second refusal continues the doubling), and no surface says it
+    // is waiting on one.
+    await rawQuery(`UPDATE actions SET retry_after = now() - interval '1 second' WHERE id = $1`, [a.id]);
+    const due = await read();
+    expect((await row(a.id)).fault_reason).toBe("credits_fault");
+    expect(due.pub).toMatchObject({ waiting_on: null, waiting_since: null, next_attempt_at: null });
+    expect(due.rows).toBe(waiting.rows - 1);
+    expect(due.due).toBe(waiting.due + 1);
+    expect(await actionWaitingOn(a.id)).toBeNull();
+
+    // Refused again: waiting again, the count carried on.
+    await rawQuery(`UPDATE actions SET status = 'running' WHERE id = $1`, [a.id]);
+    await releaseAction(a.id, refused());
+    expect((await row(a.id)).fault_attempts).toBe(2);
+    expect((await read()).pub.waiting_on).toBe("credits_fault");
   });
 
   it("never reads as waiting once it is closed, whichever statement closed it", async () => {
@@ -509,6 +589,49 @@ describe("an ingest a deployment fault stops", () => {
   });
 });
 
+describe("the tagging lane, which has no ledger row", () => {
+  // The lane's wait is one row of platform_flags (services/tagging-lane.ts),
+  // written by whichever task met the fault and read by the process that
+  // serves /queue and /monitors.
+  afterEach(() => clearTaggingLaneWait());
+
+  it("says on /queue and /monitors what it is waiting on, since when and until when, and stops saying so when the attempt is due", async () => {
+    expect((await taggingQueueHealth()).waiting).toBeNull();
+
+    const placed = await holdTaggingLaneOnFault("credits_fault", null);
+    expect(placed).toMatchObject({ reason: "credits_fault", attempts: 1 });
+    const health = await taggingQueueHealth();
+    expect(health.waiting).toMatchObject({ reason: "credits_fault", attempts: 1, since: placed.since, next_attempt_at: placed.next_attempt_at });
+    expect(health.waiting!.reason_label).toContain("out of credits");
+    expect(typeof health.pending).toBe("number");
+    const lane = (await queueHealth()).taggingLane;
+    expect(lane.waiting).toMatchObject({ reason: "credits_fault", next_attempt_at: placed.next_attempt_at });
+    expect(lane.pending).toBe(health.pending);
+
+    // A second refusal continues the count from the first and keeps its since.
+    const second = await holdTaggingLaneOnFault("credits_fault", await readTaggingLaneWait());
+    expect(second).toMatchObject({ attempts: 2, since: placed.since });
+    expect(Date.parse(second.next_attempt_at) - Date.now()).toBeGreaterThan(FAULT_RETRY_BASE_SECONDS * 2 * 1000 - 5000);
+
+    // Its time has come and no tick has run yet: due, not waiting.
+    const later = Date.parse(second.next_attempt_at) + 1;
+    expect(await currentTaggingLaneWait(later)).toBeNull();
+    expect(await readTaggingLaneWait()).toMatchObject({ reason: "credits_fault", attempts: 2 });
+
+    await clearTaggingLaneWait();
+    expect((await taggingQueueHealth()).waiting).toBeNull();
+    expect((await queueHealth()).taggingLane.waiting).toBeNull();
+  });
+
+  it("says so when it is the spend breaker it waits on, until the breaker's window rolls over", async () => {
+    const placed = await holdTaggingLaneOnBreaker("hourly_call_count", null);
+    expect(Date.parse(placed.next_attempt_at) % 3_600_000).toBe(0);
+    const health = await taggingQueueHealth();
+    expect(health.waiting).toMatchObject({ reason: "spend_breaker", attempts: 0 });
+    expect(health.waiting!.reason_label).toContain("spend breaker");
+  });
+});
+
 describe("what the operator is told", () => {
   it("one open fault and one report, however many calls it fails; the class on /monitors, the provider's words only in the report", async () => {
     const provider = `prov-${randomUUID().slice(0, 8)}`;
@@ -556,7 +679,12 @@ describe("what the operator is told", () => {
     const health = await queueHealth();
     const shown = health.deploymentFaults.filter((f) => f.provider === provider);
     expect(shown).toHaveLength(2);
-    expect(JSON.stringify(health.deploymentFaults)).not.toMatch(/402|available credits|x-api-key/);
+    // The provider's words stay out of the view. Its timestamps are left out
+    // of the check, and the status code is matched as a whole number: a bare
+    // /402/ also matched a millisecond field such as "…:30.402Z", so this
+    // failed on roughly one run in a few hundred whatever the change.
+    const words = JSON.stringify(health.deploymentFaults.map(({ since: _s, lastSeen: _l, ...f }) => f));
+    expect(words).not.toMatch(/\b402\b|available credits|x-api-key/);
     expect(health.waitingOnFault.find((w) => w.reason === "credits_fault" && w.kind === "lookout_run")?.rows).toBeGreaterThanOrEqual(1);
   });
 

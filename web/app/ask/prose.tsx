@@ -119,9 +119,6 @@ export function ClaimPreview({ citation }: { citation: AssistantCitationView }) 
           <span className="tag kind">{citation.kind}</span>
         )}
         {citation.kind === "question" && <span className="tag kind">question</span>}
-        {typeof citation.confidence === "number" && (
-          <span className="ask-fact">confidence {citation.confidence.toFixed(2)}</span>
-        )}
         {citation.assessed_at && (
           <span className="ask-fact">assessed {citation.assessed_at.slice(0, 10)}</span>
         )}

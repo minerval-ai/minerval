@@ -51,7 +51,8 @@ export interface ClaimForAssessment {
     kind: NodeKind;
     /** A claim's status; "unknown" when no verdict is recorded, or for another kind. */
     status: string;
-    confidence: number;
+    /** Null when the node has not been assessed: there is no confidence to give. */
+    confidence: number | null;
     /** The reader-facing summary of the current assessment, estimate or standing. */
     summary: string | null;
     /** What a quantity measures, of what population, in what unit. */
@@ -65,6 +66,12 @@ export interface ClaimForAssessment {
     estimate?: QuantityEstimate | null;
     /** A question's current standing. */
     standing?: QuestionStanding | null;
+    /**
+     * Set only where more than one judgment of the node is in force for the
+     * asker: one sentence saying how many, and that what is given above is
+     * the most recently made (judgment-version-service.ts).
+     */
+    several_judgments?: string;
     subclaim_count: number;
   };
 }

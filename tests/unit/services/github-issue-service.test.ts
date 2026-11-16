@@ -96,8 +96,17 @@ function requests(): Array<[string, string, unknown]> {
   ]);
 }
 
+/** The label the report's row carries, as the service reads it before anything is sent. */
+let reportLabel = "public";
+const LABEL_READ = "SELECT sensitivity_label FROM agent_reports";
+/** Every statement but that read: what the service wrote. */
+const writes = () => mocks.rawQuery.mock.calls.filter(([sql]) => !String(sql).includes(LABEL_READ));
+
 beforeEach(() => {
-  mocks.rawQuery.mockReset().mockResolvedValue([]);
+  reportLabel = "public";
+  mocks.rawQuery
+    .mockReset()
+    .mockImplementation(async (sql: string) => (sql.includes(LABEL_READ) ? [{ sensitivity_label: reportLabel }] : []));
   mocks.fetch.mockReset().mockImplementation(async (url: string, init: RequestInit) => {
     const path = String(url);
     if (init.method === "POST" && path.endsWith("/labels")) {
@@ -254,7 +263,7 @@ describe("fileIssueForReport", () => {
     const init = mocks.fetch.mock.calls[0]![1] as RequestInit;
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer ghp_test");
 
-    const [sql, params] = mocks.rawQuery.mock.calls[0]!;
+    const [sql, params] = writes()[0]!;
     expect(String(sql)).toContain("WHERE id = $1 AND github_issue_number IS NULL");
     expect(params).toEqual([REPORT_ID, 41, "https://github.com/minerval-ai/minerval/issues/41"]);
 
@@ -321,7 +330,7 @@ describe("fileIssueForReport", () => {
         : response(422, {})
     );
     expect(await fileIssueForReport(ROW)).toBeNull();
-    expect(mocks.rawQuery).not.toHaveBeenCalled();
+    expect(writes()).toHaveLength(0);
 
     mocks.fetch.mockRejectedValue(new Error("ECONNRESET"));
     expect(await fileIssueForReport(ROW)).toBeNull();
@@ -331,6 +340,37 @@ describe("fileIssueForReport", () => {
     mocks.fetch.mockImplementation(async () => response(403, { message: "Forbidden" }));
     expect(await fileIssueForReport(ROW)).toBeNull();
     expect(requests().filter(([, p]) => p.endsWith("/issues"))).toHaveLength(0);
+  });
+});
+
+// A tracker is outside the deployment: only public work is ever sent to it.
+describe("what stays inside the deployment", () => {
+  it("does not file a report that is at any label but public", async () => {
+    reportLabel = "internal";
+    expect(await fileIssueForReport(ROW)).toBeNull();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("does not file a report this work cannot read", async () => {
+    mocks.rawQuery.mockReset().mockResolvedValue([]);
+    expect(await fileIssueForReport(ROW)).toBeNull();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing a run at another label says about a public report: no sighting, no note, no triage note", async () => {
+    const { runWithUsageContext } = await import("../../../src/llm/usage-context.js");
+    await runWithUsageContext({ label: "internal" }, async () => {
+      expect(await fileIssueForReport(ROW)).toBeNull();
+      await syncSightingToIssue(
+        { ...WITH_ISSUE, occurrence_count: 5 },
+        { reopened: true, account: "It failed on the partner's document.", agent: "curator", explicit: true }
+      );
+      await syncTriageToIssue({ ...WITH_ISSUE, status: "wontfix", triage_note: "Only the partner's files do this." });
+    });
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    // The label of the work in progress settles it before the row is read.
+    expect(mocks.rawQuery).not.toHaveBeenCalled();
   });
 });
 
@@ -347,7 +387,7 @@ describe("syncSightingToIssue", () => {
     expect(path).toBe("/repos/minerval-ai/minerval/issues/41/comments");
     expect((body as { body: string }).body).toContain("Seen again");
     expect((body as { body: string }).body).toContain("5 time(s)");
-    expect(String(mocks.rawQuery.mock.calls[0]![0])).toContain("github_synced_at = now()");
+    expect(String(writes()[0]![0])).toContain("github_synced_at = now()");
   });
 
   it("always carries an account the agent gave, with where it happened", async () => {
@@ -449,7 +489,7 @@ describe("syncTriageToIssue", () => {
       state_reason: "completed",
       labels: expect.arrayContaining(["status/actioned"]),
     });
-    const update = mocks.rawQuery.mock.calls.find(([sql]) => sql.includes("status = 'actioned'"));
+    const update = writes().find(([sql]) => sql.includes("status = 'actioned'"));
     expect(update?.[1]).toEqual([REPORT_ID]);
   });
 
@@ -462,7 +502,7 @@ describe("syncTriageToIssue", () => {
     );
     await syncTriageToIssue({ ...WITH_ISSUE, status: "triaged" });
     expect(requests().find(([m]) => m === "PATCH")![2]).toMatchObject({ state: "open" });
-    expect(mocks.rawQuery.mock.calls.some(([sql]) => sql.includes("status = 'actioned'"))).toBe(false);
+    expect(writes().some(([sql]) => sql.includes("status = 'actioned'"))).toBe(false);
   });
 
   it("names a duplicate's target, and is a no-op without an issue", async () => {
@@ -523,7 +563,7 @@ describe("syncIssueClosures (#493)", () => {
     const list = requests().find(([m, p]) => m === "GET" && p.includes("state=closed"))!;
     expect(list[1]).toContain("labels=agent-generated");
     expect(list[1]).toContain("since=2026-08-01T00%3A00%3A00.000Z");
-    const update = mocks.rawQuery.mock.calls.find(([sql]) => String(sql).includes("UPDATE agent_reports"))!;
+    const update = writes().find(([sql]) => String(sql).includes("UPDATE agent_reports"))!;
     expect(update[0]).toContain("status IN ('new', 'triaged')");
     expect(update[0]).toContain("Earlier note: ");
     expect(update[1]).toEqual([

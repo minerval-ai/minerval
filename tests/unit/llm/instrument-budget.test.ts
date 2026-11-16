@@ -28,9 +28,13 @@ describe("estimateBudget", () => {
 });
 
 describe("spendLine", () => {
-  it("states the spend, the share, and the turns left at the last turn's cost", () => {
+  it("states the spend and the share, and the turns left only once most of the budget is spent", () => {
+    // Early in a run a countdown reads as pressure to stop short.
     expect(spendLine({ spentMicroUsd: 840_000, ceilingMicroUsd: 2_000_000, lastTurnMicroUsd: 60_000 })).toBe(
-      "Budget: $0.84 of $2.00 spent (42%). Your last turn cost $0.06; at that rate about 19 turns remain, fewer as the conversation grows."
+      "Budget: $0.84 of $2.00 spent (42%)."
+    );
+    expect(spendLine({ spentMicroUsd: 1_500_000, ceilingMicroUsd: 2_000_000, lastTurnMicroUsd: 100_000 })).toBe(
+      "Budget: $1.50 of $2.00 spent (75%). Your last turn cost $0.10; at that rate about 5 turns remain, fewer as the conversation grows."
     );
   });
 

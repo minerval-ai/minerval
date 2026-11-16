@@ -152,20 +152,23 @@
 .legendLbl { color: var(--muted); }
 
 /* footnote under the compass clarifying what the colours mean */
-.compassNote {
-  font-size: 0.62rem;
-  line-height: 1.4;
-  letter-spacing: 0.01em;
-  color: var(--faint);
-  margin: 0.15rem 0 0;
-}
 
-/* resting state for atomic claims / zero dependents */
-.emptyNote {
-  font-size: 0.76rem;
-  line-height: 1.5;
+/* the rail's word for a claim with no subclaims (DecompositionState) */
+.stateLabel {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  margin: 0.4rem 0 0.2rem;
+}
+/* the rail sits right under the site header, so the gloss opens below */
+.stateLabel :global(.term-pop) { bottom: auto; top: calc(100% + 0.5rem); }
+.stateLabel :global(.term-pop)::after { top: auto; bottom: 100%; }
+.stateNote {
+  font-size: 0.74rem;
+  line-height: 1.45;
   color: var(--muted);
-  margin: 0.85rem 0 0;
+  margin: 0 0 0.5rem;
 }
 
 /* ----- left: the map card (#192) ------------------------------------------

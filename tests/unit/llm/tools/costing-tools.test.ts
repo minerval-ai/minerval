@@ -36,7 +36,6 @@ vi.mock("../../../../src/services/allocation-policy-service.js", () => ({
 vi.mock("../../../../src/services/contribution-service.js", () => ({
   reviewCostEstimateMicroUsd: async () => 300_000,
 }));
-vi.mock("../../../../src/services/owl.js", () => ({ capMicroUsd: () => 1_000_000 }));
 vi.mock("../../../../src/services/research-run-service.js", () => ({
   RESEARCH_MODEL_TIERS: ["cheap"],
   modelForTier: () => "m",
@@ -62,8 +61,9 @@ describe("cost_sheet ledger_work", () => {
     expect(line("assess", "strong")).toMatchObject({ runs_last_30_days: 12, typical_usd: 1.5, ceiling_usd: 2.5 });
     expect(line("assess", "strong").note).toBeUndefined();
 
-    // Two runs is too few: the ceiling is the ingestion cap, and the line says so.
-    expect(line("ingest", "standard")).toMatchObject({ runs_last_30_days: 2, ceiling_usd: 1 });
+    // Two runs is too few: the ceiling is the ingest prior (the ledger's own
+    // figure, not the submitter's cap), and the line says so.
+    expect(line("ingest", "standard")).toMatchObject({ runs_last_30_days: 2, ceiling_usd: 0.25 });
     expect(line("ingest", "standard").note).toMatch(/prior/);
 
     // A kind with no runs yet still appears, priced from its prior.

@@ -9,10 +9,15 @@ function usd(micro: number): string {
   return `$${(Math.max(0, micro) / 1_000_000).toFixed(2)}`;
 }
 
+/** From this share of the budget on, the line also counts the turns left. */
+export const TURNS_LEFT_FROM_FRACTION = 0.7;
+
 /**
- * The line shown after every turn: what has been spent, of what, and about
- * how many turns remain at the last turn's cost. Turns grow dearer as the
- * history grows, so the count is an upper bound and says so.
+ * The line shown after every turn: what has been spent, of what, and, once
+ * most of the budget is spent, about how many turns remain at the last
+ * turn's cost. Turns grow dearer as the history grows, so the count is an
+ * upper bound and says so. The count is left off earlier: shown from the
+ * first turn it reads as a countdown and makes runs stop short.
  */
 export function spendLine(input: {
   spentMicroUsd: number;
@@ -22,7 +27,7 @@ export function spendLine(input: {
   const { spentMicroUsd: spent, ceilingMicroUsd: ceiling, lastTurnMicroUsd: last } = input;
   const pct = ceiling > 0 ? Math.min(100, Math.round((100 * spent) / ceiling)) : 100;
   const head = `Budget: ${usd(spent)} of ${usd(ceiling)} spent (${pct}%).`;
-  if (last <= 0 || spent >= ceiling) return head;
+  if (last <= 0 || spent >= ceiling || spent < ceiling * TURNS_LEFT_FROM_FRACTION) return head;
   const left = Math.floor((ceiling - spent) / last);
   return (
     `${head} Your last turn cost ${usd(last)}; at that rate about ${left} ` +

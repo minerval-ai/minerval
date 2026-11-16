@@ -115,11 +115,21 @@ export async function pageRoutes(app: FastifyInstance) {
     },
   });
 
-  app.get("/", {
-    schema: { tags: ["pages"], summary: "List the pages saved to your account" },
+  app.get<{ Querystring: { offset?: number; limit?: number } }>("/", {
+    schema: {
+      tags: ["pages"],
+      summary: "List the pages saved to your account, newest first, a page at a time",
+      querystring: {
+        type: "object",
+        properties: {
+          offset: { type: "integer", minimum: 0, default: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 100, default: 100 },
+        },
+      },
+    },
     preHandler: guards,
     handler: async (request, reply) => {
-      const pages = await listPages(request.auth!.userId!);
+      const pages = await listPages(request.auth!.userId!, request.query.limit ?? 100, request.query.offset ?? 0);
       return reply.send({ pages: pages.map(serializePageSummary) });
     },
   });

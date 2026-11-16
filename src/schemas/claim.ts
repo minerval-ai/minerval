@@ -90,6 +90,9 @@ export const assessmentResponse = z.object({
   status: assessmentStatusEnum,
   // Verdict confidence — how sure the Steward is of the status, not P(true).
   confidence: z.number(),
+  // The other reading (§10): the status the evidence could otherwise be read
+  // as; null where none was named. Optional so pre-deploy responses parse.
+  alternative_status: assessmentStatusEnum.nullable().optional(),
   // Credence that the claim is true; null where one number would be false
   // precision (constitution §7). Optional so pre-deploy responses still parse.
   claim_credence: z.number().nullable().optional(),
@@ -220,6 +223,12 @@ export interface TreeNode {
   unit?: unknown | null;
   standing?: string | null;
   steward_parked?: { reason: string; reason_label: string; since: string | null; failed_passes: number };
+  /** On a graph with more than one label: the label the edge into this node is recorded at, and its argument's. */
+  label?: string;
+  argument_label?: string;
+  /** Where a label the reader reads has set the edge, or its argument, aside: that label and its reason. */
+  set_aside?: { at: string; reason: string | null };
+  argument_set_aside?: { at: string; reason: string | null };
   children: TreeNode[];
   subtree_collapsed?: boolean;
   children_truncated?: boolean;
@@ -308,6 +317,7 @@ export const assessmentHistoryItem = z.object({
   claim_id: uuidSchema,
   status: assessmentStatusEnum,
   confidence: z.number(),
+  alternative_status: assessmentStatusEnum.nullable().optional(),
   claim_credence: z.number().nullable().optional(),
   summary: z.string(),
   reasoning_trace: z.string(),

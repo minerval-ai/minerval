@@ -10,7 +10,8 @@
  * on a request is recorded with its outcome, and every outcome (a negative
  * result, a finding that it cannot be met, a refusal) is a complete one.
  */
-import { rawQuery, withTransaction } from "../db/client.js";
+import { takenUpOn, type TakenUp } from "./request-take-up-service.js";
+import { rawQuery, requestTextMatch, withTransaction } from "../db/client.js";
 import {
   CLOSED_REQUEST_STATES,
   REQUEST_OUTCOMES,
@@ -21,6 +22,7 @@ import {
   type RequestState,
 } from "../schemas/kinds.js";
 import { generateEmbedding } from "./embedding-service.js";
+import { importanceSql } from "./overlay-service.js";
 import {
   closeRequestActions,
   COVERAGE_SQL,
@@ -84,6 +86,13 @@ export async function fileRequest(input: {
    */
   budgetUsd?: number | null;
   filer: RequestFiler;
+  /**
+   * Set by askAbove (ask-above-service.ts) and by nothing else: the request
+   * is addressed to the face of a label above and its asker has paid for
+   * work there. The work is that label's, so no ledger row is opened for
+   * it at this one.
+   */
+  askedOf?: { faceId: string; as: "work" | "mandate"; budgetMicroUsd: number } | null;
 }): Promise<{ id: string }> {
   for (const [field, v] of [["ask", input.ask], ["why", input.why], ["satisfied_by", input.satisfiedBy]] as const) {
     if (!v.trim()) throw new RequestError(`A request states its ${field}`);
@@ -96,6 +105,20 @@ export async function fileRequest(input: {
   const keeperClaimId = claimIds.length === 1 && sourceIds.length === 0 ? claimIds[0]! : null;
   const budgetMicroUsd = budgetMicro(input.budgetUsd);
   const filer = input.filer;
+  // A request may be addressed to a mandate another graph published here, by the mandate's id
+  // (published-mandate-service.ts): the mandate is then the request's address, as a label's face is the
+  // address of work asked of a label above. The request stays an ordinary one, open to anyone to fund or meet,
+  // and its record shows what the mandate's publisher did about it. Its work is not paid for from here: the
+  // publisher's graph pays for what it takes up, in its own owls.
+  let addressedTo = input.addressedTo?.trim() || null;
+  let publishedFaceId: string | null = null;
+  if (!input.askedOf && addressedTo && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(addressedTo)) {
+    const { publishedFace, NO_SUCH_PUBLISHED_MANDATE } = await import("./published-mandate-service.js");
+    const face = await publishedFace(addressedTo);
+    if (!face) throw new RequestError(NO_SUCH_PUBLISHED_MANDATE);
+    publishedFaceId = face.id;
+    addressedTo = `${face.publisher}: ${face.name}`;
+  }
   // Embedded before the transaction, so no row lock waits on the network.
   const embedding = await embedRequest(input.ask, input.why);
   const filed = await withTransaction(async (tx) => {
@@ -112,14 +135,15 @@ export async function fileRequest(input: {
       `INSERT INTO requests
          (ask, why, satisfied_by, who_could, addressed_to, bears_on_text,
           filer_kind, filer_agent, filer_contributor_id, filer_grant_id, filer_run_id,
-          keeper_kind, keeper_claim_id, state, embedding, budget_micro_usd, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector, $16, $17) RETURNING id`,
+          keeper_kind, keeper_claim_id, state, embedding, budget_micro_usd, sensitivity_label,
+          asked_of_face_id, asked_as, asked_budget_micro_usd)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::vector, $16, $17, $18, $19, $20) RETURNING id`,
       [
         input.ask.trim(),
         input.why.trim(),
         input.satisfiedBy.trim(),
         input.whoCould?.trim() || null,
-        input.addressedTo?.trim() || null,
+        addressedTo,
         input.bearsOnText?.trim() || null,
         filer.kind,
         filer.kind === "admin" ? filer.agent : null,
@@ -128,10 +152,13 @@ export async function fileRequest(input: {
         filer.kind === "contributor" ? null : (filer.runId ?? null),
         keeperClaimId ? "steward" : "curator",
         keeperClaimId,
-        input.addressedTo?.trim() ? "addressed" : "open",
+        addressedTo ? "addressed" : "open",
         embedding,
         budgetMicroUsd,
         currentLabel(),
+        input.askedOf?.faceId ?? publishedFaceId,
+        input.askedOf?.as ?? null,
+        input.askedOf?.budgetMicroUsd ?? null,
       ]
     );
     const id = row!.id;
@@ -144,8 +171,9 @@ export async function fileRequest(input: {
     return { id };
   });
   // A filed request is work anyone may fund: its row goes on the ledger,
-  // priced and offered to the platform lane at once.
-  await openRequestWork(filed.id);
+  // priced and offered to the platform lane at once. One asked of a label
+  // above is that label's work and has no row here.
+  if (!input.askedOf) await openRequestWork(filed.id);
   return filed;
 }
 
@@ -246,7 +274,21 @@ export async function recordWork(input: {
       ]);
     }
     return { id: row!.id };
+  }).then(async (recorded) => {
+    // Work with an outcome on a request taken up from another label is its answer: it goes to the gate.
+    if (input.outcome != null) await answerDown(input.requestId);
+    return recorded;
   });
+}
+
+/** Where this request was taken up from a label that does not read it, offer what it found to that label's gate. */
+async function answerDown(requestId: string, opts: { closed?: boolean } = {}): Promise<void> {
+  const { oneLabelOnly } = await import("./judgment-version-service.js");
+  if (oneLabelOnly()) return;
+  const { offerDown } = await import("./request-adoption-service.js");
+  await offerDown("answer", requestId);
+  // Once work on it has ended: what was spent and what went back, in words.
+  if (opts.closed) await offerDown("statement", requestId);
 }
 
 /**
@@ -284,6 +326,7 @@ export async function setRequestState(input: {
   // A closed request takes no more work: its rows close and its funders'
   // unspent money returns.
   if (isClosed(input.state)) await closeRequestActions(input.requestId);
+  if (isClosed(input.state)) await answerDown(input.requestId, { closed: true });
 }
 
 /** Sharpen a request's wording: what it asks, why, what would satisfy it, who could do it, whom it is put to. */
@@ -473,7 +516,12 @@ export interface RequestView {
   satisfied_by: string;
   who_could: string | null;
   addressed_to: string | null;
-  bears_on: { id: string; text: string; kind: NodeKind }[];
+  /** The nodes it bears on, each with its importance (0..1) as the reader's layer has it. */
+  bears_on: { id: string; text: string; kind: NodeKind; importance: number | null }[];
+  /** The importance of the most important node it bears on; null when it bears on none. */
+  importance: number | null;
+  /** The topics of the nodes it bears on. */
+  tags: { slug: string; name: string }[];
   bears_on_sources: { id: string; title: string; url: string | null }[];
   bears_on_text: string | null;
   filed_by: { kind: RequestFilerKind; label: string };
@@ -518,6 +566,53 @@ export interface RequestView {
     quote_usd: number | null;
     funding: string | null;
   }[];
+  /**
+   * The accounts that have said they are taking the request up
+   * (request-take-up-service.ts), each with what followed as the record
+   * shows it. Such a statement is not work: it is listed here and not
+   * above.
+   */
+  taken_up: TakenUp[];
+  /**
+   * Where the request was taken up from the layer below
+   * (request-adoption-service.ts): the public graph's request, or the
+   * request at a label this one's label reads. Absent on any other request.
+   */
+  taken_up_from?: { public_request_id: string } | { request_id: string; label: string };
+  /**
+   * That the request was taken up by work at a label the reader may not
+   * read, as it came through the gate from there, and whether an answer
+   * has come through or is still at the gate. Absent where nothing came.
+   */
+  taken_up_above?: { said_at: string; answer: "through the gate" | "at the gate" | "none yet"; answer_source_id?: string };
+  /**
+   * The requests at other labels that took this one up, for a reader who
+   * reads those labels: each is where the work on it at that label is
+   * recorded. Absent where the reader reads none, so a reader of this
+   * request's own label alone is shown nothing.
+   */
+  taken_up_at?: { label: string; request_id: string; state: RequestState }[];
+  /**
+   * On a request that asked for work at a label above (ask-above-service.ts):
+   * the face it was addressed to, whether it asked for one piece of work or
+   * a mandate, and the budget its asker paid. This is the asker's record of
+   * what was asked. What became of it there is not part of this request
+   * until that label's gate lets it through.
+   */
+  asked_of?: { face_id: string; name: string; as: "work" | "mandate"; budget_usd: number };
+  /**
+   * On a request addressed to a mandate another graph published here
+   * (published-mandate-service.ts): the mandate, its publisher, and where
+   * the request stands with that publisher, read from this graph's own
+   * record: taken up, declined with its reason, a page published on a node
+   * the request bears on, or nothing yet, each with how long.
+   */
+  addressed_to_mandate?: { face_id: string; name: string; publisher: { account_id: string; name: string }; withdrawn: boolean; stands: string; in_words: string };
+  /**
+   * On a request taken up from one that paid for work here from a label
+   * below: that label. The run that does the work is told (requestBrief).
+   */
+  paid_from_below?: { label: string };
 }
 
 interface RequestRowJoined {
@@ -537,6 +632,13 @@ interface RequestRowJoined {
   state_note: string | null;
   created_at: Date;
   budget_micro_usd: string | null;
+  asked_of_face_id: string | null;
+  asked_publisher_id: string | null;
+  asked_publisher_name: string | null;
+  asked_face_withdrawn_at: Date | null;
+  asked_as: "work" | "mandate" | null;
+  asked_budget_micro_usd: string | null;
+  asked_face_name: string | null;
 }
 
 const AGENT_LABELS: Record<string, string> = {
@@ -569,19 +671,50 @@ const REQUEST_SELECT = `
   SELECT r.id, r.ask, r.why, r.satisfied_by, r.who_could, r.addressed_to, r.bears_on_text,
          r.filer_kind, r.filer_agent, fc.display_name AS contributor_name,
          r.keeper_kind, kc.kind AS keeper_node_kind, r.state, r.state_note, r.created_at,
-         r.budget_micro_usd
+         r.budget_micro_usd, r.asked_of_face_id, r.asked_as, r.asked_budget_micro_usd, lf.name AS asked_face_name,
+         lf.publisher_account_id AS asked_publisher_id, pc.display_name AS asked_publisher_name, lf.withdrawn_at AS asked_face_withdrawn_at
     FROM requests r
+    LEFT JOIN label_faces lf ON lf.id = r.asked_of_face_id
+    LEFT JOIN contributors pc ON pc.id = lf.publisher_account_id
     LEFT JOIN contributors fc ON fc.id = r.filer_contributor_id
     LEFT JOIN claims kc ON kc.id = r.keeper_claim_id`;
+
+/** Where a request addressed to a published mandate stands with the mandate's publisher, from this graph's own record. */
+function addressedToMandate(r: RequestRowJoined, taken: TakenUp | null): NonNullable<RequestView["addressed_to_mandate"]> {
+  const days = Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 86_400_000));
+  const since = days === 0 ? "the same day" : days === 1 ? "1 day on" : `${days} days on`;
+  const publisher = r.asked_publisher_name ?? "its publisher";
+  const addressed = `Addressed on ${new Date(r.created_at).toISOString().slice(0, 10)} to "${r.asked_face_name ?? ""}", a mandate ${publisher} published here.`;
+  return {
+    face_id: r.asked_of_face_id!,
+    name: r.asked_face_name ?? "",
+    publisher: { account_id: r.asked_publisher_id!, name: publisher },
+    withdrawn: r.asked_face_withdrawn_at !== null,
+    stands: taken ? taken.followed : "not_taken_up_yet",
+    in_words: taken
+      ? `${addressed} ${taken.in_words}`
+      : `${addressed} ${publisher} has not said whether it takes this request up, ${since}.` +
+        (r.asked_face_withdrawn_at ? " The mandate has since been withdrawn." : ""),
+  };
+}
 
 async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
   if (rows.length === 0) return [];
   const ids = rows.map((r) => r.id);
-  const [nodes, sources, work, ledger] = await Promise.all([
-    rawQuery<{ request_id: string; id: string; text: string; kind: NodeKind }>(
-      `SELECT t.request_id, c.id, c.text, c.kind
+  const [nodes, tags, sources, work, ledger] = await Promise.all([
+    rawQuery<{ request_id: string; id: string; text: string; kind: NodeKind; importance: number | null }>(
+      `SELECT t.request_id, c.id, c.text, c.kind, ${importanceSql("c")} AS importance
          FROM request_targets t JOIN claims c ON c.id = t.claim_id
         WHERE t.request_id = ANY($1::uuid[]) ORDER BY t.id`,
+      [ids]
+    ),
+    // The topics of the nodes it bears on: what a reader browsing by subject finds it under.
+    rawQuery<{ request_id: string; slug: string; name: string }>(
+      `SELECT DISTINCT t.request_id, g.slug, g.name
+         FROM request_targets t
+         JOIN taggings tg ON tg.subject_kind = 'claim' AND tg.subject_id = t.claim_id
+         JOIN tags g ON g.id = tg.tag_id AND g.merged_into IS NULL
+        WHERE t.request_id = ANY($1::uuid[]) ORDER BY g.name`,
       [ids]
     ),
     rawQuery<{ request_id: string; id: string; title: string; url: string | null }>(
@@ -605,7 +738,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       `SELECT w.request_id, w.by_label, w.outcome, w.summary, w.created_at, w.funded_by_job_id,
               w.research_run_id, rr.run_id, w.budget_micro_usd, w.quote_micro_usd
          FROM request_work w LEFT JOIN research_runs rr ON rr.id = w.research_run_id
-        WHERE w.request_id = ANY($1::uuid[]) ORDER BY w.created_at, w.id`,
+        WHERE w.request_id = ANY($1::uuid[]) AND NOT w.taken_up ORDER BY w.created_at, w.id`,
       [ids]
     ),
     rawQuery<{
@@ -624,6 +757,32 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
       [ids]
     ),
   ]);
+  const takenUp = await takenUpOn(ids);
+  // Read as the caller, like everything here: a take-up at a label the
+  // reader does not read is not returned by the database.
+  const adoptions = await rawQuery<{
+    request_id: string; public_request_id: string | null; from_request_id: string | null;
+    from_label: string | null; label: string; state: RequestState; from_paid: boolean;
+  }>(
+    `SELECT a.request_id, a.public_request_id, a.from_request_id, f.sensitivity_label AS from_label,
+            a.sensitivity_label AS label, r.state, (f.asked_of_face_id IS NOT NULL) AS from_paid
+       FROM adopted_requests a JOIN requests r ON r.id = a.request_id
+       LEFT JOIN requests f ON f.id = a.from_request_id
+      WHERE a.request_id = ANY($1::uuid[]) OR a.from_request_id = ANY($1::uuid[])
+      ORDER BY a.adopted_at, a.id`,
+    [ids]
+  );
+  // What has come to these requests through a gate from a label the reader may not read: that one was taken
+  // up there, and an answer. The rows are this side's own and name nothing of the other (release-gate-service.ts).
+  const fromAbove = (await import("./judgment-version-service.js")).oneLabelOnly()
+    ? []
+    : await rawQuery<{ reply_ref: string; kind: string; shown_at: Date | null; source_id: string | null }>(
+        `SELECT s.reply_ref, p.kind, p.shown_at, p.source_id
+           FROM shown_pages p JOIN shown_showings s ON s.id = p.showing_id
+          WHERE s.reply_ref = ANY($1::uuid[]) AND p.kind IN ('taken_up', 'answer') AND p.stage <> 'overtaken'
+          ORDER BY p.opened_at`,
+        [ids]
+      );
   const jobIds = [...new Set(work.map((w) => w.funded_by_job_id).filter((j): j is string => !!j))];
   const fundingLabels = new Map<string, string | null>(
     await Promise.all(
@@ -636,6 +795,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
     return m;
   };
   const nodesBy = group(nodes);
+  const tagsBy = group(tags);
   const sourcesBy = group(sources);
   const workBy = group(work);
   const ledgerBy = new Map(ledger.map((l) => [l.request_id, l]));
@@ -647,7 +807,17 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
     satisfied_by: r.satisfied_by,
     who_could: r.who_could,
     addressed_to: r.addressed_to,
-    bears_on: (nodesBy.get(r.id) ?? []).map(({ id, text, kind }) => ({ id, text, kind })),
+    bears_on: (nodesBy.get(r.id) ?? []).map(({ id, text, kind, importance }) => ({
+      id,
+      text,
+      kind,
+      importance: importance == null ? null : Number(importance),
+    })),
+    importance: (() => {
+      const xs = (nodesBy.get(r.id) ?? []).map((n) => n.importance).filter((x): x is number => x != null).map(Number);
+      return xs.length > 0 ? Math.max(...xs) : null;
+    })(),
+    tags: (tagsBy.get(r.id) ?? []).map(({ slug, name }) => ({ slug, name })),
     bears_on_sources: (sourcesBy.get(r.id) ?? []).map(({ id, title, url }) => ({ id, title, url })),
     bears_on_text: r.bears_on_text,
     filed_by: { kind: r.filer_kind, label: filerLabel(r) },
@@ -677,6 +847,38 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
         w.quote_micro_usd == null ? null : Number(w.quote_micro_usd)
       ),
     })),
+    taken_up: takenUp.get(r.id) ?? [],
+    ...(() => {
+      const from = adoptions.find((a) => a.request_id === r.id);
+      const above = adoptions.filter((a) => a.from_request_id === r.id);
+      return {
+        ...(from
+          ? {
+              taken_up_from: from.from_request_id
+                ? { request_id: from.from_request_id, label: from.from_label ?? "" }
+                : { public_request_id: from.public_request_id! },
+            }
+          : {}),
+        ...(above.length > 0
+          ? { taken_up_at: above.map((a) => ({ label: a.label, request_id: a.request_id, state: a.state })) }
+          : {}),
+        ...takenUpAbove(fromAbove.filter((f) => f.reply_ref === r.id)),
+        ...(r.asked_of_face_id && r.asked_as
+          ? {
+              asked_of: {
+                face_id: r.asked_of_face_id,
+                name: r.asked_face_name ?? r.addressed_to ?? "",
+                as: r.asked_as,
+                budget_usd: usd(r.asked_budget_micro_usd ?? 0),
+              },
+            }
+          : {}),
+        ...(r.asked_of_face_id && r.asked_publisher_id
+          ? { addressed_to_mandate: addressedToMandate(r, (takenUp.get(r.id) ?? []).find((t) => t.account_id === r.asked_publisher_id) ?? null) }
+          : {}),
+        ...(from?.from_paid && from.from_label ? { paid_from_below: { label: from.from_label } } : {}),
+      };
+    })(),
   }));
 }
 
@@ -750,6 +952,22 @@ export async function requestQuoteNote(input: {
 }
 
 /**
+ * What a run is told when the request it works was asked for and paid for
+ * from a label below its own. It is a limit on the run, so it is stated in
+ * its task with the reason: the payer does not read this label, so a
+ * petition to it is information going down and waits at the gate.
+ */
+export function paidFromBelowNote(label: string): string {
+  return (
+    `This request was asked for and paid for from \`${label}\`, which this run's label reads. Its asker ` +
+    `does not read this label: what you report reaches them only through this label's gate, where it may ` +
+    `be redacted or held, so write the report as you would any other. A petition for more money ` +
+    `(petition_mandate) goes to its payer the same way and may not be answered while this run lasts, so ` +
+    `plan to finish within the budget you have.`
+  );
+}
+
+/**
  * The brief a run that takes up (or scopes) a request works from: the
  * request as filed, verbatim, and the work already done on it. Whoever
  * funded it adds nothing to it.
@@ -772,6 +990,7 @@ export function requestBrief(request: RequestView): string {
     request.work.length
       ? `Work already done on it: ${request.work.map((w) => `${workLabel(w)}: ${w.summary}`).join(" | ")}`
       : null,
+    request.paid_from_below ? paidFromBelowNote(request.paid_from_below.label) : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -798,14 +1017,18 @@ export async function getRequest(id: string): Promise<RequestView | null> {
 }
 
 /**
- * Requests, newest first. `live` keeps the ones still open to work (open,
- * addressed, in progress); `claimId` keeps the ones that bear on that node.
+ * Requests, newest first unless ordered otherwise. `live` keeps the ones
+ * still open to work (open, addressed, in progress); `claimId` keeps the
+ * ones that bear on that node; `facets` counts what each filter would leave.
  */
 // The cosine similarity a request needs to match a query by meaning alone,
 // the same floor claim search defaults to (claimSearchParams.min_similarity).
 const REQUEST_MIN_SIMILARITY = 0.3;
 
-export async function listRequests(opts: {
+/** How a list of requests is ordered: newest, by the importance of what it bears on, or closest to a search. */
+export type RequestOrder = "recent" | "importance" | "relevance";
+
+export interface ListRequestsOptions {
   state?: RequestState;
   live?: boolean;
   claimId?: string;
@@ -816,21 +1039,72 @@ export async function listRequests(opts: {
    * none) or a node's Steward (#764), so the Curator can list what it keeps.
    */
   keeper?: "curator" | "steward";
+  /** Keep the ones bearing on a node with this topic (a tag slug, or one merged into it). */
+  tag?: string;
+  /**
+   * Keep the ones open to anyone, or the ones put to a particular party
+   * (named in words, or a mandate another graph published here).
+   */
+  asked?: "anyone" | "named";
+  /** Keep the ones whose work is open on the ledger with nothing yet behind it. */
+  waiting?: boolean;
   /**
    * A search over what requests ask and why: by meaning, and by keyword
    * (web-search syntax) for exact terms, ranked by meaning.
    */
   q?: string;
+  /**
+   * 'recent' (newest first, the default without a search), 'importance'
+   * (the most important node it bears on first; a request bearing on no
+   * node last), or 'relevance' (closest to the search, the default with one).
+   */
+  order?: RequestOrder;
   limit?: number;
   offset?: number;
-} = {}): Promise<{ items: RequestView[]; total: number }> {
+}
+
+/** Counts of what each value of a filter would leave, under the other filters in force. */
+export interface RequestFacets {
+  states: { state: RequestState; count: number }[];
+  tags: { slug: string; name: string; count: number }[];
+  asked: { anyone: number; named: number };
+  waiting: number;
+}
+
+type RequestFilterKey = "state" | "tag" | "asked" | "waiting";
+
+// The importance of the most important node a request bears on, read as the
+// reader's layer has it (overlay-service.ts). Null for a request bearing on
+// no node: it sorts last under 'importance'.
+const requestImportanceSql = (): string =>
+  `(SELECT max(${importanceSql("c")}) FROM request_targets t JOIN claims c ON c.id = t.claim_id WHERE t.request_id = r.id)`;
+
+const NAMED_SQL = `(r.addressed_to IS NOT NULL OR r.asked_of_face_id IS NOT NULL)`;
+// Built when used, not at import: tests that mock the ledger stub it whole.
+const waitingSql = (): string => `EXISTS (SELECT 1 FROM actions a
+   WHERE a.kind = 'request' AND a.target_ref = r.id::text AND a.status = 'open' AND ${COVERAGE_SQL} <= 0)`;
+// How many topics the facet lists; the rest are reached from a request's own.
+const FACET_TAGS = 12;
+
+/**
+ * The WHERE clause for a list's filters, leaving out the one named in
+ * `without`: a facet counts what each of its values would leave, so it is
+ * counted under every filter but its own. The search is never left out.
+ */
+async function requestWhere(
+  opts: ListRequestsOptions,
+  embedding: number[] | null,
+  without?: RequestFilterKey
+): Promise<{ where: string[]; params: unknown[]; similarity: string | null; tsq: string | null }> {
   const where: string[] = [];
   const params: unknown[] = [];
-  if (opts.state) {
-    params.push(opts.state);
-    where.push(`r.state = $${params.length}`);
-  } else if (opts.live) {
-    where.push(`r.state IN ('open', 'addressed', 'in_progress')`);
+  if (without !== "state") {
+    if (opts.state) {
+      params.push(opts.state);
+      where.push(`r.state = $${params.length}`);
+    } else if (opts.live) {
+      where.push(`r.state IN ('open', 'addressed', 'in_progress')`);
+    }
   }
   if (opts.keeper) {
     params.push(opts.keeper);
@@ -844,18 +1118,90 @@ export async function listRequests(opts: {
     params.push(opts.sourceId);
     where.push(`EXISTS (SELECT 1 FROM request_targets t WHERE t.request_id = r.id AND t.source_id = $${params.length})`);
   }
+  if (opts.tag && without !== "tag") {
+    params.push(opts.tag);
+    const n = params.length;
+    where.push(`EXISTS (
+      SELECT 1 FROM request_targets t
+        JOIN taggings tg ON tg.subject_kind = 'claim' AND tg.subject_id = t.claim_id
+        JOIN tags g ON g.id = tg.tag_id
+       WHERE t.request_id = r.id
+         AND (g.slug = $${n} OR g.merged_into IN (SELECT id FROM tags WHERE slug = $${n})))`);
+  }
+  if (opts.asked && without !== "asked") where.push(opts.asked === "named" ? NAMED_SQL : `NOT ${NAMED_SQL}`);
+  if (opts.waiting && without !== "waiting") where.push(waitingSql());
   // A search works as claim search does (search-service.ts): keyword OR
-  // semantic match for recall, ranked by cosine similarity to the query,
-  // keyword rank (the ask weighs most; see requests.text_search) and then
-  // recency breaking ties. A request with no embedding ranks after every
-  // scored one. Without an embedding of the query it falls back to keyword
-  // matching, loudly. Without a query the list is simply newest first.
-  let order = "r.created_at DESC, r.id";
+  // semantic match for recall. Without an embedding of the query it falls
+  // back to keyword matching, loudly (listRequests).
+  let similarity: string | null = null;
+  let tsq: string | null = null;
   const q = opts.q?.trim();
   if (q) {
     params.push(q);
-    const tsq = `websearch_to_tsquery('english', $${params.length})`;
-    let queryEmbedding: number[] | null = null;
+    tsq = `websearch_to_tsquery('english', $${params.length})`;
+    if (embedding) {
+      params.push(`[${embedding.join(",")}]`, REQUEST_MIN_SIMILARITY);
+      similarity = `1 - (r.embedding <=> $${params.length - 1}::vector)`;
+      where.push(`(r.text_search @@ ${tsq} OR ${similarity} > $${params.length})`);
+    } else {
+      where.push(await requestTextMatch("r", tsq));
+    }
+  }
+  return { where, params, similarity, tsq };
+}
+
+const whereClause = (where: string[]) => (where.length ? `WHERE ${where.join(" AND ")}` : "");
+
+async function requestFacets(opts: ListRequestsOptions, embedding: number[] | null): Promise<RequestFacets> {
+  const [states, tags, asked, waiting] = await Promise.all([
+    requestWhere(opts, embedding, "state"),
+    requestWhere(opts, embedding, "tag"),
+    requestWhere(opts, embedding, "asked"),
+    requestWhere(opts, embedding, "waiting"),
+  ]);
+  const [stateRows, tagRows, askedRows, waitingRows] = await Promise.all([
+    rawQuery<{ state: RequestState; n: number }>(
+      `SELECT r.state, count(*)::int AS n FROM requests r ${whereClause(states.where)} GROUP BY r.state`,
+      states.params
+    ),
+    rawQuery<{ slug: string; name: string; n: number }>(
+      `SELECT g.slug, g.name, count(DISTINCT r.id)::int AS n
+         FROM requests r
+         JOIN request_targets t ON t.request_id = r.id
+         JOIN taggings tg ON tg.subject_kind = 'claim' AND tg.subject_id = t.claim_id
+         JOIN tags g ON g.id = tg.tag_id AND g.merged_into IS NULL
+        ${whereClause(tags.where)}
+        GROUP BY g.slug, g.name ORDER BY count(DISTINCT r.id) DESC, g.name LIMIT ${FACET_TAGS}`,
+      tags.params
+    ),
+    rawQuery<{ named: boolean; n: number }>(
+      `SELECT ${NAMED_SQL} AS named, count(*)::int AS n FROM requests r ${whereClause(asked.where)} GROUP BY 1`,
+      asked.params
+    ),
+    rawQuery<{ n: number }>(
+      `SELECT count(*)::int AS n FROM requests r ${whereClause([...waiting.where, waitingSql()])}`,
+      waiting.params
+    ),
+  ]);
+  return {
+    states: REQUEST_STATES.map((state) => ({ state, count: stateRows.find((s) => s.state === state)?.n ?? 0 })).filter(
+      (s) => s.count > 0
+    ),
+    tags: tagRows.map((t) => ({ slug: t.slug, name: t.name, count: t.n })),
+    asked: {
+      anyone: askedRows.find((a) => !a.named)?.n ?? 0,
+      named: askedRows.find((a) => a.named)?.n ?? 0,
+    },
+    waiting: waitingRows[0]?.n ?? 0,
+  };
+}
+
+export async function listRequests(
+  opts: ListRequestsOptions & { facets?: boolean } = {}
+): Promise<{ items: RequestView[]; total: number; facets: RequestFacets | null }> {
+  const q = opts.q?.trim();
+  let queryEmbedding: number[] | null = null;
+  if (q) {
     try {
       queryEmbedding = await generateEmbedding(q);
     } catch (err) {
@@ -863,24 +1209,36 @@ export async function listRequests(opts: {
         `Request search embedding failed; falling back to keyword-only matching: ${err instanceof Error ? err.message : String(err)}`
       );
     }
-    if (queryEmbedding) {
-      params.push(`[${queryEmbedding.join(",")}]`, REQUEST_MIN_SIMILARITY);
-      const similarity = `1 - (r.embedding <=> $${params.length - 1}::vector)`;
-      where.push(`(r.text_search @@ ${tsq} OR ${similarity} > $${params.length})`);
-      order = `COALESCE(${similarity}, 0) DESC, ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
-    } else {
-      where.push(`r.text_search @@ ${tsq}`);
-      order = `ts_rank(r.text_search, ${tsq}) DESC, ${order}`;
-    }
   }
-  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
-  const [count] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM requests r ${clause}`, params);
+  const { where, params, similarity, tsq } = await requestWhere(opts, queryEmbedding);
+  // Under a search: cosine similarity to the query, then keyword rank (the
+  // ask weighs most; see requests.text_search), then recency; a request with
+  // no embedding ranks after every scored one. Without one, newest first.
+  // 'importance' puts the most important node a request bears on first and
+  // breaks ties the same way.
+  const recent = "r.created_at DESC, r.id";
+  const relevance = tsq
+    ? similarity
+      ? `COALESCE(${similarity}, 0) DESC, ts_rank(r.text_search, ${tsq}) DESC, ${recent}`
+      : `ts_rank(r.text_search, ${tsq}) DESC, ${recent}`
+    : recent;
+  const order =
+    opts.order === "importance"
+      ? `${requestImportanceSql()} DESC NULLS LAST, ${relevance}`
+      : opts.order === "recent"
+        ? recent
+        : relevance;
+  const clause = whereClause(where);
+  const [[count], facets] = await Promise.all([
+    rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM requests r ${clause}`, params),
+    opts.facets ? requestFacets(opts, queryEmbedding) : Promise.resolve(null),
+  ]);
   params.push(opts.limit ?? 50, opts.offset ?? 0);
   const rows = await rawQuery<RequestRowJoined>(
     `${REQUEST_SELECT} ${clause} ORDER BY ${order} LIMIT $${params.length - 1} OFFSET $${params.length}`,
     params
   );
-  return { items: await assemble(rows), total: count?.n ?? 0 };
+  return { items: await assemble(rows), total: count?.n ?? 0, facets };
 }
 
 /**
@@ -894,4 +1252,21 @@ async function noActiveNodeMessage(missing: string[]): Promise<string> {
     ...[...merged.values()].map((m) => m.message),
     ...(gone.length > 0 ? [`No active node ${gone.join(", ")}`] : []),
   ].join(" ");
+}
+
+/** What the gate has let through to a request from a label its reader may not read, in fixed words. */
+function takenUpAbove(rows: { kind: string; shown_at: Date | null; source_id: string | null }[]): {
+  taken_up_above?: { said_at: string; answer: "through the gate" | "at the gate" | "none yet"; answer_source_id?: string };
+} {
+  const told = rows.find((r) => r.kind === "taken_up" && r.shown_at);
+  const answers = rows.filter((r) => r.kind === "answer");
+  const through = [...answers].reverse().find((r) => r.shown_at);
+  if (!told && !through) return {};
+  return {
+    taken_up_above: {
+      said_at: (told?.shown_at ?? through!.shown_at!).toISOString(),
+      answer: through ? "through the gate" : answers.length > 0 ? "at the gate" : "none yet",
+      ...(through?.source_id ? { answer_source_id: through.source_id } : {}),
+    },
+  };
 }

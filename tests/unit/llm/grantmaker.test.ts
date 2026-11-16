@@ -113,4 +113,21 @@ describe("validateMandate", () => {
       "positive"
     );
   });
+
+  it('takes funder_stake as exactly "none" or the stake itself, never "none" with a qualification', () => {
+    expect(validateMandate(mandate({ funder_stake: "None." }))).toBeNull();
+    expect(
+      validateMandate(mandate({ funder_stake: "the founder of Minerval, the platform that hosts this graph" }))
+    ).toBeNull();
+    expect(
+      validateMandate(
+        mandate({
+          funder_stake:
+            "None declared: the funder states they have no interest in how these questions come out. " +
+            "They also state that they are the founder of Minerval.",
+        })
+      )
+    ).toContain('exactly "none" or the stake itself');
+    expect(validateMandate(mandate({ funder_stake: "No stake beyond curiosity" }))).toContain("the stake itself");
+  });
 });

@@ -136,3 +136,10 @@ describe("tallyInstanceStances", () => {
     expect(tally.mentioning_instances).toBe(2);
   });
 });
+
+describe("BibTeX escaping", () => {
+  it("escapes a backslash once, without escaping the braces of its replacement", () => {
+    const bib = formatBibtex({ ...assessed, title: "a\\b {c} 50% ~d^" });
+    expect(bib).toContain("title        = {a\\textbackslash{}b \\{c\\} 50\\% \\textasciitilde{}d\\textasciicircum{}},");
+  });
+});

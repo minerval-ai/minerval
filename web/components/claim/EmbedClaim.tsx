@@ -8,7 +8,7 @@ import { SITE_ORIGIN, badgeMarkdown, iframeSnippet, scriptSnippet } from "@/lib/
 // embed (a quotation that becomes the card and sizes itself), the bare
 // iframe (for tools that take no script), and the badge (an image, for a
 // README). All three are served from the claim's card, so what they show is
-// the status with its confidence, dispute beside it, and an "as of" date.
+// the status, dispute beside it, and an "as of" date.
 // Sits with "Cite this claim": both carry the claim out of the graph.
 
 export function EmbedClaim({ claimId, text, kind }: { claimId: string; text: string; kind?: string }) {
@@ -64,12 +64,11 @@ export function EmbedClaim({ claimId, text, kind }: { claimId: string; text: str
     <details className="reasoning-detail" onToggle={(e) => {
       if ((e.target as HTMLDetailsElement).open) setOrigin(window.location.origin);
     }}>
-      <summary>Embed this claim: show it on another site with its current assessment</summary>
+      <summary>Embed this claim</summary>
       <div style={{ marginTop: ".7rem" }}>
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)", margin: "0 0 .8rem" }}>
-          An embed reports the graph&apos;s judgment as it stands when the page is
-          viewed: the status with its confidence, how disputed the claim is, and
-          the date. It links back here.
+          An embed shows the graph&apos;s judgment as it stands when it is viewed, and
+          links back here.
         </p>
         {snippets.map((s) => (
           <div key={s.key} style={{ margin: "0 0 .9rem" }}>

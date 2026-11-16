@@ -80,6 +80,14 @@ jobs:
       - name: DB-backed tests
         run: npm run test:db
 
+      # The same server, as a deployment's owner is on a managed Postgres:
+      # a role that owns the database and is not a superuser. The suite above
+      # runs as a superuser, whom no policy binds and who may do what an
+      # owner may not, so the label wall's own tests run again here on a
+      # database that role owns (tests/db/global-setup.ts makes both).
+      - name: Label enforcement tests as a plain owner
+        run: npm run test:db:owner
+
   # The web app and the extension have their own lockfiles and nothing above
   # touches them, so without these a Dependabot bump to Next, React or WXT
   # would merge on a green check that never built it. Both builds need no

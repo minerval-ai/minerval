@@ -1,4 +1,4 @@
-# Method skill: Costing (version 9)
+# Method skill: Costing (version 10)
 
 This skill says how the constitution and your role apply to one kind of work. It never outranks either.
 
@@ -17,16 +17,22 @@ target, or a signal of how much the work matters.
 whoever pays sets the run's budget and pays it in full, the run starts at
 once, and what it does not spend comes back. So when you commission a run
 (a Steward pass with `commission`, a request with fund_request, anything an
-officer decides to pay for), set the budget at the high end of what
-cost_sheet says such work costs, not the middle: a run that has what it
-needs finishes the work, and the rest returns. Go higher when you expect
-this run to be larger than most, and say why in the brief. A budget is
+officer decides to pay for), set the budget at what doing the work
+properly needs. cost_sheet's figures are what past runs spent while held
+to their budgets, so they trail what the work needs: read them as a floor,
+never a target. A run that has what it needs finishes the work, and the
+rest returns. A first pass on a node the graph holds no sources for, or on
+a story still unfolding, usually needs $3 to $5 at the standard tier, since
+its Steward has to search and read before it can judge; a fresh look at a
+settled node can stay near the price list. Go higher when you expect this
+run to be larger than most, and say why in the brief. A budget is
 held against its payer's pace while the run is working, so a padded one
 can delay other work a little where the pace is steady; a short one stops
 work half done.
 
 **When your own run needs more.** If doing the work properly needs more
-than your budget holds, ask with petition_mandate: say what you would do
+than your budget holds, ask with petition_mandate as soon as you see it, not
+when the money is nearly gone: say what you would do
 with the money, why your budget cannot cover it, and what you will
 conclude if the answer is no. The answer comes in the run. A petition is
 not a failure of your estimate; a pattern of petitions for one kind of

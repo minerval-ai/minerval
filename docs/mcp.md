@@ -83,6 +83,19 @@ opt-in doc-checking hook — the repo doubles as its marketplace:
 
 See [plugin/README.md](../plugin/README.md) for auth and usage.
 
+### The label a connection works at
+
+In a members-only deployment that holds material at more than one label
+([accounts.md](accounts.md), "The label a request works at"), a key or a
+token works at one label, which the person chose when they minted the key
+or approved the client. The server's instructions say which, and
+`get_my_labels` says who reads it. Every call reads what that label reads
+and files what it adds there. No tool takes a label: a tool that starts
+something new files it at the connection's label, and a tool that acts on
+an existing thing is refused, with the reason, when that thing carries
+another label. The endpoint is not for a signed-in session, which has no
+label of its own.
+
 ## Metering
 
 Tool calls follow the same free-vs-metered split as the REST API (#70):
@@ -125,6 +138,18 @@ Their reads are tools; their writes are excluded, because a change to who
 may do what takes a signed-in session. In such a deployment a tool whose
 route needs a permission is offered only to a caller whose account holds
 it, and the server's instructions name the tools left out and say why.
+The routes for connections to an organization's systems
+(docs/connections.md) are in the same case: `list_connections`,
+`get_connection` and `list_connection_calls` are tools for a caller who
+holds `administer`, and adding a connection, changing one, and picking
+which of its tools the graph's agents are offered take a session. So are
+the routes for file sets (docs/file-sets.md): `list_file_sets`,
+`get_file_set`, `list_file_set_files` and `list_file_set_commands` are
+tools for a caller who holds `direct`, and adding a set, uploading into
+one, closing one and switching one off take a session. Registering a
+directory as a set takes a session and `administer`.
+`get_setup_checklist` is the administrators' read of how far the
+deployment's setup has got (docs/deployment.md, "The setup checklist").
 
 **How a route tool runs.** It does not reimplement the route: the call is
 injected into the same Fastify app (`src/mcp/dispatch.ts`), so the route's
@@ -457,7 +482,8 @@ read of a claim, use a card.
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
   `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
   `get_judgment_inputs` (what a node's judgment in force was made against,
-  and what has changed since: premises judged again, added or removed,
+  and what has changed since: premises judged again (and whether each one's
+  verdict moved), added or removed,
   sources attached or detached, corrections and retractions on its sources;
   `get_claim` and `search_claims` carry its counts as `since_assessed`, so
   this is the read for which premises and which sources),
@@ -476,8 +502,27 @@ read of a claim, use a card.
   `list_grants`, `get_grant`, `approve_grant_plan`, `top_up_grant`,
   `cancel_grant`, `list_mandates`, `get_mandate`, `get_mandate_allocation`
   (the mandate's operations: its operating policy, commissions, decisions
-  and petitions), `fund_mandate`, `withdraw_from_mandate` (take back your
+  and petitions, and what its Grantmaker is watching for: its next
+  check-in and the subscriptions it and the mandate's inbox hold, public
+  ones only), `fund_mandate`, `withdraw_from_mandate` (take back your
   share of a mandate's uncommitted money), `get_mandate_lookout`.
+  Mandate and grant reads carry `page_url` (the mandate's page) and, for
+  its funder, `funder_url` (their page for it, with its Grantmaker); a
+  granting conversation carries its own page and, once funded, the
+  mandate's. `list_mandates` and `list_grants` answer a short row per
+  mandate (`list_mandates` takes `detail: "full"` for every field);
+  `get_mandate` and `get_grant` answer a summary: the plan's items a page
+  at a time (`items_offset`, `items_limit`, `items_state`) with
+  `plan_item_counts` for the whole plan, every other list cut to
+  `list_limit`, and `collections` giving each list's whole length
+  (`detail: "full"` for everything; the site asks for it). Each plan item
+  carries `added_by` and `added_at`. The three reads of a mandate's money
+  count spent and held owls the same way (grantEscrowBreakdown).
+  `fund_grant` refuses a draft that carries warnings
+  (`WARNINGS_UNACKNOWLEDGED`) until the call passes `acknowledge_warnings`
+  after the user has read them; `get_grant_conversation`'s `wait` holds a
+  read up to 120 seconds, and a running turn's `turn.progress` says which
+  step the Grantmaker is on.
 - **Correspondents (#563):** `list_correspondents` (with `claim_id`, the
   ones covering a claim), `get_correspondent`, `list_correspondent_updates`,
   `get_correspondent_update`, `poke_correspondent` (the mandate's manager).

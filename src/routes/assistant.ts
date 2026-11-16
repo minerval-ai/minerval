@@ -27,6 +27,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   addAssistantMessage,
+  assistantShowsLabels,
   assistantModels,
   decideHeldAction,
   deleteAssistantConversation,
@@ -175,18 +176,29 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.get("/conversations", {
-    schema: { tags: ["assistant"], summary: "List your conversations with the Assistant" },
+  app.get<{ Querystring: { offset?: number; limit?: number } }>("/conversations", {
+    schema: {
+      tags: ["assistant"],
+      summary: "List your conversations with the Assistant, most recently active first, a page at a time",
+      querystring: {
+        type: "object",
+        properties: {
+            offset: { type: "integer", minimum: 0, default: 0 },
+            limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+        },
+      },
+    },
     preHandler: guards,
     handler: async (request, reply) => {
       const userId = request.auth!.userId!;
-      const [rows, entitlement, always] = await Promise.all([
-        listAssistantConversations(userId),
+      const [rows, entitlement, always, showLabels] = await Promise.all([
+        listAssistantConversations(userId, request.query.limit ?? 50, request.query.offset ?? 0),
         getEntitlement(userId),
         getAllowance(userId),
+        assistantShowsLabels(),
       ]);
       return reply.send({
-        conversations: rows.map(serializeAssistantSummary),
+        conversations: rows.map((c) => serializeAssistantSummary(c, showLabels)),
         // What a new conversation would start with.
         models: assistantModels(),
         balance_micro_usd: entitlement.owlBalanceMicroUsd,

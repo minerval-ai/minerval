@@ -18,8 +18,8 @@
  *  - A fetch that writes into a source's own row (its text, its facts, its
  *    page hash) leaves the source's label as it was.
  *  - Work that starts from a source itself, with no row of its own to wait
- *    in, runs at the source's label: the source backfill, and the
- *    scheduler's note of a source someone else ingested.
+ *    in, runs at the source's label: the source backfill. (The scheduler's
+ *    note of a source in a mandate's pipeline is the mandate's work.)
  *  - None of it reaches a reader: no view query_sql reads, no API response
  *    and no agent's read of a source carries the column.
  *
@@ -99,7 +99,8 @@ vi.mock("../../src/services/embedding-service.js", () => ({
 import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
-import { currentLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { currentLabel, runAtLabel, runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
+import { ClearanceError, withSystemClearance } from "../../src/db/clearance.js";
 import { executeGovernanceTool } from "../../src/llm/tools/governance-tools.js";
 import { executeGraphReadTool } from "../../src/llm/tools/graph-read-tools.js";
 import { createLookoutFeedTools } from "../../src/llm/tools/feed-tools.js";
@@ -149,7 +150,7 @@ import {
   sourceBackfillTick,
 } from "../../src/workers/source-backfill.js";
 import { handleUrlExtraction } from "../../src/workers/url-extraction.js";
-import { OWL, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, asGiven, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 const INTERNAL = "internal";
 const FOREIGN_KEY_VIOLATION = "23503";
@@ -286,7 +287,7 @@ async function writeOneOfEach() {
   const tag = randomUUID().slice(0, 8);
   const claim = await settledClaim("sources claim");
   const steward = { role: "claim-steward" as const, claimId: claim, run: { model: "dbtest-model" } };
-  const url = pageUrl();
+  const url = await asGiven(pageUrl());
   const source = await getOrCreateSource({ url, title: "Night work and diabetes", content: PAGE });
 
   // A passage, recorded as the Steward records one it met while assessing.
@@ -299,7 +300,7 @@ async function writeOneOfEach() {
   const figure = ok(
     await executeKindTool(
       "record_estimate",
-      { quantity_id: quantity, url: pageUrl("figure"), stated: { form: "point", central: 5 } },
+      { quantity_id: quantity, url: await asGiven(pageUrl("figure")), stated: { form: "point", central: 5 } },
       { role: "claim_steward", claimId: quantity, model: "dbtest-model" }
     )
   );
@@ -322,7 +323,7 @@ async function writeOneOfEach() {
   const edge = ok(
     await executeRecordEdge(
       {
-        from_instance_id: recorded.instance_id, to_source_url: pageUrl("upstream"), relation_type: "derives_from",
+        from_instance_id: recorded.instance_id, to_source_url: await asGiven(pageUrl("upstream")), relation_type: "derives_from",
         evidence: "As the registry reports.", reasoning: "It restates the registry's figure.",
       },
       steward
@@ -437,7 +438,7 @@ beforeEach(() => {
 });
 
 describe("the columns", () => {
-  it("are on every source-side table, default to the connection's label, and point at labels", async () => {
+  it("are on every source-side table, defaulting to the connection's label, and point at labels", async () => {
     const rows = await rawQuery<{ table_name: string; column_default: string | null; is_nullable: string; fk: boolean }>(
       `SELECT c.table_name, c.column_default, c.is_nullable,
               EXISTS (
@@ -454,8 +455,6 @@ describe("the columns", () => {
       [SOURCE_TABLES]
     );
     expect(rows).toEqual(
-      // The default is the function 0130 gave every labelled table: the
-      // connection's label, which is 'public' wherever it is the only one.
       SOURCE_TABLES.map((table_name) => ({ table_name, column_default: "minerval_default_label()", is_nullable: "NO", fk: true }))
     );
   });
@@ -575,17 +574,31 @@ describe("a row read from a source or written about one", () => {
     };
     expect(await read()).toEqual(Object.fromEntries(kept.map((t) => [t, [PUBLIC_LABEL]])));
 
-    // The same writes again, from a run at another label: each lands on the row already there.
+    // The same writes again, from a run at another label.
     const [covered] = await rawQuery<{ segment_id: string }>(
       `SELECT segment_id FROM examination_coverage WHERE examination_id = $1 LIMIT 1`,
       [ids.examination]
     );
     const [event] = await rawQuery<{ notice_url: string }>(`SELECT notice_url FROM source_events WHERE source_id = $1`, [ids.source]);
     const [upstream] = await rawQuery<{ url: string }>(`SELECT url FROM sources WHERE id = $1`, [ids.upstream]);
+    // Four of them carry the run's own words (a reasoning, a basis, a
+    // summary). A run at another label does not write those into a row the
+    // first label's readers read (db/clearance.ts, sameLabelOnly): it is
+    // refused, and told why. A reading of the passage is the other label's
+    // own judgment of it, and is recorded as a row of its own beside the
+    // first (services/overlay-service.ts).
+    const refused = async (write: () => Promise<unknown>) => {
+      const err = await write().then(
+        () => null,
+        (e: unknown) => e
+      );
+      expect(err).toBeInstanceOf(ClearanceError);
+      expect((err as Error).message).toMatch(/already exists at another label than this work's/);
+    };
     await inRunAt(INTERNAL, async () => {
-      expect(ok(await executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward)).replaced).toBe(true);
-      const edge = ok(
-        await executeRecordEdge(
+      ok(await executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward));
+      await refused(() =>
+        executeRecordEdge(
           {
             from_instance_id: ids.instance, to_source_url: upstream!.url, relation_type: "derives_from",
             evidence: "As the registry reports.", reasoning: "Read again.",
@@ -593,56 +606,70 @@ describe("a row read from a source or written about one", () => {
           steward
         )
       );
-      expect(edge).toMatchObject({ replaced: true, to_source_id: ids.upstream });
-      expect(
-        ok(
-          await executeRecordSourceRelationship(
-            { parent_source_id: ids.source, child_source_id: ids.upstream, relation_type: "version_of", reasoning: "Read again." },
-            steward
-          )
-        ).replaced
-      ).toBe(true);
-      expect(ok(await executeRecordRoot({ source_id: ids.upstream, status: "untraced", basis: "Read again." }, steward)).replaced).toBe(true);
-      expect(ok(await executeWriteMap({ summary: "Read again, and it still rests on one release.", material: false }, steward)).replaced).toBe(true);
+      await refused(() =>
+        executeRecordSourceRelationship(
+          { parent_source_id: ids.source, child_source_id: ids.upstream, relation_type: "version_of", reasoning: "Read again." },
+          steward
+        )
+      );
+      await refused(() => executeRecordRoot({ source_id: ids.upstream, status: "untraced", basis: "Read again." }, steward));
+      await refused(() => executeWriteMap({ summary: "Read again, and it still rests on one release.", material: false }, steward));
+      // The rest carry no words of the run's, and land on the row already there.
       expect(await recordSourceEvent({ sourceId: ids.source, kind: "correction", noticeUrl: event!.notice_url, detectedBy: "crossref_poll" }))
         .toEqual({ recorded: false });
       expect(ok(await executeRecordCoverage({ segment_ids: [covered!.segment_id], facet: "data" }, researcher)).recorded).toBe(0);
-      expect(ok(await executeCiteFindings({ instance_id: ids.instance, finding_ids: [ids.finding] }, steward)).cited).toBe(0);
+      // The citation goes on this label's own reading of the passage, recorded above.
+      expect(ok(await executeCiteFindings({ instance_id: ids.instance, finding_ids: [ids.finding] }, steward)).cited).toBe(1);
       await recordGrantSource(ids.grantId, ids.source, ids.url, null);
       // The feed is polled again and holds what it held.
       stage.pages.set(`${ids.lookout.site}/feed`, rss(ids.lookout.site, ["a", "b"]));
       expect(await pollFeed((await getFeed(ids.feedId))!)).toMatchObject({ ok: true, newItems: 0 });
+      // A page's shared entry is the first label's; a later analysis at another label leaves it as it is.
       expect(await shareIfPublic(ids.analyzed, analysis("a later reading"), { fetchText: async () => ANALYZED_PAGE }))
         .toMatchObject({ shared: true });
     });
-    expect(await read()).toEqual(Object.fromEntries(kept.map((t) => [t, [PUBLIC_LABEL]])));
-    // The rows were written: the reading and the shared entry say what the second run said.
-    const [reading] = await rawQuery<{ support: string }>(`SELECT support FROM claim_instance_readings WHERE instance_id = $1`, [ids.instance]);
-    expect(reading!.support).toBe("overstates");
+    expect(await read()).toEqual(
+      Object.fromEntries(kept.map((t) => [t, t === "claim_instance_readings" || t === "reading_citations" ? [PUBLIC_LABEL, INTERNAL].sort() : [PUBLIC_LABEL]]))
+    );
+    // Nothing the second run said is in a row the first label's readers read.
+    const [reading] = await rawQuery<{ support: string; note: string | null }>(
+      `SELECT support, note FROM claim_instance_readings WHERE instance_id = $1 AND sensitivity_label = $2`,
+      [ids.instance, PUBLIC_LABEL]
+    );
+    expect(reading!.support).toBe("supports");
+    expect(reading!.note ?? "").not.toContain("Read again.");
     const [shared] = await rawQuery<{ annotations: Array<{ why: string }> }>(
       `SELECT annotations FROM shared_page_analyses WHERE url_hash = $1`,
       [ids.urlHash]
     );
-    expect(shared!.annotations[0]!.why).toBe("a later reading");
+    expect(shared!.annotations[0]!.why).not.toBe("a later reading");
     expect((await rawQuery(`SELECT 1 FROM grant_sources WHERE grant_id = $1`, [ids.grantId])).length).toBe(1);
 
-    // The log is not an upsert: each reading is a row of its own, at its own run's label.
+    // A run at the rows' own label revises them as before.
+    expect(ok(await executeRecordReading({ instance_id: ids.instance, support: "overstates", note: "Read again." }, steward)).replaced).toBe(true);
+    expect(ok(await executeWriteMap({ summary: "Read again, and it still rests on one release.", material: false }, steward)).replaced).toBe(true);
     const log = await rawQuery<{ support: string; sensitivity_label: string }>(
       `SELECT support, sensitivity_label FROM claim_instance_reading_log WHERE instance_id = $1 ORDER BY created_at`,
       [ids.instance]
     );
     expect(log).toEqual([
       { support: "supports", sensitivity_label: PUBLIC_LABEL },
+      // The other label's own reading, recorded beside the first.
       { support: "overstates", sensitivity_label: INTERNAL },
+      { support: "overstates", sensitivity_label: PUBLIC_LABEL },
     ]);
   });
 
   it("is a feed item's at the label of the poll that first saw it, and the page fetched for it later leaves that alone", async () => {
     const { grantId, lookoutId, site } = await seedLookout();
     stage.pages.set(`${site}/feed`, rss(site, ["a"]));
-    const feed = await inRunAt(INTERNAL, () => addFeed({ grantId, lookoutId, url: `${site}/feed`, createdBy: "grantmaker:chat" }));
+    // A lookout's feeds are changed by work at the lookout's own label: from another it is refused.
+    expect(
+      await inRunAt(INTERNAL, () => addFeed({ grantId, lookoutId, url: `${site}/feed`, createdBy: "grantmaker:chat" }))
+    ).toMatchObject({ ok: false, code: "OTHER_LABEL" });
+    const feed = await addFeed({ grantId, lookoutId, url: `${site}/feed`, createdBy: "grantmaker:chat" });
     if (!feed.ok) throw new Error(JSON.stringify(feed));
-    // The poller runs outside any run. A lookout carries no label yet, so what it records is public.
+    // The poller runs outside any run, at the lookout's label (label-governance.test.ts). This lookout is public.
     stage.pages.set(`${site}/feed`, rss(site, ["a", "b"]));
     expect(await pollFeed((await getFeed(feed.feed_id))!)).toMatchObject({ ok: true, newItems: 1 });
     const items = (
@@ -652,12 +679,12 @@ describe("a row read from a source or written about one", () => {
       )
     ).sort((a, b) => (a.url < b.url ? -1 : 1));
     expect(items.map((i) => [i.url, i.sensitivity_label])).toEqual([
-      [`${site}/p/a`, INTERNAL],
+      [`${site}/p/a`, PUBLIC_LABEL],
       [`${site}/p/b`, PUBLIC_LABEL],
     ]);
     // A lookout's run reads the new item: the page lands on the item already there.
     stage.pages.set(`${site}/p/b`, `<html><body><article><p>The whole post.</p></article></body></html>`);
-    const read = await inRunAt(INTERNAL, () => readItem({ lookoutId, itemId: items[1]!.id, view: "full", from: "page" }));
+    const read = await readItem({ lookoutId, itemId: items[1]!.id, view: "full", from: "page" });
     expect(read).toMatchObject({ ok: true, from: "page" });
     const [item] = await rawQuery<{ body: string | null; sensitivity_label: string }>(
       `SELECT body, sensitivity_label FROM lookout_feed_items WHERE id = $1`,
@@ -710,12 +737,14 @@ describe("what is derived mechanically from a document", () => {
     expect((await rawQuery(`SELECT 1 FROM source_segments WHERE source_id = $1`, [open.id])).length).toBeGreaterThan(2);
   });
 
-  it("is restricted when a run at public opens a restricted source, as it can until reads are held to a label", async () => {
+  // Until reads were held to a label, a run at public could open a
+  // restricted source, and this test showed its segments and notices
+  // staying restricted. Now the source is not there for that run.
+  it("is not there for a run at public when the source is restricted", async () => {
     const restricted = await unopened(INTERNAL);
-    expect(await openedBy(PUBLIC_LABEL, restricted)).toEqual({
-      source: INTERNAL, segments: [INTERNAL], notices: [INTERNAL],
-      instance: PUBLIC_LABEL, reading: [PUBLIC_LABEL],
-    });
+    await expect(openedBy(PUBLIC_LABEL, restricted)).rejects.toThrow(/No source .* exists/);
+    expect(await labelsOn("source_segments", restricted.id)).toEqual([]);
+    expect(await labelsOn("source_events", restricted.id)).toEqual([]);
   });
 
   it("carries the source's label from each seam that writes it, inside a run and outside any", async () => {
@@ -727,9 +756,16 @@ describe("what is derived mechanically from a document", () => {
       expect(await refreshSourceFacts(source.id)).toMatchObject({ events_recorded: 1, doi: source.doi });
       expect(await labelsOn("source_segments", source.id)).toEqual([sourceLabel]);
       expect(await labelsOn("source_events", source.id)).toEqual([sourceLabel]);
-      // Inside a run at the other label: segmenting again replaces the
-      // segments, and a second notice is recorded. Both are still the source's.
-      await inRunAt(otherLabel, async () => {
+      // From work at the other label: segmenting again replaces the
+      // segments, and a second notice is recorded. Both are still the
+      // source's. A run at the internal label reads a public source. A run
+      // at public does not read an internal one, so there the other work is
+      // a worker's, which sees every label and has public in the air.
+      const atOther = <T>(fn: () => Promise<T>) =>
+        otherLabel === PUBLIC_LABEL
+          ? withSystemClearance("A test stands in for a worker.", () => runWithUsageContext({ label: otherLabel }, fn))
+          : inRunAt(otherLabel, fn);
+      await atOther(async () => {
         expect((await segmentSource(source.id)).segments).toBeGreaterThan(2);
         expect(await recordSourceEvent({ sourceId: source.id, kind: "retraction", noticeUrl: `https://doi.org/${source.doi}.r1`, detectedBy: "facts_fetch" }))
           .toEqual({ recorded: true });
@@ -749,10 +785,24 @@ describe("what is derived mechanically from a document", () => {
     }
   });
 
-  it("is not recorded against a source that does not exist, which fails as it always did", async () => {
+  // The notice takes its label from the source. A source that is not there
+  // has none to give, and nothing stands in for it: the insert is refused
+  // for want of a label (it used to fall through to public and then fail on
+  // the source it named).
+  it("is not recorded against a source that does not exist, or one the work cannot read", async () => {
+    const NOT_NULL_VIOLATION = "23502";
     await expect(
       recordSourceEvent({ sourceId: randomUUID(), kind: "correction", noticeUrl: "https://doi.org/10.5555/never", detectedBy: "facts_fetch" })
-    ).rejects.toSatisfy((err) => sqlState(err) === FOREIGN_KEY_VIOLATION);
+    ).rejects.toSatisfy((err) => sqlState(err) === NOT_NULL_VIOLATION);
+    const restricted = await seedSource(INTERNAL);
+    // For work that cannot read the source the same holds, and the policy
+    // refuses the row before the missing label is looked at.
+    await expect(
+      runAtLabel(PUBLIC_LABEL, "a public run", () =>
+        recordSourceEvent({ sourceId: restricted.id, kind: "correction", noticeUrl: "https://doi.org/10.5555/unread", detectedBy: "facts_fetch" })
+      )
+    ).rejects.toBeInstanceOf(ClearanceError);
+    expect(await labelsOn("source_events", restricted.id)).toEqual([]);
   });
 });
 
@@ -762,6 +812,7 @@ describe("what is derived mechanically from a document", () => {
 describe("a document a worker extracts", () => {
   async function ingested(label: string | null, known?: { url: string }) {
     const url = known?.url ?? pageUrl("submitted");
+    if (label) await asGiven(url, label);
     const submit = () => submitSource({ url, content: PAGE });
     const { jobId, sourceId } = label ? await inRunAt(label, submit) : await submit();
     const queue = getLocalQueue("urlExtraction");
@@ -790,7 +841,11 @@ describe("a document a worker extracts", () => {
     expect(await ingested(INTERNAL)).toEqual(at(INTERNAL));
     expect(await ingested(null)).toEqual(at(PUBLIC_LABEL));
     // A document the graph already held as public, submitted at a second label: the reading is the job's, the structure the document's.
+    // The text handed over with the submission is the submitter's and is
+    // not put into the public row; the worker fetches the document from its
+    // address and stores that at the document's label.
     const known = await seedSource(PUBLIC_LABEL);
+    stage.pages.set(known.url, PAGE);
     expect(await ingested(INTERNAL, known)).toEqual({
       source: PUBLIC_LABEL, instances: [INTERNAL], extractions: [INTERNAL], segments: [PUBLIC_LABEL],
     });
@@ -812,18 +867,21 @@ describe("a fetch into a source's own row", () => {
   });
 
   it("made for a document found again by its URL leaves the label it was first recorded at", async () => {
-    const url = pageUrl("cited");
+    const url = await asGiven(pageUrl("cited"), INTERNAL);
     const first = await inRunAt(INTERNAL, () => getOrCreateSource({ url }));
     expect((await sourceRow(first.id)).sensitivity_label).toBe(INTERNAL);
-    // A submission outside any run carries the text. The row is found by its URL, whatever its label.
+    // A submission outside any run carries the text. The row is found by its
+    // URL, whatever its label, and the text is not put into it: a row is
+    // filled by work at its own label, or by a fetch of its address.
     const again = await getOrCreateSource({ url, title: "Now with text", content: PAGE });
     expect(again.id).toBe(first.id);
-    expect(await sourceRow(first.id)).toMatchObject({ sensitivity_label: INTERNAL, has_text: true });
+    expect(await sourceRow(first.id)).toMatchObject({ sensitivity_label: INTERNAL, has_text: false });
     // And the other way round: a run at a restricted label finds the public row.
     const open = await getOrCreateSource({ url: pageUrl("cited") });
     const found = await inRunAt(INTERNAL, () => getOrCreateSource({ url: open.url!, content: PAGE }));
     expect(found.id).toBe(open.id);
-    expect(await sourceRow(open.id)).toMatchObject({ sensitivity_label: PUBLIC_LABEL, has_text: true });
+    // The restricted run's text is not put into the public row either.
+    expect(await sourceRow(open.id)).toMatchObject({ sensitivity_label: PUBLIC_LABEL, has_text: false });
   });
 
   it("made by the page-hash fill at startup leaves every label alone", async () => {
@@ -888,7 +946,13 @@ describe("work that starts from a source", () => {
 
   it("is done at the source's label whatever context the worker is in", async () => {
     const restricted = await unfetched(INTERNAL);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => fillSource(restricted.id))).toBe(true);
+    // The worker's tick sees every label (withSystemClearance in
+    // workers/source-backfill.ts), whatever label is in the air around it.
+    expect(
+      await withSystemClearance("A test stands in for the backfill's tick.", () =>
+        runWithUsageContext({ label: PUBLIC_LABEL }, () => fillSource(restricted.id))
+      )
+    ).toBe(true);
     expect(stage.fetchedAt.get(restricted.url)).toBe(INTERNAL);
     expect(await filled(restricted.id)).toEqual(filledAt(INTERNAL));
   });
@@ -914,13 +978,16 @@ describe("work that starts from a source", () => {
     expect((await sourceRow(restricted.id)).sensitivity_label).toBe(INTERNAL);
   });
 
-  it("is noted in a mandate's pipeline by the scheduler at the mandate's label, whatever the label of the source someone else ingested", async () => {
-    const attributed = async (label: string) => {
+  // The note is the mandate's record of its own pipeline, written while its
+  // plan is materialized, so it carries the mandate's label now that
+  // mandates have one (label-governance.test.ts). Before, the source's
+  // label stood in for it.
+  it("is noted in a mandate's pipeline by the scheduler at the mandate's label, whatever the source's is", async () => {
+    const attributed = async (label: string, mandateLabel: string) => {
       const funder = await seedUser("sources-plan");
       const { grantId } = await seedGrantWithJob({ funderId: funder, budgetMicroUsd: 50 * OWL });
-      // The mandate decides for its plan rows; the source carries the other label.
-      await rawQuery(`UPDATE grants SET sensitivity_label = $2 WHERE id = $1`, [grantId, label]);
-      const source = await seedSource(label === INTERNAL ? PUBLIC_LABEL : INTERNAL);
+      await rawQuery(`UPDATE grants SET sensitivity_label = $2 WHERE id = $1`, [grantId, mandateLabel]);
+      const source = await seedSource(label);
       // Another reader's ingest of the URL ran and finished.
       await rawQuery(
         `INSERT INTO jobs (type, status, input, completed_at)
@@ -942,15 +1009,27 @@ describe("work that starts from a source", () => {
       expect(item!.ledger.status).toBe("done");
       return labelsWhere("grant_sources", "grant_id = $1 AND source_id = $2", [grantId, source.id]);
     };
-    expect(await attributed(INTERNAL)).toEqual([INTERNAL]);
-    expect(await attributed(PUBLIC_LABEL)).toEqual([PUBLIC_LABEL]);
+    // A public mandate's plan does not read an internal source, so it notes
+    // nothing: before reads were held to a label it learned that the graph
+    // held the document, and noted it.
+    expect(await attributed(INTERNAL, PUBLIC_LABEL)).toEqual([]);
+    expect(await attributed(PUBLIC_LABEL, INTERNAL)).toEqual([INTERNAL]);
+    expect(await attributed(PUBLIC_LABEL, PUBLIC_LABEL)).toEqual([PUBLIC_LABEL]);
   });
 
   it("takes the source's label over the one in the air", async () => {
     const source = await seedSource(INTERNAL);
     const at = () => Promise.resolve(currentLabel());
     expect(await runAtSourceLabel(source.id, at)).toBe(INTERNAL);
-    expect(await runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtSourceLabel(source.id, at))).toBe(INTERNAL);
+    // A worker sees every label (withSystemClearance), whatever label is in the air around it.
+    expect(
+      await withSystemClearance("A test stands in for a worker.", () =>
+        runWithUsageContext({ label: PUBLIC_LABEL }, () => runAtSourceLabel(source.id, at))
+      )
+    ).toBe(INTERNAL);
+    // Work that does not read the source's label cannot move itself to it:
+    // the source is not there for that work, and it runs as it would have.
+    expect(await runAtLabel(PUBLIC_LABEL, "a public run", () => runAtSourceLabel(source.id, at))).toBe(PUBLIC_LABEL);
     // A source that does not exist has nothing to run at: the work runs as it would have.
     expect(await runAtSourceLabel(randomUUID(), at)).toBe(PUBLIC_LABEL);
     // Reading the label writes nothing.
@@ -981,7 +1060,11 @@ describe("what a reader is shown", () => {
 
   const carriesIt = (text: string) => /sensitivity[_ ]?label/i.test(text);
   /** The label's name as a JSON value, which no response has another reason to hold. */
-  const namesIt = (text: string) => text.includes(`"${INTERNAL}"`);
+  // A read of a node or of a source says which label it carries, on a
+  // deployment with more than one, and a node's versions each say theirs
+  // (services/judgment-version-service.ts). That one field is shown by
+  // design; the label's name anywhere else is not.
+  const namesIt = (text: string) => text.replaceAll(`"label":"${INTERNAL}"`, "").includes(`"${INTERNAL}"`);
 
   it("has no view query_sql reads that exposes the column", async () => {
     // The public_read views name their columns, and Postgres stores a view
@@ -1119,7 +1202,7 @@ describe("what a reader is shown", () => {
       await executeWriteMap({ summary: "It rests on one release.", material: true }, steward),
       await executeRecordSourceInterest({ scope: "claim", source_id: ids.source, party: "A party", stake: "A stake." }, steward),
       await executeStewardTool("record_claim_instance", {
-        claim_id: ids.claim, url: pageUrl("another"), verbatim_text: "Another passage.", stance: "mentions",
+        claim_id: ids.claim, url: await asGiven(pageUrl("another")), verbatim_text: "Another passage.", stance: "mentions",
       }),
     ]);
     for (const reply of replies) {

@@ -181,10 +181,13 @@ describe("the Grantmaker's tenth", () => {
         WHERE id = $1`,
       [funded.grantId]
     );
+    // Funding opened its planning row at once (openMandateFirstSitting);
+    // that pass ran and spent the tenth.
+    expect((await row(PLANNING_GROUP(funded.grantId)))?.status).toBe("open");
     await rawQuery(
-      `INSERT INTO actions (kind, exclusion_group, variant, target_ref, label, cost_est_micro_usd, status, metered_cost_micro_usd)
-       VALUES ('grant_planning', $1, 'standard', $2, 'planned', 1, 'done', $3)`,
-      [PLANNING_GROUP(funded.grantId), funded.grantId, 0.5 * OWL]
+      `UPDATE actions SET status = 'done', metered_cost_micro_usd = $2
+        WHERE exclusion_group = $1 AND variant = 'standard'`,
+      [PLANNING_GROUP(funded.grantId), 0.5 * OWL]
     );
     await tendMandates();
     expect((await grant(funded.grantId)).status).toBe("completed");

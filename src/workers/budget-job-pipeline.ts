@@ -19,7 +19,8 @@
  */
 import { rawQuery } from "../db/client.js";
 import { runClaimSteward } from "../llm/agents/claim-steward.js";
-import { runAtLabel, runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { currentLabel, runAtLabel, runWithUsageContext, withPassBudget } from "../llm/usage-context.js";
+import { oneLabelOnly } from "../services/judgment-version-service.js";
 import {
   STEWARD_SUCCESS_CLEAR_SET,
   parksAtOnce,
@@ -103,6 +104,10 @@ async function claimNextTarget(
   decomposition_status: string;
   steward_trigger: string | null;
 } | null> {
+  // The job takes a node's own row, which is its slot for work at its own
+  // label, so on a deployment with more than one label it takes only the
+  // nodes at the job's label: another label's row is that label's to move.
+  const ownLabelOnly = oneLabelOnly() ? "" : `\n          AND c.sensitivity_label = '${currentLabel()}'`;
   const rows = await rawQuery<{
     id: string;
     prior_state: string;
@@ -120,7 +125,7 @@ async function claimNextTarget(
        SELECT c.id, c.steward_state AS prior_state
          FROM claims c JOIN subtree s ON c.id = s.id
         WHERE c.state = 'active'
-          AND c.steward_state IN ('pending', 'deferred')
+          AND c.steward_state IN ('pending', 'deferred')${ownLabelOnly}
         ORDER BY (c.steward_state = 'pending') DESC, c.importance DESC
         LIMIT 1
         FOR UPDATE OF c SKIP LOCKED

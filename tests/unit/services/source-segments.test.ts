@@ -83,6 +83,14 @@ describe("locateQuote and segmentAt", () => {
     const loose = locateQuote(DOC, "“Rotating night work was associated with a 1.4 fold”")!;
     expect(DOC.slice(loose.start, loose.end)).toBe("Rotating night work was associated with a 1.4-fold");
     expect(locateQuote(DOC, "doubles the risk")).toBeNull();
+    // A quotation with cuts is found piece by piece, in order, and anchors at its first piece.
+    const cut = locateQuote(DOC, "We followed 9,000 nurses [...] a 1.4-fold higher risk.")!;
+    expect(cut.parts).toHaveLength(2);
+    expect(DOC.slice(cut.parts![0]!.start, cut.parts![0]!.end)).toBe("We followed 9,000 nurses");
+    expect(segmentAt(segs, cut.start)).toBe(segs[3]);
+    expect(locateQuote(DOC, "a 1.4-fold higher risk […] We followed 9,000 nurses")).toBeNull();
+    // A quotation found whole carries no parts.
+    expect(locateQuote(DOC, "a 1.4-fold higher risk")!.parts).toBeUndefined();
     // An offset on a heading belongs to its section.
     expect(segmentAt(segs, segs[7]!.start)).toBe(segs[7]);
   });

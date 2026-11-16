@@ -184,6 +184,20 @@ export async function applyAcceptanceEffects(
     note = ` Recorded as work on request ${requestId}; its keeper is notified.`;
   }
 
+  // A published page's submission (docs/published-pages.md): admitting it
+  // attaches the page to the node as a source and tells the node's Steward.
+  // Idempotent: a page already attached is not attached twice.
+  if (c.contributionType === "add_instance" && c.reviewStatus !== "accepted") {
+    const { publicationOfContribution, takeIn } = await import("./published-page-service.js");
+    const publishedPageId = await publicationOfContribution(contributionId);
+    if (publishedPageId) {
+      const taken = await takeIn(publishedPageId, { first: true });
+      note = taken.attached
+        ? " The published page is attached to the node as a source, and the node's Steward has been told; do not call notify_claim_steward."
+        : " The publication is admitted to the node's record and its Steward has been told; no page has been released yet, so there is nothing to attach. Do not call notify_claim_steward.";
+    }
+  }
+
   if (c.contributionType === STATED_VIEW_CONTRIBUTION_TYPE) {
     try {
       const admitted = await admitStatedView(contributionId, by);

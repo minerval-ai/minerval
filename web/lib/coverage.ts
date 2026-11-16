@@ -13,9 +13,9 @@ import type { Coverage, CoverageRow } from "./types";
 
 /** What the page calls each kind's judgment and the node itself. */
 const KIND_WORDS = {
-  claim: { lead: "Not yet assessed", carries: "no verdict", about: "for or against the claim" },
-  quantity: { lead: "Not yet estimated", carries: "no estimate from the graph", about: "about the value" },
-  question: { lead: "Not yet assessed", carries: "no answer from the graph", about: "about the answer" },
+  claim: { lead: "Not yet assessed", about: "for or against the claim" },
+  quantity: { lead: "Not yet estimated", about: "about the value" },
+  question: { lead: "Not yet assessed", about: "about the answer" },
 } as const;
 
 export type CoverageKind = keyof typeof KIND_WORDS;
@@ -29,8 +29,8 @@ export type CoverageKind = keyof typeof KIND_WORDS;
  */
 export function notExaminedLine(kind: CoverageKind, opts: { afterLead?: boolean } = {}): string {
   const w = KIND_WORDS[kind];
-  const first = opts.afterLead ? "This page carries" : `${w.lead}, so this page carries`;
-  return `${first} ${w.carries}. That is not a finding ${w.about}.`;
+  const rest = `That is not a finding ${w.about}.`;
+  return opts.afterLead ? rest : `${w.lead}. ${rest}`;
 }
 
 /**
@@ -58,4 +58,37 @@ export function evidenceNotShownLine(
     `This ${judgment} rests in part on evidence not shown: ` +
     "at least one of its sources reports a result from data it has not published."
   );
+}
+
+/**
+ * In a deployment that holds material at more than one label, what a
+ * judgment was made on is said to the person reading it: evidence they can
+ * read, evidence they cannot, or both. A reader's own judgment rests on
+ * evidence they cannot read when its Steward weighed a page shown from a
+ * label the reader does not read (docs/showing-a-page.md). One line under the verdict, or null
+ * where the API does not say (the public graph, where everything is read by
+ * everyone).
+ */
+export function readerEvidenceLine(
+  coverage: Coverage | null | undefined,
+  judgment: "assessment" | "estimate" = "assessment",
+): string | null {
+  if (!coverage || !coverage.examined) return null;
+  const can = coverage.on.includes("evidence_this_reader_can_read");
+  const cannot = coverage.on.includes("evidence_this_reader_cannot_read");
+  if (can && cannot) {
+    return (
+      `This ${judgment} was made partly on evidence you can read and partly on evidence you cannot: ` +
+      "among what it rests on is a page shown from a label you do not read, with what was removed or held marked."
+    );
+  }
+  if (cannot) {
+    return (
+      `This ${judgment} was made on evidence you cannot read: what it rests on is a page shown ` +
+      "from a label you do not read, with what was removed or held marked."
+    );
+  }
+  // Made on evidence this reader can read and nothing else recorded: the
+  // ordinary case, which needs no line.
+  return null;
 }

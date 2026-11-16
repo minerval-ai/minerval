@@ -351,6 +351,118 @@ prize checks are DB-backed jobs with their own workers, never SQS messages:
 the two queues' 120-second visibility timeout (`infra/lib/queue-stack.ts`)
 is unsuitable for either.
 
+## The mirror feed
+
+A private deployment holds the public graph as a read-only copy, kept from
+a feed of signed batches the public graph publishes (docs/mirror.md). The
+API publishes it when `mirrorPublish` in `infra/cdk.json` is `"true"`: the
+task then runs with `MIRROR_PUBLISH=true` and reads `MIRROR_SIGNING_KEY`
+from the Secrets Manager entry `episteme/mirror-signing-key`. It starts
+`"false"`, and while it is, `/mirror/feed` is not mounted and a private
+deployment cannot mirror the public graph, which also means it cannot
+publish a page to it (a page goes to the node the mirror gave it).
+
+To turn it on:
+
+1. Make the key, on a machine with the repository:
+   `npx tsx scripts/mirror.ts keygen`. It prints a private key (PEM) and
+   its public half. Keep a copy of the private key in the password
+   manager: a new key starts a feed every mirror has to be told about.
+2. Create the entry by hand, so the key never passes through
+   CloudFormation: `aws secretsmanager create-secret --name
+   episteme/mirror-signing-key --secret-string file://mirror-key.pem`.
+3. Set `"mirrorPublish": "true"` in `infra/cdk.json` and merge. The API
+   refuses to start with the feed on and no key, so the entry must exist
+   before this deploys.
+4. Check: `GET https://api.claimgraph.io/mirror/feed/key` answers with the
+   public key, and the API's log shows `Mirror feed publisher started` and
+   then the first cut, a snapshot of every public row in batches of at most
+   `MIRROR_BATCH_MAX_BYTES`.
+
+Each cut reads and hashes the replicated tables, every
+`MIRROR_PUBLISH_INTERVAL_SECONDS` (900 by default), so the feed costs the
+primary database that read. Batches are kept in the database. A deployment
+that mirrors fetches them with an ordinary account's API key; nothing
+charges for the feed yet.
+
+To stop publishing, set it back to `"false"` and merge. Mirrors keep what
+they applied and stop moving.
+
+## The extraction lane
+
+Reading a source (an ingest) is a message on the URL extraction queue,
+consumed by the API service (`desiredCount` 1). One extraction is an
+Extractor run and then a Matcher run for each claim it proposed, one after
+another, which for a news article is about five minutes of mostly waiting on
+a model. Until 2026-11-13 the poller ran the messages it received strictly
+one at a time, with no limit on how long one could take; on that day one
+hung handler stopped all ingestion for twenty hours, until a deploy
+restarted the process, and the ingest rows behind it read `running` all the
+while. The lane now works like this.
+
+**The poller** (`src/workers/poller.ts`, started in `src/index.ts`) runs up
+to `URL_EXTRACTION_CONCURRENCY` extractions at once (default 3; every other
+queue keeps one at a time) and receives only as many messages as it has free
+places, so none waits out its visibility in the process's hands behind
+another. While a handler runs, the poller extends its message's visibility
+every forty seconds (the receive asks for 120, as the queue's default
+does), so a long extraction is never delivered to a second worker. A handler
+that goes `URL_EXTRACTION_STALL_MINUTES` (default 15; `QUEUE_STALL_MINUTES`,
+default 30, for the other queues) without progress is given up on: its
+signal aborts, its place is freed, and its message is made visible again
+after thirty seconds, to be tried again or, after the queue's three
+receives, to go to its dead-letter queue. Progress is any metered model call
+finishing (the usage context's `onProgress`, fed by the metering
+chokepoint) or a step the handler reports, so a long document reads for as
+long as it keeps moving; the window is not a limit on the work. It is
+there because a call that never returns spends nothing, so no budget can
+stop it. A budget stop (`LlmBudgetExceededError`) pauses receiving for a
+minute and returns that message after the pause, as before.
+
+**The job.** An extraction's job (`jobs`) records the ledger row it executes
+(`action_id`), when a worker took it up (`started_at`; null while it is
+queued), how many times one has (`attempts`) and when its run last made
+progress (`heartbeat_at`, stamped at most every thirty seconds as model
+calls finish, and at every step). The attempt number is the run's hold on
+the job: before the Extractor's result is used, before each Matcher run and
+before the job is completed, the run checks it still holds it, and a run
+the poller gave up on, or that a later delivery of the same message has
+taken over, stops there and writes nothing more
+(`ExtractionAbandonedError` in `src/workers/url-extraction.ts`). A job that
+completed, or that the sweep below abandoned, is never taken up again: a
+second delivery of its message is dropped.
+
+**Queued or being read.** The executor sets an ingest row `running` when
+it submits the source, not when a worker takes it up, so the row alone
+cannot say which. The public `ledger` view says it for a running ingest:
+`extraction` is `queued` or `extracting`, `extraction_started_at` is when
+the current extraction was taken up, and `queued_ahead` is, for a queued
+one, how many extraction jobs submitted before it are still unstarted (a
+count over `jobs`; approximate, as an SQS standard queue does not promise
+its order). A mandate's pipeline (`get_mandate`'s `pipeline`, the
+Grantmaker's `ingestion_report`, a review pass's `pipeline_report`) gives
+each source `extraction_stage` (queued, extracting, done, failed),
+`extraction_started_at` and `extraction_queued_ahead`, computed the same way.
+
+**The sweep** (`sweepStalledIngests` in `src/workers/recovery-sweep.ts`, in
+the recovery sweep that runs every minute) gives up on an extraction whose
+ledger row is still `running` and whose job has shown no progress for twice
+the stall window, and never less than thirty minutes
+(`ingestStallMinutes()`): by then no attempt holds it, and none is about to
+(the process died, the message went to the dead-letter queue, or, with
+in-memory queues, a restart lost a job that was still queued). In one
+guarded write the job is marked failed with `result.abandoned`, and the row
+is released to open with its allocations, so the engine executor submits
+the source again under a new job. Only that extraction's metered cost is
+consumed when it completes, so its funders are not charged twice; what the
+stopped run spent stays metered to its own job. After the sweep has given up
+on a row's extraction three times it cancels the row instead: a source that
+hangs every time would otherwise be resubmitted forever, and a hang spends
+nothing. With SQS a job that was never taken up is left alone, since the
+queue keeps its message for four days; the ledger's reconcile
+(`INGEST_JOB_LOST_DAYS` in `src/services/action-service.ts`) reopens such a
+row after that.
+
 ## Attachments and the S3 path
 
 Uploaded files live in Postgres (`attachments`, `bytea` bodies) at v1
@@ -381,6 +493,10 @@ storage past about 5 GB, or a second region.
   (`MINERVAL_OPERATOR_KEY`) for the Platform mandates workflow, which
   presents it only to `POST /operator/platform-mandates/fund`, to fund a
   draft that a merged pull request pinned (#529).
+- `episteme/mirror-signing-key`: the Ed25519 key the mirror feed is signed
+  with, read by the API task only while `mirrorPublish` is on. Created by
+  hand and imported by name, like the operator key ("The mirror feed",
+  above).
 - Nothing else is baked into the checker image or its environment, because
   the cold lane runs a claimant's code.
 - A payout provider's key arrives only with cash payouts, in its own entry,

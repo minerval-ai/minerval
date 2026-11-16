@@ -234,6 +234,19 @@
   padding: 0.35rem 0 0.35rem 2.2rem; min-height: 2.2rem; cursor: pointer; text-align: left;
 }
 .fold:hover { text-decoration: underline; text-underline-offset: 2px; }
+/* Where a lead passage sits in the document: its section, quietly. */
+.where {
+  font-family: var(--sans); font-size: 0.64rem; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted); margin: 0.9rem 0 0.05rem 2.2rem;
+}
+/* The one fold over the full text, below the passages that lead. */
+.wholeFold {
+  display: block; margin: 1.1rem 0 0.4rem; padding: 0.4rem 0;
+  font-family: var(--sans); font-size: 0.78rem; color: var(--link);
+  background: none; border: 0; border-top: 1px solid var(--rule-soft); width: 100%; text-align: left; cursor: pointer;
+}
+.wholeFold:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 2px; }
+.wholeFold:disabled { color: var(--muted); cursor: default; }
 
 /* ----- margin notes ----- */
 .mg { font-family: var(--sans); font-size: 0.72rem; color: var(--ink-soft); display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
@@ -244,6 +257,12 @@
 .nread { margin: 0; line-height: 1.5; }
 .nread b { font-weight: 600; }
 .caution { color: var(--muted); font-style: italic; }
+.cuts { font-size: 0.72rem; line-height: 1.5; }
+.cuts summary { color: var(--link); cursor: pointer; }
+.cuts p { margin: 0.3rem 0 0; }
+.omitted { color: var(--muted); }
+.omitted::before { content: "[ "; }
+.omitted::after { content: " ]"; }
 
 .fcard {
   background: var(--paper-sunk); border-radius: 3px; padding: 0.4rem 0.55rem;
@@ -352,4 +371,12 @@
   .prom { grid-template-columns: minmax(0, 1fr); gap: 0.6rem; }
   .hist li { grid-template-columns: 5.2rem minmax(0, 1fr); gap: 0.1rem 0.6rem; }
   .hist li > span:last-child { grid-column: 2; }
+}
+
+/* ----- a quiet page (#507): no rail, and one line for what has not happened ----- */
+/* Without the rail the column lines up with the masthead, as other pages do. */
+.norail { grid-template-columns: minmax(0, 1fr); max-width: var(--frame); }
+.absent {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+  margin: 1.4rem 0 0; max-width: 38rem;
 }

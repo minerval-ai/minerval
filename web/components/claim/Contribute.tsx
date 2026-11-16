@@ -77,6 +77,10 @@ export function Contribute({ claimId }: { claimId: string }) {
   const [type, setType] = useState<TypeValue>("challenge");
   const [prefill, setPrefill] = useState("");
   const [status, setStatus] = useState<SubmitState>({ kind: "idle" });
+  // A published page on this claim the contribution is made through, from
+  // the second tab's link (?through=<published page>). It is filed on the
+  // claim like any contribution, and names the page.
+  const [through, setThrough] = useState<string | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -85,6 +89,8 @@ export function Contribute({ claimId }: { claimId: string }) {
     if (wanted !== null || window.location.hash === "#contribute") {
       setOpen(true);
       if (isTypeValue(wanted)) setType(wanted);
+      const page = params.get("through");
+      if (page && /^[0-9a-f-]{36}$/i.test(page)) setThrough(page);
       const quote = params.get("quote");
       if (quote) setPrefill(`On the passage: “${quote.trim()}”\n\n`);
       setTimeout(
@@ -115,6 +121,7 @@ export function Contribute({ claimId }: { claimId: string }) {
           ...(type === "propose_edit"
             ? { proposed_canonical_form: data.get("proposed_wording") }
             : {}),
+          ...(through ? { about_published_page_id: through } : {}),
           ...(type === "propose_merge"
             ? {
                 // Accept a pasted claim-page address as well as a bare id.
@@ -161,10 +168,7 @@ export function Contribute({ claimId }: { claimId: string }) {
     <section id="contribute" ref={sectionRef}>
       <h2>Contribute</h2>
       <p className="contribute-lede">
-        Every judgment on this page is open to challenge. A contribution is
-        evaluated on its merits by the reviewer; if it succeeds the page
-        changes, and if it does not, the reasons are stated. Either way the
-        exchange becomes part of the claim&rsquo;s public record.
+        Every judgment on this page is open to challenge.
       </p>
 
       {!open && (
@@ -223,6 +227,16 @@ export function Contribute({ claimId }: { claimId: string }) {
 
       {open && session.kind === "signed-in" && status.kind !== "sent" && (
         <form className="contribute-box" onSubmit={onSubmit}>
+          {through && (
+            <p className="contribute-hint">
+              This is filed as made through the redacted assessment on sealed evidence published on this claim. It is
+              reviewed here like any contribution. The graph that published the page reads it from this graph&rsquo;s
+              public record, and its record here will say whether that graph received it and what followed.{" "}
+              <button type="button" className="linklike" onClick={() => setThrough(null)}>
+                File it on the public assessment instead
+              </button>
+            </p>
+          )}
           <label className="contribute-label" htmlFor="contribute-type">
             What kind of contribution?
           </label>
@@ -308,6 +322,10 @@ export function Contribute({ claimId }: { claimId: string }) {
               contributing as {session.name ?? "you"}
             </span>
           </div>
+          <p className="contribute-hint">
+            The reviewer evaluates it on its merits. If it succeeds the page changes; if not, the
+            reasons are stated. Either way the exchange joins the claim&rsquo;s public record.
+          </p>
           {status.kind === "error" && (
             <p className="contribute-error">{status.message}</p>
           )}

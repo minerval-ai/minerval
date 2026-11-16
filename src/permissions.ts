@@ -23,9 +23,10 @@
  * may read: `public`, every label a `read` grant names, and every label
  * those read (the pairs in label_reads, followed to the end). It is put on
  * the request's async context (currentClearance in llm/usage-context.ts) so
- * that whatever holds reads to a clearance can pick it up without a
- * parameter. Nothing holds a read to it yet: that is the database's job
- * and is later work.
+ * that what holds reads to a clearance can pick it up without a
+ * parameter. The database does: where a deployment has more than one
+ * label, a request's queries run on a connection that reads those labels
+ * and no others (db/clearance.ts).
  *
  * A member is an account that holds at least one live grant. An account
  * that has signed in and holds none is not a member, and is served nothing
@@ -75,16 +76,25 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "direct the graph",
     covers:
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
-      "Correspondent for an update, and add sources.",
+      "Correspondent for an update, add sources, among them sets of files they upload, state the organization's own view on a node, " +
+      "ask for a node's page to be shown to readers " +
+      "who do not read its label, end a standing showing, hold a page that has not been shown, send what a " +
+      "showing outside has released to the public graph, and write the words a node is proposed there in. " +
+      "Adopt a request from the public graph, and leave a mandate or a node out of keeping public versions current. " +
+      "Unless the deployment names another permission for it: act on the public graph in the organization's name, which is to " +
+      "say there that the graph is taking a request up, open and fund public mandates with public owls, pay for a public node's " +
+      "assessment, and set whether public versions are kept current.",
     never: "Edit an assessment or a run's log.",
   },
   release: {
     scope: "party",
     phrase: "release one party's material",
     covers:
-      "Release or hold what would leave the deployment of one party's material. It is granted " +
-      "for that party alone. Publishing outward is not built yet, so for now the grant records " +
-      "who holds that party's gate.",
+      "Act at a gate on what rests on one party's material: approve, release, remove a passage from, hold or delay " +
+      "each part of a page or other item going to readers who do not read its label, set the gate for that " +
+      "party's material, and release the words a node is proposed " +
+      "to the public graph in. For the organization's own material: send an agent's report, as redacted, to Minerval's " +
+      "maintainers. It is granted for that party alone.",
     never: "Edit what the agents wrote, or release another party's material.",
   },
   fund: {
@@ -113,7 +123,12 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     phrase: "administer the deployment",
     covers:
       "Grant and remove permissions, define labels and which label reads which, add parties, " +
-      "and say whose material a source is.",
+      "say whose material a source is, save the redaction policy of a boundary, sign the statement that " +
+      "registers the deployment's key to an account on the public graph, connect the deployment to an " +
+      "organization's systems and pick which of their tools agents are offered, and register a directory on " +
+      "the deployment's disk as a set of files. Set up the deployment's General and Governance " +
+      "mandates, and create owls where the deployment creates its own. Read the usage reports " +
+      "the deployment makes to the public graph, and send them.",
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",
@@ -203,6 +218,13 @@ export interface ReadsConfig {
  */
 export function membersOnly(config: ReadsConfig = loadConfig()): boolean {
   return config?.reads === "members";
+}
+
+/** What a refusal says where any one of several permissions would do. */
+export function anyPermissionRefusal(permissions: readonly PermissionName[]): string {
+  const phrases = permissions.map((p) => `the permission to ${PERMISSION_DEFINITIONS[p].phrase}`);
+  const listed = phrases.length <= 1 ? (phrases[0] ?? "") : `${phrases.slice(0, -1).join(", ")} or ${phrases[phrases.length - 1]!}`;
+  return `This needs ${listed}, and this account holds ${phrases.length === 2 ? "neither" : "none of them"}. An administrator of this deployment grants them.`;
 }
 
 /** What a refusal for a missing permission says. */

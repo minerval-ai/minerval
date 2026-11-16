@@ -126,12 +126,6 @@ function judgmentHtml(j: EmbedJudgment): string {
       `<span class="glyph" aria-hidden="true">${escapeHtml(v.glyph)}</span>${escapeHtml(v.label)}</span>`,
     );
   }
-  if (j.verdictConfidence != null) {
-    const what = j.kind === "Question"
-      ? "How sure the Steward is that this standing is the right reading of the evidence, from 0 to 1."
-      : "How sure the Steward is that this status is the right reading of the evidence, from 0 to 1. Not the probability that the claim is true.";
-    out.push(`<span class="conf" title="${escapeHtml(what)}">${escapeHtml(j.confidenceLabel)} ${j.verdictConfidence.toFixed(2)}</span>`);
-  }
   if (j.dispute) {
     out.push(
       `<span class="dispute${j.disputeLevel === "active" ? " active" : ""}" ` +

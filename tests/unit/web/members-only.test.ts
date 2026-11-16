@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { parseRequestsView } from "../../../web/lib/requests";
 
 // The web app's part in a members-only deployment (web/lib/members.ts):
 // every read names its reader and is kept for no one, no read is ever
@@ -207,7 +208,7 @@ describe("in a members-only deployment", () => {
     const { data } = await load("members", false);
     expect(await data.loadClaim("inflation-2022")).toEqual({ detail: null, source: "live" });
     expect((await data.loadClaims()).results).toEqual([]);
-    expect((await data.loadRequests()).requests).toEqual([]);
+    expect((await data.loadRequestsPage(parseRequestsView({}))).requests).toEqual([]);
     expect((await data.loadRequest("anything")).request).toBeNull();
     expect((await data.loadOpenPrizes()).prizes).toEqual([]);
     expect((await data.loadAttempt("inflation-2022", "a")).attempt).toBeNull();
@@ -300,7 +301,26 @@ describe("the gate", () => {
       answer(200, { account: { id: "a", display_name: "Alice", external_id: "oidc:alice" }, member: true, permissions: ["read"] })
     );
     const tree = (await gate("members")) as Node;
-    expect(tree.props.children).toBe(PAGE);
+    // The page, under the line of links a member's permissions open
+    // (components/MembersBand.tsx).
+    const [band, page] = tree.props.children as [Node, unknown];
+    expect(page).toBe(PAGE);
+    const links = (who: string[], clearance: string[] = ["public"]) => {
+      const rendered = (band.type as (props: unknown) => Node | null)({
+        mine: { account: {}, member: true, permissions: who, grants: [], clearance, raw_source_labels: [], groups: [] },
+      });
+      return rendered === null ? null : textOf(rendered.props.children);
+    };
+    // A member who reads only what everyone reads, and can neither direct, release nor administer, is shown no line at all.
+    expect(links(["read"])).toBeNull();
+    // A person is shown a link for what they can do: showings for whoever reads at a label besides `public` or acts
+    // on showings, the release queue for whoever releases, file sets for whoever directs or administers, and the
+    // pages about the public graph for whoever directs or releases, since sending an agent's report on takes release.
+    expect(links(["read"], ["public", "finance"])).toBe("ShowingsGates");
+    expect(links(["release"])).toBe("ShowingsGatesAt the gateThe public graph");
+    expect(links(["read", "direct"])).toBe("ShowingsGatesFile setsAdd a sourceThe public graph");
+    expect(links(["administer"])).toBe("GatesFile setsAdministration");
+    expect(links(["direct", "fund", "administer"])).toBe("ShowingsGatesFile setsAdd a sourceThe public graphAdministration");
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

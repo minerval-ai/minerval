@@ -20,8 +20,11 @@ vi.mock("../../src/llm/agents/grantmaker.js", () => ({
   runGrantmakerTurn: vi.fn(async (input: {
     transcript: unknown[];
     onText?: (delta: string, turn: number) => void;
+    onTool?: (name: string, input: Record<string, unknown>) => void;
   }) => {
     agent.transcripts.push(input.transcript);
+    input.onTool?.("search_claims", { query: "education outcomes" });
+    input.onTool?.("get_claim", { claim_id: "c-1" });
     input.onText?.("Here is ", 0);
     input.onText?.("my rep", 0);
     const gate = agent.gates.shift();
@@ -105,12 +108,25 @@ describe("granting-conversation turns", () => {
     await new Promise((r) => setTimeout(r, 1_400));
     const mid = (await getConversation(id, userId))!;
     expect(serializeTurn(mid)).toMatchObject({ state: "replying", partial: "Here is my rep" });
+    // And which step it is on: the tools it has called, the latest last.
+    expect(serializeTurn(mid)).toMatchObject({
+      progress: {
+        steps: 2,
+        note: "Step 2: get_claim (c-1)",
+        recent: [
+          { tool: "search_claims", about: "education outcomes" },
+          { tool: "get_claim", about: "c-1" },
+        ],
+      },
+    });
 
     release();
     await settleGrantConversationTurns();
     const done = (await getConversation(id, userId))!;
     expect(done.turnPartial).toBeNull();
+    expect(done.turnActivity).toBeNull();
     expect(serializeTurn(done).partial).toBeNull();
+    expect(serializeTurn(done)).not.toHaveProperty("progress");
   });
 
   it("refuses a second message while a turn runs, without saving it", async () => {
@@ -281,9 +297,14 @@ describe("granting-conversation turns", () => {
       await app.inject({ method: "GET", url: `/grant-conversations/${id}?wait=25` });
       expect(Date.now() - t0).toBeLessThan(2_000);
 
-      // A wait is capped.
-      const tooLong = await app.inject({ method: "GET", url: `/grant-conversations/${id}?wait=60` });
+      // A wait is capped, at two minutes: a drafting turn takes one or two.
+      const longer = await app.inject({ method: "GET", url: `/grant-conversations/${id}?wait=90` });
+      expect(longer.statusCode).toBe(200);
+      const tooLong = await app.inject({ method: "GET", url: `/grant-conversations/${id}?wait=121` });
       expect(tooLong.statusCode).toBe(400);
+
+      // Every read says where the conversation is read on the site.
+      expect(again.page_url).toMatch(new RegExp(`/ask/mandates/c/${id}$`));
 
       // The list carries summaries, not transcripts.
       const list = (await app.inject({ method: "GET", url: "/grant-conversations" })).json();
@@ -306,10 +327,95 @@ describe("granting-conversation turns", () => {
         payload: { budget_owls: 10 },
       });
       expect(fund.statusCode).toBe(200);
+      const grantId = fund.json().grant_id as string;
       expect(fund.json()).toEqual({
         grant_id: expect.any(String),
+        page_url: expect.stringMatching(new RegExp(`/mandates/${grantId}$`)),
+        funder_url: expect.stringMatching(new RegExp(`/ask/mandates/${grantId}$`)),
         conversation: { id, status: "funded" },
       });
+      // Once funded, the conversation points to the mandate.
+      const after = (await app.inject({ method: "GET", url: `/grant-conversations/${id}?after=4` })).json()
+        .conversation;
+      expect(after.mandate_page_url).toMatch(new RegExp(`/mandates/${grantId}$`));
+      expect(after.funder_url).toMatch(new RegExp(`/ask/mandates/${grantId}$`));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("refuses to fund a draft with warnings until the funder acknowledges them", async () => {
+    const userId = await seedUser("turn-warnings");
+    await creditOwls(userId, 100 * OWL);
+    const app = Fastify();
+    app.decorate("authenticate", async (request: { auth?: unknown }) => {
+      request.auth = { userId };
+    });
+    app.decorate("requireUser", async () => {});
+    await app.register(grantConversationRoutes, { prefix: "/grant-conversations" });
+    await app.ready();
+    try {
+      // An anonymous funder with a declared stake, and a warning of the
+      // Grantmaker's own about the quote.
+      agent.mandate = {
+        ...draft,
+        funder_named: false,
+        funder_stake: "I run the largest charter network in the state.",
+        warnings: [{ id: "w-quote", about: "cost", text: "The quote may run over.", raised_by: "grantmaker" }],
+      };
+      const started = await startConversation({ userId, message: "Draft it." });
+      if (!started.ok) throw new Error(started.message);
+      await settleGrantConversationTurns();
+      const id = started.conversation.id;
+
+      const read = (await app.inject({ method: "GET", url: `/grant-conversations/${id}` })).json().conversation;
+      const warnings = read.mandate.warnings as Array<{ id: string; about: string; raised_by: string; text: string }>;
+      expect(warnings.map((w) => [w.about, w.raised_by])).toEqual([
+        ["identity", "platform"],
+        ["cost", "grantmaker"],
+      ]);
+      expect(warnings[0]!.text).toContain("largest charter network");
+
+      // Without the acknowledgement: refused, with the warnings, and nothing escrowed.
+      const refused = await app.inject({
+        method: "POST",
+        url: `/grant-conversations/${id}/fund`,
+        payload: { budget_owls: 10 },
+      });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json()).toMatchObject({ code: "WARNINGS_UNACKNOWLEDGED" });
+      expect(refused.json().warnings).toHaveLength(2);
+      const [held] = await rawQuery<{ n: number }>(
+        `SELECT count(*)::int AS n FROM owl_ledger WHERE user_id = $1 AND reason = 'escrow_hold'`,
+        [userId]
+      );
+      expect(held!.n).toBe(0);
+
+      // Acknowledging one of two is not enough.
+      const partly = await fundConversationMandate({
+        conversationId: id,
+        userId,
+        budgetOwls: 10,
+        acknowledgeWarnings: [warnings[1]!.id],
+      });
+      expect(partly.ok).toBe(false);
+      if (!partly.ok) expect(partly.code).toBe("WARNINGS_UNACKNOWLEDGED");
+
+      // Both, by id: funded, and the mandate keeps what was acknowledged.
+      const funded = await fundConversationMandate({
+        conversationId: id,
+        userId,
+        budgetOwls: 10,
+        acknowledgeWarnings: warnings.map((w) => w.id),
+      });
+      expect(funded.ok).toBe(true);
+      if (!funded.ok) return;
+      const [grant] = await rawQuery<{ mandate: { warnings?: unknown[]; warnings_acknowledged_at?: string } }>(
+        `SELECT mandate FROM grants WHERE id = $1`,
+        [funded.grantId]
+      );
+      expect(grant!.mandate.warnings).toHaveLength(2);
+      expect(grant!.mandate.warnings_acknowledged_at).toEqual(expect.any(String));
     } finally {
       await app.close();
     }

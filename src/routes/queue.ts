@@ -15,13 +15,16 @@ export async function queueRoutes(app: FastifyInstance): Promise<void> {
     schema: {
       tags: ["queue"],
       summary:
-        "Steward lane depth by state and open actions by kind (ops health; " +
+        "Steward lane depth by state, the tagging lane's depth with what it is waiting on " +
+        "(`tagging.waiting`: a platform fault or the platform's spend breaker, since when and " +
+        "until when; null when it is not waiting), and open actions by kind (ops health; " +
         "the allocation views live on GET /mandates/:id/allocation)",
     },
     handler: async (_request, reply) => {
       const [health, tagging, actions] = await Promise.all([
         stewardQueueHealth(),
-        // The tagging lane (#272): untagged, parked, and done.
+        // The tagging lane (#272): untagged, parked, and done, and its wait
+        // when it is holding off (services/tagging-lane.ts).
         taggingQueueHealth(),
         rawQuery<{ kind: string; status: string; n: number }>(
           `SELECT kind, status, COUNT(*)::int AS n

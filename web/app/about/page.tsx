@@ -112,7 +112,7 @@ export default function About() {
           .
         </Annot>
         . Minerval does both. By delegating funding decisions to{" "}
-        <Link href="/account/grants">grantmaker</Link> agents, it aims to solve the
+        <Link href="/mandates">grantmaker</Link> agents, it aims to solve the
         information asymmetry problem in the market for science.
       </p>
 
@@ -150,7 +150,7 @@ export default function About() {
           services, with the very minor exception of the chat feature in the browser
           extension/API.
         </Annot>
-        . At this time, Minerval is just me and Claude Code. I am actively looking for
+        . I am actively looking for
         cofounders. If you like the vision and want to work on it, please{" "}
         <a href="#contact">reach out</a>. If you know the perfect person, please put us in
         touch! I write about building Minerval at{" "}

@@ -833,7 +833,7 @@ export async function recordLeanCheck(input: RecordLeanCheckInput): Promise<Lean
        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8::uuid, $9::uuid, $10,
                $11::jsonb, $12::jsonb, $13::boolean, $14::jsonb, $15, $16, $17,
                $18::jsonb, $19::bigint, $20::timestamptz, $21)
-       ON CONFLICT (formalization_id, submission_sha256, checker_version, mode)
+       ON CONFLICT (formalization_id, submission_sha256, checker_version, mode, sensitivity_label)
        DO UPDATE SET
          verdict = EXCLUDED.verdict,
          checks = EXCLUDED.checks,

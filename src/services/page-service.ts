@@ -16,7 +16,7 @@
  * their own agent over MCP (save_page), and edited by the user on its page.
  */
 import { randomBytes } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
 import { PUBLIC_LABEL } from "../labels.js";
 import { getDb } from "../db/client.js";
 import { assistantPages, type AssistantPage } from "../db/schema.js";
@@ -166,13 +166,25 @@ export async function getPage(id: string, userId: string): Promise<AssistantPage
   return page && page.userId === userId ? page : null;
 }
 
-export async function listPages(userId: string, limit = 100): Promise<AssistantPage[]> {
+/**
+ * The user's pages as a list shows them (serializePageSummary), newest
+ * first. Their text, snapshot and earlier versions are not read: on every
+ * row `body` is empty and `snapshot` and `versions` are too. The Ask
+ * section's sidebar reads this list on every page.
+ */
+export async function listPages(userId: string, limit = 100, offset = 0): Promise<AssistantPage[]> {
   return getDb()
-    .select()
+    .select({
+      ...getTableColumns(assistantPages),
+      body: sql<string>`''`,
+      snapshot: sql<unknown>`'{}'::jsonb`,
+      versions: sql<unknown>`'[]'::jsonb`,
+    })
     .from(assistantPages)
     .where(eq(assistantPages.userId, userId))
     .orderBy(desc(assistantPages.savedAt))
-    .limit(limit);
+    .limit(limit)
+    .offset(Math.max(0, offset));
 }
 
 export async function deletePage(id: string, userId: string): Promise<boolean> {

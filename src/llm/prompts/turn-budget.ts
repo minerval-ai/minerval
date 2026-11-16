@@ -27,8 +27,7 @@ export interface BudgetLineOptions {
    * What the figure is and who set it, as one or more whole sentences, for
    * a run whose budget is not a costing-skill estimate of the work: a
    * Grantmaker's own pass, budgeted by its mandate's policy (#820). It
-   * replaces the "high end of what work like this usually costs" sentence,
-   * which is only true of a budget set that way.
+   * replaces the sentence that says what the budget is for.
    */
   basis?: string;
 }
@@ -38,19 +37,20 @@ export function runBudgetSentence(opts: BudgetLineOptions = {}): string {
   const budget = runBudget();
   if (!budget) return "";
   return (
-    `This run has a budget of ${usd(budget.ceilingMicroUsd)}, from ${budget.source}. ` +
-    (opts.basis
-      ? `${opts.basis.trim()} Spend what the work warrants, and what you leave goes back to whoever paid, ` +
-        `for other work. `
-      : `It is ` +
-        `set at the high end of what work like this usually costs, so most runs finish well ` +
-        `inside it: spend what the work warrants, and what you leave goes back to whoever paid, ` +
-        `for other work. `) +
+    `This run has a budget of ${usd(budget.ceilingMicroUsd)}, from ${budget.source}` +
+    (opts.basis ? `. ${opts.basis.trim()} ` : `, for doing this work properly. `) +
+    // Said plainly because the old sentence ("most runs finish well inside
+    // it") taught runs to economize, and the next estimate was then built
+    // from those economized runs, so the budgets ratcheted down (Nov 2026).
+    `Use what the work needs: a pass that stops short to save money leaves the work for another ` +
+    `pass, which costs more than finishing it now. What you do not spend goes back to whoever paid. ` +
     `It is metered at real cost, model tokens and any paid tool; paid ` +
     `tools say what they cost and decline a call the remaining budget cannot cover.` +
     (opts.canSpend
-      ? ` If doing this properly needs more, ask with petition_mandate and you will get the ` +
-        `answer in this run. You can pay for other agents' work from this budget with commission.`
+      ? ` If doing this properly needs more, ask with petition_mandate as soon as you see that, ` +
+        `not at the end: asking is expected and costs nothing, you keep working while it is ` +
+        `decided, and the answer comes in this run. You can pay for other agents' work from this ` +
+        `budget with commission.`
       : "")
   );
 }

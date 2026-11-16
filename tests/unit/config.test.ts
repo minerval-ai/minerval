@@ -312,6 +312,52 @@ describe("loadConfig mathematics keys (docs/mathematics.md Appendix E)", () => {
     expect(() => loadConfig()).toThrow(/SOLVER_MODEL .* strong-tier/);
   });
 
+  describe("where the mathematics feature is off", () => {
+    const others = () => {
+      process.env.ENVIRONMENT = "production";
+      for (const name of ["STEWARD_MODEL", "CURATOR_MODEL", "AUDIT_MODEL", "ARBITRATION_MODEL", "EXTRACTOR_MODEL", "STEWARD_STRONG_MODEL"]) {
+        process.env[name] = "endpoint:local/gpt-oss-120b";
+      }
+      process.env.MODEL_ENDPOINTS = JSON.stringify([
+        { name: "local", baseUrl: "http://vllm.internal:8000/v1", inputUsdPerMtok: 0, outputUsdPerMtok: 0 },
+      ]);
+      delete process.env.SOLVER_MODEL;
+    };
+
+    it("production starts with no SOLVER_MODEL and no Anthropic model named, and the solver has no model", async () => {
+      others();
+      process.env.FEATURES_OFF = "extension, mathematics";
+      const { loadConfig } = await import("../../src/config.js");
+      const config = loadConfig();
+      expect(config.solverModel).toBe("");
+      expect(config.stewardModel).toBe("endpoint:local/gpt-oss-120b");
+    });
+
+    it("does not read a SOLVER_MODEL that is set, whatever it names", async () => {
+      others();
+      process.env.FEATURES_OFF = "mathematics";
+      process.env.SOLVER_MODEL = "llama-3-70b";
+      const { loadConfig } = await import("../../src/config.js");
+      expect(loadConfig().solverModel).toBe("");
+    });
+
+    it("with mathematics on and none named, production refuses as before", async () => {
+      others();
+      process.env.FEATURES_OFF = "extension";
+      const { loadConfig } = await import("../../src/config.js");
+      expect(() => loadConfig()).toThrow(/Missing model env\(s\) in production: SOLVER_MODEL\./);
+    });
+
+    it("with mathematics on, SOLVER_ENABLED=false does not lift either check", async () => {
+      others();
+      process.env.SOLVER_ENABLED = "false";
+      const { loadConfig } = await import("../../src/config.js");
+      expect(() => loadConfig()).toThrow(/SOLVER_MODEL/);
+      process.env.SOLVER_MODEL = "endpoint:local/gpt-oss-120b";
+      expect(() => loadConfig()).toThrow(/SOLVER_MODEL .* strong-tier/);
+    });
+  });
+
   it("refuses a SOLVER_MODEL that resolves to no provider", async () => {
     process.env.SOLVER_MODEL = "llama-3-70b";
     const { loadConfig } = await import("../../src/config.js");
@@ -358,5 +404,26 @@ describe("loadConfig API key contributor bindings (issue #10)", () => {
     const config = loadConfig();
     expect(config.apiKeys).toEqual([""]);
     expect(config.apiKeyContributors).toEqual({});
+  });
+});
+
+describe("the Redactor's model", () => {
+  it("is a setting of its own, unset unless REDACTOR_MODEL names one, and refused when it names a model that cannot be reached", async () => {
+    const load = async (value?: string) => {
+      vi.resetModules();
+      if (value === undefined) delete process.env.REDACTOR_MODEL;
+      else process.env.REDACTOR_MODEL = value;
+      const { loadConfig } = await import("../../src/config.js");
+      return loadConfig();
+    };
+    try {
+      // Unset, the Redactor runs on the Steward's model (src/llm/agents/redactor.ts).
+      expect((await load()).redactorModel).toBe("");
+      expect((await load("claude-opus-5-5")).redactorModel).toBe("claude-opus-5-5");
+      await expect(load("us.anthropic.not-a-model")).rejects.toThrow();
+    } finally {
+      delete process.env.REDACTOR_MODEL;
+      vi.resetModules();
+    }
   });
 });

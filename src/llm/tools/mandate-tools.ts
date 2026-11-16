@@ -33,8 +33,8 @@ import {
   getReadPageToolDefinition,
   executeReadPage,
 } from "./read-page-tool.js";
-import { stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
-import { microUsdToOwls, capOwls } from "../../services/owl.js";
+import { estimateLedgerKindCostMicroUsd, stewardTierCostEstimates } from "../../services/cost-estimate-service.js";
+import { microUsdToOwls } from "../../services/owl.js";
 
 export { READ_PAGE_TOOL_NAME };
 export const UPDATE_WORKSPACE_TOOL_NAME = "update_workspace";
@@ -145,7 +145,7 @@ export async function planCostFloorOwls(
   const tiers = await stewardTierCostEstimates();
   const pass = microUsdToOwls(tiers.standardMicroUsd);
   const strong = microUsdToOwls(tiers.strongMicroUsd);
-  const ingest = capOwls("source_ingest");
+  const ingest = microUsdToOwls(await estimateLedgerKindCostMicroUsd("ingest"));
   let floor = 0;
   for (const it of items) {
     if (it.action === "assess" || it.action === "reassess" || it.action === "deepen") {

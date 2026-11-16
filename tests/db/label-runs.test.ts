@@ -56,8 +56,8 @@ vi.mock("../../src/services/github-issue-service.js", async (orig) => ({
   syncTriageToIssue: vi.fn(async () => undefined),
 }));
 
-import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
+import { rawQuery } from "../../src/db/client.js";
 import { PUBLIC_LABEL } from "../../src/labels.js";
 import { complete } from "../../src/llm/client.js";
 import { createFindingTools } from "../../src/llm/tools/finding-tools.js";
@@ -262,11 +262,17 @@ async function labelsOf(tables: Record<string, { where: string; params: unknown[
 }
 const everyTableAt = (label: string) => Object.fromEntries(RUN_TABLES.map((t) => [t, [label]]));
 
-// The deployment's PROVIDER_LABELS as config loading parsed it.
+// A run at a label other than public is served only once its model's
+// provider is cleared for that label (src/provider-labels.ts;
+// tests/db/provider-labels.test.ts), so this deployment clears it.
 const deployment = loadConfig() as unknown as { providerLabels: Record<string, string[]> };
 const loadedProviderLabels = deployment.providerLabels;
+afterAll(() => {
+  deployment.providerLabels = loadedProviderLabels;
+});
 
 beforeAll(async () => {
+  deployment.providerLabels = { anthropic: [PUBLIC_LABEL, SECOND] };
   // A second label, as a deployment would define one: a row, nothing else.
   await rawQuery(
     `INSERT INTO labels (name, description) VALUES ($1, 'Readable by the people it is about.')
@@ -277,14 +283,6 @@ beforeAll(async () => {
   // open rows of theirs beside the ones this file opens.
   await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true OR policy IN ('general', 'governance')`);
   resetAllocationPolicyCache();
-  // A run at a label other than public is served only once its model's
-  // provider is cleared for that label (src/provider-labels.ts;
-  // tests/db/provider-labels.test.ts), so this deployment clears it.
-  deployment.providerLabels = { ...loadedProviderLabels, anthropic: [PUBLIC_LABEL, SECOND] };
-});
-
-afterAll(() => {
-  deployment.providerLabels = loadedProviderLabels;
 });
 
 describe("the columns", () => {
@@ -489,28 +487,50 @@ describe("a write that lands on a row already there", () => {
       `SELECT occurrence_count, body FROM agent_reports WHERE id = $1`,
       [first]
     );
-    // The row was written: the count went up and the freshest account is on it.
-    expect(report).toMatchObject({ occurrence_count: 2, body: "Seen again, at a second label." });
-    expect(await labelsWhere("agent_report_sightings", "report_id = $1", [first])).toEqual([SECOND]);
+    // Nothing of the report's row moved, its count included: work changes
+    // only rows at its own label. The account of a run at another label is
+    // in the sighting's own row, at the sighting's label.
+    expect(report).toMatchObject({ occurrence_count: 1, body: "First seen." });
+    const sightings = await rawQuery<{ body: string; sensitivity_label: string }>(
+      `SELECT body, sensitivity_label FROM agent_report_sightings WHERE report_id = $1`,
+      [first]
+    );
+    expect(sightings).toEqual([{ body: "Seen again, at a second label.", sensitivity_label: SECOND }]);
   });
 
+  // The finding is public and is met again by a run at the second label,
+  // which reads it. The other way round the finding is not there to join:
+  // a public run does not read a finding at the second label, and its note
+  // is answered as one that rests on no record it can see.
   it("leaves a finding's label alone and gives the sighting the label of the run that met it again", async () => {
-    const { ids } = await oneRunAt(SECOND);
-    const joined = await runAt(null, async () =>
+    const { ids } = await oneRunAt(null);
+    const joined = await runAt(SECOND, async () =>
       ok(
         await createFindingTools().execute("note_finding", {
-          headline: "The same finding.", account: "Met a third time, from a public run.", claim_id: ids.claim,
+          headline: "The same finding.", account: "Met a third time, from a run at the second label.", claim_id: ids.claim,
           refs: [{ kind: "claim", id: ids.claim }], importance: 4, joins: ids.findingId,
         })
       )
     );
     expect(joined.finding_id).toBe(ids.findingId);
-    expect(await labelOf("agent_findings", ids.findingId)).toBe(SECOND);
+    expect(await labelOf("agent_findings", ids.findingId)).toBe(PUBLIC_LABEL);
     const sightings = await rawQuery<{ sensitivity_label: string }>(
       `SELECT sensitivity_label FROM agent_finding_sightings WHERE finding_id = $1 ORDER BY noted_at`,
       [ids.findingId]
     );
-    expect(sightings.map((s) => s.sensitivity_label)).toEqual([SECOND, PUBLIC_LABEL]);
+    expect(sightings.map((s) => s.sensitivity_label)).toEqual([PUBLIC_LABEL, SECOND]);
+
+    const restricted = await oneRunAt(SECOND);
+    const refused = JSON.parse(
+      (await runAt(null, () =>
+        createFindingTools().execute("note_finding", {
+          headline: "The same finding.", account: "Met from a public run.", claim_id: restricted.ids.claim,
+          refs: [{ kind: "claim", id: restricted.ids.claim }], importance: 4, joins: restricted.ids.findingId,
+        })
+      ))!
+    );
+    expect(refused).toMatchObject({ success: false, status: "not_recorded" });
+    expect(await rawQuery(`SELECT 1 FROM agent_finding_sightings WHERE finding_id = $1 AND sensitivity_label = $2`, [restricted.ids.findingId, PUBLIC_LABEL])).toEqual([]);
   });
 
   it("leaves a setup part at the label of the run that first stored its text, whichever came first", async () => {
@@ -581,7 +601,11 @@ describe("what a reader is shown", () => {
 
   const carriesIt = (text: string) => /sensitivity[_ ]?label/i.test(text);
   /** The label's name as a JSON value. */
-  const namesIt = (text: string) => text.includes(`"${SECOND}"`);
+  // A read of a node or of a source says which label it carries, on a
+  // deployment with more than one, and a node's versions each say theirs
+  // (services/judgment-version-service.ts). That one field is shown by
+  // design; the label's name anywhere else is not.
+  const namesIt = (text: string) => text.replaceAll(`"label":"${SECOND}"`, "").includes(`"${SECOND}"`);
   /**
    * The one thing that names the label by design, as it did before this
    * column: the setup a run's prompt step records, which the hash chain

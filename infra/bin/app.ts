@@ -72,6 +72,7 @@ new ApiStack(app, "EpistemeApi", {
     securityGroup: leanChecker.checkerSg,
     subnetIds: leanChecker.coldSubnetIds,
   },
+  mirrorPublish: app.node.tryGetContext("mirrorPublish") === "true",
 });
 
 // The solver worker (docs/mathematics.md 7.9, 13.1): its own Fargate service

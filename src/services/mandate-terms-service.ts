@@ -75,7 +75,7 @@ export async function amendObjective(input: {
   // inbox; people read it on the mandate's page and in their account.
   const regranters = await rawQuery<{ from_grant_id: string; share: number }>(
     `SELECT from_grant_id, SUM(amount_micro_usd - refunded_micro_usd)::bigint AS share
-       FROM regrants WHERE to_grant_id = $1 GROUP BY from_grant_id`,
+       FROM minerval_whole.regrant_money WHERE to_grant_id = $1 GROUP BY from_grant_id`,
     [g.id]
   );
   for (const r of regranters) {
@@ -148,7 +148,7 @@ export async function withdrawFromMandate(input: {
     );
     const mandates = await tx.query<{ from_grant_id: string; held: number }>(
       `SELECT from_grant_id, SUM(amount_micro_usd - refunded_micro_usd)::bigint AS held
-         FROM regrants WHERE to_grant_id = $1 GROUP BY from_grant_id`,
+         FROM minerval_whole.regrant_money WHERE to_grant_id = $1 GROUP BY from_grant_id`,
       [input.grantId]
     );
     const total = [...people, ...mandates].reduce((s, r) => s + Math.max(0, Number(r.held)), 0);
@@ -172,7 +172,7 @@ export async function withdrawFromMandate(input: {
       // Lower the newest regrants first, keeping each at or above what it has returned.
       let left = want;
       const rows = await tx.query<{ id: string; room: number }>(
-        `SELECT id, (amount_micro_usd - refunded_micro_usd)::bigint AS room FROM regrants
+        `SELECT id, (amount_micro_usd - refunded_micro_usd)::bigint AS room FROM minerval_whole.regrant_money
           WHERE to_grant_id = $1 AND from_grant_id = $2 ORDER BY created_at DESC FOR UPDATE`,
         [input.grantId, input.funder.grantId]
       );
@@ -184,11 +184,11 @@ export async function withdrawFromMandate(input: {
         // no share behind: the row goes, and the withdrawal is recorded in
         // the decision log below. Otherwise it keeps what remains.
         if (take >= Number(r.room) && (await tx.query<{ refunded: number }>(
-          `SELECT refunded_micro_usd AS refunded FROM regrants WHERE id = $1`, [r.id]
+          `SELECT refunded_micro_usd AS refunded FROM minerval_whole.regrant_money WHERE id = $1`, [r.id]
         ))[0]?.refunded == 0) {
-          await tx.query(`DELETE FROM regrants WHERE id = $1`, [r.id]);
+          await tx.query(`DELETE FROM minerval_whole.regrant_money WHERE id = $1`, [r.id]);
         } else {
-          await tx.query(`UPDATE regrants SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`, [r.id, take]);
+          await tx.query(`UPDATE minerval_whole.regrant_money SET amount_micro_usd = amount_micro_usd - $2 WHERE id = $1`, [r.id, take]);
         }
         left -= take;
       }

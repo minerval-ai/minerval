@@ -5,7 +5,7 @@ administrators' prompts in `src/llm/prompts/`. Do not edit by hand.
 
 ## Skills
 
-### Costing (`skills/costing.md`, version 9, method skill)
+### Costing (`skills/costing.md`, version 10, method skill)
 
 How to estimate what a piece of work will cost before anyone pays for it: a request's budget, a scoping quote, a research run's ceiling, or a check on someone else's estimate. It prices work; whether the work is worth doing is a separate judgment.
 
@@ -17,7 +17,7 @@ How the constitution applies to propositions of mathematics: proofs as arguments
 
 Sections: For every administrator; For the Claim Steward; For the Grantmaker; For the Contribution Reviewer and the Dispute Arbitrator; For the Audit Agent; For the Curator; For the Matcher; For the Extractor; For the researcher; Standards for judging; Failure modes.
 
-### Provenance (`skills/provenance.md`, version 10, method skill)
+### Provenance (`skills/provenance.md`, version 11, method skill)
 
 How to trace what a claim's support rests on: whether each source's own evidence bears what it asserts, which documents each assertion draws on, which sources are one voice repeated, and a short account for readers where it matters.
 
@@ -29,7 +29,7 @@ How to search for evidence on a claim or question so that what the search did no
 
 Sections: For every administrator.
 
-### Sql (`skills/sql.md`, version 10, method skill)
+### Sql (`skills/sql.md`, version 13, method skill)
 
 How to query the graph and the action ledger with read-only SQL: what each view holds, how they join, what is fast, and queries for the questions readers and agents most often ask.
 
@@ -88,6 +88,10 @@ The Lookout's counterpart and the most flexible agent a mandate can fund: any ag
 ### Consistency Checker (`roles/consistency-checker.md`)
 
 The sweep that reads assessments against one another. Each Steward reads its own node; the checker reads a region of the graph at a time for reasoning that conflicts with a neighbor's, evidence one claim records that another never weighed, verdicts that are not a defensible function of what they rest on, and what is established in one field bearing on assessments in another that never weighed it. It raises each find with the Steward whose node looks wrong, anywhere in the graph, as a reassessment the ledger prices and funds like any other, and sends structural defects to the Curator; it writes no verdict and owns no node.
+
+### Redactor (`roles/redactor.md`)
+
+Works at the gate where something written at one label goes to readers who may not read that label: a node's page, an answer, a mandate's terms or funding. Under the policy for that boundary it removes the passages a category covers and marks each removal in place, and may hold or delay a part. Its tools change no word. What it lets through goes once Audit has checked its work, unless the gate is set for a person to decide as well.
 
 ### Solver (`roles/math-solver.md`)
 

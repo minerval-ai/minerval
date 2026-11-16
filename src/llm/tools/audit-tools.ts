@@ -13,6 +13,8 @@
  * decision back to whichever process made it (re-review for a contribution,
  * a fresh Steward pass for an assessment, a curation request for structure).
  */
+import { membersOnly } from "../../permissions.js";
+import { REPORT_ABOUT } from "../../services/report-about.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq } from "drizzle-orm";
@@ -133,6 +135,24 @@ export function getAuditToolDefinitions(): Tool[] {
             type: "string",
             description: "For status duplicate: the report this one repeats",
           },
+          // Only where reports are kept inside the deployment
+          // (services/report-sending-service.ts). The public graph's
+          // reports already go to the maintainers, so its tool is unchanged.
+          ...(membersOnly()
+            ? {
+                about: {
+                  type: "string",
+                  enum: Object.keys(REPORT_ABOUT),
+                  description:
+                    "What the report is about: " +
+                    Object.entries(REPORT_ABOUT).map(([k, v]) => `${k} (${v})`).join("; ") +
+                    ". Reports here stay inside this deployment, so Minerval's maintainers hear of a fault in the machinery only if the " +
+                    "report goes on. A report about Minerval's machinery is offered to the gate to outside, where its words go through a " +
+                    "Redactor's pass and, where the organization has set it, a person's decision; one about this deployment is not. " +
+                    "Leave it out where you cannot tell.",
+                },
+              }
+            : {}),
         },
         required: ["report_id", "status", "note"],
       },
@@ -566,6 +586,64 @@ export function getAuditToolDefinitions(): Tool[] {
         required: ["claim_id", "defect", "finding_id", "reason"],
       },
     },
+    {
+      name: "get_redaction_to_check",
+      description:
+        "For a redaction_fidelity audit: the page, or other item, as its author recorded it and as the Redactor left it, part by " +
+        "part, each removal with its category and the Redactor's note, what the Redactor held or delayed and why, what it was " +
+        "least sure of, what is always shown with the item, and the policy for the boundary in full.",
+      input_schema: {
+        type: "object" as const,
+        properties: { page_id: { type: "string", description: "The page's id, from the audit's context" } },
+        required: ["page_id"],
+      },
+    },
+    {
+      name: "look_at_destination",
+      description:
+        "For a redaction_fidelity audit: " + "what the readers on the other side of this boundary can already read: the labels they read, the file sets held there by name with their paths, "
+        + "and the connections held there by name. Given text (a phrase, a figure, a file name), also the sources there whose title, stored text or "
+        + "quoted passages contain it and the nodes there whose wording or definition does. Outside this deployment, also the name "
+        + "everything is published under, which its readers see on every package. It returns names and ids, not text.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          page_id: { type: "string", description: "The page's id, from the audit's context" },
+          text: { type: "string", description: "Words or a figure to look for where the readers on the other side read." },
+        },
+        required: ["page_id"],
+      },
+    },
+    {
+      name: "record_fidelity_outcome",
+      description:
+        "Record the outcome of a redaction_fidelity audit. 'pass' sends the item on through the gate: what the Redactor " +
+        "let through then goes to its readers, unless the gate is set to a person's decision as well. For a node's page, give " +
+        "your answer to whether what remains still supports the verdict, which is shown with the page in fixed words. " +
+        "'return' sends the work back to the Redactor with your reasons, and its redaction is opened again. Your reasons " +
+        "stay at the label the item was written at.",
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          page_id: { type: "string", description: "The page's id" },
+          outcome: { type: "string", enum: ["pass", "return"] },
+          answer: {
+            type: "string",
+            enum: ["supports", "supports_in_part", "does_not_show_why"],
+            description:
+              "With 'pass': supports (the reasoning shown supports the verdict), supports_in_part, or " +
+              "does_not_show_why (the reasoning shown does not show why the verdict was reached).",
+          },
+          reasons: {
+            type: "string",
+            description:
+              "With 'return': what passed that the policy protects, or what was removed that it does not name, " +
+              "part by part, so the Redactor can act on it. With 'pass': why the work holds up and why you chose the answer.",
+          },
+        },
+        required: ["page_id", "outcome", "reasons"],
+      },
+    },
   ];
 }
 
@@ -672,9 +750,22 @@ export async function executeAuditTool(
             message: `Report ${reportId} not found.`,
           });
         }
+        let offered: Record<string, unknown> = {};
+        if (membersOnly() && typeof input.about === "string" && input.about !== "") {
+          if (!(input.about in REPORT_ABOUT)) {
+            offered = { about_not_recorded: `about is one of: ${Object.keys(REPORT_ABOUT).join(", ")}. The status and note were recorded.` };
+          } else {
+            const { setReportAbout } = await import("../../services/report-sending-service.js");
+            const said = await setReportAbout(reportId, input.about);
+            offered = said
+              ? { about: said.about, offered_for_sending: said.offered }
+              : { about_not_recorded: "This report was filed at another label than this run's, so what it is about is for a run at that label to say. The status and note were recorded." };
+          }
+        }
         return JSON.stringify({
           success: true,
           report: formatAgentReport(updated),
+          ...offered,
         });
       }
 
@@ -1312,6 +1403,53 @@ export async function executeAuditTool(
           ...(resolved.length > 0 ? { resolved_finding_ids: resolved } : {}),
           ...(recordedFindingId ? { recorded_finding_id: recordedFindingId } : {}),
         });
+      }
+
+      case "get_redaction_to_check": {
+        const { redactionToCheck, ShowingError } = await import("../../services/showing-service.js");
+        try {
+          return JSON.stringify({ success: true, ...(await redactionToCheck(String(input.page_id ?? "").trim())) });
+        } catch (err) {
+          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          throw err;
+        }
+      }
+
+      case "look_at_destination": {
+        const { whatTheDestinationHolds, ShowingError } = await import("../../services/showing-service.js");
+        try {
+          const text = typeof input.text === "string" ? input.text : undefined;
+          return JSON.stringify({ success: true, ...(await whatTheDestinationHolds(String(input.page_id ?? "").trim(), text)) });
+        } catch (err) {
+          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          throw err;
+        }
+      }
+
+      case "record_fidelity_outcome": {
+        const { recordFidelityOutcome, ShowingError } = await import("../../services/showing-service.js");
+        const outcome = String(input.outcome ?? "");
+        if (outcome !== "pass" && outcome !== "return") {
+          return JSON.stringify({ success: false, message: "outcome is 'pass' or 'return'." });
+        }
+        try {
+          const result = await recordFidelityOutcome({
+            pageId: String(input.page_id ?? "").trim(),
+            outcome,
+            answer: typeof input.answer === "string" ? input.answer : undefined,
+            reasons: String(input.reasons ?? ""),
+          });
+          return JSON.stringify({
+            success: true,
+            message:
+              result.stage === "at_gate"
+                ? "Recorded. The page has gone on to the people who decide what is released, with your answer."
+                : "Recorded. The work is back with the Redactor with your reasons, and its redaction is open again.",
+          });
+        } catch (err) {
+          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          throw err;
+        }
       }
 
       default:

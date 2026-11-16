@@ -51,7 +51,7 @@ beforeEach(() => {
 describe("getOrCreateSource", () => {
   it("fills in a content-less existing row when the submission carries content", async () => {
     state.existing = [
-      { id: "s1", url: "https://arxiv.org/abs/0806.3381", title: "https://arxiv.org/abs/0806.3381", rawContent: null },
+      { id: "s1", url: "https://arxiv.org/abs/0806.3381", title: "https://arxiv.org/abs/0806.3381", rawContent: null, sensitivityLabel: "public" },
     ];
     const row = await getOrCreateSource({
       url: "https://arxiv.org/abs/0806.3381",
@@ -77,7 +77,7 @@ describe("getOrCreateSource", () => {
   });
 
   it("keeps a real title when only content was missing", async () => {
-    state.existing = [{ id: "s1", url: "u", title: "Kept", rawContent: null }];
+    state.existing = [{ id: "s1", url: "u", title: "Kept", rawContent: null, sensitivityLabel: "public" }];
     await getOrCreateSource({ url: "u", title: "Other", content: "text" });
     expect(state.updates).toEqual([{ rawContent: "text", contentHash: sourceContentHash("text") }]);
   });

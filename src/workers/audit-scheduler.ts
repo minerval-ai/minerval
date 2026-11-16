@@ -17,11 +17,26 @@
  *
  * The scheduler picks WHAT to look at (mechanism as backstop); every
  * conclusion belongs to the Audit Agent run it enqueues.
+ *
+ * Where a deployment has more than one label, the triage and the sweep are
+ * asked for label by label (everyLabel in services/label-service.ts). The
+ * request says how many reports are waiting, and is made only when there
+ * are decisions to sweep, and the audit it opens reads at its own label.
+ * So each label's request is made inside that label, about the reports
+ * and decisions recorded at that label, with a key of its own. A request
+ * at `public` then says nothing of what another label holds, and what a
+ * label holds is looked at by an audit that can read it. The scheduler
+ * never sees every label at once, so it is not system work. Suspensions
+ * are of accounts, which carry no label, and are reviewed as before.
  */
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { requestAudit } from "../services/queue-service.js";
 import { countNewReportsSince } from "../services/report-service.js";
+import { PUBLIC_LABEL } from "../labels.js";
+import { runAtLabel } from "../llm/usage-context.js";
+import { oneLabelOnly } from "../services/judgment-version-service.js";
+import { everyLabel, keyAtLabel } from "../services/label-service.js";
 
 export interface AuditSchedulerTickResult {
   sweepRequested: boolean;
@@ -44,10 +59,20 @@ export async function auditSchedulerTick(
   // Report triage (#366) has its own cadence and its own gate: a write-only
   // report table is a slightly more expensive /dev/null, so something has
   // to read it — but only when there is something new to read.
-  if (config.reportTriageIntervalHours > 0) {
+  const labels = await everyLabel();
+  // With one label the work is done as it always was, outside any label.
+  const atLabel = <T>(label: string, fn: () => Promise<T>): Promise<T> =>
+    oneLabelOnly() ? fn() : runAtLabel(label, `the audit scheduler at ${label}`, fn);
+  // The reports and decisions a label's request is about: those recorded at
+  // it. A label that reads another does not ask again about that one's.
+  const recordedAt = (label: string) => (oneLabelOnly() ? undefined : label);
+
+  if (config.reportTriageIntervalHours > 0) for (const label of labels) await atLabel(label, async () => {
     const triageMs = config.reportTriageIntervalHours * 3_600_000;
     const triagePeriod = Math.floor(now / triageMs);
-    const fresh = await countNewReportsSince(new Date(now - triageMs));
+    const at = recordedAt(label);
+    const since = new Date(now - triageMs);
+    const fresh = at === undefined ? await countNewReportsSince(since) : await countNewReportsSince(since, at);
     if (fresh > 0) {
       const runId = await requestAudit({
         auditType: "report_triage",
@@ -62,11 +87,11 @@ export async function auditSchedulerTick(
           `wontfix what is not a defect. External-origin reports are ` +
           `testimony, not findings.`,
         triggeredBy: "report_triage",
-        dedupeKey: `report-triage:${triagePeriod}`,
+        dedupeKey: keyAtLabel(`report-triage:${triagePeriod}`, label),
       });
-      result.reportTriageRequested = runId !== null;
+      result.reportTriageRequested ||= runId !== null;
     }
-  }
+  });
 
   if (config.auditSweepIntervalHours <= 0) return result;
 
@@ -75,11 +100,12 @@ export async function auditSchedulerTick(
 
   // Sweep only when the period saw live decisions — there is no judging of
   // the judging where nothing was judged.
+  for (const label of labels) await atLabel(label, async () => {
   const [decided] = await rawQuery<{ count: number }>(
     `SELECT count(*)::int AS count
      FROM contribution_reviews
-     WHERE superseded = false AND reviewed_at > $1`,
-    [new Date(now - intervalMs)]
+     WHERE superseded = false AND reviewed_at > $1${oneLabelOnly() ? "" : " AND sensitivity_label = $2"}`,
+    oneLabelOnly() ? [new Date(now - intervalMs)] : [new Date(now - intervalMs), label ?? PUBLIC_LABEL]
   );
   if ((decided?.count ?? 0) > 0) {
     // The window is named as a time the agent can pass to since (#696).
@@ -96,10 +122,11 @@ export async function auditSchedulerTick(
         `most heavily, and look for what no single decision reveals: like ` +
         `cases decided unalike, drift, coordinated contribution patterns.`,
       triggeredBy: "scheduled_sweep",
-      dedupeKey: `sweep:${period}`,
+      dedupeKey: keyAtLabel(`sweep:${period}`, label),
     });
-    result.sweepRequested = runId !== null;
+    result.sweepRequested ||= runId !== null;
   }
+  });
 
   // Suspensions that have stood past the threshold get a re-examination, at
   // most once per contributor per month.
@@ -152,6 +179,8 @@ export function startAuditScheduler(options: {
     if (busy) return;
     busy = true;
     try {
+      // Not system work: each label's request is made inside that label
+      // (see the header).
       const result = await auditSchedulerTick();
       if (
         result.sweepRequested ||

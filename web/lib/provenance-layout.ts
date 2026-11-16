@@ -345,6 +345,28 @@ export function storyCounts(story: ProvenanceStory) {
   };
 }
 
+/**
+ * A story with no shape: no origin, nothing drawn on, no source tied to
+ * another. The map would be the instance cards below drawn a second time in
+ * a dashed box, each saying it is untraced, so the one fact it holds is given
+ * as a line on the Provenance heading instead ("6 sources · none traced to an
+ * origin"). Null for a story with a shape, which the map draws.
+ */
+export function flatStoryLine(story: ProvenanceStory | null | undefined): string | null {
+  if (!story || story.nodes.length === 0) return null;
+  const flat = story.nodes.every(
+    (n) => n.standing !== "origin" && !n.underlying && n.upstream.length === 0
+      && n.copy_of.length === 0 && n.downstream === 0,
+  );
+  if (!flat) return null;
+  const n = story.counts.sources;
+  return n === 1
+    ? "1 source · not traced to an origin"
+    : n === 2
+    ? "2 sources · neither traced to an origin"
+    : `${n} sources · none traced to an origin`;
+}
+
 /** A story worth drawing: any source at all. A lone untraced source still shows, honestly, as untraced. */
 export function hasStory(story: ProvenanceStory | null | undefined): story is ProvenanceStory {
   return !!story && story.nodes.length > 0;

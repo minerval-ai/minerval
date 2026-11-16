@@ -1,16 +1,16 @@
 import Link from "next/link";
 import type { ClaimDetail, Instance } from "@/lib/types";
-import { splitInstances, stanceTag } from "@/lib/instances";
+import { instanceByline, splitInstances, stanceTag } from "@/lib/instances";
 import {
-  statusMeta, isStatus, claimTypeMeta, decompositionNote,
-  DEFINED_IN, VERDICT_CONFIDENCE_GLOSS, SEED_PRELIM_GLOSS,
+  statusMeta, isStatus, claimTypeMeta,
+  DEFINED_IN, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
 import { sinceAssessedLine } from "@/lib/since-assessed";
-import { evidenceNotShownLine, isExamined, notExaminedLine } from "@/lib/coverage";
+import { evidenceNotShownLine, isExamined, notExaminedLine, readerEvidenceLine } from "@/lib/coverage";
 import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import { modelDisplayName } from "@/lib/model-names";
-import { StatusBadge, Dispute, Credence, VerdictConfidence, Swatch, Importance } from "./Assessment";
+import { StatusBadge, Dispute, Credence, Swatch, Importance } from "./Assessment";
 import { Term } from "./Term";
 import { TopicChips } from "./Topics";
 import { AssessmentText } from "./AssessmentText";
@@ -23,6 +23,7 @@ import { CiteClaim } from "./claim/CiteClaim";
 import { EmbedClaim } from "./claim/EmbedClaim";
 import { AskBox } from "./AskBox";
 import { OrderAssessment } from "./claim/OrderAssessment";
+import { SinceAssessed } from "./claim/SinceAssessed";
 import { FundDecomposition } from "./claim/FundDecomposition";
 import { FormalStatement } from "./claim/FormalStatement";
 import { MachineChecked } from "./claim/MachineChecked";
@@ -35,18 +36,36 @@ import {
   QuantityHead, QuantityEstimates, QuantityReadings, QuantityCuts, ThresholdPanel,
 } from "./quantity/QuantitySections";
 import { PageHead } from "@/components/PageHead";
+import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
+import {
+  OtherVerdict, PublicationRecord, PublishedSaidBack, PublishedAssessment, PublishedDecomposition, PublishedGaps, PublishedIntro,
+  PublishedNotes, PublishedProvenance, TakenOut,
+} from "./claim/PublishedPage";
+import { isReadingAddress } from "@/lib/source-address";
+import { flatStoryLine } from "@/lib/provenance-layout";
+import { ShownIntro, ShownRecord } from "./claim/InsideVersions";
+import { importanceInEffect } from "@/lib/layers";
+import type { ValueByLabel } from "@/lib/types";
 
 /** One source's appearance of the claim, with its stance where it is not simply affirming. */
 function InstanceCard({ inst }: { inst: Instance }) {
   const tag = stanceTag(inst.stance);
+  // Whose words, where and when. The title leads to the source's own page,
+  // which holds the rest of its record (examinations, lineage, history);
+  // the document itself is one link further along the byline.
+  const byline = instanceByline(inst);
+  // A reading kept through a connection has an address no browser opens
+  // (lib/source-address.ts); its document is read on the source's page.
+  const original = [inst.link, inst.source_url].find((u) => u && !isReadingAddress(u)) ?? null;
   return (
     <div className="instance">
       <blockquote>{inst.verbatim_text}</blockquote>
       <div className="instance-cite">
-        {inst.source_url ? (
-          <a href={inst.source_url}>{inst.source_title}</a>
-        ) : (
-          <span>{inst.source_title}</span>
+        <Link href={`/sources/${inst.source_id}`}>{inst.source_title}</Link>
+        {!byline && original && (
+          <a href={original} rel="noopener noreferrer" className="instance-original">
+            original <span aria-hidden>↗</span>
+          </a>
         )}
         {tag && (
           <span className="tag" title={tag.title}>{tag.word}</span>
@@ -67,14 +86,29 @@ function InstanceCard({ inst }: { inst: Instance }) {
         )}
         {/* This score is the Extractor's, not the Matcher's: it says
             "this passage states a genuine, well-formed claim", not how
-            well the passage matches the canonical form (#160). */}
-        <span
-          className="conf-num"
-          title="The Extractor's confidence that this passage states a genuine, well-formed claim."
-        >
-          extraction {inst.confidence.toFixed(2)}
-        </span>
+            well the passage matches the canonical form (#160). Shown only
+            when it is short of full: "extraction 1.00" on every card said
+            nothing, and a doubtful extraction stood out less among them. */}
+        {inst.confidence < 0.995 && (
+          <span
+            className="conf-num"
+            title="The Extractor's confidence that this passage states a genuine, well-formed claim."
+          >
+            extraction {inst.confidence.toFixed(2)}
+          </span>
+        )}
       </div>
+      {byline && (
+        <p className="instance-byline">
+          {byline}
+          {original && " · "}
+          {original && (
+            <a href={original} rel="noopener noreferrer">
+              original <span aria-hidden>↗</span>
+            </a>
+          )}
+        </p>
+      )}
       {inst.context && (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".78rem", color: "var(--muted)", margin: ".35rem 0 0" }}>
           {inst.context}
@@ -94,11 +128,29 @@ function fmtDate(iso: string) {
 }
 
 export function ClaimView({
-  detail, fixture = false, features = ALL_FEATURES_ON,
+  detail, fixture = false, features = ALL_FEATURES_ON, publishedPages = [], published = null, judgedAbove = false, versionsAbove,
 }: {
+  /**
+   * Only inside a private deployment, for a reader who holds two labels
+   * that do not read each other: both assessments stand above this column
+   * (components/claim/InsideVersions.tsx), so it carries no verdict of its
+   * own and does not say the node is unassessed.
+   */
+  judgedAbove?: boolean;
+  /** Those assessments, drawn where this column's own verdict would stand. */
+  versionsAbove?: React.ReactNode;
   detail: ClaimDetail;
   fixture?: boolean;
   features?: Features;
+  /** The pages other graphs publish of this node (docs/published-pages.md), for the line under the public verdict. */
+  publishedPages?: PublishedPageSummary[];
+  /**
+   * The second tab: one published page, shown through this same page. The
+   * detail then carries that page's verdict, and its text comes as parts,
+   * with removals marked and held parts in place. What acts on the public
+   * node (ordering, contributing, citing) stays on the first tab.
+   */
+  published?: PublishedPageView | null;
 }) {
   const { claim, tree, instances, trajectory, record } = detail;
   // Views stated to the graph directly (§4) have a section of their own, so
@@ -157,8 +209,21 @@ export function ClaimView({
   const notShown = anyAssessment
     ? evidenceNotShownLine(detail.coverage, isQuantity ? "estimate" : "assessment")
     : null;
+  // In a deployment with more than one label, whether the judgment rests on
+  // evidence this reader cannot read. The public graph's API never says so.
+  const readerEvidence = anyAssessment
+    ? readerEvidenceLine(detail.coverage, isQuantity ? "estimate" : "assessment")
+    : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
+  const retiredArguments = detail.retired_arguments ?? [];
+  // A provenance story with no shape, as a line on the heading.
+  const flatProvenance = flatStoryLine(detail.provenance_story);
+  // Inside a deployment with more than one label: the node's own label, so
+  // that a row another label added can say so, and whose importance the
+  // page shows where a label holds its own (lib/layers.ts).
+  const nodeLabel = (claim as { label?: string }).label ?? null;
+  const importanceHeld = importanceInEffect((claim as { importance_by_label?: ValueByLabel[] }).importance_by_label);
   // Canonical text for [[claim:<id>]] references in assessment prose (#203):
   // assessments cite subclaims, and subclaims live in the tree already held.
   const linkTexts = buildClaimTextMap(tree);
@@ -168,7 +233,7 @@ export function ClaimView({
       <PageHead
         back={{ href: "/claims", label: "claims" }}
         // kicker: type + state
-        kicker={isQuantity ? "Quantity" : "Claim"}
+        kicker={claim.kind === "quantity" ? "Quantity" : "Claim"}
         tags={
           <>
             {claimType ? (
@@ -187,6 +252,12 @@ export function ClaimView({
             {typeof claim.importance === "number" && (
               <span style={{ marginLeft: "auto" }}>
                 <Importance value={claim.importance} />
+                {/* Where a label the reader reads holds its own importance for the node: whose this is, and what the others hold. */}
+                {importanceHeld && (
+                  <span className="layer-mark" title={importanceHeld.title}>
+                    {importanceHeld.at}
+                  </span>
+                )}
               </span>
             )}
           </>
@@ -207,6 +278,9 @@ export function ClaimView({
         title={claim.text}
       />
 
+      {published && (published.inside ? <ShownIntro view={published} /> : <PublishedIntro view={published} />)}
+      {published && <OtherVerdict view={published} />}
+
       {/* A quantity's definition and the graph's estimate lead its page, where
           a claim's status would (§3, §10). */}
       {isQuantity && <QuantityHead detail={detail} aside={<Dispute value={claim.contestation} />} />}
@@ -221,15 +295,15 @@ export function ClaimView({
 
       {isQuantity && !qAssessment && <OrderAssessment claimId={claim.id} variant="unassessed" />}
 
-      {!isQuantity && !assessment && (
+      {versionsAbove}
+
+      {!published && !judgedAbove && !isQuantity && !assessment && (
         <>
           {/* The place a verdict would stand. An empty place is easy to
               read as nothing being wrong, so it says in words that there is
               no verdict and that this is not a finding (#543). */}
           <p className="not-examined" style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
-            {isExamined(detail.coverage, false) ? "Not yet assessed." : notExaminedLine("claim")} Attention goes where its expected
-            value is highest and someone funds it; nothing has funded an
-            assessment of this claim yet, and anyone can.
+            {isExamined(detail.coverage, false) ? "Not yet assessed." : notExaminedLine("claim")}
           </p>
           {/* The demand side: a purchase fully funds the action, and a
               fully funded action runs now. */}
@@ -252,8 +326,9 @@ export function ClaimView({
             ) : (
               "the claim this one was decomposed from"
             )}
-            , recorded when this subclaim was created and pending this
-            claim&apos;s own assessment.
+            {/* With a credence, its gloss says it waits on this claim's own
+                assessment; a note alone says so here. */}
+            {seed.credence == null && ", pending this claim's own assessment"}
           </p>
           {seed.credence != null && (
             <p className="seed-prelim-credence">
@@ -285,7 +360,7 @@ export function ClaimView({
               points, the dispute label comes from contestation. */}
           <span className="verdict-pair">
             <StatusBadge status={assessment.status} size="lg" />
-            <Dispute value={claim.contestation} />
+            {!published && <Dispute value={claim.contestation} />}
           </span>
           {/* The derived machine-checked badge (§2.3), beside the status
               rather than in place of it: the checker confirms the proof;
@@ -295,10 +370,10 @@ export function ClaimView({
             <MachineChecked kind={verification.kind} size="lg" rules={featureOn(features, "prizes")} />
           )}
           {/* Credence (P(claim true)) gets the meter, when the Steward stated
-              one; verdict confidence is meta and stays a quiet labelled figure
-              so the two are never mistaken for each other (#160). */}
+              one. It is the only figure the band shows: verdict confidence
+              and the other reading (§10) stay in the record and the API.
+              The figure was too easily read as credence. */}
           <Credence value={assessment.claim_credence} />
-          <VerdictConfidence value={assessment.confidence} />
           {/* The one date most readers want (#196). assessed_at, not
               updated_at: only the former honestly means "last assessed"
               (#160). The assessing model rides along (#294): a verdict is only
@@ -345,12 +420,12 @@ export function ClaimView({
           Status carried over from the retired label &lsquo;{assessment.relabeled_from}&rsquo;; not yet re-judged.
         </p>
       )}
-      {/* Quiet, like the note above: a fact about the judgment's footing,
-          not a verdict on whether it still holds. */}
+      {/* Said only when a premise's verdict, a premise, a source or a
+          notice on one moved, never for a premise judged again to the
+          verdict it had: a fact about the judgment's footing, which opens
+          onto what moved and the way to have it judged again. */}
       {changedSince && (
-        <p className="assess-changed-since" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
-          {changedSince}
-        </p>
+        <SinceAssessed claimId={claim.id} line={changedSince} inputs={detail.judgment_inputs} judgment={isQuantity ? "estimate" : "assessment"} />
       )}
       {/* Quiet as well: what the judgment was made on, beside what it says. */}
       {notShown && (
@@ -358,6 +433,17 @@ export function ClaimView({
           {notShown}
         </p>
       )}
+
+      {readerEvidence && (
+        <p className="assess-reader-evidence" style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" }}>
+          {readerEvidence}
+        </p>
+      )}
+
+      {/* What other graphs publish of this node, and whether the verdict
+          above has weighed it; on the second tab, what was taken out. */}
+      {!published && <PublishedNotes claimId={claim.id} published={publishedPages} />}
+      {published && <TakenOut view={published} />}
 
       {/* A claim about which side of a figure a quantity lies: where the
           quantity's estimate puts the value, against this claim's credence. */}
@@ -369,15 +455,20 @@ export function ClaimView({
         />
       )}
 
-      {/* reasoning trace */}
-      {anyAssessment && (
+      {published?.page && (
         <section>
           <h2>Assessment</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            {assessment
-              ? statusMeta(assessment.status).def
-              : "The graph's estimate, all things considered: the figures and arguments it rests on, and how they were combined."}
-          </p>
+          <PublishedAssessment view={published} />
+        </section>
+      )}
+      {published?.page && <PublishedGaps view={published} />}
+
+      {/* reasoning trace */}
+      {!published && anyAssessment && (
+        <section>
+          {/* No caption: what the status means is the badge's own gloss,
+              a few lines up. */}
+          <h2>Assessment</h2>
           {/* Reader-facing assessment — the primary content, styled as lead prose
               rather than an inset box. The fuller reasoning trace stays accessible
               just below, behind a disclosure, for anyone who wants the full
@@ -391,17 +482,17 @@ export function ClaimView({
             anyAssessment.reasoning_trace !== anyAssessment.summary && (
               <details className="reasoning-detail">
                 <summary>
-                  {assessment
-                    ? "Full reasoning: the evidence and decisions behind this verdict"
-                    : "The work: which figures, how they were combined, and the arithmetic"}
+                  {assessment ? "Full reasoning" : "The work"}
                 </summary>
                 <div className="reasoning">
                   <AssessmentText content={anyAssessment.reasoning_trace} texts={linkTexts} />
                 </div>
               </details>
             )}
-          {/* Reassessment on demand: quiet, but always available. */}
-          <OrderAssessment claimId={claim.id} variant="reassess" />
+          {/* Reassessment on demand: quiet, but always available. Where
+              something has moved under the judgment, it is offered beside
+              what moved instead, and once on the page is enough. */}
+          {!changedSince && <OrderAssessment claimId={claim.id} variant="reassess" />}
         </section>
       )}
 
@@ -414,7 +505,7 @@ export function ClaimView({
           graph it holds, in its own words, beside the assessment and never
           inside it. The section says that its place gives it no weight. A
           design fixture has no API to state a view to. */}
-      {!fixture && (
+      {!fixture && statedViews.length > 0 && (
         <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={statedViews} />
       )}
 
@@ -424,11 +515,9 @@ export function ClaimView({
           never a verdict itself; omitted when nothing has been noted. */}
       {detail.findings && detail.findings.length > 0 && (
         <section className="claim-findings">
-          <h2>Findings</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            Noted by the graph&apos;s administrators in the course of their work, in their own
-            words; <Link href="/findings">all findings</Link>.
-          </p>
+          <h2 className="with-meta">
+            Findings <span className="h2-meta"><Link href="/findings">all findings →</Link></span>
+          </h2>
           {detail.findings.map((f) => (
             <FindingCard key={f.id} finding={f} showClaim={false} headingLevel={3} />
           ))}
@@ -447,44 +536,46 @@ export function ClaimView({
       <AttemptLog claimId={claim.id} attempts={attempts} />
       <ResearchLog runs={detail.research_runs} />
 
-      {/* decomposition */}
-      <section>
-        <h2>Decomposition</h2>
-        {hasTree ? (
-          <>
-            <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-              {isQuantity
-                ? "The arguments the estimate rests on, each stated as it runs, with what it shows about the value and its premises linked inline. ↗\uFE0E opens a premise; the map shows how they fit together."
-                : tree!.children.some((c) => c.argument_name)
-                ? "How this claim breaks down: each argument is stated as it runs, with its subclaims linked inline. ↗\uFE0E opens a subclaim; the map shows how they fit together."
-                : "The claims this one rests on directly. ↗\uFE0E opens a subclaim; the map shows how they fit together."}
-            </p>
-            <DecompositionTree tree={tree!} argumentChecks={argumentChecks} />
-          </>
-        ) : (
-          <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
-            {decompositionNote({
-              decompositionStatus: claim.decomposition_status,
-              assessed: !!assessment,
-              stewardState: claim.steward_state,
-            })}
+      {published?.page && (
+        <section>
+          <h2>Decomposition</h2>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+            {published.inside
+              ? "The arguments and subclaims the Steward recorded for this node at the label the page was written at, each as written."
+              : "The arguments and subclaims the publishing graph's Steward recorded for this claim, each as written."}
           </p>
-        )}
+          <PublishedDecomposition view={published} />
+        </section>
+      )}
+      {published?.page && (published.page.sources.length > 0 || published.page.readings.length > 0 || published.page.stated_views.length > 0) && (
+        <section>
+          <h2>Provenance</h2>
+          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
+            {published.inside ? "The sources read at the label the page was written at." : "The sources read in the publishing graph."} Each is
+            listed by kind and by who supplied it; what it says is not shown beyond the passages its readings quote.
+          </p>
+          <PublishedProvenance view={published} />
+        </section>
+      )}
+
+      {/* decomposition. With no subclaims the left rail says why and offers
+          the funding (DecompositionState); the section is here only for a
+          tree, or for retired arguments a claim with none left still keeps. */}
+      {!published && (hasTree || retiredArguments.length > 0) && <section>
+        <h2>Decomposition</h2>
+        {hasTree && <DecompositionTree tree={tree!} argumentChecks={argumentChecks} nodeLabel={nodeLabel} />}
         {/* Arguments no longer on the claim (#541): retiring keeps an
             argument's name, page and record (§7), so they are listed here,
             folded away, each linking to its page with the reason. */}
-        {(detail.retired_arguments?.length ?? 0) > 0 && (
+        {retiredArguments.length > 0 && (
           <details className="reasoning-detail retired-arguments">
             <summary>
-              {detail.retired_arguments!.length === 1
+              {retiredArguments.length === 1
                 ? "1 retired argument"
-                : `${detail.retired_arguments!.length} retired arguments`}
+                : `${retiredArguments.length} retired arguments`}
             </summary>
-            <p className="retired-arguments-note">
-              No longer among this claim&apos;s arguments. Each keeps its page, with its record and why it was retired.
-            </p>
             <ul className="retired-arguments-list">
-              {detail.retired_arguments!.map((a) => (
+              {retiredArguments.map((a) => (
                 <li key={a.id}>
                   <Link href={`/arguments/${a.id}`}>{a.name ?? "Unnamed argument"}</Link>
                   {a.stance !== "neutral" && <span className="retired-arguments-stance"> · {a.stance}</span>}
@@ -502,23 +593,30 @@ export function ClaimView({
         )}
         {/* Build your part of the graph: an owl budget takes this subtree
             deeper than the background pipeline's economics ever would. */}
-        <FundDecomposition claimId={claim.id} />
-        <p className="order-line">
-          <Link href={`/account/grants/new?claim_id=${claim.id}`}>
-            or create a grant for this whole area →
-          </Link>
-        </p>
-      </section>
+        {hasTree && (
+          <>
+            <FundDecomposition claimId={claim.id} />
+            <p className="order-line">
+              <Link href={`/ask/mandates/new?claim_id=${claim.id}`}>
+                or start a mandate for this whole area →
+              </Link>
+            </p>
+          </>
+        )}
+      </section>}
 
       {/* provenance */}
       {(voices.length > 0 || mentions.length > 0 || (detail.quantity?.readings.length ?? 0) > 0) && (
         <section>
-          <h2>Provenance</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            {isQuantity
-              ? "Where this quantity's evidence comes from. The figures sources state are under Estimates above."
-              : "Where this claim has been said, linked to its canonical form."}
-          </p>
+          <h2 className="with-meta">
+            Provenance
+            {(flatProvenance || isQuantity) && (
+              <span className="h2-meta">
+                {isQuantity ? <a href="#estimates">figures are under Estimates ↑</a> : flatProvenance}
+                {isQuantity && flatProvenance && <> · {flatProvenance}</>}
+              </span>
+            )}
+          </h2>
           <QuantityReadings detail={detail} />
           {/* What the support rests on (#286): the Steward's account, shown
               only when it judged the structure of the support material. */}
@@ -532,10 +630,11 @@ export function ClaimView({
               are never counted as affirming or denying. */}
           {mentions.length > 0 && (
             <>
-              <h3 style={{ fontSize: "1rem", margin: "1rem 0 .2rem" }}>Mentioned in</h3>
-              <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem" }}>
-                Sources that refer to the claim without taking a side: they cite it, report the debate, or raise it in passing.
-              </p>
+              <h3 style={{ fontSize: "1rem", margin: "1rem 0 .4rem" }}>
+                <Term gloss="Sources that refer to the claim without taking a side: they cite it, report the debate, or raise it in passing.">
+                  Mentioned in
+                </Term>
+              </h3>
               {mentions.map((inst) => <InstanceCard key={inst.id} inst={inst} />)}
             </>
           )}
@@ -564,9 +663,6 @@ export function ClaimView({
                 <span className="traj-body">
                   <span className="sc" style={{ color: "var(--muted)" }}>{fmtDate(p.assessed_at)}</span>
                   {statusMeta(p.status).label}
-                  {typeof p.confidence === "number" && (
-                    <span title={VERDICT_CONFIDENCE_GLOSS}> · {p.confidence.toFixed(2)}</span>
-                  )}
                   {p.trigger && <em style={{ color: "var(--faint)" }}> · {p.trigger.replace(/_/g, " ")}</em>}
                 </span>
               </div>
@@ -583,15 +679,24 @@ export function ClaimView({
       {/* cite this claim (#290) — the reading column's exit: a conventional
           citation pinned to the current assessment version, plus the evidence
           record for carrying the page's provenance out of the graph. */}
-      <CiteClaim claimId={claim.id} />
-      {/* its neighbour on the way out: the claim shown on another site,
-          with the judgment whole */}
-      <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+      {!published && (
+        <div className="page-exits">
+          <CiteClaim claimId={claim.id} />
+          {/* its neighbour on the way out: the claim shown on another site,
+              with the judgment whole */}
+          <EmbedClaim claimId={claim.id} text={claim.text} kind={claim.kind} />
+        </div>
+      )}
       {/* the Assistant, opened from this node (#646): it is told which page
           the question came from */}
-      <section className="ask-about">
-        <AskBox nodeId={claim.id} placeholder={`Ask the Assistant about this ${claim.kind ?? "claim"}…`} />
-      </section>
+      {!published && (
+        <section className="ask-about">
+          <AskBox nodeId={claim.id} placeholder={`Ask the Assistant about this ${claim.kind ?? "claim"}…`} />
+        </section>
+      )}
+      {/* How the published page was made, closed to one line like Full reasoning. */}
+      {published && !published.inside && <PublishedSaidBack view={published} claimId={detail.claim.id} />}
+      {published && (published.inside ? <ShownRecord view={published} /> : <PublicationRecord view={published} />)}
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content, behind a closed disclosure so no
@@ -603,18 +708,23 @@ export function ClaimView({
           above — the record shows past exchanges, this is where a new one
           starts. Kept at the end of the reading column so the page itself
           stays unmarked by the exchanges behind it. */}
-      <Contribute claimId={claim.id} />
+      {!published && <Contribute claimId={claim.id} />}
+      {/* with none stated, only the invitation, at the foot */}
+      {!fixture && statedViews.length === 0 && (
+        <StatedViews claimId={claim.id} kind={isQuantity ? "quantity" : "claim"} views={[]} />
+      )}
 
       <hr className="thin" />
       {/* Funding disclosure (§19), placed here at the bottom deliberately:
           disclosure belongs on the page, but not beside the verdict, and
-          never without the explanation that gives it its meaning. */}
+          never without what gives it its meaning: the one line that funding
+          buys scheduling and not a verdict, and the section that says why. */}
       {assessment?.funding && (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
-          The attention this claim received was paid for by{" "}
+          Attention paid for by{" "}
           {assessment.funding.mandate ? (
             <>
-              a funded mandate,{" "}
+              a mandate,{" "}
               <a href={`/mandates/${assessment.funding.mandate.id}`}>
                 {assessment.funding.mandate.title}
               </a>{" "}
@@ -623,13 +733,8 @@ export function ClaimView({
           ) : (
             assessment.funding.label
           )}
-          . Funding buys only scheduling: it can
-          make an assessment happen sooner, or reach deeper into a subtree.
-          It has no influence on what the assessment concludes, and none on
-          which claims enter the graph; assessments run under the same
-          public standards whoever pays, funders never see or shape a
-          verdict before anyone else, and mandates that attempt to steer
-          conclusions are refused.
+          . Funding buys scheduling, never a verdict.{" "}
+          <Link href="/docs/constitution#allocating-attention-and-paid-attention">How funding works →</Link>
         </p>
       )}
       {assessment?.developer_disclosure && (
@@ -643,11 +748,18 @@ export function ClaimView({
           may be biased about its own developer.
         </p>
       )}
-      <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
-        Created by {claim.created_by} · {fmtDate(claim.created_at)}.
-        {/* the last-assessed date moved into the assessment band (#196) */}
-        {" "}Every judgment on this page is accompanied by a reasoning trace.
-      </p>
+      {published ? (
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
+          {published.inside
+            ? "Contributing to this node, ordering an assessment of it and citing it are on the tabs of its own assessments."
+            : "Contributing to this claim, ordering an assessment of it and citing it are on the public assessment's tab."}
+        </p>
+      ) : (
+        <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
+          Created by {claim.created_by} · {fmtDate(claim.created_at)}.
+          {/* the last-assessed date moved into the assessment band (#196) */}
+        </p>
+      )}
     </article>
   );
 }

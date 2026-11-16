@@ -34,7 +34,7 @@ const { handleQuery } = vi.hoisted(() => ({
         },
       ];
     }
-    if (q.includes("FROM regrants WHERE from_grant_id")) {
+    if (q.includes("FROM minerval_whole.regrant_money WHERE from_grant_id")) {
       return [{ total: state.regrantsOut }];
     }
     if (q.includes("g.status = 'active'") && q.includes("j.budget_micro_usd")) {
@@ -107,7 +107,7 @@ describe("createRegrant", () => {
     });
     expect(r).toMatchObject({ ok: true, toGrantId: "g-dst", amountOwls: 3 });
     const row = state.inserted.find((i) => i.table === "regrants");
-    // The last is the label of the work that moved the money: public outside any run.
+    // The row carries the label of the work that moved the money.
     expect(row!.params).toEqual(["g-src", "g-dst", 3_000_000, "the ingestion slice", "public"]);
     // Target job credited (and would resume from paused_budget). The
     // guarded credit addresses the target GRANT; the join finds its job.

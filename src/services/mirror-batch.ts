@@ -145,15 +145,15 @@ export function parsePublicKey(text: string): KeyObject {
 }
 
 /** The signing key from its PEM (PKCS#8, Ed25519). */
-export function parseSigningKey(pem: string): KeyObject {
+export function parseSigningKey(pem: string, setting = "MIRROR_SIGNING_KEY"): KeyObject {
   let key: KeyObject;
   try {
     key = createPrivateKey(pem.replace(/\\n/g, "\n").trim());
   } catch {
-    throw new Error("MIRROR_SIGNING_KEY is not a private key in PEM form");
+    throw new Error(`${setting} is not a private key in PEM form`);
   }
   if (key.asymmetricKeyType !== "ed25519") {
-    throw new Error("MIRROR_SIGNING_KEY must be an Ed25519 private key");
+    throw new Error(`${setting} must be an Ed25519 private key`);
   }
   return key;
 }

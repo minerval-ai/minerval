@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { StatusBadge, Dispute, VerdictConfidence, Unassessed } from "@/components/Assessment";
+import { StatusBadge, Dispute, Unassessed } from "@/components/Assessment";
 import styles from "./home.module.css";
 
 // The browser-extension demo (issue #80): a mock article whose sentences are
@@ -18,63 +18,62 @@ type CardId =
 const CARDS: {
   id: CardId;
   status: string | null; // null = unassessed
-  confidence: number | null;
   // How actively the claim is disputed (0..1), shown beside the verdict.
   contestation?: number;
   claim: string;
   match: string;
   reason: string;
-  subs?: { status: string; text: string; conf: string }[];
+  subs?: { status: string; text: string }[];
 }[] = [
   {
-    id: "c-high", status: "supported", confidence: 0.78,
+    id: "c-high", status: "supported",
     claim: "US CPI inflation in 2022 exceeded the threshold for ‘high’ inflation.",
     match: "canonical match 0.82 · empirical (derived)",
     reason:
       "The 6.5% magnitude is verified; the claim turns on a definitional subclaim the evidence does not settle: what counts as “high.” Verified arithmetic on an inconclusive definition: supported, not verified.",
     subs: [
-      { status: "verified", text: "BLS reported CPI-U growth of 6.5% for 2022", conf: "0.97" },
-      { status: "inconclusive", text: "The threshold for ‘high’ inflation is 5%", conf: "0.55" },
-      { status: "verified", text: "6.5% is greater than 5%", conf: "1.00" },
+      { status: "verified", text: "BLS reported CPI-U growth of 6.5% for 2022" },
+      { status: "inconclusive", text: "The threshold for ‘high’ inflation is 5%" },
+      { status: "verified", text: "6.5% is greater than 5%" },
     ],
   },
   {
-    id: "c-bls", status: "verified", confidence: 0.97,
+    id: "c-bls", status: "verified",
     claim: "The US Bureau of Labor Statistics reported CPI-U growth of 6.5% for the 12 months ending December 2022.",
     match: "canonical match 0.99 · primary_data · BLS, Dec 2022",
     reason:
       "Checkable against the primary source, with no serious dispute. It is a required subclaim of the “high inflation” claim above.",
   },
   {
-    id: "c-wages", status: "verified", confidence: 0.9,
+    id: "c-wages", status: "verified",
     claim: "Real (inflation-adjusted) wages fell for most US workers in 2022.",
     match: "empirical · requires → the CPI claim",
     reason:
       "Rests on the verified CPI figure by a requires edge, one of five claims in the graph that lean on it.",
   },
   {
-    id: "c-squeeze", status: "inconclusive", confidence: 0.58, contestation: 0.45,
+    id: "c-squeeze", status: "inconclusive", contestation: 0.45,
     claim: "2022 was the worst US cost-of-living squeeze in four decades.",
     match: "evaluative · supports ← the CPI claim",
     reason:
       "“Worst” depends on which measure of living costs you pick, and the measures point different ways. Examined, the evidence comes down on neither side; the disagreement is definitional, not factual.",
   },
   {
-    id: "c-over", status: "doubtful", confidence: 0.6, contestation: 0.75,
+    id: "c-over", status: "doubtful", contestation: 0.75,
     claim: "The 2022 tightening was a policy overreaction to transitory inflation.",
     match: "causal · contradicts ← the CPI claim",
     reason:
       "The evidence leans against it: the supported “high inflation” claim weighs against this one by a contradicts edge, and the rest hangs on the disputed word “transitory.” Doubtful on the evidence, and actively disputed: two facts, shown side by side.",
   },
   {
-    id: "c-defl", status: "contradicted", confidence: 0.88,
+    id: "c-defl", status: "contradicted",
     claim: "The United States experienced sustained deflation throughout 2009.",
     match: "empirical (verifiable)",
     reason:
       "Evidence leans against: prices fell for part of 2009, but the decline was neither sustained nor year-long. A confident sentence; a contradicted claim.",
   },
   {
-    id: "c-shelter", status: null, confidence: null,
+    id: "c-shelter", status: null,
     claim: "The CPI shelter component was reweighted in the 2023 basket revision.",
     match: "empirical (verifiable) · unassessed",
     reason:
@@ -156,7 +155,6 @@ export function AnnotatedDemo() {
                 <div className={styles.mMeta}>
                   {c.status ? <StatusBadge status={c.status} size="lg" /> : <Unassessed />}
                   {c.status && <Dispute value={c.contestation} />}
-                  {c.status && <VerdictConfidence value={c.confidence} />}
                 </div>
                 <p className={styles.mClaim}>{c.claim}</p>
                 <p className={styles.mMatch}>{c.match}</p>
@@ -167,7 +165,6 @@ export function AnnotatedDemo() {
                       <li key={s.text}>
                         <StatusBadge status={s.status} />
                         <span className={styles.txt}>{s.text}</span>
-                        <span className="conf-num" title="verdict confidence">{s.conf}</span>
                       </li>
                     ))}
                   </ul>

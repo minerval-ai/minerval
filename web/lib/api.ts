@@ -1,5 +1,6 @@
 import "server-only";
 import type {
+  JudgmentInputs,
   ArgumentPage,
   ClaimCard,
   AttemptStats,
@@ -22,6 +23,7 @@ import type {
   TagSummary,
   TrajectoryPoint,
   ProvenanceStory,
+  RequestFacets,
   RequestItem,
   SourceFacts,
   SourceDocument,
@@ -40,6 +42,7 @@ import type {
 import { ALL_FEATURES_ON, featuresFromResponse, type Features } from "./features";
 import { membersOnly } from "./members";
 import { viewerExternalId } from "./viewer";
+import { sinceAssessedMoved } from "./since-assessed";
 
 // Server-only client for the Minerval Fastify API. The API key is read from the
 // environment and attached here, on the server — it is never shipped to the
@@ -109,6 +112,9 @@ function pathSegment(id: string): string {
   }
   return encodeURIComponent(id);
 }
+
+import type { PublishedPageSummary, PublishedPageView } from "./published";
+import type { ListedTool } from "./tool-catalog";
 
 async function apiGet<T>(path: string): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
@@ -208,8 +214,15 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
       `/stated-views?claim_id=${seg}&earlier=true`,
     ).catch(() => null),
   ]);
+  // Which premises moved, read only when the counts say something under the
+  // judgment did: most claims have nothing to say, and pay nothing for it.
+  // Absent rather than failing the page.
+  const judgmentInputs = sinceAssessedMoved(detail.since_assessed)
+    ? await apiGet<JudgmentInputs>(`/claims/${seg}/judgment-inputs`).catch(() => null)
+    : null;
   return {
     ...withMathDefaults(detail),
+    ...(judgmentInputs ? { judgment_inputs: judgmentInputs } : {}),
     provenance_story: provenanceStory,
     ...(trajectory ? { trajectory } : {}),
     ...(record ? { record: record.record } : {}),
@@ -222,11 +235,15 @@ export async function fetchClaimDetail(id: string): Promise<ClaimDetail> {
 // shows the ones still open to work first; a request with no node of its own
 // appears only here.
 // With `q`, a search by meaning and keyword, ranked by meaning.
-export async function fetchRequests(limit = 100, q?: string): Promise<RequestItem[]> {
-  const p = new URLSearchParams({ limit: String(limit) });
-  if (q) p.set("q", q);
-  const res = await apiGet<{ requests: RequestItem[] }>(`/requests?${p.toString()}`);
-  return res.requests;
+// One page of the requests index, with its total and the facets that count
+// what each filter would leave (web/lib/requests.ts builds the query).
+export async function fetchRequestsPage(
+  query: URLSearchParams,
+): Promise<{ requests: RequestItem[]; total: number; facets: RequestFacets | null }> {
+  const res = await apiGet<{ requests: RequestItem[]; total?: number; facets?: RequestFacets }>(
+    `/requests?${query.toString()}`,
+  );
+  return { requests: res.requests, total: res.total ?? res.requests.length, facets: res.facets ?? null };
 }
 
 export async function fetchRequest(id: string): Promise<RequestItem | null> {
@@ -252,7 +269,8 @@ export async function fetchSourcePage(id: string): Promise<SourcePage | null> {
     throw err;
   }
   const [document, examinations, context] = await Promise.all([
-    apiGet<SourceDocument>(`/sources/${seg}/document`).catch(() => null),
+    // The whole document: the API pages it by default.
+    apiGet<SourceDocument>(`/sources/${seg}/document?detail=full`).catch(() => null),
     apiGet<{ examinations: Examination[] }>(`/sources/${seg}/examinations`)
       .then((r) => r.examinations)
       .catch(() => [] as Examination[]),
@@ -522,6 +540,30 @@ export async function fetchAttempt(id: string): Promise<AttemptSummary | null> {
 // reader opens the cite panel, not with the page.
 export async function fetchClaimCitation(id: string): Promise<ClaimCitationPayload> {
   return apiGet<ClaimCitationPayload>(`/claims/${pathSegment(id)}/citation`);
+}
+
+// The MCP server's tools, as its own tools/list answers (/docs/tools). The
+// endpoint is stateless, so one JSON-RPC request with no initialize is a
+// whole exchange (src/routes/mcp.ts). It goes with the service key and, in a
+// members-only deployment, the viewer, so the list is what that viewer's
+// account would be offered.
+export async function fetchMcpTools(): Promise<ListedTool[]> {
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  const options = await readOptions();
+  const res = await fetch(`${BASE}/mcp`, {
+    ...options,
+    method: "POST",
+    headers: {
+      ...(options.headers as Record<string, string>),
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+  });
+  if (!res.ok) throw new ApiError(`Minerval API ${res.status} for tools/list`, res.status, await errorCode(res));
+  const body = (await res.json()) as { result?: { tools?: ListedTool[] }; error?: { message?: string } };
+  if (!body.result?.tools) throw new Error(`Minerval API: tools/list answered ${body.error?.message ?? "no tools"}`);
+  return body.result.tools;
 }
 
 // The claim card: the judgment whole, in one small shape (the API's
@@ -817,4 +859,77 @@ export async function fetchRunStep(id: string, seq: number): Promise<RunStep | n
     if (err instanceof ApiError && err.status === 404) return null;
     throw err;
   }
+}
+
+// --- published pages (docs/published-pages.md) ---------------------------------
+
+// The pages other graphs publish of one node, each with its state and where
+// it stands on the node.
+export async function fetchPublishedPages(nodeId: string): Promise<PublishedPageSummary[]> {
+  const res = await apiGet<{ published_pages: PublishedPageSummary[] }>(`/published-pages?node_id=${encodeURIComponent(nodeId)}`);
+  return res.published_pages ?? [];
+}
+
+// One published page in the shape of a node's page, with its record.
+export async function fetchPublishedPage(id: string, pkg?: number): Promise<PublishedPageView> {
+  return apiGet<PublishedPageView>(`/published-pages/${pathSegment(id)}${pkg ? `?package=${pkg}` : ""}`);
+}
+
+// One package exactly as signed, with the publisher's key as the graph holds it.
+export async function fetchPublishedPackage(id: string, pkg?: number): Promise<{ sequence: number; package: unknown; publisher_key: string | null }> {
+  return apiGet(`/published-pages/${pathSegment(id)}/package${pkg ? `?package=${pkg}` : ""}`);
+}
+
+// A publisher's public record; null for an account that has registered no key.
+export async function fetchPublisher(accountId: string): Promise<PublisherRecord | null> {
+  try {
+    return await apiGet<PublisherRecord>(`/publishers/${pathSegment(accountId)}`);
+  } catch {
+    return null;
+  }
+}
+
+export interface PublishedMandateSetting {
+  what: string;
+  kind: string;
+  the_gate: "open" | "redactor" | "person";
+  in_words: string;
+  from: string;
+  set_on: string | null;
+  in_a_line: string;
+}
+
+export interface PublishedMandate {
+  face_id: string;
+  publisher: { account_id: string; name: string };
+  name: string;
+  terms: string;
+  withdrawn_at: string | null;
+  first_published_at: string;
+  last_changed_at: string;
+  gate: null | {
+    settings: PublishedMandateSetting[];
+    for_requests_under: Array<{ public_node_id: string; kind: string; the_gate: string; in_words: string; set_on: string }>;
+    narrower_settings_not_listed: number;
+    pages_flow: string;
+    other_parties: string;
+    money: string;
+  };
+  as_released: { parts_held: number; removals: Record<string, number> };
+  history: Array<{ package: number; received_at: string; changes: string[] }>;
+  requests_addressed_to_it: number;
+  note: string;
+}
+
+export interface PublisherRecord {
+  account_id: string;
+  name: string;
+  registrations: Array<{ key_id: string; public_key: string; runs_on: string; attested_by: string; declared_interest: string | null; registered_at: string; retired_at: string | null }>;
+  published_pages: PublishedPageSummary[];
+  /** The mandates it published, which a request here can be addressed to (docs/published-pages.md, "A published mandate"). */
+  published_mandates?: PublishedMandate[];
+  /** What this graph's own record holds of the publisher, as counts and dates in sentences (docs/outward-acts.md). */
+  record?: { in_words: string[] };
+  record_note?: string;
+  note: string;
 }

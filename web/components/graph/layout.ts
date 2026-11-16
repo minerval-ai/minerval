@@ -78,6 +78,8 @@ export interface ClaimBits {
   text: string;
   claimType: ClaimType | null;
   status: AssessmentStatus | null;
+  // Only where more than one judgment of the node is in force for the reader: how many. `status` is then the most recently made.
+  severalInForce?: number;
   confidence: number | null;       // verdict confidence — meta, not P(true)
   credence: number | null;         // the Steward's P(claim true), when stated (#238)
   // Steward-seeded prior credence (#285): the parent Steward's preliminary
@@ -212,6 +214,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
     text: n.text,
     claimType: n.claim_type,
     status: n.assessment_status,
+    severalInForce: n.judgments_in_force,
     confidence: n.assessment_confidence,
     // The API already nulls the seed once a node is assessed; the guard here
     // keeps the invariant even against a fixture or an optimistic partial.
@@ -286,6 +289,7 @@ export function computeLayout(detail: ClaimDetail, opts: LayoutOptions): Layout 
           text: r.dep.text,
           claimType: r.dep.claim_type,
           status: r.dep.assessment_status,
+          severalInForce: r.dep.judgments_in_force,
           confidence: r.dep.assessment_confidence,
           credence: r.dep.assessment_credence ?? null,
           relation: r.dep.relation_type,

@@ -41,10 +41,34 @@ export type SourceKind =
   | "dataset" | "official_statistics" | "transcript" | "treaty" | "court_record" | "legislation"
   | "journal_article" | "preprint" | "conference_paper" | "book" | "book_chapter" | "thesis"
   | "report" | "standard" | "news_article" | "opinion" | "press_release" | "blog_post"
-  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "unknown";
+  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "shown_page" | "published_page" | "unknown";
+
+/** A label that has set an edge or an argument aside for its own readers, with its reason. */
+export interface SetAside {
+  at: string;
+  reason: string | null;
+}
+
+/** One label's importance or contestation for a node, where labels the reader reads hold their own. */
+export interface ValueByLabel {
+  label: string;
+  value: number | null;
+  in_effect: boolean;
+}
 
 export interface TreeNode {
   id: string;
+  // Inside a deployment with more than one label: the label the edge into
+  // this node is recorded at, and its argument's; and where a label the
+  // reader reads has set either aside, which label and why.
+  label?: string;
+  argument_label?: string;
+  set_aside?: SetAside;
+  argument_set_aside?: SetAside;
+  // Only where more than one judgment of the node, or evaluation of the
+  // argument it sits under, is in force for the reader: how many.
+  judgments_in_force?: number;
+  argument_evaluations_in_force?: number;
   text: string;
   claim_type: ClaimType;
   state: ClaimState;
@@ -121,8 +145,13 @@ export interface Assessment {
   status: AssessmentStatus;
   // Verdict confidence: how sure the Steward is that `status` is the right
   // reading of the evidence. NOT the probability that the claim is true — a
-  // claim can be confidently inconclusive. Render it quietly and labelled.
+  // claim can be confidently inconclusive. Kept for the record and the API,
+  // not shown to readers, who took it for a credence.
   confidence: number;
+  // The other reading (§10): the status the evidence could otherwise be read
+  // as, where the Steward named one; null where none was named. In the API
+  // for callers; not shown on the page. Optional while deploys race.
+  alternative_status?: AssessmentStatus | null;
   // Credence: the Steward's probability that the claim, as stated, is true.
   // Null where one number would be false precision (normative/evaluative
   // claims, entangled composites) — constitution §7. Optional while API
@@ -242,7 +271,7 @@ export type InstanceSupport =
   | "evidence_not_shown"
   | "contradicts_own_evidence"
   | "unclear";
-export type QuoteCheck = "verbatim" | "normalized_match" | "not_found" | "no_stored_content";
+export type QuoteCheck = "verbatim" | "normalized_match" | "elided_match" | "not_found" | "no_stored_content";
 
 // A stake recorded for a source (§9): who has it and what it is. A fact
 // about the source, never a finding against it: what the source says is
@@ -345,6 +374,13 @@ export interface Instance {
   publication?: string | null;
   source_date?: string | null;
   link?: string | null;
+  // The source document's own record (what its page shows): authors,
+  // publisher, publication date and DOI. Absent from an API that predates
+  // them; null or empty where the source has none.
+  source_authors?: string[];
+  source_publisher?: string | null;
+  source_published_date?: string | null;
+  source_doi?: string | null;
   // The Steward's reading of this source (#286); null or absent until one
   // has been recorded.
   reading?: InstanceReading | null;
@@ -383,12 +419,16 @@ export interface RelatedClaim {
   text: string;
   claim_type: ClaimType;
   assessment_status: AssessmentStatus | null;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   assessment_confidence: number | null;
   assessment_credence: number | null;
 }
 
 export interface DependentClaim {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   claim_type: ClaimType;
   relation_type: RelationType;
@@ -489,11 +529,39 @@ export interface SinceAssessed {
   changed: boolean | null;
   note?: string;
   premises_rejudged?: number;
+  // Of those, the ones whose verdict is not the one the judgment was made
+  // against. Absent from an API that predates it.
+  premises_moved?: number;
   premises_added?: number;
   premises_removed?: number;
   sources_added?: number;
   sources_removed?: number;
   source_events?: number;
+}
+
+/**
+ * The whole record behind `since_assessed` (GET /claims/:id/judgment-inputs),
+ * as much of it as the claim page reads: which premises changed and how.
+ * `verdict_then` and `verdict_now` are a claim's status or a question's
+ * standing, null for a quantity or for no judgment.
+ */
+export interface JudgmentInputs {
+  recorded: boolean;
+  premises: Array<{
+    node_id: string;
+    relation: string;
+    state: "unchanged" | "rejudged" | "removed";
+    moved?: boolean;
+    text?: string | null;
+    verdict_then?: string | null;
+    verdict_now?: string | null;
+  }>;
+  premises_added: Array<{
+    node_id: string;
+    relation: string;
+    text?: string | null;
+    verdict_now?: string | null;
+  }>;
 }
 
 /**
@@ -521,10 +589,68 @@ export interface CoverageRow {
   on?: string[];
 }
 
+/**
+ * One current version of a node's judgment, where a deployment holds
+ * material at more than one label (docs/architecture.md, "A judgment at
+ * each label"): the label it was made at, the judgment itself in the fields
+ * its kind has, whether it is in force for this reader, and what it was
+ * made beside. The public graph serves none.
+ */
+/** A label's record that it examined a node and left the judgment it reads standing. Not a judgment. */
+export interface LeftStanding {
+  label: string;
+  examined_at: string;
+  run_id: string | null;
+  reasoning: string;
+  judgments: Array<{ label: string; replaced: boolean }>;
+  /** One of them has been replaced, or a label it reads has a judgment made since. */
+  open_again: boolean;
+}
+
+export interface NodeVersion {
+  id: string;
+  label: string;
+  in_force: boolean;
+  assessed_at: string;
+  made_beside: Array<{ label: string; replaced: boolean }>;
+  versions_since: string[];
+  made_against_earlier: boolean;
+  // What this judgment was made on, said to the reader, and what has changed beneath it since.
+  coverage?: Coverage | null;
+  since_assessed?: SinceAssessed | null;
+  model?: string | null;
+  run_id?: string | null;
+  // A claim's assessment.
+  status?: AssessmentStatus;
+  confidence?: number | null;
+  alternative_status?: AssessmentStatus | null;
+  claim_credence?: number | null;
+  summary?: string | null;
+  reasoning_trace?: string | null;
+  // A quantity's estimate.
+  estimate?: unknown;
+  work?: string | null;
+  // A question's assessment.
+  standing?: string;
+  favored_answer_ids?: string[];
+  incomplete?: string | null;
+}
+
 export interface ClaimDetail {
   // Present when the id asked for was merged into this claim (#884).
   resolved_from?: ResolvedFrom | null;
   claim: ClaimCore;
+  // Only where the deployment holds material at more than one label: the
+  // versions of the node's judgment this reader may read, those in force
+  // first. Absent on the public graph.
+  versions?: NodeVersion[];
+  // Where a label the reader reads examined the node and left another
+  // label's judgment standing, and the labels the reader reads at which the
+  // node has been neither judged nor examined. Absent where there are none.
+  left_standing?: LeftStanding[];
+  not_examined_at?: string[];
+  // Only where the node is the public graph's, read through a mirror.
+  mirrored?: { public_graph_as_of: string | null; public_page_url: string | null } | null;
   assessment: Assessment | null;
   // Beside the judgment and present where there is none; absent when the API
   // predates the field.
@@ -532,6 +658,9 @@ export interface ClaimDetail {
   // Beside the judgment, whichever kind keeps it; absent when the node has
   // none in force or the API predates the field.
   since_assessed?: SinceAssessed | null;
+  // Which premises moved, read only when `since_assessed` says something
+  // did (lib/since-assessed.ts); absent otherwise.
+  judgment_inputs?: JudgmentInputs | null;
   subclaim_count: number;
   // Steward-seeded prior (#285); absent when the claim is assessed, unseeded,
   // or the API predates the field.
@@ -776,6 +905,8 @@ export type QuestionStanding = "answered" | "leaning" | "open" | "ill_posed" | "
 /** A candidate answer: a claim or a quantity (§7a). */
 export interface QuestionAnswer {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   kind: NodeKind;
   status: AssessmentStatus | null;
@@ -797,6 +928,8 @@ export interface AnswerRelation {
 
 export interface QuestionNodeRef {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   text: string;
   status?: AssessmentStatus | null;
   standing?: QuestionStanding | null;
@@ -868,6 +1001,14 @@ export interface RequestWork {
 }
 
 /** Something someone could do that would improve what the graph knows (Part VIII, Requests). */
+/** What each filter of the requests index would leave, under the others (GET /requests?facets=true). */
+export interface RequestFacets {
+  states: { state: RequestState; count: number }[];
+  tags: { slug: string; name: string; count: number }[];
+  asked: { anyone: number; named: number };
+  waiting: number;
+}
+
 export interface RequestItem {
   id: string;
   ask: string;
@@ -878,7 +1019,12 @@ export interface RequestItem {
   who_could?: string | null;
   // Null when open to anyone.
   addressed_to: string | null;
-  bears_on: { id: string; text: string; kind: NodeKind }[];
+  // Each node with its importance, 0..1, where the API serves it.
+  bears_on: { id: string; text: string; kind: NodeKind; importance?: number | null }[];
+  // The importance of the most important node it bears on (null when it
+  // bears on none), and the topics of the nodes it bears on.
+  importance?: number | null;
+  tags?: { slug: string; name: string }[];
   // Sources it bears on: a document's full text, a corrected table.
   bears_on_sources?: { id: string; title: string; url?: string | null }[];
   // What it bears on that the graph does not yet hold, in words.
@@ -903,10 +1049,33 @@ export interface RequestItem {
     backing_usd: number;
   } | null;
   work?: RequestWork[];
+  // Accounts that have said, on the request's record, that they are taking
+  // it up, each with what followed as the record shows it (docs/outward-acts.md).
+  taken_up?: {
+    by: string;
+    account_id: string;
+    at: string;
+    followed: string;
+    in_words: string;
+    published_page_id: string | null;
+    node_id: string | null;
+  }[];
+  // Where the request was addressed to a mandate another graph published
+  // here: the mandate, its publisher, and where the request stands with it.
+  addressed_to_mandate?: {
+    face_id: string;
+    name: string;
+    publisher: { account_id: string; name: string };
+    withdrawn: boolean;
+    stands: string;
+    in_words: string;
+  };
 }
 
 export interface SearchResultItem {
   id: string;
+  // Only where more than one judgment of the node is in force for the reader: how many.
+  judgments_in_force?: number;
   // A claim, a quantity or a question (constitution §2, §7a); absent from an
   // API older than kinds, which listed claims only.
   kind?: NodeKind;
@@ -1054,6 +1223,8 @@ export type ClaimEvent =
       assessment_id: string;
       status: AssessmentStatus;
       confidence: number;
+      // The other reading (§10); optional while API deploys race the frontend.
+      alternative_status?: AssessmentStatus | null;
       claim_credence: number | null;
       summary: string;
       trigger: string | null;
@@ -1207,6 +1378,10 @@ export interface ContributionDetail {
     // landed on. Optional so an older API reads as "not yet".
     became_claim_id?: string | null;
     page_url?: string | null;
+    // Where it was made through a published page on its node: the page, and
+    // what the graph that published it has said became of the contribution.
+    about_published_page_id?: string | null;
+    through_published_page?: { published_page_id: string; publisher: string; node_id: string; state: string; in_words: string } | null;
   };
   review: {
     id: string;
@@ -1587,6 +1762,8 @@ export interface DocumentInstance {
   verbatim_text: string;
   /** The claim Steward's reading of this appearance, in that claim's voice. */
   reading: { support: InstanceReading["support"]; note: string | null; source_read: boolean } | null;
+  /** A quotation with cuts in it: each piece as the document has it, and what each cut left out. */
+  quoted_parts?: Array<{ text: string; omitted?: true }>;
 }
 
 export interface DocumentSegment {
@@ -1810,6 +1987,9 @@ export interface ArgumentPage {
     merged_into: string | null;
   };
   evaluation: ArgumentEvaluationEntry | null;
+  // Only where more than one evaluation is in force for the reader: how many, and each.
+  evaluations_in_force?: number;
+  evaluations?: ArgumentEvaluationEntry[];
   evaluation_history: ArgumentEvaluationEntry[];
   premises: ArgumentPremise[];
   instances: ArgumentInstanceItem[];
@@ -1887,8 +2067,10 @@ export interface ClaimCard {
   state: string;
   /** A claim's status; null when unassessed and for the other kinds. */
   assessment_status: string | null;
-  /** How sure the Steward is of the status (or a question's standing), 0..1. */
+  /** How sure the Steward is of the status (or a question's standing), 0..1. Not shown to readers. */
   assessment_confidence: number | null;
+  /** The other reading (§10): the status the evidence could otherwise be read as; null where none was named. Optional while API deploys race the frontend. */
+  assessment_alternative_status?: string | null;
   /** A question's standing; null for the other kinds and until judged. */
   standing: string | null;
   /** A quantity's current estimate and unit; null for the other kinds. */
