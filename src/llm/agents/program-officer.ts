@@ -19,13 +19,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { currentLabel, runWithUsageContext, withAgent, withPassBudget, withSkills } from "../usage-context.js";
+import { currentLabel, runBudget, runWithUsageContext, withAgent, withPassBudget, withSkills } from "../usage-context.js";
 import { getProgramOfficerSystemPromptBlocks } from "../prompts/program-officer.js";
 import { getGraphReadToolDefinitions, executeGraphReadTool } from "../tools/graph-read-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
-import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
+import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
 import { LABEL_ON_REOPEN_SQL, claimAction, completeAction, releaseAction } from "../../services/action-service.js";
 import { commissionAction, commissionNodePass, commissionNoteText, placeCommission } from "../../services/commission-service.js";
 import { describePace, paceRoom, parsePace, validatePace } from "../../services/pace-service.js";
@@ -76,8 +76,9 @@ const DECIDE_PETITIONS: Tool = {
     "refuse, or follow_up (fund a fresh pass with the petitioner's plan as its " +
     "brief, at the budget you set). reason is shown to the petitioner and on " +
     "the mandate's public record: say what about the work made the " +
-    "difference. Officers: a decision above the limit your task message " +
-    "states is refused here; escalate it.",
+    "difference. What you grant or fund is paid from the mandate's escrow, " +
+    "not this run's own budget. Officers: a decision above the limit your " +
+    "task message states is refused here; escalate it.",
   input_schema: {
     type: "object" as const,
     properties: {
@@ -105,7 +106,8 @@ const DECIDE_PETITIONS: Tool = {
 export const COMMISSION_FOR_MANDATE: Tool = {
   name: "commission",
   description:
-    "Pay for runs from your mandate's money: one entry or many. Each entry is " +
+    "Pay for runs from your mandate's money: one entry or many, paid from the " +
+    "mandate's escrow, not this run's own budget. Each entry is " +
     "a Steward pass on a node (target); research (kind research, Grantmaker " +
     "only: a Researcher run on a question the mission needs answered, its " +
     "brief the whole task, its report returned into your session, optionally " +
@@ -492,6 +494,34 @@ function describeItem(i: InboxItem, label: string): string {
   );
 }
 
+/**
+ * What the sitting's own budget is, said apart from what the officer may
+ * commit (#1049). They are different money: the sitting's budget
+ * (withPassBudget, OFFICER_RUN_BUDGET_OWLS) meters only this run's model
+ * tokens, while a commission, grant or follow-up is paid from the mandate's
+ * escrow (commissionNodePass, payer grant), bounded by the per-decision
+ * limit, the pace and what the escrow holds uncommitted. The generic
+ * run-budget sentence spoke of paying "from your mandate's money" and of
+ * declining what "the remaining budget cannot cover", and an officer read a
+ * 1-owl sitting budget as a cap on a 5.5-owl pass its 6-owl limit allowed,
+ * and escalated it. Both figures are in owls; the dollars beside the
+ * sitting's match the spend line after each turn (an owl covers a dollar of
+ * metered cost). limitMicroUsd is null for a run with no delegated limit.
+ */
+export function sittingBudgetSentence(sittingMicroUsd: number | null, limitMicroUsd: number | null): string {
+  if (sittingMicroUsd == null) return "";
+  const sitting = owls(sittingMicroUsd);
+  return (
+    `This sitting has a budget of ${sitting} owl${sitting === 1 ? "" : "s"} ` +
+    `($${(sittingMicroUsd / 1_000_000).toFixed(2)}) from the mandate's money. It pays only for your own reading ` +
+    `and deciding here, model tokens and any paid tool at real cost, and it is what the spend line after each ` +
+    `turn counts; what it does not spend goes back to the mandate. It is not a limit on what you commit: ` +
+    `commissions, grants and follow-ups are paid from the mandate's escrow, not this sitting's budget` +
+    (limitMicroUsd != null ? `, up to ${owls(limitMicroUsd)} owls in one decision` : "") +
+    `, within the pace and what the escrow holds uncommitted.`
+  );
+}
+
 async function buildBrief(
   grant: GrantRow,
   role: Role,
@@ -579,7 +609,7 @@ async function buildBrief(
     `## Position\n\n` +
       (pace ? `${pace.sentence} ` : "") +
       `Deciding has cost ${decidingShare}% of the mandate's spend over the last seven days. ` +
-      (runBudgetSentence() || ""),
+      sittingBudgetSentence(runBudget()?.ceilingMicroUsd ?? null, role === "officer" ? limit.microUsd : null),
     `## What else the money could buy\n\n` +
       `Beyond this brief: ${elsewhere?.more_items ?? 0} more inbox item(s) waiting for the next sitting, ` +
       `${elsewhere?.held ?? 0} petition(s) held, ${elsewhere?.orders ?? 0} plan order(s) waiting for room. ` +

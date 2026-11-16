@@ -106,6 +106,16 @@ describe("subscriptions", () => {
     expect(after!.status).toBe("ready");
   });
 
+  it("says how late a check-in is when it arrives well past its time", async () => {
+    const id = await session();
+    await createSubscription({ subscriberKind: "session", subscriberRef: id, dueAt: new Date(Date.now() + 86_400_000), once: true, reason: "late look", createdBy: "test" });
+    await rawQuery(`UPDATE subscriptions SET due_at = now() - interval '17 hours 24 minutes 10 seconds' WHERE subscriber_ref = $1`, [id]);
+    await routeEvents();
+    const text = (await replies(id)).at(-1)!.text;
+    expect(text).toContain("late look");
+    expect(text).toMatch(/it is now (\d{4}-\d{2}-\d{2} )?\d{2}:\d{2} UTC, 17 h 24 min late/);
+  });
+
   it("closes a session that holds nothing, and ends its subscriptions when it closes", async () => {
     const id = await session();
     await createSubscription({ subscriberKind: "session", subscriberRef: id, filter: { node_ids: [randomUUID()] }, delivery: "queue", reason: "queued only", createdBy: "test" });

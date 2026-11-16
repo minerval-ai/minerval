@@ -106,8 +106,10 @@ mission would need:
 - **read back what its money did**: the briefing opens with what the
   mandate commissioned since the last review and how those runs used their
   budgets, by kind; the outcomes on the nodes it paid for; the petitions it
-  heard and how its officers answered; runs that spent their whole budget
-  without asking; its officers' decisions and what deciding cost; the
+  heard and how its officers answered; runs that spent their whole budget,
+  or went past it, without asking (a run counts as settled when its action
+  closes, though a fully spent allocation is never stamped released); its
+  officers' decisions and what deciding cost; the
   messages waiting on the nodes it pays for; and what its lookouts raised
   and commissioned (src/services/mandate-reflection-service.ts). It starts
   from what happened, not from scratch, and fixes causes in the operating
@@ -825,7 +827,8 @@ item first opened its rows, whoever funded that sweep, and a re-sweep is
 another item. The reconcile sweep leaves open the rows a live sweep item
 names even when the partition is not due. A mandate's agents may also
 commission an open sweep row directly (`commission`, with its action id;
-`query_sql` shows the open rows), and `cost_sheet` prices sweeps by the
+`query_sql` shows the open rows, the ledger view's `partition` naming
+each row's tag slug or `residual`), and `cost_sheet` prices sweeps by the
 rule below: per assessed node, a floor and a ceiling. Flags a mandate's
 sweep raises are the same flags: the passes they ask for go to the
 General mandate's officers like any other, unless someone commissions
@@ -1587,7 +1590,11 @@ sitting does not have.
 A sitting is commissioned from the mandate on its own row
 (`officer:<grant>` at `OFFICER_RUN_BUDGET_OWLS`, 1), so deciding counts
 against the mandate's pace and escrow like any of its work and returns what
-it does not spend. The scheduler also holds sittings for inboxes no run is waiting on
+it does not spend. That budget pays only for the sitting's own reading and
+deciding; what the officer commits is paid from the mandate's escrow, bounded
+by its per-decision limit, the pace and the escrow, and the brief states the
+two figures apart so the one is not read as a cap on the other (#1049).
+The scheduler also holds sittings for inboxes no run is waiting on
 (`workWaitingInboxes`), when `OFFICER_SITTINGS_ENABLED` is true; it is a
 deployment switch, off by default, since sittings run models.
 
@@ -1777,7 +1784,10 @@ model in it. It reads the log in order from where it last stopped, as
 events are recorded and again on the engine executor's tick, and delivers
 each event to every active subscription it matches; on the tick it also
 delivers the check-ins that are due and the thresholds that have been
-crossed. To a session, a delivery is an answer in its transcript, shown in
+crossed. A check-in that arrives more than five minutes after its time
+(the runner stalled or was down) says so: the time now and how late it is,
+so the agent does not take the world to be as it was when it set it. To a
+session, a delivery is an answer in its transcript, shown in
 its next tool result if it is running; a `wake` delivery resumes it if it
 has paused, and a `queue` one waits for its next turn. To a mandate's
 inbox it is an item its officers read; to a node's inbox, a message its

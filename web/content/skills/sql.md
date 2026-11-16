@@ -55,7 +55,21 @@ unknown.
   queued), queued_ahead (for a queued ingest, about how many extractions
   submitted before it are still waiting; the queue does not promise its
   order). A running ingest is not necessarily being read: say queued when
-  it is
+  it is. partition (null unless the row is a consistency_sweep: the slug
+  of the tag it reads, `residual` for the bucket of live claims no tag
+  large enough to be swept on its own covers, or `graph` for a sweep of
+  the whole graph; null too for a tag that is gone or you cannot see).
+  target_ref is the row's target in the ledger's own terms: for
+  `ingest`, the source's URL; for `consistency_sweep`, the swept tag's
+  id (not served by `tags`; join on partition instead), `residual` or
+  `graph`; for work on a node (assess, reassess, formalize and the
+  like), the node is target_node_id; for other kinds, the id of what the
+  work is for (the mandate of a planning or review pass, a request, a
+  lookout or correspondent) or null. An open consistency_sweep row is a
+  partition the platform judges due (never swept, or something in it
+  re-assessed since its last sweep, and not within a day of it), or one a
+  mandate's `sweep` plan item keeps open; each partition has two rows, a
+  `standard` and a `strong` variant, of which one is funded
 - `commissions`: the money on each piece of work. commission_id, action_id,
   exclusion_group, payer_kind (mandate, person), payer_mandate_id,
   budget_owls, spent_owls, returned_owls, commissioned_by, brief, reason,
@@ -202,6 +216,37 @@ SELECT l.kind, l.waiting_on, count(DISTINCT l.action_id) AS rows,
     ON c.action_id = l.action_id AND c.settled_at IS NULL
  WHERE l.status = 'open' AND l.waiting_on IS NOT NULL
  GROUP BY l.kind, l.waiting_on ORDER BY since;
+```
+
+When each partition was last swept for consistency, whether it is due
+again, and which of its nodes have been re-assessed since (where new
+incoherence would come from). A partition's two rows are reused: when it
+falls due again they reopen, so the time a sweep ended is read from its
+settled commission, not from the row's status. A sweep that failed after
+spending counts as a sweep here; the platform reopens such a partition
+while it is still due. The residual bucket and whole-graph sweeps have no
+tag to join, so they list with no nodes:
+
+```sql
+WITH swept AS (
+  SELECT l.partition, max(c.settled_at) AS last_swept
+    FROM ledger l JOIN commissions c USING (action_id)
+   WHERE l.kind = 'consistency_sweep' AND l.partition IS NOT NULL
+     AND c.settled_at IS NOT NULL AND c.spent_owls > 0
+   GROUP BY l.partition)
+SELECT s.partition, s.last_swept,
+       EXISTS (SELECT 1 FROM ledger o
+                WHERE o.kind = 'consistency_sweep' AND o.status = 'open'
+                  AND o.partition = s.partition) AS due,
+       count(a.id) AS reassessed_since,
+       array_agg(n.id ORDER BY n.importance DESC)
+         FILTER (WHERE a.id IS NOT NULL) AS nodes
+  FROM swept s
+  LEFT JOIN nodes n ON s.partition = ANY(n.tags) AND n.state = 'active'
+  LEFT JOIN assessments a ON a.node_id = n.id AND a.is_current
+                         AND a.assessed_at > s.last_swept
+ GROUP BY s.partition, s.last_swept
+ ORDER BY reassessed_since DESC, s.last_swept;
 ```
 
 **What is not here.** Only public data: no emails, keys, balances or

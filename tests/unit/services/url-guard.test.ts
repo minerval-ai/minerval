@@ -1,5 +1,12 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { assertPublicHttpUrl, fetchPublicBytes, fetchPublicUrl, UnsafeUrlError } from "../../../src/services/url-guard.js";
+import {
+  assertPublicHttpUrl,
+  DOCUMENT_MAX_DOWNLOAD_BYTES,
+  fetchPublicBytes,
+  fetchPublicUrl,
+  ResponseTooLargeError,
+  UnsafeUrlError,
+} from "../../../src/services/url-guard.js";
 
 // The SSRF guard's classification logic, via IP-literal hosts (no DNS
 // involved). Hostname resolution and redirect-hop re-validation are
@@ -97,6 +104,14 @@ describe("fetchPublicBytes", () => {
     expect((await fetchPublicBytes("http://8.8.8.8/big", { maxBytes: 4096 })).bytes).toHaveLength(2048);
     vi.stubGlobal("fetch", vi.fn(async () => respond(new Uint8Array(10 * 1024 * 1024 + 1))));
     await expect(fetchPublicBytes("http://8.8.8.8/big")).rejects.toThrow(/exceeds 10485760 bytes/);
+  });
+
+  it("names a body over its cap as such, and holds a document to 50 MiB (#1068)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => respond(new Uint8Array(2048))));
+    const err = await fetchPublicBytes("http://8.8.8.8/big", { maxBytes: 1024 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ResponseTooLargeError);
+    expect(err).toMatchObject({ url: "http://8.8.8.8/big", maxBytes: 1024 });
+    expect(DOCUMENT_MAX_DOWNLOAD_BYTES).toBe(50 * 1024 * 1024);
   });
 
   it("is what the text form reads through", async () => {
