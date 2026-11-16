@@ -113,7 +113,7 @@ export default async function OutboundPage() {
             holds it, any reason given and since when. Nothing else of the page.
           </li>
           <li>
-            The verdict with its confidence, what kinds of evidence it was made on, that each source exists, how the page was made, and the
+            The verdict with any credence, what kinds of evidence it was made on, that each source exists, how the page was made, and the
             redaction policy in full.
           </li>
           <li>

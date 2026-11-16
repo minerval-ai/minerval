@@ -165,7 +165,7 @@ export default async function AskShowingPage({ searchParams }: { searchParams: P
               The gate&rsquo;s settings, and whether what is released outside is sent as it is released, are on <Link href="/gates">Gates</Link>.
             </p>
             <p>
-              Some things are shown whenever the page is shown, and nothing is removed from them: the verdict with its confidence, what
+              Some things are shown whenever the page is shown, and nothing is removed from them: the verdict with any credence, what
               kinds of evidence it was made on, that each source exists and whether an outside party supplied it, how the page was made, and
               how many passages were removed under each category. Holding them holds the whole page. The <Link href="/redaction-policies">redaction policy</Link> for the
               boundary lists them, and everyone the page is shown to can read that policy in full.

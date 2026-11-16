@@ -91,9 +91,6 @@ function Missing({ id }: { id: string }) {
   );
 }
 
-function pct(n: number | null): string {
-  return typeof n === "number" ? n.toFixed(2) : "–";
-}
 
 function NodeCard({ node }: { node: PageNodeView }) {
   return (
@@ -104,9 +101,6 @@ function NodeCard({ node }: { node: PageNodeView }) {
       <div className="card-foot">
         <Judgment node={node} />
         {node.kind !== "claim" && <span className="tag kind">{node.kind}</span>}
-        {typeof node.assessment_confidence === "number" && (
-          <span className="kept-fact">confidence {pct(node.assessment_confidence)}</span>
-        )}
         {node.assessed_at && <span className="kept-fact">assessed {fmtDate(node.assessed_at)}</span>}
         <Moved node={node} />
       </div>
@@ -114,7 +108,9 @@ function NodeCard({ node }: { node: PageNodeView }) {
   );
 }
 
-type SortKey = "page" | "status" | "confidence";
+// No confidence column: verdict confidence is not shown to readers (§10),
+// who took it for a credence.
+type SortKey = "page" | "status";
 
 function statusRank(node: PageNodeView): number {
   if (node.kind !== "claim" || !node.assessment_status) return STATUS_ORDER.length;
@@ -128,8 +124,7 @@ function NodesTable({ ids, nodes }: { ids: string[]; nodes: Page["nodes"] }) {
   const rows = useMemo(() => {
     const held = ids.map((id) => nodes[id]).filter((n): n is PageNodeView => !!n);
     if (sort === "page") return held;
-    const value = (n: PageNodeView) =>
-      sort === "status" ? -statusRank(n) : (n.assessment_confidence ?? -1);
+    const value = (n: PageNodeView) => -statusRank(n);
     return [...held].sort((a, b) => (down ? value(b) - value(a) : value(a) - value(b)));
   }, [ids, nodes, sort, down]);
   const missing = ids.filter((id) => !nodes[id]);
@@ -159,7 +154,6 @@ function NodesTable({ ids, nodes }: { ids: string[]; nodes: Page["nodes"] }) {
           <tr>
             {head("page", "Node")}
             {head("status", "Judgment")}
-            {head("confidence", "Confidence")}
           </tr>
         </thead>
         <tbody>
@@ -173,7 +167,6 @@ function NodesTable({ ids, nodes }: { ids: string[]; nodes: Page["nodes"] }) {
                 <Judgment node={n} />
                 <Moved node={n} />
               </td>
-              <td>{pct(n.assessment_confidence)}</td>
             </tr>
           ))}
         </tbody>

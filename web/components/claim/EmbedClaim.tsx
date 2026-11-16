@@ -8,7 +8,7 @@ import { SITE_ORIGIN, badgeMarkdown, iframeSnippet, scriptSnippet } from "@/lib/
 // embed (a quotation that becomes the card and sizes itself), the bare
 // iframe (for tools that take no script), and the badge (an image, for a
 // README). All three are served from the claim's card, so what they show is
-// the status with its confidence, dispute beside it, and an "as of" date.
+// the status, dispute beside it, and an "as of" date.
 // Sits with "Cite this claim": both carry the claim out of the graph.
 
 export function EmbedClaim({ claimId, text, kind }: { claimId: string; text: string; kind?: string }) {

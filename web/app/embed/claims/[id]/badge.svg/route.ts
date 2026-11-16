@@ -3,8 +3,8 @@ import { isEmbeddableId } from "@/lib/embed";
 import { renderBadge, renderBadgeNotice } from "@/lib/embed-render";
 
 // The badge: a claim's judgment in one line, as a small image for a README
-// or a forum post. It still says the judgment whole (status, confidence,
-// dispute), and its title carries the "as of" date.
+// or a forum post. It still says the judgment whole (status and dispute),
+// and its title carries the "as of" date.
 
 function svg(body: string, status: number, cache: string): Response {
   return new Response(body, {

@@ -9,7 +9,7 @@ import { fmtDate } from "./format";
 // The graph's judgment of a node as an embed states it: the embed page, the
 // badge and the oEmbed endpoint all read this, so a claim shown on someone
 // else's site says what its own page says. The rule is the page's (§10): a
-// status goes with its confidence, dispute is reported beside it and never in
+// status goes with its dispute, reported beside it and never in
 // its place, and a node with no current judgment reads as unassessed, not as
 // a verdict. Every label is one the claim page already uses (lib/ontology.ts,
 // lib/quantity.ts); an embed must not coin one of its own.

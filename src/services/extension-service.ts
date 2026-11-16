@@ -79,7 +79,8 @@ export interface PageAnnotation {
   verdict: AnnotationVerdict;
   /** One-line reader-facing explanation (hover card). */
   why: string;
-  confidence: number;
+  /** The assessor's confidence in the verdict; null where no verdict was judged (a claim the graph doesn't hold). */
+  confidence: number | null;
   /** Whether the page affirms, denies, or merely poses the canonical claim. */
   stance: MatchedInstanceStance;
   /**
@@ -94,7 +95,8 @@ export interface PageAnnotation {
     id: string;
     canonical_form: string;
     status: string;
-    status_confidence: number;
+    /** Null while the node has no assessment: not yet assessed is not 0. */
+    status_confidence: number | null;
     subclaim_count: number;
     url: string;
     /** Present only where more than one judgment of the node is in force for the asker: what is given is the most recently made (judgment-version-service.ts). */
@@ -232,7 +234,7 @@ export function buildAnnotations(input: {
       claimId: string;
       canonicalForm: string;
       status: string;
-      statusConfidence: number;
+      statusConfidence: number | null;
       subclaimCount: number;
       claimUrl: string;
       judgmentsInForce?: number;
@@ -255,7 +257,7 @@ export function buildAnnotations(input: {
         why: c.undecided
           ? "Minerval could not decide whether this claim is in the graph."
           : "This claim isn't in the Minerval graph yet.",
-        confidence: 0,
+        confidence: null,
         stance: c.stance,
         proposed_canonical_form: c.proposedCanonicalForm ?? null,
         claim: null,
@@ -269,7 +271,7 @@ export function buildAnnotations(input: {
       // If the assessor dropped the claim, fail safe to no markup.
       verdict: (v?.verdict ?? "fine") as AnnotationVerdict,
       why: v?.why ?? "",
-      confidence: v?.confidence ?? 0,
+      confidence: v?.confidence ?? null,
       stance: c.stance,
       proposed_canonical_form: null,
       claim: {
@@ -294,7 +296,8 @@ export interface MatchedClaim {
   status: string;
   /** Whether the node has a current assessment, estimate or standing at all. */
   assessed: boolean;
-  statusConfidence: number;
+  /** A claim's confidence in its status; null when it has no assessment, and for the other kinds. */
+  statusConfidence: number | null;
   /**
    * The reader-facing summary of the current assessment, estimate or
    * standing (§12), not the internal trace. An older record with no summary
@@ -357,7 +360,7 @@ export async function loadMatchedClaim(claimId: string): Promise<MatchedClaim | 
     canonicalForm: claim.text,
     status: assessment?.status ?? "unknown",
     assessed: !!assessment,
-    statusConfidence: assessment?.confidence ?? 0,
+    statusConfidence: assessment?.confidence ?? null,
     summary: readerSummary(assessment?.summary, assessment?.reasoningTrace),
     definition: null,
     estimate: null,

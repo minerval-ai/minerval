@@ -52,7 +52,6 @@ export function TargetPin({ arm, claimId, graph, index, nav, direction }: { arm:
       <p className={s.nowMeta}>
         <Swatch status={c?.status ?? null} /> {meta.label}
         {c?.credence != null ? <> · credence {c.credence.toFixed(2)}</> : null}
-        {c?.confidence != null ? <> · verdict confidence {c.confidence.toFixed(2)}</> : null}
       </p>
     </div>
   );
