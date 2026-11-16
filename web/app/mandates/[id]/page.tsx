@@ -14,7 +14,7 @@ import { MandateRecord } from "../../../components/MandateRecord";
 import { MastheadHeight } from "../../../components/MastheadHeight";
 import { AskBox } from "../../../components/AskBox";
 import { PageBack, PageHead } from "@/components/PageHead";
-import { Sheet, Prose, FoldedProse, FoldedNote } from "../../../components/mandate/Sheet";
+import { Sheet, Prose, FoldedNote } from "../../../components/mandate/Sheet";
 import { CompletedWork } from "../../../components/mandate/CompletedWork";
 import { PlanSection } from "../../../components/mandate/PlanSection";
 import { AgentsSection } from "../../../components/mandate/AgentsSection";
@@ -27,12 +27,13 @@ import { ContributeBox } from "./ContributeBox";
 export const metadata: Metadata = { title: "Mandate · Minerval" };
 export const dynamic = "force-dynamic";
 
-// A mandate's page. The mandate itself (its title, objective and strategy)
-// is a document someone wrote, and is set as one: a sheet with a byline.
-// Under it the page reports, in sections that stay reachable from a bar that
-// follows the reader down: what the mandate has finished, what is happening
-// now, its plan, its agents, its spending, and its history. Text an agent
-// wrote is always on a sheet with a byline; everything else is the page.
+// A mandate's page. It opens on the title and the figures, so a reader sees
+// where the mandate stands before anything else; what only its manager sees
+// follows in one row. Then, in sections that stay reachable from a bar that
+// follows the reader down: what is happening now, the mandate itself (its
+// objective and, folded, its strategy), its plan, its agents, its spending,
+// its completed work, and its history. Text an agent wrote always carries a
+// byline; everything else is the page.
 
 const STATE_LABEL: Record<string, string> = {
   planning: "Being drafted",
@@ -67,15 +68,45 @@ function OwlFigure({ value }: { value: number }) {
   );
 }
 
-function funderLine(m: MandateDetailView): string {
-  if (m.is_platform) return "Run by Minerval.";
-  if (!m.funder) return `Managed by ${m.manager}.`;
+/**
+ * Who funds the mandate, in one short line under its title. A declared stake
+ * is the funder's own words and can run long, so it is one click away rather
+ * than in the line.
+ */
+function FunderLine({ mandate: m }: { mandate: MandateDetailView }) {
+  if (m.is_platform) return <p className="acct-note mnd-funder">Run by Minerval.</p>;
+  if (!m.funder) return <p className="acct-note mnd-funder">Managed by {m.manager}.</p>;
   if (!m.funder.declared) {
-    return `Funded by ${m.funder.shown_as}, before funders were asked to declare a stake.`;
+    return (
+      <p className="acct-note mnd-funder">
+        Funded by {m.funder.shown_as}, before funders were asked to declare a stake.
+      </p>
+    );
   }
-  return m.funder.stake
-    ? `Funded by ${m.funder.shown_as}, who declared a stake in its subject: ${m.funder.stake}.`
-    : `Funded by ${m.funder.shown_as}, who declared no stake in its subject.`;
+  if (!m.funder.stake) {
+    return <p className="acct-note mnd-funder">Funded by {m.funder.shown_as}, who declared no stake in its subject.</p>;
+  }
+  return (
+    <details className="acct-note mnd-funder">
+      <summary>
+        Funded by {m.funder.shown_as} · <span className="mnd-funder-open">what the funder declared about its stake</span>
+      </summary>
+      <p>Its declared stake in the subject: {m.funder.stake}</p>
+    </details>
+  );
+}
+
+/**
+ * The start of a note, to stand in one line: its first sentence, or as much
+ * of it as fits. The whole note is one click away.
+ */
+function noteOpening(text: string, max = 180): { head: string; cut: boolean } {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const end = flat.search(/[.!?](\s|$)/);
+  const sentence = end >= 0 ? flat.slice(0, end + 1) : flat;
+  if (sentence.length <= max) return { head: sentence, cut: sentence.length < flat.length };
+  const at = flat.lastIndexOf(" ", max);
+  return { head: `${flat.slice(0, at > 0 ? at : max)}…`, cut: true };
 }
 
 /** The mandate's longer sections, each shown only where it has one. */
@@ -90,6 +121,27 @@ function mandateSections(m: MandateDetailView, features: Features): Array<[strin
     ["What every funded claim says", t.disclosure],
   ];
   return all.filter((e): e is [string, string] => !!e[1]);
+}
+
+/** Its Grantmaker's latest note to the manager: its opening, and the rest folded. */
+function ManagerNote({ at, text }: { at: string; text: string }) {
+  const { head, cut } = noteOpening(text);
+  if (!cut) {
+    return (
+      <p className="acct-note">
+        {dateish(at)}: {text}
+      </p>
+    );
+  }
+  return (
+    <details className="acct-note mnd-strip-note">
+      <summary>
+        {dateish(at)}: <span className="mnd-strip-head">{head}</span>{" "}
+        <span className="mnd-strip-more" data-closed="Read the note" data-open="Hide" />
+      </summary>
+      <p>{text}</p>
+    </details>
+  );
 }
 
 /** What only the mandate's manager sees: what waits on them, and what they can do. */
@@ -114,15 +166,11 @@ function ManagerStrip({ mandate }: { mandate: MandateDetailView }) {
   return (
     <section className="mnd-strip" aria-label="For you, the manager">
       <div className="mnd-strip-say">
-        <div className="sc">
-          You manage this mandate <span className="mnd-strip-only">only you see this</span>
-        </div>
-        <p>{head}</p>
-        {note && mandate.status === "active" && (
-          <p className="acct-note">
-            {dateish(note.at)}: {note.note}
-          </p>
-        )}
+        <p>
+          <span className="sc mnd-strip-who">You manage this</span>
+          {head}
+        </p>
+        {note && mandate.status === "active" && <ManagerNote at={note.at} text={note.note} />}
       </div>
       {open && (
         <div className="mnd-strip-do">
@@ -421,6 +469,66 @@ function NowSection({
   );
 }
 
+/**
+ * The mandate itself: its objective at reading width, the rest of its text
+ * folded under it, and its strategy folded below that. It sits under "Now"
+ * because a reader coming back wants where it stands; the objective is one
+ * click up the bar.
+ */
+function MandateSection({ mandate, sections }: { mandate: MandateDetailView; sections: Array<[string, string]> }) {
+  return (
+    <section className="acct-section mnd-mandate" id="mandate">
+      <div className="acct-head">
+        <h2>Mandate</h2>
+        <span className="mnd-by">
+          {mandate.platform_approval ? (
+            <>
+              Drafted by its Grantmaker and funded under a{" "}
+              <a href={mandate.platform_approval.approval_url}>public approval</a>
+            </>
+          ) : (
+            "Drafted by its Grantmaker in conversation with the funder, who approved it by funding it"
+          )}
+        </span>
+      </div>
+      <div className="mnd-objective">
+        {mandate.objective ? <Prose text={mandate.objective} /> : <p className="acct-note">No objective is written yet.</p>}
+      </div>
+      <p className="acct-note mnd-tagline">A mandate decides which work gets done, not how it comes out.</p>
+      {sections.length > 0 && (
+        <details className="mnd-fold">
+          <summary>
+            <span>
+              <strong>The rest of the mandate</strong>{" "}
+              <span className="mnd-fold-what">{sections.map(([h]) => h.toLowerCase()).join(", ")}</span>
+            </span>
+          </summary>
+          <div className="mnd-fold-body">
+            {sections.map(([heading, body]) => (
+              <div key={heading}>
+                <div className="sc mnd-sub">{heading}</div>
+                <Prose text={body} />
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      {mandate.strategy && (
+        <details className="mnd-fold">
+          <summary>
+            <span>
+              <strong>Strategy</strong> <span className="mnd-fold-what">how its Grantmaker goes about it</span>
+            </span>
+          </summary>
+          <div className="mnd-fold-body">
+            <Prose text={mandate.strategy} />
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
 function HistorySection({ mandate }: { mandate: MandateDetailView }) {
   const started = ["active", "completed", "cancelled"].includes(mandate.status);
   const updates = mandate.updates_total ?? 0;
@@ -574,59 +682,19 @@ export default async function MandatePage({
           {STATE_LABEL[mandate.status] ?? mandate.status}
           {mandate.budget_status === "paused_budget" && live ? " · budget spent" : ""}
         </span>
-        <span className="acct-note">{funderLine(mandate)}</span>
       </div>
-
-      {mandate.is_manager && <ManagerStrip mandate={mandate} />}
-
-      <Sheet
-        id="mandate"
-        className="mnd-mandate"
-        label="The mandate"
-        by={
-          mandate.platform_approval ? (
-            <>
-              Drafted by its Grantmaker and funded under a{" "}
-              <a href={mandate.platform_approval.approval_url}>public approval</a>
-            </>
-          ) : (
-            "Drafted by its Grantmaker in conversation with the funder, who approved it by funding it"
-          )
-        }
-      >
+      <div className="mnd-title">
         <PageHead title={mandate.title} variant="statement" />
-        <div className="mnd-mandate-cols">
-          <div className="mnd-objective">
-            {mandate.objective ? <Prose text={mandate.objective} /> : <p className="acct-note">No objective is written yet.</p>}
-            {sections.length > 0 && (
-              <details className="mnd-more mnd-rest">
-                <summary>The rest of the mandate: {sections.map(([h]) => h.toLowerCase()).join(", ")}</summary>
-                {sections.map(([heading, body]) => (
-                  <div key={heading}>
-                    <div className="sc mnd-sub">{heading}</div>
-                    <Prose text={body} />
-                  </div>
-                ))}
-              </details>
-            )}
-          </div>
-          {mandate.strategy && (
-            <aside className="mnd-strategy">
-              <div className="sc">
-                Strategy <span className="mnd-strategy-how">how its Grantmaker goes about it</span>
-              </div>
-              <FoldedProse text={mandate.strategy} />
-            </aside>
-          )}
-        </div>
-      </Sheet>
-      <p className="acct-note mnd-tagline">A mandate decides which work gets done, not how it comes out.</p>
+        <FunderLine mandate={mandate} />
+      </div>
 
       <Figures mandate={mandate} budget={budget} running={running} />
 
+      {mandate.is_manager && <ManagerStrip mandate={mandate} />}
+
       <nav className="acct-nav" aria-label="On this page">
-        <a href="#mandate">The mandate</a>
         <a href="#now">Now</a>
+        <a href="#mandate">Mandate</a>
         <a href="#actions">Actions</a>
         <a href="#agents">Agents</a>
         <a href="#spending">Spending</a>
@@ -636,6 +704,7 @@ export default async function MandatePage({
       </nav>
 
       <NowSection mandate={mandate} allocation={allocation} />
+      <MandateSection mandate={mandate} sections={sections} />
       <Suspense fallback={<SectionReading id="actions" title="Actions" />}>
         <PlanSection mandate={mandate} view={view} budget={budget} />
       </Suspense>
