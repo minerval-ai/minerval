@@ -21,7 +21,7 @@
  * read is capped in size.
  */
 import { rawQuery } from "../db/client.js";
-import { fetchPublicBytes, fetchPublicUrl, type PublicBody } from "./url-guard.js";
+import { fetchPublicBytes, fetchPublicUrl, HttpStatusError, type PublicBody } from "./url-guard.js";
 import { fetchRuleApplies, noteGiven, noteGivenIn } from "./given-addresses.js";
 import { parseDoi } from "./identifiers.js";
 import { bodyToText, looksLikePdf, windowText, type TextWindow } from "./document-text.js";
@@ -65,6 +65,13 @@ export interface DoiCheck {
   updates: CrossrefUpdate[];
   /** Works this one updates (set when the DOI is itself a notice). */
   updates_to: CrossrefUpdate[];
+  /**
+   * Set when Crossref could not be read, and then `found: false` or an
+   * empty `updates` is no finding (#1034); `retryable` says whether asking
+   * again later could help.
+   */
+  problem?: string;
+  retryable?: boolean;
 }
 
 type CrossrefWork = {
@@ -99,21 +106,134 @@ function updatesOf(w: CrossrefWork): CrossrefUpdate[] {
   }));
 }
 
-async function crossrefJson<T>(path: string): Promise<T | null> {
-  // Crossref's own address, with a path this file builds: a DOI of checked
-  // shape, a date, a fixed filter, or the words of a search, which go to
-  // Crossref as a search query goes to a search engine.
-  const body = await fetchPublicUrl(`${CROSSREF}${path}`, {
-    userAgent: USER_AGENT,
-    notFromTheRun: "Crossref's API at a path built here",
-  }).catch(
-    () => null
-  );
-  if (!body) return null;
-  try {
-    return JSON.parse(body) as T;
-  } catch {
-    return null;
+/** Why a Crossref read came back empty-handed, worded for the agent that asked. */
+export interface CrossrefFailure {
+  ok: false;
+  problem: string;
+  /** Whether asking again later could succeed: false for a refusal that will not change. */
+  retryable: boolean;
+  /** How many times Crossref was asked before giving up. */
+  attempts: number;
+}
+
+type CrossrefRead<T> = { ok: true; data: T; attempts: number } | CrossrefFailure;
+
+/**
+ * At most this many requests per Crossref read. A hard limit, not a
+ * budget: Crossref reads are unmetered, so no money bounds them, and a
+ * caller is waiting on the result (an agent's tool call, the retraction
+ * poll), so a read that keeps failing has to end and say so.
+ */
+const CROSSREF_ATTEMPTS = 3;
+/** The pause before the second and the third attempt. */
+const CROSSREF_BACKOFF_MS = [500, 2_000];
+/**
+ * The longest Retry-After waited out. Crossref's rate limiter asks for
+ * seconds; a longer ask is not waited out with a caller waiting, but
+ * reported, with the wait it named.
+ */
+const CROSSREF_MAX_RETRY_AFTER_MS = 5_000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** Retry-After in milliseconds (seconds or an HTTP date), or null when absent or unreadable. */
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const seconds = Number(header.trim());
+  if (header.trim() !== "" && Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? null : Math.max(0, at - Date.now());
+}
+
+/**
+ * Whether a failed fetch may pass on asking again: a rate limit, a server
+ * error, or the network. A timeout is not asked again, having already
+ * kept the caller waiting the fetcher's full minute; a refused address, a
+ * label the open web is not cleared for, or a 4xx other than 408 and 429
+ * will not change.
+ */
+function isTransient(err: unknown): boolean {
+  if (err instanceof HttpStatusError) return err.status === 408 || err.status === 429 || err.status >= 500;
+  // fetch() reports a network failure (refused, reset, DNS mid-flight) as a TypeError.
+  return err instanceof TypeError;
+}
+
+function isTimeout(err: unknown): boolean {
+  return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+}
+
+const messageOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/**
+ * Read one Crossref JSON path, asking again on a failure that may pass
+ * (#1034): a 429, a 5xx or a network error is retried after a short
+ * pause, or after the server's Retry-After when that is short. Anything
+ * else, and a failure that outlasts the attempts, comes back as a
+ * CrossrefFailure that says what happened and whether trying later could
+ * help.
+ */
+async function crossrefJson<T>(path: string): Promise<CrossrefRead<T>> {
+  for (let attempts = 1; ; attempts++) {
+    let body: string;
+    try {
+      // Crossref's own address, with a path this file builds: a DOI of checked
+      // shape, a date, a fixed filter, or the words of a search, which go to
+      // Crossref as a search query goes to a search engine.
+      body = await fetchPublicUrl(`${CROSSREF}${path}`, {
+        userAgent: USER_AGENT,
+        notFromTheRun: "Crossref's API at a path built here",
+      });
+    } catch (err) {
+      if (isTimeout(err)) {
+        return {
+          ok: false,
+          problem: "Crossref did not answer within a minute; try again later or leave a note.",
+          retryable: true,
+          attempts,
+        };
+      }
+      if (!isTransient(err)) {
+        return {
+          ok: false,
+          problem: `Crossref could not be read (${messageOf(err)}); asking again will not change that.`,
+          retryable: false,
+          attempts,
+        };
+      }
+      const asked = err instanceof HttpStatusError ? retryAfterMs(err.retryAfter) : null;
+      if (asked !== null && asked > CROSSREF_MAX_RETRY_AFTER_MS) {
+        return {
+          ok: false,
+          problem:
+            `Crossref is limiting requests and asked for a wait of ${Math.ceil(asked / 1000)}s ` +
+            `(${messageOf(err)}); try again after that or leave a note.`,
+          retryable: true,
+          attempts,
+        };
+      }
+      if (attempts >= CROSSREF_ATTEMPTS) {
+        return {
+          ok: false,
+          problem:
+            `Crossref could not be read (${messageOf(err)}), on any of ${attempts} attempts; ` +
+            "this is usually brief, so try again in a few minutes or leave a note.",
+          retryable: true,
+          attempts,
+        };
+      }
+      await sleep(Math.max(asked ?? 0, CROSSREF_BACKOFF_MS[attempts - 1] ?? 0));
+      continue;
+    }
+    try {
+      return { ok: true, data: JSON.parse(body) as T, attempts };
+    } catch {
+      return {
+        ok: false,
+        problem: "Crossref answered with something that is not JSON; try again later or leave a note.",
+        retryable: true,
+        attempts,
+      };
+    }
   }
 }
 
@@ -148,16 +268,18 @@ export async function checkDoi(rawDoi: string): Promise<DoiCheck> {
       `/works?filter=updates:${encodeURIComponent(doi)}&rows=10&select=DOI,title,type,update-to,source`
     ),
   ]);
-  const w = work?.message;
+  const failed = !work.ok ? work : !notices.ok ? notices : null;
+  const unread = failed ? { problem: failed.problem, retryable: failed.retryable } : {};
+  const w = work.ok ? work.data.message : undefined;
   const updates: CrossrefUpdate[] = [];
-  for (const n of notices?.message?.items ?? []) {
+  for (const n of (notices.ok ? notices.data.message?.items : undefined) ?? []) {
     for (const u of updatesOf(n)) {
       if (u.doi === doi) {
         updates.push({ ...u, doi: (n.DOI ?? "").toLowerCase() });
       }
     }
   }
-  if (!w) return { ...empty, updates };
+  if (!w) return { ...empty, updates, ...unread };
   // Crossref holds this DOI, so its resolver address is one the run was
   // given, where runs are held to those (given-addresses.ts).
   await noteGiven([`https://doi.org/${doi}`], "identifier");
@@ -175,6 +297,7 @@ export async function checkDoi(rawDoi: string): Promise<DoiCheck> {
     container: w["container-title"]?.[0]?.trim() || null,
     updates,
     updates_to: updatesOf(w),
+    ...unread,
   };
 }
 
@@ -231,7 +354,7 @@ export interface RetractionPage {
  * added to Crossref since `since`, newest first, optionally narrowed by a
  * free-text query, with the total so a reader knows how much is left.
  * Both publisher-deposited and Retraction Watch entries come back; `source`
- * says which. Null when Crossref could not be read.
+ * says which. When Crossref could not be read, a CrossrefFailure saying why.
  */
 export async function recentRetractionsPage(input: {
   since: Date;
@@ -239,7 +362,7 @@ export async function recentRetractionsPage(input: {
   types?: RetractionType[];
   rows?: number;
   offset?: number;
-}): Promise<RetractionPage | null> {
+}): Promise<RetractionPage | CrossrefFailure> {
   const filter = retractionFilter(input.since, input.types);
   const q = input.query?.trim() ? `&query=${encodeURIComponent(input.query.trim())}` : "";
   const rows = Math.min(200, Math.max(1, input.rows ?? 50));
@@ -249,9 +372,18 @@ export async function recentRetractionsPage(input: {
     `/works?filter=${encodeURIComponent(filter)}${q}&rows=${rows}&offset=${offset}` +
       `&sort=updated&order=desc&select=${NOTICE_SELECT}`
   );
-  if (!res?.message) return null;
-  const items = res.message.items ?? [];
-  const total = typeof res.message["total-results"] === "number" ? res.message["total-results"] : null;
+  if (!res.ok) return res;
+  const message = res.data.message;
+  if (!message) {
+    return {
+      ok: false,
+      problem: "Crossref answered without a list of notices; try again later or leave a note.",
+      retryable: true,
+      attempts: res.attempts,
+    };
+  }
+  const items = message.items ?? [];
+  const total = typeof message["total-results"] === "number" ? message["total-results"] : null;
   const end = offset + items.length;
   return {
     total,
@@ -268,7 +400,8 @@ export async function recentRetractions(input: {
   types?: RetractionType[];
   rows?: number;
 }): Promise<RetractionNotice[]> {
-  return (await recentRetractionsPage(input))?.rows ?? [];
+  const page = await recentRetractionsPage(input);
+  return "ok" in page ? [] : page.rows;
 }
 
 export interface RetractionWindow {
@@ -307,14 +440,15 @@ export async function retractionNoticesSince(input: {
       `/works?filter=${encodeURIComponent(filter)}&rows=${rows}` +
         `&cursor=${encodeURIComponent(cursor)}&sort=updated&order=asc&select=${NOTICE_SELECT}`
     );
-    if (!res?.message) return { notices, complete: false, readThrough };
-    const items = res.message.items ?? [];
+    const message = res.ok ? res.data.message : undefined;
+    if (!message) return { notices, complete: false, readThrough };
+    const items = message.items ?? [];
     for (const n of items) {
       notices.push(toNotice(n));
       const at = n.deposited?.["date-time"];
       if (at) readThrough = new Date(at);
     }
-    const next = res.message["next-cursor"];
+    const next = message["next-cursor"];
     if (items.length < rows || !next) return { notices, complete: true, readThrough };
     cursor = next;
   }

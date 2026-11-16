@@ -40,6 +40,23 @@ export class UnsafeUrlError extends Error {
   }
 }
 
+/**
+ * A response that was neither a success nor a redirect. Carries the status
+ * and any Retry-After the server sent, so a caller can tell a passing
+ * refusal (429, 5xx) from one that will not change (#1034).
+ */
+export class HttpStatusError extends Error {
+  constructor(
+    readonly url: string,
+    readonly status: number,
+    /** The Retry-After header as sent (seconds or an HTTP date), or null. */
+    readonly retryAfter: string | null
+  ) {
+    super(`Failed to fetch ${url}: ${status}`);
+    this.name = "HttpStatusError";
+  }
+}
+
 function ipv4ToInt(ip: string): number {
   const [a, b, c, d] = ip.split(".").map(Number);
   return ((a! << 24) | (b! << 16) | (c! << 8) | d!) >>> 0;
@@ -197,7 +214,8 @@ export async function fetchPublicBytes(rawUrl: string, init: PublicFetchInit = {
       continue;
     }
     if (!response.ok) {
-      throw new Error(`Failed to fetch ${current}: ${response.status}`);
+      await response.arrayBuffer().catch(() => undefined);
+      throw new HttpStatusError(current, response.status, response.headers.get("retry-after"));
     }
     const contentType = response.headers.get("content-type");
     const reader = response.body?.getReader();

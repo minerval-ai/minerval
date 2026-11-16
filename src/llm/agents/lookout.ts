@@ -338,7 +338,8 @@ async function runLookoutImpl(input: {
         "count, and every notice that updates it (retractions, " +
         "corrections, expressions of concern), each with the notice's DOI " +
         "and date. Accepts a bare DOI or a doi.org URL. An empty `updates` list " +
-        "means nothing is on record against it.",
+        "means nothing is on record against it, unless `problem` is set: then " +
+        "Crossref could not be read, and `retryable` says whether trying later can help.",
       input_schema: {
         type: "object" as const,
         properties: { doi: { type: "string" } },
@@ -353,7 +354,9 @@ async function runLookoutImpl(input: {
         "optionally narrowed by a free-text query, 50 a page with the total " +
         "and next_offset. Each entry names the retracted DOI(s), so you can " +
         "check them against scope_sources. Use this for a field-wide watch; " +
-        "for one paper use check_doi.",
+        "for one paper use check_doi. A passing Crossref failure is retried a " +
+        "couple of times first; one that remains comes back as ok: false with " +
+        "the problem, the attempts made, and whether trying later can help.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -644,9 +647,8 @@ async function runLookoutImpl(input: {
               rows: 50,
               offset: Number(toolInput.offset ?? 0),
             });
-            if (!page) {
-              return JSON.stringify({ ok: false, problem: "Crossref could not be read just now; try again or leave a note." });
-            }
+            // A failure says why, whether it was retried, and whether trying later can help (#1034).
+            if ("ok" in page) return JSON.stringify(page);
             return JSON.stringify({ days, ...page });
           }
           const feedResult = await feedTools.execute(name, toolInput);
