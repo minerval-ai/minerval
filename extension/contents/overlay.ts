@@ -156,6 +156,7 @@ const STYLE = `
   z-index: 2147483647; background: #fffef9; color: #222; border-left: 1px solid #b9b5a7;
   box-shadow: -2px 0 12px rgba(0,0,0,0.18); overflow-y: auto; padding: 18px 20px;
   font: 14px/1.55 Georgia, 'Times New Roman', serif;
+  overflow-wrap: anywhere;
 }
 .ep-panel h1 { font-size: 16px; margin: 0 0 4px; }
 .ep-panel h2 { font: 600 11px/1 -apple-system, system-ui, sans-serif; letter-spacing: 0.06em;
@@ -235,6 +236,25 @@ function verdictLabel(v: Verdict): string {
       return "";
   }
 }
+
+/**
+ * A claim proposed from this page that the graph has since taken in. The
+ * annotation keeps its "unknown" verdict so it stays marked under the same
+ * setting, but nothing judged the page's wording against the claim, and it is
+ * no longer true that the graph lacks it.
+ */
+function landedFromProposal(a: PageAnnotation): boolean {
+  return a.verdict === "unknown" && !!a.claim;
+}
+
+/** The line under a claim's name: what the page's passage is to the graph. */
+function headlineOf(a: PageAnnotation): string {
+  return landedFromProposal(a) ? "Proposed from this page · now in the graph" : verdictLabel(a.verdict);
+}
+
+const LANDED_NOTE =
+  "This was proposed from this page and the graph has taken it in. What follows is " +
+  "the graph's view of the claim, not a check of how this page words it.";
 
 /** How a recorded passage stands toward its node, in the page's terms. */
 function stanceNote(stance: string): string {
@@ -338,10 +358,10 @@ function showCard(box: HTMLElement, a: PageAnnotation): void {
   } else if (a.claim) {
     const status = a.claim.status;
     card.innerHTML = `
-      <div class="ep-status"><b class="ep-s-${esc(a.verdict)}">${esc(verdictLabel(a.verdict))}</b>
+      <div class="ep-status"><b class="ep-s-${esc(a.verdict)}">${esc(headlineOf(a))}</b>
         · graph status: <b class="ep-s-${esc(status)}">${esc(status)}</b></div>
       <div class="ep-canonical">${esc(a.claim.canonical_form)}</div>
-      <div class="ep-why">${esc(a.why)}</div>
+      <div class="ep-why">${esc(landedFromProposal(a) ? LANDED_NOTE : a.why)}</div>
       <div class="ep-hint">Click for evidence & decomposition</div>`;
   } else {
     const submitted = state.claimSubmissions[a.verbatim_text];
@@ -415,13 +435,13 @@ async function openPanel(a: PageAnnotation): Promise<void> {
       <span class="ep-badge ep-s-${esc(status)}">${esc(status)}</span>
     </div>
     <h1>${esc(a.claim.canonical_form)}</h1>
-    <div class="ep-muted">${esc(verdictLabel(a.verdict))}${
+    <div class="ep-muted">${esc(headlineOf(a))}${
       a.stance === "denies" ? " · this page argues against the claim above" : ""
     }</div>
+    ${landedFromProposal(a) ? `<div class="ep-muted">${esc(LANDED_NOTE)}</div>` : ""}
     <h2>On this page</h2>
     <div class="ep-quote">${esc(a.verbatim_text)}</div>
-    <h2>Assessment</h2>
-    <div>${esc(a.why)}</div>
+    ${landedFromProposal(a) || !a.why ? "" : `<h2>Assessment</h2><div>${esc(a.why)}</div>`}
     <div class="ep-detail"><p class="ep-muted">Loading decomposition & evidence…</p></div>
     <p><a href="${esc(a.claim.url)}" target="_blank" rel="noopener">Open this claim on minerval.ai →</a><br>
        <a href="${esc(contributeUrl(a.claim.url, a.verbatim_text))}" target="_blank" rel="noopener">Challenge it or add evidence →</a></p>`
