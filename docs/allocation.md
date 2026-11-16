@@ -106,8 +106,10 @@ mission would need:
 - **read back what its money did**: the briefing opens with what the
   mandate commissioned since the last review and how those runs used their
   budgets, by kind; the outcomes on the nodes it paid for; the petitions it
-  heard and how its officers answered; runs that spent their whole budget
-  without asking; its officers' decisions and what deciding cost; the
+  heard and how its officers answered; runs that spent their whole budget,
+  or went past it, without asking (a run counts as settled when its action
+  closes, though a fully spent allocation is never stamped released); its
+  officers' decisions and what deciding cost; the
   messages waiting on the nodes it pays for; and what its lookouts raised
   and commissioned (src/services/mandate-reflection-service.ts). It starts
   from what happened, not from scratch, and fixes causes in the operating
