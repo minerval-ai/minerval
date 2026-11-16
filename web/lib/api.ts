@@ -114,6 +114,7 @@ function pathSegment(id: string): string {
 }
 
 import type { PublishedPageSummary, PublishedPageView } from "./published";
+import type { ListedTool } from "./tool-catalog";
 
 async function apiGet<T>(path: string): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
@@ -539,6 +540,30 @@ export async function fetchAttempt(id: string): Promise<AttemptSummary | null> {
 // reader opens the cite panel, not with the page.
 export async function fetchClaimCitation(id: string): Promise<ClaimCitationPayload> {
   return apiGet<ClaimCitationPayload>(`/claims/${pathSegment(id)}/citation`);
+}
+
+// The MCP server's tools, as its own tools/list answers (/docs/tools). The
+// endpoint is stateless, so one JSON-RPC request with no initialize is a
+// whole exchange (src/routes/mcp.ts). It goes with the service key and, in a
+// members-only deployment, the viewer, so the list is what that viewer's
+// account would be offered.
+export async function fetchMcpTools(): Promise<ListedTool[]> {
+  if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  const options = await readOptions();
+  const res = await fetch(`${BASE}/mcp`, {
+    ...options,
+    method: "POST",
+    headers: {
+      ...(options.headers as Record<string, string>),
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+  });
+  if (!res.ok) throw new ApiError(`Minerval API ${res.status} for tools/list`, res.status, await errorCode(res));
+  const body = (await res.json()) as { result?: { tools?: ListedTool[] }; error?: { message?: string } };
+  if (!body.result?.tools) throw new Error(`Minerval API: tools/list answered ${body.error?.message ?? "no tools"}`);
+  return body.result.tools;
 }
 
 // The claim card: the judgment whole, in one small shape (the API's

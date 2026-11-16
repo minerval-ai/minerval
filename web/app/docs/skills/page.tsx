@@ -16,7 +16,6 @@ export default function SkillsIndex() {
   return (
     <div className="col-wide">
       <PageHead
-        back={{ href: "/docs", label: "docs" }}
         title="How the constitution applies in a domain"
         lede={
           <>

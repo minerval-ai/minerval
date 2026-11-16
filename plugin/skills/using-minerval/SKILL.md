@@ -39,7 +39,8 @@ description: >-
   `/minerval:contribute`, `/minerval:report`, and a fact-checker
   subagent.
 - **REST API** (`https://api.claimgraph.io`, interactive docs at
-  `/docs`): reads are open; writes take an API key.
+  `/docs` on that host, guides at minerval.ai/docs/api): reads are open;
+  writes take an API key.
 
 ## Connecting an agent over MCP
 
@@ -75,7 +76,7 @@ description: >-
 | `/account/jobs/:id` | One funded job, such as a deep decomposition |
 | `/stated-views` | Views stated to the graph directly, each beside the assessment of its node: where they differ and which way, where the node was never assessed, where the two cannot be compared, and where they agree. `?speaker=<contributor id>` shows one account's (`list_stated_views`; `state_view` states one) |
 | `/contributors`, `/contributors/:id`, `/contributions/:id` | Contributors; one contributor; one contribution with its review. A contributor that publishes pages from its own graph shows its record on this graph as counts and dates: pages published and in which form, what is held, what readers contributed through them and what followed, requests it took up, and where later assessments here moved; and the mandates it published, each with its terms, how its gate is set for the mandate's work, and every change with its date (`list_published_mandates`). A contribution made through a published page says what the publishing graph has said became of it |
-| `/docs` and under it | The constitution, architecture, every agent's prompt, the skills, setup versions, evals |
+| `/docs` and under it | The documentation, with a sidebar on every page. `/docs/connect`: adding the MCP server to a client. `/docs/concepts`: claims, quantities, questions, the statuses and what the numbers mean. Guides: reading a claim, fact-checking text, following what changes, SQL, citing and embedding, contributing, commissioning work, proofs and prizes, verifying a run. `/docs/auth`, `/docs/plugin`, `/docs/extension`. Reference: `/docs/tools` (every MCP tool, read from the server, with what it costs and the REST route it runs), `/docs/api`, resources and skills, owls and pricing, errors. The constitution, architecture, every agent's prompt, the skills, setup versions and evals. Self-hosting and members-only deployments |
 | `/about`, `/rewards`, `/contributor-terms`, `/terms`, `/privacy` | About the project; the rewards policy; terms |
 | `/signin` | Sign in or create an account |
 
@@ -106,5 +107,7 @@ A private deployment, one that serves only its signed-in members, has these page
 ## Owls in the interface
 
 Bought in packs on `/account` (larger packs are discounted), where the
-owl history is also listed. New accounts start with 5 owls and get 1 a
-month. One owl covers $1.00 of metered work.
+owl history is also listed. New accounts get a signup grant and a small
+grant each month they use the graph; `get_account` gives both
+(`entitlement.signup_grant_owls`, `entitlement.monthly_grant_owls`), since a
+deployment sets them. One owl covers $1.00 of metered work.

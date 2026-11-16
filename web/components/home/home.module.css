@@ -217,22 +217,15 @@
 .swDashed { border: 1px dashed var(--faint); background: transparent; }
 
 /* ----- MCP & API panel ----- */
-.tier { margin: 0 0 1.6rem; }
-.tier > .tierLabel { display: block; margin-bottom: 0.6rem; color: var(--faint); }
 .tools {
-  display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 1.4rem;
   background: var(--rule); border: 1px solid var(--rule);
   border-radius: 4px; overflow: hidden;
 }
-.tool { background: var(--paper-card); padding: 0.7rem 0.85rem; }
-.tool code {
-  font-family: var(--mono); font-size: 0.74rem; color: var(--ink);
-  background: var(--paper-sunk); border: 1px solid var(--rule-soft);
-  border-radius: 3px; padding: 0.04rem 0.3rem;
-}
-.tool p { font-size: 0.78rem; color: var(--muted); margin: 0.35rem 0 0; line-height: 1.45; }
-.toolsNote { font-family: var(--sans); font-size: 0.72rem; color: var(--faint); margin: 0.7rem 0 0; }
-.toolsNote code { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.tool { display: block; background: var(--paper-card); padding: 0.7rem 0.85rem; color: var(--ink); text-decoration: none; font-family: var(--sans); }
+.tool:hover { background: var(--paper-sunk); text-decoration: none; }
+.tool strong { font-size: 0.86rem; }
+.tool p { font-size: 0.78rem; color: var(--muted); margin: 0.3rem 0 0; line-height: 1.45; }
 
 .setup { margin: 1.9rem 0 0; }
 .setupTabs { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0 0 0.7rem; }

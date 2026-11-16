@@ -38,7 +38,8 @@ function pageRoutes(dir: string, prefix = ""): string[] {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     if (!statSync(path).isDirectory()) continue;
-    if (name === "api") continue;
+    // web/app/api holds route handlers, not pages; /docs/api is a page.
+    if (name === "api" && prefix === "") continue;
     // A route group "(name)" adds no path segment.
     const segment = /^\(.*\)$/.test(name) ? "" : `/${name.replace(/^\[(.+)\]$/, ":$1")}`;
     out.push(...pageRoutes(path, prefix + segment));

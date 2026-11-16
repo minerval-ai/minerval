@@ -12,19 +12,25 @@ import styles from "./home.module.css";
 
 // The three-surface tabs (issue #80): the same graph served three ways. The
 // graph tab embeds the live claim map (GraphView in embed mode); the extension
-// tab holds the annotated-web demo; the MCP & API tab lists the real MCP tools
-// (mirroring src/mcp/server.ts) with setup snippets per client.
+// tab holds the annotated-web demo; the MCP & API tab says what an agent can
+// do and what it costs, with a setup snippet per client, and leaves the tools
+// themselves to /docs/tools, which reads them from the server.
 
 type TabId = "graph" | "ext" | "mcp";
 type SetupId = "cc" | "cursor" | "claude" | "rest";
 
-const SETUPS: { id: SetupId; label: string; code: string }[] = [
+const SETUPS: { id: SetupId; label: string; code: string; note: string }[] = [
   {
     id: "cc", label: "Claude Code",
-    code: `claude mcp add --transport http minerval \\
-  https://api.claimgraph.io/mcp
-# Signs you in via OAuth on first use; or skip the
-# browser with --header "x-api-key: YOUR_KEY"`,
+    code: `claude mcp add --transport http minerval https://api.claimgraph.io/mcp`,
+    note: "Then run /mcp in Claude Code to sign in through the browser.",
+  },
+  {
+    id: "claude", label: "Claude.ai",
+    code: `Settings → Connectors → Add custom connector
+  Name  Minerval
+  URL   https://api.claimgraph.io/mcp`,
+    note: "Leave the OAuth client ID and secret empty: the connector registers itself and opens the sign-in page.",
   },
   {
     id: "cursor", label: "Cursor",
@@ -33,64 +39,30 @@ const SETUPS: { id: SetupId; label: string; code: string }[] = [
   "mcpServers": {
     "minerval": {
       "url": "https://api.claimgraph.io/mcp",
-      "headers": { "x-api-key": "YOUR_KEY" }
+      "headers": { "x-api-key": "<your key>" }
     }
   }
 }`,
-  },
-  {
-    id: "claude", label: "Claude.ai",
-    code: `# Claude.ai → Settings → Connectors → Add custom connector
-Name:  Minerval
-URL:   https://api.claimgraph.io/mcp
-# Leave the OAuth client ID/secret fields empty: the connector
-# registers itself and walks you through sign-in and consent.`,
+    note: "Uses an API key from your account page.",
   },
   {
     id: "rest", label: "REST",
-    code: `# Reads are open. Search, then walk a claim in both directions:
-GET  https://api.claimgraph.io/claims/search/inflation
-GET  https://api.claimgraph.io/claims/inflation-2022
-GET  https://api.claimgraph.io/claims/inflation-2022/trajectory
-
-# Down into what it rests on, up into what rests on it:
-GET  .../claims/inflation-2022?information_depth=standard&depth=3
-GET  .../claims/inflation-2022/dependents?depth=3
-
-# Agentic calls & writes authenticate with your key.
-# Proposals are reviewed before they join the graph:
-POST https://api.claimgraph.io/claims/propose
-     x-api-key: YOUR_KEY
-
-# Full OpenAPI schema & explorer: https://api.claimgraph.io/docs`,
+    code: `# Reads need no key. One claim's judgment, whole:
+curl https://api.claimgraph.io/claims/dc02e01f-ce69-4dbe-ba36-ed0e2e90d071/card`,
+    note: "Every route an account can call is also an MCP tool.",
   },
 ];
 
-const TIERS: { label: string; tools: { name: string; desc: string }[] }[] = [
-  {
-    label: "Free reads · no LLM work",
-    tools: [
-      { name: "search_claims", desc: "Hybrid semantic + keyword search over Minerval’s canonical claims, quantities, and questions." },
-      { name: "get_claim", desc: "Fetch a canonical claim: its form, current assessment, credence where stated, and reasoning." },
-      { name: "get_decomposition", desc: "Walk down: the subclaim tree a claim rests on, every node with its relation and verdict." },
-      { name: "get_dependents", desc: "Walk up: what rests on a claim, and so what would move if its verdict changed." },
-    ],
-  },
-  {
-    label: "Agentic · metered, quota-gated (runs the agents)",
-    tools: [
-      { name: "extract_claims", desc: "Run a passage through the Extractor to pull out the claims it asserts." },
-      { name: "match_claim", desc: "Run a free-text assertion through the Matcher to find its canonical claim, or learn it’s new." },
-      { name: "assess_text", desc: "Fact-check a passage: extract its claims, match each, and report their standing." },
-    ],
-  },
-  {
-    label: "Writes & status",
-    tools: [
-      { name: "submit_contribution", desc: "File a challenge, evidence, or a merge / split / edit proposal into the review pipeline." },
-      { name: "get_contribution_status", desc: "Check the review outcome of a contribution you submitted." },
-    ],
-  },
+// What an agent can do with the graph, and what each kind of call costs. The
+// tools themselves are listed on /docs/tools, read from the server, so this
+// tab names none it would have to keep current.
+const CAPABILITIES: { title: string; what: string; cost: string; href: string }[] = [
+  { title: "Read the graph", what: "search, cards, decomposition, dependents", cost: "free", href: "/docs/reading" },
+  { title: "Check text", what: "match, extract, assess", cost: "capped per call, settled to metered cost", href: "/docs/fact-checking" },
+  { title: "Follow changes", what: "the change stream and Correspondents' updates", cost: "free to read", href: "/docs/following" },
+  { title: "Contribute", what: "challenges, evidence, stated views", cost: "free, reviewed", href: "/docs/contributing" },
+  { title: "Commission work", what: "assessments, mandates, requests", cost: "a budget you set; what is not spent comes back", href: "/docs/commissioning" },
+  { title: "Verify", what: "run logs, setups, prompt hashes", cost: "free", href: "/docs/verifying" },
 ];
 
 const VERDICTS = ["verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown"];
@@ -199,36 +171,25 @@ export function Surfaces({
       <div id="panel-mcp" role="tabpanel" aria-labelledby="tab-mcp" hidden={tab !== "mcp"}>
         <div className={styles.panelCopy}>
           <p>
-            Point your AI at the graph. Minerval is a remote MCP server, so an agent
-            grounds its answers in claims already weighed and questions already
-            answered instead of re-deriving them, with the reasoning and evidence attached. The same graph is
-            a plain REST API.
+            Point your agent at the graph. It grounds its answers in claims already weighed,
+            with the reasoning and evidence attached, and reports them as the graph states
+            them. The same graph is a plain REST API.
           </p>
-          <a className={styles.cta} href="https://api.claimgraph.io/docs">API reference →</a>
+          <Link className={styles.cta} href="/docs/connect">Connect in two minutes →</Link>
           <span style={{ color: "var(--faint)" }}> · </span>
-          <Link className={styles.cta} href="/account">Get an API key</Link>
+          <Link className={styles.cta} href="/docs/tools">Every tool →</Link>
+          <span style={{ color: "var(--faint)" }}> · </span>
+          <Link className={styles.cta} href="/docs/api">REST API →</Link>
         </div>
 
-        {TIERS.map((tier) => (
-          <div className={styles.tier} key={tier.label}>
-            <span className={`sc ${styles.tierLabel}`}>{tier.label}</span>
-            <div className={styles.tools}>
-              {tier.tools.map((tool) => (
-                <div className={styles.tool} key={tool.name}>
-                  <code>{tool.name}</code>
-                  <p>{tool.desc}</p>
-                </div>
-              ))}
-              {tier.tools.length % 2 === 1 && <div className={styles.tool} aria-hidden />}
-            </div>
-          </div>
-        ))}
-        <p className={styles.toolsNote}>
-          Eight tools in all. The server also exposes two prompt templates
-          (<code>fact_check_document</code>, <code>check_assertion</code>) and read-only
-          resources (<code>claim://{"{id}"}</code> and a recently-updated feed) for
-          clients that support them.
-        </p>
+        <div className={styles.tools}>
+          {CAPABILITIES.map((c) => (
+            <Link className={styles.tool} key={c.title} href={c.href}>
+              <strong>{c.title}</strong>
+              <p>{c.what} · {c.cost}</p>
+            </Link>
+          ))}
+        </div>
 
         <div className={styles.setup}>
           <div className={styles.setupTabs} role="tablist" aria-label="Set up the MCP server">
@@ -246,8 +207,8 @@ export function Surfaces({
           </div>
           <pre className={styles.code}>{SETUPS.find((s) => s.id === setup)!.code}</pre>
           <p className={styles.setupNote}>
-            Reads are open; agentic tools are metered against your monthly grant. Keys are
-            minted at <Link href="/account">/account</Link>.
+            {SETUPS.find((s) => s.id === setup)!.note} Reading the graph is free;{" "}
+            <Link href="/docs/owls">owls and pricing</Link> has the rest.
           </p>
         </div>
       </div>
