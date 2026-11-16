@@ -78,6 +78,9 @@ describe("a stewarding item's budget and tier", () => {
     // An order that does not fit does not hold the plan, and the cost of that is said.
     expect(PLAN_KIND_RULES).toMatch(/never holds the ones after it/);
     expect(PLAN_KIND_RULES).toMatch(/can be passed over/);
+    // An ingest's size limit, with its reason, and that read_page meets the same one (#1068).
+    expect(PLAN_KIND_RULES).toMatch(/document over 50 MB is not fetched and the item fails/);
+    expect(PLAN_KIND_RULES).toMatch(/no budget bounds\); read_page meets the same limit/);
     // What "started" means, and what can change before then.
     expect(PLAN_KIND_RULES).toMatch(/started once its pass is running/);
     expect(AMEND_PLAN_ITEMS.description).toMatch(/started once its pass is running/);

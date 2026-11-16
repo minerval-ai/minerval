@@ -2048,6 +2048,16 @@ given address, because a source's address is fetched later by workers no
 run watches. The refusal says what counts as given and what to do instead:
 search, or `resolve_identifier`.
 
+The same function caps what it fetches, since a body is held whole in the
+memory of the process every agent runs on and nothing meters memory: 10 MiB
+for a page, a feed or a lookup, and 50 MiB (`DOCUMENT_MAX_DOWNLOAD_BYTES`)
+for a document read whole, by `read_page` or by an ingest (#1068). Both
+meet the one limit, so a URL `read_page` can read is one an ingest can
+fetch. The limit is stated in `read_page`'s description, in the plan's
+ingest rules and in `propose_ingest`, with its reason; a document over it
+is refused with the same reason and the smaller forms to look for instead
+(an HTML version, a landing page, its parts published separately).
+
 `resolve_identifier` exists because the rule costs research something: an
 agent can no longer write `https://doi.org/` in front of a DOI, or reach
 the next page of results by editing an address. The tool builds the

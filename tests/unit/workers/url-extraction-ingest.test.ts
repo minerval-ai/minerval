@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
   attempt: 1 as number | null,
   // How many more checks the run passes before it loses the hold.
   holdsFor: Infinity,
+  // The source's stored text; null has the job fetch it.
+  rawContent: "the text" as string | null,
 }));
 
 vi.mock("../../../src/db/client.js", () => ({
@@ -28,7 +30,7 @@ vi.mock("../../../src/db/client.js", () => ({
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: async () => [{ id: "src-1", rawContent: "the text", sourceType: "article", title: "T" }],
+          limit: async () => [{ id: "src-1", rawContent: h.rawContent, sourceType: "article", title: "T" }],
         }),
       }),
     }),
@@ -78,7 +80,10 @@ vi.mock("../../../src/services/curation-service.js", async (importOriginal) => (
   requestCuration: vi.fn(async () => ({ ok: true, requestId: "r", actionId: "a", repeat: false })),
 }));
 vi.mock("../../../src/services/owl-ledger-service.js", () => ({ settleMeteredCharge: vi.fn() }));
-vi.mock("../../../src/services/url-guard.js", () => ({ fetchPublicUrl: vi.fn() }));
+vi.mock("../../../src/services/url-guard.js", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  fetchPublicUrl: vi.fn(),
+}));
 vi.mock("../../../src/services/source-facts-service.js", () => ({ refreshSourceFactsOnce: async () => undefined }));
 vi.mock("../../../src/services/source-segment-service.js", () => ({ segmentSourceOnce: async () => undefined }));
 vi.mock("../../../src/services/ingest-focus-service.js", () => ({
@@ -97,6 +102,11 @@ import { requestAudit } from "../../../src/services/queue-service.js";
 import { updateJob } from "../../../src/services/job-service.js";
 import { matchClaim } from "../../../src/llm/agents/matcher.js";
 import { recordSourceKind } from "../../../src/services/source-service.js";
+import {
+  DOCUMENT_MAX_DOWNLOAD_BYTES,
+  ResponseTooLargeError,
+  fetchPublicUrl,
+} from "../../../src/services/url-guard.js";
 
 const proposal = (text: string, extra: Record<string, unknown> = {}) => ({
   verbatim_text: text,
@@ -143,6 +153,24 @@ beforeEach(() => {
   h.extractInput = null;
   h.attempt = 1;
   h.holdsFor = Infinity;
+  h.rawContent = "the text";
+});
+
+describe("fetching the document (#1068)", () => {
+  it("fetches under the document cap, and fails a document over it with the limit, its reason and what to ingest instead", async () => {
+    h.rawContent = null;
+    vi.mocked(fetchPublicUrl).mockRejectedValueOnce(
+      new ResponseTooLargeError("https://example.org/a", DOCUMENT_MAX_DOWNLOAD_BYTES)
+    );
+    await expect(handleUrlExtraction(MESSAGE)).rejects.toThrow(/over 50 MB and was not ingested/);
+    expect(vi.mocked(fetchPublicUrl)).toHaveBeenCalledWith("https://example.org/a", {
+      maxBytes: DOCUMENT_MAX_DOWNLOAD_BYTES,
+    });
+    const failed = vi.mocked(updateJob).mock.calls.at(-1)![1] as { status: string; error: string };
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toMatch(/memory of the server every agent runs on, which no budget bounds/);
+    expect(failed.error).toMatch(/smaller form instead: an HTML version, or its parts published separately/);
+  });
 });
 
 describe("the run's hold on its job (docs/infrastructure.md, \"The extraction lane\")", () => {
