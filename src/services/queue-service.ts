@@ -460,7 +460,8 @@ export async function enqueueSteward(
     if (slot.own) await refreshQueuePriority(message.claimId);
   } catch (err) {
     console.warn(
-      `[queue] priority refresh failed for ${message.claimId}:`,
+      "[queue] priority refresh failed for %s:",
+      message.claimId,
       err instanceof Error ? err.message : err
     );
   }
@@ -473,7 +474,8 @@ export async function enqueueSteward(
     await ensureAssessActions(message.claimId);
   } catch (err) {
     console.warn(
-      `[queue] action-ledger refresh failed for ${message.claimId}:`,
+      "[queue] action-ledger refresh failed for %s:",
+      message.claimId,
       err instanceof Error ? err.message : err
     );
   }
@@ -497,7 +499,8 @@ async function forwardToSuccessors(message: StewardMessage): Promise<void> {
     successors = await activeSuccessors(message.claimId);
   } catch (err) {
     console.warn(
-      `[queue] successor lookup failed for ${message.claimId}:`,
+      "[queue] successor lookup failed for %s:",
+      message.claimId,
       err instanceof Error ? err.message : err
     );
     return;

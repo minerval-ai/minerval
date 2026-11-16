@@ -168,13 +168,15 @@ function dateParts(d: Date): [number, number, number] {
 
 /** Escape the BibTeX/LaTeX special characters that occur in ordinary prose. */
 function bibtexEscape(s: string): string {
-  return s
-    .replace(/\\/g, "\\textbackslash{}")
-    .replace(/([{}])/g, "\\$1")
-    .replace(/([&%$#_])/g, "\\$1")
-    .replace(/~/g, "\\textasciitilde{}")
-    .replace(/\^/g, "\\textasciicircum{}");
+  // One pass, so the braces of a replacement are not escaped again.
+  return s.replace(/[\\{}&%$#_~^]/g, (c) => BIBTEX_ESCAPES[c] ?? `\\${c}`);
 }
+
+const BIBTEX_ESCAPES: Record<string, string> = {
+  "\\": "\\textbackslash{}",
+  "~": "\\textasciitilde{}",
+  "^": "\\textasciicircum{}",
+};
 
 /** One line describing the pinned assessment, shared across formats. */
 function assessmentClause(input: CitationInput): string {

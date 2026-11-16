@@ -577,11 +577,12 @@ export function htmlToText(html: string, maxChars = 12_000): string {
     .replace(/<\/(p|div|li|h[1-6]|tr|br|section|article)>/gi, "\n");
   const text = stripTags(blocks)
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
+    // Last, so "&amp;lt;" reads "&lt;" and is not decoded twice.
+    .replace(/&amp;/g, "&")
     .replace(/[ \t]+/g, " ")
     .replace(/[ \t]*\n[ \t]*/g, "\n")
     .replace(/\n\n+/g, "\n")

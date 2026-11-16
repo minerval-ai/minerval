@@ -246,7 +246,7 @@ export function renderIssueBody(row: AgentReportRow): string {
   ];
   const table =
     "| | |\n|---|---|\n" +
-    rows.map(([k, v]) => `| ${k} | ${v.replace(/\|/g, "\\|")} |`).join("\n");
+    rows.map(([k, v]) => `| ${k} | ${v.replace(/[\\|]/g, "\\$&")} |`).join("\n");
 
   const refs = Object.entries(row.context_refs ?? {});
   const refList = refs.length
