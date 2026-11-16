@@ -80,6 +80,7 @@ import {
   type LookoutRow,
 } from "../../services/lookout-service.js";
 import { createLookoutFeedTools, getReadListingToolDefinition } from "../tools/feed-tools.js";
+import { lookoutWindow, lookoutWindowSentence } from "../../services/lookout-window.js";
 import {
   checkDoi,
   claimsRestingOnSources,
@@ -518,6 +519,16 @@ async function runLookoutImpl(input: {
           })
           .join("\n");
 
+  // The commission window and what of it is used, read as the run starts;
+  // each commission's result says what is left after it (lookout-window.ts).
+  const commissionWindow = Number(lookout.commission_window_micro_usd ?? 0) > 0 ? await lookoutWindow(lookout.id) : null;
+  const windowLine =
+    commissionWindow && commissionWindow.windowMicroUsd > 0
+      ? `- Across items, you may commit at most ${commissionWindow.windowMicroUsd / 1_000_000} owls on your own in any ` +
+        `${commissionWindow.hours} hours. ${lookoutWindowSentence(commissionWindow)} An item that would take you past it goes to the ` +
+        `program officers with its budget, as one above the per-item limit does: several small items in a short ` +
+        `time add up to a large call on the funder's money, and that is the officers' to weigh.\n`
+      : "";
   const briefing =
     `## Lookout run\n\n` +
     `You are "${lookout.title}", a lookout posted by the mandate ` +
@@ -532,11 +543,15 @@ async function runLookoutImpl(input: {
     `brief names a different figure (a daily allowance, another amount), these govern.\n\n` +
     (Number(lookout.commission_limit_micro_usd ?? 0) > 0
       ? `- You may commission work yourself up to ${Number(lookout.commission_limit_micro_usd ?? 0) / 1_000_000} owls for ` +
-        `each item (name budget_owls). This is a per-item limit, not a daily one: you have no allowance per day ` +
-        `of your own, and what you commission comes out of the mandate's pace like the rest of its work, so a ` +
+        `each item (name budget_owls). This is a per-item limit. ` +
+        (windowLine
+          ? `Your total across items is bounded by the window below. `
+          : `You have no allowance per day or per run of your own. `) +
+        `What you commission comes out of the mandate's pace like the rest of its work, so a ` +
         `commission the pace or the escrow has no room for goes to the officers instead. Anything above the limit, or raised ` +
         `without a budget, goes to the mandate's program officers, who weigh it against everything else the ` +
-        `mandate could buy; the limit exists so that larger calls on the funder's money get that weighing.\n`
+        `mandate could buy; the limit exists so that larger calls on the funder's money get that weighing.\n` +
+        windowLine
       : `- Your commission limit is 0: everything you raise goes to the mandate's program officers, who decide ` +
         `under its operating policy. Your Grantmaker kept every spending decision for them.\n`) +
     `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +

@@ -512,6 +512,13 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
             triggers: lookout.triggers ?? [],
             model: lookout.model,
             commission_limit_owls: Number(lookout.commission_limit_micro_usd ?? 0) / 1_000_000,
+            commission_window:
+              Number(lookout.commission_window_micro_usd ?? 0) > 0
+                ? {
+                    owls: Number(lookout.commission_window_micro_usd) / 1_000_000,
+                    hours: Number(lookout.commission_window_hours ?? 24),
+                  }
+                : null,
             territory: { claim_ids: lookout.territory_claim_ids ?? [], tag_ids: lookout.territory_tag_ids ?? [] },
             workspace: lookout.workspace,
             last_note: lookout.last_note,

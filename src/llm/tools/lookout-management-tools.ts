@@ -37,6 +37,7 @@ import {
 } from "../../services/feed-service.js";
 import { executeReadListing, getReadListingToolDefinition } from "./feed-tools.js";
 import { STANDING_ORDER_RETRY_MINUTES } from "../../services/standing-order-service.js";
+import { COMMISSION_WINDOW_MAX_HOURS } from "../../services/lookout-window.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -106,9 +107,12 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
         "funded from your escrow within the mandate's pace. Its limits are " +
         "the fields you set here, not figures in the brief: " +
         "commission_limit_owls is the most it may commission alone for ONE " +
-        "item, it has no daily allowance of its own (what it commissions " +
-        "comes out of your mandate's pace like the rest of your work), and " +
-        "every run is told these figures as the ones it is held to. Leave " +
+        "item; commission_window_owls, if you set it, is the most it may " +
+        "commit alone across items in any commission_window_hours (24 by " +
+        "default), so that a burst of small items does not add up to a large " +
+        "call nobody weighed; without it, what it commissions is bounded only " +
+        "by your mandate's pace and escrow. Every run is told these figures as " +
+        "the ones it is held to, with what of its window is used. Leave " +
         "numbers out of the brief, or repeat these exactly; a different " +
         "figure in the brief misleads only you.",
       input_schema: {
@@ -158,6 +162,23 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
               "one. Above that, or at 0 (the default), it raises the item to " +
               "your program officers. This stored figure is the one the " +
               "lookout is told and held to: an item above it goes to your officers.",
+          },
+          commission_window_owls: {
+            type: "number",
+            description:
+              "The most it may commit on its own across items within any " +
+              "commission_window_hours, from your money (default 0: no window, " +
+              "the per-item limit alone). The per-item limit marks what is small " +
+              "enough to commit without your officers' weighing; this keeps five " +
+              "such items in two minutes from becoming one large call nobody " +
+              "weighed. Counted as a pace is: running work holds its budget, " +
+              "settled work its spend. An item past it goes to your officers. " +
+              "It is a delegation in money, not a reserve: your officers keep " +
+              "their room.",
+          },
+          commission_window_hours: {
+            type: "number",
+            description: `The window's length in hours (default 24; 1 to ${COMMISSION_WINDOW_MAX_HOURS}).`,
           },
           model: {
             type: "string",
@@ -294,6 +315,16 @@ export function getLookoutManagementToolDefinitions(): Tool[] {
             type: "number",
             description: "The most it may commission alone for one item, in owls; its runs are told and held to this figure.",
           },
+          commission_window_owls: {
+            type: "number",
+            description:
+              "The most it may commit alone across items within any commission_window_hours, in owls; 0 removes the window. " +
+              "Its runs are told and held to this figure, with what of it is used.",
+          },
+          commission_window_hours: {
+            type: "number",
+            description: `The window's length in hours (1 to ${COMMISSION_WINDOW_MAX_HOURS}); given alone, the owls stay as they are.`,
+          },
           model: { type: "string" },
         },
         required: ["lookout_id"],
@@ -346,6 +377,7 @@ export async function executeLookoutManagementTool(
       model: typeof toolInput.model === "string" ? toolInput.model : null,
       commissionLimitOwls:
         toolInput.commission_limit_owls === undefined ? undefined : Number(toolInput.commission_limit_owls),
+      commissionWindow: windowOf(toolInput),
       territory: territoryOf(toolInput.territory),
       createdBy: opts.createdBy,
     });
@@ -374,6 +406,13 @@ export async function executeLookoutManagementTool(
         ? {
             heartbeat_hours: posted.heartbeat_hours,
             commission_limit_owls_per_item: Number(posted.commission_limit_micro_usd ?? 0) / 1_000_000,
+            commission_window:
+              Number(posted.commission_window_micro_usd ?? 0) > 0
+                ? {
+                    owls: Number(posted.commission_window_micro_usd) / 1_000_000,
+                    hours: Number(posted.commission_window_hours ?? 24),
+                  }
+                : "none: the per-item limit alone, within your pace",
           }
         : {}),
       ...(feeds.length > 0 ? { feeds } : {}),
@@ -383,7 +422,7 @@ export async function executeLookoutManagementTool(
         `about ${STANDING_ORDER_RETRY_MINUTES} minutes of each falling due, and ` +
         "when a trigger fires. It leaves a note on the mandate page each run, " +
         "and its flags reach you in your session's briefing. Its runs are told " +
-        "the heartbeat and per-item commission limit above as the figures they " +
+        "the heartbeat, the per-item commission limit and the window above as the figures they " +
         "are held to, whatever the brief says." +
         (feeds.length > 0
           ? " Each feed's current items are recorded as already seen; new ones wake it by the feed's rule."
@@ -423,6 +462,7 @@ export async function executeLookoutManagementTool(
       ...(toolInput.commission_limit_owls !== undefined
         ? { commissionLimitOwls: Number(toolInput.commission_limit_owls) }
         : {}),
+      ...(windowOf(toolInput) ? { commissionWindow: windowOf(toolInput) } : {}),
       ...(toolInput.territory !== undefined ? { territory: territoryOf(toolInput.territory) } : {}),
       ...(toolInput.model !== undefined ? { model: String(toolInput.model) } : {}),
     });
@@ -490,6 +530,17 @@ export async function executeLookoutManagementTool(
 }
 
 /** A tool's territory input, as the service takes it. */
+/** The commission window from a spawn or update input; undefined when neither part is given. */
+function windowOf(toolInput: Record<string, unknown>): { owls?: number; hours?: number } | undefined {
+  const owls = toolInput.commission_window_owls;
+  const hours = toolInput.commission_window_hours;
+  if (owls === undefined && hours === undefined) return undefined;
+  return {
+    ...(owls !== undefined ? { owls: Number(owls) } : {}),
+    ...(hours !== undefined ? { hours: Number(hours) } : {}),
+  };
+}
+
 function territoryOf(raw: unknown): { claimIds?: unknown; tagSlugs?: unknown } | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const t = raw as { claim_ids?: unknown; tags?: unknown };

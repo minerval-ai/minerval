@@ -36,6 +36,7 @@ import { assertPublicHttpUrl, UnsafeUrlError } from "./url-guard.js";
 import { ingestCoverage, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { estimateLedgerKindCostMicroUsd } from "./cost-estimate-service.js";
 import { raiseToMandate } from "./mandate-inbox-service.js";
+import { COMMISSION_WINDOW_MAX_HOURS, lookoutWindow, lookoutWindowSentence } from "./lookout-window.js";
 
 /** Input kinds a lookout can wake on, beyond its heartbeat. */
 export const LOOKOUT_TRIGGER_KINDS = [
@@ -79,6 +80,9 @@ export interface LookoutRow {
   model: string | null;
   /** The most it may commission alone for one item, from the mandate's money. */
   commission_limit_micro_usd: number;
+  /** The most it may commit alone within any commission_window_hours; 0 = no window (lookout-window.ts). */
+  commission_window_micro_usd: number;
+  commission_window_hours: number;
   /** The graph feed's territory and how far it has read the change stream. */
   territory_claim_ids: string[];
   territory_tag_ids: string[];
@@ -101,7 +105,7 @@ export interface LookoutRow {
  */
 export const LOOKOUT_COLUMNS = [
   "id", "grant_id", "title", "brief", "status", "heartbeat_hours", "triggers", "model",
-  "commission_limit_micro_usd", "territory_claim_ids", "territory_tag_ids",
+  "commission_limit_micro_usd", "commission_window_micro_usd", "commission_window_hours", "territory_claim_ids", "territory_tag_ids",
   "changes_cursor", "workspace", "last_note", "last_run_at",
   "next_due_at", "runs", "flags", "created_by", "created_at", "updated_at",
 ] as const;
@@ -113,6 +117,33 @@ const LOOKOUT_SELECT = `
 export type LookoutWriteResult =
   | { ok: true; lookoutId: string }
   | { ok: false; code: string; message: string };
+
+/**
+ * A commission window from a tool's input, over what is stored: either part
+ * alone keeps the other. Refused in words rather than clamped, since the
+ * figure is the Grantmaker's delegation of the funder's money.
+ */
+function normalizeWindow(
+  raw: { owls?: number; hours?: number } | undefined,
+  current: { micro: number; hours: number }
+): { micro: number; hours: number } | string {
+  if (raw === undefined || raw === null) return current;
+  let micro = current.micro;
+  let hours = current.hours;
+  if (raw.owls !== undefined && raw.owls !== null) {
+    const o = Number(raw.owls);
+    if (!Number.isFinite(o) || o < 0) return "commission_window_owls must be 0 (no window) or more";
+    micro = Math.round(o * 1_000_000);
+  }
+  if (raw.hours !== undefined && raw.hours !== null) {
+    const h = Number(raw.hours);
+    if (!Number.isInteger(h) || h < 1 || h > COMMISSION_WINDOW_MAX_HOURS) {
+      return `commission_window_hours must be a whole number of hours from 1 to ${COMMISSION_WINDOW_MAX_HOURS} (24 for a day, 168 for a week)`;
+    }
+    hours = h;
+  }
+  return { micro, hours };
+}
 
 function normalizeTriggers(raw: unknown): LookoutTriggerKind[] | string {
   if (raw === undefined || raw === null) return [];
@@ -158,6 +189,11 @@ export async function createLookout(input: {
   model?: string | null;
   /** The most it may commission alone for one item, in owls; 0 raises everything to the officers. */
   commissionLimitOwls?: number;
+  /**
+   * The most it may commit alone across items in any `hours` (#1043), in
+   * owls; 0 or absent sets no window, the per-item limit alone.
+   */
+  commissionWindow?: { owls?: number; hours?: number };
   /** The graph feed's territory: node ids (each with everything beneath it) and tag slugs. */
   territory?: { claimIds?: unknown; tagSlugs?: unknown };
   createdBy: string;
@@ -203,6 +239,8 @@ export async function createLookout(input: {
       message: "A lookout with no heartbeat and no triggers would never run",
     };
   }
+  const commissionWindow = normalizeWindow(input.commissionWindow, { micro: 0, hours: 24 });
+  if (typeof commissionWindow === "string") return { ok: false, code: "COMMISSION_WINDOW", message: commissionWindow };
   const territory = await resolveTerritory(input.territory);
   if (typeof territory === "string") return { ok: false, code: "TERRITORY", message: territory };
   // An empty territory follows the whole graph. Only a mandate whose own
@@ -227,8 +265,9 @@ export async function createLookout(input: {
   const [row] = await rawQuery<{ id: string }>(
     `INSERT INTO lookouts
        (grant_id, title, brief, heartbeat_hours, triggers, model, created_by,
-        commission_limit_micro_usd, territory_claim_ids, territory_tag_ids, sensitivity_label)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::uuid[], $10::uuid[], $11)
+        commission_limit_micro_usd, territory_claim_ids, territory_tag_ids, sensitivity_label,
+        commission_window_micro_usd, commission_window_hours)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::uuid[], $10::uuid[], $11, $12, $13)
      RETURNING id`,
     [
       input.grantId,
@@ -242,6 +281,8 @@ export async function createLookout(input: {
       territory.claimIds,
       territory.tagIds,
       currentLabel(),
+      commissionWindow.micro,
+      commissionWindow.hours,
     ]
   );
   return { ok: true, lookoutId: row!.id };
@@ -262,6 +303,8 @@ export async function updateLookout(input: {
   triggers?: unknown;
   model?: string | null;
   commissionLimitOwls?: number;
+  /** Either part alone changes only that part; owls 0 removes the window. */
+  commissionWindow?: { owls?: number; hours?: number };
   territory?: { claimIds?: unknown; tagSlugs?: unknown };
 }): Promise<LookoutWriteResult> {
   const current = isUuid(input.lookoutId) ? await getLookout(input.lookoutId) : null;
@@ -314,6 +357,15 @@ export async function updateLookout(input: {
   }
   if (input.commissionLimitOwls !== undefined) {
     set("commission_limit_micro_usd", Math.round(Math.max(0, Number(input.commissionLimitOwls) || 0) * 1_000_000));
+  }
+  if (input.commissionWindow !== undefined) {
+    const commissionWindow = normalizeWindow(input.commissionWindow, {
+      micro: Number(current.commission_window_micro_usd ?? 0),
+      hours: Number(current.commission_window_hours ?? 24),
+    });
+    if (typeof commissionWindow === "string") return { ok: false, code: "COMMISSION_WINDOW", message: commissionWindow };
+    set("commission_window_micro_usd", commissionWindow.micro);
+    set("commission_window_hours", commissionWindow.hours);
   }
   if (input.territory !== undefined) {
     const territory = await resolveTerritory(input.territory);
@@ -498,6 +550,9 @@ async function actOnFind(input: {
 }): Promise<{ commissioned: boolean; note: string }> {
   const [lookout] = await rawQuery<{ title: string }>(`SELECT title FROM lookouts WHERE id = $1`, [input.lookoutId]);
   const title = lookout?.title ?? "a lookout";
+  // Why a commission within the per-item limit was refused (the window, the
+  // pace, the escrow), so the lookout is told why the item went up.
+  let refused: string | null = null;
   if (input.budgetMicroUsd > 0 && input.budgetMicroUsd <= input.commissionLimitMicroUsd) {
     const { commissionAction } = await import("./commission-service.js");
     const res = await commissionAction({
@@ -507,7 +562,9 @@ async function actOnFind(input: {
       brief: input.rationale,
       reason: `Raised by the lookout "${title}"`,
       commissionedBy: "lookout",
+      lookoutId: input.lookoutId,
     });
+    if (!res.ok) refused = res.message;
     if (res.ok) {
       await rawQuery(
         `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, action_id, sensitivity_label)
@@ -515,11 +572,16 @@ async function actOnFind(input: {
         [input.grantId, res.status === "commissioned" ? "commissioned" : "joined a paid pass", input.claimId ?? input.url,
          res.status === "commissioned" ? input.budgetMicroUsd : null, input.rationale, input.actionId, currentLabel()]
       );
+      // What is left of the window, so the lookout sees its running state
+      // as it goes (lookout-window.ts).
+      const w = res.status === "commissioned" ? await lookoutWindow(input.lookoutId).catch(() => null) : null;
+      const windowNote = w ? lookoutWindowSentence(w) : "";
       return {
         commissioned: res.status === "commissioned",
         note:
           res.status === "commissioned"
-            ? `Commissioned at ${input.budgetMicroUsd / 1_000_000} owls from the mandate, within your limit.`
+            ? `Commissioned at ${input.budgetMicroUsd / 1_000_000} owls from the mandate, within your limit.` +
+              (windowNote ? ` ${windowNote}` : "")
             : "It already had a run paid for; nothing more was spent.",
       };
     }
@@ -535,9 +597,15 @@ async function actOnFind(input: {
     detail: {
       action_id: input.actionId,
       ...(input.budgetMicroUsd > 0 ? { suggested_budget_owls: input.budgetMicroUsd / 1_000_000 } : {}),
+      ...(refused ? { not_commissioned_because: refused } : {}),
     },
   });
-  return { commissioned: false, note: "Raised to the mandate's program officers, who decide under its operating policy." };
+  return {
+    commissioned: false,
+    note:
+      (refused ? `Not commissioned: ${refused} ` : "") +
+      "Raised to the mandate's program officers, who decide under its operating policy.",
+  };
 }
 
 /**
@@ -946,6 +1014,8 @@ export interface LookoutSummary {
   model: string | null;
   /** The most it may commission alone for one item, in owls; the rest goes to the officers. */
   commission_limit_owls: number;
+  /** The most it may commit alone across items in any `hours`; null when it has no window (#1043). */
+  commission_window: { owls: number; hours: number } | null;
   /** The graph feed's territory; empty follows the whole graph. */
   territory: { claim_ids: string[]; tag_ids: string[] };
   runs: number;
@@ -1027,6 +1097,10 @@ export async function summarizeLookouts(grantId: string): Promise<LookoutSummary
       triggers: l.triggers ?? [],
       model: l.model,
       commission_limit_owls: Number(l.commission_limit_micro_usd ?? 0) / 1_000_000,
+      commission_window:
+        Number(l.commission_window_micro_usd ?? 0) > 0
+          ? { owls: Number(l.commission_window_micro_usd) / 1_000_000, hours: Number(l.commission_window_hours ?? 24) }
+          : null,
       territory: { claim_ids: l.territory_claim_ids ?? [], tag_ids: l.territory_tag_ids ?? [] },
       runs: l.runs,
       flags: l.flags,

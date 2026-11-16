@@ -982,6 +982,8 @@ export interface MandateLookoutView {
   triggers: string[];
   model: string | null;
   commission_limit_owls: number;
+  /** The most it may commit alone across items in any `hours` (#1043); null with none, absent from an older API. */
+  commission_window?: { owls: number; hours: number } | null;
   territory: { claim_ids: string[]; tag_ids: string[] };
   runs: number;
   flags: number;

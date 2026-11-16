@@ -407,26 +407,50 @@ brief, that warrants work?* — posted by the Grantmaker (`spawn_lookout`,
 in the owner's chat or on a review pass) with a brief in its own words
 (scope, where to look, what to look out for, what to leave alone), a set
 of triggers, and a bounded, delegated slice of the mandate's spending:
-the most it may commission alone for one item (`commission_limit_owls`),
-the rest raised to the mandate's program officers (llm/agents/lookout.ts,
-services/lookout-service.ts).
+the most it may commission alone for one item (`commission_limit_owls`)
+and, if the Grantmaker sets one, across items in a rolling window
+(`commission_window_owls` per `commission_window_hours`), the rest raised
+to the mandate's program officers (llm/agents/lookout.ts,
+services/lookout-service.ts, services/lookout-window.ts).
 
 Scope is the brief's words, as a mandate's is. "This claim and what it
 turns on" is one shape; "the retraction record behind the nutrition
 literature" or "new work on X" are others. Which happenings fall under
 the brief is the lookout's judgment, never a keyword filter's.
 
-**Limits are the stored fields, not the brief.** The heartbeat and the
-per-item commission limit a lookout is held to are the ones set on
+**Limits are the stored fields, not the brief.** The heartbeat, the
+per-item commission limit and the window a lookout is held to are the ones set on
 `spawn_lookout`/`update_lookout`. The tool's description and result say
 so, and each run's task message states them under "Your delegated bounds"
 as the figures that govern wherever the brief names another (a lookout of
 2026-11-13 was briefed "commission at most about 4 owls in a day on your
-own" while its stored limit was 1 owl an item, and it has no daily
-allowance at all: its commissions come out of the mandate's pace). The
-run is told why the limit exists: larger calls on the funder's money go
-to the program officers, who weigh them against everything else the
-mandate could buy.
+own" while its stored limit was 1 owl an item and it had no window: its
+commissions came out of the mandate's pace alone). The run is told why
+the limit exists: larger calls on the funder's money go to the program
+officers, who weigh them against everything else the mandate could buy.
+
+**The window (#1043).** The per-item limit marks what is small enough to
+commit without that weighing. It says nothing of how many such items: a
+lookout on a 60-owl mandate once committed five passes of 3 or 4 owls in
+two minutes, each inside its limit, a third of what the escrow had left
+in one call nobody weighed. The reserve could not bound that without
+also taking the room from the officers, since both commit from outside
+it. So a lookout may also carry a window: at most `commission_window_owls`
+committed alone in any `commission_window_hours` (1 to 168; 0 owls, the
+default, sets none). It is read as a steady pace is ("Pace and reserve",
+below), over the allocations the lookout placed
+(`action_allocations.lookout_id`): each counts its amount while its run
+may spend it and its spend once settled, so running work holds its
+budget and frees what it leaves. The check is made in the commission
+path behind the mandate's lock, beside the pace (`OVER_LOOKOUT_WINDOW`);
+a commission past it is never clipped, it goes to the officers with its
+budget and the figures, as one past the per-item limit does. The run is
+told the window with what of it is used, and each commission's result
+says what is left. It is a delegation in money the Grantmaker sets, not a
+count of commissions or runs: a burst of events still waits for the next
+funded run, which reads them all. It also bounds what injected text on a
+page the lookout reads could commit, which the per-item limit alone does
+not.
 
 **Triggers.** A lookout is woken, never polling on its own: by its
 **heartbeat** (a cadence the Grantmaker sets, hours to a month; 0 for

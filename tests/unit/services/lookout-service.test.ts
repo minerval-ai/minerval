@@ -175,6 +175,9 @@ describe("createLookout", () => {
       ["66666666-6666-4666-8666-666666666666"],
       // The lookout's label: that of the run that sets it up, public outside any (src/labels.ts).
       "public",
+      // No commission window unless one is given (#1043): the per-item limit alone, over a day.
+      0,
+      24,
     ]);
     // The retired per-run count is no longer written; the column keeps its default (#695).
     expect(insert.q).not.toContain("max_ingests_per_run");
@@ -212,6 +215,25 @@ describe("updateLookout", () => {
     expect(upd.q).toContain("commission_limit_micro_usd = $4");
     expect(upd.params[1]).toBe("active");
     expect(upd.params[3]).toBe(3_000_000);
+  });
+
+  it("sets a commission window, keeps the stored part not given, and refuses a window it cannot hold to (#1043)", async () => {
+    state.lookout = { id: LOOKOUT, grant_id: GRANT, status: "active", commission_window_micro_usd: 6_000_000, commission_window_hours: 24 };
+    expect((await updateLookout({ grantId: GRANT, lookoutId: LOOKOUT, commissionWindow: { hours: 48 } })).ok).toBe(true);
+    const upd = queries.find((x) => x.q.startsWith("UPDATE lookouts SET"))!;
+    expect(upd.q).toContain("commission_window_micro_usd = $2");
+    expect(upd.q).toContain("commission_window_hours = $3");
+    expect(upd.params.slice(1, 3)).toEqual([6_000_000, 48]);
+
+    for (const bad of [{ owls: -1 }, { hours: 0 }, { hours: 169 }, { hours: 2.5 }, { owls: Number.NaN }]) {
+      expect(await updateLookout({ grantId: GRANT, lookoutId: LOOKOUT, commissionWindow: bad })).toMatchObject({
+        ok: false,
+        code: "COMMISSION_WINDOW",
+      });
+    }
+    expect(
+      await createLookout({ grantId: GRANT, title: "x y z", brief: BRIEF, createdBy: "t", commissionWindow: { owls: 5, hours: 0 } })
+    ).toMatchObject({ ok: false, code: "COMMISSION_WINDOW" });
   });
 
   it("refuses another mandate's lookout and a retired one", async () => {
