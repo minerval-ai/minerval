@@ -81,6 +81,25 @@ export function parseProse(content: string): ProseSegment[] {
   return segments;
 }
 
+// Writers (the Stewards above all) set a run-in heading or a key phrase in
+// **bold**, Markdown-style, though prose here is otherwise plain. Rendered
+// as text, the asterisks showed. A pair of double asterisks around a run of
+// text on one line is bold; anything else, a lone "**" included, stays text.
+const STRONG = /\*\*(?=\S)([^*\n]*?\S)\*\*/g;
+
+/** Split a stretch of plain text into runs, each bold or not, in order. */
+export function splitStrong(text: string): { text: string; strong: boolean }[] {
+  const runs: { text: string; strong: boolean }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(STRONG)) {
+    if (m.index! > last) runs.push({ text: text.slice(last, m.index), strong: false });
+    runs.push({ text: m[1]!, strong: true });
+    last = m.index! + m[0].length;
+  }
+  if (last < text.length) runs.push({ text: text.slice(last), strong: false });
+  return runs;
+}
+
 // Distinguishes a real written form from the creation-time label that legacy
 // arguments carry in `content` (the backfill upgrades those over time): only
 // prose that references its subclaims is worth rendering as an argument.

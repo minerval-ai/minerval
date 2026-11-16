@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { parseProse, recordHref } from "@/lib/claim-links";
+import { parseProse, recordHref, splitStrong } from "@/lib/claim-links";
 
 /**
  * The graph's inline prose conventions, rendered: [[claim:<id>]] references
@@ -66,7 +66,14 @@ export function ArgumentText({
     <>
       {parseProse(content).map((seg, i) => {
         if (seg.kind === "text") {
-          return <span key={i}>{categories?.length ? <WithMarks text={seg.text} categories={categories} /> : seg.text}</span>;
+          const plain = (t: string) => (categories?.length ? <WithMarks text={t} categories={categories} /> : t);
+          return (
+            <span key={i}>
+              {splitStrong(seg.text).map((run, j) =>
+                run.strong ? <strong key={j}>{plain(run.text)}</strong> : <span key={j}>{plain(run.text)}</span>,
+              )}
+            </span>
+          );
         }
         if (seg.kind === "url") {
           return (

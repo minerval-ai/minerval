@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 // The web-side prose parser (issue #203): assessment summaries and reasoning
 // traces carry the same [[claim:<id>]] references as argument written forms,
 // plus bare source URLs. Pure string → segments, so it tests without a DOM.
-import { parseProse } from "../../../web/lib/claim-links";
+import { parseProse, splitStrong } from "../../../web/lib/claim-links";
 
 const A = "11111111-2222-3333-4444-555555555555";
 
@@ -67,5 +67,24 @@ describe("parseProse", () => {
     expect(parseProse("[[mandate:m-1|a mandate]]")).toEqual([
       { kind: "text", text: "[[mandate:m-1|a mandate]]" },
     ]);
+  });
+});
+
+describe("splitStrong", () => {
+  it("passes text with no bold through as one run", () => {
+    expect(splitStrong("Plain prose.")).toEqual([{ text: "Plain prose.", strong: false }]);
+  });
+
+  it("takes a Steward's run-in heading as bold, without its asterisks", () => {
+    expect(splitStrong("**Proximate cause.** The FAA attributed the stop")).toEqual([
+      { text: "Proximate cause.", strong: true },
+      { text: " The FAA attributed the stop", strong: false },
+    ]);
+  });
+
+  it("leaves a lone pair, an empty pair and a pair across lines as text", () => {
+    expect(splitStrong("2 ** 3 is eight")).toEqual([{ text: "2 ** 3 is eight", strong: false }]);
+    expect(splitStrong("a **** b")).toEqual([{ text: "a **** b", strong: false }]);
+    expect(splitStrong("**one\ntwo**")).toEqual([{ text: "**one\ntwo**", strong: false }]);
   });
 });
