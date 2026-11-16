@@ -33,6 +33,7 @@ import type { FeaturesConfig } from "../features.js";
 import { countStates, cutList, pagePlanItems, type DetailOptions } from "./read-detail.js";
 import { describePlanItems } from "./plan-state.js";
 import { mandateFunderUrl, mandatePageUrl } from "./mandate-urls.js";
+import { DOCUMENT_MAX_DOWNLOAD_MB } from "./url-guard.js";
 
 export const GRANT_POLICIES = ["deepen", "cover", "maintain", "agent"] as const;
 
@@ -281,7 +282,13 @@ export const PLAN_KIND_RULES =
   "that its pass is placed without them, and a reassess item later is the " +
   "way to weigh them. Leave after off a pass whose node the sources do not " +
   "bear on, or that should run now regardless. " +
-  "ingest: an http(s) url; executes in plan order from your escrow. An " +
+  "ingest: an http(s) url; executes in plan order from your escrow. A " +
+  `document over ${DOCUMENT_MAX_DOWNLOAD_MB} MB is not fetched and the item fails (it ` +
+  "would be held whole in the memory of the server every agent runs on, " +
+  "which no budget bounds); read_page meets the same limit, so a URL it " +
+  "reads is one an ingest can fetch. For a larger document, plan its " +
+  "smaller forms instead: an HTML version, or its parts published " +
+  "separately. An " +
   "optional focus scopes it: the extractor reads the whole document but " +
   "proposes only the claims bearing on the focus (premises those claims " +
   "rest on come in later, through their Stewards' decompositions). Use it " +

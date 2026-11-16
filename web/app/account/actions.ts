@@ -18,6 +18,7 @@ import {
 export interface CreateKeyState {
   plaintext?: string;
   name?: string;
+  label?: string;
   error?: string;
 }
 
@@ -31,10 +32,12 @@ export async function createKeyAction(
   if (!session?.externalId) return { error: "Not signed in." };
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { error: "Give the key a name." };
+  // Named where the deployment holds material at more than one label.
+  const label = String(formData.get("label") ?? "").trim() || undefined;
   try {
-    const created = await createApiKey(session.externalId, name);
+    const created = await createApiKey(session.externalId, name, label);
     revalidatePath("/account");
-    return { plaintext: created.key, name: created.name };
+    return { plaintext: created.key, name: created.name, label: created.label };
   } catch (err) {
     const message =
       err instanceof AccountApiError ? err.message : "Key creation failed.";

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "../../../../auth";
 import { GrantmakerConversation } from "../../GrantmakerConversation";
+import { fetchMyLabels } from "../../../../lib/admin-api";
+import { loadStanding } from "../../../../lib/standing";
 
 export const metadata: Metadata = { title: "Start a mandate · Minerval" };
 
@@ -19,11 +21,16 @@ export default async function StartMandatePage({
   const here = `/ask/mandates/new${claim_id ? `?claim_id=${encodeURIComponent(claim_id)}` : ""}`;
   if (!session?.externalId) redirect(`/signin?callbackUrl=${encodeURIComponent(here)}`);
   const claim = claim_id && /^[0-9a-f-]{36}$/i.test(claim_id) ? claim_id : null;
+  // A members-only deployment with more than one label asks which one the mandate works at.
+  const standing = await loadStanding();
+  const labels =
+    standing.state === "signed_in" ? await fetchMyLabels(session.externalId).catch(() => null) : null;
 
   return (
     <GrantmakerConversation
       key={here}
       title="A new mandate"
+      labels={labels}
       initialDraft={claim ? `I want to fund work on the area around claim ${claim}.` : ""}
     >
       <div className="ask-welcome">

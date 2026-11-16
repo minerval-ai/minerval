@@ -99,7 +99,11 @@ services:
       - MINERVAL_OPERATOR_KEY
       - LOG_LEVEL
       - FEATURES_OFF
-      - RUN_LOG_MODE
+      # "record" here, not the API's own "best_effort": a deployment that
+      # holds private material starts no agent work until every run's log is
+      # kept whole (docs/deployment.md, "Preflight"), and this package is for
+      # holding private material.
+      - RUN_LOG_MODE=${RUN_LOG_MODE:-record}
       - TRACE_RETENTION_DAYS
       - OWLS
       - MODEL_PRICES

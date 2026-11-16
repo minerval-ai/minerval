@@ -40,7 +40,12 @@ import { GENERIC_SOURCE_KINDS, type SourceKind } from "../schemas/common.js";
 import { recordSourceKind } from "../services/source-service.js";
 import { rawQuery } from "../db/client.js";
 import { settleMeteredCharge } from "../services/owl-ledger-service.js";
-import { fetchPublicUrl } from "../services/url-guard.js";
+import {
+  DOCUMENT_MAX_DOWNLOAD_BYTES,
+  DOCUMENT_MAX_DOWNLOAD_MB,
+  ResponseTooLargeError,
+  fetchPublicUrl,
+} from "../services/url-guard.js";
 import { refreshSourceFactsOnce } from "../services/source-facts-service.js";
 import { segmentSourceOnce } from "../services/source-segment-service.js";
 import { normalizeFocus, recordExtraction, type UndecidedProposal } from "../services/ingest-focus-service.js";
@@ -846,6 +851,22 @@ async function fetchUrlContent(url: string): Promise<string> {
   // SSRF-guarded: ingest URLs come from user proposals, grant plans, and
   // the review agent's own web research — every hop must be public
   // (src/services/url-guard.ts). A refused URL fails the job like any
-  // other unfetchable source.
-  return fetchPublicUrl(url);
+  // other unfetchable source. A document is read whole, so it is fetched
+  // under the document cap, not the page-sized one (#1068), and one over it
+  // fails the job with a reason the mandate's agents can act on.
+  try {
+    return await fetchPublicUrl(url, { maxBytes: DOCUMENT_MAX_DOWNLOAD_BYTES });
+  } catch (err) {
+    if (err instanceof ResponseTooLargeError) throw new Error(tooLargeToIngest(err.url));
+    throw err;
+  }
+}
+
+/** Why an ingest of a document over the limit failed, and what to ingest instead. */
+export function tooLargeToIngest(url: string): string {
+  return (
+    `${url} is over ${DOCUMENT_MAX_DOWNLOAD_MB} MB and was not ingested: a fetched document is held whole ` +
+    `in the memory of the server every agent runs on, which no budget bounds. Ingest the same text in a ` +
+    `smaller form instead: an HTML version, or its parts published separately (chapters, appendices).`
+  );
 }

@@ -492,6 +492,27 @@ export interface SendReport {
   sent: Array<{ package_id: string; node_id: string; sequence: number; result: string; detail: string | null }>;
 }
 
+/** Offer a mandate to the gate to outside, to stand on the organisation's record on the public graph (POST /gate/offers). */
+export function offerMandateOutside(externalId: string, mandateId: string): Promise<Record<string, unknown>> {
+  return accountFetch("/gate/offers", {
+    method: "POST",
+    actingUser: externalId,
+    body: { kind: "mandate", mandate_id: mandateId, outside: true },
+  });
+}
+
+/** Register this deployment's signing key to the organization's account on the public graph (POST /outbound/registration/send). */
+export function registerPublisherOutside(
+  externalId: string,
+  declaredInterest?: string
+): Promise<{ account: { external_id: string; name: string | null }; key_id: string | null; hosting: string; in_words: string | null }> {
+  return accountFetch("/outbound/registration/send", {
+    method: "POST",
+    actingUser: externalId,
+    body: declaredInterest ? { declared_interest: declaredInterest } : {},
+  });
+}
+
 export function sendOutside(externalId: string, showingId: string): Promise<SendReport> {
   return accountFetch("/outbound/send", { method: "POST", actingUser: externalId, body: { showing_id: showingId } });
 }

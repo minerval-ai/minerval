@@ -14,15 +14,20 @@ const { state } = vi.hoisted(() => ({
     /** What the server calls a body, by the same prefix; HTML when unset. */
     contentTypes: new Map<string, string | null>(),
     fetched: [] as string[],
+    maxBytes: [] as Array<number | undefined>,
   },
 }));
 
 vi.mock("../../../src/db/client.js", () => ({ rawQuery: vi.fn(async () => []) }));
 vi.mock("../../../src/services/url-guard.js", async (importOriginal) => ({
-  // The error classes are the real ones, so a refusal is classified as the fetcher throws it.
-  ...(({ HttpStatusError, UnsafeUrlError }) => ({ HttpStatusError, UnsafeUrlError }))(
-    await importOriginal<typeof import("../../../src/services/url-guard.js")>()
-  ),
+  // The error classes and the document cap are the real ones, so a refusal is classified as the fetcher throws it.
+  ...(({ HttpStatusError, UnsafeUrlError, ResponseTooLargeError, DOCUMENT_MAX_DOWNLOAD_BYTES, DOCUMENT_MAX_DOWNLOAD_MB }) => ({
+    HttpStatusError,
+    UnsafeUrlError,
+    ResponseTooLargeError,
+    DOCUMENT_MAX_DOWNLOAD_BYTES,
+    DOCUMENT_MAX_DOWNLOAD_MB,
+  }))(await importOriginal<typeof import("../../../src/services/url-guard.js")>()),
   fetchPublicUrl: vi.fn(async (url: string) => {
     state.fetched.push(url);
     for (const [prefix, body] of state.responses) {
@@ -31,8 +36,9 @@ vi.mock("../../../src/services/url-guard.js", async (importOriginal) => ({
     throw new Error(`no response for ${url}`);
   }),
   // readPage reads bytes and what the server called them (#912).
-  fetchPublicBytes: vi.fn(async (url: string) => {
+  fetchPublicBytes: vi.fn(async (url: string, init?: { maxBytes?: number }) => {
     state.fetched.push(url);
+    state.maxBytes.push(init?.maxBytes);
     for (const [prefix, body] of state.responses) {
       if (url.startsWith(prefix)) {
         return {
@@ -61,6 +67,7 @@ beforeEach(() => {
   state.responses = new Map();
   state.contentTypes = new Map();
   state.fetched = [];
+  state.maxBytes = [];
 });
 
 describe("extractDois", () => {
@@ -436,6 +443,24 @@ describe("htmlToText / readPage", () => {
     state.responses.set("https://arxiv.org/e-print/2401.00001", Buffer.from([0x1f, 0x8b, 0x08, 0, 0, 0, 0, 0]));
     const archive = await readPage("https://arxiv.org/e-print/2401.00001");
     expect(archive).toMatchObject({ ok: false, problem: expect.stringMatching(/gzip archive.*read_arxiv_source/) });
+  });
+
+  it("reads a document up to the document cap, and says what to try when one is over it (#1068)", async () => {
+    state.responses.set("https://plain.example/a", "Hello");
+    await readPage("https://plain.example/a");
+    expect(state.maxBytes).toEqual([50 * 1024 * 1024]);
+
+    const { fetchPublicBytes, ResponseTooLargeError } = await import("../../../src/services/url-guard.js");
+    vi.mocked(fetchPublicBytes).mockRejectedValueOnce(
+      new ResponseTooLargeError("https://big.example/card.pdf", 50 * 1024 * 1024)
+    );
+    const res = await readPage("https://big.example/card.pdf");
+    expect(res).toMatchObject({ ok: false });
+    const problem = (res as { problem: string }).problem;
+    expect(problem).toMatch(/over 50 MB and was not fetched/);
+    expect(problem).toMatch(/memory of the server every agent runs on, which no budget bounds/);
+    expect(problem).toMatch(/an ingest of this URL fails at the same limit/);
+    expect(problem).toMatch(/HTML version/);
   });
 
   it("returns a problem rather than throwing on an unfetchable page", async () => {

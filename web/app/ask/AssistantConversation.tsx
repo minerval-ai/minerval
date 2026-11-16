@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ClaimPreview, Cited, Owls, Prose } from "./prose";
 import { PageView } from "./pages/[id]/PageView";
+import { StartAtLabel, labelReady } from "../../components/inside/StartAtLabel";
+import type { MyLabels } from "../../lib/admin-api";
 import {
   MandateProposal,
   type MandateView,
@@ -378,6 +380,7 @@ export function AssistantConversation({
   kindLabels,
   nodeId,
   question,
+  startLabels,
   children,
 }: {
   initial: Convo | null;
@@ -389,12 +392,15 @@ export function AssistantConversation({
   nodeId?: string;
   /** A question written on another page's ask box, not yet sent. */
   question?: string;
+  /** Where the deployment holds material at more than one label: the labels a new conversation may start at. */
+  startLabels?: MyLabels | null;
   /** What an empty conversation shows above the composer. */
   children?: ReactNode;
 }) {
   const router = useRouter();
   const [convo, setConvo] = useState<Convo | null>(initial);
   const [draft, setDraft] = useState(question ?? "");
+  const [label, setLabel] = useState("");
   const [model, setModel] = useState(
     initial?.model ?? models.find((m) => m.default)?.id ?? models[0]?.id ?? ""
   );
@@ -519,6 +525,10 @@ export function AssistantConversation({
   const send = async () => {
     const message = draft.trim();
     if (!message || sending || replying) return;
+    if (!convo && !labelReady(startLabels, label)) {
+      setError("Choose the label this conversation works at first.");
+      return;
+    }
     setSending(true);
     setError(null);
     atBottom.current = true;
@@ -532,7 +542,12 @@ export function AssistantConversation({
         : await fetch(`/api/assistant/conversations`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify({ message, model, ...(nodeId ? { node_id: nodeId } : {}) }),
+            body: JSON.stringify({
+              message,
+              model,
+              ...(nodeId ? { node_id: nodeId } : {}),
+              ...(label ? { label } : {}),
+            }),
           });
       const data = await res.json();
       if (!res.ok) {
@@ -717,6 +732,15 @@ export function AssistantConversation({
             </p>
           ) : (
             <div className="ask-composer">
+              {!convo && (
+                <StartAtLabel
+                  mine={startLabels}
+                  value={label}
+                  onChange={setLabel}
+                  disabled={sending}
+                  what="The Assistant works at this label for the whole conversation: it reads what the label reads, and anything it adds for you is filed there."
+                />
+              )}
               <textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}

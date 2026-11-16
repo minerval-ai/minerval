@@ -37,6 +37,7 @@ import { MastheadHeight } from "@/components/MastheadHeight";
 import { PageHead } from "@/components/PageHead";
 import { grantText, listed } from "../../lib/admin-words";
 import { loadStanding } from "../../lib/standing";
+import { fetchMyLabels } from "../../lib/admin-api";
 
 export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
@@ -208,6 +209,11 @@ export default async function AccountPage({
   // public graph, where this is not read.
   const standing = await loadStanding();
   const held = standing.state === "signed_in" ? standing.mine.grants : [];
+  // Where a members-only deployment holds material at more than one label, a
+  // new key names the label it works at (LabelChoice asks only then).
+  const myLabels =
+    standing.state === "signed_in" ? await fetchMyLabels(externalId).catch(() => null) : null;
+  const keyLabels = activeKeys.some((k) => k.label);
   const priceRows = [
     ["Propose a claim (reviewed, then assessed)", caps.claim_proposal],
     ["Order a claim assessment", caps.assessment],
@@ -579,7 +585,7 @@ export default async function AccountPage({
             its own.
           </p>
           <div className="acct-side">
-            <KeyCreator extension={extensionOn} />
+            <KeyCreator extension={extensionOn} labels={myLabels} />
           </div>
         </div>
         <div className="acct-scroll">
@@ -587,6 +593,7 @@ export default async function AccountPage({
             <thead>
               <tr>
                 <th>name</th>
+                {keyLabels && <th>label</th>}
                 <th>key</th>
                 <th>created</th>
                 <th>last used</th>
@@ -601,6 +608,7 @@ export default async function AccountPage({
                 return (
                   <tr key={k.id}>
                     <td>{k.name}</td>
+                    {keyLabels && <td>{k.label ? <code>{k.label}</code> : null}</td>}
                     <td>
                       <code>{k.key_prefix}…</code>
                     </td>
@@ -625,7 +633,7 @@ export default async function AccountPage({
               })}
               {sessionUsage && (
                 <tr>
-                  <td colSpan={4}>
+                  <td colSpan={keyLabels ? 5 : 4}>
                     <em>Signed in on the site, no key</em>
                   </td>
                   <td className="acct-num">{sessionUsage.calls.toLocaleString("en-US")}</td>

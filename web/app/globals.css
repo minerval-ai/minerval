@@ -2513,6 +2513,8 @@ body:has(.ask-shell) footer.site { display: none; }
   background: none; border: none; outline: none; resize: none; padding: 0; width: 100%;
   min-height: 2.8rem; max-height: 14rem; field-sizing: content;
 }
+.ask-label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.6rem; margin-bottom: 0.4rem; }
+.ask-label small { color: var(--ink-3, inherit); opacity: 0.8; }
 .ask-composer-row { display: flex; justify-content: flex-end; align-items: center; gap: 0.7rem; }
 .ask-composer-row .order-button { padding: 0.3rem 0.9rem; border-radius: 8px; }
 /* the model: said quietly beside the send button, a menu only when opened */

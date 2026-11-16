@@ -37,6 +37,10 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
         error:
           "Proposing a claim or question holds up to 2 owls while its assessment runs, and your balance cannot cover it. You can buy owls from your account page; the unused part of the hold comes back when the run finishes.",
       };
+    case "LABEL_REQUIRED":
+    case "LABEL_NOT_READABLE":
+      // The API's own words name the labels that may be chosen.
+      return { status: err.status, error: err.message };
     default:
       return {
         status: err.status >= 500 ? 502 : err.status,
@@ -61,7 +65,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let body: { claim?: string };
+  let body: { claim?: string; label?: string };
   try {
     body = await request.json();
   } catch {
@@ -80,6 +84,7 @@ export async function POST(request: NextRequest) {
   try {
     const contribution = await proposeClaimIntake(session.externalId, {
       claim,
+      ...(typeof body.label === "string" && body.label ? { label: body.label } : {}),
     });
     return NextResponse.json({ contribution }, { status: 202 });
   } catch (err) {

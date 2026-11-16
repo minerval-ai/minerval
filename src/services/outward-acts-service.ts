@@ -45,7 +45,7 @@ import { PUBLIC_LABEL } from "../labels.js";
 import type { PermissionName } from "../permissions.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
-import { OutboundError, answerOf, call, publicGraph } from "./outbound-service.js";
+import { OutboundError, answerOf, call, publicGraph, signedRegistration } from "./outbound-service.js";
 import type { GateActor } from "./release-gate-service.js";
 import { DECLINE_REASONS, type DeclineReason } from "./request-take-up-service.js";
 
@@ -82,7 +82,8 @@ export type OutwardActKind =
   | "keep_current"
   | "publish_mandate"
   | "send_report"
-  | "send_failure_facts";
+  | "send_failure_facts"
+  | "register_publisher";
 
 /** What each kind of act is, as the log says it to a member. */
 export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
@@ -98,6 +99,7 @@ export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
   publish_mandate: "sent a mandate's name and terms, as the gate let them through, to stand on the organization's record on the public graph",
   send_report: "sent an agent's report, as the gate let it through, to Minerval's maintainers",
   send_failure_facts: "sent the facts of a tool failure to Minerval's maintainers",
+  register_publisher: "registered this deployment's signing key to the organization's account on the public graph",
 };
 
 /** Who made a call: a person, or the gate to outside sending what its setting let through with nobody sending it. */
@@ -542,4 +544,60 @@ export async function raisePublicNode(input: { nodeId: string; mandateId: string
     publicRef: id,
   });
   return { asked: true, node_id: id, the_public_graph_said: String(answer.in_words ?? "") };
+}
+
+/**
+ * Register this deployment's signing key to the organization's account on the
+ * public graph, in one act: the account is read from the public graph
+ * (`GET /users/me`, the identity the registration names), the statement is
+ * signed with the key (outbound-service.ts, signedRegistration), and the
+ * account sends it to `POST /publishers`. It decides who speaks for the
+ * deployment outside, so it is an administrator's act from a signed-in
+ * session, and it is on the log of acts like every other.
+ */
+export async function registerPublisherOutside(input: { declaredInterest?: string | null; actor: GateActor }): Promise<Record<string, unknown>> {
+  let graph;
+  try {
+    graph = publicGraph();
+  } catch (err) {
+    if (err instanceof OutboundError) throw new OutwardError("NO_ROUTE_OUT", NO_ACCOUNT_WORDS);
+    throw err;
+  }
+  let me: { status: number; json: Record<string, any> };
+  try {
+    me = await call(graph, "GET", "/users/me");
+  } catch (err) {
+    throw new OutwardError("PUBLIC_GRAPH_UNREACHABLE", `The public graph could not be reached, so nothing was sent: ${err instanceof Error ? err.message.slice(0, 300) : "no answer"}`, 502);
+  }
+  const account = me.status === 200 ? String(me.json.user?.external_id ?? "") : "";
+  if (!account) {
+    throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not accept this deployment's key (${me.status}). An operator checks PUBLIC_GRAPH_API_KEY.`, 409);
+  }
+  let statement;
+  try {
+    statement = signedRegistration(account);
+  } catch (err) {
+    if (err instanceof OutboundError) throw new OutwardError(err.code, err.message, 409);
+    throw err;
+  }
+  const interest = input.declaredInterest?.trim();
+  const answer = await act({
+    kind: "register_publisher",
+    by: { actor: input.actor },
+    method: "POST",
+    path: "/publishers",
+    body: {
+      public_key: statement.public_key,
+      hosting: statement.hosting,
+      signature: statement.signature,
+      ...(interest ? { declared_interest: interest } : {}),
+    },
+  });
+  return {
+    account: { external_id: account, name: me.json.user?.display_name ?? null },
+    publisher_id: answer.publisher_id ?? null,
+    key_id: answer.key_id ?? null,
+    hosting: answer.hosting ?? statement.hosting,
+    in_words: answer.in_words ?? null,
+  };
 }

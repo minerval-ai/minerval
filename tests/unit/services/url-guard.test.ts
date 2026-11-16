@@ -1,9 +1,11 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   assertPublicHttpUrl,
+  DOCUMENT_MAX_DOWNLOAD_BYTES,
   fetchPublicBytes,
   fetchPublicUrl,
   HttpStatusError,
+  ResponseTooLargeError,
   UnsafeUrlError,
 } from "../../../src/services/url-guard.js";
 
@@ -110,6 +112,14 @@ describe("fetchPublicBytes", () => {
     const err = await fetchPublicBytes("http://8.8.8.8/busy").catch((e: unknown) => e);
     expect(err).toBeInstanceOf(HttpStatusError);
     expect(err).toMatchObject({ status: 429, retryAfter: "2", message: "Failed to fetch http://8.8.8.8/busy: 429" });
+  });
+
+  it("names a body over its cap as such, and holds a document to 50 MiB (#1068)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => respond(new Uint8Array(2048))));
+    const err = await fetchPublicBytes("http://8.8.8.8/big", { maxBytes: 1024 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ResponseTooLargeError);
+    expect(err).toMatchObject({ url: "http://8.8.8.8/big", maxBytes: 1024 });
+    expect(DOCUMENT_MAX_DOWNLOAD_BYTES).toBe(50 * 1024 * 1024);
   });
 
   it("is what the text form reads through", async () => {

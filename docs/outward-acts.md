@@ -61,6 +61,7 @@ decided there, by its settings and, where they say so, by holders of
 | Offer to the gate to outside that the graph is taking a request up, or decline it | `PUBLIC_ACTS_BY` | session or card | yes |
 | Open a public mandate; write to the public Grantmaker | `PUBLIC_ACTS_BY` | session | no: the words are a person's |
 | Fund a drafted public mandate; add public owls to one; fund a mirrored node; ask a public mandate about a node | `PUBLIC_ACTS_BY` | session or card | yes |
+| Register the deployment's signing key to the organization's account there | `administer` | session | no: it decides who speaks for the deployment |
 | Name the mandate that keeps public versions current; set the gate to outside | `administer` (a party's own setting: `release` for it) | any credential | yes |
 | Approve, hold or remove at the gate to outside where a person decides | `release` for the parties an item rests on | any credential | yes |
 

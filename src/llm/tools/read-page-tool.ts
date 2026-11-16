@@ -19,6 +19,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { readPage } from "../../services/source-watch-service.js";
 import { SOURCE_READ_DEFAULT_CHARS, SOURCE_READ_MAX_CHARS } from "../../services/document-text.js";
+import { DOCUMENT_MAX_DOWNLOAD_MB } from "../../services/url-guard.js";
 
 export const READ_PAGE_TOOL_NAME = "read_page";
 
@@ -31,7 +32,10 @@ export function getReadPageToolDefinition(): Tool {
       `(${SOURCE_READ_DEFAULT_CHARS.toLocaleString("en-US")} characters unless max_chars says ` +
       `otherwise, at most ${SOURCE_READ_MAX_CHARS.toLocaleString("en-US")}). When truncated is ` +
       "true, call again with offset: next_offset to read on, to the end if the page matters. " +
-      "No count limits the windows; your budget does. Stores nothing in the graph.",
+      "No count limits the windows; your budget does. Stores nothing in the graph. " +
+      `A document over ${DOCUMENT_MAX_DOWNLOAD_MB} MB is not fetched, here or by an ingest: it is held ` +
+      "whole in the memory of the server every agent runs on, which no budget bounds. Look then for " +
+      "a smaller form of the same text (an HTML version, a landing page, its parts published separately).",
     input_schema: {
       type: "object" as const,
       properties: {

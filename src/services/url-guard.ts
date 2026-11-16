@@ -33,6 +33,29 @@ const FETCH_TIMEOUT_MS = 60_000;
  * unbounded body is a memory-exhaustion vector, not a source. */
 const MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
+/**
+ * The cap for a document fetched to be read or ingested whole: a long
+ * system card, risk report or regulatory filing as one PDF runs past the
+ * page-sized cap above (#1068). The body is held whole in the memory of
+ * the process every agent runs on, and its text extracted there; nothing
+ * meters memory, so a run's budget cannot bound it and the cap is a
+ * number. Feeds and lookups keep the page-sized cap. The agents that read
+ * or ingest are told this limit in their tools' descriptions.
+ */
+export const DOCUMENT_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+export const DOCUMENT_MAX_DOWNLOAD_MB = DOCUMENT_MAX_DOWNLOAD_BYTES / (1024 * 1024);
+
+/** A body that ran past its fetch's `maxBytes`; nothing of it is kept. */
+export class ResponseTooLargeError extends Error {
+  constructor(
+    readonly url: string,
+    readonly maxBytes: number
+  ) {
+    super(`Response from ${url} exceeds ${maxBytes} bytes`);
+    this.name = "ResponseTooLargeError";
+  }
+}
+
 export class UnsafeUrlError extends Error {
   constructor(message: string) {
     super(message);
@@ -168,7 +191,8 @@ export interface PublicBody {
  * bounded, response time- and size-capped. The one sanctioned way for
  * ingestion and the agents' reading tools to touch the network. `maxBytes`
  * replaces the page-sized cap for a caller that knows it is fetching
- * something larger (a paper's source archive).
+ * something larger (a paper's source archive, a document read or ingested
+ * whole: DOCUMENT_MAX_DOWNLOAD_BYTES); past it, ResponseTooLargeError.
  *
  * Being the one way, it is where the `web_pages` service is held to the
  * label of the run or request fetching (src/provider-labels.ts), and where
@@ -228,9 +252,7 @@ export async function fetchPublicBytes(rawUrl: string, init: PublicFetchInit = {
       received += value.byteLength;
       if (received > maxBytes) {
         await reader.cancel().catch(() => undefined);
-        throw new Error(
-          `Response from ${current} exceeds ${maxBytes} bytes`
-        );
+        throw new ResponseTooLargeError(current, maxBytes);
       }
       chunks.push(value);
     }

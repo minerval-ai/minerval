@@ -61,6 +61,7 @@ import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
 } from "../tools/graph-read-tools.js";
+import { DOCUMENT_MAX_DOWNLOAD_MB } from "../../services/url-guard.js";
 import { createMandateTools } from "../tools/mandate-tools.js";
 import { createConnectionTools } from "../tools/connection-tools.js";
 import {
@@ -409,7 +410,10 @@ async function runLookoutImpl(input: {
         "a repeat. A focus scopes the ingest: the " +
         "extractor reads the whole document but proposes only the claims " +
         "bearing on that subject. Use one when your brief wants one subject " +
-        "from a document that ranges wider.",
+        "from a document that ranges wider. " +
+        `A document over ${DOCUMENT_MAX_DOWNLOAD_MB} MB is not ingested, as read_page does not ` +
+        "fetch it (it is held whole in the memory of the server every agent runs on, which no " +
+        "budget bounds): raise a smaller form of the same text instead.",
       input_schema: {
         type: "object" as const,
         properties: {
