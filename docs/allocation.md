@@ -1044,14 +1044,18 @@ A mandate's **pace** says how fast its money may be committed
   are projects (explore a question, ingest a source, map a literature)
   whose money is naturally spent as the work arrives, much of it at the
   start.
-- `steady` {owls, period_hours}: at most that many owls committed in any
-  rolling window of that many hours (24 for a day's worth, 168 for a
-  week's), for upkeep that should spread its money evenly. The window is
-  rolling, so there is no midnight at which a day's room appears at once.
-  It counts each allocation's amount while it is live and its spend once
-  it is released (`allocationDayUseSql`, src/services/day-use.ts), so
-  running work holds its budget against the window and frees what it
-  leaves as it finishes.
+- `steady` {owls, period_hours}: at most that many owls allocated to
+  runs in any rolling window of that many hours (24 for a day's
+  worth, 168 for a week's), for upkeep that should spread its money
+  evenly. The window is rolling, so there is no midnight at which a day's
+  room appears at once. It counts each allocation's amount while it is
+  live and its spend once it is released (`allocationDayUseSql`,
+  src/services/day-use.ts), so running work holds its budget against the
+  window and frees what it leaves as it finishes. It counts allocations
+  only, the mandate's own passes and runs among them: what the mandate's
+  job meters outside the ledger (`outside_ledger_owls`, mostly the
+  Grantmaker's chat with the funder) is in what the escrow has committed
+  and not in the window, and the pace sentence says so with the figure.
 
 The funder agrees the pace when funding: the Grantmaker drafts it with
 them (`propose_mandate`'s `pace`) and it is written when the draft is

@@ -1168,7 +1168,7 @@ export const AMEND_PACE: Tool = {
     "Change how fast the mandate's money may be committed, its pace, which its funder agreed when funding it. " +
     "Use it only in conversation with the funder, when they ask for the change or agree to one you proposed. " +
     "as_needed: the escrow is the only bound, for a mandate whose work should run as it arrives (explore a " +
-    "question, ingest a source, map a literature). steady: at most owls committed in any rolling period_hours " +
+    "question, ingest a source, map a literature). steady: at most owls allocated to runs in any rolling period_hours " +
     "(24 for a day's worth, 168 for a week's), for upkeep that should spread its money evenly. The change takes " +
     "effect at once and is recorded on the mandate's public record with your note. Outside your funder's chat, propose " +
     "a change to your funder with note_to_funder.",

@@ -25,6 +25,7 @@ const { state } = vi.hoisted(() => ({
     script: [] as Array<{ name: string; input: Record<string, unknown> }>,
     outputs: [] as string[],
     updates: [] as Array<{ sql: string; params: unknown[] }>,
+    outsideLedgerMicroUsd: 0,
   },
 }));
 
@@ -73,7 +74,12 @@ vi.mock("../../../src/llm/tools/subscription-tools.js", () => ({
   executeSubscriptionTool: async () => null,
 }));
 vi.mock("../../../src/services/pace-service.js", () => ({
-  paceRoom: async () => ({ sentence: "Pace as needed: the escrow is the only bound.", windowMicroUsd: null, windowUsedMicroUsd: null }),
+  paceRoom: async () => ({
+    sentence: "Pace as needed: the escrow is the only bound.",
+    windowMicroUsd: null,
+    windowUsedMicroUsd: null,
+    outsideLedgerMicroUsd: state.outsideLedgerMicroUsd,
+  }),
 }));
 vi.mock("../../../src/services/subscription-service.js", () => ({
   createSubscription: async () => ({ id: "s" }),
@@ -162,6 +168,7 @@ beforeEach(() => {
   state.script = [];
   state.outputs = [];
   state.updates = [];
+  state.outsideLedgerMicroUsd = 0;
 });
 
 const names = () => state.loop!.tools.map((t) => t.name);
@@ -195,6 +202,16 @@ describe("runMandateReview", () => {
     await runMandateReview({ grantId: GRANT });
     expect(state.loop!.briefing).toContain("write_operating_policy");
     expect(state.loop!.briefing).toContain("Start from what happened, not from scratch");
+  });
+
+  it("names what was metered outside the ledger, which the pace does not hold", async () => {
+    await runMandateReview({ grantId: GRANT });
+    expect(state.loop!.briefing).not.toContain("outside the ledger");
+    state.outsideLedgerMicroUsd = 3_000_000;
+    await runMandateReview({ grantId: GRANT });
+    expect(state.loop!.briefing).toContain(
+      "3 of the spent was metered outside the ledger, mostly your chat with the funder, which draws on the escrow and is not held to the pace"
+    );
   });
 
   it("extend_plan takes the shared item schema and keeps an ingest's focus", async () => {

@@ -9,7 +9,7 @@ import { rawQuery } from "../../src/db/client.js";
 import { commissionNodePass } from "../../src/services/commission-service.js";
 import { paceRoom, parsePace, validatePace } from "../../src/services/pace-service.js";
 import { executeMandateOperationsTool } from "../../src/llm/agents/program-officer.js";
-import { OWL, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
+import { OWL, seedClaim, seedGrantWithJob, seedLlmUsage, seedUser } from "./helpers.js";
 
 async function mandate(opts: { escrow: number; perDay?: number }) {
   const funder = await seedUser("pace funder");
@@ -47,6 +47,24 @@ describe("pace", () => {
     // A commitment older than the window no longer counts against it.
     await rawQuery(`UPDATE action_allocations SET created_at = now() - interval '25 hours' WHERE grant_id = $1`, [grantId]);
     expect(await pass(grantId, await seedClaim("e"), 3 * OWL, "program_officer")).toMatchObject({ ok: true });
+  });
+
+  it("says the window counts allocations only, and names what was metered outside the ledger", async () => {
+    const { grantId, jobId } = await mandate({ escrow: 100 * OWL, perDay: 5 * OWL });
+    expect(await pass(grantId, await seedClaim("oc"), 2 * OWL, "program_officer")).toMatchObject({ ok: true });
+    // The funder's chat with the Grantmaker: metered to the job, in no allocation.
+    await seedLlmUsage({ jobId, costMicroUsd: 4 * OWL });
+    const room = (await paceRoom(grantId, "delegated"))!;
+    expect(room.outsideLedgerMicroUsd).toBe(4 * OWL);
+    expect(room.windowUsedMicroUsd).toBe(2 * OWL);
+    expect(room.committedMicroUsd).toBe(6 * OWL);
+    expect(room.sentence).toContain("at most 5 owls allocated to runs in any rolling day");
+    expect(room.sentence).toContain("Committed so far 6 of 100 owls");
+    expect(room.sentence).toContain("The window counts only what is allocated to runs: it holds 2 of 5 owls");
+    expect(room.sentence).toContain(
+      "4 owls were metered outside the ledger (mostly the Grantmaker's chat with the funder); they draw on the escrow but not on the window"
+    );
+    expect((await paceRoom(grantId, "grantmaker"))!.sentence).toContain("(mostly your chat with the funder)");
   });
 
   it("keeps the reserve from officers and plan orders, lets the Grantmaker draw on it, and states it", async () => {

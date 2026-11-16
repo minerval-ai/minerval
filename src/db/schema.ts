@@ -3507,8 +3507,8 @@ export const grants = pgTable(
     isPlatform: boolean("is_platform").notNull().default(false),
     // How fast the money may be committed (services/pace-service.ts):
     // {kind: 'as_needed'}, the escrow the only bound, or {kind: 'steady',
-    // owls, period_hours}, at most that much committed in any rolling
-    // window. Drafted with the funder and changed only with the funder.
+    // owls, period_hours}, at most that much allocated to runs in
+    // any rolling window. Drafted with the funder and changed only with the funder.
     pace: jsonb("pace").notNull().default(sql`'{"kind":"as_needed"}'::jsonb`),
     // Owls only the Grantmaker may commit (set_reserve), with its reason:
     // money held back for the directions worth pursuing once the first

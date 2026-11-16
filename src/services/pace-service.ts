@@ -9,9 +9,12 @@
  * mandate is drafted and changed only with the funder (amend_pace):
  *
  *  - `as_needed`: the escrow is the only bound. The default.
- *  - `steady`: at most `owls` committed in any rolling `period_hours`
- *    (24 for a day's worth, 168 for a week's). Rolling, so there is no
- *    midnight at which a day's room appears all at once.
+ *  - `steady`: at most `owls` allocated to runs in any rolling
+ *    `period_hours` (24 for a day's worth, 168 for a week's). Rolling, so
+ *    there is no midnight at which a day's room appears all at once. The
+ *    window counts allocations only: what the mandate's job meters outside
+ *    the ledger (mostly the funder's chat with the Grantmaker) draws on the
+ *    escrow and not on the window.
  *
  * Inside the pace, the Grantmaker holds a reserve (set_reserve): owls its
  * officers, lookouts, plan orders and the mandate's own routine runs cannot
@@ -28,7 +31,7 @@
  */
 import { rawQuery, type TxQuery } from "../db/client.js";
 import { allocationDayUseSql } from "./day-use.js";
-import { grantCommittedMicroUsd } from "./regrant-service.js";
+import { grantEscrowBreakdown } from "./regrant-service.js";
 import { microUsdToOwls, owlsToMicroUsd } from "./owl.js";
 
 export type Pace =
@@ -71,7 +74,7 @@ export function describePace(pace: Pace): string {
   if (pace.kind === "as_needed") return "as needed: the escrow is the only bound";
   const period =
     pace.period_hours === 24 ? "day" : pace.period_hours === 168 ? "week" : `${pace.period_hours} hours`;
-  return `steady: at most ${pace.owls} owls committed in any rolling ${period}`;
+  return `steady: at most ${pace.owls} owls allocated to runs in any rolling ${period}`;
 }
 
 /**
@@ -107,6 +110,8 @@ export interface PaceRoom {
   binding: "window" | "reserve" | "escrow";
   escrowMicroUsd: number;
   committedMicroUsd: number;
+  /** The part of committed metered outside the ledger: in the escrow, not the window. */
+  outsideLedgerMicroUsd: number;
   reserveMicroUsd: number;
   reserveReason: string | null;
   /** Steady only: what the window holds and allows. */
@@ -130,7 +135,9 @@ export async function paceRoom(grantId: string, who: PaceCommitter, tx?: TxQuery
   if (!g) return null;
   const pace = parsePace(g.pace);
   const escrow = Number(g.escrow);
-  const committed = await grantCommittedMicroUsd({ id: grantId, budgetJobId: g.budget_job_id }, tx);
+  const money = await grantEscrowBreakdown({ id: grantId, budgetJobId: g.budget_job_id }, tx);
+  const committed = money.committed;
+  const outsideLedger = Math.min(money.outsideLedger, committed);
   const uncommitted = Math.max(0, escrow - committed);
   const reserve = Math.min(Math.max(0, Number(g.reserve)), uncommitted);
   const windowMicro = pace.kind === "steady" ? owlsToMicroUsd(pace.owls) : null;
@@ -145,7 +152,14 @@ export async function paceRoom(grantId: string, who: PaceCommitter, tx?: TxQuery
     `Committed so far ${owls(committed)} of ${owls(escrow)} owls in escrow; ${owls(uncommitted)} uncommitted.`,
   ];
   if (pace.kind === "steady") {
-    parts.push(`The window holds ${owls(windowUsed!)} of ${pace.owls} owls; it frees as running work settles and as commitments age past ${pace.period_hours} hours.`);
+    parts.push(
+      `The window counts only what is allocated to runs: it holds ${owls(windowUsed!)} of ${pace.owls} owls, and frees as running work settles and as commitments age past ${pace.period_hours} hours.`
+    );
+    if (outsideLedger > 0) {
+      parts.push(
+        `Of what is committed, ${owls(outsideLedger)} owls were metered outside the ledger (mostly ${who === "grantmaker" ? "your" : "the Grantmaker's"} chat with the funder); they draw on the escrow but not on the window.`
+      );
+    }
   }
   if (reserve > 0) {
     parts.push(
@@ -161,6 +175,7 @@ export async function paceRoom(grantId: string, who: PaceCommitter, tx?: TxQuery
     binding,
     escrowMicroUsd: escrow,
     committedMicroUsd: committed,
+    outsideLedgerMicroUsd: outsideLedger,
     reserveMicroUsd: reserve,
     reserveReason: g.reserve_reason,
     windowUsedMicroUsd: windowUsed,

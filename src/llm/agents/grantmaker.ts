@@ -201,7 +201,7 @@ const MANDATE_SCHEMA = {
         "them in plain words before they fund. as_needed (the default): the " +
         "escrow is the only bound, so the work runs as it arrives, which " +
         "suits a mandate that explores a question, ingests a source or maps " +
-        "a literature. steady: at most owls committed in any rolling " +
+        "a literature. steady: at most owls allocated to runs in any rolling " +
         "period_hours (24 for a day's worth, 168 for a week's), for upkeep " +
         "or a funder who wants the money spread out. Either way you can hold " +
         "part of it in reserve (set_reserve) for the directions worth " +
