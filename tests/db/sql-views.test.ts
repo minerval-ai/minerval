@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
 import { loadConfig } from "../../src/config.js";
 import {
@@ -18,7 +19,7 @@ import {
   runReadOnlyQuery,
 } from "../../src/services/sql-service.js";
 import { TEST_DATABASE_URL } from "./urls.js";
-import { seedClaim } from "./helpers.js";
+import { seedAction, seedAllocation, seedClaim, seedUser } from "./helpers.js";
 
 const ROLE = "minerval_sql_dbtest";
 const PASSWORD = "dbtest-sql";
@@ -35,7 +36,7 @@ const REVIEWED_COLUMNS: Record<string, string[]> = {
   tags: ["slug", "name", "description", "status", "node_count"],
   sources: ["id", "url", "title", "source_type", "publisher", "published_date", "doi", "retrieved_at"],
   instances: ["id", "node_id", "source_id", "stance", "speaker", "publication", "source_date", "verbatim_head", "created_at", "detached_at"],
-  ledger: ["action_id", "kind", "variant", "target_node_id", "target_ref", "label", "status", "spent_owls", "opened_at", "updated_at", "waiting_on", "waiting_since", "next_attempt_at", "extraction", "extraction_started_at", "queued_ahead"],
+  ledger: ["action_id", "kind", "variant", "target_node_id", "target_ref", "label", "status", "spent_owls", "opened_at", "updated_at", "waiting_on", "waiting_since", "next_attempt_at", "extraction", "extraction_started_at", "queued_ahead", "partition"],
   commissions: ["commission_id", "action_id", "exclusion_group", "payer_kind", "payer_mandate_id", "budget_owls", "spent_owls", "returned_owls", "commissioned_by", "brief", "reason", "parent_action_id", "created_at", "settled_at"],
   messages: ["message_id", "node_id", "trigger", "sender_kind", "sender_node_id", "paid", "body", "created_at", "read_at", "outcome", "outcome_note"],
   mandates: ["mandate_id", "title", "objective", "status", "is_platform", "pace", "reserve_owls", "reserve_reason", "escrow_owls", "operating_policy", "created_at"],
@@ -109,6 +110,54 @@ describe("read-only SQL", () => {
     expect(res.columns).toEqual(["id", "text", "importance", "status", "relabeled_from", "assessed_at", "open_reassess", "committed_owls"]);
     const row = res.rows.find((r) => r[0] === id);
     expect(row?.[4]).toBe("contested");
+  });
+
+  it("names a consistency sweep's partition, and runs the sql skill's last-sweep query (#1005)", async () => {
+    const skill = readFileSync(new URL("../../skills/sql/SKILL.md", import.meta.url), "utf8");
+    const recipe = skill.split("```sql").map((b) => b.split("```")[0]!).find((b) => b.includes("reassessed_since"));
+    expect(recipe).toBeTruthy();
+    const slug = `sweep-partition-${randomUUID().slice(0, 8)}`;
+    const [tag] = await rawQuery<{ id: string }>(`INSERT INTO tags (slug, name) VALUES ($1, $1) RETURNING id`, [slug]);
+    const changed = await seedClaim("re-assessed since its sweep");
+    const settled = await seedClaim("unchanged since its sweep");
+    for (const id of [changed, settled]) {
+      await rawQuery(
+        `INSERT INTO taggings (tag_id, subject_kind, subject_id, source) VALUES ($1, 'claim', $2, 'dbtest')`,
+        [tag!.id, id]
+      );
+    }
+    await rawQuery(
+      `INSERT INTO assessments (claim_id, status, confidence, reasoning_trace, assessed_at)
+       VALUES ($1, 'supported', 0.7, 'before', now() - interval '2 days'),
+              ($2, 'supported', 0.7, 'after', now())`,
+      [settled, changed]
+    );
+    // The partition's rows, reopened since the sweep that ran: its finish
+    // is on the settled commission, not the row.
+    const group = `consistency:${tag!.id}`;
+    const swept = await seedAction({ kind: "consistency_sweep", group, targetRef: tag!.id, costMicroUsd: 1_000_000 });
+    await seedAction({ kind: "consistency_sweep", group, variant: "strong", targetRef: tag!.id, costMicroUsd: 3_000_000 });
+    const userId = await seedUser("sweep funder");
+    const commission = await seedAllocation({ group, actionId: swept, userId, amountMicroUsd: 1_000_000, spentMicroUsd: 400_000, released: true });
+    await rawQuery(`UPDATE action_allocations SET released_at = now() - interval '1 day' WHERE id = $1`, [commission]);
+    const residual = await seedAction({ kind: "consistency_sweep", group: "consistency:residual", targetRef: "residual", costMicroUsd: 1_000_000 });
+    const ingest = await seedAction({ kind: "ingest", group: `ingest:${slug}`, targetRef: "https://example.org/x", costMicroUsd: 1_000_000 });
+
+    const partitions = await runReadOnlyQuery(
+      `SELECT action_id, partition FROM ledger WHERE action_id = ANY($1::uuid[])`,
+      [[swept, residual, ingest]],
+      { audience: "agent" }
+    );
+    expect(new Map(partitions.rows.map((r) => [r[0], r[1]]))).toEqual(
+      new Map([[swept, slug], [residual, "residual"], [ingest, null]])
+    );
+
+    const res = await runReadOnlyQuery(recipe!, [], { audience: "agent" });
+    expect(res.columns).toEqual(["partition", "last_swept", "due", "reassessed_since", "nodes"]);
+    const row = res.rows.find((r) => r[0] === slug);
+    expect(row?.[2]).toBe(true);
+    expect(Number(row?.[3])).toBe(1);
+    expect(row?.[4]).toEqual([changed]);
   });
 
   it("refuses what isn't a single SELECT, before anything runs", async () => {
