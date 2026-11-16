@@ -2314,6 +2314,7 @@ textarea.contribute-field.mono, input.contribute-field.mono { font-family: var(-
 .ask-prose { font-family: var(--serif); font-size: 1rem; line-height: 1.6; overflow-wrap: anywhere; }
 .ask-prose > :first-child { margin-top: 0; }
 .ask-prose > :last-child { margin-bottom: 0; }
+.ask-thread .ask-prose { font-size: 0.88rem; line-height: 1.5; }
 .ask-prose h1, .ask-prose h2, .ask-prose h3 { font-size: 1.05rem; margin: 1.1rem 0 0.4rem; }
 .ask-prose table { border-collapse: collapse; font-family: var(--sans); font-size: 0.82rem; display: block; overflow-x: auto; }
 .ask-prose th, .ask-prose td { border-bottom: 1px solid var(--rule-soft); padding: 0.3rem 0.8rem 0.3rem 0; text-align: left; vertical-align: top; }
@@ -2471,6 +2472,7 @@ body:has(.ask-shell) footer.site { display: none; }
   min-height: 0;
 }
 .ask-chat.ask-chat-wide-panel { grid-template-columns: minmax(0, 1fr) minmax(24rem, 46%); }
+.ask-chat.ask-chat-no-panel { grid-template-columns: minmax(0, 1fr); }
 .ask-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .ask-bar {
   display: flex; gap: 1rem; align-items: baseline; justify-content: space-between;

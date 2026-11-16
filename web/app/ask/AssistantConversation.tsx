@@ -221,15 +221,21 @@ function GrantThread({ id }: { id: string }) {
               <span className="sc convo-who">
                 {m.role !== "user" ? "grantmaker" : m.via === "assistant" ? "your assistant" : "you"}
               </span>
-              <div className="convo-body">{m.content}</div>
+              {m.role === "user" ? (
+                <div className="convo-body">{m.content}</div>
+              ) : (
+                <Prose content={m.content} />
+              )}
             </div>
           ))}
           {thread.turn?.state === "replying" && (
             <div className="convo-msg convo-agent">
               <span className="sc convo-who">grantmaker</span>
-              <div className={thread.turn.partial ? "convo-body" : "convo-body convo-thinking"}>
-                {thread.turn.partial || "surveying the graph…"}
-              </div>
+              {thread.turn.partial ? (
+                <Prose content={thread.turn.partial} />
+              ) : (
+                <div className="convo-body convo-thinking">surveying the graph…</div>
+              )}
             </div>
           )}
         </div>
@@ -627,13 +633,19 @@ export function AssistantConversation({
   const allowedCount = new Set([...always, ...inConversation]).size;
   const offered = convo?.models ?? models;
   const shown: Panel = preview ? { type: "claim", citation: preview } : pinned;
+  // The right panel is there only when it has something to show, or might at
+  // a pointer's touch: a reply with citations keeps it, so that pointing at
+  // one does not narrow the column under the pointer.
+  const hasPanel = !!shown || (convo?.messages ?? []).some((m) => (m.citations?.length ?? 0) > 0);
   // What the running turn shows: the stream's, where there is one.
   const activity = live?.activity ?? convo?.turn.activity ?? [];
   const runningNote = live ? live.note : (convo?.turn.note ?? null);
   const runningText = live ? live.partial : (convo?.turn.partial ?? "");
 
   return (
-    <div className={`ask-chat${pinned?.type === "page" ? " ask-chat-wide-panel" : ""}`}>
+    <div
+      className={`ask-chat${!hasPanel ? " ask-chat-no-panel" : pinned?.type === "page" ? " ask-chat-wide-panel" : ""}`}
+    >
       <div className="ask-col">
         {convo && (
           <div className="ask-bar">
@@ -836,15 +848,17 @@ export function AssistantConversation({
         </div>
       </div>
 
-      <aside className="ask-panel" aria-label="Details">
-        {shown?.type === "claim" && <ClaimPreview citation={shown.citation} />}
-        {shown?.type === "page" && <PagePanel id={shown.id} />}
-        {pinned && !preview && (
-          <button className="linklike ask-panel-close" onClick={() => setPinned(null)}>
-            Close
-          </button>
-        )}
-      </aside>
+      {hasPanel && (
+        <aside className="ask-panel" aria-label="Details">
+          {shown?.type === "claim" && <ClaimPreview citation={shown.citation} />}
+          {shown?.type === "page" && <PagePanel id={shown.id} />}
+          {pinned && !preview && (
+            <button className="linklike ask-panel-close" onClick={() => setPinned(null)}>
+              Close
+            </button>
+          )}
+        </aside>
+      )}
     </div>
   );
 }
