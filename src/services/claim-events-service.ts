@@ -54,6 +54,8 @@ export type ClaimEvent =
       assessment_id: string;
       status: string;
       confidence: number;
+      // The other reading (§10); null where the Steward named none.
+      alternative_status: string | null;
       claim_credence: number | null;
       summary: string;
       trigger: string | null;
@@ -236,6 +238,7 @@ export interface ClaimEventsInput {
     id: string;
     status: string;
     confidence: number;
+    alternativeStatus?: string | null;
     claimCredence: number | null;
     summary: string | null;
     reasoningTrace: string;
@@ -438,6 +441,7 @@ export function composeClaimEvents(input: ClaimEventsInput): ClaimEvent[] {
       assessment_id: a.id,
       status: a.status,
       confidence: a.confidence,
+      alternative_status: a.alternativeStatus ?? null,
       claim_credence: a.claimCredence ?? null,
       // Reader-facing body; fall back to the reasoning trace for assessments
       // written before the summary/reasoning split (nullable column).

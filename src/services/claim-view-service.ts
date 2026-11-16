@@ -184,6 +184,7 @@ export function formatClaimViewAssessment(
     id: string;
     status: string;
     confidence: number;
+    alternativeStatus?: string | null;
     claimCredence: number | null;
     summary: string | null;
     reasoningTrace: string;
@@ -202,6 +203,8 @@ export function formatClaimViewAssessment(
     status: a.status,
     // Verdict confidence: how sure the Steward is of the status, not P(true).
     confidence: a.confidence,
+    // The other reading (§10); null where none was named.
+    alternative_status: a.alternativeStatus ?? null,
     // Credence that the claim is true; null where one number would be false
     // precision (constitution §10).
     claim_credence: a.claimCredence ?? null,

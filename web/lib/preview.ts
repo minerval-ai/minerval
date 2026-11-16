@@ -8,8 +8,9 @@ import { fmtDate } from "./format";
 // The graph's judgment of a node, as a link preview states it: the page's
 // metadata description and the generated card (lib/og/card.tsx) both read
 // this, so a pasted link says what the page says. The rule is the page's own
-// (§10): the status describes the evidence, credence and verdict confidence
-// go with it, dispute is reported beside it and never in its place, and a
+// (§10): the status describes the evidence, the credence goes with it,
+// dispute is reported beside it and never in its place (verdict confidence
+// and the other reading, which the page does not show, are not here), and a
 // node with no current assessment reads as unassessed, not as a verdict.
 // Every word here is one the claim page already uses (lib/ontology.ts,
 // components/Assessment.tsx); a preview must not coin a label of its own.
@@ -36,8 +37,6 @@ export interface ClaimPreview {
   dispute: string | null;
   /** The Steward's probability that the claim is true, when stated. */
   credence: number | null;
-  /** How sure the Steward is of the status itself. */
-  verdictConfidence: number | null;
   /** When the current assessment was made (ISO). */
   assessedAt: string | null;
   /** "last assessed" or "last estimated", the page's wording for the date. */
@@ -56,7 +55,6 @@ export function claimPreview(detail: ClaimDetail): ClaimPreview {
     text: claim.text,
     unassessedLabel: UNASSESSED_META.label,
     credence: null,
-    verdictConfidence: null,
     assessedVerb: "last assessed",
   };
   const dispute = disputeMeta(claim.contestation)?.label ?? null;
@@ -102,7 +100,6 @@ export function claimPreview(detail: ClaimDetail): ClaimPreview {
     verdict: { family: "status", key: normalizeStatus(a.status), label: s.label, def: s.def },
     dispute,
     credence: typeof a.claim_credence === "number" ? a.claim_credence : null,
-    verdictConfidence: typeof a.confidence === "number" ? a.confidence : null,
     assessedAt: a.assessed_at,
   };
 }
@@ -133,7 +130,6 @@ export function describePreview(p: ClaimPreview): string {
   } else {
     parts.push(p.verdict.label);
     if (p.credence != null) parts.push(`credence ${p.credence.toFixed(2)}`);
-    if (p.verdictConfidence != null) parts.push(`verdict confidence ${p.verdictConfidence.toFixed(2)}`);
     if (p.dispute) parts.push(p.dispute);
     if (when) parts.push(`${p.assessedVerb} ${when}`);
     tail = p.verdict.def;

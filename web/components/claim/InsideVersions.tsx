@@ -5,7 +5,7 @@ import { isStatus } from "@/lib/ontology";
 import { leftStandingLines, notExaminedLine, versionRef } from "@/lib/inside-versions";
 import { day, stateWords, type PublishedPageView } from "@/lib/published";
 import type { ClaimDetail, NodeVersion } from "@/lib/types";
-import { Credence, StatusBadge, VerdictConfidence } from "../Assessment";
+import { Credence, StatusBadge } from "../Assessment";
 import { AssessmentText } from "../AssessmentText";
 import { CheckShownPage } from "./CheckShownPage";
 import { estimateAsRecorded } from "@/lib/quantity";
@@ -190,7 +190,6 @@ function VersionBand({ version }: { version: NodeVersion }) {
         <>
           <StatusBadge status={version.status} size="lg" />
           <Credence value={version.claim_credence} />
-          <VerdictConfidence value={version.confidence} />
         </>
       ) : "estimate" in version ? (
         <span>Estimate: {estimateAsRecorded(version.estimate)}</span>

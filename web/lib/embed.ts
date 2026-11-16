@@ -45,10 +45,6 @@ export interface EmbedJudgment {
   /** "actively disputed" or "disputed", where the page shows it. */
   dispute: string | null;
   disputeLevel: DisputeLevel | null;
-  /** How sure the Steward is of the status, or of a question's standing. */
-  verdictConfidence: number | null;
-  /** The page's words for that figure. */
-  confidenceLabel: string;
   /** When the current judgment was made (ISO). */
   assessedAt: string | null;
   /** "last assessed" or "last estimated", the page's wording for the date. */
@@ -60,18 +56,12 @@ function sentence(s: string): string {
   return /[.!?]$/.test(t) ? t : `${t}.`;
 }
 
-function confidence(v: unknown): number | null {
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
-}
-
 export function cardJudgment(card: ClaimCard): EmbedJudgment {
   const base = {
     state: card.state !== "active" ? card.state.replace(/_/g, " ") : null,
     text: card.text,
     unassessedLabel: UNASSESSED_META.label as string,
     unassessedDef: UNASSESSED_META.def as string,
-    verdictConfidence: null,
-    confidenceLabel: "verdict confidence",
     assessedVerb: "last assessed",
   };
   const level = disputeLevel(card.contestation);
@@ -87,9 +77,6 @@ export function cardJudgment(card: ClaimCard): EmbedJudgment {
       // The question page shows dispute beside the standing either way.
       dispute,
       disputeLevel: level,
-      verdictConfidence: standing ? confidence(card.assessment_confidence) : null,
-      // The card's own word for it; a standing is not a verdict on a proposition.
-      confidenceLabel: "confidence",
       assessedAt: standing ? card.assessed_at : null,
     };
   }
@@ -129,7 +116,6 @@ export function cardJudgment(card: ClaimCard): EmbedJudgment {
     verdict: { family: "status", key: card.assessment_status, label: s.label, glyph: s.glyph, def: s.def },
     dispute,
     disputeLevel: level,
-    verdictConfidence: confidence(card.assessment_confidence),
     assessedAt: card.assessed_at,
   };
 }
@@ -141,16 +127,16 @@ export function embedDate(iso: string | null | undefined): string | null {
 }
 
 /**
- * The judgment in one short line, for the badge: "supported · 0.80 ·
- * disputed", "unassessed", "leaning · 0.60", "17 to 100 million". Short, but
- * whole: the confidence and the dispute travel with the status.
+ * The judgment in one short line, for the badge: "inconclusive · disputed",
+ * "unassessed", "leaning", "17 to 100 million". Short, but whole: the
+ * dispute travels with the status. Verdict confidence and the other reading
+ * (§10) are not shown to readers anywhere, embeds included.
  */
 export function judgmentLine(j: EmbedJudgment): string {
   const parts: string[] = [];
   if (!j.verdict) parts.push(j.unassessedLabel.toLowerCase());
   else if (j.verdict.family === "estimate") parts.push(j.verdict.lead);
   else parts.push(j.verdict.label.toLowerCase());
-  if (j.verdictConfidence != null) parts.push(j.verdictConfidence.toFixed(2));
   if (j.dispute) parts.push(j.dispute);
   if (j.state) parts.push(j.state);
   return parts.join(" · ");
@@ -162,7 +148,6 @@ export function judgmentSentence(j: EmbedJudgment): string {
   if (!j.verdict) parts.push(j.unassessedLabel);
   else if (j.verdict.family === "estimate") parts.push(j.verdict.words.replace(/\.$/, ""));
   else parts.push(j.verdict.label);
-  if (j.verdictConfidence != null) parts.push(`${j.confidenceLabel} ${j.verdictConfidence.toFixed(2)}`);
   if (j.dispute) parts.push(j.dispute);
   const when = embedDate(j.assessedAt);
   if (when) parts.push(`${j.assessedVerb} ${when}`);

@@ -67,6 +67,7 @@ const FLAGSHIP: ClaimDetail = {
     id: "a-1",
     status: "supported",
     // Verdict confidence: how sure the Steward is that "supported" is right.
+    // Kept in the record, not shown on the page.
     confidence: 0.78,
     // No credence: the claim's one open question is definitional, and a single
     // probability would be false precision (§10). The omission is information.

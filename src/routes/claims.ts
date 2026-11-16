@@ -189,6 +189,9 @@ export const assessmentSchema = {
     status: { type: "string" },
     // Verdict confidence — how sure the Steward is of the status, not P(true).
     confidence: { type: "number" },
+    // The other reading (§10): the status the evidence could otherwise be
+    // read as; null where the Steward named none.
+    alternative_status: { type: "string", nullable: true },
     // Credence that the claim is true; null where one number would be false
     // precision (constitution §7).
     claim_credence: { type: "number", nullable: true },
@@ -310,6 +313,12 @@ export const claimCardSchema = {
       description:
         "How sure the Steward is of the status (for a question, of the standing), 0..1. Not the probability that the claim is true.",
     },
+    assessment_alternative_status: {
+      type: "string",
+      nullable: true,
+      description:
+        "The other reading: the status the evidence could otherwise be read as, where the Steward named one (for an inconclusive claim, whether the doubt runs toward supported or doubtful). Null when none was named, and for a quantity or question.",
+    },
     standing: {
       type: "string",
       nullable: true,
@@ -348,6 +357,7 @@ export const claimCardSchema = {
     "state",
     "assessment_status",
     "assessment_confidence",
+    "assessment_alternative_status",
     "standing",
     "estimate",
     "unit",
@@ -2024,6 +2034,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
                     claim_id: { type: "string", format: "uuid" },
                     status: { type: "string" },
                     confidence: { type: "number", nullable: true },
+                    alternative_status: { type: "string", nullable: true },
                     claim_credence: { type: "number", nullable: true },
                     summary: { type: "string", nullable: true },
                     reasoning_trace: { type: "string", nullable: true },
@@ -2410,12 +2421,14 @@ function formatClaim(claim: { id: string; kind?: string; text: string; claimType
   };
 }
 
-export function formatAssessment(a: { id: string; status: string; confidence: number; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null; relabeledFrom?: string | null }) {
+export function formatAssessment(a: { id: string; status: string; confidence: number; alternativeStatus?: string | null; claimCredence: number | null; summary: string | null; reasoningTrace: string; subclaimSummary: unknown; assessedAt: Date; model?: string | null; runId?: string | null; relabeledFrom?: string | null }) {
   return {
     id: a.id,
     status: a.status,
     // Verdict confidence — how sure the Steward is of the status, not P(true).
     confidence: a.confidence,
+    // The other reading (§10); null where the Steward named none.
+    alternative_status: a.alternativeStatus ?? null,
     // Credence that the claim is true; null where one number would be false
     // precision (constitution §7).
     claim_credence: a.claimCredence ?? null,

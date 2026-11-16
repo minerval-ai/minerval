@@ -71,15 +71,15 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /claims/:claim_id/card": {
     name: "get_claim_card",
     note:
-      "Free. Report what a card says whole: the status with its confidence, " +
-      "and contestation beside them. Use get_claim when you need the " +
+      "Free. Report what a card says whole: the status, and contestation " +
+      "beside it. Use get_claim when you need the " +
       "reasoning, arguments, sources or tree.",
   },
   "GET /claims/cards": {
     name: "get_claim_cards",
     note:
       "Free. One call instead of a get_claim per claim; a status still " +
-      "travels with its confidence and the claim's contestation.",
+      "travels with the claim's contestation.",
   },
   // ---- read-only SQL ----
   "POST /sql": {

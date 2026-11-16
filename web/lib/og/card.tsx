@@ -237,7 +237,7 @@ function Judgment({ p }: { p: ClaimPreview }) {
     ) : (
       <Badge label={v.label} ink={(STATUS_COLOR[v.key] ?? STATUS_COLOR.unknown!).ink} tint={(STATUS_COLOR[v.key] ?? STATUS_COLOR.unknown!).tint} />
     );
-  const figures = p.credence != null || p.verdictConfidence != null;
+  const figures = p.credence != null;
   return (
     <div style={STACK}>
       <div style={ROW}>
@@ -249,8 +249,7 @@ function Judgment({ p }: { p: ClaimPreview }) {
         <div style={{ ...ROW, marginTop: 20, fontSize: 26, color: C.inkSoft }}>
           {p.credence != null && (
             // Credence gets the meter, in neutral ink so it never reads as a
-            // restatement of the verdict; verdict confidence stays a quiet
-            // labelled figure (#160).
+            // restatement of the verdict (#160).
             <div style={{ ...ROW, marginRight: 40 }}>
               <div>credence</div>
               <div
@@ -263,9 +262,6 @@ function Judgment({ p }: { p: ClaimPreview }) {
               </div>
               <div>{p.credence.toFixed(2)}</div>
             </div>
-          )}
-          {p.verdictConfidence != null && (
-            <div style={{ color: C.muted }}>{`verdict confidence ${p.verdictConfidence.toFixed(2)}`}</div>
           )}
         </div>
       )}

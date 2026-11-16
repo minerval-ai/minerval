@@ -76,7 +76,7 @@ export function getCallerSkill(name: string): CallerSkill | null {
  */
 export const MCP_INSTRUCTIONS = `Minerval is a shared, public map of what is known, how well it is known, and where real disagreement lies. Its claims are assessed by administrator agents working under a published constitution. You are a caller, not an administrator: these are principles for using the graph well, which you are free to follow.
 
-- Report the graph's judgment as the graph's: its status, its confidence, and the claim's page_url. Keep your own view separate and labeled as yours.
+- Report the graph's judgment as the graph's: its status, its credence where stated, and the claim's page_url. Keep your own view separate and labeled as yours.
 - Don't round. A status describes the evidence, not the debate; contestation is reported separately. "inconclusive" and "doubtful" are findings, not failures. A verified claim is reported plainly.
 - When a question is hard, find what it turns on: get_decomposition shows which subclaims are settled and which are not.
 - The graph's silence is not evidence. A claim it does not hold, or holds but has not assessed, is not a license to answer from recollection; an assessed "unknown" is a finding that the evidence is insufficient. When the graph is silent or wrong on something that matters, propose a claim, submit a source, or contribute, with your user's agreement.

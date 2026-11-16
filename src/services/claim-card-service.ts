@@ -52,6 +52,12 @@ export interface ClaimCard {
    * Steward stated none, and for a quantity.
    */
   assessment_confidence: number | null;
+  /**
+   * The other reading (§10): the status the evidence could otherwise be read
+   * as, where the Steward named one. Null when none was named, when
+   * unassessed, and for a quantity or a question.
+   */
+  assessment_alternative_status: string | null;
   /** A question's current standing; null for other kinds and until judged. */
   standing: string | null;
   /** A quantity's current estimate; null for other kinds and until estimated. */
@@ -88,6 +94,7 @@ interface CardRow {
   updated_at: Date | string;
   assessment_status: string | null;
   assessment_confidence: number | null;
+  assessment_alternative_status: string | null;
   standing: string | null;
   estimate: Record<string, unknown> | null;
   unit: Record<string, unknown> | null;
@@ -110,6 +117,7 @@ function toCard(row: CardRow): ClaimCard {
     state: row.state,
     assessment_status: row.assessment_status ?? null,
     assessment_confidence: row.assessment_confidence ?? null,
+    assessment_alternative_status: row.assessment_alternative_status ?? null,
     standing: row.standing ?? null,
     estimate: row.estimate ?? null,
     unit: row.unit ?? null,
@@ -158,6 +166,7 @@ async function readCards(ids: string[]): Promise<Map<string, ClaimCard>> {
             CASE WHEN c.kind = 'claim' THEN a.status END AS assessment_status,
             CASE c.kind WHEN 'claim' THEN a.confidence
                         WHEN 'question' THEN qa.confidence END AS assessment_confidence,
+            CASE WHEN c.kind = 'claim' THEN a.alternative_status END AS assessment_alternative_status,
             CASE WHEN c.kind = 'question' THEN qa.standing END AS standing,
             CASE WHEN c.kind = 'quantity' THEN qe.estimate END AS estimate,
             CASE WHEN c.kind = 'quantity' THEN qd.unit END AS unit,

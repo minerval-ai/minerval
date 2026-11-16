@@ -13,7 +13,7 @@ import { ALL_FEATURES_ON, featureOn, type Features } from "@/lib/features";
 import {
   CLAIM_TYPE_LABEL, RELATION, STATUS, STATUS_ORDER,
   claimTypeMeta, decompositionNote, statusMeta,
-  nodeStatusMeta, UNASSESSED_META, VERDICT_CONFIDENCE_GLOSS, CREDENCE_GLOSS,
+  nodeStatusMeta, UNASSESSED_META, CREDENCE_GLOSS,
   DEFINED_IN, STEWARD_SOURCE, RULES_SOURCE, isAssumesRelation,
   seedVerity, SEED_PRELIM_GLOSS, QUESTION_STANDING, isStanding, showsMark,
 } from "@/lib/ontology";
@@ -720,8 +720,8 @@ export function GraphView({
                   with its word. Importance pips used to sit here and read as
                   exactly this — an unlabelled meter next to a verdict. The
                   importance band now lives on the claim page, worded. Verdict
-                  confidence stays meta and stays in the hover preview,
-                  labelled, never a bare number beside the badge (#160). */}
+                  confidence is not shown to readers anywhere: it read as
+                  credence and said nothing about which way doubt ran. */}
               {d.assessment?.claim_credence != null && (
                 <Term gloss={CREDENCE_GLOSS} href={DEFINED_IN.confidence} align="start" className={styles.confNum}>
                   credence {d.assessment.claim_credence.toFixed(2)}
@@ -1167,13 +1167,6 @@ export function GraphView({
                     {c.prizeMicroUsd != null && (
                       <div className={styles.previewPrize} title={MAP_KEY.prize}>
                         Prize: {formatOwls(c.prizeMicroUsd)} · open
-                      </div>
-                    )}
-                    {/* Verdict confidence is meta ("is the badge right?"), so
-                        it steps back to a quiet line of its own (#238). */}
-                    {c.confidence != null && (
-                      <div className={styles.previewQuiet} title={VERDICT_CONFIDENCE_GLOSS}>
-                        verdict confidence {c.confidence.toFixed(2)}
                       </div>
                     )}
                     {rel && (

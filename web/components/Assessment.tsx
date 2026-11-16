@@ -1,7 +1,7 @@
 import type { AssessmentStatus, QuestionStanding } from "@/lib/types";
 import {
   statusMeta, importanceLevel, IMPORTANCE, UNASSESSED_META, DEFINED_IN,
-  CREDENCE_GLOSS, VERDICT_CONFIDENCE_GLOSS, disputeMeta, QUESTION_STANDING, isStanding,
+  CREDENCE_GLOSS, disputeMeta, QUESTION_STANDING, isStanding,
 } from "@/lib/ontology";
 import { Term } from "./Term";
 
@@ -103,17 +103,6 @@ export function Credence({ value }: { value: number | null | undefined }) {
         <span className="conf-fill" style={{ width: `${Math.round(value * 100)}%` }} />
       </span>
       <span className="conf-num">{value.toFixed(2)}</span>
-    </Term>
-  );
-}
-
-// Verdict confidence — how sure the Steward is of the status itself. Meta, so
-// it stays quiet: a small labelled figure, no meter, defined on hover/click.
-export function VerdictConfidence({ value }: { value: number | null | undefined }) {
-  if (typeof value !== "number") return null;
-  return (
-    <Term gloss={VERDICT_CONFIDENCE_GLOSS} href={DEFINED_IN.confidence} className="conf-quiet">
-      verdict confidence {value.toFixed(2)}
     </Term>
   );
 }

@@ -145,8 +145,13 @@ export interface Assessment {
   status: AssessmentStatus;
   // Verdict confidence: how sure the Steward is that `status` is the right
   // reading of the evidence. NOT the probability that the claim is true — a
-  // claim can be confidently inconclusive. Render it quietly and labelled.
+  // claim can be confidently inconclusive. Kept for the record and the API,
+  // not shown to readers, who took it for a credence.
   confidence: number;
+  // The other reading (§10): the status the evidence could otherwise be read
+  // as, where the Steward named one; null where none was named. In the API
+  // for callers; not shown on the page. Optional while deploys race.
+  alternative_status?: AssessmentStatus | null;
   // Credence: the Steward's probability that the claim, as stated, is true.
   // Null where one number would be false precision (normative/evaluative
   // claims, entangled composites) — constitution §7. Optional while API
@@ -618,6 +623,7 @@ export interface NodeVersion {
   // A claim's assessment.
   status?: AssessmentStatus;
   confidence?: number | null;
+  alternative_status?: AssessmentStatus | null;
   claim_credence?: number | null;
   summary?: string | null;
   reasoning_trace?: string | null;
@@ -1204,6 +1210,8 @@ export type ClaimEvent =
       assessment_id: string;
       status: AssessmentStatus;
       confidence: number;
+      // The other reading (§10); optional while API deploys race the frontend.
+      alternative_status?: AssessmentStatus | null;
       claim_credence: number | null;
       summary: string;
       trigger: string | null;
@@ -2044,8 +2052,10 @@ export interface ClaimCard {
   state: string;
   /** A claim's status; null when unassessed and for the other kinds. */
   assessment_status: string | null;
-  /** How sure the Steward is of the status (or a question's standing), 0..1. */
+  /** How sure the Steward is of the status (or a question's standing), 0..1. Not shown to readers. */
   assessment_confidence: number | null;
+  /** The other reading (§10): the status the evidence could otherwise be read as; null where none was named. Optional while API deploys race the frontend. */
+  assessment_alternative_status?: string | null;
   /** A question's standing; null for the other kinds and until judged. */
   standing: string | null;
   /** A quantity's current estimate and unit; null for the other kinds. */

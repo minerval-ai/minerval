@@ -64,8 +64,8 @@ export default async function DocsPage() {
           </li>
           <li>
             <strong>Assessment</strong>: one of six verdicts (verified, supported,
-            inconclusive, doubtful, contradicted, unknown) with a reasoning trace, a
-            verdict confidence, and, where appropriate, a credence. A claim not yet
+            inconclusive, doubtful, contradicted, unknown) with a reasoning trace
+            and, where appropriate, a credence. A claim not yet
             reached is unassessed: pending, not a verdict.
           </li>
           <li>
