@@ -1773,7 +1773,10 @@ model in it. It reads the log in order from where it last stopped, as
 events are recorded and again on the engine executor's tick, and delivers
 each event to every active subscription it matches; on the tick it also
 delivers the check-ins that are due and the thresholds that have been
-crossed. To a session, a delivery is an answer in its transcript, shown in
+crossed. A check-in that arrives more than five minutes after its time
+(the runner stalled or was down) says so: the time now and how late it is,
+so the agent does not take the world to be as it was when it set it. To a
+session, a delivery is an answer in its transcript, shown in
 its next tool result if it is running; a `wake` delivery resumes it if it
 has paused, and a `queue` one waits for its next turn. To a mandate's
 inbox it is an item its officers read; to a node's inbox, a message its

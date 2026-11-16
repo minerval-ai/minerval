@@ -107,12 +107,16 @@ async function routeOnce(): Promise<number> {
 /** Scheduled check-ins that are due, and thresholds that have been crossed. */
 async function deliverDue(): Promise<number> {
   let n = 0;
-  const due = await rawQuery<RoutedSubscription>(
-    `SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND due_at IS NOT NULL AND due_at <= now()`
+  // The time now and the lateness are read from the database's clock, the
+  // one `due_at <= now()` is asked against.
+  const due = await rawQuery<RoutedSubscription & { now_at: string; late_s: number }>(
+    `SELECT ${SUB_COLUMNS}, to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS now_at,
+            floor(extract(epoch FROM now() - due_at))::int AS late_s
+       FROM subscriptions WHERE active AND due_at IS NOT NULL AND due_at <= now()`
   );
   for (const s of due) {
     if (!(await claimEnd(s.id))) continue; // another router took it
-    const text = `The time you set has come (${s.due_at!.slice(0, 16).replace("T", " ")} UTC).`;
+    const text = checkInText(s.due_at!, s.now_at, s.late_s);
     if (await atSubscriber(s, () => deliver({ ...s, once: false }, null, text))) n++;
   }
   const conditions = await rawQuery<RoutedSubscription>(`SELECT ${SUB_COLUMNS} FROM subscriptions WHERE active AND condition IS NOT NULL`);
@@ -139,6 +143,37 @@ async function deliverDue(): Promise<number> {
     }
   }
   return n;
+}
+
+/**
+ * How late a check-in may arrive before its text says so. The router runs on
+ * the engine's tick, so a check-in normally lands within a minute or so of
+ * its time, and that slip is not news. Past this it is: the runner stalled
+ * or was down, and an agent told only "the time you set has come" would take
+ * the world to be as it was at that time (#1028: a check-in set for 04:06
+ * arrived some seventeen hours late and said only 04:06).
+ */
+export const LATE_CHECK_IN_NOTICE_SECONDS = 5 * 60;
+
+/**
+ * The text of a check-in that has come due: the time that was set and, when
+ * it arrives more than LATE_CHECK_IN_NOTICE_SECONDS after it, the time now
+ * and how late it is. `dueAt` is the stored time (UTC), `nowAt` the time now
+ * as "YYYY-MM-DD HH:MM" UTC, `lateSeconds` the time since `dueAt`.
+ */
+export function checkInText(dueAt: string, nowAt: string, lateSeconds: number): string {
+  const set = dueAt.slice(0, 16).replace("T", " ");
+  if (lateSeconds <= LATE_CHECK_IN_NOTICE_SECONDS) return `The time you set has come (${set} UTC).`;
+  const minutes = Math.floor(lateSeconds / 60);
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const late = [days ? `${days} d` : "", days || hours ? `${hours} h` : "", `${minutes % 60} min`].filter(Boolean).join(" ");
+  // The date is named only when the day has changed since the time set.
+  const now = nowAt.slice(0, 10) === set.slice(0, 10) ? nowAt.slice(11, 16) : nowAt.slice(0, 16);
+  return (
+    `The time you set has come (${set} UTC), but this check-in reaches you late: it is now ${now} UTC, ${late} late. ` +
+    `Things may have moved since the time you set; look at where they stand before acting on what you planned for it.`
+  );
 }
 
 /** End a subscription only if still active; whether this call ended it. */
