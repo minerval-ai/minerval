@@ -409,7 +409,28 @@ export function decompositionNote(opts: {
       ? "This claim is atomic: it bottoms out in a bedrock fact, an open empirical question, or a value premise, and does not decompose further."
       : "This claim has been assessed but its decomposition is not yet recorded.";
   }
-  return "This claim has not been assessed yet. Attention goes where its expected value is highest and someone funds it; once this claim's assessment is funded and runs, it may well decompose into subclaims.";
+  return "This claim has not been assessed yet. Once its assessment is funded and runs, it may well decompose into subclaims.";
+}
+
+// The same state in the claim page's left rail, where the decomposition is
+// summarised when there is one. A claim with no rendered subclaims shows a
+// short label there, with the full sentence above as its gloss, instead of a
+// section in the reading column that held one sentence.
+export function decompositionRailState(opts: {
+  decompositionStatus: string;
+  assessed: boolean;
+  stewardState?: string;
+}): { label: string; note: string; gloss: string } {
+  const gloss = decompositionNote(opts);
+  if (opts.stewardState === "running") {
+    return { label: "being decomposed…", note: "Its subclaims are being worked out now.", gloss };
+  }
+  if (isProcessed(opts)) {
+    return isAtomic(opts.decompositionStatus)
+      ? { label: "atomic", note: "Bottoms out here; no subclaims.", gloss }
+      : { label: "not yet recorded", note: "Assessed, but no decomposition is on record.", gloss };
+  }
+  return { label: "awaits assessment", note: "Subclaims come with its first assessment.", gloss };
 }
 
 // Claim importance — how much it is worth spending scarce intelligence to get the

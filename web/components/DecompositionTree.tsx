@@ -274,7 +274,9 @@ export function ArgumentBlock({
     <section className={`argblock${group.setAside ? " set-aside" : ""}`} data-arg-anchor={argKey(group)}>
       {isBasis ? (
         <div className="arghead basis-head">
-          <span className="argname">{BASIS.label}</span>
+          <Term gloss={BASIS.gloss} href={DEFINED_IN.argument} className="argname" align="start">
+            {BASIS.label}
+          </Term>
         </div>
       ) : (
         <div className="arghead">
@@ -297,7 +299,6 @@ export function ArgumentBlock({
           )}
         </div>
       )}
-      {isBasis && <p className="basis-note">{BASIS.gloss}</p>}
       <SetAsideNote setAside={group.setAside} what="argument" />
 
       {written ? (
@@ -335,16 +336,9 @@ export function DecompositionTree({
   argumentChecks?: Map<string, LeanCheckSummary>;
 }) {
   const texts = buildClaimTextMap(tree);
-  if (tree.children.length === 0) {
-    return (
-      <div className="tree">
-        <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
-          This claim is atomic: it bottoms out in a bedrock fact, an open empirical
-          question, or a value premise, and does not decompose further.
-        </p>
-      </div>
-    );
-  }
+  // A claim with no subclaims has no tree; the left rail says why
+  // (DecompositionState).
+  if (tree.children.length === 0) return null;
   // The same top-level grouping the left rail uses, so their argument keys line
   // up and a jump-list click lands on the right block.
   const groups = groupByArgument(topLevelEffects(tree));

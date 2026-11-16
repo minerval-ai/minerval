@@ -13,7 +13,8 @@ const PRESETS = [5, 20, 100];
 // budget. The form says exactly what happens: escrow now, metered spend, a
 // tenth for the Grantmaker's own planning, the rest refunded when done. A
 // balance that cannot cover it goes to the owl packs and comes back here.
-export function FundDecomposition({ claimId }: { claimId: string }) {
+// `compact` is the left rail's form, for a claim with no subclaims yet.
+export function FundDecomposition({ claimId, compact = false }: { claimId: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [budget, setBudget] = useState(PRESETS[0]!);
   const [custom, setCustom] = useState(false);
@@ -68,23 +69,19 @@ export function FundDecomposition({ claimId }: { claimId: string }) {
     return (
       <p className="order-line" id="fund-decomposition">
         <button className="linklike" onClick={() => setOpen(true)}>
-          fund a deeper decomposition of this claim…
+          {compact ? "fund a deeper decomposition…" : "fund a deeper decomposition of this claim…"}
         </button>
       </p>
     );
   }
 
   return (
-    <div className="fund-decomp" id="fund-decomposition">
+    <div className={`fund-decomp${compact ? " compact" : ""}`} id="fund-decomposition">
       <p className="order-caption">
-        Give this claim an owl budget and a mandate works on it: first a fresh
-        assessment of the claim itself, then the claims it turns on, including
-        the low-importance branches the graph&rsquo;s own budget leaves as
-        stubs, and the claims around it that bear on it, most consequential
-        first. A tenth of the budget pays for the Grantmaker that plans the
-        work. The budget is held in escrow now, spend is metered against real
-        model work, and whatever isn&rsquo;t used comes back. The mandate is
-        public; it shows you as &ldquo;a reader&rdquo;.
+        A mandate reassesses this claim, then works through what it turns on,
+        most consequential first, including branches the graph leaves as
+        stubs. A tenth pays for its Grantmaker. Unused owls come back. The
+        mandate is public and shows you as &ldquo;a reader&rdquo;.
       </p>
       <div className="key-create" role="group" aria-label="budget in owls">
         {PRESETS.map((p) => (

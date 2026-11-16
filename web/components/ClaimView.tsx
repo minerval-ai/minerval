@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ClaimDetail, Instance } from "@/lib/types";
 import { instanceByline, splitInstances, stanceTag } from "@/lib/instances";
 import {
-  statusMeta, isStatus, claimTypeMeta, decompositionNote,
+  statusMeta, isStatus, claimTypeMeta,
   DEFINED_IN, SEED_PRELIM_GLOSS,
 } from "@/lib/ontology";
 import { buildClaimTextMap } from "@/lib/claim-links";
@@ -41,6 +41,7 @@ import {
   PublishedNotes, PublishedProvenance, TakenOut,
 } from "./claim/PublishedPage";
 import { isReadingAddress } from "@/lib/source-address";
+import { flatStoryLine } from "@/lib/provenance-layout";
 import { ShownIntro, ShownRecord } from "./claim/InsideVersions";
 import { importanceInEffect } from "@/lib/layers";
 import type { ValueByLabel } from "@/lib/types";
@@ -214,6 +215,9 @@ export function ClaimView({
     : null;
   const claimType = claimTypeMeta(claim.claim_type);
   const hasTree = !!(tree && tree.children && tree.children.length > 0);
+  const retiredArguments = detail.retired_arguments ?? [];
+  // A provenance story with no shape, as a line on the heading.
+  const flatProvenance = flatStoryLine(detail.provenance_story);
   // Inside a deployment with more than one label: the node's own label, so
   // that a row another label added can say so, and whose importance the
   // page shows where a label holds its own (lib/layers.ts).
@@ -298,9 +302,7 @@ export function ClaimView({
               read as nothing being wrong, so it says in words that there is
               no verdict and that this is not a finding (#543). */}
           <p className="not-examined" style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)", marginTop: "-.5rem" }}>
-            {isExamined(detail.coverage, false) ? "Not yet assessed." : notExaminedLine("claim")} Attention goes where its expected
-            value is highest and someone funds it; nothing has funded an
-            assessment of this claim yet, and anyone can.
+            {isExamined(detail.coverage, false) ? "Not yet assessed." : notExaminedLine("claim")}
           </p>
           {/* The demand side: a purchase fully funds the action, and a
               fully funded action runs now. */}
@@ -323,8 +325,9 @@ export function ClaimView({
             ) : (
               "the claim this one was decomposed from"
             )}
-            , recorded when this subclaim was created and pending this
-            claim&apos;s own assessment.
+            {/* With a credence, its gloss says it waits on this claim's own
+                assessment; a note alone says so here. */}
+            {seed.credence == null && ", pending this claim's own assessment"}
           </p>
           {seed.credence != null && (
             <p className="seed-prelim-credence">
@@ -458,11 +461,6 @@ export function ClaimView({
       {published?.page && (
         <section>
           <h2>Assessment</h2>
-          {assessment && (
-            <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-              {statusMeta(assessment.status).def}
-            </p>
-          )}
           <PublishedAssessment view={published} />
         </section>
       )}
@@ -471,12 +469,9 @@ export function ClaimView({
       {/* reasoning trace */}
       {!published && anyAssessment && (
         <section>
+          {/* No caption: what the status means is the badge's own gloss,
+              a few lines up. */}
           <h2>Assessment</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            {assessment
-              ? statusMeta(assessment.status).def
-              : "The graph's estimate, all things considered: the figures and arguments it rests on, and how they were combined."}
-          </p>
           {/* Reader-facing assessment — the primary content, styled as lead prose
               rather than an inset box. The fuller reasoning trace stays accessible
               just below, behind a disclosure, for anyone who wants the full
@@ -490,9 +485,7 @@ export function ClaimView({
             anyAssessment.reasoning_trace !== anyAssessment.summary && (
               <details className="reasoning-detail">
                 <summary>
-                  {assessment
-                    ? "Full reasoning: the evidence and decisions behind this verdict"
-                    : "The work: which figures, how they were combined, and the arithmetic"}
+                  {assessment ? "Full reasoning" : "The work"}
                 </summary>
                 <div className="reasoning">
                   <AssessmentText content={anyAssessment.reasoning_trace} texts={linkTexts} />
@@ -523,11 +516,9 @@ export function ClaimView({
           never a verdict itself; omitted when nothing has been noted. */}
       {detail.findings && detail.findings.length > 0 && (
         <section className="claim-findings">
-          <h2>Findings</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            Noted by the graph&apos;s administrators in the course of their work, in their own
-            words; <Link href="/findings">all findings</Link>.
-          </p>
+          <h2 className="with-meta">
+            Findings <span className="h2-meta"><Link href="/findings">all findings →</Link></span>
+          </h2>
           {detail.findings.map((f) => (
             <FindingCard key={f.id} finding={f} showClaim={false} headingLevel={3} />
           ))}
@@ -568,44 +559,24 @@ export function ClaimView({
         </section>
       )}
 
-      {/* decomposition */}
-      {!published && <section>
+      {/* decomposition. With no subclaims the left rail says why and offers
+          the funding (DecompositionState); the section is here only for a
+          tree, or for retired arguments a claim with none left still keeps. */}
+      {!published && (hasTree || retiredArguments.length > 0) && <section>
         <h2>Decomposition</h2>
-        {hasTree ? (
-          <>
-            <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-              {isQuantity
-                ? "The arguments the estimate rests on, each stated as it runs, with what it shows about the value and its premises linked inline. ↗\uFE0E opens a premise; the map shows how they fit together."
-                : tree!.children.some((c) => c.argument_name)
-                ? "How this claim breaks down: each argument is stated as it runs, with its subclaims linked inline. ↗\uFE0E opens a subclaim; the map shows how they fit together."
-                : "The claims this one rests on directly. ↗\uFE0E opens a subclaim; the map shows how they fit together."}
-            </p>
-            <DecompositionTree tree={tree!} argumentChecks={argumentChecks} nodeLabel={nodeLabel} />
-          </>
-        ) : (
-          <p style={{ color: "var(--muted)", fontStyle: "italic" }}>
-            {decompositionNote({
-              decompositionStatus: claim.decomposition_status,
-              assessed: !!assessment,
-              stewardState: claim.steward_state,
-            })}
-          </p>
-        )}
+        {hasTree && <DecompositionTree tree={tree!} argumentChecks={argumentChecks} nodeLabel={nodeLabel} />}
         {/* Arguments no longer on the claim (#541): retiring keeps an
             argument's name, page and record (§7), so they are listed here,
             folded away, each linking to its page with the reason. */}
-        {(detail.retired_arguments?.length ?? 0) > 0 && (
+        {retiredArguments.length > 0 && (
           <details className="reasoning-detail retired-arguments">
             <summary>
-              {detail.retired_arguments!.length === 1
+              {retiredArguments.length === 1
                 ? "1 retired argument"
-                : `${detail.retired_arguments!.length} retired arguments`}
+                : `${retiredArguments.length} retired arguments`}
             </summary>
-            <p className="retired-arguments-note">
-              No longer among this claim&apos;s arguments. Each keeps its page, with its record and why it was retired.
-            </p>
             <ul className="retired-arguments-list">
-              {detail.retired_arguments!.map((a) => (
+              {retiredArguments.map((a) => (
                 <li key={a.id}>
                   <Link href={`/arguments/${a.id}`}>{a.name ?? "Unnamed argument"}</Link>
                   {a.stance !== "neutral" && <span className="retired-arguments-stance"> · {a.stance}</span>}
@@ -623,23 +594,30 @@ export function ClaimView({
         )}
         {/* Build your part of the graph: an owl budget takes this subtree
             deeper than the background pipeline's economics ever would. */}
-        <FundDecomposition claimId={claim.id} />
-        <p className="order-line">
-          <Link href={`/ask/mandates/new?claim_id=${claim.id}`}>
-            or start a mandate for this whole area →
-          </Link>
-        </p>
+        {hasTree && (
+          <>
+            <FundDecomposition claimId={claim.id} />
+            <p className="order-line">
+              <Link href={`/ask/mandates/new?claim_id=${claim.id}`}>
+                or start a mandate for this whole area →
+              </Link>
+            </p>
+          </>
+        )}
       </section>}
 
       {/* provenance */}
       {(voices.length > 0 || mentions.length > 0 || (detail.quantity?.readings.length ?? 0) > 0) && (
         <section>
-          <h2>Provenance</h2>
-          <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-            {isQuantity
-              ? "Where this quantity's evidence comes from. The figures sources state are under Estimates above."
-              : "Where this claim has been said, linked to its canonical form."}
-          </p>
+          <h2 className="with-meta">
+            Provenance
+            {(flatProvenance || isQuantity) && (
+              <span className="h2-meta">
+                {isQuantity ? <a href="#estimates">figures are under Estimates ↑</a> : flatProvenance}
+                {isQuantity && flatProvenance && <> · {flatProvenance}</>}
+              </span>
+            )}
+          </h2>
           <QuantityReadings detail={detail} />
           {/* What the support rests on (#286): the Steward's account, shown
               only when it judged the structure of the support material. */}
@@ -653,10 +631,11 @@ export function ClaimView({
               are never counted as affirming or denying. */}
           {mentions.length > 0 && (
             <>
-              <h3 style={{ fontSize: "1rem", margin: "1rem 0 .2rem" }}>Mentioned in</h3>
-              <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.2rem" }}>
-                Sources that refer to the claim without taking a side: they cite it, report the debate, or raise it in passing.
-              </p>
+              <h3 style={{ fontSize: "1rem", margin: "1rem 0 .4rem" }}>
+                <Term gloss="Sources that refer to the claim without taking a side: they cite it, report the debate, or raise it in passing.">
+                  Mentioned in
+                </Term>
+              </h3>
               {mentions.map((inst) => <InstanceCard key={inst.id} inst={inst} />)}
             </>
           )}
@@ -739,13 +718,14 @@ export function ClaimView({
       <hr className="thin" />
       {/* Funding disclosure (§19), placed here at the bottom deliberately:
           disclosure belongs on the page, but not beside the verdict, and
-          never without the explanation that gives it its meaning. */}
+          never without what gives it its meaning: the one line that funding
+          buys scheduling and not a verdict, and the section that says why. */}
       {assessment?.funding && (
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
-          The attention this claim received was paid for by{" "}
+          Attention paid for by{" "}
           {assessment.funding.mandate ? (
             <>
-              a funded mandate,{" "}
+              a mandate,{" "}
               <a href={`/mandates/${assessment.funding.mandate.id}`}>
                 {assessment.funding.mandate.title}
               </a>{" "}
@@ -754,13 +734,8 @@ export function ClaimView({
           ) : (
             assessment.funding.label
           )}
-          . Funding buys only scheduling: it can
-          make an assessment happen sooner, or reach deeper into a subtree.
-          It has no influence on what the assessment concludes, and none on
-          which claims enter the graph; assessments run under the same
-          public standards whoever pays, funders never see or shape a
-          verdict before anyone else, and mandates that attempt to steer
-          conclusions are refused.
+          . Funding buys scheduling, never a verdict.{" "}
+          <Link href="/docs/constitution#allocating-attention-and-paid-attention">How funding works →</Link>
         </p>
       )}
       {assessment?.developer_disclosure && (
@@ -784,7 +759,6 @@ export function ClaimView({
         <p style={{ fontFamily: "var(--sans)", fontSize: ".74rem", color: "var(--faint)" }}>
           Created by {claim.created_by} · {fmtDate(claim.created_at)}.
           {/* the last-assessed date moved into the assessment band (#196) */}
-          {" "}Every judgment on this page is accompanied by a reasoning trace.
         </p>
       )}
     </article>

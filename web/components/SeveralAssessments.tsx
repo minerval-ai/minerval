@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Term } from "./Term";
 
 // Where more than one judgment of a node is in force for the reader (a
 // private deployment's reader who holds two labels that do not read each
@@ -26,8 +27,12 @@ export function SeveralCounted({ n, of }: { n: number; of: string }) {
   if (n < 1) return null;
   return (
     <p className="several-counted">
-      {n} of these {of} {n === 1 ? "has" : "have"} more than one assessment that stands for you, made at labels that
-      do not read each other. Each is counted here by the most recently made.
+      <Term
+        gloss={`${n} of these ${of} ${n === 1 ? "has" : "have"} more than one assessment that stands for you, made at labels that do not read each other. Each is counted here by the most recently made.`}
+        align="start"
+      >
+        {n} counted by {n === 1 ? "its" : "their"} latest assessment
+      </Term>
     </p>
   );
 }

@@ -165,7 +165,12 @@
 .groupStripLabel { font-family: var(--sans); font-size: 0.78rem; color: var(--ink-soft); line-height: 1.4; }
 .groupStripLabel .sc { font-size: 0.58rem; color: var(--muted); margin-right: 0.2rem; }
 .intro { color: var(--muted); font-family: var(--sans); font-size: 0.8rem; margin-top: -0.3rem; max-width: 40rem; }
-.plotKey { font-family: var(--sans); font-size: 0.74rem; color: var(--muted); margin: 0.7rem 0 0; max-width: 38rem; }
+.plotKey {
+  display: flex; flex-wrap: wrap; gap: 0.35rem 1.2rem; list-style: none; padding: 0;
+  font-family: var(--sans); font-size: 0.72rem; color: var(--muted); margin: 0.8rem 0 0; max-width: 40rem;
+}
+.plotKey li { display: flex; align-items: center; gap: 0.4rem; }
+.plotKeyMark { display: inline-block; width: 2.8rem; flex: none; }
 @media (max-width: 640px) {
   .row, .groupStrip { grid-template-columns: minmax(0, 1fr); }
   .axisRow > :first-child, .groupStripLabel { display: none; }

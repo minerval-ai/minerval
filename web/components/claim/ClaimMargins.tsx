@@ -3,7 +3,7 @@ import type { ClaimDetail } from "@/lib/types";
 import type { DataSource } from "@/lib/data";
 import { ALL_FEATURES_ON, type Features } from "@/lib/features";
 import { ClaimView } from "@/components/ClaimView";
-import { DecompositionCompass } from "./DecompositionCompass";
+import { DecompositionCompass, DecompositionState } from "./DecompositionCompass";
 import { MapCard } from "./MapCard";
 import { DependentsRail } from "./DependentsRail";
 import { RelatedRail } from "./RelatedRail";
@@ -14,6 +14,7 @@ import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
 import { ClaimTabs, publishedDetail } from "./PublishedPage";
 import { detailAt, detailWithoutJudgment, type InsideNode } from "@/lib/inside-node";
 import { AskToShow, ExaminedNote, SeveralInForce, VersionNote, VersionTabs, VersionsInFull } from "./InsideVersions";
+import { isStatus } from "@/lib/ontology";
 import styles from "./margins.module.css";
 
 // The claim page in its full three-column form (issue #42): the decomposition
@@ -91,13 +92,31 @@ export function ClaimMargins({
   // A question is a node of its own kind (constitution §7a), with a page of
   // its own shape in the same frame.
   const isQuestion = detail.claim.kind === "question" && !!detail.question;
+  const hasSubclaims = (detail.tree?.children?.length ?? 0) > 0;
   return (
     <div className={styles.bleed}>
       <div className={styles.grid}>
         {/* LEFT — decomposition compass, with the map view as its structural
             counterpart: the same decomposition seen as a navigable figure */}
         <div className={styles.leftRail}>
-          {isQuestion ? <QuestionRail detail={detail} /> : detail.tree && <DecompositionCompass tree={detail.tree} />}
+          {isQuestion ? (
+            <QuestionRail detail={detail} />
+          ) : hasSubclaims ? (
+            <DecompositionCompass tree={detail.tree!} />
+          ) : (
+            // No subclaims: the rail says why, where the reading column
+            // used to give it a section of its own.
+            <DecompositionState
+              claimId={detail.claim.id}
+              decompositionStatus={shownDetail.claim.decomposition_status}
+              assessed={
+                open?.kind === "several" ||
+                isStatus(shownDetail.assessment?.status) ||
+                !!shownDetail.quantity?.assessed?.summary
+              }
+              stewardState={shownDetail.claim.steward_state}
+            />
+          )}
           <MapCard claimId={detail.claim.id} tree={detail.tree} />
           <p style={{ marginTop: "0.55rem" }}>
             <Link className={styles.railLink} href={`/claims/${detail.claim.id}/history`}>

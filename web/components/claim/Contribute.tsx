@@ -168,10 +168,7 @@ export function Contribute({ claimId }: { claimId: string }) {
     <section id="contribute" ref={sectionRef}>
       <h2>Contribute</h2>
       <p className="contribute-lede">
-        Every judgment on this page is open to challenge. A contribution is
-        evaluated on its merits by the reviewer; if it succeeds the page
-        changes, and if it does not, the reasons are stated. Either way the
-        exchange becomes part of the claim&rsquo;s public record.
+        Every judgment on this page is open to challenge.
       </p>
 
       {!open && (
@@ -325,6 +322,10 @@ export function Contribute({ claimId }: { claimId: string }) {
               contributing as {session.name ?? "you"}
             </span>
           </div>
+          <p className="contribute-hint">
+            The reviewer evaluates it on its merits. If it succeeds the page changes; if not, the
+            reasons are stated. Either way the exchange joins the claim&rsquo;s public record.
+          </p>
           {status.kind === "error" && (
             <p className="contribute-error">{status.message}</p>
           )}

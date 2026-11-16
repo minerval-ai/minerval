@@ -231,7 +231,7 @@ export function PublishedAssessment({ view }: { view: PublishedPageView }) {
       </div>
       {shape.reasoning.length > 0 && (
         <details className="reasoning-detail" open>
-          <summary>Full reasoning: the evidence and decisions behind this verdict</summary>
+          <summary>Full reasoning</summary>
           <div className="reasoning">
             <AssessmentText content="" blocks={shape.reasoning} categories={categories} />
           </div>

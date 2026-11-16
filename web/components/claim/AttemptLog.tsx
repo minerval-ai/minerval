@@ -25,8 +25,6 @@ export function AttemptLog({
       <h2>Attempts</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
         What Minerval&rsquo;s own solver has tried against the formal statement.
-        Every attempt is public with its cost and its report, so that anyone
-        working on the question knows what has been tried.
       </p>
       <ul className="attempt-log">
         {sorted.map((a) => (

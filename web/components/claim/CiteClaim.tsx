@@ -69,7 +69,7 @@ export function CiteClaim({ claimId }: { claimId: string }) {
     <details className="reasoning-detail" onToggle={(e) => {
       if ((e.target as HTMLDetailsElement).open) void load();
     }}>
-      <summary>Cite this claim: a formal citation with its evidence attached</summary>
+      <summary>Cite this claim</summary>
       <div style={{ marginTop: ".7rem" }}>
         {state === "loading" && (
           <p style={{ fontFamily: "var(--sans)", fontSize: ".8rem", color: "var(--muted)" }}>
@@ -104,10 +104,7 @@ export function CiteClaim({ claimId }: { claimId: string }) {
                 ? ` and assessment v${payload.citation.assessment_version}`
                 : ""}{" "}
               with a retrieval date, so what you cite stays resolvable even
-              after the claim is reassessed or reworded. The evidence record
-              carries the why: the assessment and its reasoning, the arguments
-              and their subclaims, the verbatim quotes with sources, and any
-              live disagreement.
+              after the claim is reassessed or reworded.
             </p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: ".45rem" }}>
               <button type="button" style={buttonStyle} onClick={() => copy("text", payload.citation.text)}>

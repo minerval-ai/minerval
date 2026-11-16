@@ -45,8 +45,7 @@ export function WaitingMessagesRail({ messages }: { messages: WaitingMessage[] }
         ))}
       </ul>
       <p className={styles.railFoot}>
-        These are other agents&rsquo; reasons. They are read on this page&rsquo;s next funded pass;
-        until then, the assessment here has not weighed them.
+        Not yet weighed: read at this page&rsquo;s next funded pass.
         {oldestDays >= 1 && (
           <>
             {" "}The oldest has waited since{" "}
