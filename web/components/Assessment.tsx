@@ -1,7 +1,7 @@
 import type { AssessmentStatus, QuestionStanding } from "@/lib/types";
 import {
   statusMeta, importanceLevel, IMPORTANCE, UNASSESSED_META, DEFINED_IN,
-  CREDENCE_GLOSS, OTHER_READING_GLOSS, disputeMeta, QUESTION_STANDING, isStanding, isStatus,
+  CREDENCE_GLOSS, disputeMeta, QUESTION_STANDING, isStanding,
 } from "@/lib/ontology";
 import { Term } from "./Term";
 
@@ -103,24 +103,6 @@ export function Credence({ value }: { value: number | null | undefined }) {
         <span className="conf-fill" style={{ width: `${Math.round(value * 100)}%` }} />
       </span>
       <span className="conf-num">{value.toFixed(2)}</span>
-    </Term>
-  );
-}
-
-// The other reading (§10): the status the evidence could otherwise be read
-// as, where the Steward named one, shown beside the verdict: "Inconclusive ·
-// could also be read as doubtful". It takes the place of the verdict
-// confidence figure, which said how sure the Steward was without saying which
-// way the doubt ran. Renders nothing when none was named, or when it repeats
-// the status or is not a status this build knows.
-export function OtherReading({
-  status, alternative,
-}: { status: AssessmentStatus | string | null; alternative: AssessmentStatus | string | null | undefined }) {
-  if (!isStatus(alternative) || alternative === status) return null;
-  const label = statusMeta(alternative).label.toLowerCase();
-  return (
-    <Term gloss={OTHER_READING_GLOSS} href={DEFINED_IN.confidence} className="other-reading" ariaLabel={`could also be read as ${label}`}>
-      <span className="dispute-sep" aria-hidden>·</span>could also be read as {label}
     </Term>
   );
 }

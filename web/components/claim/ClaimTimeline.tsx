@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ClaimEvent, ClaimEventsPage } from "@/lib/types";
-import { statusMeta, isStatus, OTHER_READING_GLOSS, CREDENCE_GLOSS } from "@/lib/ontology";
+import { statusMeta, CREDENCE_GLOSS } from "@/lib/ontology";
 import { Swatch } from "@/components/Assessment";
 import { ArgumentText } from "@/components/ArgumentText";
 import styles from "./timeline.module.css";
@@ -113,24 +113,17 @@ function AssessmentEntry({
     : changed
       ? `Reassessed: ${statusMeta(e.prev_status).label} → ${meta.label}`
       : `Reassessed: still ${meta.label}`;
-  const other = isStatus(e.alternative_status) && e.alternative_status !== e.status ? e.alternative_status : null;
   return (
     <>
       <span className={styles.marker}><Swatch status={e.status} /></span>
       <div className={styles.body}>
         <Dateline event={e} trigger={e.trigger} />
         <p className={styles.headline}>{headline}</p>
-        {/* The other reading and the credence, where stated; verdict
-            confidence stays in the record, not on the page (§10). */}
-        {(other || typeof e.claim_credence === "number") && (
+        {/* The credence, where stated; verdict confidence stays in the
+            record, not on the page (§10). */}
+        {typeof e.claim_credence === "number" && (
           <p className={styles.figures}>
-            {other && (
-              <span title={OTHER_READING_GLOSS}>could also be read as {statusMeta(other).label.toLowerCase()}</span>
-            )}
-            {other && typeof e.claim_credence === "number" && " · "}
-            {typeof e.claim_credence === "number" && (
-              <span title={CREDENCE_GLOSS}>credence {e.claim_credence.toFixed(2)}</span>
-            )}
+            <span title={CREDENCE_GLOSS}>credence {e.claim_credence.toFixed(2)}</span>
           </p>
         )}
         {/* A verdict-changing assessment gets its summary; a routine

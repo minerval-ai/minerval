@@ -2390,13 +2390,13 @@ a claim or an agent that reports where one stands: `id`, `kind`, `text`,
 is of the status, or of a question's standing; not the probability that the
 claim is true, and not shown to readers), `assessment_alternative_status`
 (the other reading: the status the evidence could also be read as, where the
-Steward named one), `standing` (a question's), `estimate` and `unit` (a
+Steward named one; also not shown to readers), `standing` (a question's), `estimate` and `unit` (a
 quantity's), `contestation`, `assessed_at`, `updated_at` and `page_url`.
 Every key is always present. An unassessed node is not an error: its
 judgment fields are null. The card leaves out the reasoning, arguments,
 sources and tree, which `GET /claims/:claim_id` serves; it does not leave
-out any part of the judgment, because a status is reported with its other
-reading and the claim's contestation beside it.
+out any part of the judgment, because a status is reported with the claim's
+contestation beside it.
 
 `GET /claims/cards?ids=<uuid>,<uuid>,...` reads up to 100 cards in one
 request and one query. It answers `{cards, not_found}`: the cards in the
@@ -2435,11 +2435,9 @@ acting-user header, so browser traffic never carries API credentials.
 
 A claim can be shown on another site with the graph's judgment of it. The
 web app serves every form of embed, each from one read of the claim card,
-so each reports the judgment whole: a claim's status with its other reading
-where the Steward named one (in the badge's title, where the badge has no
-room for it), a question's standing, or a quantity's estimate; no embed
-shows verdict confidence, which the claim page does not show either;
-dispute beside it when the claim's contestation reaches the
+so each reports the judgment whole: a claim's status, a question's standing,
+or a quantity's estimate; no embed shows verdict confidence or the other
+reading, which the claim page does not show either; dispute beside it when the claim's contestation reaches the
 thresholds the claim page uses; an unassessed node as unassessed. Every
 embed links to the claim's page and is dated, because embeds are cached and
 screenshotted.

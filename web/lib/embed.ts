@@ -45,12 +45,6 @@ export interface EmbedJudgment {
   /** "actively disputed" or "disputed", where the page shows it. */
   dispute: string | null;
   disputeLevel: DisputeLevel | null;
-  /**
-   * The other status the evidence could be read as, in the page's words
-   * ("doubtful"), where the Steward named one. Verdict confidence is not
-   * here: no reader-facing surface shows it (§10).
-   */
-  otherReading: string | null;
   /** When the current judgment was made (ISO). */
   assessedAt: string | null;
   /** "last assessed" or "last estimated", the page's wording for the date. */
@@ -68,7 +62,6 @@ export function cardJudgment(card: ClaimCard): EmbedJudgment {
     text: card.text,
     unassessedLabel: UNASSESSED_META.label as string,
     unassessedDef: UNASSESSED_META.def as string,
-    otherReading: null,
     assessedVerb: "last assessed",
   };
   const level = disputeLevel(card.contestation);
@@ -123,10 +116,6 @@ export function cardJudgment(card: ClaimCard): EmbedJudgment {
     verdict: { family: "status", key: card.assessment_status, label: s.label, glyph: s.glyph, def: s.def },
     dispute,
     disputeLevel: level,
-    otherReading:
-      isStatus(card.assessment_alternative_status) && card.assessment_alternative_status !== card.assessment_status
-        ? STATUS[card.assessment_alternative_status].label.toLowerCase()
-        : null,
     assessedAt: card.assessed_at,
   };
 }
@@ -139,9 +128,9 @@ export function embedDate(iso: string | null | undefined): string | null {
 
 /**
  * The judgment in one short line, for the badge: "inconclusive · disputed",
- * "unassessed", "leaning", "17 to 100 million". Short: the dispute travels
- * with the status, and the other reading, too long for a badge, is in
- * judgmentSentence, which the badge carries as its title.
+ * "unassessed", "leaning", "17 to 100 million". Short, but whole: the
+ * dispute travels with the status. Verdict confidence and the other reading
+ * (§10) are not shown to readers anywhere, embeds included.
  */
 export function judgmentLine(j: EmbedJudgment): string {
   const parts: string[] = [];
@@ -159,7 +148,6 @@ export function judgmentSentence(j: EmbedJudgment): string {
   if (!j.verdict) parts.push(j.unassessedLabel);
   else if (j.verdict.family === "estimate") parts.push(j.verdict.words.replace(/\.$/, ""));
   else parts.push(j.verdict.label);
-  if (j.otherReading) parts.push(`could also be read as ${j.otherReading}`);
   if (j.dispute) parts.push(j.dispute);
   const when = embedDate(j.assessedAt);
   if (when) parts.push(`${j.assessedVerb} ${when}`);

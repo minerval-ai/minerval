@@ -47,18 +47,13 @@ describe("the judgment an embed states", () => {
     expect(judgmentSentence(cardJudgment(c))).not.toContain("0.80");
   });
 
-  it("names the other reading in the sentence, where the Steward gave one", () => {
+  it("does not show the other reading either: the status is the verdict", () => {
     const c = card({
       assessment_status: "inconclusive", assessment_alternative_status: "doubtful",
       assessment_confidence: 0.7, contestation: 0.7, assessed_at: NOW,
     });
-    expect(judgmentSentence(cardJudgment(c))).toContain("Inconclusive · could also be read as doubtful · actively disputed");
-    // Too long for the badge, which carries the sentence as its title.
+    expect(judgmentSentence(cardJudgment(c))).not.toContain("doubtful");
     expect(judgmentLine(cardJudgment(c))).toBe("inconclusive · actively disputed");
-    // One that repeats the status, or is not a status, is not a reading.
-    for (const alt of ["inconclusive", "contested"]) {
-      expect(cardJudgment({ ...c, assessment_alternative_status: alt }).otherReading).toBeNull();
-    }
   });
 
   it("reads an unassessed claim as unassessed, with no verdict and no dispute label", () => {

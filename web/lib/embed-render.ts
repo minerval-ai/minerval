@@ -4,7 +4,6 @@ import {
   EMBED_HEIGHT_MESSAGE, cardJudgment, embedDate, escapeHtml, judgmentLine, judgmentSentence,
 } from "./embed";
 import type { EmbedJudgment } from "./embed";
-import { OTHER_READING_GLOSS } from "./ontology";
 
 // What an embed looks like: the chrome-less card page and the SVG badge, both
 // rendered to a string. They are served into other people's pages, so each is
@@ -126,9 +125,6 @@ function judgmentHtml(j: EmbedJudgment): string {
       `<span class="${cls}"${style} title="${escapeHtml(v.def)}">` +
       `<span class="glyph" aria-hidden="true">${escapeHtml(v.glyph)}</span>${escapeHtml(v.label)}</span>`,
     );
-  }
-  if (j.otherReading) {
-    out.push(`<span class="conf" title="${escapeHtml(OTHER_READING_GLOSS)}">could also be read as ${escapeHtml(j.otherReading)}</span>`);
   }
   if (j.dispute) {
     out.push(

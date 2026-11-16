@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { StatusBadge, Dispute, OtherReading, Unassessed } from "@/components/Assessment";
+import { StatusBadge, Dispute, Unassessed } from "@/components/Assessment";
 import styles from "./home.module.css";
 
 // The browser-extension demo (issue #80): a mock article whose sentences are
@@ -18,8 +18,6 @@ type CardId =
 const CARDS: {
   id: CardId;
   status: string | null; // null = unassessed
-  // The other reading (§10), where the demo's Steward would name one.
-  alternative?: string;
   // How actively the claim is disputed (0..1), shown beside the verdict.
   contestation?: number;
   claim: string;
@@ -54,14 +52,14 @@ const CARDS: {
       "Rests on the verified CPI figure by a requires edge, one of five claims in the graph that lean on it.",
   },
   {
-    id: "c-squeeze", status: "inconclusive", alternative: "doubtful", contestation: 0.45,
+    id: "c-squeeze", status: "inconclusive", contestation: 0.45,
     claim: "2022 was the worst US cost-of-living squeeze in four decades.",
     match: "evaluative · supports ← the CPI claim",
     reason:
       "“Worst” depends on which measure of living costs you pick, and the measures point different ways. Examined, the evidence comes down on neither side; the disagreement is definitional, not factual.",
   },
   {
-    id: "c-over", status: "doubtful", alternative: "inconclusive", contestation: 0.75,
+    id: "c-over", status: "doubtful", contestation: 0.75,
     claim: "The 2022 tightening was a policy overreaction to transitory inflation.",
     match: "causal · contradicts ← the CPI claim",
     reason:
@@ -156,7 +154,6 @@ export function AnnotatedDemo() {
               >
                 <div className={styles.mMeta}>
                   {c.status ? <StatusBadge status={c.status} size="lg" /> : <Unassessed />}
-                  {c.status && <OtherReading status={c.status} alternative={c.alternative} />}
                   {c.status && <Dispute value={c.contestation} />}
                 </div>
                 <p className={styles.mClaim}>{c.claim}</p>

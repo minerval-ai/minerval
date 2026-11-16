@@ -146,12 +146,11 @@ export interface Assessment {
   // Verdict confidence: how sure the Steward is that `status` is the right
   // reading of the evidence. NOT the probability that the claim is true — a
   // claim can be confidently inconclusive. Kept for the record and the API,
-  // not shown to readers: a figure on a status does not say which way the
-  // doubt runs. alternative_status does, and is what the page shows.
+  // not shown to readers, who took it for a credence.
   confidence: number;
   // The other reading (§10): the status the evidence could otherwise be read
-  // as, where the Steward named one; null where none was named. Optional
-  // while API deploys race the frontend.
+  // as, where the Steward named one; null where none was named. In the API
+  // for callers; not shown on the page. Optional while deploys race.
   alternative_status?: AssessmentStatus | null;
   // Credence: the Steward's probability that the claim, as stated, is true.
   // Null where one number would be false precision (normative/evaluative

@@ -8,9 +8,9 @@ import { fmtDate } from "./format";
 // The graph's judgment of a node, as a link preview states it: the page's
 // metadata description and the generated card (lib/og/card.tsx) both read
 // this, so a pasted link says what the page says. The rule is the page's own
-// (§10): the status describes the evidence, its other reading and the
-// credence go with it, dispute is reported beside it and never in its place
-// (verdict confidence, which the page does not show, is not here), and a
+// (§10): the status describes the evidence, the credence goes with it,
+// dispute is reported beside it and never in its place (verdict confidence
+// and the other reading, which the page does not show, are not here), and a
 // node with no current assessment reads as unassessed, not as a verdict.
 // Every word here is one the claim page already uses (lib/ontology.ts,
 // components/Assessment.tsx); a preview must not coin a label of its own.
@@ -37,8 +37,6 @@ export interface ClaimPreview {
   dispute: string | null;
   /** The Steward's probability that the claim is true, when stated. */
   credence: number | null;
-  /** The other status the evidence could be read as, in the page's words ("doubtful"), where the Steward named one. */
-  otherReading: string | null;
   /** When the current assessment was made (ISO). */
   assessedAt: string | null;
   /** "last assessed" or "last estimated", the page's wording for the date. */
@@ -57,7 +55,6 @@ export function claimPreview(detail: ClaimDetail): ClaimPreview {
     text: claim.text,
     unassessedLabel: UNASSESSED_META.label,
     credence: null,
-    otherReading: null,
     assessedVerb: "last assessed",
   };
   const dispute = disputeMeta(claim.contestation)?.label ?? null;
@@ -103,10 +100,6 @@ export function claimPreview(detail: ClaimDetail): ClaimPreview {
     verdict: { family: "status", key: normalizeStatus(a.status), label: s.label, def: s.def },
     dispute,
     credence: typeof a.claim_credence === "number" ? a.claim_credence : null,
-    otherReading:
-      isStatus(a.alternative_status) && a.alternative_status !== a.status
-        ? statusMeta(a.alternative_status).label.toLowerCase()
-        : null,
     assessedAt: a.assessed_at,
   };
 }
@@ -136,7 +129,6 @@ export function describePreview(p: ClaimPreview): string {
     if (when) parts.push(`${p.assessedVerb} ${when}`);
   } else {
     parts.push(p.verdict.label);
-    if (p.otherReading) parts.push(`could also be read as ${p.otherReading}`);
     if (p.credence != null) parts.push(`credence ${p.credence.toFixed(2)}`);
     if (p.dispute) parts.push(p.dispute);
     if (when) parts.push(`${p.assessedVerb} ${when}`);

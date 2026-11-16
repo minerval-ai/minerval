@@ -67,11 +67,8 @@ const FLAGSHIP: ClaimDetail = {
     id: "a-1",
     status: "supported",
     // Verdict confidence: how sure the Steward is that "supported" is right.
-    // Kept in the record; the page shows the other reading instead.
+    // Kept in the record, not shown on the page.
     confidence: 0.78,
-    // The other reading (§10): the measured leg is verified, so the doubt
-    // about "supported" runs toward verified, not toward inconclusive.
-    alternative_status: "verified",
     // No credence: the claim's one open question is definitional, and a single
     // probability would be false precision (§10). The omission is information.
     claim_credence: null,
@@ -429,7 +426,6 @@ const FLAGSHIP_EVENTS: ClaimEventsPage = {
       assessment_id: "a-1",
       status: "supported",
       confidence: 0.78,
-      alternative_status: "verified",
       claim_credence: null,
       summary:
         "The 6.5% figure is beyond dispute, but the accepted challenge is right that “high” rests on [[claim:threshold-def|an unsettled definitional threshold]]. Supported, not Verified: the conclusion holds under any mainstream threshold, while the threshold itself remains a definitional choice.",

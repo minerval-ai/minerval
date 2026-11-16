@@ -355,7 +355,7 @@ export function getStewardToolDefinitions(): Tool[] {
               "NOT the probability that the claim is true. A claim can be " +
               "confidently inconclusive. It is kept with the verdict and " +
               "read by monitors and later passes; the claim page does not " +
-              "show it, and shows alternative_status instead.",
+              "show it.",
           },
           alternative_status: {
             type: "string",
@@ -366,11 +366,10 @@ export function getStewardToolDefinitions(): Tool[] {
               "another reading is live, that is whenever your confidence is " +
               "materially short of certain because a neighboring status is " +
               "also defensible: for an inconclusive verdict, whether the doubt " +
-              "runs toward supported or toward doubtful. The claim page shows " +
-              "it beside the status (\"could also be read as doubtful\"), so a " +
-              "reader sees which way the doubt runs. Omit it when the status " +
-              "you chose is the only reasonable reading. Never the same as " +
-              "status.",
+              "runs toward supported or toward doubtful. It is kept with the " +
+              "verdict for later passes and for callers of the API; the claim " +
+              "page does not show it. Omit it when the status you chose is the " +
+              "only reasonable reading. Never the same as status.",
           },
           claim_credence: {
             type: "number",
@@ -1488,8 +1487,8 @@ export async function executeStewardTool(
         const confidence = input.confidence as number;
         // The other reading (§10): optional, normalized like the status, and
         // bounced back when it is not a status or repeats the one chosen, so
-        // the page never says "inconclusive, could also be read as
-        // inconclusive" or shows a word no reader knows.
+        // the record never holds a reading that names nothing or the verdict
+        // itself.
         const rawAlternative = input.alternative_status;
         const alternativeStatus =
           rawAlternative == null || String(rawAlternative).trim() === ""

@@ -237,7 +237,7 @@ function Judgment({ p }: { p: ClaimPreview }) {
     ) : (
       <Badge label={v.label} ink={(STATUS_COLOR[v.key] ?? STATUS_COLOR.unknown!).ink} tint={(STATUS_COLOR[v.key] ?? STATUS_COLOR.unknown!).tint} />
     );
-  const figures = p.credence != null || p.otherReading != null;
+  const figures = p.credence != null;
   return (
     <div style={STACK}>
       <div style={ROW}>
@@ -262,9 +262,6 @@ function Judgment({ p }: { p: ClaimPreview }) {
               </div>
               <div>{p.credence.toFixed(2)}</div>
             </div>
-          )}
-          {p.otherReading != null && (
-            <div style={{ color: C.muted }}>{`could also be read as ${p.otherReading}`}</div>
           )}
         </div>
       )}

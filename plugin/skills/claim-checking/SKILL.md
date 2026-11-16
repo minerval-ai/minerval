@@ -45,9 +45,9 @@ skill bundles it in full, and the section numbers below point into it.
   the same tool the graph's own agents read nodes with.
 - **Only where a claim stands**: `get_claim_card`, or `get_claim_cards` for
   up to 100 claims in one call. A card is the judgment whole and nothing
-  else: the claim's text, kind and state, its status with its other reading
-  where one is named (`assessment_alternative_status`) and its verdict
-  confidence (a question's `standing`, a quantity's `estimate` and `unit`), its
+  else: the claim's text, kind and state, its status with its verdict
+  confidence and its other reading (`assessment_alternative_status`) (a
+  question's `standing`, a quantity's `estimate` and `unit`), its
   `contestation`, when it was last assessed and last changed, and its
   `page_url`. Prefer it to `get_claim` when you will report or cite the
   verdict and do not need the reasoning, and for a list of claims you
@@ -86,8 +86,8 @@ skill bundles it in full, and the section numbers below point into it.
   rest) take `fields`, a comma-separated list of dotted paths such as
   `results.id,results.text,results.assessment_status,results.assessment_confidence`,
   and return only those. Use it to keep a large read out of your context. Trim what you
-  carry, never what you report: if you will report a status, keep its
-  other reading and the claim's `contestation` in the paths you ask for.
+  carry, never what you report: if you will report a status, keep the
+  claim's `contestation` in the paths you ask for.
 - **What the support rests on**: `get_claim` with `include: ["provenance"]`,
   or `get_claim_provenance`. Free.
 - **What changed since you last looked**: `list_graph_changes`, narrowed with
@@ -117,10 +117,9 @@ skill bundles it in full, and the section numbers below point into it.
 
 - Verdicts (`verified`, `supported`, `inconclusive`, `doubtful`,
   `contradicted`, and `unknown` on a matched claim) are the graph's
-  assessments. Say so: "Minerval assesses this as inconclusive, and notes it
-  could also be read as doubtful", with the claim's `page_url`, where the
-  reasoning is. Give the credence where one is stated ("supported, credence
-  0.85").
+  assessments. Say so: "Minerval assesses this as supported", with the
+  claim's `page_url`, where the reasoning is. Give the credence where one is
+  stated ("supported, credence 0.85").
 - Keep your own view separate. If you think the graph is wrong, say that
   as your view, with your reasons, after reporting what the graph says;
   never blend the two into one unattributed verdict. And if you think it
@@ -128,15 +127,15 @@ skill bundles it in full, and the section numbers below point into it.
 - Read the verdict in the terms it was written in (§10). `verified` means
   the evidence, examined directly, establishes the claim. `supported` and
   `doubtful` mean the evidence leans one way but the examination is
-  incomplete or indirect. `alternative_status`, the other reading, is the
-  status the evidence could also defensibly be given, named where one is
-  live: it says which way any doubt about the status runs, and the claim
-  page shows it beside the status. Verdict confidence is how sure the graph
-  is of the status, not the probability the claim is true; that is
-  `credence`, given only where one number is an honest summary. The claim
-  page does not show verdict confidence, because a figure on a status does
-  not say which way the doubt runs; report the other reading rather than
-  the figure.
+  incomplete or indirect. Verdict confidence is how sure the graph is of
+  the status, not the probability the claim is true; that is `credence`,
+  given only where one number is an honest summary. `alternative_status`,
+  the other reading, is the status the evidence could also defensibly be
+  given, where the Steward named one: it says which way any doubt about the
+  status runs. Neither is shown on the claim page, and readers take a
+  figure beside a status for a credence, so report the status and any
+  credence as the page does; use the other two to judge how settled a
+  verdict is, not as part of it.
 - An assessment's `id` names the verdict itself; cite it, not only the
   claim, when you point at what the graph concluded, so the citation still
   means that verdict after a reassessment. A quantity's estimate
@@ -176,11 +175,10 @@ skill bundles it in full, and the section numbers below point into it.
   actively a claim is disputed is its `contestation` (0..1), reported
   separately. A highly contested claim can be `verified`; an uncontested
   one can be `inconclusive`.
-- **A status travels with its other reading and its contestation.** A card
-  (`get_claim_card`) carries all three for that reason. Asking a tool for
-  fewer `fields` is a way to read less, not a way to say less: a status
-  reported without the other reading and contestation that go with it has
-  been rounded.
+- **A status travels with its contestation.** A card (`get_claim_card`)
+  carries both for that reason. Asking a tool for fewer `fields` is a way
+  to read less, not a way to say less: a status reported without the
+  contestation that goes with it has been rounded.
 - **`inconclusive` and `doubtful` are findings, not failures.**
   `inconclusive` means the evidence was examined and does not come down on
   either side. Don't round it up to "probably true" or down to "unproven,
@@ -345,7 +343,7 @@ What your user writes with your help is theirs: a brief, a report, an
 argument for one side. It can take a position the graph does not, and it
 can be written from an angle. What it must not do is misstate the graph.
 Wherever you quote or cite a Minerval assessment, quote it accurately,
-with its status, its other reading, and its uncertainty, even when it cuts
+with its status, its credence where stated, and its uncertainty, even when it cuts
 against the piece. Leaving out a verdict that undermines the argument
 while citing the ones that help is the selective presentation §18 forbids
 the graph itself; don't do on the graph's behalf what it will not do.

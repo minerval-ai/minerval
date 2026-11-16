@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ClaimCard, Finding } from "@/lib/types";
 import { agentLabel, type FindingsView, findingsHref } from "@/lib/findings";
 import { StatusBadge, StandingBadge } from "../Assessment";
-import { OTHER_READING_GLOSS, QUESTION_STANDING, isStanding, isStatus, statusMeta } from "@/lib/ontology";
+import { QUESTION_STANDING, isStanding, statusMeta } from "@/lib/ontology";
 import { fmtDate } from "../Findings";
 
 // The pieces the findings index and a finding's own page share: how a
@@ -21,9 +21,9 @@ export function ImportanceTicks({ value }: { value: number }) {
 }
 
 /**
- * Where a node stands now: a claim's status with its other reading where
- * the Steward named one (§10), or a question's standing. Verdict confidence
- * is not shown: a bare figure beside a status read as a credence. `plain` draws the same badge without its glossary
+ * Where a node stands now: a claim's status, or a question's standing.
+ * Verdict confidence is not shown: a bare figure beside a status read as a
+ * credence. `plain` draws the same badge without its glossary
  * link, for use inside something that is already a link (a margin card).
  */
 export function Standing({ card, plain = false }: { card: ClaimCard | undefined; plain?: boolean }) {
@@ -36,10 +36,6 @@ export function Standing({ card, plain = false }: { card: ClaimCard | undefined;
   }
   if (!card.assessment_status) return null;
   const s = statusMeta(card.assessment_status);
-  const other =
-    isStatus(card.assessment_alternative_status) && card.assessment_alternative_status !== card.assessment_status
-      ? statusMeta(card.assessment_alternative_status).label.toLowerCase()
-      : null;
   return (
     <span className="fnd-standing">
       {plain ? (
@@ -51,11 +47,6 @@ export function Standing({ card, plain = false }: { card: ClaimCard | undefined;
         </span>
       ) : (
         <StatusBadge status={card.assessment_status} />
-      )}
-      {other && (
-        <span className="fnd-credence" title={OTHER_READING_GLOSS}>
-          could also be read as {other}
-        </span>
       )}
     </span>
   );
