@@ -8,7 +8,8 @@ import type {
   SourceEventKind,
   SourcePage,
 } from "@/lib/types";
-import { fmtDate, partialDate } from "@/lib/format";
+// Relative, not "@/lib/format", so the unit suite can load this file.
+import { fmtDate, partialDate } from "../../lib/format";
 
 // The source page's view model (#507): the document's own outline, which
 // leaves each examination covered, and where findings sit. Derived here so the
@@ -295,4 +296,61 @@ export const HISTORY_WORD: Record<string, string> = {
 
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+// --- how much the page has to show (#507) ----------------------------------------
+
+/** The steps every source goes through on entering the graph; news about none in particular. */
+export const INTAKE_KINDS = new Set<string>(["retrieved", "facts", "segmented"]);
+
+export interface SourceShape {
+  /** Passages a claim marks or an examination found something in. */
+  touched: number;
+  /** Examinations, plus requests bearing on the document. */
+  examined: number;
+  lineage: number;
+  /** Copies, other versions, copies-of, corrections and recorded interests. */
+  facts: number;
+  /** History rows beyond the intake steps. */
+  history: number;
+  /**
+   * Anything beyond a few quoted passages is recorded. A busy page keeps the
+   * outline rail, the facts band, the prominence figures and the passage map;
+   * a quiet one, a source quoted once or twice and nothing else, leads with
+   * its text and says in one line what has not happened.
+   */
+  busy: boolean;
+}
+
+export function sourceShape(page: SourcePage, groups: Group[], findingSegs: ReadonlySet<string>): SourceShape {
+  const touched = groups
+    .flatMap((g) => g.leaves)
+    .filter((l) => l.seg.instances.length > 0 || findingSegs.has(l.seg.id)).length;
+  const ctx = page.context;
+  const examined = page.examinations.length + (ctx?.reviews?.requests.length ?? 0);
+  const lineage = ctx ? ctx.lineage.draws_on.total + ctx.lineage.drawn_on_by.total : 0;
+  const f = page.facts;
+  const facts = f.copies.length + f.versions.length + f.copy_of.length + f.events.length + (f.interests?.length ?? 0);
+  const history = (ctx?.history ?? []).filter((h) => !INTAKE_KINDS.has(h.kind)).length;
+  return {
+    touched,
+    examined,
+    lineage,
+    facts,
+    history,
+    busy: examined > 0 || lineage > 0 || facts > 0 || touched >= 3,
+  };
+}
+
+/**
+ * The one line that stands in for the sections a quiet page leaves out, in
+ * the page's own words. Null when nothing it covers is missing, or when the
+ * graph has not said (no context served), since silence is not absence.
+ */
+export function absentLine(page: SourcePage, shape: SourceShape): string | null {
+  const parts: string[] = [];
+  const asked = (page.context?.reviews?.requests ?? []).some((r) => r.live);
+  if (page.examinations.length === 0) parts.push(asked ? "Not examined; a review has been asked for." : "Not examined or reviewed.");
+  if (page.context && shape.lineage === 0) parts.push("No other source draws on it or is drawn on by it.");
+  return parts.length ? parts.join(" ") : null;
 }

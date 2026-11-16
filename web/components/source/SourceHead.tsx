@@ -7,10 +7,12 @@ import { PageHead } from "@/components/PageHead";
 import { isReadingAddress } from "@/lib/source-address";
 
 // Identity, then what has happened to the document since: facts that need no
-// judgment, first on the page (#507).
+// judgment, first on the page (#507). The byline names what is known; a gap
+// is said in the Record. The band and the prominence figures are for a busy
+// page: on a source quoted once and nothing else, every cell said "None".
 export function SourceHead({
-  page, groups, exams, sample,
-}: { page: SourcePage; groups: Group[]; exams: ExamView[]; sample: boolean }) {
+  page, groups, exams, busy, sample,
+}: { page: SourcePage; groups: Group[]; exams: ExamView[]; busy: boolean; sample: boolean }) {
   const { source, versions, copies, copy_of, events } = page.facts;
   const interests = page.facts.interests ?? [];
   const doc = page.document;
@@ -47,9 +49,9 @@ export function SourceHead({
         title={source.title}
       />
       <p className={s.ident}>
-        {source.authors.length > 0 ? <b>{source.authors.join(", ")}</b> : <span className={s.none}>Author not recorded</span>}
+        {source.authors.length > 0 && <b>{source.authors.join(", ")}</b>}
         {source.publisher && <span>{source.publisher}</span>}
-        <span>{published ? `Published ${published}` : <span className={s.none}>Date not recorded</span>}</span>
+        {published && <span>Published {published}</span>}
         {source.doi && <a href={`https://doi.org/${source.doi}`}>doi {source.doi}</a>}
         {source.url && !isReadingAddress(source.url) && <a href={source.url} rel="noopener noreferrer">Original&#xFE0E; ↗</a>}
         {source.archived_url && <a href={source.archived_url} rel="noopener noreferrer">Archived copy</a>}
@@ -102,6 +104,7 @@ export function SourceHead({
         </div>
       ))}
 
+      {busy && <>
       <div className={s.band}>
         <Fact k="Claims" v={claimIds.size ? String(claimIds.size) : "None"} quiet={!claimIds.size} />
         <Fact
@@ -128,6 +131,7 @@ export function SourceHead({
         </span>
       </div>
       <Prominence context={page.context} />
+      </>}
     </div>
   );
 }
