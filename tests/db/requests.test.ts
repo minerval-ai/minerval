@@ -190,6 +190,74 @@ describe("listing and routes", () => {
     }
   });
 
+  // The index's ways in: by topic, by whom it is asked of, by whether its
+  // work waits for funding, by the importance of what it bears on, and the
+  // facets that count each under the other filters.
+  it("filters by topic, by whom it is asked of and by funding, orders by importance, and counts facets", async () => {
+    const word = `zt${randomUUID().slice(0, 8)}`;
+    const filer = { kind: "admin" as const, agent: "claim_steward" };
+    const minor = await seedClaim();
+    const central = await seedClaim();
+    await rawQuery(`UPDATE claims SET importance = 0.2 WHERE id = $1`, [minor]);
+    await rawQuery(`UPDATE claims SET importance = 0.9 WHERE id = $1`, [central]);
+    const [tag] = await rawQuery<{ id: string }>(`INSERT INTO tags (slug, name) VALUES ($1, 'Zt topic') RETURNING id`, [word]);
+    await rawQuery(`INSERT INTO taggings (tag_id, subject_kind, subject_id, source) VALUES ($1, 'claim', $2, 'dbtest')`, [
+      tag!.id,
+      central,
+    ]);
+    const ask = `Find the ${word} registers.`;
+    const onMinor = await fileRequest({ ...BASE, ask, claimIds: [minor], filer });
+    const onCentral = await fileRequest({ ...BASE, ask, claimIds: [central], filer, addressedTo: "The national statistics office" });
+    const onNothing = await fileRequest({ ...BASE, ask, bearsOnText: "Something the graph does not hold yet", filer });
+    const closed = await fileRequest({ ...BASE, ask, claimIds: [minor], filer });
+    await setRequestState({ requestId: closed.id, state: "withdrawn", note: "Superseded by a sharper request." });
+
+    const byImportance = await listRequests({ q: word, order: "importance", live: true });
+    expect(byImportance.items.map((r) => r.id)).toEqual([onCentral.id, onMinor.id, onNothing.id]);
+    expect(byImportance.items[0]).toMatchObject({ importance: 0.9, tags: [{ slug: word, name: "Zt topic" }] });
+    expect(byImportance.items[0]!.bears_on[0]).toMatchObject({ id: central, importance: 0.9 });
+    expect(byImportance.items[2]).toMatchObject({ importance: null, tags: [] });
+
+    expect((await listRequests({ q: word, tag: word })).items.map((r) => r.id)).toEqual([onCentral.id]);
+    expect((await listRequests({ q: word, asked: "named" })).items.map((r) => r.id)).toEqual([onCentral.id]);
+    expect((await listRequests({ q: word, asked: "anyone", live: true })).total).toBe(2);
+    // A fresh request's work is open on the ledger with nothing behind it; a closed one's is not.
+    const waiting = await listRequests({ q: word, waiting: true });
+    expect(waiting.items.map((r) => r.id)).not.toContain(closed.id);
+    expect(waiting.total).toBe(3);
+
+    // Each facet counts under every filter but its own.
+    const { facets } = await listRequests({ q: word, live: true, tag: word, facets: true });
+    expect(facets).not.toBeNull();
+    expect(facets!.states).toEqual([{ state: (await getRequest(onCentral.id))!.state, count: 1 }]);
+    expect(facets!.tags).toEqual([{ slug: word, name: "Zt topic", count: 1 }]);
+    expect(facets!.asked).toEqual({ anyone: 0, named: 1 });
+    const untagged = await listRequests({ q: word, live: true, facets: true });
+    expect(untagged.facets!.asked).toEqual({ anyone: 2, named: 1 });
+    expect(untagged.facets!.states.reduce((t, s) => t + s.count, 0)).toBe(4);
+    expect(untagged.facets!.waiting).toBe(3);
+
+    const app = Fastify();
+    app.decorate("authenticate", async () => {});
+    app.decorate("requireUser", async () => {});
+    await app.register(requestRoutes, { prefix: "/requests" });
+    await app.ready();
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: `/requests?q=${word}&state=live&order=importance&facets=true&asked=anyone`,
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.requests.map((r: { id: string }) => r.id)).toEqual([onMinor.id, onNothing.id]);
+      expect(body.requests[0]).toMatchObject({ importance: 0.2, bears_on: [{ id: minor, importance: 0.2 }] });
+      expect(body.facets).toMatchObject({ asked: { anyone: 2, named: 1 } });
+      expect((await app.inject({ method: "GET", url: `/requests?q=${word}` })).json().facets).toBeUndefined();
+    } finally {
+      await app.close();
+    }
+  });
+
   // Keyword search over requests.text_search: a match in the ask outranks
   // one only in the reasons, and search composes with the other filters.
   it("searches what a request asks and why, ranking the ask first", async () => {

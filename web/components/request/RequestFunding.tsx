@@ -11,13 +11,14 @@ import styles from "./request.module.css";
 // runs at once, and unspent owls come back.
 export function RequestFunding({ r }: { r: RequestItem }) {
   const ledger = r.ledger;
-  const [owls, setOwls] = useState(1);
+  const scope = ledger?.variant === "scope";
+  // Start the box at the price, so the plain choice is to fund the work whole.
+  const [owls, setOwls] = useState(() => (ledger && !scope ? Math.max(0.25, Math.ceil(ledger.cost_usd * 4) / 4) : 1));
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [commissioned, setCommissioned] = useState((ledger?.backing_usd ?? 0) > 0);
   if (!ledger) return null;
 
-  const scope = ledger.variant === "scope";
   const running = ledger.status === "running";
 
   const fund = async () => {
@@ -32,13 +33,16 @@ export function RequestFunding({ r }: { r: RequestItem }) {
       const data = await res.json();
       if (!res.ok) {
         if (data.code === "SIGN_IN") {
-          window.location.href = "/signin";
+          window.location.href = `/signin?callbackUrl=${encodeURIComponent(`/requests/${r.id}`)}`;
           return;
         }
         setNote(data.error ?? "That did not go through; try again.");
       } else {
         setCommissioned(true);
-        setNote(`Thank you: commissioned with ${data.allocated_owls} owls. The work starts shortly.`);
+        setNote(
+          `Thank you: commissioned with ${data.allocated_owls} owls. The work starts shortly.` +
+            (data.below_quote && data.note ? ` ${data.note}` : "")
+        );
       }
     } catch {
       setNote("That did not go through; try again.");
@@ -48,41 +52,44 @@ export function RequestFunding({ r }: { r: RequestItem }) {
   };
 
   return (
-    <section>
-      <h2>Funding the work</h2>
-      <p className={styles.intro}>
-        {scope
-          ? "This request has no budget yet, so the next step is a short scoping pass: the Researcher finds out what the work would involve and quotes it, and the quote becomes the request's budget."
-          : `Its budget is about $${ledger.cost_usd.toFixed(2)}.`}{" "}
-        Anyone may commission it, with the budget they think it needs; it starts at once. You pay
-        what the work actually costs; the rest comes back, as does everything if the request closes
-        first. Funding buys the work, never its result.
-      </p>
+    <div className={styles.box}>
+      <div className="sc">Fund the work</div>
       <p className={styles.fundingLine}>
         {running ? (
-          "Under way now."
+          "Funded and under way."
         ) : commissioned ? (
           "Commissioned; it starts shortly."
+        ) : scope ? (
+          <>Not yet priced. A short scoping pass comes first: the Researcher finds out what the work would involve and quotes it.</>
         ) : (
-          <>Not yet commissioned.</>
+          <>
+            About <strong>${ledger.cost_usd.toFixed(2)}</strong> to do, and nobody has commissioned it yet.
+          </>
         )}
       </p>
       {!running && !commissioned && (
-        <div className="key-create">
-          <input
-            type="number"
-            min={0.25}
-            step={0.25}
-            value={owls}
-            onChange={(e) => setOwls(Number(e.target.value))}
-            aria-label="budget in owls for this work"
-          />
-          <button onClick={fund} disabled={busy || !(owls > 0)}>
-            {busy ? "commissioning…" : <>Commission it with <OwlMark size={14} className="owl-mark" />{owls}</>}
-          </button>
-        </div>
+        <>
+          <p>
+            Anyone may commission it, with the budget they think it needs; it starts at once. You pay what the work
+            actually costs and the rest comes back, as does everything if the request closes first. Funding buys the
+            work, never its result.
+          </p>
+          <div className="key-create">
+            <input
+              type="number"
+              min={0.25}
+              step={0.25}
+              value={owls}
+              onChange={(e) => setOwls(Number(e.target.value))}
+              aria-label="budget in owls for this work"
+            />
+            <button onClick={fund} disabled={busy || !(owls > 0)}>
+              {busy ? "commissioning…" : <>Commission it with <OwlMark size={14} className="owl-mark" />{owls}</>}
+            </button>
+          </div>
+        </>
       )}
       {note && <p role="status" className={styles.fundingNote}>{note}</p>}
-    </section>
+    </div>
   );
 }
