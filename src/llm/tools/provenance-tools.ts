@@ -262,17 +262,23 @@ export const executeRecordReading: SkillToolExecutor = async (input, ctx) =>
       model: ctx.run?.model ?? null,
       createdBy: writerFor(ctx),
     });
+    const checkedIn = result.quote_checked_in
+      ? `The stored text of this instance's own source does not hold the passage (an arXiv paper's abs page holds ` +
+        `only its abstract), so it was checked against another record of the same paper and version: source ` +
+        `${result.quote_checked_in.source_id} (${result.quote_checked_in.url}). `
+      : "";
     return JSON.stringify({
       success: true,
       ...result,
       quote_check_note:
-        result.quote_check === "verbatim" || result.quote_check === "normalized_match"
+        checkedIn +
+        (result.quote_check === "verbatim" || result.quote_check === "normalized_match"
           ? "The recorded passage is present in the stored text of its source."
           : result.quote_check === "elided_match"
             ? "The recorded passage leaves text out (\"[...]\"); each piece is in the stored text of its source, in order. Read what the cuts left out before relying on the quote: if a cut changes what the source says, say so in your reasoning."
           : result.quote_check === "not_found"
             ? "The recorded passage was NOT found in the stored text of its source. Read the source before relying on the quote; if the instance misquotes it, say so in your reasoning."
-            : "The graph holds no text for this source, so the quote could not be checked; provenance_read_source fetches and stores it.",
+            : "The graph holds no text for this source, so the quote could not be checked; provenance_read_source fetches and stores it."),
     });
   });
 

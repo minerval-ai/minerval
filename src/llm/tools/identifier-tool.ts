@@ -58,8 +58,10 @@ export function resolveIdentifier(kind: IdentifierKind, raw: string): ResolvedId
   }
   if (kind === "arxiv") {
     const id = parseArxivIdStrict(raw);
+    // The PDF first: it is the paper, where the abs page is its abstract,
+    // and a source recorded at the abs address held only that (#1047).
     return id
-      ? { kind, id, address: `https://arxiv.org/abs/${id}`, also: { pdf: `https://arxiv.org/pdf/${id}` } }
+      ? { kind, id, address: `https://arxiv.org/pdf/${id}`, also: { abs: `https://arxiv.org/abs/${id}` } }
       : null;
   }
   if (kind === "pmid") {

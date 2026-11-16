@@ -263,6 +263,42 @@ export function parseArxivId(raw: string): string | null {
   return null;
 }
 
+/**
+ * The paper an arxiv.org reading address names, and which rendering of it
+ * the address serves: `abs`, the abstract page, or `pdf` and `html`, the
+ * full text. arXiv serves one paper at all three, so a source recorded at
+ * one is the same document as one recorded at another (getOrCreateSource,
+ * #1047). The key is the id as the address writes it, version included:
+ * v1 and v2 are different texts, and the unversioned address (whatever
+ * version is latest) is a key of its own. Null for any other address, the
+ * source archive (e-print, src) and a figure under html/ included.
+ */
+export function arxivPaperAddress(url: string): { key: string; rendering: ArxivRendering } | null {
+  const m = url
+    .trim()
+    .match(/^https?:\/\/(?:www\.|export\.)?arxiv\.org\/(abs|pdf|html)\/([^?#]+?)(?:\.pdf)?\/*(?:[?#].*)?$/i);
+  if (!m) return null;
+  const key = parseArxivId(m[2]!);
+  return key ? { key, rendering: m[1]!.toLowerCase() as ArxivRendering } : null;
+}
+
+export type ArxivRendering = "abs" | "pdf" | "html";
+
+/**
+ * The addresses of one paper's renderings, each in the form normalizePageUrl
+ * gives (https, no www., no trailing slash), so their page hashes find a
+ * row recorded at any spelling of them.
+ */
+export function arxivPaperAddresses(key: string): string[] {
+  const out: string[] = [];
+  for (const host of ["arxiv.org", "export.arxiv.org"]) {
+    for (const path of [`abs/${key}`, `pdf/${key}`, `pdf/${key}.pdf`, `html/${key}`]) {
+      out.push(`https://${host}/${path}`);
+    }
+  }
+  return out;
+}
+
 export function arxivEprintUrl(id: string): string {
   return `https://arxiv.org/e-print/${id}`;
 }

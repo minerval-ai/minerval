@@ -30,7 +30,8 @@ import { currentLabel } from "../llm/usage-context.js";
 import { runAtSourceLabel } from "./label-service.js";
 import { fetchPublicUrl } from "./url-guard.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
-import { getOrCreateSource, recordSourceKind } from "./source-service.js";
+import { getOrCreateSource, pageHashOf, recordSourceKind } from "./source-service.js";
+import { arxivPaperAddress, arxivPaperAddresses } from "./paper-files.js";
 import { noKeptSource, sourceAddressProblem } from "./reading-address.js";
 import { refreshSourceFactsOnce } from "./source-facts-service.js";
 import { segmentSourceOnce } from "./source-segment-service.js";
@@ -322,7 +323,51 @@ function cutPieceMissing(quote: string, normalizedText: string): string | null |
 export async function recordedQuoteProblem(sourceId: string, quote: string): Promise<string | null> {
   if (!hasCut(quote)) return null;
   const [row] = await rawQuery<{ raw_content: string | null }>(`SELECT raw_content FROM sources WHERE id = $1`, [sourceId]);
-  return cutQuoteProblem(quote, row?.raw_content);
+  const problem = cutQuoteProblem(quote, row?.raw_content);
+  if (problem === null) return null;
+  // The same arXiv paper's full text, recorded at another of its addresses,
+  // holds what the abstract page's copy does not (#1047).
+  return (await quoteCheckInSibling(sourceId, quote)) ? null : problem;
+}
+
+/**
+ * The stored text of the other records of the arXiv paper a source is,
+ * the longest first: one paper recorded at its abs and its pdf address is
+ * two rows, and the abs row's text is the abstract (#1047). The same
+ * version only (arxivPaperAddress). Empty for any other source.
+ */
+async function arxivSiblingTexts(
+  sourceId: string
+): Promise<Array<{ id: string; url: string; raw_content: string }>> {
+  const [row] = await rawQuery<{ url: string | null }>(`SELECT url FROM sources WHERE id = $1`, [sourceId]);
+  const paper = row?.url ? arxivPaperAddress(row.url) : null;
+  if (!paper) return [];
+  const siblings = await rawQuery<{ id: string; url: string; raw_content: string }>(
+    `SELECT id, url, raw_content FROM sources
+      WHERE id <> $1 AND page_url_hash = ANY($2::text[])
+        AND raw_content IS NOT NULL AND raw_content <> ''
+      ORDER BY length(raw_content) DESC, id`,
+    [sourceId, arxivPaperAddresses(paper.key).map(pageHashOf)]
+  );
+  return siblings.filter((s) => arxivPaperAddress(s.url)?.key === paper.key);
+}
+
+/**
+ * Where a quotation not in its source's stored text is in the stored text
+ * of another record of the same arXiv paper: the check there, and which
+ * record. Null when the source is no arXiv paper or no other record holds it.
+ */
+export async function quoteCheckInSibling(
+  sourceId: string,
+  quote: string
+): Promise<{ check: QuoteCheckResult; source_id: string; url: string } | null> {
+  for (const sibling of await arxivSiblingTexts(sourceId)) {
+    const check = quoteCheck(quote, sibling.raw_content);
+    if (check !== "not_found" && check !== "no_stored_content") {
+      return { check, source_id: sibling.id, url: sibling.url };
+    }
+  }
+  return null;
 }
 
 /** The pure half of recordedQuoteProblem, against a stored copy in hand. */
@@ -580,6 +625,8 @@ export interface RecordInstanceReadingInput {
 export async function recordInstanceReading(input: RecordInstanceReadingInput): Promise<{
   id: string;
   quote_check: QuoteCheckResult;
+  /** Where the quote was checked, when not in its own source's text: another record of the same arXiv paper. */
+  quote_checked_in?: { source_id: string; url: string };
   replaced: boolean;
   source_kind?: string;
   source_kind_note?: string;
@@ -597,7 +644,14 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
       "worth_reading_reason is required when worth_reading is true: say what a close reading would settle."
     );
   }
-  const check = quoteCheck(instance.verbatim_text, instance.raw_content);
+  let check = quoteCheck(instance.verbatim_text, instance.raw_content);
+  // An arXiv paper recorded at its abs address holds the abstract; the
+  // same paper recorded at its pdf address holds the paper (#1047).
+  const sibling =
+    check === "not_found" || check === "no_stored_content"
+      ? await quoteCheckInSibling(instance.source_id, instance.verbatim_text)
+      : null;
+  if (sibling) check = sibling.check;
   // A first reading takes this run's label, whatever the source's or the
   // claim's: a reading is the reader's. A re-read replaces the reading in
   // place and leaves the label it has (src/labels.ts).
@@ -654,7 +708,13 @@ export async function recordInstanceReading(input: RecordInstanceReadingInput): 
   const kind = sourceKind
     ? await recordSourceKind(instance.source_id, sourceKind, { read: input.sourceRead === true })
     : {};
-  return { id: row.id, quote_check: check, replaced: !row.inserted, ...kind };
+  return {
+    id: row.id,
+    quote_check: check,
+    ...(sibling ? { quote_checked_in: { source_id: sibling.source_id, url: sibling.url } } : {}),
+    replaced: !row.inserted,
+    ...kind,
+  };
 }
 
 export interface RecordProvenanceEdgeInput {

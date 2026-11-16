@@ -713,7 +713,13 @@ piece is in the text, in order, with at most 3,000 characters left out at
 each cut, and the join is the recorder's (`src/services/quote-elision.ts`).
 The recording tools refuse a quotation with cuts whose pieces are not in a
 stored copy, and the source page shows, beside the claim's reading, what
-each cut left out. One reading
+each cut left out. An arXiv paper is one document at its abs, pdf and html
+addresses, and the abs page holds only the abstract: a source asked for at
+one of them takes a row already recorded at another for the same id and
+version, the one with the most stored text (never an abs row for a pdf or
+html address), and where an older pair is still two rows, a quotation not in
+its own row's text is checked against the other's, and the reading says so
+(#1047). One reading
 per instance, replaced in place. `claim_provenance_edges` is the load-bearing
 edge: from one source's assertion of the claim (an instance) to the document
 that assertion draws on (a source, which need not assert the claim itself;

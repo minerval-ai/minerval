@@ -37,6 +37,8 @@ import {
   fetchViewable,
   imageProblem,
   imageTokenEstimate,
+  arxivPaperAddress,
+  arxivPaperAddresses,
   parseArxivId,
   readTar,
   safeArchiveName,
@@ -124,6 +126,40 @@ describe("classifyViewable / fetchViewable", () => {
       ok: false,
       problem: "Refusing 10.0.0.5: resolves to non-public address 10.0.0.5",
     });
+  });
+});
+
+describe("arxivPaperAddress", () => {
+  it("keys the abs, pdf and html addresses of one paper alike, version included (#1047)", () => {
+    expect(arxivPaperAddress("https://arxiv.org/abs/2401.01234v2")).toEqual({ key: "2401.01234v2", rendering: "abs" });
+    expect(arxivPaperAddress("https://arxiv.org/pdf/2401.01234v2")).toEqual({ key: "2401.01234v2", rendering: "pdf" });
+    expect(arxivPaperAddress("http://www.arxiv.org/pdf/2401.01234v2.pdf")).toEqual({ key: "2401.01234v2", rendering: "pdf" });
+    expect(arxivPaperAddress("https://arxiv.org/html/2401.01234v2/#S2")).toEqual({ key: "2401.01234v2", rendering: "html" });
+    expect(arxivPaperAddress("https://export.arxiv.org/abs/hep-th/9901001")).toEqual({ key: "hep-th/9901001", rendering: "abs" });
+    // Each version is its own text, and the unversioned address its own key.
+    expect(arxivPaperAddress("https://arxiv.org/abs/2401.01234v1")!.key).not.toBe(arxivPaperAddress("https://arxiv.org/abs/2401.01234v2")!.key);
+    expect(arxivPaperAddress("https://arxiv.org/abs/2401.01234")!.key).toBe("2401.01234");
+  });
+
+  it("is null for the source archive, a figure, and any other host", () => {
+    for (const other of [
+      "https://arxiv.org/e-print/2401.01234",
+      "https://arxiv.org/src/2401.01234",
+      "https://arxiv.org/html/2401.01234v1/x1.png",
+      "https://arxiv.org.evil.example/abs/2401.01234",
+      "https://example.org/abs/2401.01234",
+      "https://arxiv.org/list/cs.AI/recent",
+    ]) {
+      expect(arxivPaperAddress(other), other).toBeNull();
+    }
+  });
+
+  it("lists every rendering's address in its normalized form", () => {
+    const all = arxivPaperAddresses("2401.01234v2");
+    expect(all).toContain("https://arxiv.org/abs/2401.01234v2");
+    expect(all).toContain("https://arxiv.org/pdf/2401.01234v2.pdf");
+    expect(all).toContain("https://export.arxiv.org/html/2401.01234v2");
+    for (const address of all) expect(arxivPaperAddress(address)?.key).toBe("2401.01234v2");
   });
 });
 
