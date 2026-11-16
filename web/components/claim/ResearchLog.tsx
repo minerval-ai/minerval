@@ -29,9 +29,7 @@ export function ResearchLog({ runs }: { runs: ResearchRunSummary[] | null | unde
     <section>
       <h2>Research</h2>
       <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", marginTop: "-.3rem" }}>
-        Investigations delegated to the platform&rsquo;s researcher on this claim, by its
-        Steward or by a mandate&rsquo;s Grantmaker. Each is disclosed with its cost; what it
-        found entered the assessment only as evidence the Steward weighed.
+        What these found entered the assessment only as evidence the Steward weighed.
       </p>
       <ul className="attempt-log">
         {sorted.map((r) => (

@@ -13,9 +13,9 @@ import type { Coverage, CoverageRow } from "./types";
 
 /** What the page calls each kind's judgment and the node itself. */
 const KIND_WORDS = {
-  claim: { lead: "Not yet assessed", carries: "no verdict", about: "for or against the claim" },
-  quantity: { lead: "Not yet estimated", carries: "no estimate from the graph", about: "about the value" },
-  question: { lead: "Not yet assessed", carries: "no answer from the graph", about: "about the answer" },
+  claim: { lead: "Not yet assessed", about: "for or against the claim" },
+  quantity: { lead: "Not yet estimated", about: "about the value" },
+  question: { lead: "Not yet assessed", about: "about the answer" },
 } as const;
 
 export type CoverageKind = keyof typeof KIND_WORDS;
@@ -29,8 +29,8 @@ export type CoverageKind = keyof typeof KIND_WORDS;
  */
 export function notExaminedLine(kind: CoverageKind, opts: { afterLead?: boolean } = {}): string {
   const w = KIND_WORDS[kind];
-  const first = opts.afterLead ? "This page carries" : `${w.lead}, so this page carries`;
-  return `${first} ${w.carries}. That is not a finding ${w.about}.`;
+  const rest = `That is not a finding ${w.about}.`;
+  return opts.afterLead ? rest : `${w.lead}. ${rest}`;
 }
 
 /**

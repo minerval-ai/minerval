@@ -136,8 +136,8 @@ export function ArgumentView({ page, source }: { page: ArgumentPage; source: Dat
             {page.evaluations_in_force && page.evaluations_in_force > 1 && (
               <div className={styles.muted}>
                 <p>
-                  {page.evaluations_in_force} evaluations of this argument stand for you, made at labels that do not read each other. The
-                  one above is the most recently made, and none replaces another. Each in full:
+                  {page.evaluations_in_force} evaluations, made at labels that do not read each other. The latest is above; none
+                  replaces another. Each in full:
                 </p>
                 {(page.evaluations ?? []).map((e, i) => (
                   <p className="argeval" key={i}>
@@ -179,8 +179,7 @@ export function ArgumentView({ page, source }: { page: ArgumentPage; source: Dat
       <section className={styles.section}>
         <h2 className="sc">Where it is made</h2>
         <p className={styles.muted}>
-          Passages where sources make, criticize or mention this argument. They record where it
-          appears, not how strong it is, and none has precedence over another.
+          Where it appears, not how strong it is.
         </p>
         {page.instances.length === 0 ? (
           <p className={styles.muted}>No source is recorded as making it.</p>

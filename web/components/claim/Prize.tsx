@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Term } from "@/components/Term";
 import type { BountySummary, PrizeClaimSummary } from "@/lib/types";
 import { formatOwls, fmtDate, fmtDateLong } from "@/lib/format";
 import {
@@ -38,7 +39,7 @@ export function Prize({
     <section className="prize" id="prize">
       <h2>Prize</h2>
       <p className="prize-lead">
-        {amount} {live ? "is" : "was"} offered by Minerval for a Lean 4{" "}
+        <Term gloss={OWLS_GLOSS} href="/prizes/rules" source="prize rules">{amount}</Term> {live ? "is" : "was"} offered by Minerval for a Lean 4{" "}
         {resolutionPhrase(bounty.resolution)} of the formal statement above,
         checked against Mathlib at the pinned revision.
         {bounty.opened_at && <> {live ? "Open since" : "Opened"} {fmtDateLong(bounty.opened_at)}.</>}
@@ -47,9 +48,6 @@ export function Prize({
         {" "}Offering a prize does not change how this claim is assessed or how
         important the graph judges it to be; it says only that someone would
         like the question settled.
-      </p>
-      <p className="prize-gloss" style={{ fontFamily: "var(--sans)", fontSize: ".82rem", color: "var(--muted)" }}>
-        {OWLS_GLOSS} <Link href="/prizes/rules">The rules →</Link>
       </p>
 
       {bounty.status === "open" && (

@@ -56,7 +56,6 @@ export function DependentsRail({ dependents }: { dependents: DependentClaim[] })
             0<span className={styles.railCountUnit}>claims</span>
           </span>
         </div>
-        <p className={styles.emptyNote}>Nothing in the graph builds on this claim yet.</p>
       </aside>
     );
   }
