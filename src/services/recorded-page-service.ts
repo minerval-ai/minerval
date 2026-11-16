@@ -88,7 +88,8 @@ export interface RecordedPassage {
      * the summary carries what the graph holds.
      */
     status: string;
-    status_confidence: number;
+    /** Null while the node has no assessment. */
+    status_confidence: number | null;
     /** The reader-facing summary of the current assessment, estimate or standing. */
     summary: string | null;
     subclaim_count: number;

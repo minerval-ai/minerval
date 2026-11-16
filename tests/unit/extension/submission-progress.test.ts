@@ -91,6 +91,8 @@ describe("getSubmissionProgress", () => {
     );
     const progress = await getSubmissionProgress(CONTRIBUTION);
     expect(progress.claim?.status).toBe("unassessed");
+    // Not yet assessed has no confidence, which is not a confidence of 0.
+    expect(progress.claim?.status_confidence).toBeNull();
     expect(progress.claim?.url).toBe(`https://minerval.ai/claims/${CLAIM}`);
   });
 });

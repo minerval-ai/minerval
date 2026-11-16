@@ -66,6 +66,13 @@ describe("loadMatchedClaim", () => {
     });
   });
 
+  it("gives an unassessed claim no confidence rather than 0", async () => {
+    mocks.getClaimById.mockResolvedValue({ id: ID, kind: "claim", text: "X." });
+    mocks.getCurrentAssessment.mockResolvedValue(null);
+    const m = await loadMatchedClaim(ID);
+    expect(m).toMatchObject({ status: "unknown", assessed: false, statusConfidence: null });
+  });
+
   it("falls back to the trace's opening for a record with no summary", async () => {
     mocks.getClaimById.mockResolvedValue({ id: ID, kind: "claim", text: "X." });
     mocks.getCurrentAssessment.mockResolvedValue({

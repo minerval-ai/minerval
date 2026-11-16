@@ -53,7 +53,7 @@ export interface StoredAnnotation {
   stance: MatchedInstanceStance;
   verdict: AnnotationVerdict;
   why: string;
-  confidence: number;
+  confidence: number | null;
   claim_id: string | null;
   proposed_canonical_form: string | null;
 }
@@ -259,7 +259,7 @@ export async function getSharedAnalysis(urlHash: string): Promise<SharedPageAnal
         ...base,
         verdict: "unknown" as const,
         why: "This claim isn't in the Minerval graph yet.",
-        confidence: 0,
+        confidence: null,
         proposed_canonical_form: a.proposed_canonical_form,
         claim: null,
       };
