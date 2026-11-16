@@ -641,7 +641,12 @@ async function runMandateReviewImpl(input: {
     `person entrusted with the budget and the mission.\n\n` +
     `Your mandate:\n\n${mandateText}\n\n` +
     `Budget: ${microUsdToOwls(Number(grant.budget_micro_usd))} owls escrowed, ` +
-    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties). ` +
+    `${microUsdToOwls(committed)} committed (spent + held by running work + regranted + held in bounties` +
+    (pace?.outsideLedgerMicroUsd
+      ? `; ${microUsdToOwls(pace.outsideLedgerMicroUsd)} of the spent was metered outside the ledger, mostly your ` +
+        `chat with the funder, which draws on the escrow and is not held to the pace`
+      : ``) +
+    `). ` +
     (pace ? `${pace.sentence} ` : ``) +
     `The pace is the funder's, agreed at funding (propose a change with note_to_funder); the reserve is yours ` +
     `(set_reserve): money your officers, lookouts and plan orders cannot commit and you can, for the ` +

@@ -107,8 +107,8 @@ unknown.
   outcome (changed, no_change, disagree), outcome_note
 - `mandates`: mandate_id, title, objective, status, is_platform, pace
   (jsonb: `{"kind":"as_needed"}`, or `{"kind":"steady","owls":…,
-  "period_hours":…}` for at most that much committed in any rolling
-  window), reserve_owls and reserve_reason (what only the Grantmaker may
+  "period_hours":…}` for at most that much allocated to runs in
+  any rolling window), reserve_owls and reserve_reason (what only the Grantmaker may
   commit, and why), escrow_owls, operating_policy, created_at
 - `mandate_decisions`: every commission, grant, refusal, decline and note
   a mandate's agents made. decision_id, mandate_id, decided_by, item_kind,

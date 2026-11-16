@@ -187,13 +187,13 @@ export function SpendingSection({
                 value={pace.kind === "steady" ? `steady · ${paceWords(pace.owls, pace.period_hours)}` : "as needed"}
                 note={
                   pace.kind === "steady"
-                    ? `At most that much committed in any ${pace.period_hours === 24 ? "24 hours" : pace.period_hours === 168 ? "week" : `${pace.period_hours} hours`}. Agreed with the funder, who alone can change it.`
+                    ? `At most that much allocated to runs in any ${pace.period_hours === 24 ? "24 hours" : pace.period_hours === 168 ? "week" : `${pace.period_hours} hours`}. Agreed with the funder, who alone can change it.`
                     : "The budget is the only bound on how fast it is committed. Agreed with the funder, who alone can change it."
                 }
               />
               {pace.kind === "steady" && (
                 <Fact
-                  label={`Committed in ${windowWords(pace.period_hours)}`}
+                  label={`Allocated to runs in ${windowWords(pace.period_hours)}`}
                   value={
                     <>
                       <strong>{owls(b.pace_window_used_owls ?? 0)}</strong>{" "}

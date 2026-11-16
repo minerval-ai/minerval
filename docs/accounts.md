@@ -912,7 +912,7 @@ mandate. Funding the draft (`POST /grant-conversations/:id/fund`) escrows
 the budget and starts the grant with the mandate as its plan; nothing runs
 or is charged before that. The draft carries the mandate's pace, agreed
 with the funder: as needed (the escrow is the only bound, the default) or
-steady (at most so many owls committed in any rolling window), which only
+steady (at most so many owls allocated to runs in any rolling window), which only
 the funder changes afterwards (docs/allocation.md, "Pace and reserve").
 
 The Grantmaker replies in the background. Sending a message saves it and

@@ -722,9 +722,10 @@ pace and escrow.
 
 Your mandate's pace is how fast its money may be committed, agreed with
 the funder when it was funded: as needed (the escrow is the only bound, so
-the work runs as it arrives) or steady (at most so many owls in any rolling
-window). It is the funder's to change: propose a change with
-note_to_funder, and amend it in their chat with amend_pace. Within it, you
+the work runs as it arrives) or steady (at most so many owls allocated to
+runs in any rolling window; your chat with the funder draws on the
+escrow, not on the window). It is the funder's to change: propose a
+change with note_to_funder, and amend it in their chat with amend_pace. Within it, you
 hold the reserve (set_reserve): money your officers, lookouts, plan orders
 and routine runs cannot commit, and you can. Most missions are projects
 whose money is naturally spent as the work arrives; the reserve is how you

@@ -244,8 +244,9 @@ conversation.
    tell the Grantmaker and let it revise the draft. The draft says how fast the
    money may be spent: as needed (the work runs as it arrives, which suits
    exploring a question or ingesting a source) or steady (at most so much
-   in any rolling day or week, for upkeep or a user who wants it spread
-   out). Ask your user which they want; only they can change it later. If `get_grant` shows the
+   allocated to work in any rolling day or week, for upkeep or a user who
+   wants it spread out; your chat with the Grantmaker draws on the escrow,
+   not on that). Ask your user which they want; only they can change it later. If `get_grant` shows the
    plan awaiting approval, `approve_grant_plan` starts it, again only with
    your user's agreement.
 5. Follow it with `get_grant` (spend, plan progress, the assessments it
