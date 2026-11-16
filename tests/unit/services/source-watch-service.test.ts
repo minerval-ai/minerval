@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
  * Source watching (services/source-watch-service.ts): DOIs are found in
@@ -19,17 +19,15 @@ const { state } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../src/db/client.js", () => ({ rawQuery: vi.fn(async () => []) }));
-vi.mock("../../../src/services/url-guard.js", () => ({
-  DOCUMENT_MAX_DOWNLOAD_BYTES: 50 * 1024 * 1024,
-  DOCUMENT_MAX_DOWNLOAD_MB: 50,
-  ResponseTooLargeError: class ResponseTooLargeError extends Error {
-    constructor(
-      readonly url: string,
-      readonly maxBytes: number
-    ) {
-      super(`Response from ${url} exceeds ${maxBytes} bytes`);
-    }
-  },
+vi.mock("../../../src/services/url-guard.js", async (importOriginal) => ({
+  // The error classes and the document cap are the real ones, so a refusal is classified as the fetcher throws it.
+  ...(({ HttpStatusError, UnsafeUrlError, ResponseTooLargeError, DOCUMENT_MAX_DOWNLOAD_BYTES, DOCUMENT_MAX_DOWNLOAD_MB }) => ({
+    HttpStatusError,
+    UnsafeUrlError,
+    ResponseTooLargeError,
+    DOCUMENT_MAX_DOWNLOAD_BYTES,
+    DOCUMENT_MAX_DOWNLOAD_MB,
+  }))(await importOriginal<typeof import("../../../src/services/url-guard.js")>()),
   fetchPublicUrl: vi.fn(async (url: string) => {
     state.fetched.push(url);
     for (const [prefix, body] of state.responses) {
@@ -54,6 +52,7 @@ vi.mock("../../../src/services/url-guard.js", () => ({
   }),
 }));
 
+import { HttpStatusError, UnsafeUrlError } from "../../../src/services/url-guard.js";
 import {
   checkDoi,
   extractDois,
@@ -167,8 +166,110 @@ describe("recentRetractionsPage", () => {
     expect(page!.rows.map((r) => r.notice_doi)).toEqual(["10.2/a", "10.2/b"]);
   });
 
-  it("returns null when Crossref cannot be read", async () => {
-    expect(await recentRetractionsPage({ since: new Date("2026-09-01T00:00:00Z") })).toBeNull();
+  it("says why when Crossref cannot be read", async () => {
+    expect(await recentRetractionsPage({ since: new Date("2026-09-01T00:00:00Z") })).toMatchObject({
+      ok: false,
+      retryable: false,
+      attempts: 1,
+      problem: expect.stringContaining("no response for"),
+    });
+  });
+});
+
+// A passing Crossref failure is asked again, briefly, before it is
+// reported; one that will not pass is reported at once (#1034).
+describe("Crossref retries", () => {
+  const since = new Date("2026-09-01T00:00:00Z");
+  const okPage = JSON.stringify({ message: { "total-results": 0, items: [] } });
+  const failWith = (err: unknown) => async (url: string) => {
+    state.fetched.push(url);
+    throw err;
+  };
+  const succeed = async (url: string) => {
+    state.fetched.push(url);
+    return okPage;
+  };
+  const settle = async <T>(p: Promise<T>): Promise<T> => {
+    await vi.runAllTimersAsync();
+    return p;
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("retries a 503 and a network error, and returns the page that then comes back", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    vi.mocked(fetchPublicUrl)
+      .mockImplementationOnce(failWith(new HttpStatusError("https://api.crossref.org/works", 503, null)))
+      .mockImplementationOnce(failWith(new TypeError("fetch failed")))
+      .mockImplementationOnce(succeed);
+    const page = await settle(recentRetractionsPage({ since }));
+    expect(state.fetched).toHaveLength(3);
+    expect(page).toMatchObject({ total: 0, rows: [] });
+  });
+
+  it("gives up after three attempts, saying it was retried and that trying later can help", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    vi.mocked(fetchPublicUrl).mockImplementation(
+      failWith(new HttpStatusError("https://api.crossref.org/works", 429, "1"))
+    );
+    const page = await settle(recentRetractionsPage({ since }));
+    vi.mocked(fetchPublicUrl).mockReset();
+    expect(state.fetched).toHaveLength(3);
+    expect(page).toMatchObject({ ok: false, retryable: true, attempts: 3 });
+    expect((page as { problem: string }).problem).toMatch(/429.*3 attempts/);
+  });
+
+  it("waits out a short Retry-After, and reports a long one without waiting", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    vi.mocked(fetchPublicUrl)
+      .mockImplementationOnce(failWith(new HttpStatusError("https://api.crossref.org/works", 429, "3")))
+      .mockImplementationOnce(succeed);
+    const pending = recentRetractionsPage({ since });
+    await vi.advanceTimersByTimeAsync(2_900);
+    expect(state.fetched).toHaveLength(1);
+    expect(await settle(pending)).toMatchObject({ total: 0 });
+    expect(state.fetched).toHaveLength(2);
+
+    state.fetched = [];
+    vi.mocked(fetchPublicUrl).mockImplementationOnce(
+      failWith(new HttpStatusError("https://api.crossref.org/works", 429, "120"))
+    );
+    const long = await settle(recentRetractionsPage({ since }));
+    expect(state.fetched).toHaveLength(1);
+    expect(long).toMatchObject({ ok: false, retryable: true, attempts: 1, problem: expect.stringContaining("120s") });
+  });
+
+  it("does not retry a refusal that will not change, a timeout, or a 404", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" });
+    const cases: Array<[unknown, boolean]> = [
+      [new UnsafeUrlError("Hostname does not resolve: api.crossref.org"), false],
+      [Object.assign(new Error("web_pages is not cleared"), { name: "ProviderNotClearedError" }), false],
+      [new HttpStatusError("https://api.crossref.org/works", 404, null), false],
+      [timeout, true],
+    ];
+    for (const [err, retryable] of cases) {
+      state.fetched = [];
+      vi.mocked(fetchPublicUrl).mockImplementationOnce(failWith(err));
+      const page = await settle(recentRetractionsPage({ since }));
+      expect(state.fetched).toHaveLength(1);
+      expect(page).toMatchObject({ ok: false, retryable, attempts: 1 });
+    }
+  });
+
+  it("marks a DOI check whose read failed, so not-found is not taken as a finding", async () => {
+    const { fetchPublicUrl } = await import("../../../src/services/url-guard.js");
+    vi.mocked(fetchPublicUrl).mockImplementation(
+      failWith(new HttpStatusError("https://api.crossref.org/works", 502, null))
+    );
+    const res = await settle(checkDoi("10.1000/paper"));
+    vi.mocked(fetchPublicUrl).mockReset();
+    expect(res).toMatchObject({ found: false, updates: [], retryable: true, problem: expect.stringContaining("502") });
   });
 });
 

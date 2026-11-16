@@ -475,7 +475,11 @@ its brief, its own workspace, and the queued inputs; then the graph
 (search, open, walk down, walk up, scope_sources), the
 retraction record (check_doi, recent_retractions), and the open web
 (web_search, read_page), and the graph feed and SQL. Most runs find
-nothing, and say so.
+nothing, and say so. A Crossref read that fails in a way that may pass (a
+429, a 5xx, the network) is asked again up to three times in all, after a
+short pause or a short Retry-After; one that still fails, or will not
+pass, comes back saying why and whether trying later can help
+(services/source-watch-service.ts, #1034).
 
 **Outputs are work, within a limit, and never conclusions.** A lookout can
 do three things and nothing else:

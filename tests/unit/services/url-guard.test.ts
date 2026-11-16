@@ -4,6 +4,7 @@ import {
   DOCUMENT_MAX_DOWNLOAD_BYTES,
   fetchPublicBytes,
   fetchPublicUrl,
+  HttpStatusError,
   ResponseTooLargeError,
   UnsafeUrlError,
 } from "../../../src/services/url-guard.js";
@@ -104,6 +105,13 @@ describe("fetchPublicBytes", () => {
     expect((await fetchPublicBytes("http://8.8.8.8/big", { maxBytes: 4096 })).bytes).toHaveLength(2048);
     vi.stubGlobal("fetch", vi.fn(async () => respond(new Uint8Array(10 * 1024 * 1024 + 1))));
     await expect(fetchPublicBytes("http://8.8.8.8/big")).rejects.toThrow(/exceeds 10485760 bytes/);
+  });
+
+  it("throws a refusal with its status and Retry-After, so a caller can tell a passing one (#1034)", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => respond("slow down", { status: 429, headers: { "retry-after": "2" } })));
+    const err = await fetchPublicBytes("http://8.8.8.8/busy").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpStatusError);
+    expect(err).toMatchObject({ status: 429, retryAfter: "2", message: "Failed to fetch http://8.8.8.8/busy: 429" });
   });
 
   it("names a body over its cap as such, and holds a document to 50 MiB (#1068)", async () => {

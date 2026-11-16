@@ -425,8 +425,10 @@ describe("runLookout", () => {
     expect(JSON.parse(await state.loop!.executeTool("recent_retractions", { offset: 50 }))).toMatchObject({
       days: 30, total: 120, next_offset: 100,
     });
-    state.retractionPage = null;
-    expect(JSON.parse(await state.loop!.executeTool("recent_retractions", {}))).toMatchObject({ ok: false });
+    state.retractionPage = { ok: false, problem: "Crossref could not be read (503), on any of 3 attempts", retryable: true, attempts: 3 };
+    expect(JSON.parse(await state.loop!.executeTool("recent_retractions", {}))).toEqual({
+      ok: false, problem: "Crossref could not be read (503), on any of 3 attempts", retryable: true, attempts: 3,
+    });
   });
 
   it("says how many flags the recent list leaves out, and gives the mandate's objective", async () => {
