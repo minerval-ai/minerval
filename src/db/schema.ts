@@ -3496,6 +3496,12 @@ export const actionAllocations = pgTable(
     parentActionId: uuid("parent_action_id").references((): AnyPgColumn => actions.id, {
       onDelete: "set null",
     }),
+    // The lookout that commissioned it (commissioned_by 'lookout'), so its
+    // rolling window (lookouts.commission_window_micro_usd) reads exactly
+    // what it placed. NULL for everything else.
+    lookoutId: uuid("lookout_id").references((): AnyPgColumn => lookouts.id, {
+      onDelete: "set null",
+    }),
     // The label of the work that placed the money, which is the label its
     // brief and reason are read at (src/labels.ts). The money itself is
     // read and settled whole, whatever the label, through
@@ -3511,6 +3517,10 @@ export const actionAllocations = pgTable(
     // its pace).
     index("idx_action_allocations_grant").on(table.grantId, table.createdAt),
     index("idx_action_allocations_user").on(table.userId),
+    // A lookout's commissions in its window (lookout-service.ts).
+    index("idx_action_allocations_lookout")
+      .on(table.lookoutId, table.createdAt)
+      .where(sql`lookout_id IS NOT NULL`),
     // Exactly one funder, positive money, spend never past the amount —
     // the invariants the comments promise, enforced.
     check(
@@ -3926,6 +3936,15 @@ export const lookouts = pgTable(
     // mandate's program officers. The Grantmaker delegates this much of its
     // spending judgment and no more.
     commissionLimitMicroUsd: bigint("commission_limit_micro_usd", { mode: "number" }).notNull().default(0),
+    // The most it may commit alone across items within a rolling window of
+    // commission_window_hours (0 = no window; the per-item limit alone). The
+    // per-item limit marks what is small enough to commit without the
+    // officers' weighing; this keeps a burst of such items from adding up to
+    // a large call nobody weighed (#1043). Counted as a pace window is
+    // (allocationDayUseSql) over the allocations the lookout placed
+    // (action_allocations.lookout_id); past it, an item goes to the officers.
+    commissionWindowMicroUsd: bigint("commission_window_micro_usd", { mode: "number" }).notNull().default(0),
+    commissionWindowHours: integer("commission_window_hours").notNull().default(24),
     // The graph feed: the part of the graph the lookout follows (nodes, with
     // everything beneath them, and tags), and how far through the change
     // stream it has read.
@@ -3968,6 +3987,7 @@ export const lookouts = pgTable(
       sql`${table.status} IN ('active', 'paused', 'retired')`
     ),
     check("ck_lookouts_heartbeat", sql`${table.heartbeatHours} >= 0`),
+    check("ck_lookouts_commission_window", sql`${table.commissionWindowMicroUsd} >= 0 AND ${table.commissionWindowHours} >= 1`),
   ]
 );
 

@@ -123,6 +123,22 @@ describe("lookout management tools", () => {
     });
   });
 
+  it("spawn_lookout and update_lookout pass a commission window, either part alone on an update (#1043)", async () => {
+    await executeLookoutManagementTool(
+      "g-1",
+      "spawn_lookout",
+      { title: "Upkeep", brief: "b".repeat(60), commission_limit_owls: 3, commission_window_owls: 6, commission_window_hours: 24 },
+      { createdBy: "grantmaker:chat" }
+    );
+    expect(state.created[0]).toMatchObject({ commissionLimitOwls: 3, commissionWindow: { owls: 6, hours: 24 } });
+    await executeLookoutManagementTool("g-1", "update_lookout", { lookout_id: L1, commission_window_hours: 48 }, { createdBy: "grantmaker:chat" });
+    expect(state.updated[0]).toEqual({ grantId: "g-1", lookoutId: L1, commissionWindow: { hours: 48 } });
+    const spawn = getLookoutManagementToolDefinitions().find((t) => t.name === "spawn_lookout")!;
+    expect(Object.keys((spawn.input_schema as { properties: object }).properties)).toEqual(
+      expect.arrayContaining(["commission_window_owls", "commission_window_hours"])
+    );
+  });
+
   it("update_lookout forwards only the given fields; poke_lookout queues a manual event on the mandate's own lookout", async () => {
     await executeLookoutManagementTool("g-1", "update_lookout", { lookout_id: L1, status: "paused" }, { createdBy: "grantmaker:chat" });
     expect(state.updated[0]).toEqual({ grantId: "g-1", lookoutId: L1, status: "paused" });

@@ -29,6 +29,7 @@ import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ASSESS_GROUP, ensureAssessActions, joinFaultWait } from "./action-service.js";
 import { slotColumnSql } from "./steward-lease.js";
 import { committerFor, paceRefusal, paceRoom, type PaceCommitter } from "./pace-service.js";
+import { lookoutWindow, lookoutWindowRefusal } from "./lookout-window.js";
 import { enqueueSteward, type StewardMessage } from "./queue-service.js";
 import type { MessageSender } from "./inbox-service.js";
 import { microUsdToOwls } from "./owl.js";
@@ -57,6 +58,12 @@ export interface CommissionInput {
   reason?: string;
   /** Who commissioned it: an agent role, or 'person'. */
   commissionedBy: string;
+  /**
+   * The lookout placing it, for a mandate payer: its commission window
+   * (lookout-window.ts) is checked behind the mandate's lock, beside the
+   * pace, and the allocation records it.
+   */
+  lookoutId?: string;
   /** How the brief reaches the node's inbox. */
   message?: { trigger: StewardMessage["trigger"]; sender?: MessageSender };
   /**
@@ -128,6 +135,8 @@ export type CommissionResult =
         | "NOT_FOUND"
         | "OVER_PACE"
         | "OVER_ESCROW"
+        /** Past the commission window of the lookout placing it (lookout-window.ts). */
+        | "OVER_LOOKOUT_WINDOW"
         | "INSUFFICIENT_OWLS"
         | "OVER_RUN_BUDGET"
         | "PAYER_INACTIVE";
@@ -283,6 +292,7 @@ export async function commissionNodePass(input: CommissionInput): Promise<Commis
     commissionedBy: input.commissionedBy,
     brief: input.brief,
     reason: input.reason ?? null,
+    lookoutId: input.lookoutId,
   });
   // Another payer's commission landed between the look above and the lock.
   if ("live" in placed) return already(placed.live);
@@ -326,6 +336,8 @@ export async function commissionAction(input: {
   brief?: string | null;
   reason?: string | null;
   commissionedBy: string;
+  /** The lookout placing it (CommissionInput.lookoutId). */
+  lookoutId?: string;
   /** For a Steward pass: how the brief reaches the node's inbox. */
   message?: CommissionInput["message"];
 }): Promise<
@@ -379,6 +391,7 @@ export async function commissionAction(input: {
       brief: input.brief?.trim() || "A pass on this node was commissioned.",
       reason: input.reason ?? undefined,
       commissionedBy: input.commissionedBy,
+      lookoutId: input.lookoutId,
       message: input.message,
     });
     if (!res.ok) return res;
@@ -407,6 +420,7 @@ export async function commissionAction(input: {
     commissionedBy: input.commissionedBy,
     brief: input.brief ?? null,
     reason: input.reason ?? null,
+    lookoutId: input.lookoutId,
   });
   if ("live" in placed) return { ok: true, status: "already_commissioned", kind: row.kind };
   if (!placed.ok) return placed;
@@ -467,6 +481,8 @@ interface PlaceInput {
    * its decision was checked against the reserve when it was made.
    */
   committer?: PaceCommitter;
+  /** The lookout placing it, for a mandate payer (CommissionInput.lookoutId). */
+  lookoutId?: string;
 }
 
 async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { ok: false; live: LiveRow }> {
@@ -508,19 +524,32 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
           roomMicroUsd: Math.max(0, room?.availableMicroUsd ?? 0),
         } as const;
       }
+      // A lookout's own window (#1043), read behind the same lock, so two
+      // of its commissions at once do not both fit the room one leaves.
+      if (input.lookoutId) {
+        const w = await lookoutWindow(input.lookoutId, tx);
+        if (w && w.windowMicroUsd > 0 && budget > w.leftMicroUsd) {
+          return {
+            ok: false,
+            code: "OVER_LOOKOUT_WINDOW",
+            message: lookoutWindowRefusal(w, budget),
+            roomMicroUsd: w.leftMicroUsd,
+          } as const;
+        }
+      }
       const [row] = await tx.query<{ id: string }>(
         // A mandate holds one live placement per row (uq_action_allocations_
         // live_placement): more money from it on the same row, a granted
         // petition's top-up, adds to that placement.
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, amount_micro_usd,
-            commissioned_by, brief, reason, sensitivity_label)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            commissioned_by, brief, reason, sensitivity_label, lookout_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
-        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason, currentLabel()]
+        [input.group, input.actionId, input.claimId, payer.grantId, budget, input.commissionedBy, input.brief, input.reason, currentLabel(), input.lookoutId ?? null]
       );
       return { ok: true, allocationId: row!.id } as const;
     });

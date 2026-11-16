@@ -575,7 +575,8 @@ async function runMandateReviewImpl(input: {
           .map(
             (l) =>
               `- "${l.title}" [${l.status}; ${l.heartbeat_hours > 0 ? `every ${l.heartbeat_hours}h` : "event-only"}` +
-              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; commissions up to ${l.commission_limit_owls} owls an item alone] ` +
+              `${l.triggers.length ? `; triggers ${l.triggers.join(", ")}` : ""}; commissions up to ${l.commission_limit_owls} owls an item alone` +
+              `${l.commission_window ? `, ${l.commission_window.owls} owls in any ${l.commission_window.hours}h` : ", no window across items"}] ` +
               `${l.runs} runs, ${l.flags} flags; precision ${l.precision.moved}/${l.precision.ran} passes moved a verdict ` +
               `(${l.precision.flagged} asked)${l.pending_events ? `; ${l.pending_events} inputs pending` : ""}` +
               `${l.last_note ? `. Last: ${l.last_note.slice(0, 200)}` : ""}` +

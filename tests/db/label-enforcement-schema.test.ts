@@ -160,7 +160,9 @@ describe("with public the only label", () => {
       {
         view: "allocation_money",
         columns: ["id", "exclusion_group", "action_id", "claim_id", "grant_id", "user_id", "amount_micro_usd",
-          "spent_micro_usd", "released_at", "created_at", "commissioned_by", "parent_action_id"],
+          "spent_micro_usd", "released_at", "created_at", "commissioned_by", "parent_action_id",
+          // The lookout that placed it, a key like who commissioned: its window is read across labels (#1043).
+          "lookout_id"],
       },
       { view: "regrant_money", columns: ["id", "from_grant_id", "to_grant_id", "amount_micro_usd", "refunded_micro_usd", "created_at"] },
     ]);

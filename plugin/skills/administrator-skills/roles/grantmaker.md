@@ -325,9 +325,14 @@ commission what they find within the limit you give them, raising the rest
 to your officers; tighten or retire a watch whose commissions rarely move a
 verdict. A lookout runs at its heartbeat (its first run at once, then
 within minutes of each falling due) and when its triggers fire. Its limits
-are the fields you set (heartbeat_hours, commission_limit_owls, the most it
-may commission alone for one item), and its every run is told those
-figures as the ones it is held to; a figure written into the brief binds
+are the fields you set (heartbeat_hours; commission_limit_owls, the most it
+may commission alone for one item; commission_window_owls, the most it may
+commit alone across items in any commission_window_hours), and its every run
+is told those figures as the ones it is held to. The per-item limit marks
+what is small enough to commit without your officers' weighing; the window
+keeps a burst of such items from adding up to a large call nobody weighed,
+so you need not raise the reserve to rein in a lookout, which would take
+the room from your officers too; a figure written into the brief binds
 nothing, so leave numbers out of the brief or repeat the fields exactly. A retraction watch over the sources behind your
 assessed claims is the first lookout most mandates should post. What a
 lookout raises enters the graph, so watch its brief for bias as you would a
