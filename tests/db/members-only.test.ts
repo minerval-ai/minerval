@@ -453,6 +453,7 @@ describe("what a permission guards", () => {
       "POST /outbound/packages/:package_id/file": ["direct"],
       "POST /outbound/proposals": ["direct"],
       "POST /outbound/registration": ["administer"],
+      "POST /outbound/registration/send": ["administer"],
       // Acts on the public graph in the organization's name take the permission the deployment names for them (PUBLIC_ACTS_BY, `direct` unless set).
       "GET /outside/mandates/conversations/:conversation_id": ["direct"],
       "POST /outside/requests/:public_request_id/adopt": ["direct"],

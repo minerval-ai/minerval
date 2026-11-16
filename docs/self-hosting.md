@@ -84,6 +84,14 @@ starts with public Minerval's own settings and you change the ones you need.
    - `PROVIDER_LABELS`, once you define labels. A provider is sent text at
      `public` only until this setting clears it for another label.
 
+   The package starts `RUN_LOG_MODE` at `record`, where every run's log is
+   kept whole. Leave it: once a label is defined, a deployment on
+   `best_effort` starts no agent work.
+
+   To work beside the public graph and publish to it, fill in section 8 of
+   `env.example` as well ("The public graph", below). It can wait until
+   the deployment runs.
+
 3. **Build the images.**
 
    ```
@@ -161,6 +169,34 @@ down -v` deletes them.
 To take a new version: `git pull`, `docker compose build`, `docker compose
 up -d`. The API applies new migrations and runs the enforcement step as it
 starts.
+
+## The public graph
+
+A deployment can keep a read-only copy of the public graph, so its own
+judgments sit beside the public ones, and can publish to it and act there in
+the organization's name ([mirror.md](mirror.md),
+[outward-acts.md](outward-acts.md)). Both go through an account on the
+public graph that belongs to the organization, not to a person: make one on
+`https://minerval.ai`, and an API key for it on its account page.
+
+| Setting | For Minerval's public graph |
+| --- | --- |
+| `MIRROR_FEED_URL` | `https://api.claimgraph.io` |
+| `MIRROR_FEED_API_KEY` | the organization account's API key |
+| `MIRROR_FEED_PUBLIC_KEYS` | the `public_key` that `https://api.claimgraph.io/mirror/feed/key` answers |
+| `PUBLIC_GRAPH_API_URL` | `https://api.claimgraph.io` |
+| `PUBLIC_GRAPH_API_KEY` | the organization account's API key |
+| `PUBLISH_SIGNING_KEY` | `npx tsx scripts/published-page.ts keygen` makes one; keep a copy |
+| `DEPLOYMENT_HOSTING` | `own_machines`, for this package |
+
+Then an administrator presses "Register this deployment's key on the public
+graph" on `/outbound`: the deployment signs the registration for the
+organization's account and sends it there through that account
+([published-pages.md](published-pages.md), "Who a publisher is"). Until the public graph's feed answers at that address, nothing can be
+mirrored ([infrastructure.md](infrastructure.md), "The mirror feed").
+
+What to decide once it runs (labels, people, what to show and say outside)
+is a guide of its own: `/docs/running-a-private-graph` on the site.
 
 ## The settings, and where each lives
 

@@ -12,6 +12,7 @@ import {
   endShowing,
   holdShownPage,
   payForShowingWork,
+  registerPublisherOutside,
   savePolicy,
   sendOutside,
   setGate,
@@ -303,6 +304,20 @@ export async function sendOutsideAction(_previous: FormState, form: FormData): P
         ? { error: `${not.length} package${not.length === 1 ? " was" : "s were"} not taken by the public graph: ${not.map((s) => s.detail ?? s.result).join(" ")}` }
         : {}),
       notice: `${admitted} package${admitted === 1 ? "" : "s"} sent and taken by the public graph.${report.proposals.length > 0 ? ` ${report.proposals.length} proposal${report.proposals.length === 1 ? "" : "s"} of a node went with ${report.proposals.length === 1 ? "it" : "them"}.` : ""}`,
+    };
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+export async function registerPublisherAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  try {
+    const done = await registerPublisherOutside(user, text(form, "declared_interest") || undefined);
+    revalidatePath("/outbound");
+    return {
+      notice: `Registered: pages this deployment publishes are now submitted under ${done.account.name ?? done.account.external_id} on the public graph.${done.in_words ? ` ${done.in_words}` : ""}`,
     };
   } catch (err) {
     return refused(err);

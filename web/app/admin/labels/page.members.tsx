@@ -249,8 +249,8 @@ export default async function LabelsPage() {
           it, such as a customer, a supplier or a partner. The party is recorded so that its stake
           in what a source says can be weighed, and because release is granted party by party: the
           holders of release for a party are who decides whether anything resting on its material
-          leaves the deployment. Publishing outward is not built yet, so for now that grant only
-          records who they are.
+          leaves the deployment, at the gates (<Link href="/gates">Gates</Link>, and the queue at{" "}
+          <Link href="/gate">At the gate</Link>).
         </p>
         {parties.length === 0 ? (
           <p className="account-empty">

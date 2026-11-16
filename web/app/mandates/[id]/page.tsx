@@ -23,6 +23,7 @@ import { AttemptsTable, PrizesSection } from "../../../components/mandate/Prizes
 import { approveGrantAction, cancelGrantAction } from "../../account/actions";
 import { TopUpGrant } from "../../../components/mandate/TopUpGrant";
 import { ContributeBox } from "./ContributeBox";
+import { OfferMandateOutside } from "@/components/outside/OfferMandateOutside";
 
 export const metadata: Metadata = { title: "Mandate · Minerval" };
 export const dynamic = "force-dynamic";
@@ -705,6 +706,7 @@ export default async function MandatePage({
 
       <NowSection mandate={mandate} allocation={allocation} />
       <MandateSection mandate={mandate} sections={sections} />
+      <OfferMandateOutside mandateId={mandate.id} live={live} />
       <Suspense fallback={<SectionReading id="actions" title="Actions" />}>
         <PlanSection mandate={mandate} view={view} budget={budget} />
       </Suspense>

@@ -187,7 +187,10 @@ An account that has registered a deployment's signing key
 statement that names the account and where the deployment runs, so nobody
 registers a key they do not hold; the deployment produces it
 (`POST /outbound/registration`, or
-`scripts/published-page.ts registration <account>`). The registration, the
+`scripts/published-page.ts registration <account>`). A deployment connected
+to the public graph sends it itself, through the organization's account
+(`POST /outbound/registration/send`, the button on `/outbound`; logged as
+an act on the public graph). The registration, the
 key, the hosting words and anything the publisher says of its own interest
 are a public record (`GET /publishers/:account_id`, and the account's
 contributor page). Registering a key again retires the earlier

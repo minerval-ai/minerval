@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "../../../auth";
 import type { FormState } from "../../../components/admin/ActionForm";
-import { AccountApiError } from "../../../lib/account-api";
+import { AccountApiError, createAssessmentOrder } from "../../../lib/account-api";
+import { offerMandateOutside } from "../../../lib/inside-api";
 import {
   adoptPublicRequest,
   askPublicMandate,
@@ -144,5 +145,38 @@ export async function askPublicMandateAction(_previous: FormState, form: FormDat
   return act(async (user) => {
     await askPublicMandate(user, text(form, "node_id"), mandate);
     return { notice: "Asked. The mandate's officers on the public graph decide whether its money pays." };
+  });
+}
+
+/**
+ * An assessment of a public node made here, at a label of the deployment's
+ * own, paid for in this deployment's owls: the organisation's own judgment
+ * of the node, beside the public one and read only by that label's readers.
+ * Nothing is sent outside.
+ */
+export async function assessHereAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const node = text(form, "node_id");
+  const label = text(form, "label");
+  if (!label) return { error: "Choose the label the assessment is made at." };
+  return act(async (user) => {
+    await createAssessmentOrder(user, node, label);
+    revalidatePath(`/claims/${node}`);
+    return {
+      notice: `Ordered at ${label}. The Steward there assesses the node on what that label reads; the result appears as that label's version on this page.`,
+    };
+  });
+}
+
+/** Offer a mandate to the gate to outside, as the organisation's face on the public graph. */
+export async function offerMandateOutsideAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const mandate = text(form, "mandate_id");
+  if (!UUID.test(mandate)) return { error: "That is not a mandate." };
+  return act(async (user) => {
+    await offerMandateOutside(user, mandate);
+    revalidatePath(`/mandates/${mandate}`);
+    return {
+      notice:
+        "Offered to the gate to outside. It goes under the gate's setting for mandates; where a person decides as well, it waits for them on At the gate.",
+    };
   });
 }
