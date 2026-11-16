@@ -3,9 +3,9 @@ import Link from "next/link";
 import { auth } from "../../auth";
 import {
   accountApiConfigured,
-  loadAssistantHome,
   type AssistantHome,
 } from "../../lib/account-api";
+import { loadAssistantHome } from "../../lib/assistant-home";
 import { PageHead } from "@/components/PageHead";
 import { AssistantConversation } from "./AssistantConversation";
 import { fetchMyLabels, type MyLabels } from "../../lib/admin-api";

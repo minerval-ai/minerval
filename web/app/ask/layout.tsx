@@ -2,11 +2,11 @@ import { Suspense, type ReactNode } from "react";
 import { auth } from "../../auth";
 import {
   accountApiConfigured,
-  loadAssistantHome,
   listGrantConversations,
   listGrants,
   listPages,
 } from "../../lib/account-api";
+import { loadAssistantHome } from "../../lib/assistant-home";
 import { AskSidebar, type SidebarItem } from "./AskSidebar";
 
 export const dynamic = "force-dynamic";
