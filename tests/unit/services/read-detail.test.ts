@@ -70,12 +70,13 @@ describe("a compact mandate row", () => {
       action_mix: { assess: 3 },
       created_at: null,
       page_url: "https://minerval.test/mandates/m-1",
+      label: "public",
       budget_status: "running",
       updated_at: null,
       assessments: 4,
     } satisfies MandateListRow;
     const compact = compactMandateRow(row, true);
-    expect(compact).toMatchObject({ id: "m-1", objective_cut: true, page_url: row.page_url, assessments: 4 });
+    expect(compact).toMatchObject({ id: "m-1", objective_cut: true, page_url: row.page_url, assessments: 4, label: "public" });
     expect(compact.funder_url).toMatch(/\/ask\/mandates\/m-1$/);
     expect(compact).not.toHaveProperty("action_mix");
     expect(compactMandateRow(row, false)).not.toHaveProperty("funder_url");

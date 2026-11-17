@@ -648,5 +648,23 @@ describe("the standing mandates", () => {
       )!.mandate;
     expect(await seenBy(member)).toEqual({ id: internalId, title: "General maintenance" });
     expect(await seenBy(funder)).toEqual({ id: internalId, title: "", withheld: true });
+
+    // The list of mandates, which the menu of where created owls go is drawn from (#1097): the
+    // General mandates share a title, so each row carries its label, and a reader is given only
+    // those at labels they read.
+    const listedTo = async (person: Person) =>
+      (await as(person, { url: "/mandates?detail=full&q=General%20maintenance&limit=100" })).json().mandates as Array<{
+        id: string;
+        title: string;
+        label: string;
+      }>;
+    const toMember = await listedTo(member);
+    expect(toMember.find((m) => m.id === internalId)).toMatchObject({ title: "General maintenance", label: "internal" });
+    expect(toMember.filter((m) => m.title === "General maintenance").map((m) => m.label)).toContain("public");
+    const toFunder = await listedTo(funder);
+    expect(toFunder.map((m) => m.id)).not.toContain(internalId);
+    expect(toFunder.every((m) => m.label === "public")).toBe(true);
+    const compact = (await as(member, { url: "/mandates?q=General%20maintenance&limit=100" })).json().mandates as Array<{ id: string; label: string }>;
+    expect(compact.find((m) => m.id === internalId)!.label).toBe("internal");
   });
 });

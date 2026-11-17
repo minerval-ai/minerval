@@ -919,6 +919,13 @@ export interface MandateSummaryView {
   contributor_count: number;
   action_mix: Record<string, number>;
   created_at: string | null;
+  /**
+   * Its label: who may read it. A deployment holds a General mandate at each
+   * label, all with one title, so a list naming mandates names each by its
+   * label as well. The API lists only mandates at labels the reader reads.
+   * Absent from an older API.
+   */
+  label?: string;
 }
 
 export interface MandatePipelineRow {

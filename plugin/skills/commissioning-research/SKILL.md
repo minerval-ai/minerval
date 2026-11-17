@@ -307,7 +307,10 @@ what its Grantmaker is watching for (`watching`: its next scheduled
 check-in and the subscriptions that wake it). `get_grant`, `get_mandate`
 and `get_mandate_allocation` count spent and held owls the same way; money
 committed to work still running is `held_owls`, not spent. `list_mandates`
-answers a short row per mandate; `detail: "full"` gives every field. A mandate's objective changes
+answers a short row per mandate; `detail: "full"` gives every field. Each
+row carries its `label`: a private deployment holds a General mandate at
+each label, all with one title, so tell them apart by label, and you are
+shown only those at labels you read. A mandate's objective changes
 only with its funder's agreement, and every other funder is told; any
 funder may take back their share of the uncommitted money at any time
 with `withdraw_from_mandate`, again only on your user's go-ahead.
