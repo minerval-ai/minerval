@@ -33,6 +33,8 @@ vi.mock("react", () => ({ cache: <T>(fn: T) => fn }));
 vi.mock("../../../web/node_modules/react/index.js", () => ({ cache: <T>(fn: T) => fn }));
 vi.mock("next/link", () => ({ default: "a" }));
 vi.mock("../../../web/node_modules/next/link.js", () => ({ default: "a" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+vi.mock("../../../web/node_modules/next/navigation.js", () => ({ usePathname: () => "/" }));
 vi.mock("react/jsx-runtime", () => h.jsxRuntime);
 vi.mock("../../../web/node_modules/react/jsx-runtime.js", () => h.jsxRuntime);
 vi.mock("react/jsx-dev-runtime", () => h.jsxDevRuntime);

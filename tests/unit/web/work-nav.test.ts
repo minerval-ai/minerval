@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageOf, workSections } from "../../../web/components/inside/nav";
+import { pageOf, workSections } from "../../../web/lib/work-sections";
 
 // The band names the sections, the column down the side lists the pages of one;
 // both come from one list, so every page sits in exactly one section.

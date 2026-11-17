@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { pageOf } from "./inside/nav";
+import { pageOf } from "../lib/work-sections";
 
 // The band's links (components/MembersBand.tsx), with the section of the page
 // being read marked. It reads the address in the browser because the gate

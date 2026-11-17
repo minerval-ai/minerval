@@ -1,5 +1,5 @@
 import type { MyPermissions } from "../lib/account-api";
-import { workSections } from "./inside/nav";
+import { workSections } from "../lib/work-sections";
 import { MembersBandLinks } from "./MembersBandLinks";
 
 // A line above every page of a members-only deployment, for a member whose
