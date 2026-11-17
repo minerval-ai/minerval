@@ -22,17 +22,11 @@ import {
   TERRITORIES, computeListingStats, computeTerritoryStats, type Territory,
 } from "./territories";
 import {
+  EMPTY_FRONT, FLAGSHIP_POOL, FRONT_TOPICS, chooseFlagship, hasVerdict, type DeploymentFront,
+} from "./deployment-front";
+import {
   REQUESTS_PER_PAGE, fundingWords, isLive, requestsApiQuery, requestsOrderInForce, type RequestsView,
 } from "./requests";
-
-// Whether a node carries a current verdict of its kind: a claim's status, a
-// question's standing, a quantity's estimate (the backend's ASSESSED_SQL).
-function hasVerdict(c: SearchResultItem): boolean {
-  if (c.kind === "question") return !!c.standing;
-  if (c.kind === "artifact") return !!c.fidelity;
-  if (c.kind === "quantity") return !!c.estimate;
-  return !!c.assessment_status;
-}
 
 // The same filter predicate the API applies, used for the fixture fallback so
 // the controls behave identically offline. "unassessed" keys off a missing
@@ -333,6 +327,26 @@ export async function loadTag(slug: string): Promise<TagSummary | null> {
     console.error(`[minerval] tag "${slug}" fetch failed:`, err);
     return null;
   }
+}
+
+// The front of a members-only deployment's home page (#1092,
+// lib/deployment-front.ts): its most-used topics and the node its map opens
+// on, both read from this deployment's graph as the reader. A failed read
+// shows nothing rather than anything of public Minerval's: there are no
+// fixtures in a private deployment.
+export async function loadDeploymentFront(): Promise<DeploymentFront> {
+  if (!apiConfigured()) return EMPTY_FRONT;
+  const [topics, pool] = await Promise.all([
+    fetchTags(FRONT_TOPICS).catch((err) => {
+      console.error("[minerval] deployment topics fetch failed:", err);
+      return [] as TagSummary[];
+    }),
+    fetchList(FLAGSHIP_POOL, { assessed: "assessed" }).catch((err) => {
+      console.error("[minerval] deployment flagship fetch failed:", err);
+      return [] as SearchResultItem[];
+    }),
+  ]);
+  return { topics, flagship: chooseFlagship(pool) };
 }
 
 // --- source pages (#507) -----------------------------------------------------
