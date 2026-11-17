@@ -60,6 +60,13 @@ export interface MandateSummary {
   created_at: string | null;
   /** The mandate's page on the site, as a claim read carries its page_url. */
   page_url: string;
+  /**
+   * Its label: who may read it (src/labels.ts). A deployment holds a General
+   * mandate at each label, all with one title, so a list that offers a choice
+   * between them names each by its label as well. A reader is given only the
+   * mandates at labels they read: the database's clearance holds the rest back.
+   */
+  label: string;
 }
 
 interface GrantRow {
@@ -77,6 +84,7 @@ interface GrantRow {
   job_status: string;
   funder_user_id: string;
   manager_name: string;
+  label: string;
   skills: string[] | null;
   platform_approval: PlatformApproval | null;
   created_at: Date | null;
@@ -85,7 +93,7 @@ interface GrantRow {
 const GRANT_SELECT = `
   SELECT g.id, g.name, g.status, g.is_platform, g.scope_claim_id,
          g.scope_query, g.plan, g.plan_cursor, g.mandate, g.budget_job_id,
-         g.funder_user_id, g.skills, g.platform_approval, g.created_at,
+         g.funder_user_id, g.skills, g.platform_approval, g.sensitivity_label AS label, g.created_at,
          j.budget_micro_usd, j.status AS job_status,
          COALESCE(c.display_name, 'a Minerval user') AS manager_name
     FROM grants g
@@ -157,6 +165,7 @@ function summaryOf(row: GrantRow, escrow: GrantEscrowBreakdown, contributorCount
     action_mix: actionMix(row.plan),
     created_at: row.created_at?.toISOString() ?? null,
     page_url: mandatePageUrl(row.id),
+    label: row.label,
   };
 }
 
@@ -247,6 +256,8 @@ export interface MandateCompactRow {
   assessments: number;
   updated_at: string | null;
   page_url: string;
+  /** Its label, which tells apart mandates that share a title. */
+  label: string;
   needs_you?: boolean;
   /** Set on the viewer's own: their page for it, with its Grantmaker. */
   funder_url?: string;
@@ -270,6 +281,7 @@ export function compactMandateRow(row: MandateListRow, viewerIsFunder: boolean):
     assessments: row.assessments,
     updated_at: row.updated_at,
     page_url: row.page_url,
+    label: row.label,
     ...(row.needs_you !== undefined ? { needs_you: row.needs_you } : {}),
     ...(viewerIsFunder ? { funder_url: mandateFunderUrl(row.id) } : {}),
   };

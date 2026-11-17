@@ -63,7 +63,7 @@ function rowLine(m: MandateListRow, mine: boolean): string {
   ].join(" · ");
 }
 
-function Row({ m, mine }: { m: MandateListRow; mine: boolean }) {
+function Row({ m, mine, showLabel }: { m: MandateListRow; mine: boolean; showLabel: boolean }) {
   const state = rowState(m);
   const action = rowAction(m, mine);
   const share = m.budget_owls > 0 ? Math.min(100, (m.spent_owls / m.budget_owls) * 100) : 0;
@@ -73,6 +73,7 @@ function Row({ m, mine }: { m: MandateListRow; mine: boolean }) {
         <Link href={`/mandates/${m.id}`} className="mnds-title">
           {m.title}
         </Link>
+        {showLabel && m.label && <span className="acct-detail">{m.label}</span>}
         <div className="acct-note">{rowLine(m, mine)}</div>
       </div>
       <span className="mnd-chip" data-state={state.key}>
@@ -145,6 +146,10 @@ export default async function MandatesPage({
   }
 
   const mine = view.scope === "mine";
+  // A deployment holds a General mandate at each label, all titled alike, so
+  // where the rows shown sit at more than one label each names its own. On
+  // the public graph every row is public and none is named.
+  const showLabels = new Set((page?.mandates ?? []).map((m) => m.label).filter(Boolean)).size > 1;
   const total = page?.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / MANDATES_PER_PAGE));
   const tabs: Array<[MandatesView["scope"], string, number | null]> = [
@@ -241,7 +246,7 @@ export default async function MandatesPage({
         </nav>
       </div>
 
-      {page?.mandates.map((m) => <Row key={m.id} m={m} mine={mine} />)}
+      {page?.mandates.map((m) => <Row key={m.id} m={m} mine={mine} showLabel={showLabels} />)}
 
       {total === 0 && (
         <p className="acct-note mnds-empty">

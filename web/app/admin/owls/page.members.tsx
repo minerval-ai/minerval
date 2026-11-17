@@ -31,6 +31,17 @@ export const dynamic = "force-dynamic";
 
 const owlWord = (n: number) => (n === 1 ? "owl" : "owls");
 
+// A mandate as the menu of where created owls go names it. A deployment holds
+// a General mandate at each label, all titled alike, and creating owls cannot
+// be taken back from here, so each is named with its label and its budget.
+// The API lists only the mandates at labels the reader reads (the database's
+// clearance holds the rest back), so none here is at a label withheld from
+// them.
+function mandateChoice(m: MandateSummaryView): string {
+  const name = m.label ? `${m.title} (${m.label})` : m.title;
+  return `${name}, budget ${owls(m.budget_owls)} ${owlWord(m.budget_owls)}, ${owls(m.spent_owls)} spent`;
+}
+
 export default async function OwlsPage() {
   const who = await viewer();
   if (!who) return null;
@@ -149,7 +160,7 @@ export default async function OwlsPage() {
                           <optgroup label="A mandate's budget">
                             {openMandates.map((m) => (
                               <option key={m.id} value={`mandate:${m.id}`}>
-                                {m.title}
+                                {mandateChoice(m)}
                               </option>
                             ))}
                           </optgroup>
