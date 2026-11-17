@@ -13,6 +13,11 @@
  *  - the graph reads every agent has (search, open, walk down, walk up) and
  *    list_graph_changes for history. These are exactly what MCP serves an
  *    outside client: a Graph Correspondent has no read an outside one lacks;
+ *  - the world: web_search, read_page, a paper's figures and arXiv source,
+ *    Elicit and Pangram where configured, and the skill tools its role
+ *    takes. Not a connection's or a file set's tools: those go to roles
+ *    that record sources, and a correspondent's outputs are public;
+ *  - note_finding and search_findings, as every administrator has;
  *  - publish_update: one update a run, its items validated against the
  *    window and the graph, its "not covered" changes computed here, never
  *    by the agent;
@@ -34,6 +39,14 @@ import { getUsageContext, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
+import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
+import { executeReadPage, getReadPageToolDefinition, READ_PAGE_TOOL_NAME } from "../tools/read-page-tool.js";
+import { createFigureTools } from "../tools/figure-tools.js";
+import { createFindingTools } from "../tools/finding-tools.js";
+import { elicitConfigured, executeElicitTool, getElicitToolDefinitions, isElicitTool } from "../tools/elicit-tools.js";
+import { createPangramTools } from "../tools/pangram-tools.js";
+import { executeSkillTool, getActiveSkillToolDefinitions, isSkillTool } from "../tools/skill-tools.js";
+import { listSkills } from "../prompts/skills.js";
 import { getCorrespondentSystemPromptBlocks } from "../prompts/correspondent.js";
 import { graphChangeDefinition, runGraphChanges, type GraphChange } from "../../services/graph-change-service.js";
 import {
@@ -143,6 +156,20 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   const system = getCorrespondentSystemPromptBlocks();
   const model = input.model ?? c.model ?? config.correspondentModel;
   const reportTools = createReportTools({ model });
+  // The world as well as the graph. Its outputs answer what people are
+  // saying and cite what they rest on, so it reads the web as every agent
+  // that weighs or writes about the world does: search, a page in full, a
+  // paper's figures and source, the literature, and the checks on a text's
+  // origin. What it says is still the graph's verdict where it says so, and
+  // its own reading labeled as its own (the constitution). Connections and
+  // file sets stay with the roles that record sources: a correspondent
+  // records none and its outputs are public (tools/connection-tools.ts).
+  const webSearch = createWebSearch(model);
+  const figureTools = createFigureTools({ model });
+  const findingTools = createFindingTools({ model, mandate: true });
+  const elicitTools = elicitConfigured(config) ? await getElicitToolDefinitions(config) : [];
+  const pangramTools = createPangramTools({ config });
+  const skillTools = getActiveSkillToolDefinitions(listSkills(), "correspondent");
 
   const events = await pendingCorrespondentEvents(c.id, 50);
   const window = await correspondentWindow(c);
@@ -178,7 +205,12 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
 
   const tools: Tool[] = [
     ...reportTools.definitions,
+    ...findingTools.definitions,
     ...getGraphReadToolDefinitions(),
+    getReadPageToolDefinition(),
+    ...figureTools.definitions,
+    ...elicitTools,
+    ...pangramTools.definitions,
     ...getSpendToolDefinitions(),
     ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
@@ -375,7 +407,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     toolUseLoop({
       initialMessages: sess.initialMessages([{ role: "user", content: briefing + skillLoader.pointerNote }]),
       ...sess.loop,
-      tools: [...tools, ...skillLoader.definitions],
+      tools: [webSearch.tool, ...tools, ...skillLoader.definitions, ...skillTools],
       system,
       model,
       maxTokens: 16384,
@@ -393,6 +425,16 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
         if (loaded !== null) return loaded;
         const report = await reportTools.execute(name, toolInput);
         if (report !== null) return report;
+        const finding = await findingTools.execute(name, toolInput);
+        if (finding !== null) return finding;
+        if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
+        if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
+        const figure = await figureTools.execute(name, toolInput);
+        if (figure !== null) return figure;
+        if (isElicitTool(name)) return executeElicitTool(name, toolInput, config);
+        const pangram = await pangramTools.execute(name, toolInput);
+        if (pangram !== null) return pangram;
+        if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "correspondent" });
         const graphRead = await executeGraphReadTool(name, toolInput);
         if (graphRead !== null) return graphRead;
         const sessionOut = await executeSessionTool(name, toolInput);

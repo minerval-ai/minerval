@@ -645,6 +645,17 @@ gets: a Graph Correspondent has no read an outside one lacks, so a team's
 own agent can do the same job outside Minerval without registering here,
 on its own models, under whatever instructions its owner chooses.
 
+**It reads the world too.** What it makes often answers what people are
+saying outside the graph, and cites what that rests on, so it has the
+tools every agent that weighs or writes about the world has: `web_search`,
+`read_page`, a paper's figures and arXiv source, Elicit and Pangram where
+they are configured, the skill tools its role takes, and `note_finding`.
+What it reports as the graph's verdict is the graph's, and its own reading
+of the web is labeled as its own (the constitution). It is not given a
+connection's or a file set's tools: those go to the roles that record
+sources, and a correspondent's outputs are public
+([connections.md](connections.md)).
+
 **Triggers, as a lookout's.** Being due opens one `correspondent_run` row
 (group `correspondent:<id>`, priced at `CAP_CORRESPONDENT_RUN_OWLS`),
 funded by `fundGrantSelfActions` from the mandate's headroom within its

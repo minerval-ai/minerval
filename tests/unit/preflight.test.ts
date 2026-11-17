@@ -571,11 +571,11 @@ describe("outside services", () => {
     const anthropicOnly = { lookoutModel: MODELS.sonnet, researcherCheapModel: MODELS.sonnet };
     expect(check("web_search", { config: config(anthropicOnly) })).toMatchObject({
       status: "pass",
-      message: "Open-web search runs inside Anthropic's API for all 8 roles that search; it has no off switch.",
+      message: "Open-web search runs inside Anthropic's API for all 9 roles that search; it has no off switch.",
     });
     const mixed = { lookoutModel: OPENROUTER_MODELS.flash, researcherCheapModel: MODELS.sonnet };
     expect(check("web_search", { config: config(mixed) }).message).toBe(
-      "Open-web search runs inside Anthropic's API for 7 roles and through OpenRouter for lookout, " +
+      "Open-web search runs inside Anthropic's API for 8 roles and through OpenRouter for lookout, " +
         "and OPENROUTER_API_KEY is set; it has no off switch."
     );
     expect(check("web_search", { config: config({ ...mixed, openrouterApiKey: "" }) })).toMatchObject({

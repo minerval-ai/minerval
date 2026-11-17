@@ -501,6 +501,7 @@ function checkEmbeddings({ config }: PreflightFacts): Outcome {
 export const WEB_SEARCH_AGENT_MODELS: Readonly<Record<string, readonly string[]>> = {
   "claim-steward.ts": ["stewardModel", "stewardStrongModel"],
   "contribution-reviewer.ts": ["governanceModel"],
+  "correspondent.ts": ["correspondentModel"],
   "dispute-arbitrator.ts": ["arbitrationModel"],
   "grantmaker.ts": ["grantmakerModel"],
   "grantor.ts": ["grantmakerModel"],
