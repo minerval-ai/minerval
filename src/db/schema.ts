@@ -3180,8 +3180,9 @@ export const usageReports = pgTable(
 // usage_reports_received: what other deployments reported to this one
 //
 // The receiving side of the same report (POST /usage-reports): a private
-// deployment sends its report to the public graph under the organization's
-// account, and it is recorded here against that account, as it was sent.
+// deployment sends its report privately to Minerval's server under the
+// organization's account, and it is recorded here against that account
+// alone, as it was sent. No route reads these rows back.
 // Nothing reads these rows to bill yet. One row per account, deployment,
 // period and revision: the same report sent again is recognized by its
 // hash and changes nothing, and a different report for a period already

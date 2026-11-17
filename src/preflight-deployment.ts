@@ -263,9 +263,9 @@ function checkUsageReport(facts: DeploymentCheckFacts): DeploymentOutcome {
   }
   if (config.usageReportUrl) {
     if (!config.usageReportApiKey) {
-      return fail("usage_report.url is set and USAGE_REPORT_API_KEY is not, so reports are prepared and none can be sent. Set the key in the environment: an API key of the organization's account on the public graph.");
+      return fail("usage_report.url is set and USAGE_REPORT_API_KEY is not, so reports are prepared and none can be sent. Set the key in the environment: an API key of the organization's account with Minerval.");
     }
-    return pass(`Usage is reported to ${config.usageReportUrl}: one total of owls spent for each day, and nothing about what the work was on.${from}`);
+    return pass(`Usage is reported privately to ${config.usageReportUrl}, for billing: one total of owls spent for each day, and nothing about what the work was on.${from}`);
   }
   return pass(`Usage is metered and no destination is set (usage_report.url or usage_report.dir), so reports are prepared and kept until one is.${from}`);
 }

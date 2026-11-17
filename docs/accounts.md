@@ -759,8 +759,9 @@ mandate of a label it reads.
 ### What a deployment reports
 
 A members-only deployment on the metered price reports the owls its runs
-spent each day to the public graph: one total, and never which claims the
-work was for. docs/usage-report.md.
+spent each day privately to Minerval, for billing: one total, and never
+which claims the work was for. It is recorded against the organization's
+account and not published. docs/usage-report.md.
 
 ## The per-token meter
 

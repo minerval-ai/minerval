@@ -185,7 +185,7 @@ const configSchema = z.object({
   // no one.
   publicGraphPrice: z.enum(["metered", "flat"]).default("metered"),
   // Where a metered deployment's usage reports go. One of the two:
-  //   usageReportUrl: the address of the public graph's receiving route
+  //   usageReportUrl: the address of the receiving route on Minerval's server
   //     (for instance https://api.minerval.ai/usage-reports), with
   //     usageReportApiKey, an API key of the organization's account there;
   //   usageReportDir: a directory the reports are written to as files, for
@@ -207,8 +207,8 @@ const configSchema = z.object({
       },
       {
         message:
-          "USAGE_REPORT_URL must be the http or https address of the public graph's receiving " +
-          'route, for example "https://api.minerval.ai/usage-reports".',
+          "USAGE_REPORT_URL must be the http or https address of the receiving route on Minerval's " +
+          'server, for example "https://api.minerval.ai/usage-reports".',
       }
     )
     .default(""),
