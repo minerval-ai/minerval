@@ -1,6 +1,6 @@
 "use client";
 
-import { THEME_KEY } from "@/app/theme";
+import { THEME_KEY } from "../app/theme";
 
 // The masthead's light/dark switch. Stateless: the current theme lives on
 // <html data-theme> (set before paint by THEME_SCRIPT), and the CSS shows

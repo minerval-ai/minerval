@@ -4,7 +4,9 @@ import { Mark } from "./Mark";
 import { THEME_SCRIPT } from "./theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { MembersGate } from "@/components/MembersGate";
+import { membersOnly } from "@/lib/members";
 import "./globals.css";
+import "./workspace.css";
 
 export const metadata: Metadata = {
   // Where relative metadata URLs (canonical links, preview images) resolve:
@@ -22,6 +24,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
+      {/* A members-only deployment has no masthead or footer: a member works
+          in the workspace's shell, with a sidebar of every page, and anyone
+          else sees the gate alone (components/MembersGate.tsx). */}
+      {membersOnly() ? (
+        <body className="w-body">
+          <MembersGate>{children}</MembersGate>
+        </body>
+      ) : (
       <body>
         <header className="masthead">
           <div className="masthead-inner">
@@ -45,12 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ThemeToggle />
           </div>
         </header>
-        {/* On the public graph the gate is the page itself. In a members-only
-            deployment it stands in for the page until the visitor is a
-            signed-in member (components/MembersGate.tsx). */}
-        <main className="frame">
-          <MembersGate>{children}</MembersGate>
-        </main>
+        <main className="frame">{children}</main>
         <footer className="site">
           <div className="inner">
             <p style={{ margin: "0 0 .7rem" }}>
@@ -82,6 +87,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </footer>
       </body>
+      )}
     </html>
   );
 }
