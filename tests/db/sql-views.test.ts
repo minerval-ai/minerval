@@ -18,11 +18,11 @@ import {
   runCallerQuery,
   runReadOnlyQuery,
 } from "../../src/services/sql-service.js";
-import { TEST_DATABASE_URL } from "./urls.js";
+import { SQL_TEST_PASSWORD, SQL_TEST_ROLE, TEST_DATABASE_URL } from "./urls.js";
 import { seedAction, seedAllocation, seedClaim, seedUser } from "./helpers.js";
 
-const ROLE = "minerval_sql_dbtest";
-const PASSWORD = "dbtest-sql";
+const ROLE = SQL_TEST_ROLE;
+const PASSWORD = SQL_TEST_PASSWORD;
 
 /**
  * Every column a view exposes, reviewed as public: each is a field the API

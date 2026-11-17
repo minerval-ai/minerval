@@ -241,8 +241,6 @@ export function pgCode(err: unknown): string | undefined {
   return (err as { code?: string } | null)?.code;
 }
 
-const SQL_TEST_ROLE = "minerval_sql_dbtest";
-const SQL_TEST_PASSWORD = "dbtest-sql";
 
 /**
  * Rows of the public_read views as read-only SQL returns them to a reader
@@ -261,7 +259,7 @@ export async function readViewsAs(
   const { loadConfig } = await import("../../src/config.js");
   const { runReadOnlyQuery } = await import("../../src/services/sql-service.js");
   const { runWithUsageContext } = await import("../../src/llm/usage-context.js");
-  const { TEST_DATABASE_URL } = await import("./urls.js");
+  const { TEST_DATABASE_URL, SQL_TEST_ROLE, SQL_TEST_PASSWORD } = await import("./urls.js");
   // Made as the tables' owner: a test that has put its own out-of-context
   // work on a cleared connection (setNoContextSessionForTests(null)) may not
   // create a role, and on a cluster that has never run the suite the role

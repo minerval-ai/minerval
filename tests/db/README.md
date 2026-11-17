@@ -23,6 +23,12 @@ applies the full migration chain (`src/db/migrations/0000` onward) with
 drizzle-kit — so migration-from-zero is itself under test, and a broken
 migration fails the suite loudly before any test runs.
 
+It then copies the migrated database once per worker
+(`episteme_dbtest_w1` to `_w4`, and each worker's mirror databases), and
+the files run four at a time, each worker on its own copy.
+`DB_TEST_WORKERS=1 npm run test:db` runs them one after another, which is
+slower but easier to read when a test is being debugged.
+
 Non-default Postgres? Override the URLs:
 
 ```sh
@@ -38,15 +44,25 @@ setup refuses to run against a database named `episteme` (the dev DB).
 
 - `vitest.db.config.ts` — the suite's own vitest config. `npm test`
   excludes `tests/db/**`, so the mocked suite never needs a database.
-- `global-setup.ts` — scratch DB from zero + migrations.
-- `setup.ts` — points the app's `DATABASE_URL` at the scratch DB per
-  worker and closes the pool after each file.
+- `global-setup.ts` — scratch DB from zero + migrations, then a copy
+  for each worker.
+- `urls.ts` — the databases' URLs: the worker's own copy
+  (`TEST_DATABASE_URL`), its mirror databases, and its read-only SQL login
+  role.
+- `setup.ts` — points the app's `DATABASE_URL` at the worker's copy and
+  closes the pool after each file.
 - `helpers.ts` — seeders minting unique identities per test, so tests
   never couple through shared rows.
-- Test files run sequentially (`fileParallelism: false`): they assert
+- Within a worker, test files run one after another: they assert
   cross-table money invariants and run genuine concurrency tests
   (parallel promises against the real DB) that must not interleave with
-  other files.
+  other files. Files in different workers cannot interleave, because each
+  worker has a database of its own.
+- What a database does not hold is shared by every worker: the server's
+  roles. A file that changes a role the application logs in as goes in
+  `SERVER_WIDE` in `vitest.db.config.ts`, and runs alone once the others
+  have finished. A file that makes a role of its own names it after the
+  worker (`SQL_TEST_ROLE` in `urls.ts`).
 
 ## What it covers
 

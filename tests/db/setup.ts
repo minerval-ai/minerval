@@ -7,6 +7,10 @@ import { afterAll, beforeAll, vi } from "vitest";
 import { TEST_DATABASE_URL } from "./urls.js";
 
 process.env.DATABASE_URL = TEST_DATABASE_URL;
+// This worker's own copy (tests/db/urls.ts), for the files that read the
+// environment before anything is imported (vi.hoisted) and for the
+// processes a file starts.
+process.env.TEST_DATABASE_URL = TEST_DATABASE_URL;
 // Keep config in its dev posture (no SSL, default caps) regardless of the
 // invoking shell.
 process.env.ENVIRONMENT = "development";

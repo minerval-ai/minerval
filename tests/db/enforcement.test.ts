@@ -38,7 +38,7 @@ import { groupAtLabel } from "../../src/services/ingest-focus-service.js";
 import { labelsReadableFrom } from "../../src/services/permission-service.js";
 import { keywordClaimSearch } from "../../src/services/search-service.js";
 import { runReadOnlyQuery, sqlClearanceToken } from "../../src/services/sql-service.js";
-import { TEST_DATABASE_URL } from "./urls.js";
+import { SQL_TEST_PASSWORD, SQL_TEST_ROLE, TEST_DATABASE_URL } from "./urls.js";
 import { readViewsAs } from "./helpers.js";
 
 const A = "enf-a";
@@ -1076,8 +1076,8 @@ describe("keyword search where reads are held", () => {
 // ---------------------------------------------------------------------------
 
 describe("read-only SQL", () => {
-  const ROLE = "minerval_sql_dbtest";
-  const PASSWORD = "dbtest-sql";
+  const ROLE = SQL_TEST_ROLE;
+  const PASSWORD = SQL_TEST_PASSWORD;
   const ids = () => Object.values(claimIds);
   const labelsOf = (rows: Array<Record<string, unknown>>) =>
     sorted(rows.map((r) => Object.entries(claimIds).find(([, id]) => id === r.id)![0]));
