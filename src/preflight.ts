@@ -2,7 +2,11 @@
  * Preflight: whether this deployment is ready to run (docs/deployment.md).
  *
  * One function, runPreflight, runs a list of named checks. Each answers
- * pass, fail or not applicable, with one sentence for whoever is installing.
+ * pass, fail, to do or not applicable, with one sentence for whoever is
+ * installing. To do is not a failure: it is something not set up yet that
+ * nothing is waiting on now and that a check will fail on later, said
+ * while there is time to do it (the General mandate at a label that holds
+ * nothing yet).
  * It is read three ways: `npm run preflight` (scripts/preflight.ts), the
  * operator's route GET /setup/preflight (routes/preflight.ts), and the gate
  * on agent work (agentWorkGate below, held by workers/agent-work-gate.ts).
@@ -65,7 +69,12 @@ import { labelsBesidesPublic, publicIsTheOnlyLabel } from "./services/label-serv
 import { verifyRunLog } from "./services/run-view-service.js";
 import { openAgentRun, recordAgentStep, sealAgentRun } from "./services/trace-service.js";
 
-export type PreflightStatus = "pass" | "fail" | "not_applicable";
+/**
+ * "to_do" is not a failure: the report stays ready and agent work is not
+ * held. It is for something not set up yet that nothing waits on now and
+ * that the check will fail on later, so that it is on the list before then.
+ */
+export type PreflightStatus = "pass" | "fail" | "to_do" | "not_applicable";
 
 export interface PreflightCheckResult {
   name: string;
@@ -83,7 +92,7 @@ export interface PreflightCheckResult {
 export interface PreflightReport {
   /** Whether a label other than `public` is defined; null when the labels could not be read. */
   holds_private_material: boolean | null;
-  /** No check failed. */
+  /** No check failed. A check that is to do is not a failure. */
   ready: boolean;
   /** Whether agent work may start: "refused" when a blocking check failed. */
   agent_work: "allowed" | "refused";

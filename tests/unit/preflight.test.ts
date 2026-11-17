@@ -847,7 +847,7 @@ describe("the report as a whole", () => {
     const report = evaluatePreflight(facts());
     expect(report.checks.map((c) => c.name)).toEqual(PREFLIGHT_CHECKS.map((c) => c.name));
     for (const c of report.checks) {
-      expect(["pass", "fail", "not_applicable"]).toContain(c.status);
+      expect(["pass", "fail", "to_do", "not_applicable"]).toContain(c.status);
       expect(c.message).toMatch(/\.$/);
     }
     expect(report.ready).toBe(true);

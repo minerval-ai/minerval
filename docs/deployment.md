@@ -392,8 +392,11 @@ written reads back as the same settings.
 
 ## Preflight
 
-The preflight is a list of named checks. Each answers **pass**, **fail** or
-**not applicable**, with one sentence. It can be read three ways:
+The preflight is a list of named checks. Each answers **pass**, **fail**,
+**to do** or **not applicable**, with one sentence. To do is not a failure:
+it is something not set up yet that nothing waits on now and that the check
+fails on later, listed while there is time to do it. It can be read three
+ways:
 
 - `npm run preflight` on the machine. It prints each check and exits with a
   non-zero status when any check failed, so it can stand in front of a start
@@ -456,7 +459,7 @@ at that label does not run at all.
 | `owls` | The settings about owls agree (`OWLS=created` needs a members-only deployment, no Stripe key and no free grants). A members-only deployment that sells owls with payments off fails: no account could get one. | no |
 | `model_prices` | Where owls are created, every model a role is set to has a price, from the rate table or `[[pricing.model_prices]]`. It fails naming each setting and model, because a run on a model with no price is refused there. | yes |
 | `usage_report` | On the metered price: the report's destination is an address with its key or a directory that can be written, not both. With neither it passes and says reports are kept. Not applicable on the flat price or on a deployment anyone may read. | no |
-| `standing_mandates` | In a members-only deployment, a General mandate is set up, and at every label that holds material of the deployment's own. It names the labels that have none. | no |
+| `standing_mandates` | In a members-only deployment, a General mandate is set up, and at every label that holds material of the deployment's own. It names the labels that have none. A label with none that holds nothing yet (no source, node or mandate) is to do, not a failure, so that it is on the list while the label is being decided about; a label that will hold only work someone asks for and pays for needs none. | no |
 | `own_organization` | In a members-only deployment, a party is marked as the organization itself. Without one a request to show a page is refused. | no |
 | `publishing` | Where a page is shown outside or hosting is set: `PUBLISH_SIGNING_KEY` is an Ed25519 private key and `publishing.hosting` is set. Not applicable where nothing is shown outside. The key is never printed. | no |
 | `public_graph` | `public_graph.api_url` is an https address and `PUBLIC_GRAPH_API_KEY` is set with it. With a signing key and no address it passes and says packages are carried as files. The public graph is not called. | no |
@@ -533,7 +536,7 @@ holders of the permission to administer:
 
 | Part | What it says |
 |---|---|
-| `preflight` | The preflight's report, above: each check with pass, fail or not applicable and a sentence saying why, and whether agent work may start. |
+| `preflight` | The preflight's report, above: each check with pass, fail, to do or not applicable and a sentence saying why, and whether agent work may start. |
 | `permissions` | How many accounts and groups hold each permission now, by label and by party where the permission is granted at one. |
 | `labels` | Every label besides `public`, with the model providers and outside services cleared for it (`PROVIDER_LABELS`) and the roles whose model's provider is not cleared, whose runs at that label are refused. |
 | `undefined_labels_in_provider_setting` | Labels `PROVIDER_LABELS` names that are not defined. While there is one, every call to a provider is refused. |

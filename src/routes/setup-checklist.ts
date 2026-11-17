@@ -26,7 +26,8 @@ export async function setupChecklistRoutes(app: FastifyInstance): Promise<void> 
         "What this deployment's setup has done and what is still to do, as facts it can see about itself (administrators)",
       description:
         "One read for the administrators of a members-only deployment. `preflight` is the " +
-        "deployment's own checks of its configuration: each check with pass, fail or not " +
+        "deployment's own checks of its configuration: each check with pass, fail, to do " +
+        "(not a failure: something not set up yet that the check fails on later) or not " +
         "applicable and a sentence saying why, and whether agent work may start. It is null in a " +
         "build that has no preflight. `permissions` says how many accounts and groups " +
         "hold each permission now, by label and by party where the permission is granted at one. " +
