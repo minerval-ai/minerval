@@ -47,7 +47,17 @@ starts with public Minerval's own settings and you change the ones you need.
 - A key for at least one model provider, or a model endpoint of your own
   that speaks the OpenAI Chat Completions API, and a decision about which
   model each role runs on. Matching and search need an embeddings key
-  (OpenAI's).
+  (OpenAI's). Six roles start on OpenRouter (the program officers, the
+  Matcher, the tagger, the lookouts, the Consistency Checker and the
+  Researcher's cheap tier); `deploy/env.example`, section 5, names their
+  settings. Open-web search needs an OpenRouter key whatever model a role
+  runs on, unless that model is a current Claude model (Fable, Mythos,
+  Opus 4.6 and later, Sonnet 4.6 and later, Haiku 5.5), which searches
+  inside Anthropic's API: every other model, OpenAI's and an endpoint of your own
+  included, searches through OpenRouter, and at a label other than
+  `public` that needs `web_search` cleared for the label. So a deployment
+  without OpenRouter puts every role that searches on one of those Claude
+  models.
 - The address people will open the site at. The package does not terminate
   TLS: put your own reverse proxy in front of the web app's port.
 

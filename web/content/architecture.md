@@ -1871,7 +1871,9 @@ ephemeral prompt-cache breakpoints, and the server-side Opus refusal
 fallback. No agent hard-codes a server tool: the agents that want web search
 (the Claim Steward, the Grantmaker in every mode — conversation, planning,
 review — and lookouts) ask `tools/web-search-tool.ts` for one `web_search`, which is the Anthropic server tool on a Claude model
-that runs it and, everywhere else, a client-side tool of the same name and
+that runs it (`web_search_20260209`, which filters hits through code
+execution, on Fable, Mythos, Opus 4.6+, Sonnet 4.6+ and Haiku 5.5;
+`anthropicServerWebSearch`) and, everywhere else, a client-side tool of the same name and
 shape that the loop executes through OpenRouter's web plugin
 (`openrouterWebSearch` in `providers/openrouter.ts`: one metered
 completion on the cheap tier whose citation annotations are the hits). A

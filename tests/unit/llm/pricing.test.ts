@@ -173,6 +173,35 @@ describe("Fable 5.1 cache reads", () => {
   });
 });
 
+describe("Haiku 5.5 (priced by prompt length)", () => {
+  it("meters $0.10/$0.50 for a prompt of up to 100,000 tokens, cache reads 0.1× and writes 1.25×", () => {
+    expect(ratesForModel("claude-haiku-5-5").inputPerMtok).toBe(0.1);
+    const micro = costMicroUsd("claude-haiku-5-5", {
+      inputTokens: 40_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 40_000,
+      cacheCreationTokens: 20_000,
+    });
+    // 0.004 + 0.5 + 0.0004 + 0.0025 = 0.5069 USD
+    expect(micro).toBe(506_900);
+  });
+
+  it("meters $0.50/$2.50 once the prompt, cache reads and writes included, passes 100,000 tokens", () => {
+    const micro = costMicroUsd("claude-haiku-5-5", {
+      inputTokens: 40_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 50_000,
+      cacheCreationTokens: 20_000,
+    });
+    // 0.02 + 2.5 + 0.0025 + 0.0125 = 2.535 USD
+    expect(micro).toBe(2_535_000);
+  });
+
+  it("keeps Haiku 4.5 on its own flat rate", () => {
+    expect(ratesForModel("claude-haiku-4-5-20251001").longPrompt).toBeUndefined();
+  });
+});
+
 describe("Fable 5.2 (the frontier tier)", () => {
   it("meters at its own list price, not Fable 5's through the shared prefix", () => {
     const micro = costMicroUsd("claude-fable-5-2", {
