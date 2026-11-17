@@ -215,7 +215,7 @@ docker compose logs -f api`}</Code>
       <p>On the public graph a package is checked against the registered key, kept as signed, and the first one for a node files an ordinary contribution, reviewed like any other and charged as a source submission (refunded if not admitted). Once admitted it is a source on the node, weighed by that node's Steward. It gets no special trust. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/published-pages.md">docs/published-pages.md</a> has the package format and the check.</p>
       <h2 id="not-yet">What the package does not do yet</h2>
       <ul>
-        <li>No TLS, no published images, no backups: put a proxy in front, build from the repository, and back up the Docker volumes yourself.</li>
+        <li>No TLS, no published images, no backups: put a proxy in front, build from the repository, and back up the Docker volumes yourself. Back up <code>deploy/.env</code> and <code>deploy/api.env</code> too, somewhere off the machine such as a password manager: they are in neither volume, the restored database needs the owner&rsquo;s password it was run with (or a new one set inside it), and a lost <code>PUBLISH_SIGNING_KEY</code> breaks the record of what you published. The other secrets can be made or issued again.</li>
         <li>One machine and one API process; more than one has not been tried.</li>
         <li>No model server and no identity provider: you bring both.</li>
         <li>No fully offline mode: open-web search, page reading and embeddings cannot be switched off yet.</li>
