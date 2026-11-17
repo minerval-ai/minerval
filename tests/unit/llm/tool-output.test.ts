@@ -242,7 +242,8 @@ describe("which models are shown what", () => {
   it("knows the visual-token cap of each resolution tier", () => {
     expect(modelImageTokenCap(MODELS.frontier)).toBe(4784);
     expect(modelImageTokenCap(MODELS.sonnet)).toBe(4784);
-    expect(modelImageTokenCap(MODELS.haiku)).toBe(1568);
+    expect(modelImageTokenCap(MODELS.haiku)).toBe(4784);
+    expect(modelImageTokenCap("claude-haiku-4-5-20251001")).toBe(1568);
     expect(modelImageTokenCap("claude-sonnet-4-6")).toBe(1568);
     expect(modelImageTokenCap("claude-opus-4-7")).toBe(4784);
   });

@@ -12,7 +12,12 @@ import { parsePublicKey, parseSigningKey } from "./mirror-batch.js";
 
 export type MirrorConfig = Pick<
   Config,
-  "mirrorPublish" | "mirrorSigningKey" | "mirrorFeedUrl" | "mirrorFeedDir" | "mirrorFeedPublicKeys"
+  | "mirrorPublish"
+  | "mirrorPublisherWorker"
+  | "mirrorSigningKey"
+  | "mirrorFeedUrl"
+  | "mirrorFeedDir"
+  | "mirrorFeedPublicKeys"
 >;
 
 export interface MirrorRoles {
@@ -27,6 +32,15 @@ export function mirrorRoles(config: Partial<MirrorConfig> = loadConfig()): Mirro
     publisher: config.mirrorPublish === true,
     applier: Boolean(config.mirrorFeedUrl) || Boolean(config.mirrorFeedDir),
   };
+}
+
+/**
+ * Whether the API process cuts the feed itself. A publisher whose cuts run
+ * in a worker of their own (MIRROR_PUBLISHER_WORKER) serves the feed from
+ * the API and cuts nothing there.
+ */
+export function cutsInApiProcess(config: Partial<MirrorConfig> = loadConfig()): boolean {
+  return mirrorRoles(config).publisher && config.mirrorPublisherWorker !== true;
 }
 
 /**

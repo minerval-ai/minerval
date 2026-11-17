@@ -25,13 +25,14 @@ beforeEach(() => {
 
 describe("web_search on every provider", () => {
   it("is the Anthropic server tool on a Claude model that runs it, with nothing to execute", () => {
-    for (const model of ["claude-opus-5-5", "claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6"]) {
+    for (const model of ["claude-opus-5-5", "claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-5-5"]) {
       expect(anthropicServerWebSearch(model)).toBe(true);
     }
     const ws = createWebSearch("claude-opus-5-5");
     // No max_uses: the run's budget bounds searches, not a count.
     expect(ws.tool).toEqual({ type: "web_search_20260209", name: WEB_SEARCH_TOOL_NAME });
     expect(ws.execute).toBeNull();
+    expect(createWebSearch("claude-haiku-5-5").tool).toEqual({ type: "web_search_20260209", name: WEB_SEARCH_TOOL_NAME });
   });
 
   it("is a client-side tool of the same name elsewhere, executed through OpenRouter", async () => {

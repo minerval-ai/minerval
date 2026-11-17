@@ -149,255 +149,271 @@ export class ApiStack extends cdk.Stack {
       );
     }
 
+    const image = ecs.ContainerImage.fromAsset("..", {
+      platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
+      // The deployed commit, stamped on agent runs and setup parts.
+      buildArgs: { GIT_SHA: process.env.GITHUB_SHA ?? "" },
+    });
+
+    // What the API process is configured with. The mirror publisher worker
+    // below starts from the same settings, so that loadConfig() sees the
+    // same deployment (it refuses production without every model named).
+    const environment: Record<string, string> = {
+      ENVIRONMENT: "production",
+      PORT: "3000",
+      HOST: "0.0.0.0",
+      DB_HOST: props.dbInstance.dbInstanceEndpointAddress,
+      DB_PORT: props.dbInstance.dbInstanceEndpointPort,
+      DB_NAME: "episteme",
+      // Read-only SQL over the public views runs on the replica, never
+      // the primary (src/services/sql-service.ts).
+      SQL_DB_HOST: props.dbReadReplica.dbInstanceEndpointAddress,
+      SQL_DB_PORT: props.dbReadReplica.dbInstanceEndpointPort,
+      // Only the ingestion queues use SQS. The Steward is a DB-backed,
+      // importance-prioritized drain (claims.steward_state) run in-process by
+      // the local runner, so it needs no queue here — and the Curator + other
+      // in-memory queues are now drained in prod too (see index.ts).
+      SQS_URL_EXTRACTION_QUEUE: props.urlExtractionQueue.queueUrl,
+      SQS_CLAIM_PIPELINE_QUEUE: props.claimPipelineQueue.queueUrl,
+      // OAuth issuer identity for the remote MCP server: must match the
+      // public host clients dial, since it's baked into the /.well-known
+      // metadata and token endpoint URLs.
+      PUBLIC_API_BASE_URL: "https://api.claimgraph.io",
+      // Where the API sends users and points claim links — the OAuth consent
+      // redirect (/oauth/authorize → /oauth/consent), MCP page_url values,
+      // and the extension's claim links — rides the code default
+      // (https://minerval.ai). This had been pinned to episteme.wiki while
+      // that was the only zone that resolved; with minerval.ai live the pin
+      // was leaking the old domain into citations, MCP links, and OAuth
+      // (docs/infrastructure.md cutover step 5).
+      //
+      // Citation URLs (#290/#292/#322) use the permanent w3id form instead —
+      // the registered namespace 302s to the claim page, and stays valid
+      // across any future domain move.
+      CITATION_URL_BASE: "https://w3id.org/minerval/claim",
+      // The Steward assesses/decomposes the main claims — use Opus 5.5 there
+      // (issue #77). The importance-priority drain means it only ever runs
+      // on the top of the queue; the rest stay embedded stubs until budget
+      // allows.
+      STEWARD_MODEL: "claude-opus-5-5",
+      // The solver runs on the frontier tier, Fable 5.2: a multi-hour
+      // proof attempt is the long-horizon work that model is for, and the
+      // attempt's ceiling bounds the spend. Config refuses production
+      // without it (docs/mathematics.md §7.8).
+      SOLVER_MODEL: "claude-fable-5-2",
+      // The Steward's six money triggers (formalize, formalization_review,
+      // prize_claim, prize_claim_voided, prize_window_closed,
+      // attempt_completed) run on this tier from the workers that own
+      // them, never on STEWARD_MODEL by way of the queue; config refuses
+      // production without it (docs/mathematics.md §6.4). Setting it also
+      // turns on model tiering: every assess/reassess group carries a
+      // 'strong' variant the allocators buy by marginal return. Fable 5.2
+      // ($8/$40 per MTok, twice Opus 5.5): the variant is bought only where
+      // a node is contested and important, and a money trigger is rare and
+      // final, so this is where the best model's judgment is worth its
+      // price. Unlike Opus 5.5, an omitted effort runs at `high`.
+      STEWARD_STRONG_MODEL: "claude-fable-5-2",
+      // The researcher (#298): the instrument a Steward or a Grantmaker
+      // launches for one bounded investigation, and the runner of document
+      // examinations (#507). Its tiers ride the config defaults (Fable 5.2,
+      // Sonnet 5.5, GPT-6 Luna through OpenRouter); the daily cap, the
+      // per-run ceiling, and the per-pass count are its backstops, and a
+      // researcher_paused platform flag halts it without a deploy.
+      RESEARCHER_ENABLED: "true",
+      // The other load-bearing governance agents: the Curator adjudicates
+      // merges/splits and the Audit Agent polices the governance system,
+      // both on Opus 5.5. The Dispute Arbitrator resolves escalations and
+      // appeals, the last word on a dispute and a handful of runs, so it
+      // takes the frontier tier, Fable 5.2. The Contribution Reviewer stays
+      // on the Sonnet default (governanceModel). Refusal false-positives
+      // on either tier degrade to Opus 4.8 via the server-side fallback in
+      // src/llm/providers/anthropic.ts.
+      CURATOR_MODEL: "claude-opus-5-5",
+      AUDIT_MODEL: "claude-opus-5-5",
+      ARBITRATION_MODEL: "claude-fable-5-2",
+      // The Extractor authors the graph's canonical language from arbitrary,
+      // wholly untrusted documents whose framing it must not adopt, and
+      // everything downstream inherits its wording. It also runs once per
+      // DOCUMENT rather than once per claim (6 sources yielded 41 claims in
+      // the first live epoch), so the tier is cheap leverage, and the spend
+      // is already attributed to the mandate that chose the source. It ran
+      // on the Sonnet default through that whole epoch only because it had
+      // no knob; config.ts now requires this env in production.
+      //
+      // Bio-adjacent refusals are the known failure here (#78): Opus 5.5
+      // carries a bio classifier, and its server-side Opus fallback can
+      // refuse with it, so extraction retries on
+      // EXTRACTOR_FALLBACK_MODEL (Sonnet by default) rather than losing the
+      // document.
+      EXTRACTOR_MODEL: "claude-opus-5-5",
+      // The Matcher's judgment is narrow (same proposition?) over candidates
+      // it retrieves itself, so it runs the cheap tier: off Haiku 4.5 on
+      // quality and price (#257), now GPT-6 Luna (see OPENROUTER_MODELS
+      // for why that id and not the rolling alias). First agent routed off
+      // Anthropic; the rest keep their defaults until the eval apparatus
+      // (#273/#297) can rank candidates. Pinned here AND as the config
+      // default (OPENROUTER_MODELS.flash) so corpus and dev runs match on
+      // the model production matches on; the model guard asserts the two
+      // agree.
+      MATCHER_MODEL: "openai/gpt-6-luna",
+      // The tagger (#272): topic tags over every claim, no epistemic
+      // judgment — the Matcher's tier for the Matcher's reasons (#257).
+      // Pinned to the config default so the model guard covers it.
+      TAGGER_MODEL: "openai/gpt-6-luna",
+      // The Lookout (docs/allocation.md, "Lookouts"): a mandate's cheap
+      // standing watch. Its judgment is relevance, not truth, so it runs
+      // on the cheap tier. Pinned to the config default so the model
+      // guard covers it; a lookout can carry its own model override.
+      LOOKOUT_MODEL: "openai/gpt-6-luna",
+      // Program officers: a mandate's routine funding decisions under its
+      // written operating policy, escalating what needs judgment to the
+      // Grantmaker, so the cheap tier. Pinned to the config default so the
+      // model guard covers it.
+      PROGRAM_OFFICER_MODEL: "openai/gpt-6-luna",
+      // Officers sit on what waits in a mandate's inbox (what lookouts
+      // and the system raised) when no run is waiting on the answer.
+      // Without them nothing but a waiting petition is ever decided, and
+      // the General mandate funds nothing it is asked.
+      OFFICER_SITTINGS_ENABLED: "true",
+      // The Correspondent (#563): reads the graph for an audience and
+      // writes updates people read, on the standard tier. Pinned to the
+      // config default so the model guard covers it.
+      CORRESPONDENT_MODEL: "claude-sonnet-5-5",
+      // The Consistency Checker (#330): reads a partition's assessments
+      // against each other and raises flags the owning Steward decides.
+      // A sweep is an exclusive set (#756): the standard variant on the
+      // cheap tier, the strong one on the standard tier, each pinned to
+      // its config default.
+      CONSISTENCY_MODEL: "openai/gpt-6-luna",
+      CONSISTENCY_STRONG_MODEL: "claude-sonnet-5-5",
+      // Sweeps on: they are the General mandate's own upkeep, funded from
+      // its escrow and day room like a review pass (docs/allocation.md,
+      // "Consistency sweeps"). Off, the Consistency Checker never runs
+      // whatever the mandate's policy says, which is how the first live
+      // epoch spent nothing on coherence. How many run is its money, with
+      // the re-sweep interval holding a partition to one a day.
+      CONSISTENCY_SWEEPS_ENABLED: "true",
+      // Spend guardrails. Call limits cap request rate; the TOKEN limits are
+      // the real $ governor (they reset hourly/daily, so this is a rate limit:
+      // the drain works the highest-importance claims each window and pauses
+      // when spent). Tune to taste — these counters are per-process, so they
+      // scale with the autoscaled task count. Lowered to a 500k-token/day
+      // ceiling, with the other three limits scaled proportionally (1/3 of the
+      // first-window values), to hold down spend on the load-bearing agents
+      // (issue #77); the drain works the top of the importance queue each
+      // window and pauses when spent. NOTE: these were sized when the strong
+      // tier was Fable 5.1 ($10/$50 per MTok); Opus 5.5 is $4/$20 (cache reads
+      // $0.20), so the same ceiling now caps well under half the spend on
+      // the Opus agents, and about four fifths of it on the Fable 5.2 ones
+      // ($8/$40).
+      LLM_HOURLY_CALL_LIMIT: "167",
+      LLM_DAILY_CALL_LIMIT: "1667",
+      LLM_HOURLY_TOKEN_LIMIT: "133333",
+      LLM_DAILY_TOKEN_LIMIT: "500000",
+      // Extension page analysis is synchronous behind the ALB (#91): cap
+      // claims per page so a typical analyze finishes inside the idle
+      // timeout below. The async flow (#93) relaxes the latency pressure,
+      // but the cap stays sensible — extension pages are reading surfaces,
+      // not corpus ingestion, and this bound is about RESPONSE TIME rather
+      // than fan-out cost.
+      //
+      // EXTRACTION_MAX_CLAIMS (was "8") is deliberately gone: a per-source
+      // claim cap truncated dense sources and invited padding in thin ones,
+      // and the fan-out cost it stood in for is now bounded by the mandate
+      // ledger instead of by a count. See src/config.ts.
+      EXTENSION_MAX_CLAIMS: "10",
+      ...leanCheckerEnvironment,
+      // Agent traces (#334 L0): the full tool-use transcript of every agent
+      // run, persisted for the eval harness, debugging and the production
+      // monitors. On by default now; this pin makes the choice visible.
+      // Runs that wrote to the graph are kept for good; the rest for 30
+      // days by the retention sweep (workers/trace-retention.ts).
+      // llm_usage keeps run_id and cost indefinitely.
+      TRACE_LEVEL: "full",
+      TRACE_RETENTION_DAYS: "30",
+      // Agent reports (#366) are filed as GitHub issues in this repo,
+      // labelled agent-generated, on first sighting; the sync worker files
+      // the backlog. Written as the minerval-agents GitHub App: these two
+      // ids plus the private key secret below (github-app-auth.ts). The
+      // installation id is the App's installation on the minerval-ai org.
+      GITHUB_ISSUES_REPO: "minerval-ai/minerval",
+      // Reports from outside callers (the MCP raise_issue) are filed too,
+      // labelled origin/external, so they are seen where the rest are.
+      GITHUB_ISSUES_INCLUDE_EXTERNAL: "true",
+      GITHUB_APP_ID: "4911585",
+      GITHUB_APP_INSTALLATION_ID: "160924398",
+    };
+
+    const secrets: Record<string, ecs.Secret> = {
+      DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
+      DB_PASSWORD: ecs.Secret.fromSecretsManager(props.dbSecret, "password"),
+      SQL_AGENT_DB_USERNAME: ecs.Secret.fromSecretsManager(props.sqlAgentSecret, "username"),
+      SQL_AGENT_DB_PASSWORD: ecs.Secret.fromSecretsManager(props.sqlAgentSecret, "password"),
+      SQL_CALLER_DB_USERNAME: ecs.Secret.fromSecretsManager(props.sqlCallerSecret, "username"),
+      SQL_CALLER_DB_PASSWORD: ecs.Secret.fromSecretsManager(props.sqlCallerSecret, "password"),
+      OPENAI_API_KEY: ecs.Secret.fromSecretsManager(
+        props.openaiApiKeySecret
+      ),
+      // OpenRouter (#257): holds a placeholder until manually populated;
+      // inert unless an agent's *_MODEL is pointed at a vendor/model ID.
+      OPENROUTER_API_KEY: ecs.Secret.fromSecretsManager(
+        props.openrouterApiKeySecret
+      ),
+      // Operator/service keys (#70) — the API fails closed in production
+      // without them. The web frontend's MINERVAL_API_KEY must be one of
+      // these entries.
+      API_KEYS: ecs.Secret.fromSecretsManager(props.apiKeysSecret),
+      // The operator key (#529): without it every operator route is
+      // closed. Its own secret, never part of API_KEYS, because the
+      // service key acts for any user and so cannot move money.
+      MINERVAL_OPERATOR_KEY: ecs.Secret.fromSecretsManager(
+        props.operatorKeySecret
+      ),
+      ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(
+        props.anthropicApiKeySecret
+      ),
+      // Elicit connector (#299): opt-in; an invalid/placeholder key
+      // degrades to the tools being omitted from Steward runs.
+      ELICIT_API_KEY: ecs.Secret.fromSecretsManager(
+        props.elicitApiKeySecret
+      ),
+      // Stripe (#309): placeholder values keep payments disabled (the
+      // provider only activates on a real "sk_…" key).
+      STRIPE_SECRET_KEY: ecs.Secret.fromSecretsManager(
+        props.stripeSecretKeySecret
+      ),
+      GITHUB_TOKEN: ecs.Secret.fromSecretsManager(props.githubTokenSecret),
+      GITHUB_APP_PRIVATE_KEY: ecs.Secret.fromSecretsManager(
+        props.githubAppPrivateKeySecret
+      ),
+      STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
+        props.stripeWebhookSecretSecret
+      ),
+      // Lean checker bearer token (docs/mathematics.md 5.3), generated in
+      // LeanCheckerStack and shared with the checker tasks.
+      ...(props.leanChecker
+        ? { LEAN_CHECKER_TOKEN: ecs.Secret.fromSecretsManager(props.leanChecker.tokenSecret) }
+        : {}),
+      ...(mirrorSigningKeySecret
+        ? { MIRROR_SIGNING_KEY: ecs.Secret.fromSecretsManager(mirrorSigningKeySecret) }
+        : {}),
+    };
+
+    // The mirror feed (docs/mirror.md). The API serves /mirror/feed and
+    // never cuts: a snapshot cut holds the batch it is building and the one
+    // before it, and at 24 MB batches it peaked at 972 MB on its own, which a
+    // 1 GB API task already serving requests could not hold (it was killed
+    // for memory on every start). Cuts run in their own service below.
+    const mirrorEnvironment: Record<string, string> = mirrorSigningKeySecret
+      ? { MIRROR_PUBLISH: "true", MIRROR_PUBLISHER_WORKER: "true" }
+      : {};
+
     const container = taskDef.addContainer("api", {
-      image: ecs.ContainerImage.fromAsset("..", {
-        platform: cdk.aws_ecr_assets.Platform.LINUX_AMD64,
-        // The deployed commit, stamped on agent runs and setup parts.
-        buildArgs: { GIT_SHA: process.env.GITHUB_SHA ?? "" },
-      }),
+      image,
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: "episteme-api" }),
-      environment: {
-        ENVIRONMENT: "production",
-        PORT: "3000",
-        HOST: "0.0.0.0",
-        DB_HOST: props.dbInstance.dbInstanceEndpointAddress,
-        DB_PORT: props.dbInstance.dbInstanceEndpointPort,
-        DB_NAME: "episteme",
-        // Read-only SQL over the public views runs on the replica, never
-        // the primary (src/services/sql-service.ts).
-        SQL_DB_HOST: props.dbReadReplica.dbInstanceEndpointAddress,
-        SQL_DB_PORT: props.dbReadReplica.dbInstanceEndpointPort,
-        // Only the ingestion queues use SQS. The Steward is a DB-backed,
-        // importance-prioritized drain (claims.steward_state) run in-process by
-        // the local runner, so it needs no queue here — and the Curator + other
-        // in-memory queues are now drained in prod too (see index.ts).
-        SQS_URL_EXTRACTION_QUEUE: props.urlExtractionQueue.queueUrl,
-        SQS_CLAIM_PIPELINE_QUEUE: props.claimPipelineQueue.queueUrl,
-        // OAuth issuer identity for the remote MCP server: must match the
-        // public host clients dial, since it's baked into the /.well-known
-        // metadata and token endpoint URLs.
-        PUBLIC_API_BASE_URL: "https://api.claimgraph.io",
-        // Where the API sends users and points claim links — the OAuth consent
-        // redirect (/oauth/authorize → /oauth/consent), MCP page_url values,
-        // and the extension's claim links — rides the code default
-        // (https://minerval.ai). This had been pinned to episteme.wiki while
-        // that was the only zone that resolved; with minerval.ai live the pin
-        // was leaking the old domain into citations, MCP links, and OAuth
-        // (docs/infrastructure.md cutover step 5).
-        //
-        // Citation URLs (#290/#292/#322) use the permanent w3id form instead —
-        // the registered namespace 302s to the claim page, and stays valid
-        // across any future domain move.
-        CITATION_URL_BASE: "https://w3id.org/minerval/claim",
-        // The Steward assesses/decomposes the main claims — use Opus 5.5 there
-        // (issue #77). The importance-priority drain means it only ever runs
-        // on the top of the queue; the rest stay embedded stubs until budget
-        // allows.
-        STEWARD_MODEL: "claude-opus-5-5",
-        // The solver runs on the frontier tier, Fable 5.2: a multi-hour
-        // proof attempt is the long-horizon work that model is for, and the
-        // attempt's ceiling bounds the spend. Config refuses production
-        // without it (docs/mathematics.md §7.8).
-        SOLVER_MODEL: "claude-fable-5-2",
-        // The Steward's six money triggers (formalize, formalization_review,
-        // prize_claim, prize_claim_voided, prize_window_closed,
-        // attempt_completed) run on this tier from the workers that own
-        // them, never on STEWARD_MODEL by way of the queue; config refuses
-        // production without it (docs/mathematics.md §6.4). Setting it also
-        // turns on model tiering: every assess/reassess group carries a
-        // 'strong' variant the allocators buy by marginal return. Fable 5.2
-        // ($8/$40 per MTok, twice Opus 5.5): the variant is bought only where
-        // a node is contested and important, and a money trigger is rare and
-        // final, so this is where the best model's judgment is worth its
-        // price. Unlike Opus 5.5, an omitted effort runs at `high`.
-        STEWARD_STRONG_MODEL: "claude-fable-5-2",
-        // The researcher (#298): the instrument a Steward or a Grantmaker
-        // launches for one bounded investigation, and the runner of document
-        // examinations (#507). Its tiers ride the config defaults (Fable 5.2,
-        // Sonnet 5.5, GPT-6 Luna through OpenRouter); the daily cap, the
-        // per-run ceiling, and the per-pass count are its backstops, and a
-        // researcher_paused platform flag halts it without a deploy.
-        RESEARCHER_ENABLED: "true",
-        // The other load-bearing governance agents: the Curator adjudicates
-        // merges/splits and the Audit Agent polices the governance system,
-        // both on Opus 5.5. The Dispute Arbitrator resolves escalations and
-        // appeals, the last word on a dispute and a handful of runs, so it
-        // takes the frontier tier, Fable 5.2. The Contribution Reviewer stays
-        // on the Sonnet default (governanceModel). Refusal false-positives
-        // on either tier degrade to Opus 4.8 via the server-side fallback in
-        // src/llm/providers/anthropic.ts.
-        CURATOR_MODEL: "claude-opus-5-5",
-        AUDIT_MODEL: "claude-opus-5-5",
-        ARBITRATION_MODEL: "claude-fable-5-2",
-        // The Extractor authors the graph's canonical language from arbitrary,
-        // wholly untrusted documents whose framing it must not adopt, and
-        // everything downstream inherits its wording. It also runs once per
-        // DOCUMENT rather than once per claim (6 sources yielded 41 claims in
-        // the first live epoch), so the tier is cheap leverage, and the spend
-        // is already attributed to the mandate that chose the source. It ran
-        // on the Sonnet default through that whole epoch only because it had
-        // no knob; config.ts now requires this env in production.
-        //
-        // Bio-adjacent refusals are the known failure here (#78): Opus 5.5
-        // carries a bio classifier, and its server-side Opus fallback can
-        // refuse with it, so extraction retries on
-        // EXTRACTOR_FALLBACK_MODEL (Sonnet by default) rather than losing the
-        // document.
-        EXTRACTOR_MODEL: "claude-opus-5-5",
-        // The Matcher's judgment is narrow (same proposition?) over candidates
-        // it retrieves itself, so it runs the cheap tier: off Haiku 4.5 on
-        // quality and price (#257), now GPT-6 Luna (see OPENROUTER_MODELS
-        // for why that id and not the rolling alias). First agent routed off
-        // Anthropic; the rest keep their defaults until the eval apparatus
-        // (#273/#297) can rank candidates. Pinned here AND as the config
-        // default (OPENROUTER_MODELS.flash) so corpus and dev runs match on
-        // the model production matches on; the model guard asserts the two
-        // agree.
-        MATCHER_MODEL: "openai/gpt-6-luna",
-        // The tagger (#272): topic tags over every claim, no epistemic
-        // judgment — the Matcher's tier for the Matcher's reasons (#257).
-        // Pinned to the config default so the model guard covers it.
-        TAGGER_MODEL: "openai/gpt-6-luna",
-        // The Lookout (docs/allocation.md, "Lookouts"): a mandate's cheap
-        // standing watch. Its judgment is relevance, not truth, so it runs
-        // on the cheap tier. Pinned to the config default so the model
-        // guard covers it; a lookout can carry its own model override.
-        LOOKOUT_MODEL: "openai/gpt-6-luna",
-        // Program officers: a mandate's routine funding decisions under its
-        // written operating policy, escalating what needs judgment to the
-        // Grantmaker, so the cheap tier. Pinned to the config default so the
-        // model guard covers it.
-        PROGRAM_OFFICER_MODEL: "openai/gpt-6-luna",
-        // Officers sit on what waits in a mandate's inbox (what lookouts
-        // and the system raised) when no run is waiting on the answer.
-        // Without them nothing but a waiting petition is ever decided, and
-        // the General mandate funds nothing it is asked.
-        OFFICER_SITTINGS_ENABLED: "true",
-        // The Correspondent (#563): reads the graph for an audience and
-        // writes updates people read, on the standard tier. Pinned to the
-        // config default so the model guard covers it.
-        CORRESPONDENT_MODEL: "claude-sonnet-5-5",
-        // The Consistency Checker (#330): reads a partition's assessments
-        // against each other and raises flags the owning Steward decides.
-        // A sweep is an exclusive set (#756): the standard variant on the
-        // cheap tier, the strong one on the standard tier, each pinned to
-        // its config default.
-        CONSISTENCY_MODEL: "openai/gpt-6-luna",
-        CONSISTENCY_STRONG_MODEL: "claude-sonnet-5-5",
-        // Sweeps on: they are the General mandate's own upkeep, funded from
-        // its escrow and day room like a review pass (docs/allocation.md,
-        // "Consistency sweeps"). Off, the Consistency Checker never runs
-        // whatever the mandate's policy says, which is how the first live
-        // epoch spent nothing on coherence. How many run is its money, with
-        // the re-sweep interval holding a partition to one a day.
-        CONSISTENCY_SWEEPS_ENABLED: "true",
-        // Spend guardrails. Call limits cap request rate; the TOKEN limits are
-        // the real $ governor (they reset hourly/daily, so this is a rate limit:
-        // the drain works the highest-importance claims each window and pauses
-        // when spent). Tune to taste — these counters are per-process, so they
-        // scale with the autoscaled task count. Lowered to a 500k-token/day
-        // ceiling, with the other three limits scaled proportionally (1/3 of the
-        // first-window values), to hold down spend on the load-bearing agents
-        // (issue #77); the drain works the top of the importance queue each
-        // window and pauses when spent. NOTE: these were sized when the strong
-        // tier was Fable 5.1 ($10/$50 per MTok); Opus 5.5 is $4/$20 (cache reads
-        // $0.20), so the same ceiling now caps well under half the spend on
-        // the Opus agents, and about four fifths of it on the Fable 5.2 ones
-        // ($8/$40).
-        LLM_HOURLY_CALL_LIMIT: "167",
-        LLM_DAILY_CALL_LIMIT: "1667",
-        LLM_HOURLY_TOKEN_LIMIT: "133333",
-        LLM_DAILY_TOKEN_LIMIT: "500000",
-        // Extension page analysis is synchronous behind the ALB (#91): cap
-        // claims per page so a typical analyze finishes inside the idle
-        // timeout below. The async flow (#93) relaxes the latency pressure,
-        // but the cap stays sensible — extension pages are reading surfaces,
-        // not corpus ingestion, and this bound is about RESPONSE TIME rather
-        // than fan-out cost.
-        //
-        // EXTRACTION_MAX_CLAIMS (was "8") is deliberately gone: a per-source
-        // claim cap truncated dense sources and invited padding in thin ones,
-        // and the fan-out cost it stood in for is now bounded by the mandate
-        // ledger instead of by a count. See src/config.ts.
-        EXTENSION_MAX_CLAIMS: "10",
-        ...leanCheckerEnvironment,
-        // Agent traces (#334 L0): the full tool-use transcript of every agent
-        // run, persisted for the eval harness, debugging and the production
-        // monitors. On by default now; this pin makes the choice visible.
-        // Runs that wrote to the graph are kept for good; the rest for 30
-        // days by the retention sweep (workers/trace-retention.ts).
-        // llm_usage keeps run_id and cost indefinitely.
-        TRACE_LEVEL: "full",
-        TRACE_RETENTION_DAYS: "30",
-        // Agent reports (#366) are filed as GitHub issues in this repo,
-        // labelled agent-generated, on first sighting; the sync worker files
-        // the backlog. Written as the minerval-agents GitHub App: these two
-        // ids plus the private key secret below (github-app-auth.ts). The
-        // installation id is the App's installation on the minerval-ai org.
-        GITHUB_ISSUES_REPO: "minerval-ai/minerval",
-        // Reports from outside callers (the MCP raise_issue) are filed too,
-        // labelled origin/external, so they are seen where the rest are.
-        GITHUB_ISSUES_INCLUDE_EXTERNAL: "true",
-        GITHUB_APP_ID: "4911585",
-        GITHUB_APP_INSTALLATION_ID: "160924398",
-        // The mirror feed (docs/mirror.md): served at /mirror/feed, a cut
-        // every MIRROR_PUBLISH_INTERVAL_SECONDS (900 by default).
-        ...(mirrorSigningKeySecret ? { MIRROR_PUBLISH: "true" } : {}),
-      },
-      secrets: {
-        DB_USERNAME: ecs.Secret.fromSecretsManager(props.dbSecret, "username"),
-        DB_PASSWORD: ecs.Secret.fromSecretsManager(props.dbSecret, "password"),
-        SQL_AGENT_DB_USERNAME: ecs.Secret.fromSecretsManager(props.sqlAgentSecret, "username"),
-        SQL_AGENT_DB_PASSWORD: ecs.Secret.fromSecretsManager(props.sqlAgentSecret, "password"),
-        SQL_CALLER_DB_USERNAME: ecs.Secret.fromSecretsManager(props.sqlCallerSecret, "username"),
-        SQL_CALLER_DB_PASSWORD: ecs.Secret.fromSecretsManager(props.sqlCallerSecret, "password"),
-        OPENAI_API_KEY: ecs.Secret.fromSecretsManager(
-          props.openaiApiKeySecret
-        ),
-        // OpenRouter (#257): holds a placeholder until manually populated;
-        // inert unless an agent's *_MODEL is pointed at a vendor/model ID.
-        OPENROUTER_API_KEY: ecs.Secret.fromSecretsManager(
-          props.openrouterApiKeySecret
-        ),
-        // Operator/service keys (#70) — the API fails closed in production
-        // without them. The web frontend's MINERVAL_API_KEY must be one of
-        // these entries.
-        API_KEYS: ecs.Secret.fromSecretsManager(props.apiKeysSecret),
-        // The operator key (#529): without it every operator route is
-        // closed. Its own secret, never part of API_KEYS, because the
-        // service key acts for any user and so cannot move money.
-        MINERVAL_OPERATOR_KEY: ecs.Secret.fromSecretsManager(
-          props.operatorKeySecret
-        ),
-        ANTHROPIC_API_KEY: ecs.Secret.fromSecretsManager(
-          props.anthropicApiKeySecret
-        ),
-        // Elicit connector (#299): opt-in; an invalid/placeholder key
-        // degrades to the tools being omitted from Steward runs.
-        ELICIT_API_KEY: ecs.Secret.fromSecretsManager(
-          props.elicitApiKeySecret
-        ),
-        // Stripe (#309): placeholder values keep payments disabled (the
-        // provider only activates on a real "sk_…" key).
-        STRIPE_SECRET_KEY: ecs.Secret.fromSecretsManager(
-          props.stripeSecretKeySecret
-        ),
-        GITHUB_TOKEN: ecs.Secret.fromSecretsManager(props.githubTokenSecret),
-        GITHUB_APP_PRIVATE_KEY: ecs.Secret.fromSecretsManager(
-          props.githubAppPrivateKeySecret
-        ),
-        STRIPE_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(
-          props.stripeWebhookSecretSecret
-        ),
-        // Lean checker bearer token (docs/mathematics.md 5.3), generated in
-        // LeanCheckerStack and shared with the checker tasks.
-        ...(props.leanChecker
-          ? { LEAN_CHECKER_TOKEN: ecs.Secret.fromSecretsManager(props.leanChecker.tokenSecret) }
-          : {}),
-        ...(mirrorSigningKeySecret
-          ? { MIRROR_SIGNING_KEY: ecs.Secret.fromSecretsManager(mirrorSigningKeySecret) }
-          : {}),
-      },
+      environment: { ...environment, ...mirrorEnvironment },
+      secrets,
+
     });
 
     container.addPortMappings({ containerPort: 3000 });
@@ -410,6 +426,43 @@ export class ApiStack extends cdk.Stack {
       securityGroups: [props.apiSg],
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
+
+    // The mirror feed's publisher (docs/mirror.md, "The publisher"): its own
+    // one-task service, so a cut can never take the API's memory. Measured on
+    // a copy of production (256,153 rows, 472 MB of batches): a snapshot cut
+    // peaked at 544 MB at 8 MB batches, an ordinary cut at 141 MB; 2 GB leaves
+    // room for the graph to grow. It needs the database and the signing key,
+    // and nothing else of the API's secrets. Two cuts cannot interleave (a cut
+    // locks the batches table), so a deploy may overlap the old task freely.
+    if (mirrorSigningKeySecret) {
+      const publisherTaskDef = new ecs.FargateTaskDefinition(this, "MirrorPublisherTaskDef", {
+        cpu: 512,
+        memoryLimitMiB: 2048,
+      });
+      props.dbSecret.grantRead(publisherTaskDef.taskRole);
+      mirrorSigningKeySecret.grantRead(publisherTaskDef.taskRole);
+      publisherTaskDef.addContainer("mirror-publisher", {
+        image,
+        command: ["npm", "run", "worker:mirror-publisher"],
+        logging: ecs.LogDrivers.awsLogs({ streamPrefix: "episteme-mirror-publisher" }),
+        environment: { ...environment, ...mirrorEnvironment },
+        secrets: {
+          DB_USERNAME: secrets.DB_USERNAME!,
+          DB_PASSWORD: secrets.DB_PASSWORD!,
+          MIRROR_SIGNING_KEY: secrets.MIRROR_SIGNING_KEY!,
+        },
+      });
+      new ecs.FargateService(this, "MirrorPublisherService", {
+        cluster,
+        taskDefinition: publisherTaskDef,
+        desiredCount: 1,
+        assignPublicIp: true,
+        securityGroups: [props.apiSg],
+        vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+        minHealthyPercent: 0,
+        maxHealthyPercent: 100,
+      });
+    }
 
     // ALB
     const alb = new elbv2.ApplicationLoadBalancer(this, "ApiAlb", {

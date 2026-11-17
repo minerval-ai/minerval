@@ -95,7 +95,9 @@ export async function mandateRoutes(app: FastifyInstance): Promise<void> {
         "approval, or a budget spent). The response carries `total` for the page's query, " +
         "the count in each state for the scope and words, and the count in each scope. " +
         "Each row is compact by default (id, title, the objective's first words, status, budget, " +
-        "spent, held, backers, assessments, page_url, and for your own funder_url); detail=full " +
+        "spent, held, backers, assessments, page_url, label, and for your own funder_url); " +
+        "mandates that share a title (a General mandate at each label) differ by label, and only " +
+        "mandates at labels the caller reads are listed. detail=full " +
         "gives every field, and get_mandate gives one mandate whole.",
       querystring: {
         type: "object",

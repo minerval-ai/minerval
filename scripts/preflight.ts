@@ -16,7 +16,7 @@ import { ConfigFileError } from "../src/config-file.js";
 import { closeDb } from "../src/db/client.js";
 import { runPreflight, type PreflightReport } from "../src/preflight.js";
 
-const LABEL = { pass: "pass", fail: "FAIL", not_applicable: "n/a " } as const;
+const LABEL = { pass: "pass", fail: "FAIL", to_do: "todo", not_applicable: "n/a " } as const;
 
 function formatPreflight(report: PreflightReport): string {
   const width = Math.max(...report.checks.map((c) => c.name.length));
@@ -32,10 +32,13 @@ function formatPreflight(report: PreflightReport): string {
     lines.push(`${LABEL[check.status]}  ${check.name.padEnd(width)}  ${check.message}${mark}`);
   }
   const failed = report.checks.filter((c) => c.status === "fail").length;
+  const toDo = report.checks.filter((c) => c.status === "to_do").length;
   lines.push("");
   lines.push(
     failed === 0
-      ? `All ${report.checks.length} checks pass or do not apply. Agent work may start.`
+      ? toDo === 0
+        ? `All ${report.checks.length} checks pass or do not apply. Agent work may start.`
+        : `No check failed, and ${toDo} ${toDo === 1 ? "is" : "are"} still to do. Agent work may start.`
       : `${failed} of ${report.checks.length} checks failed. ` +
           (report.agent_work === "refused"
             ? "Agent work is refused until the ones that block it pass."

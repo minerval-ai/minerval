@@ -156,7 +156,7 @@ describe("what the checklist says", () => {
     expect(preflight).not.toBeNull();
     expect(preflight!.checks.map((c) => c.name)).toEqual(PREFLIGHT_CHECKS.map((c) => c.name));
     for (const check of preflight!.checks) {
-      expect(["pass", "fail", "not_applicable"], check.name).toContain(check.status);
+      expect(["pass", "fail", "to_do", "not_applicable"], check.name).toContain(check.status);
       expect(check.message.length, check.name).toBeGreaterThan(10);
     }
     expect(["allowed", "refused"]).toContain(preflight!.agent_work);

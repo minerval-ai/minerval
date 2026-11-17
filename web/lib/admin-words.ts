@@ -257,9 +257,12 @@ function checksItem(c: SetupChecklist): ChecklistItem {
   const { checks, agent_work: agentWork } = c.preflight;
   const failed = checks.filter((k) => k.status === "fail");
   const passed = checks.filter((k) => k.status === "pass").length;
-  const notApplicable = checks.length - passed - failed.length;
+  // Not a failure: something not set up yet that the check fails on later.
+  const toDo = checks.filter((k) => k.status === "to_do").length;
+  const notApplicable = checks.length - passed - failed.length - toDo;
   const facts = [
     `${count(checks.length, "check")}: ${passed} pass, ${failed.length} fail` +
+      (toDo > 0 ? `, ${toDo} ${toDo === 1 ? "is" : "are"} to do` : "") +
       (notApplicable > 0 ? `, ${notApplicable} ${notApplicable === 1 ? "does" : "do"} not apply.` : "."),
   ];
   if (agentWork === "refused") {
@@ -268,13 +271,15 @@ function checksItem(c: SetupChecklist): ChecklistItem {
   return {
     key: "checks",
     title: "The deployment's own checks",
-    state: agentWork === "refused" ? "attention" : failed.length > 0 ? "to_do" : "done",
+    state: agentWork === "refused" ? "attention" : failed.length > 0 || toDo > 0 ? "to_do" : "done",
     facts,
     ...(failed.length > 0
       ? {
           next: `${CONFIG_OWNER} puts these right. They are settings in its config file and its environment, and each failed check below says which.`,
         }
-      : {}),
+      : toDo > 0
+        ? { next: "Nothing has failed. Each check below that is to do says what is not set up yet and who sets it up." }
+        : {}),
   };
 }
 
@@ -426,7 +431,14 @@ function mandatesItem(c: SetupChecklist): ChecklistItem {
     const waiting = mandate.running ? "" : " It is not running: its budget is spent, or it is waiting for one.";
     return `${m.title}${short}: set up with a budget of ${owlsText(mandate.budget_owls)}${daily}.${waiting}`;
   });
-  const ready = each.every(({ mandate }) => mandate && mandate.budget_owls > 0 && mandate.running);
+  // The deployment's own check looks at every label, the ones the reader
+  // does not read among them, by name only. Where it is to do (a label with
+  // none that holds nothing yet) or fails, its sentence is shown here too,
+  // so the label is on this item's list before material arrives.
+  const check = c.preflight?.checks.find((k) => k.name === "standing_mandates");
+  const checkOpen = check?.status === "to_do" || check?.status === "fail";
+  if (check && checkOpen) facts.push(check.message);
+  const ready = each.every(({ mandate }) => mandate && mandate.budget_owls > 0 && mandate.running) && !checkOpen;
   const missing = each.some(({ mandate }) => !mandate);
   return {
     key: "standing_mandates",
@@ -438,7 +450,9 @@ function mandatesItem(c: SetupChecklist): ChecklistItem {
       : {
           next: missing
             ? "An administrator sets it up. No agent work runs unless a mandate pays for it."
-            : "An administrator adds to the budget, or anyone who holds the permission to fund backs the mandate.",
+            : checkOpen
+              ? "An administrator who reads the label sets one up there, unless the label will hold only work someone asks for and pays for."
+              : "An administrator adds to the budget, or anyone who holds the permission to fund backs the mandate.",
         }),
     href: "/admin/owls#standing-mandates",
     link: "Owls",

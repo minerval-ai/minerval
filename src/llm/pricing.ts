@@ -40,6 +40,13 @@ interface ModelRates {
   cacheReadMultiplier?: number;
   /** Multiple of the input rate charged for a cache WRITE. Default 1.25. */
   cacheWriteMultiplier?: number;
+  /**
+   * Higher rates for a request whose prompt is longer than `overTokens`,
+   * where the vendor prices by prompt length. The prompt counts every input
+   * token: uncached input, cache reads and cache writes. The cache
+   * multipliers apply to these rates as to the base ones.
+   */
+  longPrompt?: { overTokens: number; inputPerMtok: number; outputPerMtok: number };
 }
 
 /** Pre-5.6 OpenAI models bill cache writes at zero. */
@@ -83,6 +90,14 @@ const MODEL_RATES: Record<string, ModelRates> = {
   // target and sits in historical usage rows.
   "claude-sonnet-5": { inputPerMtok: 3, outputPerMtok: 15 },
   "claude-sonnet-4-6": { inputPerMtok: 3, outputPerMtok: 15 },
+  // Haiku 5.5 is priced by prompt length: $0.10/$0.50 for a prompt of up to
+  // 100,000 tokens, $0.50/$2.50 above, with the default 0.1×/1.25× cache
+  // multipliers on either (Anthropic's pricing page, 2026-11).
+  "claude-haiku-5-5": {
+    inputPerMtok: 0.1,
+    outputPerMtok: 0.5,
+    longPrompt: { overTokens: 100_000, inputPerMtok: 0.5, outputPerMtok: 2.5 },
+  },
   "claude-haiku-4-5": { inputPerMtok: 1, outputPerMtok: 5 },
 
   // --- OpenAI (src/llm/providers/openai.ts) --------------------------------
@@ -270,14 +285,18 @@ export function costMicroUsd(model: string, usage: UsageTokens): number {
   const readMultiplier = rates.cacheReadMultiplier ?? DEFAULT_CACHE_READ_MULTIPLIER;
   const writeMultiplier =
     rates.cacheWriteMultiplier ?? DEFAULT_CACHE_WRITE_MULTIPLIER;
+  const promptTokens =
+    usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheCreationTokens ?? 0);
+  const { inputPerMtok, outputPerMtok } =
+    rates.longPrompt && promptTokens > rates.longPrompt.overTokens ? rates.longPrompt : rates;
   const usd =
-    (usage.inputTokens / 1_000_000) * rates.inputPerMtok +
-    (usage.outputTokens / 1_000_000) * rates.outputPerMtok +
+    (usage.inputTokens / 1_000_000) * inputPerMtok +
+    (usage.outputTokens / 1_000_000) * outputPerMtok +
     ((usage.cacheReadTokens ?? 0) / 1_000_000) *
-      rates.inputPerMtok *
+      inputPerMtok *
       readMultiplier +
     ((usage.cacheCreationTokens ?? 0) / 1_000_000) *
-      rates.inputPerMtok *
+      inputPerMtok *
       writeMultiplier;
   return Math.round(usd * 1_000_000);
 }

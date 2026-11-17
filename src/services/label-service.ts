@@ -2,6 +2,7 @@ import { enforcementLastKnown } from "../db/clearance.js";
 import { currentReadClearance, rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { getUsageContext, runAtLabel } from "../llm/usage-context.js";
+import { membersOnly } from "../permissions.js";
 
 /**
  * Whether `public` is the only label this deployment has: no row in `labels`
@@ -219,6 +220,31 @@ const quotedList = (labels: readonly string[]): string => {
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
 };
 
+/**
+ * What `public` is for on a members-only deployment (#1093). The stored
+ * description was written by the migration that made the label
+ * (0121_labels.sql) in the public graph's words, "Readable by anyone.",
+ * which on a members-only deployment is wrong: there `public` is the
+ * members' common label, and a visitor who is not signed in is served
+ * nothing (src/permissions.ts). It is replaced where it is shown, not in the
+ * row, so the public graph keeps its own words and no migration is needed.
+ *
+ * It says what does leave, because it does: a provider PROVIDER_LABELS does
+ * not name is cleared for `public` (src/provider-labels.ts), so text at
+ * `public` goes to every model provider and outside service unless whoever
+ * runs the deployment says otherwise, and a member may publish it or show
+ * it outside (docs/the-gate.md, docs/showing-a-page.md).
+ */
+export const MEMBERS_PUBLIC_DESCRIPTION =
+  "Every member of this deployment reads it, and nobody outside reads what is filed at it unless it " +
+  "is published or shown outside. Text at it is still sent to the deployment's model providers and " +
+  "outside services, which are all cleared for it unless whoever runs the deployment says otherwise.";
+
+/** A label's description as it is shown: the stored one, but for `public` on a members-only deployment. */
+export function shownLabelDescription(name: string, stored: string): string {
+  return name === PUBLIC_LABEL && membersOnly() ? MEMBERS_PUBLIC_DESCRIPTION : stored;
+}
+
 /** Who reads material filed at a label, in words (the `who_reads` of a ChoosableLabel). */
 export function whoReads(label: Pick<ChoosableLabel, "name" | "also_read_from" | "also_read_from_others">): string {
   if (label.name === PUBLIC_LABEL) {
@@ -270,7 +296,7 @@ export async function choosableLabels(): Promise<ChoosableLabel[]> {
       };
       return {
         ...facts,
-        description: row.description,
+        description: shownLabelDescription(name, row.description),
         reads: row.reads.filter((r) => r !== name).sort(),
         read_by_everyone: name === PUBLIC_LABEL,
         who_reads: whoReads(facts),

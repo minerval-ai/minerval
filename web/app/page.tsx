@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { FLAGSHIP_ID } from "@/lib/fixtures";
 import { apiConfigured } from "@/lib/api";
-import { loadClaim, loadFeatures } from "@/lib/data";
+import { loadClaim, loadDeploymentFront, loadFeatures, type DataSource } from "@/lib/data";
+import type { DeploymentFront } from "@/lib/deployment-front";
+import { membersOnly } from "@/lib/members";
 import { TERRITORIES, territoryHref } from "@/lib/territories";
+import type { ClaimDetail } from "@/lib/types";
+import { topicHref } from "@/components/Topics";
 import { SearchInput } from "@/components/home/SearchInput";
 import { Surfaces } from "@/components/home/Surfaces";
 import styles from "@/components/home/home.module.css";
@@ -32,12 +36,30 @@ const LIVE_FLAGSHIP_ID = "dc02e01f-ce69-4dbe-ba36-ed0e2e90d071"; // scalable ove
 const FLAGSHIP =
   process.env.FLAGSHIP_CLAIM_ID ?? (apiConfigured() ? LIVE_FLAGSHIP_ID : FLAGSHIP_ID);
 
+// A members-only deployment (lib/members.ts, #1092) is not public Minerval:
+// its home page names none of the curated territories above, suggests none of
+// public Minerval's claims, and opens its map on no hand-picked id. What it
+// shows is read from its own graph as the reader (loadDeploymentFront): its
+// most-used topics, and the flagship chosen by the rule in
+// lib/deployment-front.ts. FLAGSHIP_CLAIM_ID still repoints the map there, as
+// an operator's own choice; the read of it is the reader's like any other.
+// Nothing on the public graph changes.
+
 export default async function Home() {
-  const [{ detail, source }, features] = await Promise.all([loadClaim(FLAGSHIP), loadFeatures()]);
+  const members = membersOnly();
+  const front = members ? await loadDeploymentFront() : null;
+  const flagship = front ? (process.env.FLAGSHIP_CLAIM_ID ?? front.flagship?.id) : FLAGSHIP;
+  const [{ detail, source }, features] = await Promise.all([
+    flagship
+      ? loadClaim(flagship)
+      : Promise.resolve({ detail: null as ClaimDetail | null, source: "live" as DataSource }),
+    loadFeatures(),
+  ]);
 
   return (
     <div>
-      {/* hero: one line, one search box */}
+      {/* hero: one line, one search box (a members-only deployment's own below) */}
+      {front ? <DeploymentHero front={front} /> : (
       <div className={styles.hero}>
         <h1 className={styles.heroTitle}>
           A new constitution of knowledge
@@ -73,17 +95,37 @@ export default async function Home() {
           propose, contribute and commission work with your account.
         </p>
       </div>
+      )}
 
       {/* what's built on the graph: 01 map · 02 extension · 03 MCP & API
           (the extension's tab only where this deployment has the extension) */}
-      <Surfaces detail={detail} source={source} features={features} />
+      <Surfaces
+        detail={detail}
+        source={source}
+        features={features}
+        emptyMapNote={
+          members
+            ? "The map opens on the most important node you can read here once one has been assessed."
+            : undefined
+        }
+      />
 
       {/* how it works: the docs triptych closes the page */}
       <section className={styles.section}>
         <h2>How Minerval works</h2>
         <p style={{ color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".92rem", maxWidth: "40rem", marginTop: ".4rem" }}>
-          The graph is maintained by LLM administrators under a public constitution. Every
-          decision carries a reasoning trace, and every trace is open to challenge.
+          {members ? (
+            <>
+              This deployment&rsquo;s graph is maintained by LLM administrators under
+              Minerval&rsquo;s constitution. Every decision carries a reasoning trace, and every
+              trace is open to challenge by the members who may read it.
+            </>
+          ) : (
+            <>
+              The graph is maintained by LLM administrators under a public constitution. Every
+              decision carries a reasoning trace, and every trace is open to challenge.
+            </>
+          )}
         </p>
         <div className={styles.triptych}>
           <Link className={styles.panelLink} href="/docs/constitution">
@@ -116,6 +158,52 @@ export default async function Home() {
           </Link>
         </div>
       </section>
+    </div>
+  );
+}
+
+// The hero of a members-only deployment (#1092): what this deployment holds,
+// as far as the reader may read it, and how its graph grows while it holds
+// nothing yet. Every name on it comes from the deployment's own graph.
+function DeploymentHero({ front }: { front: DeploymentFront }) {
+  return (
+    <div className={styles.hero}>
+      <h1 className={styles.heroTitle}>
+        A new constitution of knowledge
+      </h1>
+      <p className={styles.heroLede}>
+        A private deployment of Minerval: claims and questions, assessed and maintained by AI
+        administrators, read only by its signed-in members, each as far as their labels reach.
+      </p>
+      <form className={styles.search} role="search" action="/claims" method="get">
+        <SearchInput placeholder="Search this deployment’s claims and questions" />
+      </form>
+      {/* coverage caption: the deployment's own topics (GET /tags), most-used
+          first, counted over what the reader may read. None until it has some. */}
+      {front.topics.length > 0 ? (
+        <p className={styles.coverage}>
+          Topics here so far:{" "}
+          {front.topics.map((t, i) => (
+            <span key={t.slug}>
+              {i > 0 && " · "}
+              <Link href={topicHref(t.slug)}>{t.name}</Link>
+            </span>
+          ))}
+          . The graph grows as this deployment&rsquo;s material is read; a search outside these
+          topics may miss for now.
+        </p>
+      ) : (
+        <p className={styles.coverage}>
+          Nothing you can read here has a topic yet. This deployment&rsquo;s graph grows from the
+          sources its members add and the mandates they fund: start from{" "}
+          <Link href="/mandates">the mandates</Link> or <Link href="/claims">propose a claim</Link>,
+          and see <Link href="/docs/running-a-private-graph">running a private graph</Link>.
+        </p>
+      )}
+      <p className={styles.coverage}>
+        Or <Link href="/ask">ask the Assistant</Link>, which reads this deployment&rsquo;s graph for
+        you and can propose, contribute and commission work with your account.
+      </p>
     </div>
   );
 }

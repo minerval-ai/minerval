@@ -8,7 +8,7 @@
  * the database is reached.
  *
  * They are written as the others are: plain functions of facts gathered
- * first, each answering pass, fail or not applicable with a sentence for
+ * first, each answering pass, fail, to do or not applicable with a sentence for
  * whoever is installing. A setting a deployment has not used is not
  * applicable, never a failure: nothing here asks a deployment to turn
  * something on.
@@ -44,7 +44,7 @@ import { PUBLIC_LABEL } from "./labels.js";
 import { unpricedConfiguredModels } from "./llm/pricing.js";
 import { checkSandbox, type SandboxCheck } from "./services/sandbox-client.js";
 
-export type DeploymentOutcome = { status: "pass" | "fail" | "not_applicable"; message: string };
+export type DeploymentOutcome = { status: "pass" | "fail" | "to_do" | "not_applicable"; message: string };
 
 /** What a path a setting names is, as this process finds it. */
 export interface PathFacts {
@@ -64,8 +64,13 @@ export interface DeploymentTables {
   publicActsHolders: number;
   /** The role the tables' owner connects as, and whether it is a superuser. */
   owner: { role: string; superuser: boolean };
-  /** For each label: whether it holds nodes or judgments of the deployment's own (what upkeep is paid for), and whether a General mandate is set up there. */
-  labels: Array<{ label: string; material: boolean; general: boolean }>;
+  /**
+   * For each label: whether it holds nodes or judgments of the deployment's
+   * own (what upkeep is paid for), whether it holds anything at all yet
+   * (`held`: a source, a node or a mandate), and whether a General mandate
+   * is set up there.
+   */
+  labels: Array<{ label: string; material: boolean; held: boolean; general: boolean }>;
   /** For each label with a connection that is on: how many, and how many name a credential variable that is not set. */
   connections: Array<{ label: string; on: number; credentialUnset: number }>;
   /** File sets that are on. */
@@ -96,6 +101,7 @@ export interface DeploymentCheckFacts {
 const pass = (message: string): DeploymentOutcome => ({ status: "pass", message });
 const fail = (message: string): DeploymentOutcome => ({ status: "fail", message });
 const notApplicable = (message: string): DeploymentOutcome => ({ status: "not_applicable", message });
+const toDo = (message: string): DeploymentOutcome => ({ status: "to_do", message });
 
 const members = (config: Config) => config.reads === "members";
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -263,9 +269,9 @@ function checkUsageReport(facts: DeploymentCheckFacts): DeploymentOutcome {
   }
   if (config.usageReportUrl) {
     if (!config.usageReportApiKey) {
-      return fail("usage_report.url is set and USAGE_REPORT_API_KEY is not, so reports are prepared and none can be sent. Set the key in the environment: an API key of the organization's account on the public graph.");
+      return fail("usage_report.url is set and USAGE_REPORT_API_KEY is not, so reports are prepared and none can be sent. Set the key in the environment: an API key of the organization's account with Minerval.");
     }
-    return pass(`Usage is reported to ${config.usageReportUrl}: one total of owls spent for each day, and nothing about what the work was on.${from}`);
+    return pass(`Usage is reported privately to ${config.usageReportUrl}, for billing: one total of owls spent for each day, and nothing about what the work was on.${from}`);
   }
   return pass(`Usage is metered and no destination is set (usage_report.url or usage_report.dir), so reports are prepared and kept until one is.${from}`);
 }
@@ -289,7 +295,20 @@ function checkStandingMandates(facts: DeploymentCheckFacts): DeploymentOutcome {
   if (withOne.length === 0) {
     return fail("No General mandate is set up, so upkeep and audits have no mandate to pay for them. An administrator sets one up (the owls page).");
   }
-  return pass(`A General mandate is set up at ${quoted(withOne)}${holding.length > 0 ? ", which is every label that holds nodes or judgments of this deployment's own" : ""}.`);
+  const setUp = `A General mandate is set up at ${quoted(withOne)}${holding.length > 0 ? ", which is every label that holds nodes or judgments of this deployment's own" : ""}.`;
+  // Lenient as above: a label with no General mandate fails only once it
+  // holds nodes or judgments, since one that holds only work asked for from
+  // below needs none. But a label that holds nothing yet is the moment its
+  // administrator is deciding about it, so it is listed as to do, not
+  // passed over in silence. A label that holds something and no material
+  // is the lenient case itself, and passes.
+  const empty = tables.labels.filter((l) => !l.general && !l.held).map((l) => l.label);
+  if (empty.length > 0) {
+    return toDo(
+      `${setUp} None is set up at ${quoted(empty)}, which ${empty.length === 1 ? "holds" : "hold"} nothing yet. Upkeep and audits at a label are paid by a General mandate at that label, since a mandate's work runs at its label, and this check fails once nodes or judgments are held at a label with none. An administrator who reads the label sets one up (the owls page). None is needed at a label that will hold only work someone asks for and pays for.`
+    );
+  }
+  return pass(setUp);
 }
 
 // ---------------------------------------------------------------------------
@@ -532,7 +551,7 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
             (SELECT count(*) FROM file_sets WHERE enabled)::int AS file_sets`,
     [config.publicActsBy]
   );
-  const labels = await rawQuery<{ label: string; material: boolean; general: boolean }>(
+  const labels = await rawQuery<{ label: string; material: boolean; held: boolean; general: boolean }>(
     // What a General mandate pays for is upkeep: curation, audits and
     // fresh passes on nodes and judgments. So the question is whether the
     // label holds nodes or judgments of its own. A label that holds only
@@ -544,6 +563,12 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
              OR EXISTS (SELECT 1 FROM quantity_estimates v WHERE v.sensitivity_label = l.name)
              OR EXISTS (SELECT 1 FROM question_assessments v WHERE v.sensitivity_label = l.name)
              OR (l.name = 'public' AND EXISTS (SELECT 1 FROM sources s WHERE s.sensitivity_label = l.name AND s.origin = 'local'))) AS material,
+            -- Whether anything is in at the label yet: a source, a node or
+            -- a mandate. A label that holds nothing is still being decided
+            -- about, and its missing General mandate is a thing to do.
+            (EXISTS (SELECT 1 FROM sources s WHERE s.sensitivity_label = l.name)
+             OR EXISTS (SELECT 1 FROM claims c WHERE c.sensitivity_label = l.name)
+             OR EXISTS (SELECT 1 FROM grants g WHERE g.sensitivity_label = l.name)) AS held,
             EXISTS (SELECT 1 FROM grants g
                      WHERE g.is_platform AND g.status = 'active' AND g.mandate->>'seed_key' = $1
                        AND g.sensitivity_label = l.name) AS general

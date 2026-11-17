@@ -258,7 +258,14 @@ as `public`.
 `GET /labels/mine` returns what a page needs to offer the choice: the
 labels the person may read, each with its description, what else its
 readers read, and who reads it (`who_reads`, in words). A label that reads
-one of theirs and that they may not read is counted and not named.
+one of theirs and that they may not read is counted and not named. On a
+members-only deployment `public` is described in that deployment's terms,
+here and in `GET /labels`, not by the row's stored "Readable by anyone.",
+which is the public graph's: every member reads it, nobody outside reads
+what is filed at it unless it is published or shown outside, and its text
+still goes to the model providers and outside services, which are cleared
+for `public` unless whoever runs the deployment says otherwise
+(`shownLabelDescription` in `src/services/label-service.ts`).
 
 The mandate drafted in a granting conversation takes the conversation's
 label, and its Grantmaker runs there. A conversation with the Assistant
@@ -617,7 +624,14 @@ made against one judgment.
 
 The account page shows no way to buy owls where `entitlement.owls_created_here`
 is true, gives what an owl is there in the API's words
-(`entitlement.owls_statement`), and says what the person holds.
+(`entitlement.owls_statement`), and says what the person holds. Every other
+page that tells a person their balance cannot cover something (the `/ask`
+notice at a balance of 0, the decomposition form, the web app's refusals of
+an order, a proposal or a contribution) says "Buy owls" only where owls are
+sold. Where they are created it says that an administrator, a holder of
+`administer`, creates owls into a person's balance under Administration →
+Owls, with a link there for a viewer who holds it and to People and
+permissions for one who does not (`web/lib/owl-source.ts`).
 
 To run one locally: set `READS=members` and an `API_KEYS` entry on the API
 (there is no dev bypass), the same key and `READS=members` on the web app,
@@ -772,8 +786,9 @@ mandate of a label it reads.
 ### What a deployment reports
 
 A members-only deployment on the metered price reports the owls its runs
-spent each day to the public graph: one total, and never which claims the
-work was for. docs/usage-report.md.
+spent each day privately to Minerval, for billing: one total, and never
+which claims the work was for. It is recorded against the organization's
+account and not published. docs/usage-report.md.
 
 ## The per-token meter
 
@@ -1079,7 +1094,7 @@ uses the stream and keeps reading the conversation beside it, so a stream
 that drops or cannot open costs only the speed.
 
 **Names.** A conversation is named from its first message by a small
-model (`ASSISTANT_TITLE_MODEL`, Claude Haiku by default, so a
+model (`ASSISTANT_TITLE_MODEL`, Claude Haiku 5.5 by default, so a
 conversation's text goes to one provider), in the
 background while the Assistant starts on the reply: two to six words in
 place of the message's opening words, which stand in until the name

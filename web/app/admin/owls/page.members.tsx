@@ -31,6 +31,17 @@ export const dynamic = "force-dynamic";
 
 const owlWord = (n: number) => (n === 1 ? "owl" : "owls");
 
+// A mandate as the menu of where created owls go names it. A deployment holds
+// a General mandate at each label, all titled alike, and creating owls cannot
+// be taken back from here, so each is named with its label and its budget.
+// The API lists only the mandates at labels the reader reads (the database's
+// clearance holds the rest back), so none here is at a label withheld from
+// them.
+function mandateChoice(m: MandateSummaryView): string {
+  const name = m.label ? `${m.title} (${m.label})` : m.title;
+  return `${name}, budget ${owls(m.budget_owls)} ${owlWord(m.budget_owls)}, ${owls(m.spent_owls)} spent`;
+}
+
 export default async function OwlsPage() {
   const who = await viewer();
   if (!who) return null;
@@ -149,7 +160,7 @@ export default async function OwlsPage() {
                           <optgroup label="A mandate's budget">
                             {openMandates.map((m) => (
                               <option key={m.id} value={`mandate:${m.id}`}>
-                                {m.title}
+                                {mandateChoice(m)}
                               </option>
                             ))}
                           </optgroup>
@@ -371,6 +382,7 @@ export default async function OwlsPage() {
             or its audits. The labels listed are the ones you read.
           </p>
         )}
+        {/* Each is anchored by its label, for the labels page to link to; with no by_label the only label is public. */}
         {standing
           .flatMap((s) =>
             s.by_label
@@ -378,7 +390,11 @@ export default async function OwlsPage() {
               : [{ ...s, label: null as string | null }]
           )
           .map((m) => (
-          <div className="admin-item" key={`${m.name}:${m.label ?? ""}`}>
+          <div
+            className="admin-item"
+            key={`${m.name}:${m.label ?? ""}`}
+            id={`standing-mandate-${m.label ?? "public"}`}
+          >
             <div className={`admin-state admin-state-${m.mandate ? (m.mandate.budget_owls > 0 ? "done" : "to_do") : "to_do"}`}>
               {m.mandate ? (m.mandate.budget_owls > 0 ? "Set up" : "No budget") : "Not set up"}
             </div>
@@ -440,8 +456,8 @@ export default async function OwlsPage() {
         ))}
         {createdHere && (
           <p className="acct-note">
-            What this deployment reports of its owl spend to the public graph, and what it never
-            reports, is on <Link href="/admin/usage-report">the usage report page</Link>
+            What this deployment reports of its owl spend privately to Minerval for billing, and what
+            it never reports, is on <Link href="/admin/usage-report">the usage report page</Link>
             {administers ? "." : ", which administrators read."}
           </p>
         )}

@@ -76,7 +76,8 @@ afterAll(() => {
 // An Anthropic model that searches the web inside the turn, one that does
 // not (its web_search is the loop's own tool), and the cheap tier on OpenRouter.
 const SONNET = MODELS.sonnet;
-const HAIKU = MODELS.haiku;
+// Haiku 4.5: Haiku 5.5 (MODELS.haiku) searches inside the turn.
+const HAIKU = "claude-haiku-4-5-20251001";
 const CHEAP = OPENROUTER_MODELS.flash;
 const LOCAL = "endpoint:local/meta-llama/Llama-3.3-70B-Instruct";
 

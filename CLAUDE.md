@@ -18,6 +18,8 @@ Read a node's current judgment through the `*_in_force` views (`src/db/schema.ts
 
 Call a model only through `src/llm/client.ts`, from inside a run that `withAgent` opened: that is what puts the call on the run log. `tests/unit/llm/logged-runs.test.ts` fails on a file that calls the client without opening a run, reaches a provider around the client, or keeps work off the log with `untraced()`, until the file is listed there with its reason. Where the log is kept as a record (`RUN_LOG_MODE=record`) the provider seam refuses a call with no run open. See docs/run-log.md, "No model call outside a run".
 
+A model named by family alone ("Opus", "Haiku", "Fable", ...) means the newest of that family: newer models are as a rule better and cheaper. Defaults and pins take the newest unless a written reason says otherwise; check the provider's live model list, not memory.
+
 ## Constraints on agents
 
 Agents, like anyone, need to know their affordances and the constraints they work under.

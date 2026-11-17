@@ -19,7 +19,7 @@ const seg = pathSegment;
 
 export interface PreflightCheck {
   name: string;
-  status: "pass" | "fail" | "not_applicable";
+  status: "pass" | "fail" | "to_do" | "not_applicable";
   /** Whether a fail here stops agent work on this deployment. */
   blocking: boolean;
   /** One sentence, the API's own. */

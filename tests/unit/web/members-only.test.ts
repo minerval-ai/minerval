@@ -217,6 +217,35 @@ describe("in a members-only deployment", () => {
     expect((await data.loadSourcePage("anything")).page).toBeNull();
     expect((await data.loadArgument("anything")).page).toBeNull();
     expect((await data.loadClaimEvents("inflation-2022")).events).toBeNull();
+    expect(await data.loadDeploymentFront()).toEqual({ topics: [], flagship: null });
+  });
+
+  it("the home page's front is read from the deployment's own graph, as the reader (#1092)", async () => {
+    const { data } = await load("members");
+    h.session = { externalId: "oidc:alice" };
+    const tag = { id: ID, slug: "q3-forecast", name: "Q3 forecast", description: "", claim_count: 4 };
+    const node = (id: string, importance: number) => ({
+      id, text: id, kind: "claim", claim_type: "empirical", state: "active", importance,
+      assessment_status: "supported", assessment_confidence: 0.7, prize_micro_usd: null, checked: null,
+    });
+    fetchMock.mockImplementation(async (url: string) =>
+      url.startsWith(`${BASE}/tags`)
+        ? answer(200, { tags: [tag] })
+        : answer(200, { results: [node("a", 0.4), node("b", 0.9), node("c", 0.9)], next_cursor: null }),
+    );
+    const front = await data.loadDeploymentFront();
+    expect(front.topics.map((t) => t.slug)).toEqual(["q3-forecast"]);
+    expect(front.flagship?.id).toBe("b");
+    const urls = fetchMock.mock.calls.map(([u]) => u as string).sort();
+    expect(urls).toEqual([`${BASE}/claims?assessed=assessed&limit=100`, `${BASE}/tags?limit=8`]);
+    for (const [, init] of fetchMock.mock.calls as [string, Init][]) {
+      expect(headersOf(init)["x-acting-user"]).toBe("oidc:alice");
+    }
+
+    // A failed read shows nothing of its own, and nothing of public Minerval's.
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    fetchMock.mockResolvedValue(answer(500, {}));
+    expect(await data.loadDeploymentFront()).toEqual({ topics: [], flagship: null });
   });
 });
 

@@ -162,7 +162,7 @@ docker compose logs -f api`}</Code>
       </div>
       <p><code>list_features</code> (<code>GET /setup/features</code>) reports which are on, and it is how the web app and outside agents learn it. Where the deployment holds private material and its run log is best-effort, the <code>features</code> check fails while the extension is on, because a best-effort log leaves out the extension's page analysis. The Lean checker is not in the package, so with mathematics on its machine checks are absent.</p>
       <h2 id="checks">The deployment's own checks</h2>
-      <p>The preflight is a list of named checks, each answering pass, fail or not applicable with one sentence. Read it on the setup checklist, or from the machine:</p>
+      <p>The preflight is a list of named checks, each answering pass, fail, to do or not applicable with one sentence. To do is not a failure: it is something not set up yet that a check will fail on later. Read it on the setup checklist, or from the machine:</p>
       <Code label="Shell">{`docker compose exec api npm run preflight`}</Code>
       <p>It exits non-zero when any check fails. Once a label besides <code>public</code> is defined, no agent work starts until six blocking checks pass: <code>database</code>, <code>run_log</code>, <code>provider_labels</code>, <code>reports_stay_inside</code>, <code>model_prices</code> and <code>sandbox_confinement</code>. The API still serves meanwhile, logs which check failed, and looks again every minute. <code>GET /setup/preflight</code> serves the same report to whoever holds the operator key.</p>
       <h2 id="mirror">Mirroring the public graph</h2>
@@ -215,7 +215,7 @@ docker compose logs -f api`}</Code>
       <p>On the public graph a package is checked against the registered key, kept as signed, and the first one for a node files an ordinary contribution, reviewed like any other and charged as a source submission (refunded if not admitted). Once admitted it is a source on the node, weighed by that node's Steward. It gets no special trust. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/published-pages.md">docs/published-pages.md</a> has the package format and the check.</p>
       <h2 id="not-yet">What the package does not do yet</h2>
       <ul>
-        <li>No TLS, no published images, no backups: put a proxy in front, build from the repository, and back up the Docker volumes yourself.</li>
+        <li>No TLS, no published images, no backups: put a proxy in front, build from the repository, and back up the Docker volumes yourself. Back up <code>deploy/.env</code> and <code>deploy/api.env</code> too, somewhere off the machine such as a password manager: they are in neither volume, the restored database needs the owner&rsquo;s password it was run with (or a new one set inside it), and a lost <code>PUBLISH_SIGNING_KEY</code> breaks the record of what you published. The other secrets can be made or issued again.</li>
         <li>One machine and one API process; more than one has not been tried.</li>
         <li>No model server and no identity provider: you bring both.</li>
         <li>No fully offline mode: open-web search, page reading and embeddings cannot be switched off yet.</li>

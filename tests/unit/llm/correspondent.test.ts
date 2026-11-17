@@ -5,8 +5,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
  * carries the readers, the brief, the scope, the budget and the mandate's
  * room, and the window of changes since the last update (those an earlier
  * quiet run read marked as seen); the toolset is the graph reads plus the
- * same list_graph_changes MCP serves, and nothing an outside client lacks
- * beyond publishing and the workspace; publish_update checks its items
+ * same list_graph_changes MCP serves, the web (search, a page in full, a
+ * paper's figures and source), findings, publishing and the workspace; publish_update checks its items
  * against the window, computes "not covered" itself, and takes one update a
  * run; queued inputs are consumed and the run returns where the cursor
  * moves. The tool loop and the services are mocked.
@@ -41,7 +41,7 @@ vi.mock("../../../src/db/client.js", () => ({
   }),
 }));
 vi.mock("../../../src/config.js", () => ({
-  loadConfig: () => ({ correspondentModel: "claude-sonnet-5-5", monitorMaterialCredenceDelta: 0.1, publicWebBaseUrl: "https://minerval.ai" }),
+  loadConfig: () => ({ correspondentModel: "claude-sonnet-5-5", monitorMaterialCredenceDelta: 0.1, publicWebBaseUrl: "https://minerval.ai", elicitApiKey: "", pangramApiKey: "" }),
 }));
 vi.mock("../../../src/llm/usage-context.js", () => ({
   runBudget: () => null,
@@ -177,11 +177,17 @@ describe("runCorrespondent", () => {
     expect(read).not.toContain("sensitivity_label");
   });
 
-  it("reads with the graph reads, the change stream and SQL outside clients have, plus publishing and the spend tools", async () => {
+  it("reads the graph, its change stream and the web, and has publishing, findings and the spend tools", async () => {
     await runCorrespondent({ correspondentId: CORR });
     expect(state.loop!.tools.map((t) => t.name).sort()).toEqual(
       [
         "raise_issue",
+        "note_finding",
+        "search_findings",
+        "web_search",
+        "read_page",
+        "view_image",
+        "read_arxiv_source",
         "search_claims",
         "get_claim",
         "get_decomposition",

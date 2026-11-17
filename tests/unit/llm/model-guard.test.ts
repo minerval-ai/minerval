@@ -145,10 +145,13 @@ describe("model guard: every reachable model resolves, prices, and behaves", () 
   });
 
   it("prices dated snapshot IDs through their family prefix", () => {
-    // The registry's dated Haiku snapshot must resolve to Haiku rates, not the
-    // fallback — prefix matching is what makes new snapshots price correctly.
+    // A dated Haiku snapshot must resolve to Haiku rates, not the fallback —
+    // prefix matching is what makes new snapshots price correctly.
+    expect(hasExplicitRates("claude-haiku-4-5-20251001")).toBe(true);
+    expect(ratesForModel("claude-haiku-4-5-20251001").inputPerMtok).toBe(1);
+    // The registry's Haiku (5.5, an exact id) has its own entry.
     expect(hasExplicitRates(MODELS.haiku)).toBe(true);
-    expect(ratesForModel(MODELS.haiku).inputPerMtok).toBe(1);
+    expect(ratesForModel(MODELS.haiku).inputPerMtok).toBe(0.1);
   });
 
   it("meters unknown models at the top-tier fallback, never free", () => {

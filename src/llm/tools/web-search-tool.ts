@@ -38,13 +38,17 @@ const CLIENT_SEARCH_RESULTS = 8;
 
 /**
  * Whether `model` runs the Anthropic server tool. The `_20260209` variant
- * runs through code execution, which the API serves on the Claude 4.6+
- * families; an Anthropic id outside them takes the client-side tool like
- * any other provider's model.
+ * filters hits through code execution before they reach the context, and
+ * Anthropic serves it on Claude 4.6 and later: Fable, Mythos, Opus 4.6+,
+ * Sonnet 4.6+ and Haiku 5.5 (the web search tool's documentation). This is
+ * an ALLOWLIST by family: an Anthropic id outside it (an older Claude, a
+ * future family not yet checked) takes the client-side tool like any other
+ * provider's model, since a server tool a model does not take fails every
+ * request of the run.
  */
 export function anthropicServerWebSearch(model: string): boolean {
   if (resolveProvider(model) !== "anthropic") return false;
-  return /^claude-(fable|mythos|opus-5|opus-4-[6-9]|sonnet-5|sonnet-4-[6-9])/.test(model);
+  return /^claude-(fable|mythos|opus-5|opus-4-[6-9]|sonnet-5|sonnet-4-[6-9]|haiku-5)/.test(model);
 }
 
 export interface WebSearch {

@@ -5,8 +5,10 @@
  * graph:
  *
  *   POST /usage-reports: a private deployment's report of the owls its
- *     runs spent in one closed UTC day, sent under the organization's
- *     account and recorded against it. Nothing is billed from it yet.
+ *     runs spent in one closed UTC day, sent privately under the
+ *     organization's account and recorded against that account alone. It is
+ *     the meter for the metered price; nothing is billed from it yet, and
+ *     nothing reads it back to anyone.
  *
  * The sending side, mounted only in a members-only deployment
  * (server/app.ts):
@@ -41,7 +43,8 @@ export async function usageReportReceivingRoutes(app: FastifyInstance): Promise<
         "owls its agents' runs spent that day, as one total. The body is the report and " +
         "nothing else. The same report sent again changes nothing; a different report for a " +
         "day and revision already recorded is refused, and a correction is sent as the next " +
-        "revision. Recording a report charges nothing.",
+        "revision. The report is recorded privately against the sending account, for billing the " +
+        "metered price; no other account can read it. Recording a report charges nothing yet.",
       body: {
         type: "object",
         required: ["format", "kind", "deployment", "period", "revision", "owls_spent"],
@@ -93,7 +96,7 @@ export async function usageReportSendingRoutes(app: FastifyInstance): Promise<vo
     schema: {
       tags: ["usage"],
       summary:
-        "What this deployment reports to the public graph of its own owl spend: the setting in force, what a report says and never says, and every report exactly as it is sent (administrators)",
+        "What this deployment reports privately to Minerval of its own owl spend, for billing the metered price: the setting in force, what a report says and never says, and every report exactly as it is sent (administrators)",
       querystring: {
         type: "object",
         properties: {

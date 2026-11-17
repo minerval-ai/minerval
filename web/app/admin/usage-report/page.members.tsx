@@ -10,7 +10,7 @@ import { sendUsageReportsAction } from "../actions";
 export const metadata: Metadata = { title: "The usage report · Minerval" };
 export const dynamic = "force-dynamic";
 
-// What this deployment reports to the public graph of its own owl spend
+// What this deployment reports privately to Minerval of its own owl spend
 // (docs/usage-report.md), exactly as the API describes it: what a report
 // says and never says are the API's sentences, and each report is shown as
 // the text that is sent, before it is sent and after.
@@ -28,7 +28,7 @@ export default async function UsageReportPage() {
       <PageHead
         kicker="Administration"
         title="The usage report"
-        lede="On the metered price, a private deployment reports to the public graph the owls its agents' runs spent each day, as one total, because that price is in proportion to it. This page shows everything that leaves the deployment for that purpose."
+        lede="This is billing. On the metered price, the organization pays Minerval toward the public graph this deployment reads, in proportion to the owls its agents' runs spend, so the deployment sends Minerval one total for each day. It goes privately, under the organization's account with Minerval: it is not published, and no other account can see it. On the flat price nothing is reported. This page shows everything that leaves the deployment for this purpose."
       />
       <WorkNav who={who} current="/admin/usage-report" />
 
@@ -100,8 +100,8 @@ function Destination({ destination }: { destination: OutgoingUsageReports["desti
   if (destination.kind === "online") {
     return (
       <p className="acct-prose acct-measure">
-        Reports are sent to <code>{destination.url}</code>, under the organisation&rsquo;s account on
-        the public graph.{" "}
+        Reports are sent privately to <code>{destination.url}</code>, Minerval&rsquo;s server, under
+        the organisation&rsquo;s account with Minerval.{" "}
         {destination.ready
           ? "The key they are sent under is set."
           : "The key they are sent under (USAGE_REPORT_API_KEY) is not set, so nothing can be sent yet."}
@@ -113,7 +113,7 @@ function Destination({ destination }: { destination: OutgoingUsageReports["desti
       <p className="acct-prose acct-measure">
         Each report is written as a file in <code>{destination.directory}</code>, to be handed over.
         A file is the report and nothing else, and whoever hands it over posts it under the
-        organisation&rsquo;s account on the public graph.
+        organisation&rsquo;s account with Minerval.
       </p>
     );
   }
@@ -156,7 +156,7 @@ function Report({ report }: { report: UsageReport }) {
       {report.receipt !== null && report.receipt !== undefined && (
         <details className="acct-asTable">
           <summary>
-            {report.sent_via === "online" ? "What the public graph answered" : "The record of how it left"}
+            {report.sent_via === "online" ? "What Minerval's server answered" : "The record of how it left"}
           </summary>
           <pre className="admin-pre">{JSON.stringify(report.receipt, null, 2)}</pre>
         </details>

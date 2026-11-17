@@ -723,7 +723,7 @@ npm run corpus:property -- fixpoint eggs --baseline=<snapshot>`}</Cmd> },
         body: <p>That the strong model is right. Fidelity is relative: where both are wrong together, it reads as agreement.</p>,
       },
       { title: "Run it", body: <Cmd>{`npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5-5 --profile=production --baseline=<snapshot>
-npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-4-5-20251001 --profile=production`}</Cmd> },
+npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-5-5 --profile=production`}</Cmd> },
     ],
   },
   // ------------------------------------------------------------------ governance

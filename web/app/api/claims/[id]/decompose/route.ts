@@ -5,6 +5,8 @@ import {
   createDecomposition,
   AccountApiError,
 } from "../../../../../lib/account-api";
+import { loadOwlSource } from "../../../../../lib/load-owl-source";
+import { gettingOwlsSentence } from "../../../../../lib/owl-source";
 
 // The fewest owls a decomposition takes; the API holds the same line.
 const MIN_OWLS = 5;
@@ -46,6 +48,15 @@ export async function POST(
     return NextResponse.json(funded, { status: 201 });
   } catch (err) {
     if (err instanceof AccountApiError) {
+      if (err.code === "INSUFFICIENT_OWLS") {
+        // Where owls come from here, so the form sends the reader to buy
+        // them only where they are sold (#1095).
+        const owlSource = await loadOwlSource(session.externalId);
+        return NextResponse.json(
+          { error: `${err.message}. ${gettingOwlsSentence(owlSource)}`, code: err.code, owl_source: owlSource },
+          { status: err.status }
+        );
+      }
       return NextResponse.json(
         { error: err.message, code: err.code },
         { status: err.status }

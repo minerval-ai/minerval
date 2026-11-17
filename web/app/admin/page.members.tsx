@@ -119,15 +119,17 @@ function Item({ item, children }: { item: ChecklistItem; children?: React.ReactN
 }
 
 // The preflight's checks: the ones that failed in full, each with the
-// check's own sentence and what to do about it, and the rest folded away.
+// check's own sentence and what to do about it, then the ones still to do
+// (not failures), and the rest folded away.
 function Checks({ checks }: { checks: PreflightCheck[] }) {
-  const failed = checks.filter((c) => c.status === "fail");
-  const rest = checks.filter((c) => c.status !== "fail");
+  const open = (c: PreflightCheck) => c.status === "fail" || c.status === "to_do";
+  const shown = [...checks.filter((c) => c.status === "fail"), ...checks.filter((c) => c.status === "to_do")];
+  const rest = checks.filter((c) => !open(c));
   return (
     <>
-      {failed.length > 0 && (
+      {shown.length > 0 && (
         <ul className="admin-checks">
-          {failed.map((check) => (
+          {shown.map((check) => (
             <CheckLine key={check.name} check={check} />
           ))}
         </ul>
@@ -135,7 +137,7 @@ function Checks({ checks }: { checks: PreflightCheck[] }) {
       {rest.length > 0 && (
         <details className="acct-asTable">
           <summary>
-            The {rest.length} check{rest.length === 1 ? "" : "s"} that did not fail
+            The {rest.length} check{rest.length === 1 ? "" : "s"} that pass or do not apply
           </summary>
           <ul className="admin-checks">
             {rest.map((check) => (
@@ -151,6 +153,7 @@ function Checks({ checks }: { checks: PreflightCheck[] }) {
 const CHECK_STATUS_WORDS: Record<PreflightCheck["status"], string> = {
   pass: "Passes",
   fail: "Fails",
+  to_do: "To do",
   not_applicable: "Does not apply",
 };
 

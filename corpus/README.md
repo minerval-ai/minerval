@@ -202,7 +202,7 @@ eval-run registry (kind `agreement`).
 ONE agent's model changed, and the two graphs compared:
 
 ```bash
-npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-4-5-20251001 --profile=production
+npm run corpus:swap -- lableak --agent=matcher --model=claude-haiku-5-5 --profile=production
 npm run corpus:swap -- eggs --agent=steward --model=claude-sonnet-5-5 --baseline=<snapshot>   # reuse arm A
 ```
 

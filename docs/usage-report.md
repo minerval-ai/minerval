@@ -1,8 +1,10 @@
 # The usage report
 
-Every private graph pays toward the public graph it reads. By default the price is metered on use: a deployment reports the owls its agents' runs spent, whoever hosts it and whoever runs its models, and pays Minerval in proportion. A flat price for the feed is the alternative, and a deployment on it reports nothing.
+The usage report is billing. Every private graph pays Minerval toward the public graph it reads. By default the price is metered on use: a deployment reports the owls its agents' runs spent, whoever hosts it and whoever runs its models, and pays Minerval in proportion. A flat price for the feed is the alternative, and a deployment on it reports nothing.
 
 The report is one total for one day. It never says which claims, mandates or people the work was for, so the payment shows nothing about what the organization cares about.
+
+**Who receives it and who can read it.** A report is sent privately to Minerval's server (`POST /usage-reports`, for instance at `api.minerval.ai`), under the organization's account with Minerval, and recorded against that account so that Minerval can bill the metered price. It is not published: no route reads a received report back, the mirror feed does not carry it, and no other account can see it (see [Receiving](#receiving)). The pages and messages a deployment shows name Minerval as the recipient, not "the public graph", which an administrator reads as "made public".
 
 One codebase serves both sides. A members-only deployment (`READS=members`) on the metered price sends reports. Every deployment can receive them, which is of use on the public graph. The public graph itself reports to no one: with nothing set, no report is prepared, no worker starts and nothing is sent.
 
@@ -43,8 +45,8 @@ One of two ways, set by the deployment:
 
 | Setting | |
 | --- | --- |
-| `USAGE_REPORT_URL` | The address of the public graph's receiving route, for instance `https://api.minerval.ai/usage-reports` |
-| `USAGE_REPORT_API_KEY` | An API key of the organization's account on the public graph. A secret |
+| `USAGE_REPORT_URL` | The address of the receiving route on Minerval's server, for instance `https://api.minerval.ai/usage-reports` |
+| `USAGE_REPORT_API_KEY` | An API key of the organization's account with Minerval (its account on the public graph). A secret |
 | `USAGE_REPORT_DIR` | A directory. Each report is written there as `usage-report-<day>-r<revision>.json`, to be handed over, for a deployment whose network is restricted |
 | `USAGE_REPORT_FROM` | The first UTC day reported, `YYYY-MM-DD`. Empty by default |
 | `USAGE_REPORT_INTERVAL_SECONDS` | How often the worker runs. Default 3600 |
@@ -62,11 +64,11 @@ curl -X POST https://api.minerval.ai/usage-reports \
   --data-binary @usage-report-2026-11-10-r0.json
 ```
 
-The account that reports is the organization's one account on the public graph, the same account its mirror of the public graph is fetched under.
+The account that reports is the organization's one account with Minerval, the same account it acts on the public graph under and its mirror of the public graph is fetched under. Reporting under it publishes nothing: the report is recorded privately against it.
 
 ## What the administrators read
 
-`GET /usage-reports/outgoing` (`list_usage_reports` on MCP), for holders of `administer`: the price in force, what a report says and what it never says, where reports go, and every report exactly as it is sent, before it is sent and after, with when it was sent, how, and what the public graph answered. On the flat price the same page says that nothing is prepared and nothing is sent.
+`GET /usage-reports/outgoing` (`list_usage_reports` on MCP), for holders of `administer`: the price in force, what a report says and what it never says, where reports go, and every report exactly as it is sent, before it is sent and after, with when it was sent, how, and what Minerval's server answered. On the flat price the same page says that nothing is prepared and nothing is sent.
 
 `POST /usage-reports/outgoing/send`, from a signed-in session, prepares and sends now instead of at the worker's next pass, and takes `recount_from` to recount from a given day.
 
@@ -75,7 +77,9 @@ The sentences it shows are in `src/services/usage-report-service.ts` (`WHAT_IS_S
 
 ## Receiving
 
-`POST /usage-reports`, on every deployment. It takes a report from an authenticated account and records it against that account in `usage_reports_received`, as sent.
+`POST /usage-reports`, on every deployment and of use on Minerval's. It takes a report from an authenticated account and records it against that account in `usage_reports_received`, as sent.
+
+- **Private to the account and to Minerval.** The route answers only with the report's day, revision, hash and when it was received. No other route, page or MCP tool reads `usage_reports_received`, the table is not in the mirror feed (`src/services/mirror-manifest.ts`), and nothing publishes it. Minerval, which runs the server and its database, is the only one to read it, to bill from it once there is a price per owl.
 
 - The same report again is recognized by its hash and changes nothing (`200`, `recorded: false`).
 - A different report for a day and revision already recorded is refused (`409 REPORT_DIFFERS`). A recorded report is not changed; a correction is the next revision.

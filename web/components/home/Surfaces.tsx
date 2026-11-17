@@ -68,11 +68,14 @@ const CAPABILITIES: { title: string; what: string; cost: string; href: string }[
 const VERDICTS = ["verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown"];
 
 export function Surfaces({
-  detail, source, features = ALL_FEATURES_ON,
+  detail, source, features = ALL_FEATURES_ON, emptyMapNote,
 }: {
   detail: ClaimDetail | null;
   source: DataSource;
   features?: Features;
+  // What the map's place says when there is no claim to open on: a
+  // members-only deployment says why in its own terms (#1092).
+  emptyMapNote?: string;
 }) {
   const [tab, setTab] = useState<TabId>("graph");
   const [setup, setSetup] = useState<SetupId>("cc");
@@ -126,7 +129,8 @@ export function Surfaces({
             <GraphView initialDetail={detail} source={source} embed features={features} />
           ) : (
             <p style={{ padding: "2rem", color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".85rem" }}>
-              The map opens once a claim is available. <Link href="/claims">Browse the claims →</Link>
+              {emptyMapNote ?? "The map opens once a claim is available."}{" "}
+              <Link href="/claims">Browse the claims →</Link>
             </p>
           )}
         </div>
