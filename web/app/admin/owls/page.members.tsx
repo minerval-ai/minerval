@@ -3,7 +3,8 @@ import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
 import { OwlMark } from "@/components/OwlMark";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, Notice, can, viewer, when } from "@/components/admin/access";
+import { Notice, can, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { fetchAccount, listMandates, type MandateSummaryView } from "@/lib/account-api";
 import { dateish, owls, words } from "@/lib/account-format";
 import {
@@ -63,7 +64,7 @@ export default async function OwlsPage() {
             : "Owls in this deployment, and the standing mandate."
         }
       />
-      {administers && <AdminNav current="/admin/owls" />}
+      {administers && <WorkNav who={who} current="/admin/owls" />}
 
       {/* ------------------------------------------------ what an owl is here */}
       <section className="acct-section admin-first" id="what">

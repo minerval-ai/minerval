@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, NeedsPermission, Notice, can, viewer } from "@/components/admin/access";
+import { NeedsPermission, Notice, can, viewer } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { dateish } from "@/lib/account-format";
 import {
   fetchGrants,
@@ -66,7 +67,7 @@ export default async function LabelsPage() {
         title="Labels and parties"
         lede="A label says who may read a thing. A party is whoever a source belongs to. Neither is ever removed once defined, because sources, judgments and runs carry them."
       />
-      <AdminNav current="/admin/labels" />
+      <WorkNav who={who} current="/admin/labels" />
 
       <section className="acct-section admin-first" id="labels">
         <div className="acct-head">

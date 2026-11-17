@@ -52,7 +52,7 @@ export default async function FileSetPage({ params }: { params: Promise<{ id: st
         title={set.name}
         lede={set.description || "Whoever added this set gave no description of what it holds."}
       />
-      <WorkNav who={who} current="" />
+      <WorkNav who={who} current={`/file-sets/${id}`} />
       <Notice>{got.notice}</Notice>
 
       <section className="acct-section admin-first" id="facts">

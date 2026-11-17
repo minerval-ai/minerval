@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
+import { NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { fetchConnections, fetchMyLabels, fetchParties } from "@/lib/admin-api";
 import { CONNECTION_STATE_WORDS, count } from "@/lib/admin-words";
 import { addConnectionAction } from "../actions";
@@ -34,7 +35,7 @@ export default async function ConnectionsPage() {
         title="Connections"
         lede="Most of what an organisation knows is in a warehouse, a wiki, a ticket system or a log store, and not in documents someone will upload. A connection points this deployment at an MCP server over one such system, and the agents that weigh evidence are offered the tools you pick from it."
       />
-      <AdminNav current="/admin/connections" />
+      <WorkNav who={who} current="/admin/connections" />
       <Notice>{notice}</Notice>
 
       <section className="acct-section admin-first" id="connections">

@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, Notice, can, viewer, when } from "@/components/admin/access";
+import { Notice, can, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { british, fetchOutwardLog, fetchPublicAccount, type OutwardAct } from "@/lib/outside-api";
 import { backPublicMandateAction, openPublicMandateAction } from "./actions";
 
@@ -29,7 +30,7 @@ export default async function OutsidePage() {
         title="The public graph"
         lede="This graph acts on the public graph as any account does and only as one: through the routes any account uses, under the organisation's own account there. Every act shows something outside, at least where the organisation's attention is, so each is made by a person who holds the permission for it, and each is listed here with who made it and exactly what was sent."
       />
-      <AdminNav current="/admin/outside" />
+      <WorkNav who={who} current="/admin/outside" />
 
       <section className="acct-section admin-first" id="account">
         <div className="acct-head">

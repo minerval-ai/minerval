@@ -1,47 +1,39 @@
 import Link from "next/link";
-import type { Viewer } from "../admin/access";
+import { type Mine, pageOf, workSections } from "../../lib/work-sections";
 
-// The links down the left side of the pages a member works in once the
-// deployment holds material at more than one label: showings, the gates,
-// sending outside, file sets and the redaction policies. A person is
-// shown a link for what they can do: what waits on them at a gate for
-// whoever holds release for a party, sending outside and file sets for whoever directs
-// (file sets for administrators too, who register directories), and one
-// line for the administration pages for whoever administers. Showings and
-// the policies are read by every member, each as far as their labels go.
+// The pages a member works in, beyond the public graph's own, in four
+// sections. The band under the masthead (components/MembersBand.tsx) names
+// the sections and marks the one the reader is in; the column down the left
+// side of a page lists the pages of that section alone, with the current one
+// marked. One list feeds both, so the two can neither repeat each other nor
+// disagree about where a page belongs.
 //
-// It takes the administration pages' own markup and class (admin/access.tsx),
-// so it sits down the left side on a wide screen and is a line of links
-// above the page on a phone, exactly as theirs does.
+// A person is shown what they can do: a page whose `shown` says no is not
+// listed, and a section with no page left is not named.
 
-export const WORK_PAGES: Array<{ href: string; name: string; needs?: string[] }> = [
-  { href: "/showings", name: "Showings" },
-  { href: "/gates", name: "Gates" },
-  { href: "/gate", name: "At the gate", needs: ["release"] },
-  // Pages leave in signed packages, listed here. Everything else that passes between this deployment and the
-  // public graph (its account there, mandates, requests, reports) is on the page after it (docs/outward-acts.md).
-  { href: "/outbound", name: "Pages sent outside", needs: ["direct"] },
-  { href: "/admin/outside", name: "The public graph", needs: ["direct", "release"] },
-  { href: "/redaction-policies", name: "Redaction policies" },
-  { href: "/file-sets", name: "File sets", needs: ["direct", "administer"] },
-  { href: "/sources/new", name: "Add a source", needs: ["direct"] },
-  { href: "/admin", name: "Administration", needs: ["administer"] },
-];
-
-export function WorkNav({ who, current }: { who: Viewer; current: string }) {
-  const pages = WORK_PAGES.filter((p) => !p.needs || p.needs.some((n) => who.mine.permissions.includes(n)));
+/**
+ * The pages of the section `current` is in, down the left side of the page
+ * (as a line of links above it on a phone). `current` is the page's own
+ * address; a page under a listed one (a showing, a file set) marks its parent.
+ */
+export function WorkNav({ who, current }: { who: { mine: Mine }; current: string }) {
+  const sections = workSections(who.mine);
+  const here = pageOf(sections, current);
+  const section = sections.find((s) => s.pages.some((p) => p.href === here));
+  // A section of one page has nothing to move between.
+  if (!section || section.pages.length < 2) return null;
   return (
-    <nav className="acct-nav admin-nav" aria-label="This deployment">
-      {pages.map((page) =>
+    <nav className="acct-nav admin-nav" aria-label={section.name}>
+      {section.pages.map((page) =>
         page.href === current ? (
           <span key={page.href} aria-current="page">
             {page.name}
           </span>
         ) : (
-          <Link key={page.href} href={page.href}>
+          <Link key={page.href} href={page.href} aria-current={page.href === here ? "true" : undefined}>
             {page.name}
           </Link>
-        )
+        ),
       )}
     </nav>
   );
@@ -53,7 +45,12 @@ export function day(iso: string | null | undefined): string {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? "a date not recorded"
-    : d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+    : d.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      });
 }
 
 /** How long something has waited, in whole hours up to two days and whole days after. */

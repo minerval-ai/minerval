@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, NeedsPermission, Notice, can, viewer } from "@/components/admin/access";
+import { NeedsPermission, Notice, can, viewer } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { fetchPublicConversation } from "@/lib/outside-api";
 import { fundPublicMandateAction, sayToGrantmakerAction } from "../../actions";
 
@@ -44,7 +45,7 @@ export default async function PublicMandateConversation({ params }: { params: Pr
         title="A new public mandate"
         lede="This conversation is on the public graph, between the organisation's account and the public Grantmaker. The mandate it drafts is public once it is funded."
       />
-      <AdminNav current="/admin/outside" />
+      <WorkNav who={who} current="/admin/outside" />
 
       <section className="acct-section admin-first">
         <p className="acct-prose">

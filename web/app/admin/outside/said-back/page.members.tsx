@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
-import { AdminNav, viewer, when } from "@/components/admin/access";
+import { viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { british, fetchSaidBack } from "@/lib/outside-api";
 
 export const metadata: Metadata = { title: "What readers said back · Minerval" };
@@ -23,7 +24,7 @@ export default async function SaidBackPage() {
         title="What readers said back"
         lede="A reader of a page this graph published can challenge it, or propose to the node it is a page of. That is the check the public has on what it cannot see, so each one is brought back in to the Steward that can answer it."
       />
-      <AdminNav current="/admin/outside/said-back" />
+      <WorkNav who={who} current="/admin/outside/said-back" />
 
       <section className="acct-section admin-first" id="how">
         <div className="acct-head">

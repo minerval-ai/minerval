@@ -50,7 +50,7 @@ export default async function PolicyPage({ params }: { params: Promise<{ id: str
           </>
         }
       />
-      <WorkNav who={who} current="" />
+      <WorkNav who={who} current={`/redaction-policies/${id}`} />
 
       <section className="acct-section admin-first" id="text">
         <div className="acct-head">

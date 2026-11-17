@@ -33,6 +33,8 @@ vi.mock("react", () => ({ cache: <T>(fn: T) => fn }));
 vi.mock("../../../web/node_modules/react/index.js", () => ({ cache: <T>(fn: T) => fn }));
 vi.mock("next/link", () => ({ default: "a" }));
 vi.mock("../../../web/node_modules/next/link.js", () => ({ default: "a" }));
+vi.mock("next/navigation", () => ({ usePathname: () => "/" }));
+vi.mock("../../../web/node_modules/next/navigation.js", () => ({ usePathname: () => "/" }));
 vi.mock("react/jsx-runtime", () => h.jsxRuntime);
 vi.mock("../../../web/node_modules/react/jsx-runtime.js", () => h.jsxRuntime);
 vi.mock("react/jsx-dev-runtime", () => h.jsxDevRuntime);
@@ -305,22 +307,27 @@ describe("the gate", () => {
     // (components/MembersBand.tsx).
     const [band, page] = tree.props.children as [Node, unknown];
     expect(page).toBe(PAGE);
-    const links = (who: string[], clearance: string[] = ["public"]) => {
+    const sections = (who: string[], clearance: string[] = ["public"]) => {
       const rendered = (band.type as (props: unknown) => Node | null)({
         mine: { account: {}, member: true, permissions: who, grants: [], clearance, raw_source_labels: [], groups: [] },
       });
-      return rendered === null ? null : textOf(rendered.props.children);
+      return rendered === null ? null : (rendered.props.sections as Array<{ name: string; href: string }>);
     };
+    const links = (who: string[], clearance?: string[]) => sections(who, clearance)?.map((s) => s.name).join(" · ") ?? null;
     // A member who reads only what everyone reads, and can neither direct, release nor administer, is shown no line at all.
     expect(links(["read"])).toBeNull();
-    // A person is shown a link for what they can do: showings for whoever reads at a label besides `public` or acts
-    // on showings, the release queue for whoever releases, file sets for whoever directs or administers, and the
-    // pages about the public graph for whoever directs or releases, since sending an agent's report on takes release.
-    expect(links(["read"], ["public", "finance"])).toBe("ShowingsGates");
-    expect(links(["release"])).toBe("ShowingsGatesAt the gateThe public graph");
-    expect(links(["read", "direct"])).toBe("ShowingsGatesFile setsAdd a sourceThe public graph");
-    expect(links(["administer"])).toBe("GatesFile setsAdministration");
-    expect(links(["direct", "fund", "administer"])).toBe("ShowingsGatesFile setsAdd a sourceThe public graphAdministration");
+    // The line names the sections a person has a page in (components/inside/nav.tsx): showings for whoever reads at
+    // a label besides `public` or acts on showings, material for whoever directs or administers, the pages about the
+    // public graph for whoever directs or releases, since sending an agent's report on takes release, and
+    // administration for whoever administers. The pages of the section are down the side of the page itself.
+    expect(links(["read"], ["public", "finance"])).toBe("Showings");
+    expect(links(["release"])).toBe("Showings · The public graph");
+    expect(links(["read", "direct"])).toBe("Showings · Material · The public graph");
+    expect(links(["administer"])).toBe("Showings · Material · Administration");
+    expect(links(["direct", "fund", "administer"])).toBe("Showings · Material · The public graph · Administration");
+    // Each section links to the first of its pages the person is shown.
+    expect(sections(["administer"])?.map((s) => s.href)).toEqual(["/gates", "/file-sets", "/admin"]);
+    expect(sections(["read", "direct"])?.map((s) => s.href)).toEqual(["/showings", "/sources/new", "/admin/outside"]);
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

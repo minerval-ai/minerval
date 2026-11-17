@@ -93,7 +93,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
           </>
         }
       />
-      <WorkNav who={who} current="" />
+      <WorkNav who={who} current={`/showings/${id}/pages/${pageId}`} />
 
       {!page.parts ? (
         <p className="account-empty admin-first">

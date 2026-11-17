@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { auth } from "../../../auth";
 import { PageHead } from "@/components/PageHead";
 import { NeedsPermission } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { fetchAccount } from "@/lib/account-api";
 import { owls } from "@/lib/account-format";
 import { fetchMyLabels } from "@/lib/admin-api";
@@ -50,6 +51,7 @@ export default async function AddSourcePage() {
 
   return (
     <div className="admin-page">
+      {standing.state !== "open" && <WorkNav who={standing} current="/sources/new" />}
       <PageHead
         title="Add a source"
         lede="A source is whatever an agent read, fixed when it was read. Give a document's address here, and the graph's agents read it for the claims, figures and questions it holds."

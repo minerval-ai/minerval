@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
-import { AdminNav, Notice, viewer, when } from "@/components/admin/access";
+import { Notice, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { british, fetchReportsForSending, type ReportForSending } from "@/lib/outside-api";
 
 export const metadata: Metadata = { title: "Agents' reports · Minerval" };
@@ -36,7 +37,7 @@ export default async function ReportsPage() {
         title="Agents' reports"
         lede="When an agent here finds that a tool fails or is missing, it files a report. On the public graph such a report goes to Minerval's maintainers. Here it stays inside, at the label of the run that wrote it, unless it is about Minerval's machinery: then it goes to the gate to outside, so that Minerval can still hear when its machinery fails, and leaves only as that gate lets it."
       />
-      <AdminNav current="/admin/outside/reports" />
+      <WorkNav who={who} current="/admin/outside/reports" />
 
       <section className="acct-section admin-first" id="offered">
         <div className="acct-head">
