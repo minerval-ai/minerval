@@ -99,8 +99,8 @@ standing showing its result goes out as the next version by the path every
 version takes.
 
 Members read the same on `GET /outside/said-back` and on the page made
-from it: each contribution as it was written, with where its reassessment
-stands.
+from it, Replies (`/admin/outside/said-back`): each contribution as it was
+written, with where its reassessment stands.
 
 **What the outside is told.** No new kind of object. The page's next
 package carries `record.said_back`: each contribution received by its

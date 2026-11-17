@@ -493,19 +493,20 @@ their code, and runs no proxy in front of its requests
 (`tests/unit/web/members-gate.test.ts`). What a private deployment adds to
 the site is named this way.
 
-**The pages a members-only build adds.** They fall into four sections, kept
-in one list (`WORK_SECTIONS` in `web/lib/work-sections.ts`): Showings
-(showings, gates, "At the gate" for holders of `release`, redaction
-policies), Material ("Add a source" for holders of `direct`, file sets for
-holders of `direct` or `administer`), The public graph (for holders of
-`direct` or `release`) and Administration (for holders of `administer`). A
-line above each page, placed by the gate for a member
-(`web/components/MembersBand.tsx`), names the sections a person has a page
-in and marks the one they are in. The pages of that section, and only those,
-run down the left side of the page, and in a line above it at a phone's
-width (`WorkNav`). A person who lacks a
-permission is not shown a control that needs it, and a page reached directly
-says which permission it needs.
+**The pages a members-only build adds.** A sidebar on every page lists
+them in sections, kept in one list (`WORK_SECTIONS` in
+`web/lib/work-sections.ts`, drawn by `web/components/work/Sidebar.tsx`): at
+the top, Inbox (what waits on the person) and Review (what waits at a gate,
+for holders of `release`); Graph (Ask, Claims, Mandates, Findings, Requests,
+Docs); Sharing (Showings, and Boundaries, each one gate with its redaction
+policy); Material (Sources and File sets for holders of `direct` or
+`administer`, Connections for holders of `administer`); Public graph
+(Overview, Requests, Replies and Outbox, for holders of `direct` or
+`release`); and Admin (Health, People, Labels, Parties, Budget and Activity
+log, for holders of `administer`). The sidebar marks the page being read and
+lists only the pages a person can use; a section with none left is not
+named. A person who lacks a permission is not shown a control that needs it,
+and a page reached directly says which permission it needs.
 
 Where the deployment holds material at more than one label, a page that
 starts something new asks which label it is for (`LabelChoice`, from
@@ -515,30 +516,33 @@ says so where an administrator's list leaves rows out.
 
 | page | who | what it is |
 |---|---|---|
-| `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` ([deployment.md](deployment.md), "The setup checklist"). Its words are in `web/lib/admin-words.ts` |
-| `/admin/people` | every member; controls for `administer` | What each permission covers, what the reader holds, and the log, with a withheld name shown as withheld. For administrators: who holds what by person and by group, granting and removing, and the accounts that have signed in and hold nothing |
-| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form, and that defining the first label takes about ten seconds; what each label is cleared to be sent to, and, for a holder of `clear_providers` where `PROVIDER_LABELS` is not set, ticking the model providers and outside services each label may be sent to (none ticked until someone ticks one), in the form that defines a label and for each label, each with what it would be sent; where the setting is set, that it fixes the clearance; the parties, with the organization's own named here; whose material a source is |
+| `/inbox` | every member | What waits on the person, from every part of the deployment, each with the act that answers it (`web/lib/inbox.ts`); beside it, the deployment's state, its owls, and the newest acts of the log |
+| `/admin` | `administer` | Health, the setup checklist and the deployment's home, one page: what needs attention now, each item saying whether the deployment's operator or an administrator puts it right, then everything as it stands, read from `GET /setup/checklist` ([deployment.md](deployment.md), "The setup checklist"). Its words are in `web/lib/admin-words.ts` |
+| `/admin/people` | every member; controls for `administer` | What each permission covers and what the reader holds. For administrators: who holds what by person and by group, granting and removing, and the accounts that have signed in and hold nothing |
+| `/admin/activity` | every member | The administrative log, newest first: grants and removals, labels, parties, connections, owls created and standing mandates set up, with a withheld name shown as withheld |
+| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form, and that defining the first label takes about ten seconds; and, as one table of checkboxes, what each label is cleared to be sent to: for a holder of `clear_providers` where `PROVIDER_LABELS` is not set, ticking the model providers and outside services each label may be sent to (none ticked until someone ticks one), also in the form that adds a label, each with what it would be sent; where the setting is set, that it fixes the clearance |
+| `/admin/parties` | `administer` | The parties, with the organization's own named here, and who holds release for each; whose material a source is, with the sources that have no party yet |
+| `/admin/budget` | every member; controls for `administer` | What an owl is here, totals and acts, creating owls, and the General mandate at each label the reader reads where there is more than one; stated prices and unpriced models; and, as its Usage tab for `administer`, docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "Prepare and send now". `/admin/owls` and `/admin/usage-report` redirect here, the second to `/admin/budget?tab=usage` |
 | `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection at a label the administrator reads, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls the administrator reads with which were kept. A connection's label is shown and not offered for change |
-| `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup, one for each label the reader reads where there is more than one |
-| `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |
-| `/admin/outside` and the four pages under it | every member; controls by permission | docs/outward-acts.md: the organization's account on the public graph with its public owls and public mandates, and the log of every act there; public requests adopted and taken up; the setting that keeps public versions current, with what it shows outside; what readers said back about published pages; and the agents' reports, with sending one on to Minerval's maintainers |
-| `/sources/new` | `direct` | Add a document or an address (`POST /sources`), at a label the person chooses where there is more than one |
+| `/admin/outside`, `/admin/outside/requests`, `/admin/outside/said-back` | every member; controls by permission | docs/outward-acts.md. Overview: the organization's account on the public graph with its public owls and public mandates, registering the deployment's signing key there ("Register key", or "Re-register"), the setting that keeps public versions current, with what it shows outside, and the log of every act there. Requests: public requests adopted and taken up. Replies: what readers said back about published pages. `/admin/outside/reports` redirects to `/outbound?tab=reports` |
+| `/sources` | `direct` or `administer` | The sources at labels the reader reads (`GET /sources`), newest first: where each stands, whose material it is, and who added it. "Add source" (`direct`) opens a drawer to add a document or an address (`POST /sources`), at a label the person chooses where there is more than one; `/sources/new` redirects to it |
 | `/claims/:id` | every member | The ordinary page of a node. Where the node carries a judgment at more than one label the reader reads (`versions` on `GET /claims/:id`), a tab for each, opening on the one in force; a reader for whom two are in force, at labels that do not read each other, is shown both in full and neither is chosen. Under the tabs: what the assessment was made on, what it was made beside, and whether that has since been replaced; where a label the reader reads examined the node and left another label's assessment standing, that it did, on what date, with the Steward's reasons, and whether that assessment has since been replaced (`left_standing`); and the labels the reader holds at which the node has not been examined at all (`not_examined_at`). A page of the node shown to a label the reader reads, or outside, is a further tab drawn by the components of the public site's second tab (`web/lib/inside-node.ts`, `web/components/claim/InsideVersions.tsx`) |
 | `/showings`, `/showings/:id`, `/showings/:id/pages/:page_id` | every member, as far as their labels reach; controls by permission | docs/showing-a-page.md: the showings a reader may see from either side; one showing with each node's state, every version, every act, and for a reader of the page's label paying for the redaction or its check (`fund`), holding a page and ending a standing showing (`direct`); one version as shown, part by part, with who released or held each, the fingerprint, and a check that runs in the reader's browser |
 | `/showings/new` | `direct` | Ask for a node's page to be shown (`POST /showings`), from the node's page. Nothing is preselected, and each choice says what it shows and to whom |
-| `/gates` | every member; settings for `administer` and for `release` | docs/the-gate.md: how much waits at each gate toward a label the reader reads, by kind, for how long and on whom, in counts (`GET /gate/backlog`); for a person with a say over a gate, its settings by kind of thing, scope and party, what flows to it, whether its backlog is shown and, outside, whether what is released is sent (`GET /gates`, `PUT /gates/:gate_id`, `PUT /gates/:gate_id/settings`) |
-| `/gate` | `release` | What waits on the person at a gate (`GET /gate/queue`): each waiting part as it would be shown, with what is always shown of its item and what the Redactor proposes; for a holder who reads at the item's label, the Redactor's removals struck through in front of their marks and its notes, and for one who does not, the marks alone, except in a part that rests only on the material of an outside party they release for; approve, release, hold, delay, lift, or remove a passage, for many items at once (`POST /gate/decisions`) |
-| `/redaction-policies`, `/redaction-policies/:id` | every member; saving for `administer` | Each boundary's policy in full; an administrator who reads the label the pages are written at saves the next version (`PUT /redaction-policies`), with a refusal shown beside the form |
-| `/outbound` | every member; controls for `direct` and `release` | Pages sent outside. docs/published-pages.md, "Inside the deployment": what a send shows outside, each package with its sends and the public graph's answers, sending, taking a package as a file, and the words a node that exists only here is proposed in |
+| `/gates` | every member | Boundaries, each one gate and its redaction policy (docs/the-gate.md): one row for each the person can see, with how much waits there toward a label the reader reads, in counts (`GET /gate/backlog`) |
+| `/gates/:id` | every member, as far as their labels reach; controls for `administer` and for `release` | One boundary, in tabs of what the person may see. Waiting: how much waits, by kind, for how long and on whom. Rules: for a person with a say over the gate, its settings by kind of thing, scope and party (`PUT /gates/:gate_id/settings`). Policy: the boundary's redaction policy in full, for a reader of either side; an administrator who reads the label the pages are written at saves the next version (`PUT /redaction-policies`), with a refusal shown beside the form. Settings: what flows to the gate, whether its backlog is shown and, outside, whether what is released is sent (`GET /gates`, `PUT /gates/:gate_id`) |
+| `/redaction-policies`, `/redaction-policies/:id` | every member | Redirects: the first to `/gates`, the second to its boundary's Policy tab (`/gates/:id?tab=policy`) |
+| `/gate` | `release` | Review: what waits on the person at a gate (`GET /gate/queue`): each waiting part as it would be shown, with what is always shown of its item and what the Redactor proposes; for a holder who reads at the item's label, the Redactor's removals struck through in front of their marks and its notes, and for one who does not, the marks alone, except in a part that rests only on the material of an outside party they release for; approve, release, hold, delay, lift, or remove a passage, for many items at once (`POST /gate/decisions`) |
+| `/outbound` | every member; controls for `direct` and `release` | The Outbox. Its Pages tab: docs/published-pages.md, "Inside the deployment": what a send shows outside, each package with its sends and the public graph's answers, sending, taking a package as a file, and the words a node that exists only here is proposed in. Its Reports tab: the agents' reports, with sending one on to Minerval's maintainers |
 | `/file-sets`, `/file-sets/:id` | `direct` or `administer` | docs/file-sets.md: the sets at labels the reader reads, adding one by upload (`direct`) or from a directory (`administer`), uploading with each file's progress and hash, a set's files and the commands run against it, switching it off |
 
-These pages link to one another down the left side, as the administration
-pages do (`WorkNav` in `web/components/inside/nav.tsx`), each link shown to
+These pages link to one another through the sidebar, each link shown to
 whoever can use the page. Their words that are not the API's own are in the
 pages; the two fixed lists of reasons are the API's, served with
-`GET /showings` and `GET /gate/queue`. `/outbound` is for pages; what
-else passes between the deployment and the public graph is on
-`/admin/outside` (docs/outward-acts.md), and each page points to the other.
+`GET /showings` and `GET /gate/queue`. The Outbox (`/outbound`) is for
+pages and agents' reports; what else passes between the deployment and the
+public graph is under the public graph's Overview (`/admin/outside`,
+docs/outward-acts.md), and each page points to the other.
 
 What the pages still cannot be given, because the API does not serve it:
 
@@ -629,9 +633,9 @@ page that tells a person their balance cannot cover something (the `/ask`
 notice at a balance of 0, the decomposition form, the web app's refusals of
 an order, a proposal or a contribution) says "Buy owls" only where owls are
 sold. Where they are created it says that an administrator, a holder of
-`administer`, creates owls into a person's balance under Administration →
-Owls, with a link there for a viewer who holds it and to People and
-permissions for one who does not (`web/lib/owl-source.ts`).
+`administer`, creates owls into a person's balance under Admin → Budget,
+with a link there for a viewer who holds it and to People for one who does
+not (`web/lib/owl-source.ts`).
 
 To run one locally: set `READS=members` and an `API_KEYS` entry on the API
 (there is no dev bypass), the same key and `READS=members` on the web app,

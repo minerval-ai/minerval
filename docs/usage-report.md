@@ -72,7 +72,7 @@ The account that reports is the organization's one account with Minerval, the sa
 
 `POST /usage-reports/outgoing/send`, from a signed-in session, prepares and sends now instead of at the worker's next pass, and takes `recount_from` to recount from a given day.
 
-The page is `/admin/usage-report` in a members-only build of the web app.
+The page is the Usage tab of Budget (`/admin/budget?tab=usage`) in a members-only build of the web app; `/admin/usage-report` redirects there.
 The sentences it shows are in `src/services/usage-report-service.ts` (`WHAT_IS_SENT`, `WHAT_IS_NEVER_SENT`, `FLAT_PRICE_SENDS_NOTHING`, `HOW_A_REPORT_IS_CORRECTED`).
 
 ## Receiving

@@ -189,7 +189,8 @@ registers a key they do not hold; the deployment produces it
 (`POST /outbound/registration`, or
 `scripts/published-page.ts registration <account>`). A deployment connected
 to the public graph sends it itself, through the organization's account
-(`POST /outbound/registration/send`, the button on `/outbound`; logged as
+(`POST /outbound/registration/send`, the "Register key" button on the
+public graph's Overview, `/admin/outside`; logged as
 an act on the public graph). The registration, the
 key, the hosting words and anything the publisher says of its own interest
 are a public record (`GET /publishers/:account_id`, and the account's

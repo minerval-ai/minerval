@@ -10,7 +10,7 @@ export const metadata = {
 const toc = [
   { depth: 2, text: "Before you start", slug: "before" },
   { depth: 2, text: "Words you will meet", slug: "words" },
-  { depth: 2, text: "1. Read the setup page", slug: "setup" },
+  { depth: 2, text: "1. Read Health", slug: "setup" },
   { depth: 2, text: "2. Decide your labels", slug: "labels" },
   { depth: 2, text: "3. Add people", slug: "people" },
   { depth: 2, text: "4. Set a budget", slug: "budget" },
@@ -118,17 +118,18 @@ export default function Page() {
         </table>
       </div>
 
-      <h2 id="setup">1. Read the setup page</h2>
+      <h2 id="setup">1. Read Health</h2>
       <p>
-        Open <code>/admin</code>. It reads the deployment and lists what needs someone now, then everything as it stands. Nothing on
-        it is ticked by hand: a line clears when the thing it is about is done. If the first line, &ldquo;The deployment&rsquo;s own
-        checks&rdquo;, says something fails, send it to whoever installed the deployment. Each failure says what to change. Come back
-        to this page after each step below.
+        Open <b>Health</b> (<code>/admin</code>), under Admin in the sidebar. It reads the deployment and lists what needs someone
+        now, then everything as it stands. Nothing on it is ticked by hand: a line clears when the thing it is about is done. Each
+        item under &ldquo;Needs attention&rdquo; says who puts it right: the operator, whoever installed and runs the deployment, or
+        an administrator here. Send the operator&rsquo;s items to whoever installed it; each says what to change. Come back to this
+        page after each step below.
       </p>
 
       <h2 id="labels">2. Decide your labels</h2>
       <p>
-        On <code>/admin/labels</code>, <b>Define the label</b>. Start with one label for the organisation&rsquo;s own material, say{" "}
+        On <b>Labels</b> (<code>/admin/labels</code>), <b>Add label</b>. Start with one label for the organisation&rsquo;s own material, say{" "}
         <code>internal</code>, and tick that its holders may also read <code>public</code>. Most organisations need nothing more at
         first. Add a second only for material that a narrower group must not share with the rest of the organisation, such as
         security findings, personnel matters or a partner&rsquo;s confidential data. A label&rsquo;s name cannot be changed, and labels
@@ -136,23 +137,24 @@ export default function Page() {
       </p>
       <div className="dc-callout">
         <b>Then clear a model provider for the label.</b>A model provider is sent nothing at a label you define until someone
-        clears it for that label: tick the providers and outside services it may be sent to, in the form that defines it or later on
-        the same page. Each says what it would be sent, nothing is ticked for you, and it takes the permission to clear providers.
-        Until one is cleared no agent works at that label, and the setup page says so under &ldquo;Labels and model providers&rdquo;.
+        clears it for that label: tick the providers and outside services it may be sent to, in the form that adds it or later in
+        the table of provider clearance on the same page. Each says what it would be sent, nothing is ticked for you, and it takes
+        the permission to clear providers. Until one is cleared no agent works at that label, and Health says so under &ldquo;Labels and model providers&rdquo;.
         Where the page says the clearance is fixed by the deployment&rsquo;s settings (<code>PROVIDER_LABELS</code>), ask whoever
         installed it instead.
       </div>
       <p>
-        On the same page, under the parties, check that one is marked as &ldquo;the organisation that runs this deployment&rdquo;. If
-        the setup page says none is, <b>Add the party</b> with that box ticked. Add a party for each outside organisation whose
-        material you will bring in, and use <b>Record whose it is</b> to say which sources are theirs.
+        On <b>Parties</b> (<code>/admin/parties</code>), check that one is marked as the organisation that runs this deployment. If
+        Health says none is, <b>Add party</b> with &ldquo;This is the organisation that runs this deployment&rdquo; ticked. Add a party
+        for each outside organisation whose material you will bring in, and say which sources are theirs on the same page, under
+        &ldquo;Sources without a party&rdquo;.
       </p>
 
       <h2 id="people">3. Add people</h2>
       <p>
         Ask each colleague to sign in once. They will see that they have no access yet, and the identity to grant it to. Then, on{" "}
-        <code>/admin/people</code>, <b>Grant</b> each the permissions they need, or grant them to a group your login provider
-        already has.
+        <b>People</b> (<code>/admin/people</code>), use <b>Grant access</b> to give each the permissions they need, or give them to
+        a group your login provider already has.
       </p>
       <div className="dc-tablewrap">
         <table>
@@ -194,17 +196,17 @@ export default function Page() {
         </table>
       </div>
       <p>
-        Every grant and removal is on the log at the foot of the page, which every member can read. A grant is never deleted, only
-        marked removed.
+        Every grant and removal is on the <b>Activity log</b> (<code>/admin/activity</code>), which every member can read. A grant is
+        never deleted, only marked removed.
       </p>
 
       <h2 id="budget">4. Set a budget</h2>
-      <p>On <code>/admin/owls</code>:</p>
+      <p>On <b>Budget</b> (<code>/admin/budget</code>):</p>
       <ol className="dc-steps">
         <li>
           <strong>Set up the General mandate at each label</strong>
           <p>
-            <b>Set up General at</b> your label pays for the graph&rsquo;s upkeep there: re-checking assessments that have gone
+            Under &ldquo;General mandates&rdquo;, <b>Set up</b> beside your label. The General mandate pays for the graph&rsquo;s upkeep there: re-checking assessments that have gone
             stale, audits, and following up what earlier work left open. Give it a budget and the most it may commit in a day. A
             small daily figure is the safe start; you can raise it once you see what the work costs.
           </p>
@@ -212,7 +214,7 @@ export default function Page() {
         <li>
           <strong>Create owls for the people who fund work</strong>
           <p>
-            <b>Create the owls</b> into each person&rsquo;s balance, with a note saying what they are for. Every creation is
+            <b>Create owls</b> into each person&rsquo;s balance, with a note saying what they are for. Every creation is
             logged, and every member can see how many owls exist and how many have been spent. There is no ceiling: the budget is
             your organisation&rsquo;s own money at its own model providers.
           </p>
@@ -223,15 +225,15 @@ export default function Page() {
       <p>Agents can only weigh what they can read. Three ways in, each filed at a label you choose:</p>
       <ul>
         <li>
-          <b>A document or an address</b>: <code>/sources/new</code>, &ldquo;Add a source&rdquo;. Paste the text if the address
+          <b>A document or an address</b>: <b>Sources</b> (<code>/sources</code>), <b>Add source</b>. Paste the text if the address
           cannot be reached from where the deployment runs.
         </li>
         <li>
-          <b>A set of files</b>: <code>/file-sets</code>, &ldquo;Add this set&rdquo;. Exports, logs, transcripts, a code repository.
+          <b>A set of files</b>: <b>File sets</b> (<code>/file-sets</code>), <b>New file set</b>. Exports, logs, transcripts, a code repository.
           Agents explore them in a sealed sandbox, run their own analysis, and keep what an assessment rests on.
         </li>
         <li>
-          <b>A connection to a system</b>: <code>/admin/connections</code>. Agents read a wiki, a warehouse or a ticket system where
+          <b>A connection to a system</b>: <b>Connections</b> (<code>/admin/connections</code>). Agents read a wiki, a warehouse or a ticket system where
           it lives, through tools you pick one by one. Whoever installed the deployment adds the system&rsquo;s read-only credential;
           the page names the setting.
         </li>
@@ -297,7 +299,8 @@ export default function Page() {
 
       <h3 id="gate">Set the gate before anything leaves</h3>
       <p>
-        On <code>/gates</code>, the gate to outside says how each kind of thing is treated on its way out. Each kind can be{" "}
+        Under <b>Boundaries</b> (<code>/gates</code>), the Rules tab of the boundary to outside says how each kind of thing is treated
+        on its way out. Each kind can be{" "}
         <b>open</b> (it goes as written), left to <b>the Redactor</b> (an agent removes what your redaction policy names, and Audit
         checks its work), or set so that <b>a person decides as well</b>. Most kinds start with the Redactor. For your first weeks,
         set <em>a node&rsquo;s page</em>, <em>mandate terms</em> and <em>proposal</em> to &ldquo;a person decides as well&rdquo;: you
@@ -305,8 +308,8 @@ export default function Page() {
       </p>
       <p>
         The redaction policy lists what is removed: personal data, security detail, unreleased product detail, commercial figures and
-        the like. Read it under <code>/redaction-policies</code> once your first page has been asked for, and save a version with the
-        categories your organisation needs. It cannot name a category by how a passage reflects on you; the policy is shown to every
+        the like. Read it on the same boundary&rsquo;s Policy tab once your first page has been asked for, and save a version with
+        the categories your organisation needs. It cannot name a category by how a passage reflects on you; the policy is shown to every
         reader of what you publish.
       </p>
 
@@ -315,8 +318,8 @@ export default function Page() {
         <li>
           <strong>Register once</strong>
           <p>
-            On <code>/outbound</code>, an administrator presses <b>Register this deployment&rsquo;s key on the public graph</b>, and
-            may add a sentence on the organisation&rsquo;s interest in what it publishes. That makes the organisation&rsquo;s public
+            On the public graph&rsquo;s <b>Overview</b> (<code>/admin/outside</code>), an administrator presses <b>Register key</b>,
+            and may add a sentence on the organisation&rsquo;s interest in what it publishes. That makes the organisation&rsquo;s public
             account the publisher of what the deployment signs.
           </p>
         </li>
@@ -331,7 +334,7 @@ export default function Page() {
         <li>
           <strong>Decide at the gate</strong>
           <p>
-            Where a person decides, the page waits on <code>/gate</code> for whoever holds release for each party it rests on. Approve
+            Where a person decides, the page waits in <b>Review</b> (<code>/gate</code>) for whoever holds release for each party it rests on. Approve
             it as the Redactor left it, remove a further passage, or hold a part with a reason. Nobody can edit the words, and a release
             is not taken back.
           </p>
@@ -339,9 +342,9 @@ export default function Page() {
         <li>
           <strong>It goes out</strong>
           <p>
-            As it starts, the gate to outside sends what it releases at once; <code>/outbound</code> shows each package and what the
-            public graph answered. A node that exists only in your graph has nowhere to land yet: on <code>/outbound</code>, write the
-            words it is to be proposed in, and they go through the gate too.
+            As it starts, the gate to outside sends what it releases at once; the <b>Outbox</b> (<code>/outbound</code>) shows each
+            package and what the public graph answered. A node that exists only in your graph has nowhere to land yet: in the Outbox,
+            write the words it is to be proposed in, and they go through the gate too.
           </p>
         </li>
       </ol>
@@ -361,8 +364,8 @@ export default function Page() {
         invites the public to ask.
       </p>
       <p>
-        Work on the public graph itself is paid in public owls, bought there; your own owls never convert. On{" "}
-        <code>/admin/outside</code> you see the organisation&rsquo;s public balance, open a public mandate in your own words, and on a
+        Work on the public graph itself is paid in public owls, bought there; your own owls never convert. On the public graph&rsquo;s{" "}
+        <b>Overview</b> (<code>/admin/outside</code>) you see the organisation&rsquo;s public balance, open a public mandate in your own words, and on a
         public claim&rsquo;s page &ldquo;Fund this on the public graph&rdquo; pays for a fresh public assessment. Each of these is
         public, under the organisation&rsquo;s name.
       </p>
@@ -370,15 +373,15 @@ export default function Page() {
       <h3 id="back">What comes back from outside</h3>
       <ul>
         <li>
-          <b>What readers said back</b> (<code>/admin/outside/said-back</code>): challenges to your published pages, each given to
+          <b>Replies</b> (<code>/admin/outside/said-back</code>): challenges to your published pages, each given to
           your Steward to answer.
         </li>
         <li>
-          <b>Public requests</b> (<code>/admin/outside/requests</code>): questions on the public graph you may hold evidence for.
+          <b>Requests</b> (<code>/admin/outside/requests</code>): questions on the public graph you may hold evidence for.
           Adopt one to work on it here, and say in public that you are taking it up or that you will not.
         </li>
         <li>
-          <b>Agents&rsquo; reports</b> (<code>/admin/outside/reports</code>): faults your agents found in Minerval&rsquo;s own tools,
+          <b>Reports</b>, a tab of the Outbox (<code>/outbound?tab=reports</code>): faults your agents found in Minerval&rsquo;s own tools,
           which go to Minerval&rsquo;s maintainers through the gate.
         </li>
       </ul>
@@ -433,20 +436,25 @@ export default function Page() {
             </tr>
           </thead>
           <tbody>
-            <tr><td><code>/admin</code></td><td>What the setup still needs</td></tr>
-            <tr><td><code>/admin/labels</code></td><td>Labels, what each reads, parties, whose a source is</td></tr>
-            <tr><td><code>/admin/people</code></td><td>Permissions, and the log of every grant</td></tr>
-            <tr><td><code>/admin/owls</code></td><td>Creating owls; the General mandate at each label</td></tr>
+            <tr><td><code>/inbox</code></td><td>Inbox: what waits on you</td></tr>
+            <tr><td><code>/gate</code></td><td>Review: what waits for your say</td></tr>
+            <tr><td><code>/admin</code></td><td>Health: what needs attention, and whether the operator or an administrator puts it right</td></tr>
+            <tr><td><code>/admin/labels</code></td><td>Labels, what each reads, and which providers each is cleared for</td></tr>
+            <tr><td><code>/admin/parties</code></td><td>Parties, who holds release for each, whose a source is</td></tr>
+            <tr><td><code>/admin/people</code></td><td>Permissions</td></tr>
+            <tr><td><code>/admin/activity</code></td><td>The log of every grant and administrative act</td></tr>
+            <tr><td><code>/admin/budget</code></td><td>Creating owls; the General mandate at each label; prices; usage reports</td></tr>
+            <tr><td><code>/sources</code>, <code>/file-sets</code></td><td>Material, and adding it</td></tr>
             <tr><td><code>/admin/connections</code></td><td>Your systems, read where they live</td></tr>
-            <tr><td><code>/sources/new</code>, <code>/file-sets</code></td><td>Adding material</td></tr>
             <tr><td><code>/claims</code></td><td>Finding nodes; proposing one</td></tr>
             <tr><td><code>/ask</code></td><td>The Assistant; starting a mandate</td></tr>
             <tr><td><code>/mandates</code></td><td>Your mandates, and the organisation&rsquo;s public ones</td></tr>
             <tr><td><code>/account</code></td><td>Your owls and your API keys</td></tr>
-            <tr><td><code>/gates</code>, <code>/gate</code></td><td>How each gate treats each kind of thing; what waits for your say</td></tr>
-            <tr><td><code>/showings</code>, <code>/redaction-policies</code></td><td>Pages asked to be shown; what the Redactor removes</td></tr>
-            <tr><td><code>/outbound</code></td><td>Registering the key; pages on their way out</td></tr>
-            <tr><td><code>/admin/outside</code></td><td>The organisation on the public graph: balance, public mandates, requests, what came back</td></tr>
+            <tr><td><code>/gates</code>, <code>/gates/:id</code></td><td>Boundaries: what waits at each, its rules by kind of thing, its redaction policy, its settings</td></tr>
+            <tr><td><code>/showings</code></td><td>Pages asked to be shown</td></tr>
+            <tr><td><code>/admin/outside</code></td><td>The organisation on the public graph: balance, public mandates, registering the key</td></tr>
+            <tr><td><code>/admin/outside/requests</code>, <code>/admin/outside/said-back</code></td><td>Public requests; replies to your published pages</td></tr>
+            <tr><td><code>/outbound</code></td><td>Outbox: pages on their way out, and agents&rsquo; reports</td></tr>
           </tbody>
         </table>
       </div>
