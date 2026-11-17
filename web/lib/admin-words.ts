@@ -70,6 +70,21 @@ export function permissionName(permission: string): string {
   return PERMISSION_WORDS[permission]?.name ?? permission.replace(/_/g, " ");
 }
 
+/** The permission in a word or two, for a chip: "Read", "Raw sources", "Clear providers". */
+const PERMISSION_SHORT: Record<string, string> = {
+  direct: "Direct",
+  release: "Release",
+  fund: "Fund",
+  read: "Read",
+  read_sources: "Raw sources",
+  administer: "Administer",
+  clear_providers: "Clear providers",
+};
+
+export function permissionShort(permission: string): string {
+  return PERMISSION_SHORT[permission] ?? capitalised(permission.replace(/_/g, " "));
+}
+
 /** As it follows "the permission to". */
 export function permissionPhrase(permission: string): string {
   return PERMISSION_WORDS[permission]?.to ?? permission.replace(/_/g, " ");
@@ -339,7 +354,7 @@ function labelsItem(c: SetupChecklist): ChecklistItem {
     key: "labels",
     title: "Labels and model providers",
     href: "/admin/labels",
-    link: "Labels and parties",
+    link: "Labels",
   };
   const undefinedNames = c.undefined_labels_in_provider_setting;
   if (undefinedNames.length > 0) {
@@ -390,7 +405,7 @@ function labelsItem(c: SetupChecklist): ChecklistItem {
 
 function partiesItem(c: SetupChecklist): ChecklistItem {
   const parties = c.material.sources_by_party.map((p) => p.party);
-  const base = { key: "parties", title: "Parties", href: "/admin/labels#parties", link: "Labels and parties" };
+  const base = { key: "parties", title: "Parties", href: "/admin/parties", link: "Parties" };
   if (parties.length === 0) {
     return {
       ...base,
@@ -454,13 +469,13 @@ function mandatesItem(c: SetupChecklist): ChecklistItem {
               ? "An administrator who reads the label sets one up there, unless the label will hold only work someone asks for and pays for."
               : "An administrator adds to the budget, or anyone who holds the permission to fund backs the mandate.",
         }),
-    href: "/admin/owls#standing-mandates",
-    link: "Owls",
+    href: "/admin/budget",
+    link: "Budget",
   };
 }
 
 function owlsItem(c: SetupChecklist): ChecklistItem {
-  const base = { key: "owls", title: "Owls", href: "/admin/owls", link: "Owls" };
+  const base = { key: "owls", title: "Owls", href: "/admin/budget", link: "Budget" };
   if (!c.owls.created_here) {
     return {
       ...base,
@@ -524,7 +539,7 @@ function publicGraphItem(c: SetupChecklist): ChecklistItem | null {
 
 function usageItem(c: SetupChecklist): ChecklistItem {
   const u = c.usage_report;
-  const base = { key: "usage_report", title: "The usage report", href: "/admin/usage-report", link: "The usage report" };
+  const base = { key: "usage_report", title: "The usage report", href: "/admin/budget", link: "Budget" };
   if (!u.reporting) {
     return {
       ...base,
@@ -557,7 +572,7 @@ function usageItem(c: SetupChecklist): ChecklistItem {
       ...base,
       state: "attention",
       facts: [waiting!, `The last attempt to send failed: ${u.last_error}`],
-      next: "An administrator can try again from the usage report page once the cause is put right.",
+      next: "An administrator can try again from the Budget page once the cause is put right.",
     };
   }
   return {
@@ -619,7 +634,7 @@ function connectionsItem(c: SetupChecklist): ChecklistItem {
 
 function materialItem(c: SetupChecklist): ChecklistItem {
   const m = c.material;
-  const base = { key: "material", title: "Material", href: "/sources/new", link: "Add a source" };
+  const base = { key: "material", title: "Material", href: "/sources?drawer=add", link: "Add a source" };
   if (m.sources === 0 && m.nodes === 0) {
     return {
       ...base,
@@ -645,7 +660,7 @@ function materialItem(c: SetupChecklist): ChecklistItem {
     state: "done",
     facts,
     ...(unowned
-      ? { next: "An administrator can say whose material a source is, on the Labels and parties page." }
+      ? { next: "An administrator can say whose material a source is, on the Parties page." }
       : {}),
   };
 }
@@ -694,6 +709,37 @@ const WITHDRAWN_WORDS: Record<string, string> = {
   missing: "the system no longer lists it",
   address_changed: "the connection's address changed",
 };
+
+/** The kinds of act the log holds, as the Activity log filters them. */
+export const LOG_TYPES = ["Access", "Labels", "Parties", "Connections", "Owls", "Providers", "Mandates"] as const;
+export type LogType = (typeof LOG_TYPES)[number] | "Other";
+
+/** Which kind of act an entry is. */
+export function logType(entry: Pick<LogEntry, "event">): LogType {
+  const e = entry.event;
+  if (e === "granted" || e === "removed") return "Access";
+  if (e.startsWith("label_")) return "Labels";
+  if (e === "provider_clearance_set") return "Providers";
+  if (e === "party_added" || e === "source_party_set" || e.startsWith("own_organization")) return "Parties";
+  if (e.startsWith("connection_")) return "Connections";
+  if (e === "owls_created") return "Owls";
+  if (e === "standing_mandate_created") return "Mandates";
+  return "Other";
+}
+
+/**
+ * Who did it: a person by name, or what acted where no person did ("Operator
+ * key", "First-administrator setting", "The deployment"), with a key that
+ * the Activity log filters by.
+ */
+export function logActor(entry: Pick<LogEntry, "by" | "via">): { key: string; name: string; person: boolean } {
+  if (entry.by) return { key: `by:${entry.by}`, name: entry.by, person: true };
+  if (entry.via === "operator") return { key: "via:operator", name: "Operator key", person: false };
+  if (entry.via === "first_administrator") {
+    return { key: "via:first_administrator", name: "First-administrator setting", person: false };
+  }
+  return { key: "deployment", name: "The deployment", person: false };
+}
 
 /** One entry of the log as a sentence. A name the reader is not entitled to is said to be withheld. */
 export function logSentence(entry: LogEntry): string {

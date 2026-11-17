@@ -1,7 +1,7 @@
 import "server-only";
 import type { MyPermissions } from "./account-api";
 import { fetchConnections, fetchParties, fetchSetupChecklist, type SetupChecklist } from "./admin-api";
-import { checklistItems, itemsNeedingSomeone } from "./admin-words";
+import { attentionItems } from "./health";
 import { fetchGateQueue, fetchOutbound, fetchShowings, type QueueItem } from "./inside-api";
 import { fetchPublicRequests, fetchSaidBack } from "./outside-api";
 import type { WorkCounts } from "./work-counts";
@@ -96,17 +96,18 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
     }
   }
 
-  // What the deployment needs from an administrator.
+  // What the deployment needs from an administrator, each in a short line (lib/health.ts).
   if (checklist) {
-    for (const item of itemsNeedingSomeone(checklistItems(checklist))) {
+    for (const a of attentionItems(checklist)) {
       items.push({
-        key: `setup-${item.key}`,
+        key: `setup-${a.key}`,
         group: "setup",
         icon: "warn",
-        tone: item.state === "attention" ? "bad" : "warn",
-        title: item.title,
-        facts: item.next ? [item.next] : [],
-        action: { href: item.href ?? "/admin", label: item.href ? "Open" : "View" },
+        tone: a.tone,
+        title: a.title,
+        facts: [a.consequence],
+        pill: a.owner === "operator" ? { text: "Operator", tone: "neu" } : undefined,
+        action: { href: a.href, label: a.action },
       });
     }
   }
@@ -220,7 +221,7 @@ export async function loadWorkCounts(who: string, mine: MyPermissions): Promise<
     ? null
     : checklist.preflight?.agent_work === "refused"
       ? "bad"
-      : itemsNeedingSomeone(checklistItems(checklist)).length > 0
+      : attentionItems(checklist).length > 0
         ? "warn"
         : "ok";
   const failing = connections?.connections.some((c) => c.enabled && c.state.status === "failing");
