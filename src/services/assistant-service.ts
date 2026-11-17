@@ -804,7 +804,12 @@ async function nameConversation(convo: AssistantConversation, message: string): 
             model: loadConfig().assistantTitleModel,
             system: getAssistantTitleSystemPrompt(),
             messages: [{ role: "user", content: message.slice(0, 2_000) }],
-            maxTokens: 400,
+            // The default title model (Haiku 5.5) thinks by default and its
+            // thinking spends from this cap, so the cap leaves room for that
+            // as well as the few words of the name: a cap sized for the name
+            // alone could end the turn before any text. A Haiku 5.5 title at
+            // this cap costs at most a tenth of a cent.
+            maxTokens: 2_000,
           })
         )
       )

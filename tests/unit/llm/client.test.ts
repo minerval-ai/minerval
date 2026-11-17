@@ -86,11 +86,22 @@ describe("complete() model routing", () => {
     expect(params).not.toHaveProperty("fallbacks");
   });
 
-  it("still sends temperature for Haiku", async () => {
-    await complete({ messages, model: MODELS.haiku });
+  it("still sends temperature for Haiku 4.5", async () => {
+    await complete({ messages, model: "claude-haiku-4-5-20251001" });
 
     const params = createMock.mock.calls[0]![0];
     expect(params.temperature).toBe(0);
+  });
+
+  it("sends Haiku 5.5 a plain request: no temperature, no thinking config, no fallback", async () => {
+    await complete({ messages, model: MODELS.haiku, temperature: 0 });
+
+    expect(betaCreateMock).not.toHaveBeenCalled();
+    const params = createMock.mock.calls[0]![0];
+    expect(params.model).toBe("claude-haiku-5-5");
+    expect(params).not.toHaveProperty("temperature");
+    expect(params).not.toHaveProperty("thinking");
+    expect(params).not.toHaveProperty("fallbacks");
   });
 });
 

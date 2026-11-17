@@ -15,6 +15,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-sonnet-5-5": "Claude Sonnet 5.5",
   "claude-sonnet-5": "Claude Sonnet 5",
+  "claude-haiku-5-5": "Claude Haiku 5.5",
   "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
   // The cheap tier's current and former occupants both stay mapped, for the
   // same reason "claude-fable-5" sits beside "claude-fable-5-1": an
