@@ -215,6 +215,10 @@ beforeAll(async () => {
   // The lanes under test run what one payer commissioned; the platform's own
   // mandates, left active by other files, would fund and open rows of theirs.
   await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true OR policy IN ('general', 'governance')`);
+  // And every mandate an earlier file on this database left running: the
+  // executor's tick reopens a live mandate's review before it picks a row,
+  // and a review runs ahead of the row these tests wait on.
+  await rawQuery(`UPDATE grants SET status = 'completed' WHERE status IN ('planning', 'active')`);
   resetAllocationPolicyCache();
 });
 
