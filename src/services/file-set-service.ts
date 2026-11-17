@@ -535,6 +535,7 @@ export async function uploadFile(
   const hash = createHash("sha256");
   let bytes = 0;
   let over = false;
+  const out = createWriteStream(temporary, { mode: 0o644 });
   try {
     await pipeline(
       body,
@@ -549,9 +550,13 @@ export async function uploadFile(
           yield chunk;
         }
       },
-      createWriteStream(temporary, { mode: 0o644 })
+      out
     );
   } catch (err) {
+    // The stream opens its file on its own time: one refused before it had
+    // opened can create the file after a removal made at once, and leave a
+    // stray file in .incoming. It is removed once the stream is closed.
+    if (!out.closed) await new Promise<void>((resolve) => out.once("close", () => resolve()));
     await rm(temporary, { force: true });
     if (over) return tooLarge();
     throw err;
