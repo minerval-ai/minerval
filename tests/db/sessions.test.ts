@@ -52,6 +52,10 @@ import { processNextEngineAction } from "../../src/workers/engine-executor.js";
 
 beforeAll(async () => {
   await rawQuery(`UPDATE grants SET status = 'completed' WHERE is_platform = true OR policy IN ('general', 'governance')`);
+  // And every mandate an earlier file on this database left running: the
+  // executor's tick reopens a live mandate's review before it picks a row,
+  // and a review runs ahead of the row these tests wait on.
+  await rawQuery(`UPDATE grants SET status = 'completed' WHERE status IN ('planning', 'active')`);
   resetAllocationPolicyCache();
 });
 

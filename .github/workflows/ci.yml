@@ -74,6 +74,16 @@ jobs:
 
       - run: npm ci
 
+      # The suite runs four workers at once, each a process with its own
+      # pools (vitest.db.config.ts), which together want more connections
+      # than Postgres's default 100. A service container takes no command
+      # line, so the setting is written and the container restarted.
+      - name: Give the test server room for the suite's workers
+        run: |
+          docker exec ${{ job.services.postgres.id }} psql -U episteme -d postgres -c "ALTER SYSTEM SET max_connections = 300"
+          docker restart ${{ job.services.postgres.id }}
+          until docker exec ${{ job.services.postgres.id }} pg_isready -U episteme -h localhost; do sleep 1; done
+
       # The suite's global setup creates the scratch DB, enables pgvector,
       # and applies the full migration chain from zero — a broken migration
       # fails this job before any test runs.

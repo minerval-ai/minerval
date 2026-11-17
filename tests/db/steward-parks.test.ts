@@ -22,7 +22,7 @@ import {
 import { parseRecoverArgs, recoverParkedStewards } from "../../scripts/recover-parked-stewards.js";
 import { runReadOnlyQuery } from "../../src/services/sql-service.js";
 import { loadConfig } from "../../src/config.js";
-import { TEST_DATABASE_URL } from "./urls.js";
+import { SQL_TEST_PASSWORD, SQL_TEST_ROLE, TEST_DATABASE_URL } from "./urls.js";
 import { OWL, seedClaim, seedGrantWithJob, seedUser } from "./helpers.js";
 
 /** Raw text of the kind steward_error really holds: nothing here may be published. */
@@ -122,14 +122,14 @@ describe("the public class of a Steward failure", () => {
     await park(unclassified, { error: "boom", reason: null });
 
     // The same scratch login tests/db/sql-views.test.ts uses.
-    const role = "minerval_sql_dbtest";
+    const role = SQL_TEST_ROLE;
     await rawQuery(`DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN
-        CREATE ROLE ${role} LOGIN PASSWORD 'dbtest-sql' CONNECTION LIMIT 3 IN ROLE minerval_sql;
+        CREATE ROLE ${role} LOGIN PASSWORD '${SQL_TEST_PASSWORD}' CONNECTION LIMIT 3 IN ROLE minerval_sql;
       END IF; END $$`);
     const url = new URL(TEST_DATABASE_URL);
     url.username = role;
-    url.password = "dbtest-sql";
+    url.password = SQL_TEST_PASSWORD;
     Object.assign(loadConfig(), { sqlAgentDatabaseUrl: url.toString() });
     const res = await runReadOnlyQuery(
       `SELECT id, steward_state, steward_park_reason FROM nodes WHERE id = ANY($1::uuid[])`,

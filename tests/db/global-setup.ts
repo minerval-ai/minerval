@@ -15,8 +15,10 @@
  *  3. Apply the full migration chain with drizzle-kit. Any migration
  *     failure fails the whole suite loudly, before a single test runs —
  *     migration-from-zero is itself under test.
- *  4. Copy the migrated, still empty database once for each side, for the mirror's tests
- *     (tests/db/urls.ts, mirrorDatabaseUrl): a publisher and a private
+ *  4. Copy the migrated, still empty database once for each worker
+ *     (tests/db/urls.ts, workerDatabaseUrl), so the workers run their files
+ *     at once without meeting, and once for each side of each worker, for
+ *     the mirror's tests (mirrorDatabaseUrl): a publisher and a private
  *     deployment are two databases.
  *
  * Runs in its own process; the per-worker DATABASE_URL is set in
@@ -26,7 +28,14 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import pg from "pg";
-import { MIRROR_DATABASE_SIDES, TEST_DATABASE_URL, TEST_DATABASE_ADMIN_URL, mirrorDatabaseUrl } from "./urls.js";
+import {
+  DB_TEST_WORKERS,
+  MIRROR_DATABASE_SIDES,
+  TEST_DATABASE_ADMIN_URL,
+  TEST_DATABASE_TEMPLATE_URL as TEST_DATABASE_URL,
+  mirrorDatabaseUrl,
+  workerDatabaseUrl,
+} from "./urls.js";
 
 /**
  * What the catalog says about enforcement (src/db/clearance.ts): the
@@ -123,6 +132,20 @@ export default async function globalSetup(project: {
   const admin = new pg.Client({ connectionString: TEST_DATABASE_ADMIN_URL });
   await admin.connect();
   try {
+    // Each worker is a process with pools of its own, and a file may start
+    // the app as a second process: four workers were seen to hold about 126
+    // connections at once. A server with fewer than this fails files
+    // part-way with 53300, which reads as a broken test; say so here instead.
+    const [{ max_connections: max }] = (await admin.query<{ max_connections: string }>(`SHOW max_connections`)).rows as [
+      { max_connections: string },
+    ];
+    const wanted = CONNECTIONS_PER_WORKER * DB_TEST_WORKERS;
+    if (Number(max) < wanted) {
+      throw new Error(
+        `The test server allows ${max} connections and ${DB_TEST_WORKERS} workers want about ${wanted}. ` +
+          `Raise max_connections (docker-compose.yml starts Postgres with 300) or run fewer workers (DB_TEST_WORKERS=1).`
+      );
+    }
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
     if (separateOwner) {
       const existing = await admin.query(`SELECT rolsuper FROM pg_roles WHERE rolname = $1`, [ownerRole]);
@@ -174,17 +197,38 @@ export default async function globalSetup(project: {
   });
 
   project.provide("enforcementSwitch", await recordEnforcementSwitch());
-  // The mirror's databases: copies of the one just migrated, taken now,
-  // while nothing is connected to it and it holds no rows.
-  const copies = new pg.Client({ connectionString: TEST_DATABASE_ADMIN_URL });
-  await copies.connect();
-  try {
-    for (const side of MIRROR_DATABASE_SIDES) {
-      const copy = new URL(mirrorDatabaseUrl(side)).pathname.replace(/^\//, "");
-      await copies.query(`DROP DATABASE IF EXISTS ${copy} WITH (FORCE)`);
-      await copies.query(`CREATE DATABASE ${copy} TEMPLATE ${dbName}`);
-    }
-  } finally {
-    await copies.end();
+  // The workers' databases, and each worker's mirror databases: copies of
+  // the one just migrated, taken now, while nothing is connected to it and
+  // it holds no rows. A copy is a file copy of a small database, so they
+  // are taken a few at a time.
+  const copies: Array<{ name: string; owner: string | null }> = [];
+  for (let worker = 1; worker <= DB_TEST_WORKERS; worker++) {
+    const url = workerDatabaseUrl(worker, TEST_DATABASE_URL);
+    copies.push({ name: databaseName(url), owner: separateOwner ? ownerRole : null });
+    for (const side of MIRROR_DATABASE_SIDES) copies.push({ name: databaseName(mirrorDatabaseUrl(side, url)), owner: null });
   }
+  await Promise.all(
+    Array.from({ length: 4 }, async (_, lane) => {
+      const client = new pg.Client({ connectionString: TEST_DATABASE_ADMIN_URL });
+      await client.connect();
+      try {
+        for (let i = lane; i < copies.length; i += 4) {
+          const { name, owner } = copies[i]!;
+          await client.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+          await client.query(`CREATE DATABASE ${name} TEMPLATE ${dbName} STRATEGY FILE_COPY${owner ? ` OWNER ${owner}` : ""}`);
+        }
+      } finally {
+        await client.end();
+      }
+    })
+  );
+}
+
+/** The connections the server should have room for per worker: about 32 were seen at the peak, with headroom for bursts. */
+const CONNECTIONS_PER_WORKER = 50;
+
+function databaseName(url: string): string {
+  const name = new URL(url).pathname.replace(/^\//, "");
+  if (!/^[a-z0-9_]+$/.test(name)) throw new Error(`Refusing to manage suspicious test db name: ${name}`);
+  return name;
 }

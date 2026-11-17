@@ -24,7 +24,7 @@ import { addLabelRead, defineLabel, removeLabelRead } from "../../src/services/l
 import { getRecordedPage } from "../../src/services/recorded-page-service.js";
 import { listReportsAwaitingIssue } from "../../src/services/report-service.js";
 import { runReadOnlyQuery } from "../../src/services/sql-service.js";
-import { TEST_DATABASE_URL } from "./urls.js";
+import { SQL_TEST_PASSWORD, SQL_TEST_ROLE, TEST_DATABASE_URL } from "./urls.js";
 
 const A = "rev-a";
 const B = "rev-b";
@@ -45,8 +45,8 @@ const refusedWith = async (code: string, work: () => Promise<unknown>) => {
 
 const claimIds: Record<string, string> = {};
 const tag = randomUUID().slice(0, 8);
-const SQL_ROLE = "minerval_sql_dbtest";
-const SQL_PASSWORD = "dbtest-sql";
+const SQL_ROLE = SQL_TEST_ROLE;
+const SQL_PASSWORD = SQL_TEST_PASSWORD;
 let actor = "";
 
 function sqlRoleUrl(): string {

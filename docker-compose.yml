@@ -11,6 +11,9 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: episteme-postgres
+    # The DB suite runs four workers at once (tests/db/README.md), which
+    # together want more than the default 100 connections.
+    command: postgres -c max_connections=300
     ports:
       - "5432:5432"
     environment:
