@@ -54,7 +54,8 @@
     "platform-mandates": "tsx scripts/platform-mandates.ts",
     "tags": "tsx scripts/tags.ts",
     "tags:seed": "tsx scripts/seed-tags-from-clusters.ts",
-    "worker:solver": "tsx src/workers/solver-executor.ts"
+    "worker:solver": "tsx src/workers/solver-executor.ts",
+    "worker:mirror-publisher": "tsx src/workers/mirror-publisher.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",

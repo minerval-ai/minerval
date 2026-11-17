@@ -29,7 +29,7 @@ import { startReportEmbeddingBackfill } from "./workers/report-embedding-backfil
 import { startSourceBackfill } from "./workers/source-backfill.js";
 import { startMirrorPublisher } from "./workers/mirror-publisher.js";
 import { startMirrorApplier } from "./workers/mirror-applier.js";
-import { mirrorConfigProblems, mirrorRoles } from "./services/mirror-roles.js";
+import { cutsInApiProcess, mirrorConfigProblems, mirrorRoles } from "./services/mirror-roles.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -194,9 +194,11 @@ function startWork(
   // deployment is configured for that side: a publisher cuts signed batches
   // of its public rows on a cadence, an applier brings its mirror of the
   // public graph up to its feed. Each takes a lock for its work, so every
-  // task may run it.
+  // task may run it. A publisher whose cuts run in their own worker
+  // (MIRROR_PUBLISHER_WORKER, src/workers/mirror-publisher.ts) only serves
+  // the feed here.
   const mirror = mirrorRoles(config);
-  if (mirror.publisher) pollers.push(startMirrorPublisher({ logger }));
+  if (cutsInApiProcess(config)) pollers.push(startMirrorPublisher({ logger }));
   if (mirror.applier) pollers.push(startMirrorApplier({ logger }));
   // The usage report (docs/usage-report.md): a members-only deployment on
   // the metered price reports the owls its runs spent each closed UTC day,

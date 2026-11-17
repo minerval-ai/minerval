@@ -231,8 +231,9 @@ A read of a node says that it is mirrored and as of when (`mirrored.public_graph
 | --- | --- |
 | `MIRROR_PUBLISH` | `true` makes the deployment a publisher |
 | `MIRROR_SIGNING_KEY` | Ed25519 private key, PEM. A secret |
+| `MIRROR_PUBLISHER_WORKER` | `true` runs the cuts in a process of their own (`npm run worker:mirror-publisher`), and the API only serves the feed. Default `false`: the API cuts too |
 | `MIRROR_PUBLISH_INTERVAL_SECONDS` | How often a cut is made. Default 900 |
-| `MIRROR_BATCH_MAX_BYTES` | Most bytes of rows in one batch. Default 24,000,000 |
+| `MIRROR_BATCH_MAX_BYTES` | Most bytes of rows in one batch. Default 8,000,000 |
 | `MIRROR_FEED_URL` | The publisher's API address. Makes the deployment an applier |
 | `MIRROR_FEED_DIR` | A directory of batch files, in place of an address |
 | `MIRROR_FEED_API_KEY` | The key presented when fetching a batch |
@@ -240,6 +241,8 @@ A read of a node says that it is mirrored and as of when (`mirrored.public_graph
 | `MIRROR_APPLY_INTERVAL_SECONDS` | How often the feed is checked. Default 300 |
 
 A publisher without a usable signing key, or an applier without a public key, does not start.
+
+**What a cut costs.** A cut holds the batch it is building and the one before it, as objects several times their JSON size, and each batch is read whole to be served and whole to be applied. Measured in November 2026 on a copy of the public graph (256,153 rows, 472 MB of batches), with the process alone under a 1 GB limit: a snapshot cut peaked at 972 MB with 24 MB batches, 544 MB with 8 MB and 474 MB with 4 MB, and took about two minutes; an ordinary cut with nothing to send took 16 seconds and 141 MB. A snapshot cut is made with the first batch and after the mirrored tables change shape. Public Minerval runs its cuts in their own 2 GB service for this reason (`MIRROR_PUBLISHER_WORKER`; [infrastructure.md](infrastructure.md), "The mirror feed"): run inside its 1 GB API task, the first snapshot killed the API for memory on every start.
 
 ## By hand
 
