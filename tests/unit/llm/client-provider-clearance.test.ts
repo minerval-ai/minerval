@@ -74,11 +74,9 @@ afterAll(() => {
 });
 
 // An Anthropic model that searches the web inside the turn, one that does
-// not (its web_search is the loop's own tool: an older Claude that takes
-// neither of the web search server tools, web-search-tool.ts), and the cheap
-// tier on OpenRouter.
+// not (its web_search is the loop's own tool), and the cheap tier on OpenRouter.
 const SONNET = MODELS.sonnet;
-const OLD_CLAUDE = "claude-3-5-haiku-20241022";
+const HAIKU = MODELS.haiku;
 const CHEAP = OPENROUTER_MODELS.flash;
 const LOCAL = "endpoint:local/meta-llama/Llama-3.3-70B-Instruct";
 
@@ -257,7 +255,7 @@ describe("a run at a second label, with its provider cleared", () => {
       withAgent("steward", () =>
         toolUseLoop({
           initialMessages: [{ role: "user", content: "go" }],
-          model: OLD_CLAUDE,
+          model: HAIKU,
           tools: everyTool,
           executeTool: async () => "unused",
         })

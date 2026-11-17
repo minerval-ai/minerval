@@ -13,7 +13,6 @@ vi.mock("../../../../src/llm/providers/openrouter.js", () => ({
 
 import {
   anthropicServerWebSearch,
-  anthropicWebSearchVariant,
   createWebSearch,
   WEB_SEARCH_TOOL_NAME,
 } from "../../../../src/llm/tools/web-search-tool.js";
@@ -26,35 +25,18 @@ beforeEach(() => {
 
 describe("web_search on every provider", () => {
   it("is the Anthropic server tool on a Claude model that runs it, with nothing to execute", () => {
-    for (const model of ["claude-opus-5-5", "claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6"]) {
+    for (const model of ["claude-opus-5-5", "claude-sonnet-5", "claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-5-5"]) {
       expect(anthropicServerWebSearch(model)).toBe(true);
     }
     const ws = createWebSearch("claude-opus-5-5");
     // No max_uses: the run's budget bounds searches, not a count.
     expect(ws.tool).toEqual({ type: "web_search_20260209", name: WEB_SEARCH_TOOL_NAME });
     expect(ws.execute).toBeNull();
-  });
-
-  it("is the basic server tool on a Claude model Anthropic lists for search without dynamic filtering", () => {
-    for (const model of [
-      "claude-haiku-5-5",
-      "claude-haiku-4-5-20251001",
-      "claude-opus-4-5-20251101",
-      "claude-sonnet-4-5-20250929",
-    ]) {
-      expect(anthropicServerWebSearch(model)).toBe(true);
-      expect(anthropicWebSearchVariant(model)).toBe("web_search_20250305");
-      const ws = createWebSearch(model);
-      expect(ws.tool).toEqual({ type: "web_search_20250305", name: WEB_SEARCH_TOOL_NAME });
-      expect(ws.execute).toBeNull();
-    }
-    expect(anthropicWebSearchVariant("claude-sonnet-4-6")).toBe("web_search_20260209");
+    expect(createWebSearch("claude-haiku-5-5").tool).toEqual({ type: "web_search_20260209", name: WEB_SEARCH_TOOL_NAME });
   });
 
   it("is a client-side tool of the same name elsewhere, executed through OpenRouter", async () => {
-    // A Claude model outside both allowlists (here a Haiku not yet checked)
-    // is not assumed to take either server tool.
-    for (const model of ["openai/gpt-6-luna", "gpt-5-mini", "o3", "claude-haiku-6"]) {
+    for (const model of ["openai/gpt-6-luna", "gpt-5-mini", "o3", "claude-haiku-4-5-20251001"]) {
       expect(anthropicServerWebSearch(model)).toBe(false);
       const ws = createWebSearch(model);
       expect(ws.tool.name).toBe(WEB_SEARCH_TOOL_NAME);

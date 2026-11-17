@@ -51,9 +51,9 @@ starts with public Minerval's own settings and you change the ones you need.
   Matcher, the tagger, the lookouts, the Consistency Checker and the
   Researcher's cheap tier); `deploy/env.example`, section 5, names their
   settings. Open-web search needs an OpenRouter key whatever model a role
-  runs on, unless that model is a Claude model with Anthropic's web search
-  tool (Fable, Mythos, Opus 4.5 and later, Sonnet 4.5 and later, Haiku 4.5
-  and Haiku 5.5): every other model, OpenAI's and an endpoint of your own
+  runs on, unless that model is a current Claude model (Fable, Mythos,
+  Opus 4.6 and later, Sonnet 4.6 and later, Haiku 5.5), which searches
+  inside Anthropic's API: every other model, OpenAI's and an endpoint of your own
   included, searches through OpenRouter, and at a label other than
   `public` that needs `web_search` cleared for the label. So a deployment
   without OpenRouter puts every role that searches on one of those Claude
