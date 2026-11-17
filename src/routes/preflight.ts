@@ -43,7 +43,7 @@ export async function preflightRoutes(app: FastifyInstance): Promise<void> {
                 type: "object",
                 properties: {
                   name: { type: "string", enum: PREFLIGHT_CHECKS.map((c) => c.name) },
-                  status: { type: "string", enum: ["pass", "fail", "not_applicable"] },
+                  status: { type: "string", enum: ["pass", "fail", "to_do", "not_applicable"] },
                   // Whether a fail here stops agent work on this deployment.
                   blocking: { type: "boolean" },
                   message: { type: "string" },

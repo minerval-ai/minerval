@@ -162,7 +162,7 @@ docker compose logs -f api`}</Code>
       </div>
       <p><code>list_features</code> (<code>GET /setup/features</code>) reports which are on, and it is how the web app and outside agents learn it. Where the deployment holds private material and its run log is best-effort, the <code>features</code> check fails while the extension is on, because a best-effort log leaves out the extension's page analysis. The Lean checker is not in the package, so with mathematics on its machine checks are absent.</p>
       <h2 id="checks">The deployment's own checks</h2>
-      <p>The preflight is a list of named checks, each answering pass, fail or not applicable with one sentence. Read it on the setup checklist, or from the machine:</p>
+      <p>The preflight is a list of named checks, each answering pass, fail, to do or not applicable with one sentence. To do is not a failure: it is something not set up yet that a check will fail on later. Read it on the setup checklist, or from the machine:</p>
       <Code label="Shell">{`docker compose exec api npm run preflight`}</Code>
       <p>It exits non-zero when any check fails. Once a label besides <code>public</code> is defined, no agent work starts until six blocking checks pass: <code>database</code>, <code>run_log</code>, <code>provider_labels</code>, <code>reports_stay_inside</code>, <code>model_prices</code> and <code>sandbox_confinement</code>. The API still serves meanwhile, logs which check failed, and looks again every minute. <code>GET /setup/preflight</code> serves the same report to whoever holds the operator key.</p>
       <h2 id="mirror">Mirroring the public graph</h2>

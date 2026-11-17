@@ -59,6 +59,7 @@ export default async function LabelsPage() {
   const sourcesBy = new Map((checklist?.material.sources_by_party ?? []).map((p) => [p.party.id, p.sources]));
   const ownLabels = labels.filter((l) => l.name !== "public");
   const ownParty = parties.find((p) => p.is_own_organization);
+  const generalAt = generalMandateAt(checklist);
 
   return (
     <div className="admin-page">
@@ -87,6 +88,7 @@ export default async function LabelsPage() {
                 <th>what it is for</th>
                 <th>also reads</th>
                 <th>who reads at it</th>
+                <th>General mandate</th>
                 <th>defined</th>
               </tr>
             </thead>
@@ -120,6 +122,9 @@ export default async function LabelsPage() {
                     {l.name === "public"
                       ? "Every member"
                       : holdersOf(grants.filter((g) => g.permission === "read" && g.label === l.name))}
+                  </td>
+                  <td>
+                    <GeneralMandateCell label={l.name} state={generalAt(l.name)} />
                   </td>
                   <td className="acct-num-left">{dateish(l.created_at)}</td>
                 </tr>
@@ -189,6 +194,14 @@ export default async function LabelsPage() {
                 </fieldset>
               )}
             </ActionForm>
+            <p className="acct-note">
+              Upkeep and audits at a label are paid by a General mandate at that label, because a
+              mandate&rsquo;s work runs at its label. A new label has none until an administrator who
+              reads it sets one up on <Link href="/admin/owls#standing-mandates">Owls</Link>; the
+              column above links to the form for each label. None is needed at a label that will
+              hold only work someone asks for and pays for. The setup page lists a label with none as
+              to do while it holds nothing, and as failing once nodes or judgments are held there.
+            </p>
             <p className="acct-note">
               Every label reads public without it being said. Defining a label gives nobody the
               right to read at it: that is granted on{" "}
@@ -359,4 +372,46 @@ export default async function LabelsPage() {
       </section>
     </div>
   );
+}
+
+type GeneralState = "set_up" | "none" | "not_read" | "unknown";
+
+// Whether a General mandate is set up at each label, as the setup checklist
+// says: at the labels the reader reads, where the deployment holds more than
+// one. A label the reader does not read is not answered for here.
+function generalMandateAt(checklist: SetupChecklist | null): (label: string) => GeneralState {
+  const general = checklist?.standing_mandates.find((m) => m.name === "general");
+  return (label) => {
+    if (!general) return "unknown";
+    if (general.by_label) {
+      const at = general.by_label.find((l) => l.label === label);
+      return at ? (at.mandate ? "set_up" : "none") : "not_read";
+    }
+    if (label === "public") return general.mandate ? "set_up" : "none";
+    return "not_read";
+  };
+}
+
+function GeneralMandateCell({ label, state }: { label: string; state: GeneralState }) {
+  const owlsAt = `/admin/owls#standing-mandate-${label}`;
+  switch (state) {
+    case "set_up":
+      return <Link href={owlsAt}>Set up</Link>;
+    case "none":
+      return (
+        <>
+          None, so nothing pays for upkeep or audits here. <Link href={owlsAt}>Set one up</Link>, unless
+          the label will hold only work someone asks for and pays for.
+        </>
+      );
+    case "not_read":
+      return (
+        <span className="acct-quiet">
+          Not shown: you do not read this label. An administrator who reads it sets one up on{" "}
+          <Link href="/admin/owls#standing-mandates">Owls</Link>.
+        </span>
+      );
+    default:
+      return <span className="acct-quiet">Could not be read just now.</span>;
+  }
 }

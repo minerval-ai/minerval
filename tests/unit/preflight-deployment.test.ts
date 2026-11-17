@@ -164,9 +164,9 @@ describe("owls, prices and the usage report", () => {
 describe("a General mandate at each label", () => {
   it("fails naming the labels that hold material and have none, and passes naming the labels that have one", () => {
     const labels = [
-      { label: "public", material: true, general: true },
-      { label: "internal", material: true, general: false },
-      { label: "restricted", material: false, general: false },
+      { label: "public", material: true, held: true, general: true },
+      { label: "internal", material: true, held: true, general: false },
+      { label: "restricted", material: false, held: true, general: false },
     ];
     const out = run("standing_mandates", facts({ config: members(), tables: { labels } }));
     expect(out.status).toBe("fail");
@@ -176,6 +176,28 @@ describe("a General mandate at each label", () => {
     expect(run("standing_mandates", facts({ config: members(), tables: { labels } })).message).toContain('A General mandate is set up at "public", "internal"');
     expect(run("standing_mandates", facts({ config: members(), tables: { labels: [] } })).message).toContain("No General mandate is set up");
     expect(run("standing_mandates", facts()).status).toBe("not_applicable");
+  });
+
+  it("lists a label with none that holds nothing yet as to do, not a failure, and passes one that holds only work asked for", () => {
+    const labels = [
+      { label: "public", material: true, held: true, general: true },
+      { label: "sensitive", material: false, held: false, general: false },
+    ];
+    const out = run("standing_mandates", facts({ config: members(), tables: { labels } }));
+    expect(out.status).toBe("to_do");
+    expect(out.message).toContain('A General mandate is set up at "public"');
+    expect(out.message).toContain('None is set up at "sensitive", which holds nothing yet.');
+    expect(out.message).toContain("only work someone asks for and pays for");
+    // Something is in at the label, and none of it is nodes or judgments of
+    // its own: the lenient case, which needs no General mandate.
+    labels[1]!.held = true;
+    expect(run("standing_mandates", facts({ config: members(), tables: { labels } })).status).toBe("pass");
+    // Once nodes or judgments are held there, it fails as before.
+    labels[1]!.material = true;
+    expect(run("standing_mandates", facts({ config: members(), tables: { labels } })).status).toBe("fail");
+    // A label with one that holds nothing is nothing to do.
+    labels[1] = { label: "sensitive", material: false, held: false, general: true };
+    expect(run("standing_mandates", facts({ config: members(), tables: { labels } })).status).toBe("pass");
   });
 });
 

@@ -382,6 +382,7 @@ export default async function OwlsPage() {
             or its audits. The labels listed are the ones you read.
           </p>
         )}
+        {/* Each is anchored by its label, for the labels page to link to; with no by_label the only label is public. */}
         {standing
           .flatMap((s) =>
             s.by_label
@@ -389,7 +390,11 @@ export default async function OwlsPage() {
               : [{ ...s, label: null as string | null }]
           )
           .map((m) => (
-          <div className="admin-item" key={`${m.name}:${m.label ?? ""}`}>
+          <div
+            className="admin-item"
+            key={`${m.name}:${m.label ?? ""}`}
+            id={`standing-mandate-${m.label ?? "public"}`}
+          >
             <div className={`admin-state admin-state-${m.mandate ? (m.mandate.budget_owls > 0 ? "done" : "to_do") : "to_do"}`}>
               {m.mandate ? (m.mandate.budget_owls > 0 ? "Set up" : "No budget") : "Not set up"}
             </div>

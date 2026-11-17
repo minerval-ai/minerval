@@ -267,6 +267,26 @@ describe("a checklist from a build with no preflight, and a deployment that hold
     ]);
   });
 
+  it("lists a label with no General mandate that holds nothing yet as to do, from the deployment's own check, without calling it a failure", () => {
+    const c = setUp();
+    const message =
+      'A General mandate is set up at "public". None is set up at "sensitive", which holds nothing yet.';
+    c.preflight = {
+      ...c.preflight!,
+      checks: [...c.preflight!.checks, { name: "standing_mandates", status: "to_do", blocking: false, message }],
+    };
+    const items = checklistItems(c);
+    const mandates = items.find((i) => i.key === "standing_mandates")!;
+    expect(mandates.state).toBe("to_do");
+    expect(mandates.facts).toContain(message);
+    expect(mandates.next).toContain("unless the label will hold only work someone asks for and pays for");
+    const checks = items.find((i) => i.key === "checks")!;
+    expect(checks.state).toBe("to_do");
+    expect(checks.facts[0]).toContain("0 fail, 1 is to do");
+    expect(checks.next).toContain("Nothing has failed.");
+    expect(c.preflight.ready).toBe(true);
+  });
+
   it("says how many connections an administrator is not shown", () => {
     const c = dayOne();
     c.connections = { ...c.connections, not_shown: 2 };
