@@ -14,6 +14,7 @@ import { rawQuery, withTransaction } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { armEnforcement } from "../db/enforcement.js";
 import { PUBLIC_LABEL } from "../labels.js";
+import { shownLabelDescription } from "./label-service.js";
 import { logAdministrativeEvent } from "./permission-service.js";
 
 /**
@@ -54,7 +55,7 @@ export async function listLabels(): Promise<LabelView[]> {
   );
   return rows.map((r) => ({
     name: r.name,
-    description: r.description,
+    description: shownLabelDescription(r.name, r.description),
     reads: r.reads ?? [],
     created_at: r.created_at.toISOString(),
   }));
