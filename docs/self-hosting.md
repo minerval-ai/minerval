@@ -72,9 +72,11 @@ starts with public Minerval's own settings and you change the ones you need.
    out unless you want to change them.
 
    `.env` is the one place this deployment's secrets live. It is ignored by
-   git. A setting in your shell's environment with the same name wins over
-   `.env`, so run the commands below from a shell that does not carry, say,
-   an `OPENAI_API_KEY` meant for something else.
+   git and is in no Docker volume, so keep a copy off the machine ("No
+   backups", below, says which values cannot be made again). A setting in
+   your shell's environment with the same name wins over `.env`, so run
+   the commands below from a shell that does not carry, say, an
+   `OPENAI_API_KEY` meant for something else.
 
    Two choices most deployments make here:
 
@@ -254,8 +256,36 @@ sandbox, and an administrator registers directories under it as file sets.
 - **No published images.** You build from the repository.
 - **One machine, one API process.** The API and its workers are one
   container. Running more than one has not been tried.
-- **No backups.** The database and the file sets are Docker volumes. Back
-  them up yourself.
+- **No backups.** The database and the file sets are Docker volumes, and
+  the settings are two files on the machine, `deploy/.env` and
+  `deploy/api.env` (where you made one), in neither volume. Back up all
+  four yourself, and keep the two files somewhere off the machine, such as
+  a password manager or a secrets store: they hold the deployment's
+  secrets, and a restored database is started with the settings it was
+  run with. What each secret costs when it is lost:
+  - **Made again, with a restart:** `AUTH_SECRET` (everyone is signed
+    out), `WEB_API_KEY`, `SANDBOX_TOKEN`, `CLEARED_ROLE_PASSWORD` (the API
+    gives the role the new password when it starts and its login is
+    refused) and `MINERVAL_OPERATOR_KEY` (give the new one to whatever
+    calls the operator routes).
+  - **Issued again by whoever issued them:** the model providers' keys,
+    `AUTH_OIDC_SECRET`, the public graph's API keys, and in `api.env`
+    Stripe's keys and each connection's credential.
+  - **`DB_OWNER_PASSWORD`** must be the password `minerval_owner` has in
+    the restored database. Without it, give the role a new one inside the
+    database: `docker compose exec postgres psql -U postgres`, then
+    `ALTER ROLE minerval_owner PASSWORD '<new>';`, and put the new one in
+    `.env`. `POSTGRES_PASSWORD` is read only when the data volume is first
+    created; a restored volume keeps the superuser's old password, and
+    the step above does not need it.
+  - **`PUBLISH_SIGNING_KEY` cannot be made again.** A new key can be
+    registered on the public graph, which retires the old registration,
+    but every page already shown outside is a chain of packages signed
+    with the old key. The new key cannot continue it: each page's record
+    starts again.
+
+  The rest of `.env` is choices (the models, which labels each provider is
+  cleared for) that can be written again, and are easier kept.
 - **No model server.** The package runs no model. An endpoint of your own is
   yours to run and to name in `MODEL_ENDPOINTS`.
 - **No mirror of the public graph unless you set it up.** With
