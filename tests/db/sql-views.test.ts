@@ -140,7 +140,10 @@ describe("read-only SQL", () => {
     const userId = await seedUser("sweep funder");
     const commission = await seedAllocation({ group, actionId: swept, userId, amountMicroUsd: 1_000_000, spentMicroUsd: 400_000, released: true });
     await rawQuery(`UPDATE action_allocations SET released_at = now() - interval '1 day' WHERE id = $1`, [commission]);
-    const residual = await seedAction({ kind: "consistency_sweep", group: "consistency:residual", targetRef: "residual", costMicroUsd: 1_000_000 });
+    // A variant of its own: the residual bucket is one exclusion group for
+    // the whole database, and another file's sweep may already hold its
+    // standard row.
+    const residual = await seedAction({ kind: "consistency_sweep", group: "consistency:residual", variant: `dbtest-${slug}`, targetRef: "residual", costMicroUsd: 1_000_000 });
     const ingest = await seedAction({ kind: "ingest", group: `ingest:${slug}`, targetRef: "https://example.org/x", costMicroUsd: 1_000_000 });
 
     const partitions = await runReadOnlyQuery(
