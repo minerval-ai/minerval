@@ -602,12 +602,12 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /owls/created": BUDGET_SESSION,
   "POST /standing-mandates/:name": BUDGET_SESSION,
   "POST /usage-reports/outgoing/send":
-    "Sends this deployment's usage reports to the public graph now instead of at the worker's " +
+    "Sends this deployment's usage reports privately to Minerval now instead of at the worker's " +
     "next pass. It is an administrator's act from a signed-in dashboard session, like every " +
     "administrative write; list_usage_reports is the tool that reads what was and will be sent.",
   "POST /usage-reports":
-    "Machine to machine: a private deployment's own worker reports its day's owl spend to the " +
-    "public graph under the organization's API key (docs/usage-report.md). An agent has no " +
+    "Machine to machine: a private deployment's own worker reports its day's owl spend privately " +
+    "to Minerval under the organization's API key, for billing (docs/usage-report.md). An agent has no " +
     "report of its own to send, and a tool here would let one file a figure in an account's name.",
 
   "GET /health": "A load-balancer liveness probe, not an affordance.",

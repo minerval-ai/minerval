@@ -1,11 +1,18 @@
 /**
  * The usage report (docs/usage-report.md).
  *
- * Every private graph pays toward the public graph it reads. By default the
- * price is metered: a deployment reports the owls its agents' runs spent,
- * whoever hosts it and whoever runs its models, and pays in proportion. A
- * flat price for the feed is the alternative, and a deployment on it
- * reports nothing (PUBLIC_GRAPH_PRICE).
+ * This is billing. Every private graph pays Minerval toward the public graph
+ * it reads. By default the price is metered: a deployment reports the owls
+ * its agents' runs spent, whoever hosts it and whoever runs its models, and
+ * pays in proportion. A flat price for the feed is the alternative, and a
+ * deployment on it reports nothing (PUBLIC_GRAPH_PRICE).
+ *
+ * A report goes privately to Minerval's server (POST /usage-reports), under
+ * the organization's account there, and is recorded against that account
+ * alone. It is not published: no route reads it back, the mirror feed does
+ * not carry it, and no other account can see it. The words the pages show
+ * name Minerval as the recipient, never "the public graph", which an
+ * administrator would read as "made public" (#1098).
  *
  * A report is one total for one closed UTC day. It never says which claims,
  * mandates, sources or people the work was for, how many runs there were or
@@ -18,7 +25,7 @@
  *
  *  - The sending side, in a members-only deployment on the metered price:
  *    prepare a report for each closed day (prepareUsageReports), and send
- *    what has not been sent (sendUsageReports), online to the public graph
+ *    what has not been sent (sendUsageReports), online to Minerval's server
  *    under the organization's account or as files to be handed over. A
  *    report's text is fixed when it is prepared, so an administrator reads
  *    before sending exactly what will leave. A day's report is never
@@ -58,14 +65,17 @@ export interface UsageReport {
 
 /** What is sent, as the administrators' page says it. */
 export const WHAT_IS_SENT =
-  "For each UTC day that has ended, this deployment reports one figure to the public graph: " +
-  "the owls its agents' runs spent that day, one owl for each dollar of metered cost. " +
+  "This is billing. The organization pays Minerval toward the public graph this deployment " +
+  "reads, and on the metered price what it pays is in proportion to the owls this deployment's " +
+  "agents' runs spend. For each UTC day that has ended, this deployment sends Minerval one " +
+  "figure: the owls its agents' runs spent that day, one owl for each dollar of metered cost. " +
   "With the figure go the day, the report's revision number (0, or higher for a correction), " +
   "the report format's name and number, and an identifier of this deployment that was made at " +
-  "random and says nothing else about it. The report is sent under the organization's account " +
-  "on the public graph, because the metered price for reading the public graph is in " +
-  "proportion to this total. Each report is shown here exactly as it is sent, before it is " +
-  "sent and after.";
+  "random and says nothing else about it. The report is sent privately to Minerval, under the " +
+  "organization's account with Minerval, and recorded against that account so that Minerval " +
+  "can bill the metered price. It is not published, and no other account can see it. Minerval " +
+  "bills nothing from it yet: the price per owl is not decided. Each report is shown here " +
+  "exactly as it is sent, before it is sent and after.";
 
 /** What is never sent. */
 export const WHAT_IS_NEVER_SENT =
@@ -75,8 +85,9 @@ export const WHAT_IS_NEVER_SENT =
 
 /** What the page says in a deployment on the flat price. */
 export const FLAT_PRICE_SENDS_NOTHING =
-  "This deployment pays a flat price for the public graph's feed (PUBLIC_GRAPH_PRICE=flat), " +
-  "so it reports nothing: no usage report is prepared and none is sent.";
+  "This deployment pays Minerval a flat price for the public graph's feed " +
+  "(PUBLIC_GRAPH_PRICE=flat), so it reports nothing: no usage report is prepared and none is " +
+  "sent to Minerval.";
 
 /** How a day's report is corrected. */
 export const HOW_A_REPORT_IS_CORRECTED =
@@ -334,12 +345,12 @@ export interface SendOutcome {
   stopped: string | null;
 }
 
-/** How long one report may take to reach the public graph before the attempt is given up. */
+/** How long one report may take to reach Minerval's server before the attempt is given up. */
 const SEND_TIMEOUT_MS = 30_000;
 
 /**
- * Send every report that has not been sent, oldest first: online to the
- * public graph, or as files where the deployment hands them over. Stops at
+ * Send every report that has not been sent, oldest first: online to
+ * Minerval's server, or as files where the deployment hands them over. Stops at
  * the first that fails and leaves the rest for the next pass, so a
  * deployment that was offline sends late and in order. A report's text is
  * what was prepared; nothing here changes it.
@@ -355,7 +366,7 @@ export async function sendUsageReports(
       sent: 0,
       stopped:
         "No destination is set. Set USAGE_REPORT_URL and USAGE_REPORT_API_KEY to send reports to " +
-        "the public graph, or USAGE_REPORT_DIR to write them as files to hand over.",
+        "Minerval, or USAGE_REPORT_DIR to write them as files to hand over.",
     };
   }
   if (destination.kind === "online" && !destination.ready) {
@@ -363,7 +374,7 @@ export async function sendUsageReports(
       sent: 0,
       stopped:
         "USAGE_REPORT_URL is set and USAGE_REPORT_API_KEY is not. A report is sent under an API " +
-        "key of the organization's account on the public graph.",
+        "key of the organization's account with Minerval.",
     };
   }
 
@@ -390,7 +401,7 @@ export async function sendUsageReports(
         });
         const text = await response.text();
         if (!response.ok) {
-          throw new Error(`The public graph answered ${response.status}: ${text.slice(0, 500)}`);
+          throw new Error(`Minerval's server answered ${response.status}: ${text.slice(0, 500)}`);
         }
         via = "online";
         try {

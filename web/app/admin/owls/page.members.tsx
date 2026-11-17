@@ -456,8 +456,8 @@ export default async function OwlsPage() {
         ))}
         {createdHere && (
           <p className="acct-note">
-            What this deployment reports of its owl spend to the public graph, and what it never
-            reports, is on <Link href="/admin/usage-report">the usage report page</Link>
+            What this deployment reports of its owl spend privately to Minerval for billing, and what
+            it never reports, is on <Link href="/admin/usage-report">the usage report page</Link>
             {administers ? "." : ", which administrators read."}
           </p>
         )}

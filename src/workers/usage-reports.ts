@@ -3,7 +3,7 @@
  *
  * In a members-only deployment on the metered price, on an interval: write
  * a report for each UTC day that has closed and has none, then send every
- * report that has not been sent, to the public graph or to files to be
+ * report that has not been sent, privately to Minerval or to files to be
  * handed over (services/usage-report-service.ts). A deployment that was
  * offline, or has no destination set yet, keeps its reports and sends them
  * when it can, oldest first.
