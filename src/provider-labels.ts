@@ -1,5 +1,5 @@
 /**
- * Providers cleared by label: PROVIDER_LABELS.
+ * Providers cleared by label.
  *
  * In a private deployment, text that is not public reaches only the parties
  * its owner chose: the deployment's members, and a model provider or an
@@ -16,27 +16,47 @@
  *    (llm/providers/endpoint-config.ts), as `endpoint:<name>`;
  *  - each outside service in OUTSIDE_SERVICES below.
  *
- * PROVIDER_LABELS is a JSON object from a provider's name to the list of
- * labels it may receive text at:
+ * Every provider is cleared for `public`, and for no other label until
+ * someone clears it. So the public graph, whose only label is `public`,
+ * needs nothing, and a private deployment serves no other label until a
+ * provider is cleared for it. That is a step of setting one up, on
+ * purpose: which outside party may read private text is never guessed, and
+ * clearing a provider for a label is never a default.
  *
- *   {"anthropic": ["public", "internal"],
- *    "endpoint:local": ["public", "internal", "restricted"],
- *    "embeddings": ["public", "internal"]}
+ * Who clears it is one of two, never both:
  *
- * A provider the setting does not name is cleared for `public` and for
- * nothing else. So the public graph, whose only label is `public`, needs no
- * setting, and a private deployment serves no other label until whoever
- * runs it clears a provider for it. That is a step of setting one up, on
- * purpose: which outside party may read private text is never guessed.
+ *  - The administrators, on the labels page, where a label is defined
+ *    (services/provider-clearance-service.ts). The choice is a row for each
+ *    provider and label it clears (provider_clearances), made by a holder
+ *    of `clear_providers` and logged. This is the starting arrangement.
  *
- * A provider the setting names is cleared for exactly the labels listed, so
- * an empty list switches it off for everything, `public` included.
+ *  - Whoever runs the machine, in PROVIDER_LABELS (or [provider_labels] in
+ *    the config file). Set, it fixes the clearance: the stored choice is
+ *    not read, the page says the clearance is fixed by the deployment's
+ *    settings, and nothing can be changed there. It is a JSON object from a
+ *    provider's name to the list of labels it may receive text at:
+ *
+ *      {"anthropic": ["public", "internal"],
+ *       "endpoint:local": ["public", "internal", "restricted"],
+ *       "embeddings": ["public", "internal"]}
+ *
+ *    A provider it does not name is cleared for `public` alone, and one it
+ *    names is cleared for exactly the labels listed, so an empty list
+ *    switches it off for everything, `public` included.
+ *
+ * The stored choice is in the database, which the synchronous readers here
+ * cannot reach, so this process keeps the last copy it read
+ * (noteStoredClearance), and llm/provider-clearance.ts reads it again
+ * before relying on it at a label other than `public`. At `public` it is
+ * never needed: under the stored choice every provider is cleared for it.
  *
  * Labels are named by name and are never created from here. Whether each
- * name is a row in `labels` can only be asked of the database, which config
- * loading does not have, so it is asked the first time the setting is used
- * (llm/provider-clearance.ts). What can be checked without the database is
- * checked at config load (providerSettingProblems).
+ * name PROVIDER_LABELS uses is a row in `labels` can only be asked of the
+ * database, which config loading does not have, so it is asked the first
+ * time the setting is used (llm/provider-clearance.ts). What can be checked
+ * without the database is checked at config load (providerSettingProblems).
+ * A stored row names its label by a foreign key, so it cannot name one
+ * that is not defined.
  *
  * This module only reads the setting. The check each call makes before
  * anything is sent, and the reasoning about which label it checks, are in
@@ -116,10 +136,137 @@ export type OutsideServiceName = (typeof OUTSIDE_SERVICES)[number]["name"];
 
 export const OUTSIDE_SERVICE_NAMES: readonly OutsideServiceName[] = OUTSIDE_SERVICES.map((s) => s.name);
 
-/** The part of the config the clearance reads. A config without it (a test's partial config) has the defaults. */
+/**
+ * What each hosted model API is sent, for whoever clears it. An endpoint's
+ * is written by endpointDescription.
+ */
+export const HOSTED_PROVIDER_DESCRIPTIONS: Record<(typeof HOSTED_PROVIDERS)[number], string> = {
+  anthropic:
+    "Anthropic's API, which is sent every prompt of a model it serves, and what its server " +
+    "tools (web search, code execution) do inside a turn.",
+  openai: "OpenAI's API, which is sent every prompt of a model it serves.",
+  openrouter: "OpenRouter's API, which is sent every prompt of a model routed through it.",
+};
+
+function endpointDescription(endpoint: ModelEndpoint): string {
+  let host = endpoint.baseUrl;
+  try {
+    host = new URL(endpoint.baseUrl).host;
+  } catch {
+    // Shown as written.
+  }
+  return `The endpoint "${endpoint.name}" this deployment declares (${host}), which is sent every prompt of a model routed to it.`;
+}
+
+/**
+ * The part of the config the clearance reads. A config without it (a
+ * test's partial config) has the defaults. providerLabels undefined (or
+ * null) is "PROVIDER_LABELS is not set": the administrators' stored choice
+ * applies.
+ */
 export interface ProviderLabelsConfig {
-  providerLabels?: Readonly<Record<string, readonly string[]>>;
+  providerLabels?: Readonly<Record<string, readonly string[]>> | null;
   modelEndpoints?: readonly ModelEndpoint[];
+}
+
+/** Whether PROVIDER_LABELS (or [provider_labels]) is set, and so fixes the clearance. */
+export function clearanceFixedBySettings(config: ProviderLabelsConfig = loadConfig()): boolean {
+  return config?.providerLabels != null;
+}
+
+/**
+ * The administrators' stored choice: each provider's labels besides
+ * `public`. A provider with no entry is cleared for `public` alone.
+ */
+export type StoredClearance = Readonly<Record<string, readonly string[]>>;
+
+/**
+ * The last copy of the stored choice this process read, and when. Null
+ * until one is read, which reads as nothing cleared beyond `public`: a
+ * process that has not asked never sends private text on a guess.
+ */
+let lastStored: { clearance: StoredClearance; readAt: number } | null = null;
+
+/** The stored choice as this process last read it; empty when it has read none. */
+export function storedClearance(): StoredClearance {
+  return lastStored?.clearance ?? {};
+}
+
+/** When this process last read the stored choice (Date.now()), or null when it has not. */
+export function storedClearanceReadAt(): number | null {
+  return lastStored?.readAt ?? null;
+}
+
+/** Keep a copy of the stored choice just read (services/provider-clearance-service.ts). */
+export function noteStoredClearance(clearance: StoredClearance, readAt: number = Date.now()): void {
+  lastStored = { clearance, readAt };
+}
+
+/** Forget the copy, so the next reader at a private label reads the table again. */
+export function forgetStoredClearance(): void {
+  lastStored = null;
+}
+
+/** The part of the config that says which providers and services this deployment has set up. */
+export interface ProviderKeysConfig extends ProviderLabelsConfig {
+  anthropicApiKey?: string;
+  openaiApiKey?: string;
+  openrouterApiKey?: string;
+  elicitApiKey?: string;
+  elicitEnabled?: "true" | "false";
+  pangramApiKey?: string;
+  pangramEnabled?: "true" | "false";
+}
+
+export interface ProviderDescription {
+  name: string;
+  kind: "model_provider" | "outside_service";
+  /** What it is and what it would be sent. */
+  description: string;
+  /** Whether this deployment has it set up: a key set, an endpoint declared, a service on. */
+  configured: boolean;
+}
+
+/**
+ * Every provider and outside service this deployment knows, each with what
+ * it would be sent and whether it is set up here: what the labels page
+ * offers to clear (architecture.md, "Providers cleared by label").
+ */
+export function describeProviders(config: ProviderKeysConfig = loadConfig()): ProviderDescription[] {
+  const keyed = (key: string | undefined, enabled?: "true" | "false") => enabled !== "false" && !!key;
+  const hostedKey: Record<(typeof HOSTED_PROVIDERS)[number], string | undefined> = {
+    anthropic: config.anthropicApiKey,
+    openai: config.openaiApiKey,
+    openrouter: config.openrouterApiKey,
+  };
+  const serviceOn: Record<OutsideServiceName, boolean> = {
+    embeddings: keyed(config.openaiApiKey),
+    // The search the agent's own loop runs goes through OpenRouter.
+    web_search: keyed(config.openrouterApiKey),
+    web_pages: true,
+    elicit: keyed(config.elicitApiKey, config.elicitEnabled),
+    pangram: keyed(config.pangramApiKey, config.pangramEnabled),
+  };
+  return [
+    ...HOSTED_PROVIDERS.map((name) => ({
+      name,
+      kind: "model_provider" as const,
+      description: HOSTED_PROVIDER_DESCRIPTIONS[name],
+      configured: keyed(hostedKey[name]),
+    })),
+    ...(config.modelEndpoints ?? []).map((endpoint) => ({
+      name: endpointProviderName(endpoint.name),
+      kind: "model_provider" as const,
+      description: endpointDescription(endpoint),
+      configured: true,
+    })),
+    ...OUTSIDE_SERVICES.map((service) => ({
+      name: service.name,
+      kind: "outside_service" as const,
+      description: service.description,
+      configured: serviceOn[service.name],
+    })),
+  ];
 }
 
 const EXAMPLE = '{"anthropic":["public","internal"],"embeddings":["public","internal"]}';
@@ -243,21 +390,30 @@ export function providerSettingProblems(
 }
 
 /**
- * The labels a provider is cleared for: the list PROVIDER_LABELS gives it,
- * or `public` alone when the setting does not name it.
+ * The labels a provider is cleared for. Where PROVIDER_LABELS is set: the
+ * list it gives the provider, or `public` alone when it does not name it.
+ * Where it is not: `public` and the labels the administrators cleared it
+ * for, as `stored` gives them (by default, this process's last copy).
  */
-export function clearedLabels(provider: string, config: ProviderLabelsConfig = loadConfig()): readonly string[] {
+export function clearedLabels(
+  provider: string,
+  config: ProviderLabelsConfig = loadConfig(),
+  stored: StoredClearance = storedClearance()
+): readonly string[] {
   const listed = config?.providerLabels;
-  return listed && Object.hasOwn(listed, provider) ? listed[provider]! : [PUBLIC_LABEL];
+  if (listed != null) return Object.hasOwn(listed, provider) ? listed[provider]! : [PUBLIC_LABEL];
+  const chosen = Object.hasOwn(stored, provider) ? stored[provider]! : [];
+  return [PUBLIC_LABEL, ...chosen.filter((label) => label !== PUBLIC_LABEL)];
 }
 
 /** Whether a provider may be sent text at `label`. */
 export function providerClearedFor(
   provider: string,
   label: string,
-  config: ProviderLabelsConfig = loadConfig()
+  config: ProviderLabelsConfig = loadConfig(),
+  stored: StoredClearance = storedClearance()
 ): boolean {
-  return clearedLabels(provider, config).includes(label);
+  return clearedLabels(provider, config, stored).includes(label);
 }
 
 /**
@@ -270,13 +426,20 @@ export class ProviderNotClearedError extends Error {
   constructor(
     readonly provider: string,
     readonly label: string,
-    cleared: readonly string[]
+    cleared: readonly string[],
+    /** Whether PROVIDER_LABELS fixes the clearance; otherwise the administrators choose it. */
+    fixedBySettings: boolean = true
   ) {
     super(
-      `${provider} is not cleared for the label "${label}", so nothing was sent to it. ` +
-        `PROVIDER_LABELS lists the labels each model provider and outside service may receive ` +
-        `text at, and one it does not list is cleared for "${PUBLIC_LABEL}" alone. To clear this ` +
-        `one, set its entry to ${JSON.stringify(provider)}:${JSON.stringify([...cleared, label])}.`
+      fixedBySettings
+        ? `${provider} is not cleared for the label "${label}", so nothing was sent to it. ` +
+            `PROVIDER_LABELS lists the labels each model provider and outside service may receive ` +
+            `text at, and one it does not list is cleared for "${PUBLIC_LABEL}" alone. To clear this ` +
+            `one, set its entry to ${JSON.stringify(provider)}:${JSON.stringify([...cleared, label])}.`
+        : `${provider} is not cleared for the label "${label}", so nothing was sent to it. ` +
+            `Every model provider and outside service is cleared for "${PUBLIC_LABEL}" and for no ` +
+            `other label until it is cleared on purpose: a holder of the permission to clear ` +
+            `providers does that for each label on the labels page (/admin/labels).`
     );
     this.name = "ProviderNotClearedError";
   }

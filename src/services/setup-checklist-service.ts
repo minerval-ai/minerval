@@ -36,7 +36,14 @@ import { featureOn, type FeatureName } from "../features.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { resolveProvider } from "../llm/providers/routing.js";
 import { PERMISSION_DEFINITIONS, PERMISSIONS, type PermissionName } from "../permissions.js";
-import { clearedLabels, knownProviderNames, OUTSIDE_SERVICE_NAMES } from "../provider-labels.js";
+import {
+  clearanceFixedBySettings,
+  clearedLabels,
+  knownProviderNames,
+  OUTSIDE_SERVICE_NAMES,
+  type StoredClearance,
+} from "../provider-labels.js";
+import { readStoredClearance } from "./provider-clearance-service.js";
 import { connectionsNotShown, listConnections } from "./connection-service.js";
 import { deploymentChecks, type PreflightReport } from "./deployment-checks.js";
 import { CONFIG_FILE_KEYS } from "../config-file.js";
@@ -98,6 +105,12 @@ export interface SetupChecklist {
    * (llm/provider-clearance.ts), so it is the first thing to put right.
    */
   undefined_labels_in_provider_setting: string[];
+  /**
+   * Whether PROVIDER_LABELS (or [provider_labels]) fixes which providers
+   * each label may be sent to. When false, holders of `clear_providers`
+   * choose it on the labels page.
+   */
+  clearance_fixed_by_settings: boolean;
   /** The General mandate, with its mandate once set up. */
   standing_mandates: StandingMandateView[];
   owls: {
@@ -237,7 +250,8 @@ function roleProviders(config: Config): Array<{ role: string; model: string; pro
 
 function checklistLabels(
   labels: ReadonlyArray<{ name: string; reads: string[] }>,
-  config: Config
+  config: Config,
+  stored: StoredClearance
 ): ChecklistLabel[] {
   const known = knownProviderNames(config);
   const outside = new Set<string>(OUTSIDE_SERVICE_NAMES);
@@ -245,7 +259,7 @@ function checklistLabels(
   return labels
     .filter((label) => label.name !== PUBLIC_LABEL)
     .map((label) => {
-      const cleared = known.filter((provider) => clearedLabels(provider, config).includes(label.name));
+      const cleared = known.filter((provider) => clearedLabels(provider, config, stored).includes(label.name));
       return {
         name: label.name,
         reads: label.reads,
@@ -317,12 +331,15 @@ export async function setupChecklist(): Promise<SetupChecklist> {
   const ownLabels = labels.map((l) => l.name).filter((name) => name !== PUBLIC_LABEL);
   const unsent = usage.reports.filter((r) => r.sent_at === null);
   const on = connections.filter((c) => c.enabled);
+  const fixed = clearanceFixedBySettings(config);
+  const stored = fixed ? {} : await readStoredClearance();
 
   return {
     preflight,
     permissions: permissionHolders(grants, ownLabels, parties),
-    labels: checklistLabels(labels, config),
+    labels: checklistLabels(labels, config, stored),
     undefined_labels_in_provider_setting: await undefinedLabels(labelsNamedByProviderSetting(config)),
+    clearance_fixed_by_settings: fixed,
     standing_mandates: standingMandates,
     owls: {
       created_here: created !== null,

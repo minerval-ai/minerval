@@ -88,13 +88,17 @@ starts with public Minerval's own settings and you change the ones you need.
    the commands below from a shell that does not carry, say, an
    `OPENAI_API_KEY` meant for something else.
 
-   Two choices most deployments make here:
+   One choice most deployments make here:
 
    - `OWLS=created`, if you pay your model providers yourself. Your
      administrators then create the owls that budget the agents' work. Left
      as it starts (`sold`), owls are bought through Stripe.
-   - `PROVIDER_LABELS`, once you define labels. A provider is sent text at
-     `public` only until this setting clears it for another label.
+
+   Which model providers and outside services may be sent the text of each
+   label you define is chosen in the web app, where the label is defined
+   (step 8), and needs nothing here. Leave `PROVIDER_LABELS` unset unless
+   you want that decided only by whoever runs the machine: set, it fixes
+   the clearance for every label, and the labels page then only shows it.
 
    The package starts `RUN_LOG_MODE` at `record`, where every run's log is
    kept whole. Leave it: once a label is defined, a deployment on
@@ -180,11 +184,12 @@ starts with public Minerval's own settings and you change the ones you need.
    the policies bind, and its log says at each start
    `[labels] reads and writes are held to a clearance in the database`.
 
-8. **Carry on in the web app.** Grant permissions (`/admin/people`), clear
-   your model providers for your labels (`PROVIDER_LABELS` in `.env`, then
-   `docker compose up -d`), create owls and set up the General mandate,
-   and add material. The checklist page says where
-   each of these stands.
+8. **Carry on in the web app.** Grant permissions (`/admin/people`),
+   define your labels and tick the model providers and outside services
+   each may be sent to (`/admin/labels`; nothing is ticked until you tick
+   it, and a change is in force within seconds, with no restart), create
+   owls and set up the General mandate, and add material. The checklist
+   page says where each of these stands.
 
 To stop: `docker compose down`. The database and the uploaded file sets are
 kept in Docker volumes and are there at the next start. `docker compose

@@ -327,7 +327,58 @@ describe("providers cleared by label", () => {
     expect(check("provider_labels")).toMatchObject({
       status: "not_applicable",
       message:
-        "provider_labels is not set, so every model provider and outside service is cleared for public and for no other label.",
+        "provider_labels is set and names nothing, so every model provider and outside service is cleared for public and for no other label.",
+    });
+    expect(check("provider_labels", { config: config({ providerLabels: undefined }) })).toMatchObject({
+      status: "not_applicable",
+      message:
+        "provider_labels is not set, so the administrators choose which model providers and outside services each " +
+        "label besides public may be sent to, on the labels page, and nothing is cleared for a label until they do. " +
+        "A choice made there can only name a label that is defined.",
+    });
+  });
+
+  describe("where provider_labels is not set: the administrators' stored choice", () => {
+    const stored = (privateLabels: string[], storedClearance: PreflightFacts["storedClearance"], over: Partial<Config> = {}) => ({
+      ...withLabels(privateLabels, { ...ALL_ANTHROPIC, providerLabels: undefined, ...over }),
+      storedClearance,
+    });
+
+    it("reads what was cleared on the labels page, and says to clear it there", () => {
+      expect(check("model_clearance", stored(["internal"], { anthropic: ["internal"] }))).toMatchObject({
+        status: "pass",
+        message: 'The provider of every role\'s model is cleared for the label "internal".',
+      });
+      const none = check("model_clearance", stored(["internal"], {}));
+      expect(none.status).toBe("fail");
+      expect(none.message).toContain(
+        "Clear the provider for the label on the labels page, by a holder of the permission to clear providers,"
+      );
+      expect(check("embeddings_clearance", stored(["internal"], { embeddings: ["internal"] })).message).toBe(
+        'Embeddings are cleared for the label "internal".'
+      );
+      expect(check("outside_service_clearance", stored(["internal"], {})).message).toMatch(
+        /the deployment's choice \(the labels page\)\.$/
+      );
+    });
+
+    it("ignores a stored choice where the setting is set: the setting fixes the clearance", () => {
+      const result = check("model_clearance", {
+        ...withLabels(["internal"], { ...ALL_ANTHROPIC, providerLabels: {} }),
+        storedClearance: { anthropic: ["internal"] },
+      });
+      expect(result.status).toBe("fail");
+      expect(result.message).toContain("Clear the provider for the label in provider_labels,");
+    });
+
+    it("fails, without blocking, when the stored choice could not be read", () => {
+      for (const name of CLEARANCE) {
+        expect(check(name, stored(["internal"], null)), name).toMatchObject({
+          status: "fail",
+          blocking: false,
+          message: "This could not be checked: the providers the administrators cleared for each label could not be read.",
+        });
+      }
     });
   });
 

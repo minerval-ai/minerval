@@ -161,6 +161,7 @@ code decides who should hold which.
 | `read` | at one label | read what the agents wrote at that label and at the labels it reads | change anything the agents wrote |
 | `read_sources` | at one label | open the sources themselves at that label | change a source |
 | `administer` | | grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key to an account on the public graph, connect the deployment to an organization's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a set of files, set up the General mandate, create owls where the deployment creates its own, read and send the usage reports | act under a permission they have not also been granted, or change who may do what without a log entry |
+| `clear_providers` | | choose, for each label besides `public`, which model providers and outside services may be sent the text of work at it, on the labels page, where the deployment's settings (`PROVIDER_LABELS`) do not fix that ([architecture.md](architecture.md), "Providers cleared by label") | read at a label they have not been granted, or clear a provider where the settings fix the clearance |
 
 A request's **standing** is resolved once, when it arrives: the live grants
 that reach its account (its own, and those made to a group its latest
@@ -172,6 +173,16 @@ deployment holds material at more than one label the database holds every
 read of the request to it ([architecture.md](architecture.md), "Labels and
 clearance"). A `read_sources` grant opens the sources themselves at its
 label ("Opening raw sources", below).
+
+`clear_providers` is a permission of its own because clearing a provider
+for a label decides who outside the deployment may read that label's
+material: it is not part of administering, and an organization may give it
+to fewer people. The first administrator is granted it with every other
+permission that has no scope. A deployment whose first administrator was
+established before it existed has nobody holding it until an administrator
+grants it, and until then nothing new can be cleared from the labels page,
+which is the safe side. Defining a label with providers ticked takes both
+`administer` and `clear_providers`.
 
 The routes a permission guards, in each mode (`requirePermission` in
 `src/server/require-permission.ts`; the list is asserted in
@@ -357,7 +368,9 @@ Mounted only where `READS=members`:
 | `GET /parties` | `administer` or `direct` | the parties: in full for an administrator; for a person who directs, each party's id and name and whether it is the organization itself, since adding a source or a set of files says whose material it is |
 | `POST /permissions/grants`, `DELETE /permissions/grants/:grant_id` | `administer`, from a signed-in session | grant; remove |
 | `POST /parties`, `PUT /sources/:source_id/party` | `administer`, from a signed-in session | add a party; say whose material a source is |
-| `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session | define a label; say or take back that one label reads another |
+| `POST /labels`, `POST /labels/:label/reads`, `DELETE /labels/:label/reads/:reads` | `administer`, from a signed-in session; `clear_providers` as well for a label defined with `providers` | define a label, with the providers cleared for it; say or take back that one label reads another |
+| `GET /labels/providers` | `administer` or `clear_providers` | every model provider and outside service this deployment knows, with what it would be sent and whether it is set up; each label with the providers cleared for it; and whether the deployment's settings fix that |
+| `PUT /labels/:label/providers` | `clear_providers`, from a signed-in session | make exactly the providers named the ones cleared for a label, logged, in force within seconds; refused for `public` and where `PROVIDER_LABELS` is set |
 | `POST /operator/administrators` | the operator key | grant `administer` to an account, by its sign-in identity |
 | `GET /setup/checklist` | `administer` | what the deployment's setup has done and what is still to do, with the deployment's own checks where the build has them ([deployment.md](deployment.md), "The setup checklist") |
 
@@ -504,7 +517,7 @@ says so where an administrator's list leaves rows out.
 |---|---|---|
 | `/admin` | `administer` | The setup checklist and the deployment's home, one page: what needs someone now, then everything as it stands, read from `GET /setup/checklist` ([deployment.md](deployment.md), "The setup checklist"). Its words are in `web/lib/admin-words.ts` |
 | `/admin/people` | every member; controls for `administer` | What each permission covers, what the reader holds, and the log, with a withheld name shown as withheld. For administrators: who holds what by person and by group, granting and removing, and the accounts that have signed in and hold nothing |
-| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form, and that defining the first label takes about ten seconds; what each label is cleared to be sent to; the parties, with the organization's own named here; whose material a source is |
+| `/admin/labels` | `administer` | The labels and which reads which, with what adding a pair does stated beside the form, and that defining the first label takes about ten seconds; what each label is cleared to be sent to, and, for a holder of `clear_providers` where `PROVIDER_LABELS` is not set, ticking the model providers and outside services each label may be sent to (none ticked until someone ticks one), in the form that defines a label and for each label, each with what it would be sent; where the setting is set, that it fixes the clearance; the parties, with the organization's own named here; whose material a source is |
 | `/admin/connections`, `/admin/connections/:id` | `administer` | docs/connections.md: the notice in full, adding a connection at a label the administrator reads, its state, its tools picked one by one with the server's marking as a hint, withdrawn tools, and the calls the administrator reads with which were kept. A connection's label is shown and not offered for change |
 | `/admin/owls` | every member; controls for `administer` | What an owl is here, totals and acts, stated prices and unpriced models, creating owls, and the standing mandates' setup, one for each label the reader reads where there is more than one |
 | `/admin/usage-report` | `administer` | docs/usage-report.md, as `GET /usage-reports/outgoing` describes it, with "prepare and send now" |

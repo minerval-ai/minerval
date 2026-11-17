@@ -19,6 +19,7 @@ import {
   removeGrant,
   removeLabelRead,
   sendUsageReports,
+  setProviderClearance,
   setSourceParty,
   setUpStandingMandate,
   type ConnectionSettings,
@@ -106,8 +107,14 @@ export async function defineLabelAction(_previous: FormState, form: FormData): P
   }
   if (!description) return { error: "Say in a sentence what the label is for." };
   const reads = form.getAll("reads").map(String).filter(Boolean);
+  const providers = providersTicked(form);
   try {
-    await defineLabel(user, { name, description, ...(reads.length > 0 ? { reads } : {}) });
+    await defineLabel(user, {
+      name,
+      description,
+      ...(reads.length > 0 ? { reads } : {}),
+      ...(providers.length > 0 ? { providers } : {}),
+    });
   } catch (err) {
     return refused(err);
   }
@@ -115,8 +122,49 @@ export async function defineLabelAction(_previous: FormState, form: FormData): P
   return {
     notice:
       `Defined ${name}. Nobody reads at it until an administrator grants that. ` +
+      (providers.length > 0
+        ? `Its text may be sent to ${listed(providers)}.`
+        : "No model provider or outside service is cleared for it yet, so no agent can work at it until one is.") +
+      " " +
       `Upkeep and audits at ${name} are paid by a General mandate at ${name}, which an administrator who reads it sets up on the Owls page ` +
       `(its row in the table above links there). None is needed if it will hold only work someone asks for and pays for.`,
+  };
+}
+
+/**
+ * The providers a form ticked. "The same as public" is a box of its own,
+ * which stands for every provider the form listed (offered), since every
+ * provider is cleared for public: ticking it is still a choice made on
+ * purpose, and nothing is ticked until someone ticks it.
+ */
+function providersTicked(form: FormData): string[] {
+  const offered = form.getAll("offered").map(String).filter(Boolean);
+  const ticked = form.get("same_as_public") ? offered : form.getAll("providers").map(String).filter(Boolean);
+  return [...new Set(ticked)];
+}
+
+export async function setProviderClearanceAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  const label = text(form, "label");
+  if (!label) return { error: "Choose a label." };
+  const providers = providersTicked(form);
+  let result: { cleared: string[]; no_longer_cleared: string[] };
+  try {
+    result = await setProviderClearance(user, label, providers);
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/admin", "layout");
+  const said = [
+    ...(result.cleared.length > 0 ? [`cleared ${listed(result.cleared)}`] : []),
+    ...(result.no_longer_cleared.length > 0 ? [`took back ${listed(result.no_longer_cleared)}`] : []),
+  ];
+  return {
+    notice:
+      said.length > 0
+        ? `For ${label}: ${said.join(" and ")}. In force within a few seconds, with no restart.`
+        : `Nothing changed for ${label}.`,
   };
 }
 

@@ -86,7 +86,7 @@ A private deployment, one that serves only its signed-in members, has these page
 | --- | --- |
 | `/admin` | For holders of the permission to administer: what the deployment's setup has done and what is still to do, read from the deployment itself, each item with who can do it and where (`get_setup_checklist`) |
 | `/admin/people` | For every member: what each permission covers, what the reader holds, and the log of every grant, removal and administrative act. For administrators also who holds what, and granting and removing |
-| `/admin/labels` | For administrators: the labels and which label reads which, the parties, and whose material a source is |
+| `/admin/labels` | For administrators: the labels and which label reads which, which model providers and outside services each label may be sent to (cleared there by a holder of `clear_providers`, unless the deployment's settings fix it), the parties, and whose material a source is |
 | `/admin/connections`, `/admin/connections/:id` | For administrators: the organization's systems the deployment reads through MCP; one connection's state, its tools to pick one by one, and the calls agents made with which were kept as sources |
 | `/admin/owls` | For every member: what an owl is in the deployment, how many its administrators created, and what its runs spent. For administrators also creating owls and setting up the General and Governance mandates |
 | `/admin/usage-report` | For administrators: what the deployment reports privately to Minerval of its owl spend, for billing on the metered price, with each report exactly as sent |

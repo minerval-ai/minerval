@@ -38,7 +38,7 @@ export default function Page() {
       <h2 id="labels">Labels</h2>
       <p>Every row of the graph carries a <b>label</b> saying who may read it: a node, a judgment, a source and every passage taken from it, an agent run and each step of its log, a mandate, a conversation with the Assistant. <code>public</code> always exists. An administrator defines more on <code>/admin/labels</code>, and says which labels each one reads: a reader cleared for <code>restricted</code> that reads <code>internal</code> also reads everything <code>internal</code> reads. Labels have no order; the reads are the only relation between them.</p>
       <p>A person's <b>clearance</b> is <code>public</code>, each label a <code>read</code> permission names, and every label those read. Where a deployment holds more than one label, the database itself holds each request's queries to its clearance, so a bug in a route cannot widen what is read. Defining the first label takes about ten seconds while the database turns this on.</p>
-      <p>Labels also govern what leaves the machine. A model provider or outside service is sent text at <code>public</code> only, until <code>PROVIDER_LABELS</code> clears it for another label. A run whose model's provider is not cleared for its label is refused before anything is sent. A node can carry a judgment at each label: an internal assessment of a public claim sits beside the public one and is read only by those cleared for it.</p>
+      <p>Labels also govern what leaves the machine. A model provider or outside service is sent text at <code>public</code> only, until it is cleared for another label: by a holder of <code>clear_providers</code> on <code>/admin/labels</code>, or, where the deployment fixes it in its settings, by <code>PROVIDER_LABELS</code>. A run whose model's provider is not cleared for its label is refused before anything is sent. A node can carry a judgment at each label: an internal assessment of a public claim sits beside the public one and is read only by those cleared for it.</p>
       <h2 id="permissions">Permissions</h2>
       <p>Six permissions, each granted on its own, to an account or to a group the identity provider names. One person may hold several, and nothing in the code decides who should hold which.</p>
       <div className="dc-tablewrap">
@@ -87,6 +87,12 @@ export default function Page() {
               <td />
               <td>Grant and remove permissions, define labels and which reads which, add parties, say whose material a source is, save the redaction policy of a boundary, sign the statement that registers the deployment's key on the public graph, connect the deployment to the organisation's systems and pick which of their tools agents are offered, register a directory on the deployment's disk as a file set, set up the General mandate, create owls where the deployment creates its own, read and send the usage reports</td>
               <td>Act under a permission they have not also been granted, or change who may do what without a log entry</td>
+            </tr>
+            <tr>
+              <td><code>clear_providers</code></td>
+              <td />
+              <td>Choose, for each label besides <code>public</code>, which model providers and outside services may be sent the text of work at it, on <code>/admin/labels</code>, where the deployment&rsquo;s settings do not fix that</td>
+              <td>Read at a label they have not been granted, or clear a provider where the settings fix the clearance</td>
             </tr>
           </tbody>
         </table>

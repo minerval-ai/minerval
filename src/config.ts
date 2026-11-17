@@ -297,9 +297,10 @@ const configSchema = z.object({
     .prefault(""),
   // The labels each model provider and outside service may receive text at
   // (src/provider-labels.ts): a JSON object from a provider's name to a
-  // list of label names. Empty by default, and a provider it does not name
-  // is cleared for `public` alone, so a deployment with another label
-  // serves nothing at it until this says who may.
+  // list of label names. Unset by default, and then the deployment's
+  // administrators choose on the labels page, starting from nothing cleared
+  // beyond `public`. Set, it fixes the clearance and that choice is not
+  // offered: undefined here is "not set", and {} is set, to nothing.
   providerLabels: z
     .string()
     .superRefine((raw, ctx) => {
@@ -307,7 +308,9 @@ const configSchema = z.object({
         ctx.addIssue({ code: z.ZodIssueCode.custom, message });
       }
     })
-    .transform((raw) => parseProviderLabels(raw).labels)
+    .transform((raw): Record<string, string[]> | undefined =>
+      raw.trim() ? parseProviderLabels(raw).labels : undefined
+    )
     .prefault(""),
   // Each label's own posture (src/label-posture.ts): a JSON object from a
   // label's name to the settings it changes for its own runs. Empty by

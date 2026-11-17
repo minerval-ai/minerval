@@ -47,6 +47,7 @@ vi.mock("../../../src/llm/budget-tracker.js", () => ({
 // run is sent differs from what it was given by the label note alone.
 vi.mock("../../../src/llm/provider-clearance.js", () => ({
   assertProviderCleared: vi.fn(),
+  freshenProviderClearance: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../../src/llm/uncleared-services-note.js", () => ({

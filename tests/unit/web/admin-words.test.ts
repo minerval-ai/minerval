@@ -7,6 +7,7 @@ import {
   labelClearanceFacts,
   logSentence,
   needsPermission,
+  permissionName,
   preflightTitle,
   preflightTodo,
   toolMarking,
@@ -223,6 +224,24 @@ describe("the setup checklist", () => {
     expect(labels.facts[1]).toBe("Until that is put right, every call to a model provider is refused, at every label.");
   });
 
+  it("says who clears a provider: on the labels page, or in the setting where the setting fixes it", () => {
+    const unserved = {
+      name: "internal",
+      reads: [],
+      model_providers_cleared: [],
+      outside_services_cleared: [],
+      roles_not_served: [],
+    };
+    const c = setUp();
+    c.labels = [unserved];
+    c.clearance_fixed_by_settings = false;
+    expect(checklistItems(c).find((i) => i.key === "labels")!.next).toMatch(
+      /^A holder of the permission to clear providers ticks, on the labels page/
+    );
+    c.clearance_fixed_by_settings = true;
+    expect(checklistItems(c).find((i) => i.key === "labels")!.next).toMatch(/PROVIDER_LABELS setting, which fixes/);
+  });
+
   it("never calls created owls bought, and says so where they are bought", () => {
     const created = checklistItems(setUp()).find((i) => i.key === "owls")!;
     expect(created.facts[0]).toBe(
@@ -359,6 +378,16 @@ describe("the log, as sentences", () => {
     ).toBe("Alice set up the mandate General maintenance, creating 60 owls as its budget.");
     // An act added to the API later still reads as something that happened.
     expect(logSentence({ event: "something_new", at, by: "Alice" })).toBe("Alice: something new.");
+  });
+
+  it("says which providers were cleared for a label, and which taken back", () => {
+    expect(
+      logSentence({ event: "provider_clearance_set", at, by: "Alice", label: "internal", cleared: ["anthropic", "embeddings"], no_longer_cleared: [] })
+    ).toBe("Alice cleared anthropic and embeddings for internal.");
+    expect(
+      logSentence({ event: "provider_clearance_set", at, by: "Alice", label: "internal", cleared: ["openai"], no_longer_cleared: ["web_search"] })
+    ).toBe("Alice cleared openai and took back the clearance of web_search for internal.");
+    expect(permissionName("clear_providers")).toBe("Clear providers for a label");
   });
 });
 

@@ -78,6 +78,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/mirrored-node-service.ts:asOfRead": "When the public graph cut the newest batch applied here, kept for half a minute. Read from the applier's own bookkeeping, which carries no label and is the same for every reader.",
   "src/services/mirror-manifest.ts:_tables": "The list of mirrored tables and columns, built from the schema in the repository. No rows.",
   "src/db/migration-head.ts:_head": "The newest migration's number and tag, read from a file in the repository.",
+  "src/provider-labels.ts:lastStored": "The administrators' choice of which providers each label may be sent to, as this process last read it, and when: provider and label names from a table that carries no label and is the same for every reader. Read again when it is a few seconds old.",
   "src/llm/provider-clearance.ts:settingFoundWhole": "The provider setting once every label it names was found defined: the configuration object itself, which is the same for every reader.",
   "src/services/prompt-set.ts:cached": "The prompt set, read from files in the repository.",
   "src/services/report-sending-service.ts:toolNames": "The names of Minerval's own tools, gathered once from the tool definitions in the code. No rows.",

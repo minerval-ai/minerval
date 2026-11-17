@@ -18,10 +18,16 @@
  *   GET    /labels, POST /labels: the labels and which reads which.
  *   GET    /labels/mine: the labels the caller may file new material at.
  *   POST   /labels/:label/reads, DELETE /labels/:label/reads/:reads
+ *   GET    /labels/providers: which model providers and outside services
+ *     each label may be sent to, and whether the settings fix that.
+ *   PUT    /labels/:label/providers: choose them for one label
+ *     (clear_providers, from a signed-in session).
  *   POST   /operator/administrators: the operator key's way back in.
  *
  * Who may call what. The reads of who holds what, and every write, need
- * the permission to administer. The writes also need a signed-in session,
+ * the permission to administer, except clearing providers for a label,
+ * which needs a permission of its own (clear_providers): defining a label
+ * with providers ticked needs both. The writes also need a signed-in session,
  * as minting an API key does: a key or an access token that leaked, or an
  * agent following text it read, must not be able to change who may read or
  * release. So the writes are not MCP tools (mcp/route-tools.ts). The log
@@ -40,6 +46,7 @@ import { deploymentHoldsLabels } from "../db/client.js";
 import { requireAnyPermission, requirePermission } from "../server/require-permission.js";
 import { choosableLabels } from "../services/label-service.js";
 import { getContributorById } from "../services/contributor-service.js";
+import { listProviderClearance, setProviderClearance } from "../services/provider-clearance-service.js";
 import {
   LABEL_DESCRIPTION_MAX_CHARS,
   LABEL_NAME_PATTERN,
@@ -383,13 +390,17 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post<{ Body: { name: string; description: string; reads?: string[] } }>("/labels", {
+  app.post<{ Body: { name: string; description: string; reads?: string[]; providers?: string[] } }>("/labels", {
     schema: {
       tags: ["permissions"],
       summary: "Define a label, with the labels its holders may also read (administrators, from a signed-in session)",
       description:
         "A label is never removed, since rows carry it. Labels are not ranked: which label " +
-        "reads which is only what is recorded here.",
+        "reads which is only what is recorded here. `providers` names the model providers and " +
+        "outside services cleared to be sent the new label's text (GET /labels/providers lists " +
+        "them); naming any takes the permission to clear providers as well, and is refused where " +
+        "the deployment's settings fix the clearance. A label defined with none is served by no " +
+        "provider until one is cleared for it.",
       body: {
         type: "object",
         required: ["name", "description"],
@@ -397,19 +408,81 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
           name: { type: "string", pattern: LABEL_NAME_PATTERN },
           description: { type: "string", minLength: 1, maxLength: LABEL_DESCRIPTION_MAX_CHARS },
           reads: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 100 },
+          providers: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 100 },
         },
       },
     },
     preHandler: administratorSession,
     handler: async (request, reply) => {
+      const providers = request.body.providers ?? [];
+      if (providers.length > 0 && !holdsPermission(standingOf(request.auth), "clear_providers")) {
+        return reply.code(403).send({
+          error:
+            "Clearing a model provider or an outside service for a label takes the permission to " +
+            `${PERMISSION_DEFINITIONS.clear_providers.phrase}, which you do not hold. Define the label ` +
+            "without providers, and a holder of that permission clears them.",
+          code: "PERMISSION_REQUIRED",
+        });
+      }
       const result = await defineLabel({
         name: request.body.name,
         description: request.body.description,
         reads: request.body.reads,
+        providers,
         actorId: request.auth!.userId!,
       });
       if (!result.ok) return reply.code(labelStatus(result.code)).send({ error: result.message, code: result.code });
       return reply.code(201).send({ labels: await listLabels() });
+    },
+  });
+
+  app.get("/labels/providers", {
+    schema: {
+      tags: ["permissions"],
+      summary:
+        "Which model providers and outside services each label may be sent text at, and what each is sent " +
+        "(administrators and holders of the permission to clear providers)",
+      description:
+        "providers lists every model provider and outside service this deployment knows, with what it would " +
+        "be sent and whether it is set up here. labels gives each label besides public the providers cleared " +
+        "for it now; every provider is cleared for public. fixed_by_settings is true where the deployment's " +
+        "settings (PROVIDER_LABELS, or [provider_labels] in its config file) fix the clearance, and then " +
+        "nothing can be changed through PUT /labels/:label/providers.",
+    },
+    preHandler: [...signedIn, requireAnyPermission(["administer", "clear_providers"])],
+    handler: async (_request, reply) => reply.send(await listProviderClearance()),
+  });
+
+  app.put<{ Params: { label: string }; Body: { providers: string[] } }>("/labels/:label/providers", {
+    schema: {
+      tags: ["permissions"],
+      summary:
+        "Choose which model providers and outside services a label may be sent text at (holders of the " +
+        "permission to clear providers, from a signed-in session)",
+      description:
+        "Exactly the providers named are cleared for the label afterwards, so an empty list clears none. " +
+        "Each change is logged, and it is in force without a restart. Refused for public, which every " +
+        "provider is cleared for, and where the deployment's settings fix the clearance.",
+      params: { type: "object", required: ["label"], properties: { label: { type: "string" } } },
+      body: {
+        type: "object",
+        required: ["providers"],
+        properties: { providers: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 100 } },
+      },
+    },
+    preHandler: [app.authenticate, app.requireSession, app.requireUser, requirePermission("clear_providers")],
+    handler: async (request, reply) => {
+      const result = await setProviderClearance({
+        label: request.params.label,
+        providers: request.body.providers,
+        actorId: request.auth!.userId!,
+      });
+      if (!result.ok) return reply.code(labelStatus(result.code)).send({ error: result.message, code: result.code });
+      return reply.send({
+        cleared: result.cleared,
+        no_longer_cleared: result.no_longer_cleared,
+        ...(await listProviderClearance()),
+      });
     },
   });
 
@@ -553,6 +626,6 @@ const FACE_TOLD =
 
 function labelStatus(code: string): number {
   if (code === "UNKNOWN_LABEL" || code === "NOT_READ" || code === "NO_FACE") return 404;
-  if (code === "LABEL_EXISTS" || code === "ALREADY_READS") return 409;
+  if (code === "LABEL_EXISTS" || code === "ALREADY_READS" || code === "FIXED_BY_SETTINGS") return 409;
   return 400;
 }
