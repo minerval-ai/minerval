@@ -26,6 +26,26 @@ import {
 let _pool: pg.Pool | null = null;
 
 /**
+ * TCP keepalive on every pooled connection, so a connection whose server
+ * went away without closing it is found and dropped.
+ *
+ * Without it, a query that reached the database just before the database's
+ * machine was restarted waits for its answer for ever: the client has sent
+ * everything, so nothing it does would ever learn the connection is gone.
+ * Each such query keeps its connection checked out, and once all of a
+ * pool's connections are held that way every later query times out waiting
+ * for one (`timeout exceeded when trying to connect`) although the database
+ * is up again (#1088). With keepalive, the first probe after the delay is
+ * answered by a reset from the restarted machine, the query fails, and the
+ * pool discards the connection.
+ *
+ * There is deliberately no per-query timeout here. Migrations and other long
+ * work run through these pools, and a timeout short enough to matter would
+ * cut them off; keepalive bounds only connections that are dead.
+ */
+const KEEPALIVE = { keepAlive: true, keepAliveInitialDelayMillis: 10_000 } as const;
+
+/**
  * TLS for every connection to the database, the pool's and read-only SQL's
  * (services/sql-service.ts) alike. With nothing set: in production,
  * verified against the RDS CA bundle, since RDS refuses unencrypted
@@ -63,6 +83,7 @@ function getPool(): pg.Pool {
     max: 20,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
+    ...KEEPALIVE,
     ...(ssl && { ssl }),
     // No JIT compilation on the app's connections. Postgres compiles a
     // statement whose estimated cost passes jit_above_cost, and on the app's
@@ -75,6 +96,10 @@ function getPool(): pg.Pool {
     // own connections and settings.
     options: [process.env.PGOPTIONS, "-c jit=off"].filter(Boolean).join(" "),
   });
+  // An idle connection the server closed is dropped by the pool; without a
+  // listener the event would end the process. The session pools below have
+  // the same listener.
+  _pool.on("error", (err) => console.error("[db] idle connection of the owner pool failed:", err.message));
   return _pool;
 }
 
@@ -244,6 +269,7 @@ function poolOf(session: Session): pg.Pool {
     max: SESSION_CONNECTIONS,
     idleTimeoutMillis: SESSION_POOL_IDLE_MS,
     connectionTimeoutMillis: 5_000,
+    ...KEEPALIVE,
     ...(ssl && { ssl }),
   });
   // An idle connection the server closed is dropped by the pool; without a
@@ -588,6 +614,7 @@ export async function withTransaction<T>(
         client: await pool.connect(),
         session,
       }));
+  let broken = false;
   try {
     await client.query("BEGIN");
     const tx: TxQuery = {
@@ -609,10 +636,13 @@ export async function withTransaction<T>(
     try {
       await client.query("ROLLBACK");
     } catch {
-      // The original error is the one that matters.
+      // The original error is the one that matters. A connection that
+      // cannot even roll back is broken (its server is gone, say), and is
+      // discarded below rather than handed to the next caller.
+      broken = true;
     }
     throw err;
   } finally {
-    client.release();
+    client.release(broken);
   }
 }
