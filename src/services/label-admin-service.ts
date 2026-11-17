@@ -15,6 +15,7 @@ import { withSystemClearance } from "../db/clearance.js";
 import { armEnforcement } from "../db/enforcement.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import { logAdministrativeEvent } from "./permission-service.js";
+import { clearanceProblem, readStoredClearance, writeClearance } from "./provider-clearance-service.js";
 
 /**
  * The labels and the pairs that say what each reads are the wall itself. A
@@ -71,7 +72,10 @@ export type LabelFailure =
   | "NOT_READ"
   | "INVALID_FACE"
   | "FACE_NOT_BELOW"
-  | "NO_FACE";
+  | "NO_FACE"
+  | "FIXED_BY_SETTINGS"
+  | "UNKNOWN_PROVIDER"
+  | "PUBLIC_LABEL";
 
 type Outcome = { ok: true } | { ok: false; code: LabelFailure; message: string };
 
@@ -90,14 +94,20 @@ function pairProblem(label: string, reads: string): Outcome | null {
 }
 
 /**
- * Define a label, with the labels its holders may also read. The pairs are
- * recorded as given and nothing is added to them. A person's clearance
- * always includes `public` whatever the pairs say (src/permissions.ts).
+ * Define a label, with the labels its holders may also read and, where the
+ * deployment's settings do not fix that, the model providers and outside
+ * services cleared to be sent its text (provider-clearance-service.ts).
+ * The pairs and the providers are recorded as given and nothing is added to
+ * them: a label defined with no providers is served by none until someone
+ * clears one. The caller has checked that the actor may clear providers
+ * when `providers` names any. A person's clearance always includes
+ * `public` whatever the pairs say (src/permissions.ts).
  */
 export async function defineLabel(input: {
   name: string;
   description: string;
   reads?: readonly string[];
+  providers?: readonly string[];
   actorId: string;
 }): Promise<Outcome> {
   const name = input.name.trim();
@@ -125,6 +135,11 @@ export async function defineLabel(input: {
     const problem = pairProblem(name, read);
     if (problem) return problem;
   }
+  const providers = [...new Set((input.providers ?? []).map((p) => p.trim()).filter((p) => p.length > 0))];
+  if (providers.length > 0) {
+    const problem = clearanceProblem(name, providers);
+    if (problem && !problem.ok) return refuse(problem.code as LabelFailure, problem.message);
+  }
   // The database holds reads to a clearance from the moment a second label
   // exists. Before the first one is defined, that is turned on and every
   // process of the deployment is given time to notice (db/enforcement.ts),
@@ -144,8 +159,13 @@ export async function defineLabel(input: {
       await tx.query(`INSERT INTO label_reads (label, reads) VALUES ($1, $2)`, [name, read]);
       await logAdministrativeEvent(tx, "label_read_added", input.actorId, { label: name, reads: read });
     }
+    if (providers.length > 0) await writeClearance(tx, { label: name, providers, actorId: input.actorId });
     return { ok: true };
-  }));
+  })).then(async (outcome) => {
+    // In force in this process at once; every other reads it within the recheck interval.
+    if (outcome.ok && providers.length > 0) await readStoredClearance();
+    return outcome;
+  });
 }
 
 /** Record that holders of `label` may also read `reads`. */

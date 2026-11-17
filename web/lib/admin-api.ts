@@ -81,6 +81,12 @@ export interface SetupChecklist {
   permissions: PermissionHolders[];
   labels: ChecklistLabel[];
   undefined_labels_in_provider_setting: string[];
+  /**
+   * Whether the deployment's settings (PROVIDER_LABELS) fix which providers
+   * each label may be sent to. Absent from a build before the labels page
+   * could clear them, where the settings were the only way.
+   */
+  clearance_fixed_by_settings?: boolean;
   standing_mandates: StandingMandate[];
   owls: {
     created_here: boolean;
@@ -181,6 +187,9 @@ export interface LogEntry {
   changed?: string[];
   offered?: string[];
   no_longer_offered?: string[];
+  /** For provider_clearance_set: the providers cleared for the label, and those no longer cleared. */
+  cleared?: string[];
+  no_longer_cleared?: string[];
   tool?: string;
   reason?: string;
   amount_owls?: number;
@@ -249,9 +258,38 @@ export async function fetchParties(externalId: string): Promise<PartyView[]> {
 
 export function defineLabel(
   externalId: string,
-  body: { name: string; description: string; reads?: string[] }
+  body: { name: string; description: string; reads?: string[]; providers?: string[] }
 ): Promise<{ labels: LabelView[] }> {
   return accountFetch("/labels", { method: "POST", actingUser: externalId, body });
+}
+
+/** A model provider or outside service, with what it would be sent (GET /labels/providers). */
+export interface ProviderView {
+  name: string;
+  kind: "model_provider" | "outside_service";
+  description: string;
+  /** Whether this deployment has it set up: a key set, an endpoint declared, a service on. */
+  configured: boolean;
+}
+
+export interface ProviderClearance {
+  /** Whether the deployment's settings (PROVIDER_LABELS) fix the clearance; nothing can be changed then. */
+  fixed_by_settings: boolean;
+  providers: ProviderView[];
+  /** Each label besides public, with the providers cleared for it now. */
+  labels: Array<{ label: string; cleared: string[] }>;
+}
+
+export async function fetchProviderClearance(externalId: string): Promise<ProviderClearance> {
+  return accountFetch<ProviderClearance>("/labels/providers", { actingUser: externalId });
+}
+
+export function setProviderClearance(
+  externalId: string,
+  label: string,
+  providers: string[]
+): Promise<ProviderClearance & { cleared: string[]; no_longer_cleared: string[] }> {
+  return accountFetch(`/labels/${seg(label)}/providers`, { method: "PUT", actingUser: externalId, body: { providers } });
 }
 
 export function addLabelRead(externalId: string, label: string, reads: string): Promise<{ labels: LabelView[] }> {

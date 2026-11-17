@@ -246,7 +246,8 @@ describe("defining a second label", () => {
            FROM pg_class c
           WHERE c.relnamespace = 'public'::regnamespace
             AND c.relname IN ('labels', 'label_reads', 'permission_grants', 'account_groups', 'administrative_events', 'claims',
-                              'api_keys', 'oauth_tokens', 'oauth_clients', 'oauth_authorization_requests', 'contributors')
+                              'api_keys', 'oauth_tokens', 'oauth_clients', 'oauth_authorization_requests', 'contributors',
+                              'provider_clearances')
           ORDER BY c.relname`
       );
     });
@@ -266,6 +267,8 @@ describe("defining a second label", () => {
       oauth_clients: "select",
       oauth_tokens: "select",
       permission_grants: "select",
+      // Which providers may be sent a label's text: read by every run at a label, written by the owner.
+      provider_clearances: "select",
     };
     const found = Object.fromEntries(rights.map((r) => [r.name, r.rights]));
     // The grants, the groups and the log come with the permissions

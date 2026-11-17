@@ -130,6 +130,37 @@ export const labelReads = pgTable(
   ]
 );
 
+// provider_clearances: the model providers and outside services the
+// administrators cleared to be sent text at a label (src/provider-labels.ts,
+// services/provider-clearance-service.ts).
+//
+// One row is one provider cleared for one label. A provider with no row
+// for a label is not cleared for it, so nothing is cleared until a person
+// clears it. `public` has no rows: every provider is cleared for it. The
+// rows are read only where PROVIDER_LABELS is not set; where it is, the
+// deployment's settings fix the clearance. `provider` is a name the code
+// gives (anthropic, endpoint:<name>, embeddings, ...) and is not held to a
+// list here, since endpoints are the deployment's own. Each change is
+// logged in administrative_events, and the table is part of the wall
+// (db/enforcement.ts): read by a cleared connection, written by the owner.
+export const providerClearances = pgTable(
+  "provider_clearances",
+  {
+    provider: text("provider").notNull(),
+    label: text("label")
+      .notNull()
+      .references(() => labels.name),
+    clearedBy: uuid("cleared_by").references((): AnyPgColumn => contributors.id),
+    clearedAt: timestamp("cleared_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.provider, table.label] }),
+    check("ck_provider_clearances_not_public", sql`${table.label} <> 'public'`),
+  ]
+);
+
 // The label column of a row that carries one. It is sensitivity_label, not
 // label, because some tables that will need one already have a `label` that
 // is a display name (actions, source_segments).
@@ -283,7 +314,7 @@ export const permissionGrants = pgTable(
   (table) => [
     check(
       "ck_permission_grants_permission",
-      sql`${table.permission} IN ('direct', 'release', 'fund', 'read', 'read_sources', 'administer')`
+      sql`${table.permission} IN ('direct', 'release', 'fund', 'read', 'read_sources', 'administer', 'clear_providers')`
     ),
     check(
       "ck_permission_grants_subject",

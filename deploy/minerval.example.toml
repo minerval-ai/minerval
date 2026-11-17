@@ -111,10 +111,12 @@ app_id = "4911585"
 app_installation_id = "160924398"
 
 # The labels each model provider and outside service may be sent text at,
-# one line for each. Public Minerval has none: a provider with no line is
-# cleared for "public" and nothing else, which is all the public graph has.
-# A deployment that defines another label sends nothing at it to anyone
-# until a line here says who may receive it. The names are anthropic,
+# one line for each. Most deployments leave this out: the administrators
+# then choose it on the labels page, where each label is defined, nothing
+# cleared until someone ticks it. Written here, it overrides that choice
+# and fixes the clearance: a provider with no line is cleared for "public"
+# and nothing else, and a label is served by nobody until a line here says
+# who may receive it. The names are anthropic,
 # openai, openrouter, "endpoint:<name>" for each endpoint above, and the
 # outside services embeddings, web_search, web_pages, elicit and pangram.
 # An empty list clears a provider for no label, "public" included.

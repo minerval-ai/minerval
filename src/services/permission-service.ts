@@ -587,6 +587,9 @@ export type AdministrativeAction =
   | "label_read_removed"
   | "label_face_shown"
   | "label_face_withdrawn"
+  // Which model providers and outside services may be sent a label's text
+  // was chosen (provider-clearance-service.ts).
+  | "provider_clearance_set"
   | "party_added"
   // The organization's own party, made at setup under a placeholder name, was given its name.
   | "own_organization_named"
@@ -637,6 +640,9 @@ export interface LogEntry {
   /** A tool withdrawn from agents, and why: changed, missing or address_changed. */
   tool?: string;
   reason?: string;
+  /** The providers a label was cleared for, and those it no longer is (provider_clearance_set). */
+  cleared?: string[];
+  no_longer_cleared?: string[];
   /** The file set an act was about, by name. */
   file_set?: string | { withheld: true };
   /** On a set's closing: how many files it holds, and the hash that fixes them. */
@@ -797,6 +803,12 @@ export async function permissionLog(
       if (typeof d.source_id === "string") entry.source_id = d.source_id;
       entry.previous_party =
         typeof d.previous_party_id === "string" ? partyName(d.previous_party_id) : null;
+    }
+    if (r.event === "provider_clearance_set") {
+      const list = (value: string | null | undefined) =>
+        typeof value === "string" && value.length > 0 ? value.split("\n") : [];
+      entry.cleared = list(d.cleared);
+      entry.no_longer_cleared = list(d.no_longer_cleared);
     }
     if (r.event === "owls_created" || r.event === "standing_mandate_created") {
       const micro = Number(d.amount_micro_usd);

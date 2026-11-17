@@ -8,8 +8,11 @@
 import { describe, it, expect } from "vitest";
 import {
   clearedLabels,
+  describeProviders,
+  forgetStoredClearance,
   HOSTED_PROVIDERS,
   knownProviderNames,
+  noteStoredClearance,
   OUTSIDE_SERVICES,
   parseProviderLabels,
   providerClearedFor,
@@ -159,5 +162,65 @@ describe("what an installer reads", () => {
         "define as a label, so nothing was sent. A label is a row in labels and is never created " +
         "from configuration: define it first, or correct the name in PROVIDER_LABELS."
     );
+  });
+});
+
+describe("the administrators' stored choice, where PROVIDER_LABELS is not set", () => {
+  const notSet = { providerLabels: undefined };
+
+  it("clears a provider for public and for the labels stored for it, and for nothing else", () => {
+    const stored = { anthropic: ["internal"], embeddings: ["internal", "restricted"] };
+    expect(clearedLabels("anthropic", notSet, stored)).toEqual(["public", "internal"]);
+    expect(clearedLabels("embeddings", notSet, stored)).toEqual(["public", "internal", "restricted"]);
+    expect(clearedLabels("openai", notSet, stored)).toEqual(["public"]);
+    expect(providerClearedFor("anthropic", "restricted", notSet, stored)).toBe(false);
+  });
+
+  it("is not read where the setting is set, even to nothing", () => {
+    const stored = { anthropic: ["internal"] };
+    expect(clearedLabels("anthropic", { providerLabels: {} }, stored)).toEqual(["public"]);
+    expect(clearedLabels("anthropic", { providerLabels: { anthropic: [] } }, stored)).toEqual([]);
+  });
+
+  it("reads the process's last copy by default, and nothing beyond public before one is read", () => {
+    forgetStoredClearance();
+    expect(clearedLabels("anthropic", notSet)).toEqual(["public"]);
+    noteStoredClearance({ anthropic: ["internal"] });
+    expect(clearedLabels("anthropic", notSet)).toEqual(["public", "internal"]);
+    forgetStoredClearance();
+    expect(clearedLabels("anthropic", notSet)).toEqual(["public"]);
+  });
+});
+
+describe("describeProviders", () => {
+  it("lists every provider and service, with what it is sent and whether this deployment has it set up", () => {
+    const providers = describeProviders({
+      modelEndpoints: [LOCAL],
+      anthropicApiKey: "k",
+      openaiApiKey: "",
+      openrouterApiKey: "",
+      pangramApiKey: "k",
+      pangramEnabled: "false",
+    });
+    expect(providers.map((p) => p.name)).toEqual(knownProviderNames({ modelEndpoints: [LOCAL] }));
+    const by = new Map(providers.map((p) => [p.name, p]));
+    expect(by.get("anthropic")).toMatchObject({ kind: "model_provider", configured: true });
+    expect(by.get("openai")!.configured).toBe(false);
+    expect(by.get("endpoint:local")).toMatchObject({ kind: "model_provider", configured: true });
+    expect(by.get("endpoint:local")!.description).toContain("localhost:8000");
+    expect(by.get("embeddings")).toMatchObject({ kind: "outside_service", configured: false });
+    expect(by.get("web_pages")!.configured).toBe(true);
+    // Switched off in the config file, though its key is set.
+    expect(by.get("pangram")!.configured).toBe(false);
+    for (const p of providers) expect(p.description.length, p.name).toBeGreaterThan(30);
+  });
+});
+
+describe("what a person reads where the administrators clear providers", () => {
+  it("names the page and the permission, and no setting", () => {
+    const message = new ProviderNotClearedError("anthropic", "internal", ["public"], false).message;
+    expect(message).toContain("/admin/labels");
+    expect(message).toContain("permission to clear providers");
+    expect(message).not.toContain("PROVIDER_LABELS");
   });
 });

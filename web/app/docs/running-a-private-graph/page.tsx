@@ -135,9 +135,12 @@ export default function Page() {
         are never removed, so take a minute over it.
       </p>
       <div className="dc-callout">
-        <b>Then ask whoever installed it to clear a model provider for the label.</b>A model provider is sent nothing at a label you
-        define until the deployment&rsquo;s settings say it may (<code>PROVIDER_LABELS</code>). Until then no agent works at that
-        label, and the setup page says so under &ldquo;Labels and model providers&rdquo;.
+        <b>Then clear a model provider for the label.</b>A model provider is sent nothing at a label you define until someone
+        clears it for that label: tick the providers and outside services it may be sent to, in the form that defines it or later on
+        the same page. Each says what it would be sent, nothing is ticked for you, and it takes the permission to clear providers.
+        Until one is cleared no agent works at that label, and the setup page says so under &ldquo;Labels and model providers&rdquo;.
+        Where the page says the clearance is fixed by the deployment&rsquo;s settings (<code>PROVIDER_LABELS</code>), ask whoever
+        installed it instead.
       </div>
       <p>
         On the same page, under the parties, check that one is marked as &ldquo;the organisation that runs this deployment&rdquo;. If

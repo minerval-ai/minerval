@@ -256,7 +256,7 @@ describe("the first administrator", () => {
 
     const mine = (await as(admin, { url: "/permissions/mine" })).json();
     expect(mine.member).toBe(true);
-    expect(mine.permissions).toEqual(["direct", "release", "fund", "read", "read_sources", "administer"]);
+    expect(mine.permissions).toEqual(["direct", "release", "fund", "read", "read_sources", "administer", "clear_providers"]);
   });
 
   it("is established once: signing in again grants nothing more", async () => {
@@ -488,6 +488,7 @@ describe("what a permission guards", () => {
       "GET /labels/faces": ["administer"],
       "PUT /labels/:label/face": ["administer"],
       "DELETE /labels/:label/face/:at": ["administer"],
+      "PUT /labels/:label/providers": ["clear_providers"],
       "POST /asks": ["fund"],
       // Connections to an organization's systems (tests/db/connections.test.ts).
       "GET /connections": ["administer"],
@@ -526,6 +527,8 @@ describe("what a permission guards", () => {
       "GET /file-sets/:file_set_id/commands": [["direct", "administer"]],
       // The parties, in full for an administrator and by name for a person who directs.
       "GET /parties": [["administer", "direct"]],
+      // Which providers each label may be sent to: for an administrator, and for whoever clears them.
+      "GET /labels/providers": [["administer", "clear_providers"]],
     });
   });
 
@@ -747,7 +750,7 @@ describe("an MCP caller and the Assistant", () => {
     const mine = app.routeCatalog
       .map((r) => routeKey(r.method, r.url))
       .filter((key) => /^\S+ \/(permissions|parties|labels)(\/|$)|\/party$|^POST \/operator\/administrators$/.test(key));
-    expect(mine.length).toBe(19);
+    expect(mine.length).toBe(21);
     for (const key of mine) {
       const isRead = key.startsWith("GET ");
       expect(key in ROUTE_TOOLS, key).toBe(isRead);

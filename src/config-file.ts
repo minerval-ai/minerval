@@ -382,7 +382,8 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
     "Filing the agents' problem reports as GitHub issues. An empty repo files nothing. " +
     "Its credential is GITHUB_APP_PRIVATE_KEY or GITHUB_TOKEN.",
   provider_labels:
-    "The labels each model provider and outside service may be sent text at. " +
+    "The labels each model provider and outside service may be sent text at. Left out, the administrators " +
+    "choose this on the labels page; written, it fixes it and overrides their choice. " +
     "One that is not named here is cleared for \"public\" alone.",
   run_log: "How much a run depends on its log, and how long logs of runs that wrote nothing are kept.",
   hosting: "Where this deployment is reached and how the API listens.",

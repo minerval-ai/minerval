@@ -28,20 +28,43 @@
  * of the kind "cleared for the higher, therefore the lower" could be
  * written without inventing an order they do not have.
  *
- * On the public graph the setting is empty, every provider is cleared for
+ * Which clearance is read. Where PROVIDER_LABELS is set, that setting.
+ * Where it is not, the administrators' stored choice
+ * (services/provider-clearance-service.ts), read again from the table when
+ * this process's copy is older than STORED_CLEARANCE_RECHECK_MS, so a
+ * clearance given or taken back on the labels page is in force without a
+ * restart. The copy is read only for a run at a label other than `public`:
+ * under the stored choice every provider is cleared for `public`.
+ *
+ * On the public graph nothing is set, every provider is cleared for
  * `public`, every run works at `public`, and this check answers yes
  * without reading anything.
  */
 import { loadConfig } from "../config.js";
 import { PUBLIC_LABEL } from "../labels.js";
 import {
+  clearanceFixedBySettings,
   clearedLabels,
   ProviderNotClearedError,
   UndefinedProviderLabelError,
   type ProviderLabelsConfig,
 } from "../provider-labels.js";
 import { undefinedLabels } from "../services/label-service.js";
+import { freshStoredClearance } from "../services/provider-clearance-service.js";
 import { currentLabel } from "./usage-context.js";
+
+/**
+ * Bring this process's copy of the stored choice up to date for the run in
+ * progress, where it could matter: PROVIDER_LABELS is not set and the run
+ * works at a label other than `public`. The synchronous readers
+ * (providerClearedHere, the tools a run is offered, the passage that tells
+ * it which services are withheld) read that copy, so a caller about to use
+ * them awaits this first. The LLM client does, for every call.
+ */
+export async function freshenProviderClearance(config: ProviderLabelsConfig = loadConfig()): Promise<void> {
+  if (clearanceFixedBySettings(config) || currentLabel() === PUBLIC_LABEL) return;
+  await freshStoredClearance();
+}
 
 /**
  * The setting last found to name only defined labels, by identity: the
@@ -85,10 +108,11 @@ export async function assertProviderCleared(
   provider: string,
   config: ProviderLabelsConfig = loadConfig()
 ): Promise<void> {
-  await assertSettingNamesDefinedLabels(config);
+  const fixed = clearanceFixedBySettings(config);
+  if (fixed) await assertSettingNamesDefinedLabels(config);
   const label = currentLabel();
-  const cleared = clearedLabels(provider, config);
-  if (!cleared.includes(label)) throw new ProviderNotClearedError(provider, label, cleared);
+  const cleared = clearedLabels(provider, config, fixed || label === PUBLIC_LABEL ? {} : await freshStoredClearance());
+  if (!cleared.includes(label)) throw new ProviderNotClearedError(provider, label, cleared, fixed);
 }
 
 /** Whether `provider` is cleared for the label this run works at. */

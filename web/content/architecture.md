@@ -1930,20 +1930,57 @@ composed or read:
 | `elicit` | Elicit's search of papers and trials | the query |
 | `pangram` | Pangram's checks for AI-generated writing and matching text | the text checked |
 
-`PROVIDER_LABELS` is a JSON object from a provider's name to the labels it may
-receive text at:
+Every provider is cleared for `public`, and for no other label until someone
+clears it. The public graph has only `public`, so it needs nothing and
+nothing about it changes. A deployment with another label serves nothing at
+that label until a provider is cleared for it: which outside party may read
+private text is a step of setting the deployment up, never a default.
+
+Who clears it is one of two, never both.
+
+**The administrators, on the labels page.** This is how a deployment starts.
+The form that defines a label on `/admin/labels`, and each label's row
+there, list the providers and outside services this deployment has set up,
+each with what it would be sent (the table above, from
+`describeProviders`). A person ticks the ones cleared for the label, and
+nothing is ticked until someone ticks it. A box "the same as public" ticks
+every one listed, which is still a choice made on purpose. The choice is
+stored in `provider_clearances`, a row for each provider and label it
+clears (`src/services/provider-clearance-service.ts`), through
+`PUT /labels/:label/providers` or with the label in `POST /labels`. It
+takes a permission of its own, `clear_providers` (docs/accounts.md), and a
+signed-in session, and each change is logged (`provider_clearance_set`).
+`public` has no rows and cannot be narrowed here. The table is part of the
+wall: a cleared connection reads it and only the owner's connection writes
+it. A row names its label by a foreign key, so it cannot name a label that
+is not defined.
+
+**Whoever runs the machine, in `PROVIDER_LABELS`** (or `[provider_labels]` in
+the config file). Set, it overrides the stored choice and fixes the
+clearance: the rows are not read, the labels page says the clearance is
+fixed by the deployment's settings, and the route refuses a change
+(`FIXED_BY_SETTINGS`). It is a JSON object from a provider's name to the
+labels it may receive text at:
 
 ```
 PROVIDER_LABELS={"anthropic":["public","internal"],"endpoint:local":["public","internal","restricted"],"embeddings":["public","internal"]}
 ```
 
 A provider the setting does not name is cleared for `public` and for nothing
-else. The public graph has only `public`, so it needs no setting and nothing
-about it changes. A deployment with another label serves nothing at that
-label until whoever runs it clears a provider for it: which outside party
-may read private text is a step of setting the deployment up, never a
-default. A provider the setting names is cleared for exactly the labels
-listed, so `[]` switches it off for every label.
+else, and one it names is cleared for exactly the labels listed, so `[]`
+switches it off for every label. Set to `{}`, it fixes every provider at
+`public` alone. An empty value is not set.
+
+A change on the labels page is in force without a restart. Each process
+keeps the last copy of the stored choice it read, and the seams below read
+the table again, before they send anything at a label other than `public`,
+once that copy is more than five seconds old
+(`STORED_CLEARANCE_RECHECK_MS`); the process that made the change reads it
+at once. So a clearance taken back stops every process sending within
+seconds. The tools a run is offered and the passage that tells it which
+services are withheld read the same copy, brought up to date by the LLM
+client at each call (`freshenProviderClearance`). At `public` the copy is
+never read, so the public graph asks the table nothing.
 
 The test is one label, by name: the provider must be cleared for the label
 the run works at. A run at a label also sends what that label reads (the
@@ -1958,8 +1995,9 @@ LLM client for the model provider of every call (`src/llm/client.ts`), in the
 embedding service, in the one function that fetches a public address
 (`services/url-guard.ts`), in the loop-run web search, and in the Elicit and
 Pangram tools (`src/llm/provider-clearance.ts`). A call that is not cleared
-fails there with an error that names the label, the provider and the entry to
-write in `PROVIDER_LABELS`. Nothing is sent, nothing is retried on another
+fails there with an error that names the label and the provider, and where
+it is cleared: the labels page, or the entry to write in `PROVIDER_LABELS`
+where the setting fixes it. Nothing is sent, nothing is retried on another
 provider, and the label is never read as `public`. A run whose model is not
 cleared fails on its first call, before it has spent anything.
 

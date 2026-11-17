@@ -60,6 +60,10 @@ const PERMISSION_WORDS: Record<string, { name: string; to: string }> = {
   read: { name: "Read at a label", to: "read at a label" },
   read_sources: { name: "Open raw sources at a label", to: "open raw sources at a label" },
   administer: { name: "Administer the deployment", to: "administer the deployment" },
+  clear_providers: {
+    name: "Clear providers for a label",
+    to: "clear model providers and outside services for a label",
+  },
 };
 
 export function permissionName(permission: string): string {
@@ -368,7 +372,12 @@ function labelsItem(c: SetupChecklist): ChecklistItem {
     facts,
     ...(unserved
       ? {
-          next: `${CONFIG_OWNER} clears a provider for a label in its PROVIDER_LABELS setting. Which outside party may be sent private text is chosen there, and is never guessed.`,
+          next:
+            // A checklist from a build before the stored choice carries no
+            // clearance_fixed_by_settings, and its clearance was the setting's.
+            c.clearance_fixed_by_settings === false
+              ? "A holder of the permission to clear providers ticks, on the labels page, the model providers and outside services each label may be sent to. Which outside party may be sent private text is chosen there, and is never guessed."
+              : `${CONFIG_OWNER} clears a provider for a label in its PROVIDER_LABELS setting, which fixes the clearance for this deployment. Which outside party may be sent private text is chosen there, and is never guessed.`,
         }
       : {}),
   };
@@ -703,6 +712,15 @@ export function logSentence(entry: LogEntry): string {
       return `${who} recorded that ${labelWords(entry.label)} reads ${labelWords(entry.reads)}.`;
     case "label_read_removed":
       return `${who} took back that ${labelWords(entry.label)} reads ${labelWords(entry.reads)}.`;
+    case "provider_clearance_set": {
+      const parts = [
+        ...(entry.cleared && entry.cleared.length > 0 ? [`cleared ${listed(entry.cleared)}`] : []),
+        ...(entry.no_longer_cleared && entry.no_longer_cleared.length > 0
+          ? [`took back the clearance of ${listed(entry.no_longer_cleared)}`]
+          : []),
+      ];
+      return `${who} ${parts.length > 0 ? parts.join(" and ") : "changed which providers are cleared"} for ${labelWords(entry.label)}.`;
+    }
     case "party_added":
       return isWithheld(entry.party)
         ? `${who} added ${partyWords(entry.party)}.`

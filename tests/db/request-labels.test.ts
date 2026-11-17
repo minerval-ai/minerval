@@ -1987,6 +1987,13 @@ describe("a route the table says adds no labelled row", () => {
     await writesNothingLabelled("DELETE /labels/:label/reads/:reads", () =>
       as(admin, { method: "DELETE", url: `/labels/${B}/reads/${A}` })
     );
+    // Clearing a provider for a private label, and taking it back.
+    await writesNothingLabelled("PUT /labels/:label/providers", () =>
+      as(admin, { method: "PUT", url: `/labels/${A}/providers`, payload: { providers: ["web_pages"] } })
+    );
+    await writesNothingLabelled("PUT /labels/:label/providers", () =>
+      as(admin, { method: "PUT", url: `/labels/${A}/providers`, payload: { providers: [] } })
+    );
   });
 });
 

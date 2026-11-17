@@ -106,6 +106,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A label, a pair in label_reads, and the administrators' log entry for each: what the administrator asked for and nothing read from elsewhere.",
     ],
   ],
+  "src/services/provider-clearance-service.ts": [
+    [
+      "Which providers may be sent a label's text is part of the wall, so it is written on the owner's connection. The caller has checked that the actor may clear providers.",
+      "A row for each provider cleared for the label, and the administrators' log entry for the change: what the person asked for and nothing read from elsewhere.",
+    ],
+  ],
   "src/services/permission-service.ts": [
     [
       "The groups a verified sign-in carried decide what the account may read, so they are written on the owner's connection.",

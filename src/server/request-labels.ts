@@ -323,6 +323,13 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   },
   "DELETE /labels/:label/face/:at": { rule: "none", why: "Withdraws a face, as the route that shows one writes it (services/label-admin-service.ts)." },
   "DELETE /labels/:label/reads/:reads": { rule: "none", why: ADMINISTRATION },
+  "PUT /labels/:label/providers": {
+    rule: "none",
+    why:
+      "Says which model providers and outside services a label's work may be sent to. The route checks the person " +
+      "holds the permission to clear providers, and the rows are written on the database owner's connection to a " +
+      "table that carries no label (services/provider-clearance-service.ts).",
+  },
 
   // ---- the gate: members-only deployments only ----
   "POST /showings": { rule: "none", why: SHOWING },

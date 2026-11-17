@@ -42,6 +42,7 @@ export const PERMISSIONS = [
   "read",
   "read_sources",
   "administer",
+  "clear_providers",
 ] as const;
 
 export type PermissionName = (typeof PERMISSIONS)[number];
@@ -132,6 +133,17 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
     never:
       "Act under a permission they have not also been granted, or change who may do what " +
       "without a log entry.",
+  },
+  clear_providers: {
+    scope: "none",
+    phrase: "clear model providers and outside services for a label",
+    covers:
+      "Choose, for each label besides public, which model providers and outside services may be sent the text " +
+      "of work at it, on the labels page, where the deployment's settings do not fix that. Nothing is cleared " +
+      "for a label until a holder of this permission clears it, and each change is logged.",
+    never:
+      "Read at a label they have not been granted, or clear a provider where the deployment's settings " +
+      "(PROVIDER_LABELS) fix the clearance.",
   },
 };
 

@@ -297,7 +297,7 @@ describe("permissions in words", () => {
   it("names each permission once, with its scope, what it covers and what it never lets anyone do", async () => {
     const { PERMISSIONS, PERMISSION_DEFINITIONS, holdsPermission, heldPermissions, PUBLIC_STANDING, standingOf, membersOnly } =
       await import("../../../src/permissions.js");
-    expect([...PERMISSIONS]).toEqual(["direct", "release", "fund", "read", "read_sources", "administer"]);
+    expect([...PERMISSIONS]).toEqual(["direct", "release", "fund", "read", "read_sources", "administer", "clear_providers"]);
     for (const name of PERMISSIONS) {
       const d = PERMISSION_DEFINITIONS[name];
       expect(d.covers.length, name).toBeGreaterThan(30);

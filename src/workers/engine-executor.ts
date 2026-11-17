@@ -104,6 +104,7 @@ import {
   getResearchRun,
   readResearcherPaused,
 } from "../services/research-run-service.js";
+import { freshClearanceAt } from "../services/provider-clearance-service.js";
 import {
   examinationForRequest,
   getExaminationRow,
@@ -851,6 +852,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
   // tier where this deployment can send this label's text to its provider,
   // and the standard tier where it cannot (requestWorkTier), so that work
   // asked of a label never needs a provider the deployment has not set up.
+  await freshClearanceAt(action.sensitivity_label);
   const fullTier = requestWorkTier(action.sensitivity_label);
   const fullWork = { tier: fullTier, model: modelForTier(fullTier), effort: "high" } as const;
   // What the full work was priced at, the row's cost (the scoping quote or

@@ -27,9 +27,12 @@
  * being present is what is checked, not whether it works.
  *
  * Four checks are about which providers may be sent private text
- * (src/provider-labels.ts). One blocks: a label that provider_labels names
- * and nobody has defined refuses every call at every label, so holding the
- * work back loses nothing. A role whose model's provider is not cleared for
+ * (src/provider-labels.ts), read from whichever clearance applies: the
+ * provider_labels setting where it is set, and otherwise the choice the
+ * administrators stored on the labels page. One blocks: a label that
+ * provider_labels names and nobody has defined refuses every call at every
+ * label, so holding the work back loses nothing. A stored choice cannot
+ * name an undefined label. A role whose model's provider is not cleared for
  * a label fails without blocking: its runs there are refused before anything
  * is sent, and the gate is one gate for the whole deployment, so closing it
  * would stop the work at the labels that are served as well. Embeddings and
@@ -60,7 +63,13 @@ import { featureOn, offFeatures, type FeatureName } from "./features.js";
 import { PUBLIC_LABEL } from "./labels.js";
 import { ENDPOINT_ID_PREFIX, parseEndpointModelId, resolveProvider } from "./llm/providers/routing.js";
 import { anthropicServerWebSearch } from "./llm/tools/web-search-tool.js";
-import { providerClearedFor, type OutsideServiceName } from "./provider-labels.js";
+import {
+  clearanceFixedBySettings,
+  providerClearedFor,
+  type OutsideServiceName,
+  type StoredClearance,
+} from "./provider-labels.js";
+import { readStoredClearance } from "./services/provider-clearance-service.js";
 import { labelsBesidesPublic, publicIsTheOnlyLabel } from "./services/label-service.js";
 import { verifyRunLog } from "./services/run-view-service.js";
 import { openAgentRun, recordAgentStep, sealAgentRun } from "./services/trace-service.js";
@@ -118,6 +127,12 @@ export interface PreflightFacts {
   holdsPrivate: boolean | null;
   /** The labels defined besides `public`, by name; null when the labels could not be read. */
   privateLabels: string[] | null;
+  /**
+   * The administrators' stored choice of providers for each label, where
+   * provider_labels is not set; null when it could not be read. Absent
+   * (facts made up for a test) reads as nothing cleared beyond `public`.
+   */
+  storedClearance?: StoredClearance | null;
   /**
    * The environment variables that declared model endpoints read their keys
    * from (keyEnv) and that are not set.
@@ -392,11 +407,33 @@ function noOtherLabel(what: string): Outcome {
   );
 }
 
+/** Whether `provider` is cleared for `label`, by whichever clearance applies. */
+function clearedFor(facts: PreflightFacts, provider: string, label: string): boolean {
+  return providerClearedFor(provider, label, facts.config, facts.storedClearance ?? {});
+}
+
+/** Where a provider is cleared, as a sentence's end says it. */
+function whereCleared(config: Config): string {
+  return clearanceFixedBySettings(config)
+    ? "in provider_labels"
+    : "on the labels page, by a holder of the permission to clear providers";
+}
+
+const STORED_UNKNOWN =
+  "This could not be checked: the providers the administrators cleared for each label could not be read.";
+
 function checkProviderLabels({ config, privateLabels }: PreflightFacts): Outcome {
+  if (!clearanceFixedBySettings(config)) {
+    return notApplicable(
+      "provider_labels is not set, so the administrators choose which model providers and outside services each " +
+        "label besides public may be sent to, on the labels page, and nothing is cleared for a label until they do. " +
+        "A choice made there can only name a label that is defined."
+    );
+  }
   const setting = config.providerLabels ?? {};
   if (Object.keys(setting).length === 0) {
     return notApplicable(
-      "provider_labels is not set, so every model provider and outside service is cleared for public and for no other label."
+      "provider_labels is set and names nothing, so every model provider and outside service is cleared for public and for no other label."
     );
   }
   const providersByLabel = new Map<string, string[]>();
@@ -427,9 +464,11 @@ function checkProviderLabels({ config, privateLabels }: PreflightFacts): Outcome
   );
 }
 
-function checkModelClearance({ config, privateLabels }: PreflightFacts): Outcome {
+function checkModelClearance(facts: PreflightFacts): Outcome {
+  const { config, privateLabels } = facts;
   if (privateLabels === null) return fail(PRIVATE_UNKNOWN);
   if (privateLabels.length === 0) return noOtherLabel("a model provider");
+  if (facts.storedClearance === null) return fail(STORED_UNKNOWN);
   const rolesByProvider = new Map<string, string[]>();
   for (const { role, model } of roleModels(config)) {
     // A model no provider serves is the models check's to report.
@@ -439,7 +478,7 @@ function checkModelClearance({ config, privateLabels }: PreflightFacts): Outcome
   const providers = [...rolesByProvider.keys()];
   const problems: string[] = [];
   for (const label of privateLabels) {
-    const uncleared = providers.filter((provider) => !providerClearedFor(provider, label, config));
+    const uncleared = providers.filter((provider) => !clearedFor(facts, provider, label));
     if (uncleared.length === 0) continue;
     if (uncleared.length === providers.length) {
       problems.push(
@@ -458,22 +497,24 @@ function checkModelClearance({ config, privateLabels }: PreflightFacts): Outcome
     return pass(`The provider of every role's model is cleared for ${theLabels(privateLabels)}.`);
   }
   return fail(
-    `${sentence(problems.join("; "))} Clear the provider for the label in provider_labels, or name the role a model ` +
+    `${sentence(problems.join("; "))} Clear the provider for the label ${whereCleared(config)}, or name the role a model ` +
       "on a provider that is cleared. This check does not stop agent work, because that would also stop the work " +
       "at labels that are served, and a refused run sends nothing."
   );
 }
 
-function checkEmbeddingsClearance({ config, privateLabels }: PreflightFacts): Outcome {
+function checkEmbeddingsClearance(facts: PreflightFacts): Outcome {
+  const { config, privateLabels } = facts;
   if (privateLabels === null) return fail(PRIVATE_UNKNOWN);
   if (privateLabels.length === 0) return noOtherLabel("embeddings");
-  const uncleared = privateLabels.filter((label) => !providerClearedFor("embeddings", label, config));
+  if (facts.storedClearance === null) return fail(STORED_UNKNOWN);
+  const uncleared = privateLabels.filter((label) => !clearedFor(facts, "embeddings", label));
   if (uncleared.length === 0) return pass(`Embeddings are cleared for ${theLabels(privateLabels)}.`);
   return pass(
     `Embeddings are not cleared for ${theLabels(uncleared)}, so what is written there is stored without a vector, ` +
       "and a search there matches on keywords where it can and returns an error where it cannot. This passes " +
-      "because nothing is sent out and it may be what the deployment chose; clearing them (embeddings, in " +
-      "provider_labels) sends the text of each claim, tag, finding, request and report there, and each search " +
+      `because nothing is sent out and it may be what the deployment chose; clearing them (embeddings, ${whereCleared(config)}) ` +
+      "sends the text of each claim, tag, finding, request and report there, and each search " +
       "query, to OpenAI."
   );
 }
@@ -592,9 +633,11 @@ function searchingRoles(config: Config): { insideAnthropic: RoleModel[]; viaOpen
   };
 }
 
-function checkOutsideServiceClearance({ config, privateLabels }: PreflightFacts): Outcome {
+function checkOutsideServiceClearance(facts: PreflightFacts): Outcome {
+  const { config, privateLabels } = facts;
   if (privateLabels === null) return fail(PRIVATE_UNKNOWN);
   if (privateLabels.length === 0) return noOtherLabel("an outside service");
+  if (facts.storedClearance === null) return fail(STORED_UNKNOWN);
   const { insideAnthropic, viaOpenRouter } = searchingRoles(config);
   // Each service an agent's tools reach, as a sentence names it, and whether
   // this deployment uses it at all. Embeddings have a check of their own.
@@ -607,8 +650,8 @@ function checkOutsideServiceClearance({ config, privateLabels }: PreflightFacts)
   const inUse = services.filter((s) => s.on);
   const said: string[] = [];
   for (const label of privateLabels) {
-    const cleared = inUse.filter((s) => providerClearedFor(s.service, label, config));
-    const withheld = inUse.filter((s) => !providerClearedFor(s.service, label, config));
+    const cleared = inUse.filter((s) => clearedFor(facts, s.service, label));
+    const withheld = inUse.filter((s) => !clearedFor(facts, s.service, label));
     let text: string;
     if (withheld.length === 0) {
       text = `at the label "${label}", every outside service that is on is cleared (${listed(cleared.map((s) => s.name))})`;
@@ -628,8 +671,8 @@ function checkOutsideServiceClearance({ config, privateLabels }: PreflightFacts)
     // goes, so leaving web_search uncleared does not stop it.
     if (
       insideAnthropic.length > 0 &&
-      !providerClearedFor("web_search", label, config) &&
-      providerClearedFor("anthropic", label, config)
+      !clearedFor(facts, "web_search", label) &&
+      clearedFor(facts, "anthropic", label)
     ) {
       text +=
         `; the ${plural(insideAnthropic.length, "role")} whose ${insideAnthropic.length === 1 ? "model" : "models"} ` +
@@ -643,7 +686,7 @@ function checkOutsideServiceClearance({ config, privateLabels }: PreflightFacts)
   }
   said.push(
     "Nothing here fails: a service that is not cleared for a label is sent nothing from it, and which services " +
-      "may be sent private text is the deployment's choice (provider_labels)."
+      `may be sent private text is the deployment's choice (${clearanceFixedBySettings(config) ? "provider_labels" : "the labels page"}).`
   );
   return pass(said.join(" "));
 }
@@ -956,6 +999,15 @@ export async function gatherPreflightFacts(): Promise<PreflightFacts> {
     // Left null: the checks that turn on it say that it could not be read.
   }
   const holdsPrivate = privateLabels === null ? null : privateLabels.length > 0;
+  // The administrators' choice, where the settings do not fix the clearance.
+  let storedClearance: StoredClearance | null = {};
+  if (!clearanceFixedBySettings(config)) {
+    try {
+      storedClearance = await readStoredClearance();
+    } catch {
+      storedClearance = null;
+    }
+  }
   const endpointKeysMissing = (config.modelEndpoints ?? [])
     .map((endpoint) => endpoint.keyEnv)
     .filter((env): env is string => !!env && !process.env[env]);
@@ -967,6 +1019,7 @@ export async function gatherPreflightFacts(): Promise<PreflightFacts> {
     configFile: appliedConfigFile(),
     holdsPrivate,
     privateLabels,
+    storedClearance,
     endpointKeysMissing,
     database,
     runLog,

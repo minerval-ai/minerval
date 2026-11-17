@@ -89,7 +89,7 @@ docker compose logs -f api`}</Code>
         </li>
         <li>
           <strong>Follow the setup checklist</strong>
-          <p><code>/admin</code> says what needs someone now: the deployment's own checks of its configuration, then permissions, labels, the General mandate, owls and material. From there: define labels (<code>/admin/labels</code>), clear model providers for them (<code>PROVIDER_LABELS</code>), grant permissions (<code>/admin/people</code>), set up the General mandate and owls, and add material.</p>
+          <p><code>/admin</code> says what needs someone now: the deployment's own checks of its configuration, then permissions, labels, the General mandate, owls and material. From there: define labels and tick the model providers and outside services each may be sent to (<code>/admin/labels</code>), grant permissions (<code>/admin/people</code>), set up the General mandate and owls, and add material.</p>
         </li>
       </ol>
       <p>To stop: <code>docker compose down</code>; the database and file sets stay in Docker volumes. <code>docker compose down -v</code> deletes them. To upgrade: <code>git pull</code>, <code>docker compose build</code>, <code>docker compose up -d</code>.</p>
@@ -112,7 +112,7 @@ docker compose logs -f api`}</Code>
             </tr>
             <tr>
               <td><code>PROVIDER_LABELS</code></td>
-              <td>Which labels each model provider and outside service may be sent text at. A provider with no entry is cleared for <code>public</code> only, so nothing at a label you define is sent anywhere until this clears a provider for it</td>
+              <td>Leave it unset: your administrators then choose, on <code>/admin/labels</code>, which model providers and outside services each label may be sent text at, with nothing cleared until someone ticks it and no restart for a change. Set it only to make that choice here alone: it then overrides the page and fixes the clearance, and a provider with no entry is cleared for <code>public</code> only</td>
             </tr>
             <tr>
               <td><code>MODEL_ENDPOINTS</code></td>

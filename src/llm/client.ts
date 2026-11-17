@@ -48,7 +48,7 @@ import { resolveProvider } from "./providers/routing.js";
 import { withRunDate } from "./run-date.js";
 import { featuresOffNote, withLeadingNote } from "./features-off-note.js";
 import { unclearedServicesNote, withoutUnclearedTools } from "./uncleared-services-note.js";
-import { assertProviderCleared } from "./provider-clearance.js";
+import { assertProviderCleared, freshenProviderClearance } from "./provider-clearance.js";
 import {
   LABEL_NOTE_HEADING,
   MIRROR_NOTE_HEADING,
@@ -125,6 +125,10 @@ async function withRunBrief(
   model: string,
   tools?: readonly object[]
 ): Promise<MessageParam[]> {
+  // The passage and the toolset the caller builds next read which services
+  // are cleared from this process's copy of the administrators' choice,
+  // which is read again here when it is old (provider-clearance.ts).
+  await freshenProviderClearance();
   if (!getUsageContext().agent) return messages;
   const brief = [featuresOffNote(), unclearedServicesNote(model)].filter((note) => note.length > 0);
   // A run that reads material that is not public and has a tool that takes

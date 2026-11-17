@@ -537,14 +537,22 @@ describe("in a members-only deployment", () => {
         const tool = ROUTE_TOOLS[routeKey(r.method, r.url)];
         return tool ? [tool.name] : [];
       });
-    // The reads of file sets, and the parties by name, which a person who directs reads to say whose material a set is.
-    expect(needingAnyOf.sort()).toEqual(["get_file_set", "list_file_set_commands", "list_file_set_files", "list_file_sets", "list_parties"]);
+    // The reads of file sets, and the parties by name, which a person who directs reads to say whose material a
+    // set is; and which providers each label may be sent to, which an administrator and a holder of the
+    // permission to clear providers read.
+    const forDirecting = ["get_file_set", "list_file_set_commands", "list_file_set_files", "list_file_sets", "list_parties"];
+    expect(needingAnyOf.sort()).toEqual([...forDirecting, "list_provider_clearance"].sort());
     const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("release"), ...needingAnyOf]);
     expect([...reader].sort()).toEqual(all.filter((name) => !gone.has(name)).sort());
-    for (const holding of [["direct"], ["administer"]]) {
-      const tools = toolsOf(holding);
-      for (const name of needingAnyOf) expect(tools, `${name} for a holder of ${holding[0]}`).toContain(name);
+    for (const [holding, names] of [
+      [["direct"], forDirecting],
+      [["administer"], needingAnyOf],
+      [["clear_providers"], ["list_provider_clearance"]],
+    ] as const) {
+      const tools = toolsOf([...holding]);
+      for (const name of names) expect(tools, `${name} for a holder of ${holding[0]}`).toContain(name);
     }
+    expect(toolsOf(["direct"])).not.toContain("list_provider_clearance");
     for (const name of needingAnyOf) expect(toolsOf(["fund"]), name).not.toContain(name);
 
     const funder = toolsOf(["fund"]);

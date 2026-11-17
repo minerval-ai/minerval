@@ -604,6 +604,8 @@ describe("the columns", () => {
       // Switches and marks the platform keeps for itself.
       "platform_flags",
       "prize_payouts",
+      // Which providers the administrators cleared for each label: names, part of the wall.
+      "provider_clearances",
       // Counts of what waits, with no content.
       "queue_depth_snapshots",
       // Database time used by query_sql, per account and day.

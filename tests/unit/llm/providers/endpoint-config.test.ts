@@ -107,6 +107,13 @@ describe("MODEL_ENDPOINTS and PROVIDER_LABELS in loadConfig", () => {
   it("declares no endpoint and clears nothing beyond the default when neither is set", async () => {
     const config = await load();
     expect(config.modelEndpoints).toEqual([]);
+    // Not set: the administrators' stored choice applies (src/provider-labels.ts).
+    expect(config.providerLabels).toBeUndefined();
+  });
+
+  it("reads PROVIDER_LABELS written as an empty object as set, to nothing", async () => {
+    process.env.PROVIDER_LABELS = "{}";
+    const config = await load();
     expect(config.providerLabels).toEqual({});
   });
 

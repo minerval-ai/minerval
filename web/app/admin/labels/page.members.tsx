@@ -9,8 +9,11 @@ import {
   fetchGrants,
   fetchLabels,
   fetchParties,
+  fetchProviderClearance,
   fetchSetupChecklist,
   type GrantView,
+  type ProviderClearance,
+  type ProviderView,
   type SetupChecklist,
 } from "@/lib/admin-api";
 import { capitalised, count, holdersText, labelClearanceFacts } from "@/lib/admin-words";
@@ -19,6 +22,7 @@ import {
   addPartyAction,
   defineLabelAction,
   removeLabelReadAction,
+  setProviderClearanceAction,
   setSourcePartyAction,
 } from "../actions";
 
@@ -42,19 +46,67 @@ const holdersOf = (grants: GrantView[]) =>
     })
   );
 
+// The providers a label may be cleared for, ticked where it is, and the
+// "same as public" box, which stands for every one listed: every provider is
+// cleared for public. Nothing is ticked that nobody ticked.
+function ProviderChecks({ providers, cleared }: { providers: ProviderView[]; cleared: readonly string[] }) {
+  return (
+    <>
+      {providers.map((p) => (
+        <label key={p.name} className="admin-check">
+          <input type="checkbox" name="providers" value={p.name} defaultChecked={cleared.includes(p.name)} />
+          <span>
+            <code>{p.name}</code>
+            <small>
+              {" "}
+              {p.description}
+              {!p.configured && " Not set up in this deployment."}
+            </small>
+          </span>
+          <input type="hidden" name="offered" value={p.name} />
+        </label>
+      ))}
+      <label className="admin-check">
+        <input type="checkbox" name="same_as_public" />
+        <span>
+          The same as public: every one listed above
+          <small> Ticking this clears them all, whatever else is ticked.</small>
+        </span>
+      </label>
+    </>
+  );
+}
+
+/**
+ * What the labels page offers to clear: the providers this deployment has
+ * set up, and any already cleared, so that a clearance can be taken back
+ * after a provider is no longer set up.
+ */
+function offeredProviders(clearance: ProviderClearance): ProviderView[] {
+  const cleared = new Set(clearance.labels.flatMap((l) => l.cleared));
+  return clearance.providers.filter((p) => p.configured || cleared.has(p.name));
+}
+
 export default async function LabelsPage() {
   const who = await viewer();
   if (!who) return null;
   if (!can(who, "administer")) return <NeedsPermission title="Labels and parties" permission="administer" />;
 
-  const [labels, parties, grants, checklist] = await Promise.all([
+  const [labels, parties, grants, checklist, clearance] = await Promise.all([
     fetchLabels(who.externalId),
     fetchParties(who.externalId),
     fetchGrants(who.externalId),
     // For the providers cleared for each label and the count of sources by
     // party. The page reads without them.
     fetchSetupChecklist(who.externalId).catch(() => null as SetupChecklist | null),
+    // Which providers each label may be sent to, and what each is sent. The
+    // page reads without it, offering no change.
+    fetchProviderClearance(who.externalId).catch(() => null as ProviderClearance | null),
   ]);
+  // Clearing is offered where the settings do not fix it, to a holder of the permission for it.
+  const clears = clearance !== null && !clearance.fixed_by_settings && can(who, "clear_providers");
+  const offered = clearance ? offeredProviders(clearance) : [];
+  const clearedFor = new Map((clearance?.labels ?? []).map((l) => [l.label, l.cleared]));
   const cleared = new Map((checklist?.labels ?? []).map((l) => [l.name, l]));
   const sourcesBy = new Map((checklist?.material.sources_by_party ?? []).map((p) => [p.party.id, p.sources]));
   const ownLabels = labels.filter((l) => l.name !== "public");
@@ -136,20 +188,50 @@ export default async function LabelsPage() {
 
         {ownLabels.length > 0 && (
           <>
-            <div className="acct-sub admin-gap">
+            <div className="acct-sub admin-gap" id="providers">
               <h3>What each label may be sent to</h3>
             </div>
-            <p className="acct-prose acct-measure">
-              Text at a label reaches a model provider or an outside service only if that provider
-              is cleared for the label. Whoever runs the deployment clears providers in its{" "}
-              <code>PROVIDER_LABELS</code> setting; it is not changed from this page.
-            </p>
+            {clearance?.fixed_by_settings ? (
+              <p className="acct-prose acct-measure">
+                Text at a label reaches a model provider or an outside service only if that provider
+                is cleared for the label. Here that is fixed by the deployment&rsquo;s settings (its{" "}
+                <code>PROVIDER_LABELS</code> setting, or <code>[provider_labels]</code> in its config
+                file), so it is not changed from this page. Whoever runs the deployment changes it there.
+              </p>
+            ) : (
+              <p className="acct-prose acct-measure">
+                Text at a label reaches a model provider or an outside service only if that provider
+                is cleared for the label. Every provider is cleared for public, and none for any other
+                label until someone ticks it here: which outside party may read private text is never
+                a default. Ticking one sends it the text of every agent run at that label, as the list
+                below says. Each change is logged, and is in force within a few seconds, with no restart.
+                {!can(who, "clear_providers") && " Changing it takes the permission to clear providers, which you do not hold."}
+              </p>
+            )}
             <ul className="admin-checks">
               {ownLabels.flatMap((l) => {
                 const facts = cleared.get(l.name);
                 return (facts ? labelClearanceFacts(facts) : []).map((fact) => <li key={fact}>{fact}</li>);
               })}
             </ul>
+            {clears && (
+              <div className="acct-cols">
+                {ownLabels.map((l) => (
+                  <div key={l.name} className="acct-main">
+                    <h4>
+                      <code>{l.name}</code> may be sent to
+                    </h4>
+                    <ActionForm action={setProviderClearanceAction} submit={`Save what ${l.name} may be sent to`}>
+                      <input type="hidden" name="label" value={l.name} />
+                      <fieldset className="admin-fieldset">
+                        <legend>Cleared for {l.name}</legend>
+                        <ProviderChecks providers={offered} cleared={clearedFor.get(l.name) ?? []} />
+                      </fieldset>
+                    </ActionForm>
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 
@@ -177,6 +259,17 @@ export default async function LabelsPage() {
                 What it is for
                 <input name="description" required maxLength={500} autoComplete="off" />
               </label>
+              {clears && (
+                <fieldset className="admin-fieldset">
+                  <legend>Its text may be sent to</legend>
+                  <small>
+                    Nothing is ticked: a label is served by no model provider or outside service until
+                    one is cleared for it, and each one ticked is sent the text of every agent run at the
+                    label, as it says. This can be changed later, below the list of labels.
+                  </small>
+                  <ProviderChecks providers={offered} cleared={[]} />
+                </fieldset>
+              )}
               {ownLabels.length > 0 && (
                 <fieldset className="admin-fieldset">
                   <legend>Its holders may also read</legend>

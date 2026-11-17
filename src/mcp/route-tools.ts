@@ -282,6 +282,12 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /parties": { name: "list_parties" },
   "GET /labels": { name: "list_labels" },
   "GET /labels/faces": { name: "list_label_faces" },
+  "GET /labels/providers": {
+    name: "list_provider_clearance",
+    note:
+      "Which model providers and outside services each label may be sent text at, with what each is " +
+      "sent. Changing it is a person's act on the labels page, from a signed-in session.",
+  },
   "GET /asks/askable": { name: "list_askable" },
   "GET /labels/mine": {
     name: "get_my_labels",
@@ -523,6 +529,13 @@ const ADMINISTRATION_SESSION =
   "access token, or an agent following text it read can then never widen anyone's access. " +
   "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
 
+const PROVIDER_CLEARANCE_SESSION =
+  "Clears a model provider or an outside service to be sent the text of work at a label, or takes that " +
+  "back: who outside the deployment may read its private material. It takes a signed-in dashboard " +
+  "session as well as the permission to clear providers, so a leaked key, an access token, or an agent " +
+  "following text it read can never send a label's text somewhere new. The matching read " +
+  "(list_provider_clearance) is a tool.";
+
 const OUTBOUND_SESSION =
   "Decides what leaves the deployment or who speaks for it outside: the words a node is proposed to the public " +
   "graph in, a party's release of those words, a package handed to a person as a file, and the signed statement " +
@@ -596,6 +609,7 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PUT /labels/:label/face": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/face/:at": ADMINISTRATION_SESSION,
   "DELETE /labels/:label/reads/:reads": ADMINISTRATION_SESSION,
+  "PUT /labels/:label/providers": PROVIDER_CLEARANCE_SESSION,
   "POST /operator/administrators":
     "The way back in for a deployment whose administrators cannot sign in: requires the " +
     "operator key, which is held outside every deployment surface on purpose (docs/accounts.md).",
