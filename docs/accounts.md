@@ -247,7 +247,14 @@ as `public`.
 `GET /labels/mine` returns what a page needs to offer the choice: the
 labels the person may read, each with its description, what else its
 readers read, and who reads it (`who_reads`, in words). A label that reads
-one of theirs and that they may not read is counted and not named.
+one of theirs and that they may not read is counted and not named. On a
+members-only deployment `public` is described in that deployment's terms,
+here and in `GET /labels`, not by the row's stored "Readable by anyone.",
+which is the public graph's: every member reads it, nobody outside reads
+what is filed at it unless it is published or shown outside, and its text
+still goes to the model providers and outside services, which are cleared
+for `public` unless whoever runs the deployment says otherwise
+(`shownLabelDescription` in `src/services/label-service.ts`).
 
 The mandate drafted in a granting conversation takes the conversation's
 label, and its Grantmaker runs there. A conversation with the Assistant
