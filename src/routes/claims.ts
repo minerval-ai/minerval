@@ -20,6 +20,9 @@ import { getClaimTree, getSubclaimCount, getClaimDependents, getTransitiveDepend
 import { listRelatedClaims } from "../services/claim-link-service.js";
 import { getQuantityDetail, getThresholdOf } from "../services/quantity-service.js";
 import { getQuestionDetail } from "../services/question-service.js";
+import { getListDetail, proposeList } from "../services/artifact-service.js";
+import { KindError } from "../services/node-kind.js";
+import { loadConfig } from "../config.js";
 import { JUDGMENTS_IN_FORCE_DESCRIPTION, nodeVersions, severalInForceNote } from "../services/judgment-version-service.js";
 import { listRequests } from "../services/request-service.js";
 import { REQUEST_SCHEMA } from "./requests.js";
@@ -121,6 +124,8 @@ const tagFilterProperties = {
 const kindItemProperties = {
   kind: { type: "string", enum: [...NODE_KINDS] },
   standing: { type: "string", nullable: true },
+  // A list's fidelity to its criteria (constitution §7b); absent on every other kind.
+  fidelity: { type: "string", nullable: true },
   estimate: looseObject,
   unit: looseObject,
   // Only where more than one judgment of the node is in force for the reader (judgment-version-service.ts).
@@ -771,6 +776,10 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
               quantity: looseObject,
               threshold_of: looseObject,
               question: looseObject,
+              // A list's specification, entries, what it left out, its
+              // fidelity, and whether it is stale (constitution §7b).
+              // Absent on every other kind.
+              list: looseObject,
               // Requests that bear on this node (Part VIII), live ones and
               // closed ones alike, newest first.
               requests: { type: "array", items: REQUEST_SCHEMA },
@@ -842,10 +851,11 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           return [];
         });
 
-        const [quantity, thresholdOf, question, nodeRequests, waiting, changes, covered] = await Promise.all([
+        const [quantity, thresholdOf, question, list, nodeRequests, waiting, changes, covered] = await Promise.all([
           claim.kind === "quantity" ? getQuantityDetail(claim_id) : null,
           claim.kind === "claim" ? getThresholdOf(claim_id) : null,
           claim.kind === "question" ? getQuestionDetail(claim_id) : null,
+          claim.kind === "artifact" ? getListDetail(claim_id) : null,
           // Requests degrade to none rather than failing the page, as tags do.
           listRequests({ claimId: claim_id, limit: 20 }).catch((err) => {
             console.error(
@@ -907,6 +917,7 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           quantity,
           threshold_of: thresholdOf,
           question,
+          ...(list ? { list } : {}),
           requests: nodeRequests.items,
           waiting_messages: waiting,
           tags: claimTags.map((t) => ({
@@ -1731,6 +1742,135 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
           contribution.id +
           " then returns became_claim_id and page_url, the node it became " +
           "(its assessment may still be under way).",
+      });
+    },
+  });
+
+  // POST /claims/propose-list — propose a list (constitution §7b, #845).
+  // A list is an artifact: a node made from nodes the graph holds, under a
+  // specification that is its identity. It is proposed by its specification,
+  // never by a sentence, so it does not go through the Matcher; the identity
+  // gate is the nearest lists by specification, shown before anything is
+  // minted when one reads very close. Its Steward's first pass judges
+  // whether the specification can be checked against (§7b's bar); a list
+  // that cannot is recorded ill_specified, on its page.
+  app.post("/propose-list", {
+    schema: {
+      tags: ["claims"],
+      summary:
+        "Propose a list: a node made from claims, quantities and questions the graph holds, under criteria a reader can check. " +
+        "Its Steward finds the entries, says why each qualifies and what was left out, and judges the list's fidelity, not its truth. " +
+        "Returns the near lists by specification; when one reads very close nothing is minted unless confirm_new says the criteria differ.",
+      body: {
+        type: "object",
+        required: ["title", "purpose", "inclusion"],
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 300, description: "What is listed, in a line." },
+          purpose: { type: "string", minLength: 1, maxLength: 2000, description: "What the list is for: the question a reader brings to it." },
+          inclusion: {
+            type: "string",
+            minLength: 1,
+            maxLength: 4000,
+            description: "What qualifies an entry, stated so that a node can be checked against it whichever way it points.",
+          },
+          exclusion: { type: "string", maxLength: 4000, description: "What is ruled out even where it would otherwise qualify." },
+          ordering: { type: "string", maxLength: 1000, description: "The basis of the order: date, size, a named measure. Never which way an entry points." },
+          entry_kinds: {
+            type: "array",
+            items: { type: "string", enum: ["claim", "quantity", "question"] },
+            description: "Which kinds of node may be entries; omit for any.",
+          },
+          confirm_new: {
+            type: "boolean",
+            default: false,
+            description: "Mint the list even though a list with a very close specification exists, because the criteria differ.",
+          },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            created: { type: "boolean" },
+            similar: { type: "array", items: { type: "object", additionalProperties: true } },
+            message: { type: "string" },
+          },
+        },
+        201: {
+          type: "object",
+          properties: {
+            created: { type: "boolean" },
+            claim: claimSchema,
+            page_url: { type: "string" },
+            similar: { type: "array", items: { type: "object", additionalProperties: true } },
+          },
+        },
+        400: errorEnvelopeSchema,
+        402: errorEnvelopeSchema,
+        403: errorEnvelopeSchema,
+        429: errorEnvelopeSchema,
+      },
+    },
+    // Proposing a list commands a full Steward pass on it, as proposing a
+    // claim does, and is capped and charged the same (src/services/owl.ts).
+    preHandler: [app.authenticate, app.requireAgenticQuota("claim_proposal")],
+    handler: async (request, reply) => {
+      const body = request.body as {
+        title: string;
+        purpose: string;
+        inclusion: string;
+        exclusion?: string;
+        ordering?: string;
+        entry_kinds?: Array<"claim" | "quantity" | "question">;
+        confirm_new?: boolean;
+      };
+      const auth = request.auth;
+      const direct = isDirectService(auth);
+      if (!direct) {
+        // Priced: the owl charge bounds proposals, so no hourly count.
+        const contributor = await gateContributor(request, reply, { priced: true });
+        if (!contributor) return;
+      }
+      const charge = direct ? null : await chargeAgenticOp(auth, "claim_proposal");
+      if (charge && !charge.allowed) return app.sendQuotaDenial(reply, charge);
+      let result: Awaited<ReturnType<typeof proposeList>>;
+      try {
+        result = await proposeList({
+          title: body.title,
+          spec: {
+            purpose: body.purpose,
+            inclusion: body.inclusion,
+            exclusion: body.exclusion?.trim() || null,
+            ordering: body.ordering?.trim() || null,
+            ...(body.entry_kinds?.length ? { entry_kinds: body.entry_kinds } : {}),
+          },
+          createdBy: direct ? "service" : "user",
+          confirmNew: body.confirm_new === true,
+        });
+      } catch (err) {
+        if (charge) await refundAgenticOp(auth, "claim_proposal").catch(() => {});
+        if (err instanceof KindError) {
+          return reply.code(400).send({ error: { code: "INVALID_LIST", message: err.message } });
+        }
+        throw err;
+      }
+      if (!result.id) {
+        // Nothing was minted: the proposer pays nothing for being shown the near lists.
+        if (charge) await refundAgenticOp(auth, "claim_proposal").catch(() => {});
+        return reply.code(200).send({
+          created: false,
+          similar: result.similar,
+          message:
+            "A list with a very close specification already exists. If its criteria are the ones you mean, use it; " +
+            "if yours differ, say how in the specification and propose again with confirm_new.",
+        });
+      }
+      const claim = await getClaimById(result.id);
+      return reply.code(201).send({
+        created: true,
+        claim: formatClaim(claim!),
+        page_url: `${loadConfig().publicWebBaseUrl.replace(/\/$/, "")}/claims/${result.id}`,
+        similar: result.similar,
       });
     },
   });

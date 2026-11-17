@@ -722,6 +722,8 @@ export interface ClaimDetail {
   threshold_of?: ThresholdOf | null;
   /** A question's standing, presuppositions, subquestions, answers and instances. */
   question?: QuestionDetail | null;
+  /** A list's specification, entries, what it left out, its fidelity and whether it is stale (constitution §7b). */
+  list?: ListDetail | null;
   /** Requests that bear on this node (Part VIII, Requests). */
   requests?: RequestItem[];
   /** What has arrived for the node's Steward since its last pass and has not yet been weighed. */
@@ -743,7 +745,74 @@ export interface WaitingMessage {
 // Node kinds: quantities and questions (constitution §2, §3, §4, §7a, §10)
 // ---------------------------------------------------------------------------
 
-export type NodeKind = "claim" | "quantity" | "question";
+export type NodeKind = "claim" | "quantity" | "question" | "artifact";
+
+// ---------------------------------------------------------------------------
+// Artifacts: lists (constitution §7b)
+// ---------------------------------------------------------------------------
+
+// A list's judgment is its fidelity to what it draws on under its
+// specification, never a verdict on its entries. Stale is not one of these:
+// it is read from what moved under the judgment since (`stale` below).
+export type ListFidelity = "faithful" | "incomplete" | "misleading" | "ill_specified";
+
+export interface ListSpec {
+  subtype: "list";
+  /** What the list is for: the question a reader brings to it. */
+  purpose: string;
+  /** What qualifies an entry. */
+  inclusion: string;
+  exclusion?: string | null;
+  /** The stated basis of the order. */
+  ordering?: string | null;
+  entry_kinds?: string[];
+}
+
+export interface ListEntry {
+  id: string;
+  text: string;
+  kind: NodeKind;
+  /** Why it qualifies, against the criteria, in the Steward's words. */
+  note: string;
+  status?: string | null;
+  credence?: number | null;
+  standing?: string | null;
+  estimate?: QuantityEstimate | null;
+  unit?: QuantityUnit | null;
+  /** Its verdict moved, or it joined, after the list was last judged. */
+  changed_since?: boolean;
+  judgments_in_force?: number;
+}
+
+export interface ListLeftOut {
+  id: string;
+  text: string | null;
+  kind: NodeKind | null;
+  reason: string;
+}
+
+export interface ListAssessment {
+  id?: string;
+  fidelity: ListFidelity;
+  summary: string | null;
+  reasoning_trace: string;
+  gaps?: string | null;
+  confidence?: number | null;
+  model?: string | null;
+  run_id?: string | null;
+  assessed_at: string;
+}
+
+export interface ListDetail {
+  spec: ListSpec | null;
+  fidelity: ListFidelity | null;
+  assessment: ListAssessment | null;
+  entries: ListEntry[];
+  left_out: ListLeftOut[];
+  /** True when an entry moved, joined or left since the judgment; null when there is nothing to compare. */
+  stale: boolean | null;
+  changed_entries: number;
+}
 
 // What a quantity's value is measured in. `kind` drives formatting and the
 // default scale; `scale` is the Steward's choice when it has made one.
@@ -1095,6 +1164,8 @@ export interface SearchResultItem {
   tags?: TagRef[];
   // What stands where a claim's status would: a question's standing, a
   // quantity's estimate and unit. Present only on that kind.
+  // A list's fidelity to its criteria (constitution §7b).
+  fidelity?: ListFidelity | null;
   standing?: QuestionStanding | null;
   estimate?: QuantityEstimate | null;
   unit?: QuantityUnit | null;

@@ -666,7 +666,91 @@ export function requestsFor(nodeId: string): RequestItem[] {
 FLU_DEATHS.requests = requestsFor(FLU_DEATHS_ID);
 FLU_ORIGIN.requests = requestsFor(FLU_ORIGIN_ID);
 
-export const KIND_CLAIMS: ClaimDetail[] = [FLU_DEATHS, FLU_OVER_50M, FLU_ORIGIN];
+// A list (constitution §7b): the published hypotheses of where the 1918
+// pandemic began, drawn from the question's answers and judged for fidelity
+// to its criteria. One entry has moved since the judgment, so the page shows
+// it stale; one node was considered and left out.
+export const FLU_ORIGIN_LIST_ID = "flu-origin-hypotheses";
+
+export const FLU_ORIGIN_LIST: ClaimDetail = {
+  claim: {
+    id: FLU_ORIGIN_LIST_ID,
+    kind: "artifact",
+    text: "Hypotheses of where the 1918 influenza pandemic began",
+    claim_type: "empirical_derived",
+    state: "active",
+    decomposition_status: "complete",
+    importance: 0.35,
+    contestation: null,
+    steward_state: "done",
+    created_by: "user",
+    created_at: CREATED,
+    updated_at: ASSESSED,
+  },
+  subclaim_count: 4,
+  formalization: null, verification: null, bounty: null, attempts: [], prize_claims: [], research_runs: [],
+  // A list has no verdict; its judgment is list.assessment.
+  assessment: null,
+  list: {
+    spec: {
+      subtype: "list",
+      purpose: "Which places have been seriously proposed as the origin of the 1918 pandemic, and how each stands.",
+      inclusion:
+        "A claim that the pandemic began in a named place or places, advanced in peer-reviewed work or a scholarly monograph with evidence from before March 1918.",
+      exclusion: "Claims about how the pandemic spread once it had begun, and claims about its later waves.",
+      ordering: "By the earliest date the hypothesis puts the start, earliest first; a hypothesis with no single date last.",
+      entry_kinds: ["claim"],
+    },
+    fidelity: "incomplete",
+    assessment: {
+      fidelity: "incomplete",
+      summary:
+        "Incomplete. The list holds the three single-place hypotheses with serious advocates, [[claim:flu-origin-france|northern France]], [[claim:flu-origin-china|northern China]] and [[claim:flu-origin-kansas|rural Kansas]], and the hypothesis that [[claim:flu-origin-diffuse|the virus emerged gradually in several places]]. Each entry is on it because it meets the criteria, whatever its own verdict, and none of them is established. One hypothesis that meets the criteria is not yet in the graph.",
+      reasoning_trace:
+        "Searched the graph for claims naming a place of origin, and read the question's answer set. Each entry was checked against the criteria: a named place, scholarly advocacy, and evidence that predates March 1918. [[claim:flu-first-wave-troops|The claim that the first wave followed troop movements]] matches on the words but concerns spread, not origin, and is excluded by the criteria. Reversal check: the criteria admit any place by the same test, and the order is by date, which favors none of them.",
+      gaps:
+        "An early wave in New York City in February to April 1918 has been argued from mortality records (Olson et al. 2005). The graph holds no node for it yet; a request to bring it in is open.",
+      confidence: 0.7,
+      model: "claude-opus-5-5",
+      assessed_at: ASSESSED,
+    },
+    entries: [
+      {
+        id: "flu-origin-france", kind: "claim", status: "inconclusive",
+        text: "The 1918 influenza pandemic began in British army camps in northern France in 1916–1917.",
+        note: "Names a place (Étaples and Aldershot camps); argued by Oxford and colleagues from outbreaks of purulent bronchitis in 1916–1917.",
+      },
+      {
+        id: "flu-origin-china", kind: "claim", status: "inconclusive",
+        text: "The 1918 influenza pandemic began in northern China and reached Europe with the Chinese Labour Corps.",
+        note: "Names a place; argued by Humphries from respiratory outbreaks in Shanxi in late 1917 and the Corps' transit through Canada.",
+      },
+      {
+        id: "flu-origin-kansas", kind: "claim", status: "doubtful", changed_since: true,
+        text: "The 1918 influenza pandemic began in rural Kansas in early 1918.",
+        note: "Names a place (Haskell County); argued by Barry from a local physician's report of severe influenza in January–February 1918.",
+      },
+      {
+        id: "flu-origin-diffuse", kind: "claim", status: null,
+        text: "The 1918 pandemic virus emerged gradually in several places before the spring 1918 wave.",
+        note: "Names several places at once; argued from phylogenetic dating that puts the virus's emergence years before 1918.",
+      },
+    ],
+    left_out: [
+      {
+        id: "flu-first-wave-troops", kind: "claim",
+        text: "The first wave of the 1918 influenza pandemic spread along First World War troop movements.",
+        reason: "About how the pandemic spread once begun, which the criteria exclude; it names no place of origin.",
+      },
+    ],
+    stale: true,
+    changed_entries: 1,
+  },
+  dependents: [],
+  related: [],
+};
+
+export const KIND_CLAIMS: ClaimDetail[] = [FLU_DEATHS, FLU_OVER_50M, FLU_ORIGIN, FLU_ORIGIN_LIST];
 
 // The quantity and the question as the browse list and search serve them,
 // so the offline /claims shows every kind (the cut claim is a plain claim).
@@ -682,5 +766,11 @@ export const KIND_INDEX: SearchResultItem[] = [
     state: "active", similarity_score: 0.46, importance: FLU_ORIGIN.claim.importance,
     assessment_status: null, assessment_confidence: null, prize_micro_usd: null, checked: null,
     standing: "open",
+  },
+  {
+    id: FLU_ORIGIN_LIST_ID, kind: "artifact", text: FLU_ORIGIN_LIST.claim.text, claim_type: "empirical_derived",
+    state: "active", similarity_score: 0.44, importance: FLU_ORIGIN_LIST.claim.importance,
+    assessment_status: null, assessment_confidence: null, prize_micro_usd: null, checked: null,
+    fidelity: "incomplete",
   },
 ];

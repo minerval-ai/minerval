@@ -1,0 +1,80 @@
+/* A list's page (constitution §7b). Ink for what is the list's own (its
+   criteria, its fidelity, its order); status colour only on the entries,
+   whose verdicts are their own nodes'. */
+
+.spec {
+  font-family: var(--sans); font-size: 0.84rem; color: var(--ink-soft);
+  border-left: 2px solid var(--rule-strong); padding: 0.3rem 0 0.3rem 0.9rem; margin: 0.6rem 0 1.1rem;
+}
+.spec dl { display: grid; grid-template-columns: 6.2rem minmax(0, 1fr); gap: 0.35rem 0.8rem; margin: 0; }
+.spec dt { color: var(--muted); font-variant: small-caps; letter-spacing: 0.04em; }
+.spec dd { margin: 0; line-height: 1.5; color: var(--ink); }
+@media (max-width: 640px) {
+  .spec dl { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .spec dd { margin-bottom: 0.4rem; }
+}
+
+.fidelity { border-radius: 4px; }
+.f_faithful { color: var(--ink); }
+.f_misleading { border-style: double; border-width: 3px; }
+.f_ill_specified { border-style: dashed; }
+
+.stale {
+  font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft);
+  background: var(--paper-card); border: 1px solid var(--rule); border-radius: 4px;
+  padding: 0.55rem 0.75rem; margin: 0.8rem 0 0.2rem; line-height: 1.5;
+}
+.stale :global(.sc) { margin-right: 0.3rem; color: var(--ink); }
+
+.gaps { font-family: var(--sans); font-size: 0.8rem; color: var(--ink-soft); line-height: 1.5; }
+.gaps :global(.sc) { margin-right: 0.4rem; }
+
+.count {
+  font-family: var(--sans); font-size: 0.78rem; font-weight: 500; color: var(--muted);
+  margin-left: 0.4rem; font-variant-numeric: tabular-nums;
+}
+.empty { font-family: var(--sans); font-size: 0.82rem; color: var(--muted); }
+
+.entries { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.entry {
+  display: grid; grid-template-columns: 1.8rem minmax(0, 1fr); gap: 0 0.6rem;
+  padding: 0.75rem 0; border-top: 1px solid var(--rule-soft);
+}
+.entry:first-child { border-top: none; }
+.n {
+  font-family: var(--serif); font-weight: 600; font-size: 0.95rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; text-align: right; padding-top: 0.1rem;
+}
+.entryBody { min-width: 0; }
+.entryText { margin: 0 0 0.3rem; font-size: 1.02rem; line-height: 1.45; }
+.entryMeta {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.7rem;
+  font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
+}
+.kind { font-style: italic; }
+.moved { color: var(--ink); font-weight: 600; }
+.note {
+  margin: 0.35rem 0 0; font-family: var(--sans); font-size: 0.8rem; line-height: 1.5; color: var(--ink-soft);
+}
+
+.leftOut { list-style: none; margin: 0.5rem 0 0; padding: 0; font-family: var(--sans); font-size: 0.82rem; }
+.leftOut li {
+  display: grid; gap: 0.15rem; padding: 0.45rem 0; border-top: 1px solid var(--rule-soft); line-height: 1.45;
+}
+.leftOut li:first-child { border-top: none; }
+.reason { color: var(--muted); }
+.gone { color: var(--muted); font-style: italic; }
+
+.foot { font-family: var(--sans); font-size: 0.74rem; color: var(--faint); }
+
+.rail { display: block; margin-bottom: 2rem; font-family: var(--sans); }
+.railFidelity {
+  margin: 0.35rem 0 0.6rem; padding-bottom: 0.55rem; border-bottom: 1px solid var(--rule);
+  font-family: var(--serif); font-size: 1.15rem; color: var(--ink);
+}
+.railStale { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); }
+.railList { list-style: none; margin: 0; padding: 0; font-size: 0.84rem; }
+.railList li { margin: 0.35rem 0; }
+.railList a { color: var(--ink-soft); }
+.railList a:hover { color: var(--link); }
+.railN { display: inline-block; min-width: 1.2rem; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 600; }

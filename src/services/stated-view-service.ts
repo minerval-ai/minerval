@@ -35,7 +35,7 @@ import {
   STATED_VIEW_STANCES,
   type StatedViewStance,
 } from "../schemas/common.js";
-import { quantityEstimateSchema, type NodeKind, type QuantityEstimate } from "../schemas/kinds.js";
+import { quantityEstimateSchema, type NodeKind, type TextNodeKind, type QuantityEstimate } from "../schemas/kinds.js";
 import { sourceContentHash } from "./source-content.js";
 import { enqueueContribution, enqueueSteward } from "./queue-service.js";
 import { INTEREST_PARTY_MAX_CHARS, INTEREST_STAKE_MAX_CHARS } from "./source-interest-service.js";
@@ -92,6 +92,11 @@ export function parseStatedView(kind: NodeKind, body: Record<string, unknown>): 
     return refuse("REASONS_TOO_LONG", `reasons is ${reasons.length} characters; at most ${REASONS_MAX_CHARS}.`);
   }
 
+  // A list asserts nothing (§7b): there is no view of it to state, only of
+  // the nodes it draws on.
+  if (kind === "artifact") {
+    return refuse("KIND", "an artifact asserts nothing, so there is no view of it to state; state a view on one of its entries.");
+  }
   const allowed: readonly string[] = STATED_VIEW_STANCES[kind];
   const stance = trimmed(body.stance);
   if (!allowed.includes(stance)) {
@@ -368,7 +373,8 @@ export async function admitStatedView(
   const admitted = await withTransaction(async (tx) => {
     const row = (await loadForAdmission(contributionId, tx, true))!;
     if (row.instance_id) return { row, instanceId: row.instance_id, alreadyAdmitted: true };
-    const kind = row.node_kind as NodeKind;
+    // parseStatedView refuses a view of an artifact, so none reaches here.
+    const kind = row.node_kind as TextNodeKind;
     const speaker = row.speaker ?? "An account with no name";
     const [instance] = await tx.query<{ id: string }>(
       // The instance and the interest below are made from the stated view

@@ -76,7 +76,8 @@ import {
   ANSWER_BASES,
   ANSWER_RELATIONS,
   ESTIMATE_FORMS,
-  NODE_KINDS,
+  TEXT_NODE_KINDS,
+  type TextNodeKind,
   QUANTITY_UNIT_KINDS,
   QUESTION_STANDINGS,
   quantityDefinitionSchema,
@@ -89,7 +90,7 @@ import { ownershipRefusal } from "./steward-ownership.js";
 
 /** Who is calling, and on which node. */
 export interface KindToolContext {
-  role: "claim_steward" | "question_steward" | "curator" | "researcher" | "grantmaker";
+  role: "claim_steward" | "question_steward" | "artifact_steward" | "curator" | "researcher" | "grantmaker";
   /** The node this run stewards; absent for the Curator. */
   claimId?: string | null;
   model?: string | null;
@@ -212,7 +213,7 @@ const NEW_NODE_PROPERTIES = {
       "Instead of an existing id: the text of a new node to create, only after match_claim found " +
       "no existing node. For a quantity, its definition in words.",
   },
-  new_kind: { type: "string", enum: [...NODE_KINDS], description: "The new node's kind (default claim)." },
+  new_kind: { type: "string", enum: [...TEXT_NODE_KINDS], description: "The new node's kind (default claim)." },
   new_definition: {
     type: "object",
     description: "For a new quantity: its definition.",
@@ -688,7 +689,7 @@ export function getChangeKindToolDefinition(): Tool {
       type: "object" as const,
       properties: {
         claim_id: { type: "string" },
-        to: { type: "string", enum: [...NODE_KINDS] },
+        to: { type: "string", enum: [...TEXT_NODE_KINDS] },
         definition: {
           type: "object",
           properties: DEFINITION_PROPERTIES,
@@ -840,7 +841,7 @@ async function existingOrNew(
   const text = str(input.new_text);
   if (!text) return { error: `Pass ${idField} for an existing node, or new_text for a new one.` };
   const kindRaw = str(input.new_kind) || defaultKind;
-  if (!(NODE_KINDS as readonly string[]).includes(kindRaw)) return { error: `Unknown kind "${kindRaw}".` };
+  if (!(TEXT_NODE_KINDS as readonly string[]).includes(kindRaw)) return { error: `Unknown kind "${kindRaw}".` };
   const importance = typeof input.importance === "number" ? input.importance : undefined;
   const id = await mintNode({
     text,
@@ -905,7 +906,7 @@ async function mayKeep(requestId: string, ctx: KindToolContext): Promise<string 
   if (ctx.role === "curator") {
     return req.keeper_kind === "curator" ? null : "That request is kept by the Steward of the node it bears on.";
   }
-  if (ctx.role !== "claim_steward" && ctx.role !== "question_steward") {
+  if (ctx.role !== "claim_steward" && ctx.role !== "question_steward" && ctx.role !== "artifact_steward") {
     return "Only a request's keeper revises or closes it.";
   }
   if (req.keeper_kind === "steward" && req.keeper_claim_id === ctx.claimId) return null;
@@ -923,7 +924,7 @@ export async function executeKindTool(
   try {
     // A Steward writes only to its own node (Part VIII; #757). Other roles
     // (Curator, Grantmaker, researcher) are bounded by their own toolsets.
-    if (ctx.role === "claim_steward" || ctx.role === "question_steward") {
+    if (ctx.role === "claim_steward" || ctx.role === "question_steward" || ctx.role === "artifact_steward") {
       const notOwn = await ownershipRefusal(name, input);
       if (notOwn) return notOwn;
     }
@@ -1447,8 +1448,8 @@ async function executeKindToolImpl(
     case "change_node_kind": {
       if (ctx.role !== "curator") return refuse("Changing a node's kind is the Curator's.");
       const claimId = str(input.claim_id);
-      const to = str(input.to) as NodeKind;
-      if (!(NODE_KINDS as readonly string[]).includes(to)) return refuse(`Unknown kind "${to}".`);
+      const to = str(input.to) as TextNodeKind;
+      if (!(TEXT_NODE_KINDS as readonly string[]).includes(to)) return refuse(`Unknown kind "${to}".`);
       const result = await changeNodeKind({
         claimId,
         to,

@@ -109,6 +109,16 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "your balance is the bound.",
   },
 
+  "POST /claims/propose-list": {
+    name: "propose_list",
+    note:
+      "A list (constitution §7b) is made from nodes the graph holds and judged for fidelity to its " +
+      "criteria, not for truth. Write criteria a reader could check a node against, whichever way it " +
+      "points. When a list with a very close specification exists nothing is minted: read it with " +
+      "get_claim first, and propose again with confirm_new only if your criteria differ. " +
+      SPENDS_OWLS,
+  },
+
   // ---- funding work on claims ----
   "POST /claims/:claim_id/order": { name: "order_assessment", note: SPENDS_OWLS },
   "POST /claims/:claim_id/contribute": {

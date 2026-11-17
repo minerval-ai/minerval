@@ -66,6 +66,7 @@ in general. For a specific question, go to the section:
 | Why a claim has subclaims; what a decomposition shows | §6 |
 | Arguments for and against; machine-checked proofs | §7 |
 | Questions and their standing (answered, leaning, open, ill-posed) | §7a |
+| Lists and other artifacts; fidelity, not truth; why a list is not evidence | §7b |
 | How a claim is assessed; consensus versus evidence; a source's interest | §9 |
 | The statuses, verdict confidence, credence, estimates for quantities | §10 |
 | Why every verdict carries its reasoning | §11 |

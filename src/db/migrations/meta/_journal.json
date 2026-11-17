@@ -1212,6 +1212,13 @@
       "when": 1794862223371,
       "tag": "0172_lookout_commission_window",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1794864437322,
+      "tag": "0173_artifacts_lists",
+      "breakpoints": true
     }
   ]
 }

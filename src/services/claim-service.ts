@@ -8,6 +8,7 @@ import {
   quantityDefinitions,
   quantityEstimatesInForce,
   questionAssessmentsInForce,
+  artifactAssessmentsInForce,
   type NewClaim,
 } from "../db/schema.js";
 import { generateEmbedding } from "./embedding-service.js";
@@ -124,7 +125,8 @@ export async function listClaims(opts: {
   filters.push(eq(claims.state, opts.state ?? "active"));
   // Same predicate as search's ASSESSED_SQL: each kind by its own table.
   const hasVerdict = sql`(CASE ${claims.kind} WHEN 'question' THEN ${questionAssessmentsInForce.id} IS NOT NULL
-    WHEN 'quantity' THEN ${quantityEstimatesInForce.id} IS NOT NULL ELSE ${assessmentsInForce.status} IS NOT NULL END)`;
+    WHEN 'quantity' THEN ${quantityEstimatesInForce.id} IS NOT NULL
+    WHEN 'artifact' THEN ${artifactAssessmentsInForce.id} IS NOT NULL ELSE ${assessmentsInForce.status} IS NOT NULL END)`;
   if (opts.assessed === "assessed") filters.push(hasVerdict);
   else if (opts.assessed === "unassessed") filters.push(sql`NOT ${hasVerdict}`);
   if (opts.minImportance && opts.minImportance > 0) {
@@ -165,6 +167,7 @@ export async function listClaims(opts: {
       importance: sql<number>`${sql.raw(importanceSql("claims"))}`.as("importance"),
       updated_at: claims.updatedAt,
       standing: questionAssessmentsInForce.standing,
+      fidelity: artifactAssessmentsInForce.fidelity,
       estimate: quantityEstimatesInForce.estimate,
       unit: quantityDefinitions.unit,
       assessment_status: assessmentsInForce.status,
@@ -183,15 +186,16 @@ export async function listClaims(opts: {
     .leftJoin(quantityEstimatesInForce, eq(quantityEstimatesInForce.claimId, claims.id))
     .leftJoin(quantityDefinitions, eq(quantityDefinitions.claimId, claims.id))
     .leftJoin(questionAssessmentsInForce, eq(questionAssessmentsInForce.claimId, claims.id))
+    .leftJoin(artifactAssessmentsInForce, eq(artifactAssessmentsInForce.claimId, claims.id))
     .where(and(...filters))
     .orderBy(desc(claims.updatedAt), desc(claims.id))
     .limit(opts.limit + 1);
 
   const hasMore = rows.length > opts.limit;
   const results = (hasMore ? rows.slice(0, opts.limit) : rows).map(
-    ({ kind, standing, estimate, unit, ...r }) => ({
+    ({ kind, standing, estimate, unit, fidelity, ...r }) => ({
       ...r,
-      ...kindFields({ kind, standing, estimate, unit }),
+      ...kindFields({ kind, standing, estimate, unit, fidelity }),
       prize_micro_usd: r.prize_micro_usd === null || r.prize_micro_usd === undefined ? null : Number(r.prize_micro_usd),
       checked: r.checked === "proof" || r.checked === "disproof" ? r.checked : null,
     })

@@ -129,8 +129,8 @@ describe("the switch", () => {
     // Three policies a table: what a cleared connection reads and changes,
     // what it may add, and what read-only SQL is shown.
     expect(recorded.during.policies).toBe(recorded.during.labelled.length * 3);
-    // The four tables that hold judgments in force.
-    expect(recorded.during.guards).toBe(4);
+    // The five tables that hold judgments in force.
+    expect(recorded.during.guards).toBe(5);
   });
 
   it("turns off when the last one is removed", () => {
@@ -178,7 +178,7 @@ describe("the catalog, with a second label defined", () => {
     expect(facts.on).toBe(true);
     expect(facts.labels).toEqual(expect.arrayContaining(ALL));
     // The schema's ninety-nine (tests/db/label-columns.test.ts lists them).
-    expect(facts.labelledTables.length).toBe(142);
+    expect(facts.labelledTables.length).toBe(144);
     expect(facts.uncoveredTables).toEqual([]);
     expect(facts.viewsReadingAsOwner).toEqual([]);
     expect(facts.sqlViewsUnheld).toEqual([]);
@@ -431,7 +431,7 @@ describe("every labelled table", () => {
   it("can be given a row at each label by this test", () => {
     // A table here needs a value this test does not know how to make: teach valueFor.
     expect(unwritable).toEqual([]);
-    expect(written.size).toBe(142);
+    expect(written.size).toBe(144);
   });
 
   for (const reader of READERS) {

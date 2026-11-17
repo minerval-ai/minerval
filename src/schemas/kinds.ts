@@ -11,9 +11,53 @@
  */
 import { z } from "zod";
 
-export const NODE_KINDS = ["claim", "quantity", "question"] as const;
+export const NODE_KINDS = ["claim", "quantity", "question", "artifact"] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];
 export const nodeKindEnum = z.enum(NODE_KINDS);
+
+/**
+ * The kinds a node is minted as from text, by the Matcher, a Steward's new
+ * subclaim, or the Curator's change of kind: everything but an artifact. An
+ * artifact is made from a specification (§7b), never from a sentence, so it
+ * is proposed through proposeList (artifact-service.ts) and nowhere else.
+ */
+export const TEXT_NODE_KINDS = ["claim", "quantity", "question"] as const;
+export type TextNodeKind = (typeof TEXT_NODE_KINDS)[number];
+
+// ---------------------------------------------------------------------------
+// Artifacts (constitution §7b)
+// ---------------------------------------------------------------------------
+
+/** The kinds of artifact. Lists first; tables, figures, analyses and safety cases may follow. */
+export const ARTIFACT_SUBTYPES = ["list"] as const;
+export type ArtifactSubtype = (typeof ARTIFACT_SUBTYPES)[number];
+
+/**
+ * An artifact's judgment (§7b): whether it faithfully represents what it
+ * draws on under its specification. Never "verified". Staleness is not one
+ * of these: it is read from what changed since the judgment.
+ */
+export const ARTIFACT_FIDELITIES = ["faithful", "incomplete", "misleading", "ill_specified"] as const;
+export type ArtifactFidelity = (typeof ARTIFACT_FIDELITIES)[number];
+
+/** The edge from an artifact to a node it draws on. Propagation follows it; it confers no support. */
+export const DRAWS_ON = "draws_on" as const;
+
+export const listSpecSchema = z
+  .object({
+    purpose: z.string().trim().min(1),
+    inclusion: z.string().trim().min(1),
+    exclusion: z.string().trim().min(1).nullish(),
+    ordering: z.string().trim().min(1).nullish(),
+    entry_kinds: z.array(z.enum(TEXT_NODE_KINDS)).optional(),
+  })
+  .strict();
+export type ListSpecInput = z.infer<typeof listSpecSchema>;
+
+export const leftOutSchema = z
+  .array(z.object({ node_id: z.string().uuid(), reason: z.string().trim().min(1) }).strict())
+  .max(500);
+export type LeftOut = z.infer<typeof leftOutSchema>;
 
 /**
  * Edges between kinds, in claim_relationships with the parent depending on

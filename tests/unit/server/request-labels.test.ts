@@ -103,6 +103,7 @@ describe("every route that writes has a rule for its label", () => {
     ).toEqual([
       "POST /assistant/conversations",
       "POST /claims/propose",
+      "POST /claims/propose-list",
       "POST /connections",
       "POST /contributions",
       "POST /extension/analyze",

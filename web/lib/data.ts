@@ -29,6 +29,7 @@ import {
 // question's standing, a quantity's estimate (the backend's ASSESSED_SQL).
 function hasVerdict(c: SearchResultItem): boolean {
   if (c.kind === "question") return !!c.standing;
+  if (c.kind === "artifact") return !!c.fidelity;
   if (c.kind === "quantity") return !!c.estimate;
   return !!c.assessment_status;
 }

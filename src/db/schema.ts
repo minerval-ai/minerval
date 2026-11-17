@@ -449,12 +449,14 @@ export const claims = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     text: text("text").notNull(),
-    // What kind of node this is (constitution §2, §7a): a claim about a
-    // proposition, a quantity (a value the discourse estimates), or a
-    // question. NODE_KINDS in src/schemas/kinds.ts. A quantity's definition
-    // and estimates live in quantity_definitions and quantity_estimates, a
-    // question's standing in question_assessments; `assessments` holds
-    // verdicts on propositions only.
+    // What kind of node this is (constitution §2, §7a, §7b): a claim about a
+    // proposition, a quantity (a value the discourse estimates), a
+    // question, or an artifact (a list made from other nodes). NODE_KINDS in
+    // src/schemas/kinds.ts. A quantity's definition and estimates live in
+    // quantity_definitions and quantity_estimates, a question's standing in
+    // question_assessments, an artifact's specification and fidelity in
+    // artifact_specs and artifact_assessments; `assessments` holds verdicts
+    // on propositions only.
     kind: text("kind").notNull().default("claim"),
     claimType: text("claim_type").notNull().default("empirical_derived"),
     // Claim lifecycle: 'active' (live), 'merged' (merge loser, aliased to the
@@ -608,7 +610,7 @@ export const claims = pgTable(
   (table) => [
     originCheck("ck_claims_origin", table.origin),
     index("idx_claims_state").on(table.state),
-    check("ck_claims_kind", sql`${table.kind} IN ('claim', 'quantity', 'question')`),
+    check("ck_claims_kind", sql`${table.kind} IN ('claim', 'quantity', 'question', 'artifact')`),
     index("idx_claims_updated").on(table.updatedAt),
     // Drain ordering: among pending claims, highest composite priority first.
     // The partial index keeps it small (only the live work queue) and fast as
@@ -6772,6 +6774,110 @@ export const questionAssessments = pgTable(
   ]
 );
 
+// ---------------------------------------------------------------------------
+// Artifacts (constitution §7b, #845)
+//
+// An artifact is a node made from other nodes: the first kind is a list. Its
+// identity is its specification (artifact_specs); the nodes it draws on are
+// ordinary edges in claim_relationships with relation_type 'draws_on', the
+// artifact the parent and each entry the child, so propagation reaches the
+// artifact when an entry changes and judgment_inputs records the entries a
+// judgment was made against. A 'draws_on' edge confers no support: nothing
+// reads it as evidence for or against either end. The judgment is fidelity
+// (artifact_assessments), never truth.
+// ---------------------------------------------------------------------------
+
+// What an artifact is: for a list, what it is for, what qualifies an entry,
+// what is excluded, and on what basis entries are ordered. Two lists with
+// different criteria are two artifacts (§7b). One row for each artifact in
+// each layer, as quantity_definitions.
+export const artifactSpecs = pgTable("artifact_specs", {
+  claimId: uuid("claim_id")
+    .notNull()
+    .references(() => claims.id, { onDelete: "cascade" }),
+  // ARTIFACT_SUBTYPES in src/schemas/kinds.ts. Lists only, for now.
+  subtype: text("subtype").notNull().default("list"),
+  // What the artifact is for: the question a reader brings to it.
+  purpose: text("purpose").notNull(),
+  // What qualifies an entry, stated so that a node can be checked against it.
+  inclusion: text("inclusion").notNull(),
+  // What is ruled out even where it would otherwise qualify. Null when nothing is.
+  exclusion: text("exclusion"),
+  // The stated basis of the order, never which way an entry points (§7b).
+  ordering: text("ordering"),
+  // Which kinds of node may be entries; empty means any.
+  entryKinds: text("entry_kinds").array().notNull().default([]),
+  createdBy: text("created_by").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  // Who may read this row (src/labels.ts), stamped from the usage context
+  // when it is written.
+  sensitivityLabel: sensitivityLabelColumn(),
+  // Which graph the row belongs to (the origin column, above).
+  origin: originColumn(),
+}, (table) => [
+  originCheck("ck_artifact_specs_origin", table.origin),
+  check("ck_artifact_specs_subtype", sql`${table.subtype} IN ('list')`),
+  primaryKey({ columns: [table.claimId, table.sensitivityLabel, table.origin] }),
+]);
+
+// An artifact's judgment: whether it faithfully and currently represents
+// what it draws on under its specification (§7b). The fifth table of
+// judgments, kept as the others are: one current row for each node (and
+// label), read through artifact_assessments_in_force. Beside the fidelity
+// it holds the rendering it judged: the order of the entries and the nodes
+// considered and left out, each with why.
+export const artifactAssessments = pgTable(
+  "artifact_assessments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    // ARTIFACT_FIDELITIES in src/schemas/kinds.ts.
+    fidelity: text("fidelity").notNull(),
+    summary: text("summary"),
+    reasoningTrace: text("reasoning_trace").notNull(),
+    // What the Steward knows is missing: qualifying nodes the graph does not
+    // hold yet, or searches it could not make. Null when it knows of none.
+    gaps: text("gaps"),
+    // The entries in the order the list shows them. Not foreign keys (a uuid
+    // array cannot be); read paths join and drop ids that are no longer
+    // entries, and show entries missing from it after the ordered ones.
+    entryOrder: uuid("entry_order").array().notNull().default([]),
+    // Nodes considered and left out: [{ node_id, reason }].
+    leftOut: jsonb("left_out").notNull().default([]),
+    confidence: real("confidence"),
+    marginalYield: real("marginal_yield"),
+    model: text("model"),
+    fundedByJobId: uuid("funded_by_job_id"),
+    runId: uuid("run_id"),
+    inputsRecorded: boolean("inputs_recorded").notNull().default(false),
+    isCurrent: boolean("is_current").notNull().default(true),
+    trigger: text("trigger"),
+    triggerContext: text("trigger_context"),
+    assessedAt: timestamp("assessed_at", { withTimezone: true }).notNull().defaultNow(),
+    sensitivityLabel: sensitivityLabelColumn(),
+    origin: originColumn(),
+  },
+  (table) => [
+    originCheck("ck_artifact_assessments_origin", table.origin),
+    // As idx_assessments_current: swapped for one for each node and label by
+    // the enforcement step where a deployment has a second label.
+    uniqueIndex("idx_artifact_assessments_current")
+      .on(table.claimId)
+      .where(sql`${table.isCurrent} = true`),
+    index("idx_artifact_assessments_claim").on(table.claimId),
+    index("idx_artifact_assessments_funded_by_job")
+      .on(table.fundedByJobId)
+      .where(sql`funded_by_job_id IS NOT NULL`),
+    check(
+      "ck_artifact_assessments_fidelity",
+      sql`${table.fidelity} IN ('faithful', 'incomplete', 'misleading', 'ill_specified')`
+    ),
+  ]
+);
+
 // How two of a question's answers bear on each other (§7a): whether they
 // exclude each other or can both hold. Stored in canonical order (a < b), as
 // claim_links is, so one row covers both directions.
@@ -7460,7 +7566,7 @@ export const judgmentInputs = pgTable(
     index("idx_judgment_inputs_judgment").on(table.judgmentKind, table.judgmentId),
     check(
       "ck_judgment_inputs_judgment_kind",
-      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment', 'argument_evaluation', 'left_standing')`
+      sql`${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment', 'artifact_assessment', 'argument_evaluation', 'left_standing')`
     ),
     check("ck_judgment_inputs_input_kind", sql`${table.inputKind} IN ('premise', 'source', 'beside')`),
     check(
@@ -7805,7 +7911,8 @@ export const stewardSlots = pgTable(
 // A node may carry one current judgment at each label: the current row, for
 // that label, of the table its kind keeps (a proposition's verdict in
 // `assessments`, a quantity's estimate in `quantity_estimates`, a question's
-// standing in `question_assessments`), and the current evaluation of an
+// standing in `question_assessments`, an artifact's fidelity in
+// `artifact_assessments`), and the current evaluation of an
 // argument in `argument_evaluations`. Each is a version, written by work at
 // its label and replaced only by it.
 //
@@ -7821,7 +7928,7 @@ export const stewardSlots = pgTable(
 //   - `<table>_in_force` is the version a reader goes by, one row for each
 //     node at most: the version in force, and where several are in force
 //     the one made most recently. Every read of "the current judgment" that
-//     wants one row for a node goes through one of these four views.
+//     wants one row for a node goes through one of these views.
 //   - `<table>_versions` is every current version the reader may read, each
 //     with its label and whether it is in force for this reader. A read that
 //     shows a node's versions side by side, or that wants the version at
@@ -7898,6 +8005,18 @@ export const questionAssessmentsInForce = pgView("question_assessments_in_force"
     )
 );
 
+export const artifactAssessmentsInForce = pgView("artifact_assessments_in_force").with(callersRights).as((qb) =>
+  qb
+    .select()
+    .from(artifactAssessments)
+    .where(
+      and(
+        eq(artifactAssessments.isCurrent, true),
+        goneBy("artifact_assessments", artifactAssessments.claimId, artifactAssessments.sensitivityLabel)
+      )
+    )
+);
+
 export const assessmentVersions = pgView("assessments_versions").with(callersRights).as((qb) =>
   qb
     .select({
@@ -7946,6 +8065,20 @@ export const questionAssessmentVersions = pgView("question_assessments_versions"
     })
     .from(questionAssessments)
     .where(eq(questionAssessments.isCurrent, true))
+);
+
+export const artifactAssessmentVersions = pgView("artifact_assessments_versions").with(callersRights).as((qb) =>
+  qb
+    .select({
+      ...getTableColumns(artifactAssessments),
+      inForce: inForce(
+        "artifact_assessments",
+        artifactAssessments.claimId,
+        artifactAssessments.sensitivityLabel
+      ).as("in_force"),
+    })
+    .from(artifactAssessments)
+    .where(eq(artifactAssessments.isCurrent, true))
 );
 
 // ---------------------------------------------------------------------------

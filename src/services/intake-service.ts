@@ -41,7 +41,7 @@ import { getOrCreateSource } from "./source-service.js";
 import { loadConfig } from "../config.js";
 import { createOrder } from "./order-service.js";
 import { rawQuery } from "../db/client.js";
-import type { NodeKind } from "../schemas/kinds.js";
+import type { NodeKind, TextNodeKind } from "../schemas/kinds.js";
 
 /**
  * An accepted claim proposal was PAID for (the claim_proposal owl at
@@ -98,7 +98,7 @@ export async function createClaimProposal(input: {
   claimText: string;
   contributorId: string;
   /** A question or a quantity proposed directly is a propose_question or a propose_quantity (§7a). */
-  kind?: NodeKind;
+  kind?: TextNodeKind;
 }) {
   const db = getDb();
   const [contribution] = await db

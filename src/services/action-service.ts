@@ -58,7 +58,7 @@ import {
   reclaimAbandonedSweeps,
   type PartitionStatus,
 } from "./consistency-service.js";
-import { CLOSED_REQUEST_STATES, NODE_KINDS, type NodeKind } from "../schemas/kinds.js";
+import { CLOSED_REQUEST_STATES, TEXT_NODE_KINDS, type TextNodeKind } from "../schemas/kinds.js";
 import { PROPOSAL_TYPE_FOR_KIND } from "../schemas/common.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
 import { ownWorkSql } from "./mirrored-node-service.js";
@@ -2505,7 +2505,7 @@ async function fileProposal(
   index: number,
   item: MaterializablePlanItem
 ): Promise<{ contributionId: string } | { problem: string }> {
-  const type = PROPOSAL_TYPE_FOR_KIND[item.kind as NodeKind];
+  const type = PROPOSAL_TYPE_FOR_KIND[item.kind as TextNodeKind];
   const text = String(item.text ?? "").trim();
   // Lazy: contribution-service reaches queue-service, which imports this module.
   const { submitGrantContribution } = await import("./contribution-service.js");
@@ -2554,7 +2554,7 @@ async function materializeProposeItem(
 ): Promise<ProposalStanding> {
   // Accepted and bound: a done proposal stays done.
   if (item.claim_id && item.ledger?.status === "done") return { ledger: item.ledger, claimId: item.claim_id };
-  if (!(NODE_KINDS as readonly unknown[]).includes(item.kind) || !String(item.text ?? "").trim()) {
+  if (!(TEXT_NODE_KINDS as readonly unknown[]).includes(item.kind) || !String(item.text ?? "").trim()) {
     return { ledger: blocked("a propose item needs a kind (claim, quantity, question) and text"), claimId: null };
   }
   let contributionId = item.contribution_id ?? null;

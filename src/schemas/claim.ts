@@ -218,7 +218,7 @@ export interface TreeNode {
   argument_decisive?: boolean | null;
   argument_evaluation: string | null;
   argument_shows?: unknown | null;
-  node_kind?: "claim" | "quantity" | "question";
+  node_kind?: "claim" | "quantity" | "question" | "artifact";
   estimate?: unknown | null;
   unit?: unknown | null;
   standing?: string | null;

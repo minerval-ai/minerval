@@ -34,7 +34,7 @@ type Tool = Anthropic.Tool;
 
 /** The kinds of held action a user can allow to run without a card. */
 export const HELD_KINDS = {
-  propose: "Propose claims, quantities and questions",
+  propose: "Propose claims, quantities, questions and lists",
   submit: "Submit sources, contributions, appeals and challenges",
   assess: "Order and fund assessments of single nodes",
   fund: "Fund requests and mandates, and approve a mandate's plan",
@@ -53,6 +53,9 @@ export function isHeldKind(value: unknown): value is HeldKind {
 /** Every account tool that waits for the user, with the kind it belongs to. */
 export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
   propose_claim: "propose",
+  // Spends the user's owls on a Steward pass and adds a node to the shared
+  // graph under their account, as propose_claim does.
+  propose_list: "propose",
   submit_source: "submit",
   submit_contribution: "submit",
   submit_published_page: "submit",
@@ -122,6 +125,7 @@ export function alwaysAsks(tool: string, input: Record<string, unknown>): boolea
 /** What each held tool does, as its card says it to the user. */
 export const HELD_TOOL_LABELS: Readonly<Record<string, string>> = {
   propose_claim: "Propose a node to the graph",
+  propose_list: "Propose a list to the graph, with the criteria its entries must meet",
   submit_source: "Submit a source for the graph to read",
   submit_contribution: "Submit a contribution",
   submit_published_page: "Submit a page your deployment publishes, as a source on its node",

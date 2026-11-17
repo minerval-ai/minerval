@@ -57,6 +57,10 @@ The owner of a claim: it decomposes the claim, maintains its canonical form, and
 
 The owner of a question: it keeps the question's wording and presuppositions, gathers its candidate answers and subquestions, and gives the best answer it can with how well answered the question is.
 
+### Artifact Steward (`roles/artifact-steward.md`)
+
+The owner of a list: it keeps the list's criteria clear and checkable, finds the nodes that meet them, says why each is on the list and what was left out, and judges the list's fidelity, never the truth of its entries.
+
 ### Curator (`roles/curator.md`)
 
 The graph-level counterpart to the Steward. It owns the connective tissue between claims, merging duplicates and counterparts, splitting conflations, and suggesting cross-claim edges for Stewards to adopt.

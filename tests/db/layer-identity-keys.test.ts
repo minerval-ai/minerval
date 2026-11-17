@@ -82,10 +82,12 @@ const KEPT: Record<string, string> = {
   idx_argument_evaluations_current: "As idx_assessments_current.",
   idx_quantity_estimates_current: "As idx_assessments_current.",
   idx_question_assessments_current: "As idx_assessments_current.",
+  idx_artifact_assessments_current: "As idx_assessments_current.",
 };
 
-/** The four that exist only while `public` is the only label. */
+/** The five that exist only while `public` is the only label. */
 const ONE_LABEL_ONLY = new Set([
+  "idx_artifact_assessments_current",
   "idx_assessments_current",
   "idx_argument_evaluations_current",
   "idx_quantity_estimates_current",

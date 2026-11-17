@@ -117,7 +117,7 @@ describe("with public the only label", () => {
       await publicOnly(tx);
       return catalog(tx);
     });
-    expect(now.labelled.length).toBe(142);
+    expect(now.labelled.length).toBe(144);
     expect(now.secured).toEqual([]);
     expect(now.policies).toEqual({});
     expect(now.judgmentGuards).toEqual([]);
@@ -142,6 +142,7 @@ describe("with public the only label", () => {
     expect(views).toEqual(
       [
         "argument_evaluations_in_force", "argument_evaluations_versions",
+        "artifact_assessments_in_force", "artifact_assessments_versions",
         "assessments_in_force", "assessments_versions",
         "quantity_estimates_in_force", "quantity_estimates_versions",
         "question_assessments_in_force", "question_assessments_versions",
@@ -216,13 +217,13 @@ describe("defining a second label", () => {
       return { during, after: await catalog(tx) };
     });
     expect(during.secured).toEqual(during.labelled);
-    expect(during.policies).toEqual({ label_clearance: 142, label_own_insert: 142, label_sql_read: 142 });
-    expect(during.judgmentGuards).toEqual(["argument_evaluations", "assessments", "quantity_estimates", "question_assessments"]);
+    expect(during.policies).toEqual({ label_clearance: 144, label_own_insert: 144, label_sql_read: 144 });
+    expect(during.judgmentGuards).toEqual(["argument_evaluations", "artifact_assessments", "assessments", "quantity_estimates", "question_assessments"]);
     expect(during.collisionGuards).toBeGreaterThan(30);
     // Every labelled table keeps a row's label as it was written.
-    expect(during.labelFixedGuards).toBe(142);
+    expect(during.labelFixedGuards).toBe(144);
     // And lets a cleared connection change or delete one only at its own label.
-    expect(during.ownLabelGuards).toBe(142);
+    expect(during.ownLabelGuards).toBe(144);
     expect(after.secured).toEqual([]);
     expect(after.policies).toEqual({});
     expect(after.judgmentGuards).toEqual([]);
@@ -422,6 +423,7 @@ describe("a judgment at each label, in the catalog", () => {
     // One label: the indexes the public graph has always had, and a test the planner folds away.
     expect(before.indexes).toEqual([
       "idx_argument_evaluations_current(argument_id)",
+      "idx_artifact_assessments_current(claim_id)",
       "idx_assessments_current(claim_id)",
       "idx_quantity_estimates_current(claim_id)",
       "idx_question_assessments_current(claim_id)",
@@ -430,6 +432,7 @@ describe("a judgment at each label, in the catalog", () => {
     // A second label: a version for each node and label, and the rule for which is in force.
     expect(during.indexes).toEqual([
       "idx_argument_evaluations_current_at_label(argument_id,sensitivity_label)",
+      "idx_artifact_assessments_current_at_label(claim_id,sensitivity_label)",
       "idx_assessments_current_at_label(claim_id,sensitivity_label)",
       "idx_quantity_estimates_current_at_label(claim_id,sensitivity_label)",
       "idx_question_assessments_current_at_label(claim_id,sensitivity_label)",

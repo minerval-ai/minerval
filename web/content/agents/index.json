@@ -146,6 +146,17 @@
     "skills": []
   },
   {
+    "key": "artifact-steward",
+    "name": "Artifact Steward",
+    "stage": 4,
+    "group": "governance",
+    "tagline": "The owner of a list: it keeps the list's criteria clear and checkable, finds the nodes that meet them, says why each is on the list and what was left out, and judges the list's fidelity, never the truth of its entries.",
+    "invokedWhen": "When a list is first proposed, a node it draws on changes, a request it keeps returns, or on periodic refresh.",
+    "model": "Claude Opus 5.5",
+    "hasConstitution": true,
+    "skills": []
+  },
+  {
     "key": "curator",
     "name": "Curator",
     "stage": 5,

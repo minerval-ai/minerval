@@ -17,6 +17,7 @@ import type { AssessedFilter, ClaimType, NodeKind, SearchResultItem } from "@/li
 import { PageHead } from "@/components/PageHead";
 import { fetchMyLabels, type MyLabels } from "@/lib/admin-api";
 import { loadStanding } from "@/lib/standing";
+import { FidelityBadge } from "@/components/list/ListView";
 
 // How many newest claims the demoted "recently added" strip shows in the
 // overview. Small on purpose: it is orientation, not the feed.
@@ -27,7 +28,7 @@ const PRIZE_STRIP = 8;
 // whole vocabulary one click away.
 const TOPIC_STRIP = 24;
 
-const NODE_KINDS: readonly NodeKind[] = ["claim", "question", "quantity"];
+const NODE_KINDS: readonly NodeKind[] = ["claim", "question", "quantity", "artifact"];
 
 // The kind tag on a question's or quantity's card (constitution §2, §7a). A
 // claim carries its claim type there instead; a question or quantity has no
@@ -43,12 +44,18 @@ const KIND_TAG: Record<Exclude<NodeKind, "claim">, { label: string; gloss: strin
     gloss: "A quantity: a value the graph estimates rather than a proposition it affirms or denies. Its estimate stands where a claim's status would.",
     href: DEFINED_IN.quantity,
   },
+  artifact: {
+    label: "List",
+    gloss: "A list: made from nodes the graph holds, under criteria a reader can check. It is judged for fidelity to those criteria, not for truth (constitution §7b).",
+    href: DEFINED_IN.list,
+  },
 };
 
 // What stands where a claim's status would: a question's standing, a
 // quantity's estimate, or a claim's verdict.
 function Verdict({ c, href }: { c: SearchResultItem; href: string }) {
   if (c.kind === "question") return <StandingBadge standing={c.standing ?? null} linkTo={href} />;
+  if (c.kind === "artifact") return <FidelityBadge fidelity={c.fidelity ?? null} />;
   if (c.kind === "quantity") {
     return c.estimate && c.unit ? (
       <span className="qty-chip" title="This is a quantity; its estimate stands where a status would.">

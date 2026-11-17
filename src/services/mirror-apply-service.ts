@@ -379,6 +379,7 @@ const JUDGED_NODE: Record<string, (alias: string) => string> = {
   assessments: (alias) => `${alias}.claim_id`,
   quantity_estimates: (alias) => `${alias}.claim_id`,
   question_assessments: (alias) => `${alias}.claim_id`,
+  artifact_assessments: (alias) => `${alias}.claim_id`,
   argument_evaluations: (alias) => `(SELECT a.claim_id FROM arguments a WHERE a.id = ${alias}.argument_id)`,
 };
 
@@ -387,6 +388,7 @@ const JUDGED_COLUMN: Record<string, string> = {
   assessments: "claim_id",
   quantity_estimates: "claim_id",
   question_assessments: "claim_id",
+  artifact_assessments: "claim_id",
   argument_evaluations: "argument_id",
 };
 

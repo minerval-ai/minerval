@@ -8,6 +8,7 @@ import { MapCard } from "./MapCard";
 import { DependentsRail } from "./DependentsRail";
 import { RelatedRail } from "./RelatedRail";
 import { QuestionView, QuestionRail } from "@/components/question/QuestionView";
+import { ListView, ListRail } from "@/components/list/ListView";
 import { RequestsRail } from "@/components/request/Requests";
 import { WaitingMessagesRail } from "./WaitingMessages";
 import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
@@ -92,6 +93,9 @@ export function ClaimMargins({
   // A question is a node of its own kind (constitution §7a), with a page of
   // its own shape in the same frame.
   const isQuestion = detail.claim.kind === "question" && !!detail.question;
+  // A list is an artifact (constitution §7b): made from other nodes and
+  // judged for fidelity, with a page of its own shape in the same frame.
+  const isList = detail.claim.kind === "artifact" && !!detail.list;
   const hasSubclaims = (detail.tree?.children?.length ?? 0) > 0;
   return (
     <div className={styles.bleed}>
@@ -99,7 +103,9 @@ export function ClaimMargins({
         {/* LEFT — decomposition compass, with the map view as its structural
             counterpart: the same decomposition seen as a navigable figure */}
         <div className={styles.leftRail}>
-          {isQuestion ? (
+          {isList ? (
+            <ListRail detail={detail} />
+          ) : isQuestion ? (
             <QuestionRail detail={detail} />
           ) : hasSubclaims ? (
             <DecompositionCompass tree={detail.tree!} />
@@ -129,7 +135,9 @@ export function ClaimMargins({
         <div className={styles.center}>
           <ClaimTabs claimId={detail.claim.id} published={publishedPages} current={null} />
           {above}
-          {isQuestion ? (
+          {isList ? (
+            <ListView detail={detail} fixture={source === "fixture"} />
+          ) : isQuestion ? (
             <>
               {/* A question's page reads its answer from the question's own
                   fields, so each assessment the reader may read is set out in

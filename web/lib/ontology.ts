@@ -1,7 +1,7 @@
 import type {
   ArgumentVerdict, AssessmentStatus, CheckKind, ClaimType, LeanCheckSummary,
   QuestionStanding, RelationType, RequestOutcome, RequestState, Stance, TreeNode, ValueShown,
-  SetAside,
+  SetAside, ListFidelity,
 } from "./types";
 import { orderByMention } from "./claim-links";
 
@@ -21,6 +21,7 @@ export const DEFINED_IN = {
   argument: "/docs/constitution#7-arguments",
   quantity: "/docs/constitution#2-what-a-claim-is",
   question: "/docs/constitution#7a-questions",
+  list: "/docs/constitution#7b-artifacts",
   standing: "/docs/constitution#10-explicit-uncertainty",
   request: "/docs/constitution#instruments",
   importance: "/docs/constitution#claim-importance-and-proportional-effort",
@@ -798,6 +799,32 @@ export const QUESTION_STANDING: Record<QuestionStanding, { label: string; glyph:
 
 export function isStanding(s: unknown): s is QuestionStanding {
   return typeof s === "string" && s in QUESTION_STANDING;
+}
+
+// A list's fidelity (constitution §7b): whether it faithfully represents
+// what it draws on under its stated criteria. Never "verified": the judgment
+// is of the list, not of its entries, whose own verdicts show beside them.
+export const LIST_FIDELITY: Record<ListFidelity, { label: string; glyph: string; def: string }> = {
+  faithful: {
+    label: "Faithful", glyph: "▣",
+    def: "Every entry meets the criteria, every node the graph holds that meets them is on the list or accounted for, and the order and notes present them honestly.",
+  },
+  incomplete: {
+    label: "Incomplete", glyph: "◫",
+    def: "Entries that meet the criteria are known to be missing; the list says which.",
+  },
+  misleading: {
+    label: "Misleading", glyph: "◩",
+    def: "Its selection, order or framing would lead a reader to a conclusion its entries do not support.",
+  },
+  ill_specified: {
+    label: "Ill-specified", glyph: "⊘",
+    def: "Its criteria cannot be checked against, or quietly assert something contested.",
+  },
+};
+
+export function isFidelity(s: unknown): s is ListFidelity {
+  return typeof s === "string" && s in LIST_FIDELITY;
 }
 
 // A request's life and what came back from work on it (Part VIII, Requests;

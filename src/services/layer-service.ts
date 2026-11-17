@@ -61,6 +61,7 @@ const PER_GRAPH = new Set([
   "argument_subclaims",
   "quantity_cuts",
   "quantity_definitions",
+  "artifact_specs",
   "sources",
 ]);
 
