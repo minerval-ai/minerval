@@ -119,6 +119,18 @@ starts with public Minerval's own settings and you change the ones you need.
    nothing to hold yet and prints nothing: the database starts holding
    reads to a clearance when you define your first label (step 7).
 
+   To check later without watching the log, either of these will do:
+
+   ```
+   docker compose ps
+   docker compose logs api | grep -E "Migrations complete|Server listening"
+   ```
+
+   The first shows `api` as `healthy` once it answers its health check
+   (every 30 seconds, from the image; `web` starts only after that). The
+   second finds the two lines however long ago they were printed. The
+   health checks themselves are not logged unless they fail.
+
    If `docker compose` stops with `Set X in .env`, that setting is empty.
    If the API's log ends in an error that names `SOLVER_MODEL`, mathematics
    is on and the solver's model is missing or is not one the API accepts
