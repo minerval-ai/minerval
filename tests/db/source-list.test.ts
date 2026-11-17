@@ -187,9 +187,13 @@ describe("what a caller is listed", () => {
 
     const all = await everything(admin);
     expect(all.map((s) => s.id)).toContain(ids.theirs);
+    // The counts cover the whole deployment, which other test files add to
+    // at the same time, so they are compared as at least: the administrator,
+    // who reads the other label, counts its source; the director does not.
     const [seen, whole] = [await list(director), await list(admin)];
-    expect(whole.counts.sources - seen.counts.sources).toBe(1);
-    expect(whole.counts.pending_review - seen.counts.pending_review).toBe(1);
+    expect(whole.counts.sources - seen.counts.sources).toBeGreaterThanOrEqual(1);
+    expect(whole.counts.pending_review - seen.counts.pending_review).toBeGreaterThanOrEqual(1);
+    expect((await list(admin, `?at_label=${THEIRS}`)).total).toBe(1);
     expect(JSON.stringify(mine)).not.toContain("Source theirs");
   });
 
