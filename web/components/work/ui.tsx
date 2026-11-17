@@ -79,8 +79,9 @@ export function Count({ n, hot = false }: { n: number; hot?: boolean }) {
 const LABEL_HUES = ["#6aa2e6", "#d9a441", "#a993e8", "#e88aa6", "#5fb39a", "#e0875a", "#7fa7c9", "#b9a35a"];
 export function labelColour(name: string): string {
   if (name === "public") return "#8b8d88";
-  let h = 0;
-  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  // FNV-1a: spreads short names across the hues better than a plain sum.
+  let h = 2166136261;
+  for (const c of name) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
   return LABEL_HUES[h % LABEL_HUES.length];
 }
 
