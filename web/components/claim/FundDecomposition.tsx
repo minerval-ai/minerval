@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { OwlMark } from "../OwlMark";
+import { GettingOwls } from "../GettingOwls";
+import type { OwlSource } from "../../lib/owl-source";
 
 // The fewest owls a decomposition takes, and the budgets offered by default.
 const MIN_OWLS = 5;
@@ -12,7 +14,9 @@ const PRESETS = [5, 20, 100];
 // pass on the claim first, then the claims that bear on it, within the
 // budget. The form says exactly what happens: escrow now, metered spend, a
 // tenth for the Grantmaker's own planning, the rest refunded when done. A
-// balance that cannot cover it goes to the owl packs and comes back here.
+// balance that cannot cover it goes to the owl packs and comes back here,
+// where owls are sold; where they are created by an administrator, the form
+// says so instead (#1095).
 // `compact` is the left rail's form, for a claim with no subclaims yet.
 export function FundDecomposition({ claimId, compact = false }: { claimId: string; compact?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -20,6 +24,8 @@ export function FundDecomposition({ claimId, compact = false }: { claimId: strin
   const [custom, setCustom] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The balance could not cover it, and owls are not bought here.
+  const [short, setShort] = useState<OwlSource | null>(null);
   const [mandateId, setMandateId] = useState<string | null>(null);
 
   const valid = Number.isFinite(budget) && budget >= MIN_OWLS;
@@ -27,6 +33,7 @@ export function FundDecomposition({ claimId, compact = false }: { claimId: strin
   const fund = async () => {
     setBusy(true);
     setError(null);
+    setShort(null);
     try {
       const res = await fetch(`/api/claims/${claimId}/decompose`, {
         method: "POST",
@@ -40,9 +47,14 @@ export function FundDecomposition({ claimId, compact = false }: { claimId: strin
           return;
         }
         if (data.code === "INSUFFICIENT_OWLS") {
-          // Buy owls, then come back to this claim.
-          const back = `${window.location.pathname}#fund-decomposition`;
-          window.location.href = `/account?return=${encodeURIComponent(back)}#buy-owls`;
+          const source: OwlSource = data.owl_source ?? { kind: "none" };
+          if (source.kind === "sold") {
+            // Buy owls, then come back to this claim.
+            const back = `${window.location.pathname}#fund-decomposition`;
+            window.location.href = `/account?return=${encodeURIComponent(back)}#buy-owls`;
+            return;
+          }
+          setShort(source);
           return;
         }
         setError(data.error ?? "The decomposition could not be funded.");
@@ -132,6 +144,11 @@ export function FundDecomposition({ claimId, compact = false }: { claimId: strin
       </div>
       {!valid && <p className="form-error">A decomposition takes at least {MIN_OWLS} owls.</p>}
       {error && <p className="form-error">{error}</p>}
+      {short && (
+        <p className="form-error">
+          Your balance cannot cover {budget} owls. <GettingOwls source={short} />
+        </p>
+      )}
     </div>
   );
 }

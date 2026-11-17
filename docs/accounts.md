@@ -604,7 +604,14 @@ made against one judgment.
 
 The account page shows no way to buy owls where `entitlement.owls_created_here`
 is true, gives what an owl is there in the API's words
-(`entitlement.owls_statement`), and says what the person holds.
+(`entitlement.owls_statement`), and says what the person holds. Every other
+page that tells a person their balance cannot cover something (the `/ask`
+notice at a balance of 0, the decomposition form, the web app's refusals of
+an order, a proposal or a contribution) says "Buy owls" only where owls are
+sold. Where they are created it says that an administrator, a holder of
+`administer`, creates owls into a person's balance under Administration →
+Owls, with a link there for a viewer who holds it and to People and
+permissions for one who does not (`web/lib/owl-source.ts`).
 
 To run one locally: set `READS=members` and an `API_KEYS` entry on the API
 (there is no dev bypass), the same key and `READS=members` on the web app,

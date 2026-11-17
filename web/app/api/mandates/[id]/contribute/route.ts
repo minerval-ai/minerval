@@ -5,6 +5,7 @@ import {
   contributeToMandateApi,
   AccountApiError,
 } from "../../../../../lib/account-api";
+import { gettingOwlsFor } from "../../../../../lib/load-owl-source";
 
 export async function POST(
   request: NextRequest,
@@ -39,8 +40,7 @@ export async function POST(
     if (err instanceof AccountApiError) {
       const error =
         err.code === "INSUFFICIENT_OWLS"
-          ? "Your balance cannot cover that contribution. You can buy owls " +
-            "from your account page."
+          ? `Your balance cannot cover that contribution. ${await gettingOwlsFor(session.externalId)}`
           : err.message;
       return NextResponse.json(
         { error, code: err.code },

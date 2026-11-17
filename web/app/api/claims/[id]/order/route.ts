@@ -6,6 +6,7 @@ import {
   getOpenOrderForClaim,
   AccountApiError,
 } from "../../../../../lib/account-api";
+import { gettingOwlsFor } from "../../../../../lib/load-owl-source";
 
 // The claim page's order surface: GET polls the signed-in user's open order
 // for this claim; POST places one. The acting identity always comes from the
@@ -57,7 +58,7 @@ export async function POST(
       const error =
         err.code === "INSUFFICIENT_OWLS"
           ? "An assessment holds up to 2 owls while it runs, and your balance " +
-            "cannot cover that ceiling. You can buy owls from your account page."
+            `cannot cover that ceiling. ${await gettingOwlsFor(session.externalId)}`
           : err.code === "ORDER_ALREADY_OPEN"
             ? "You already have an open order for this claim."
             : err.message;

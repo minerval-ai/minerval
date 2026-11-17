@@ -5,6 +5,7 @@ import {
   allocateToClaim,
   AccountApiError,
 } from "../../../../../lib/account-api";
+import { gettingOwlsFor } from "../../../../../lib/load-owl-source";
 
 // Chip in toward a claim's next assessment: allocations accumulate across
 // funders and the assessment runs the moment they cover its cost.
@@ -41,8 +42,7 @@ export async function POST(
     if (err instanceof AccountApiError) {
       const error =
         err.code === "INSUFFICIENT_OWLS"
-          ? "Your balance cannot cover that. You can buy owls from your " +
-            "account page."
+          ? `Your balance cannot cover that. ${await gettingOwlsFor(session.externalId)}`
           : err.message;
       return NextResponse.json(
         { error, code: err.code },

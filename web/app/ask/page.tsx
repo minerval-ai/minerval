@@ -10,6 +10,8 @@ import { PageHead } from "@/components/PageHead";
 import { AssistantConversation } from "./AssistantConversation";
 import { fetchMyLabels, type MyLabels } from "../../lib/admin-api";
 import { loadStanding } from "../../lib/standing";
+import { loadOwlSource } from "../../lib/load-owl-source";
+import type { OwlSource } from "../../lib/owl-source";
 
 export const metadata: Metadata = {
   title: "Ask · Minerval",
@@ -41,16 +43,19 @@ export default async function AskPage({
 
   let home: AssistantHome | null = null;
   let labels: MyLabels | null = null;
+  let owlSource: OwlSource = { kind: "none" };
   if (session?.externalId && accountApiConfigured()) {
     const externalId = session.externalId;
     // Read side by side. The home is shared with the sidebar's read. A
     // members-only deployment with more than one label asks which one the
-    // conversation works at.
-    [home, labels] = await Promise.all([
+    // conversation works at. Where owls come from here is what the notice
+    // says when the balance is 0.
+    [home, labels, owlSource] = await Promise.all([
       loadAssistantHome(externalId).catch(() => null),
       loadStanding().then((standing) =>
         standing.state === "signed_in" ? fetchMyLabels(externalId).catch(() => null) : null
       ),
+      loadOwlSource(externalId),
     ]);
   }
   // Where signing in returns to: the question written on another page.
@@ -84,6 +89,7 @@ export default async function AskPage({
       allowedAlways={home.allowed_kinds.always}
       kindLabels={home.allowed_kinds.labels}
       startLabels={labels}
+      owlSource={owlSource}
       {...(node && /^[0-9a-f-]{36}$/i.test(node) ? { nodeId: node } : {})}
       {...(q ? { question: q.slice(0, 2000) } : {})}
     >
