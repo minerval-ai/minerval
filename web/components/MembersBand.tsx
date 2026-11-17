@@ -4,7 +4,7 @@ import { MembersBandLinks } from "./MembersBandLinks";
 
 // A line above every page of a members-only deployment, for a member whose
 // permissions open pages the public site does not have. It names the
-// sections of those pages (components/inside/nav.tsx), each linking to its
+// sections of those pages (lib/work-sections.ts), each linking to its
 // first page, and marks the one the reader is in; the pages of that section
 // are the column down the left side of the page. A member who is shown no
 // section is shown no line at all.

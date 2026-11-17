@@ -474,7 +474,7 @@ their code, and runs no proxy in front of its requests
 the site is named this way.
 
 **The pages a members-only build adds.** They fall into four sections, kept
-in one list (`WORK_SECTIONS` in `web/components/inside/nav.tsx`): Showings
+in one list (`WORK_SECTIONS` in `web/lib/work-sections.ts`): Showings
 (showings, gates, "At the gate" for holders of `release`, redaction
 policies), Material ("Add a source" for holders of `direct`, file sets for
 holders of `direct` or `administer`), The public graph (for holders of
