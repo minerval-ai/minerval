@@ -14,6 +14,7 @@ describe("modelDisplayName", () => {
     expect(modelDisplayName("claude-opus-4-8")).toBe("Claude Opus 4.8");
     expect(modelDisplayName("claude-sonnet-5-5")).toBe("Claude Sonnet 5.5");
     expect(modelDisplayName("claude-sonnet-5")).toBe("Claude Sonnet 5");
+    expect(modelDisplayName("claude-haiku-5-5")).toBe("Claude Haiku 5.5");
     expect(modelDisplayName("claude-haiku-4-5-20251001")).toBe("Claude Haiku 4.5");
     expect(modelDisplayName("openai/gpt-6-luna")).toBe("GPT-6 Luna");
     expect(modelDisplayName("z-ai/glm-5.3-flash")).toBe("GLM 5.3 Flash");

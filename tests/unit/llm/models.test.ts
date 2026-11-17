@@ -24,8 +24,10 @@ describe("model helpers", () => {
     expect(modelAcceptsTemperature(MODELS.sonnet)).toBe(false);
     expect(modelAcceptsTemperature(MODELS.opus)).toBe(false);
     expect(modelAcceptsTemperature("claude-opus-4-7")).toBe(false);
+    // Haiku 5.5 rejects it like the rest of the 5 family.
+    expect(modelAcceptsTemperature(MODELS.haiku)).toBe(false);
     // Haiku 4.x and Sonnet 4.x still accept it.
-    expect(modelAcceptsTemperature(MODELS.haiku)).toBe(true);
+    expect(modelAcceptsTemperature("claude-haiku-4-5-20251001")).toBe(true);
     expect(modelAcceptsTemperature("claude-sonnet-4-6")).toBe(true);
     // The allowlist is version-specific: a future family member is not assumed
     // to accept temperature until verified (#324's forward-compat hole — a
@@ -44,7 +46,10 @@ describe("model helpers", () => {
     expect(modelNeedsRefusalFallback("claude-opus-5")).toBe(false);
     expect(modelNeedsRefusalFallback("claude-sonnet-5")).toBe(false);
     expect(modelNeedsRefusalFallback(MODELS.opus)).toBe(false);
+    // Haiku 5.5's classifiers can refuse, but it has no server-side fallback:
+    // a `fallbacks` list on it is a 400.
     expect(modelNeedsRefusalFallback(MODELS.haiku)).toBe(false);
+    expect(modelRefusalFallbackForm(MODELS.haiku)).toBeNull();
   });
 
   it("gives Sonnet 5.5 the default form and the rest the array form", () => {

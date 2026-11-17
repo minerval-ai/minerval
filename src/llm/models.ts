@@ -55,7 +55,26 @@ export const MODELS = {
   /** The refusal-fallback target for the strong tier (and a direct override option). */
   opus: "claude-opus-4-8",
   sonnet: "claude-sonnet-5-5",
-  haiku: "claude-haiku-4-5-20251001",
+  /**
+   * Haiku 5.5 — the small Claude model: the Assistant's conversation titles
+   * (ASSISTANT_TITLE_MODEL) and an Anthropic-only override for a cheap-tier
+   * agent. $0.10/$0.50 per MTok for a prompt of up to 100K tokens, $0.50/$2.50
+   * above (pricing.ts). An exact id with no dated snapshot.
+   *
+   * Its request surface differs from Haiku 4.5's, and each difference matters
+   * here: adaptive thinking is on by default and is its only thinking mode
+   * (`budget_tokens` 400s; the adapter never sends a `thinking` config), and
+   * thinking spends from `max_tokens`, so a call sized for a short reply needs
+   * headroom; non-default `temperature`/`top_p`/`top_k` 400 (it is off the
+   * modelAcceptsTemperature allowlist); an assistant prefill 400s; `effort`
+   * takes low through max and defaults to `medium`; and its safety
+   * classifiers can refuse with no server-side fallback (it is off
+   * modelRefusalFallbackForm — a `fallbacks` list is a 400), so a refusal
+   * fails loudly like any other model's. Like the 5.5 tiers above, its
+   * thinking blocks are bound to the conversation, so a tool loop on it stays
+   * append-only.
+   */
+  haiku: "claude-haiku-5-5",
 } as const;
 
 /**
@@ -81,7 +100,7 @@ export const MODELS = {
  * Why the versioned id and not `~openai/gpt-luna-latest`: every eval number in
  * this repo is a claim about a specific model, and an alias that repoints when
  * the vendor ships makes a scorecard a measurement of nothing. Same discipline
- * as the dated Haiku snapshot in MODELS.
+ * as the exact ids in MODELS.
  *
  * Why through OpenRouter and not OpenAI direct ("gpt-6-luna"): the tier's
  * callers lean on OpenRouter-only behaviour (the `web` plugin search in
@@ -116,12 +135,13 @@ export function isAnthropicModelId(id: string): boolean {
 
 /**
  * Whether a model accepts the `temperature` request parameter. The Claude 5
- * family (Opus 5.5, Fable 5.2, Sonnet 5.5) and Opus 4.7+ reject non-default sampling params
- * with a 400 — and the client sends `temperature: 0`, which counts as
- * non-default — so this is an ALLOWLIST of families known to accept it
- * (Haiku 4.x, Sonnet 4.x), not a blocklist of ones that don't. The version is
- * part of the allowlist: a future family member (e.g. a Haiku 5) is NOT
- * assumed to accept it until verified, since a wrong guess 400s every run of
+ * family (Opus 5.5, Fable 5.2, Sonnet 5.5, Haiku 5.5) and Opus 4.7+ reject
+ * non-default sampling params with a 400 — and the client sends
+ * `temperature: 0`, which counts as non-default — so this is an ALLOWLIST of
+ * families known to accept it (Haiku 4.x, Sonnet 4.x), not a blocklist of
+ * ones that don't. The version is part of the allowlist: a future family
+ * member is NOT assumed to accept it until verified (Haiku 5.5, the first
+ * Haiku 5, does not), since a wrong guess 400s every run of
  * the agent routed to it (issue #77; the forward-compat hole from #324's
  * audit). Omitting the parameter is always safe.
  */
@@ -137,7 +157,10 @@ export function modelAcceptsTemperature(id: string): boolean {
  * classifiers add `bio` and `reasoning_extraction` to Opus 5's `cyber`), and
  * Sonnet 5.5 (five decline categories to Sonnet 5's one). Opus 5 and Sonnet 5
  * are not listed — the match is exact on the 5.5 version, so `claude-opus-5`
- * and `claude-sonnet-5` stay out. See modelRefusalFallbackForm for which wire
+ * and `claude-sonnet-5` stay out. Haiku 5.5 is not listed either: its
+ * classifiers can refuse, but it has no server-side fallback (a `fallbacks`
+ * list is a 400 and `"default"` leaves a decline declined), so its refusals
+ * fail loudly in checkRefusal. See modelRefusalFallbackForm for which wire
  * form each takes.
  */
 export function modelNeedsRefusalFallback(id: string): boolean {
@@ -204,8 +227,10 @@ export function modelReadsPdfDocuments(id: string): boolean {
 /**
  * The most visual tokens one image costs on the model, for telling an agent
  * what a figure will cost it: an image is ⌈width/28⌉ × ⌈height/28⌉ tokens,
- * downscaled first to fit this cap. 4,784 on Claude 4.7 and later, 1,568 on
- * earlier Claude models. Other providers price images their own way; the
+ * downscaled first to fit this cap. 4,784 on Claude 4.7 and later (the Claude
+ * 5 family, Haiku 5.5 included, takes the higher figure: it is the one an
+ * agent should budget to where no lower cap is published), 1,568 on earlier
+ * Claude models. Other providers price images their own way; the
  * higher figure is used for them, as the estimate an agent should budget to.
  */
 export function modelImageTokenCap(id: string): number {

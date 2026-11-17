@@ -1081,7 +1081,7 @@ uses the stream and keeps reading the conversation beside it, so a stream
 that drops or cannot open costs only the speed.
 
 **Names.** A conversation is named from its first message by a small
-model (`ASSISTANT_TITLE_MODEL`, Claude Haiku by default, so a
+model (`ASSISTANT_TITLE_MODEL`, Claude Haiku 5.5 by default, so a
 conversation's text goes to one provider), in the
 background while the Assistant starts on the reply: two to six words in
 place of the message's opening words, which stand in until the name
