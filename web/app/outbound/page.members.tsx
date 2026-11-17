@@ -1,257 +1,581 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PageHead } from "@/components/PageHead";
-import { ActionForm } from "@/components/admin/ActionForm";
-import { can, viewer, when } from "@/components/admin/access";
-import { WorkNav, day } from "@/components/inside/nav";
-import { fetchOutbound, type OutboundNode, type OutboundPackage } from "@/lib/inside-api";
-import { registerPublisherAction, sendOutsideAction, writeProposalAction } from "../showings/actions";
+import { can, viewer } from "@/components/admin/access";
+import { WorkForm } from "@/components/work/WorkForm";
+import { ButtonLink, Empty, Pill, Section, Table, Tabs, Tip, WorkHead, WorkPage, plural, shortDay, shortWhen, type Tone } from "@/components/work/ui";
+import { fetchOutbound, type OutboundNode, type OutboundPackage, type OutboundSend } from "@/lib/inside-api";
+import { british, fetchReportsForSending, type ReportForSending } from "@/lib/outside-api";
+import { HeadSub, Note, loadAccount, tryRead } from "../admin/outside/parts";
+import { sendOutsideAction, writeProposalAction } from "../showings/actions";
 
-export const metadata: Metadata = { title: "Pages sent outside · Minerval" };
+export const metadata: Metadata = { title: "Outbox · Minerval" };
 export const dynamic = "force-dynamic";
 
-// Where each node shown outside this deployment stands on its way out
-// (GET /outbound; docs/published-pages.md, "Inside the deployment"): the
-// node on the public graph or its proposal there, each signed package built,
-// and each time one was sent or taken as a file, with what the public graph
-// answered. A person who directs sends, and is told first what a send shows
-// outside.
+// Everything leaving this deployment for the public graph. Pages: where each
+// node shown outside stands on its way out (GET /outbound; docs/published-pages.md,
+// "Inside the deployment"): the node on the public graph or its proposal there,
+// each signed package built, and each time one was sent or taken as a file,
+// with what the public graph answered. A person who directs sends. Reports:
+// the agents' reports of problems, kept inside, and where each one about
+// Minerval's machinery stands at the gate to outside (docs/outward-acts.md).
 
 const STATE_WORDS: Record<string, string> = {
-  not_yet_assessed: "says the node is not yet assessed, and carries no page",
-  released_whole: "carries the page released whole",
-  released_in_part: "carries the page released in part, with each held part named in its place",
-  held: "says the node's latest assessment is held, and gives none of that assessment's text. Where an earlier assessment was shown, the package still carries that page",
+  not_yet_assessed: "Says the node is not yet assessed, and carries no page",
+  released_whole: "Carries the page released whole",
+  released_in_part: "Carries the page released in part, with each held part named in its place",
+  held: "Says the node's latest assessment is held, and gives none of its text; where an earlier assessment was shown, it still carries that page",
 };
 
-const PROPOSAL_STATE: Record<string, string> = {
-  waiting_for_release: "written, and at the gate to outside",
-  ready: "written and released, and waiting to be sent",
-  sent: "sent, and under review on the public graph",
-  on_the_public_graph: "admitted: the public graph holds the node",
-  not_admitted: "not admitted on the public graph",
-  replaced: "replaced by later words",
+const STATE_SHORT: Record<string, string> = {
+  not_yet_assessed: "not yet assessed",
+  released_whole: "released whole",
+  released_in_part: "released in part",
+  held: "held",
 };
+
+const PROPOSAL: Record<string, { tone: Tone; text: string }> = {
+  waiting_for_release: { tone: "warn", text: "At the gate" },
+  ready: { tone: "ok", text: "Ready" },
+  sent: { tone: "info", text: "Under review outside" },
+  on_the_public_graph: { tone: "ok", text: "Admitted" },
+  not_admitted: { tone: "bad", text: "Not admitted" },
+  replaced: { tone: "neu", text: "Replaced" },
+};
+
+const BY_HAND = "sent to the public graph";
 
 function taken(p: OutboundPackage): boolean {
   return p.sends.some((s) => s.result === "admitted");
 }
 
-function PackageRows({ node, mayDirect }: { node: OutboundNode; mayDirect: boolean }) {
+/** One send, as a pill: taken, refused, not arrived, or carried by hand as a file. */
+function sendPill(s: OutboundSend): { tone: Tone; text: string } {
+  if (s.how !== BY_HAND) return { tone: "neu", text: "Taken as a file" };
+  if (s.result === "admitted") return { tone: "ok", text: "Taken" };
+  if (s.result === "refused") return { tone: "bad", text: "Refused" };
+  return { tone: "warn", text: "Not sent" };
+}
+
+function chipOf(p: OutboundPackage): { cls: string; text: string } {
+  if (taken(p)) return { cls: "w-ok", text: "taken" };
+  const last = p.sends[p.sends.length - 1];
+  if (!last) return { cls: "w-warn", text: "waiting" };
+  if (last.how !== BY_HAND) return { cls: "", text: "as file" };
+  if (last.result === "refused") return { cls: "w-bad", text: "refused" };
+  return { cls: "w-warn", text: "not sent" };
+}
+
+export default async function OutboxPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+  const who = await viewer();
+  if (!who) return null;
+  const { tab } = await searchParams;
+  const current = tab === "reports" ? "reports" : "pages";
+  const [{ data: account, problem: accountProblem }, { data: overview, problem: pagesProblem }, { data: reports, problem: reportsProblem }] =
+    await Promise.all([
+      loadAccount(who.externalId),
+      tryRead(() => fetchOutbound(who.externalId), "The pages on their way out could not be read"),
+      tryRead(() => fetchReportsForSending(who.externalId), "The agents' reports could not be read"),
+    ]);
+  const mayDirect = can(who, "direct");
+  const nodes = overview?.nodes ?? [];
+  const waiting = nodes.reduce((n, node) => n + node.packages.filter((p) => !taken(p) && p.sends.length === 0).length, 0);
+  const offered = (reports?.reports ?? []).filter((r) => r.offered_to_the_gate);
+
   return (
-    <div className="acct-scroll">
-      <table className="account-table acct-table">
-        <thead>
-          <tr>
-            <th>package</th>
-            <th>what it tells the outside</th>
-            <th>sent, or carried</th>
-            <th />
-          </tr>
-        </thead>
-        <tbody>
-          {node.packages.map((p) => (
-            <tr key={p.package_id}>
-              <td>
-                {p.sequence}
-                <span className="acct-detail">built {when(p.built_at)}</span>
-              </td>
-              <td>It {STATE_WORDS[p.state] ?? `gives the node's state as ${p.state.replace(/_/g, " ")}`}.</td>
-              <td>
-                {p.sends.length === 0 ? (
-                  <>Not sent. It waits here.</>
-                ) : (
-                  p.sends.map((s, i) => (
-                    <span className="inside-line" key={i}>
-                      {when(s.at)}: {s.how}
-                      {s.by ? ` by ${s.by}` : ""}
-                      {s.how === "sent to the public graph" ? (s.result === "admitted" ? "; it was taken" : s.result === "refused" ? "; it was refused" : "; it did not arrive") : ""}.
-                      {s.the_public_graph_said && <span className="acct-detail">The public graph answered: {s.the_public_graph_said}</span>}
-                    </span>
-                  ))
-                )}
-              </td>
-              <td>
-                {mayDirect && (
-                  <form method="post" action={`/api/outbound/packages/${p.package_id}/file`}>
-                    <button className="linklike" type="submit">
-                      take it as a file
-                    </button>
-                  </form>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <WorkPage>
+      <WorkHead
+        title="Outbox"
+        sub={<HeadSub account={account} problem={accountProblem}>Everything leaving for the public graph</HeadSub>}
+        actions={
+          <>
+            {can(who, "administer") && (
+              <ButtonLink href="/admin/outside?drawer=key" title="Registering the signing key is on the Public graph overview">
+                Register key
+              </ButtonLink>
+            )}
+            <ButtonLink href="/gates">Gate settings</ButtonLink>
+          </>
+        }
+      />
+
+      {accountProblem && <Note tone="bad">{accountProblem}</Note>}
+
+      <Tabs
+        current={current}
+        tabs={[
+          { key: "pages", label: <span title="Packages waiting to be sent">Pages</span>, href: "/outbound", count: waiting },
+          { key: "reports", label: "Reports", href: "/outbound?tab=reports", count: reports?.reports.length ?? 0 },
+        ]}
+      />
+
+      {current === "pages" ? (
+        <Pages overview={overview} problem={pagesProblem} mayDirect={mayDirect} />
+      ) : (
+        <Reports listed={reports} problem={reportsProblem} />
+      )}
+    </WorkPage>
   );
 }
 
-export default async function OutboundPage() {
-  const who = await viewer();
-  if (!who) return null;
-  const overview = await fetchOutbound(who.externalId);
-  const mayDirect = can(who, "direct");
-  const mayAdminister = can(who, "administer");
+// ---- pages ------------------------------------------------------------------------
+
+function Pages({
+  overview,
+  problem,
+  mayDirect,
+}: {
+  overview: { nodes: OutboundNode[]; how_sending_works: Record<string, string> } | null;
+  problem: string | null;
+  mayDirect: boolean;
+}) {
+  if (problem) return <Note tone="bad">{problem}</Note>;
+  if (!overview) return null;
   const showings = [...new Set(overview.nodes.map((n) => n.showing_id))];
+  const how = overview.how_sending_works;
 
   return (
-    <div className="admin-page">
-      <PageHead
-        title="Pages sent outside"
-        lede="What a showing outside has released leaves this deployment in signed packages, each one node's page as the outside is to read it. A package is submitted to the public graph under the organisation's own account, where it is reviewed like any contribution and then weighed as a source by the node's Steward there."
-      />
-      <WorkNav who={who} current="/outbound" />
-
-      <section className="acct-section admin-first" id="what-a-send-shows">
-        <div className="acct-head">
-          <h2>What a send shows outside</h2>
+    <>
+      {showings.length === 0 && (
+        <div className="w-tbox">
+          <Empty>No page has been asked to be shown outside this deployment.</Empty>
         </div>
-        <ul className="inside-list acct-measure">
+      )}
+
+      {showings.map((showingId) => {
+        const nodes = overview.nodes.filter((n) => n.showing_id === showingId);
+        const head = nodes[0]!;
+        const waiting = nodes.reduce((n, node) => n + node.packages.filter((p) => !taken(p)).length, 0);
+        const ready = nodes.filter((n) => n.proposal?.state === "ready").length;
+        const standing = head.sent === "as_released";
+        const lastTaken = nodes
+          .flatMap((n) => n.packages.flatMap((p) => p.sends.filter((s) => s.result === "admitted").map((s) => s.at)))
+          .sort()
+          .pop();
+        return (
+          <section className="w-tbox" key={showingId} id={`showing-${showingId}`} style={{ scrollMarginTop: 16 }}>
+            <div className="w-pub-grp">
+              <span className="w-node">{head.node ?? "A node you do not read"}</span>
+              {nodes.length > 1 && <span className="w-muted w-small">and {nodes.length - 1} under it</span>}
+              <Link className="w-small" href={`/showings/${showingId}`}>
+                Showing
+              </Link>
+              <span className="w-row" style={{ gap: 4 }}>
+                <Pill tone="neu">{standing ? "Sent as released" : "Sent by a person"}</Pill>
+                {how[head.sent] && <Tip>{british(how[head.sent]!)}</Tip>}
+              </span>
+              <div className="w-spacer w-row">
+                {waiting + ready === 0 ? (
+                  <span className="w-muted w-small">
+                    {plural(nodes.length, "node")} · nothing waiting{lastTaken ? ` · last taken ${shortDay(lastTaken)}` : ""}
+                  </span>
+                ) : (
+                  mayDirect && (
+                    <WorkForm action={sendOutsideAction} submit={`Send ${waiting + ready} waiting`} primary inline lock="Can't be taken back">
+                      <input type="hidden" name="showing_id" value={showingId} />
+                    </WorkForm>
+                  )
+                )}
+                {waiting + ready > 0 && !mayDirect && <span className="w-muted w-small">{waiting + ready} waiting for a person who directs</span>}
+              </div>
+            </div>
+            <table className="w-t" aria-label="Nodes under this showing">
+              <thead>
+                <tr>
+                  <th>Node</th>
+                  <th>Public node</th>
+                  <th>Packages</th>
+                  <th>Last send</th>
+                  <th className="w-act" />
+                </tr>
+              </thead>
+              {nodes.map((node) => (
+                <NodeRows key={node.node_id} node={node} showingId={showingId} mayDirect={mayDirect} />
+              ))}
+            </table>
+          </section>
+        );
+      })}
+
+      <details className="w-pub-more">
+        <summary>What a send shows outside</summary>
+        <ul className="w-pub-list">
           <li>
-            The text of each part that every party it rests on has released, with each removal marked, and for each held part its kind, who
-            holds it, any reason given and since when. Nothing else of the page.
+            The text of each part that every party it rests on has released, with each removal marked, and for each held part its kind, who holds
+            it, any reason given and since when. Nothing else of the page.
           </li>
           <li>
             The verdict with any credence, what kinds of evidence it was made on, that each source exists, how the page was made, and the
             redaction policy in full.
           </li>
           <li>
-            The record of the showing: when it was asked for and whether that was before the node was first assessed, every act on it with
-            the permissions the person held, and every assessment made while it stood, the held ones as held. People are numbered, and no
-            person&rsquo;s name is sent. Parties&rsquo; names are.
+            The record of the showing: when it was asked for and whether that was before the node was first assessed, every act on it with the
+            permissions the person held, and every assessment made while it stood, the held ones as held. People are numbered, and no
+            person&apos;s name is sent. Parties&apos; names are.
           </li>
           <li>
             That this organisation is attending to this node, and when. A package that says only &ldquo;held&rdquo; or &ldquo;not yet
             assessed&rdquo; still says that.
           </li>
+          {how.by_a_person_each_time && <li>{british(how.by_a_person_each_time)}</li>}
+          <li>
+            Where the network does not join this deployment to the public graph, a person takes a package as a file and submits it there by hand;
+            the public graph checks it the same way. Taking a file is recorded here with who took it. What became of a package carried by hand is
+            read on the public graph.
+          </li>
         </ul>
-        <p className="acct-prose acct-measure">
-          {overview.how_sending_works.by_a_person_each_time} Where the network does not join this deployment to the public graph, a person
-          takes a package as a file and submits it there by hand; the public graph checks it the same way however it arrives. Taking a file
-          is recorded here with who took it. This deployment is not told what became of a package carried by hand, and has nowhere to record
-          a receipt for one: that is read on the public graph.
-        </p>
-      </section>
+      </details>
+    </>
+  );
+}
 
-      {mayAdminister && (
-        <section className="acct-section" id="register">
-          <div className="acct-head">
-            <h2>Who publishes these pages</h2>
-          </div>
-          <p className="acct-prose acct-measure">
-            The public graph takes a package only from the account this deployment&rsquo;s signing key is registered to. Registering
-            names the organisation&rsquo;s account there (the one this deployment acts through) as the publisher of what this deployment
-            signs, and says where the deployment runs. It is done once, and again if the key or where the deployment runs changes;
-            registering again retires the earlier registration, which stays on the public record.
-          </p>
-          <ActionForm action={registerPublisherAction} submit="Register this deployment's key on the public graph">
-            <label>
-              What the organisation says of its own interest in what it publishes (optional)
-              <textarea name="declared_interest" rows={2} maxLength={1000} />
-              <small>
-                Shown whole beside every page the organisation publishes. A sentence or two: what it stands to gain or lose from how
-                the nodes it publishes on are judged.
-              </small>
-            </label>
-            <p className="admin-kept">
-              <small>
-                The registration, the key and where the deployment runs are public on the publisher&rsquo;s record. It is recorded here
-                with your name and the permissions you hold.
-              </small>
-            </p>
-          </ActionForm>
-        </section>
-      )}
+function NodeRows({ node, showingId, mayDirect }: { node: OutboundNode; showingId: string; mayDirect: boolean }) {
+  const packages = [...node.packages].sort((a, b) => a.sequence - b.sequence);
+  const latest = packages[packages.length - 1];
+  const sends = packages
+    .flatMap((p) => p.sends.map((s) => ({ ...s, sequence: p.sequence })))
+    .sort((a, b) => (a.at < b.at ? -1 : 1));
+  const last = sends[sends.length - 1];
+  const earlierMiss = last && sendPill(last).tone === "ok" ? sends.slice(0, -1).filter((s) => sendPill(s).tone !== "ok" && s.how === BY_HAND).pop() : undefined;
+  const proposal = node.proposal ? (PROPOSAL[node.proposal.state] ?? { tone: "neu" as Tone, text: node.proposal.state.replace(/_/g, " ") }) : null;
+  const mayWord = !node.public_node_id && mayDirect && node.proposal?.state !== "sent" && node.proposal?.state !== "on_the_public_graph";
 
-      <p className="acct-prose acct-measure">
-        This page is for pages. What else passes between this deployment and the public graph (the organisation&rsquo;s account there,
-        public mandates, requests taken up, agents&rsquo; reports sent on) is on <Link href="/admin/outside">The public graph</Link>.
-      </p>
-
-      {overview.nodes.length === 0 && (
-        <p className="account-empty">No page has been asked to be shown outside this deployment.</p>
-      )}
-
-      {showings.map((showingId) => {
-        const nodes = overview.nodes.filter((n) => n.showing_id === showingId);
-        const waiting = nodes.reduce((n, node) => n + node.packages.filter((p) => !taken(p)).length, 0);
-        const proposalsReady = nodes.filter((n) => n.proposal?.state === "ready").length;
-        const standing = nodes[0]!.sent === "as_released";
-        return (
-          <section className="acct-section" key={showingId} id={`showing-${showingId}`}>
-            <div className="acct-head">
-              <h2>{nodes[0]!.node ?? "A node you do not read"}{nodes.length > 1 ? `, and ${nodes.length - 1} under it` : ""}</h2>
-            </div>
-            <p className="acct-prose acct-measure">
-              <Link href={`/showings/${showingId}`}>The showing</Link> has who asked and where each page stands.{" "}
-              {standing
-                ? "Whoever asked for it chose that each package is sent as soon as it is built, with nobody sending it; that choice is stated in every package."
-                : "A person who directs the graph sends its packages."}{" "}
-              {waiting + proposalsReady === 0
-                ? "Nothing under it waits to be sent."
-                : `${waiting} package${waiting === 1 ? "" : "s"}${proposalsReady > 0 ? ` and ${proposalsReady} proposal${proposalsReady === 1 ? "" : "s"} of a node` : ""} wait${waiting + proposalsReady === 1 ? "s" : ""} to be sent.`}
-            </p>
-            {mayDirect && waiting + proposalsReady > 0 && (
-              <ActionForm action={sendOutsideAction} submit="Send what waits under this showing">
-                <input type="hidden" name="showing_id" value={showingId} />
-                <p className="admin-kept">
-                  <small>
-                    Sending submits each waiting package, in order, to the public graph under the organisation&rsquo;s account. What is sent
-                    is then outside this deployment and is not taken back. The send is recorded here with your name and the permissions you
-                    hold.
-                  </small>
-                </p>
-              </ActionForm>
-            )}
-
-            {nodes.map((node) => (
-              <div className="inside-node" key={node.node_id}>
-                {nodes.length > 1 && <h3>{node.node ?? "A node you do not read"}</h3>}
-                {node.waiting && <p className="acct-prose acct-measure">{node.waiting}</p>}
-                {node.proposal && (
-                  <div className="inside-proposal">
-                    <p className="acct-prose acct-measure">
-                      The words it is proposed in, written {day(node.proposal.written_at)} ({PROPOSAL_STATE[node.proposal.state] ?? node.proposal.state}):
-                    </p>
-                    <blockquote>{node.proposal.text}</blockquote>
-                    {node.proposal.state === "waiting_for_release" && (
-                      <p className="admin-kept">
-                        <small>
-                          These words are at the gate to outside, as an item of their own, and go under its setting for proposals. Where a
-                          person decides as well, they are approved on the gate&rsquo;s page.
-                        </small>
-                      </p>
-                    )}
-                  </div>
-                )}
-                {!node.public_node_id && mayDirect && node.proposal?.state !== "sent" && node.proposal?.state !== "on_the_public_graph" && (
-                  <details className="admin-args">
-                    <summary>{node.proposal ? "propose it in other words" : "write the words it is proposed in"}</summary>
-                    <ActionForm action={writeProposalAction} submit="Record these words">
-                      <input type="hidden" name="showing_id" value={showingId} />
-                      <input type="hidden" name="node_id" value={node.node_id} />
-                      <label>
-                        The node as it is to be proposed to the public graph
-                        <textarea name="text" rows={3} />
-                        <small>
-                          Left blank, the node&rsquo;s own wording is used. These words are yours, and are public once sent: they go to the
-                          public graph as a proposal under the organisation&rsquo;s account, which is reviewed there like anyone&rsquo;s. They go
-                          through the gate to outside first, resting on the parties the node&rsquo;s wording rests on, unless they are word for
-                          word a wording that already went through it with the node&rsquo;s page.
-                        </small>
-                      </label>
-                    </ActionForm>
+  return (
+    <tbody className="w-pub-xg">
+      <tr>
+        <td style={{ maxWidth: 320 }}>
+          <Link className="w-node w-sm" href={`/claims/${node.node_id}`}>
+            {node.node ?? "A node you do not read"}
+          </Link>
+        </td>
+        <td>
+          {node.public_node_id ? (
+            <span className="w-mono">{node.public_node_id.slice(0, 8)}</span>
+          ) : (
+            <div className="w-col" style={{ gap: 4 }}>
+              <span className="w-small w-muted">
+                Not on the public graph yet{node.waiting && <> <Tip>{british(node.waiting)}</Tip></>}
+              </span>
+              <span className="w-row" style={{ gap: 6 }}>
+                {proposal && <Pill tone={proposal.tone}>Proposal: {proposal.text}</Pill>}
+                {mayWord && (
+                  <details className="w-pub-tg">
+                    <summary className="w-linkbtn w-small">{node.proposal ? "Edit wording" : "Write wording"}</summary>
                   </details>
                 )}
-                {node.public_node_id && node.packages.length === 0 && <p className="account-empty">No package has been built for it yet.</p>}
-                {node.packages.length > 0 && <PackageRows node={node} mayDirect={mayDirect} />}
+              </span>
+            </div>
+          )}
+        </td>
+        <td>
+          {packages.length === 0 ? (
+            <span className="w-faint w-small">{node.public_node_id ? "None built yet" : "Goes after the proposal is admitted"}</span>
+          ) : (
+            <>
+              <div className="w-pub-seq">
+                {packages.map((p, i) => {
+                  const chip = chipOf(p);
+                  return (
+                    <span key={p.package_id} style={{ display: "contents" }}>
+                      {i > 0 && <em aria-hidden />}
+                      <span className={chip.cls} title={`Package ${p.sequence}: ${STATE_WORDS[p.state] ?? p.state.replace(/_/g, " ")}`}>
+                        #{p.sequence} {chip.text}
+                      </span>
+                    </span>
+                  );
+                })}
               </div>
+              {latest && (
+                <div className="w-faint w-small" style={{ marginTop: 4 }}>
+                  #{latest.sequence} built {shortDay(latest.built_at)} · {STATE_SHORT[latest.state] ?? latest.state.replace(/_/g, " ")}
+                </div>
+              )}
+            </>
+          )}
+        </td>
+        <td className="w-small">
+          {last ? (
+            <>
+              <Pill tone={sendPill(last).tone}>{sendPill(last).text}</Pill>{" "}
+              <span className="w-muted">
+                #{last.sequence} · {shortDay(last.at)}
+              </span>
+              {earlierMiss && <div className="w-faint">after #{earlierMiss.sequence} {sendPill(earlierMiss).text.toLowerCase()}, {shortDay(earlierMiss.at)}</div>}
+            </>
+          ) : (
+            <span className="w-faint">Never sent</span>
+          )}
+        </td>
+        <td className="w-act">
+          <div className="w-row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+            {mayDirect && latest && (
+              <form method="post" action={`/api/outbound/packages/${latest.package_id}/file`}>
+                <button className="w-btn w-ghost w-sm" type="submit" title="Take it as a file to submit by hand · recorded with your name">
+                  Download package
+                </button>
+              </form>
+            )}
+            {(sends.length > 0 || packages.length > 1 || node.proposal) && (
+              <details className="w-pub-tg">
+                <summary className="w-btn w-ghost w-sm" aria-label="Show every package and send">
+                  More
+                </summary>
+              </details>
+            )}
+          </div>
+        </td>
+      </tr>
+      <tr className="w-detail w-pub-xrow">
+        <td colSpan={5}>
+          <div className="w-col" style={{ gap: 12, padding: "4px 0" }}>
+            {node.proposal && (
+              <div>
+                <span className="w-pub-k">
+                  Proposed in these words, written {shortDay(node.proposal.written_at)}
+                  {node.proposal.waits_on.length > 0 && ` · waits on ${node.proposal.waits_on.map((p) => p.name).join(", ")}`}
+                </span>
+                <p className="w-pub-quote">{node.proposal.text}</p>
+                {node.proposal.state === "waiting_for_release" && (
+                  <span className="w-help">
+                    At the gate to outside as an item of its own. Where a person decides as well, it is approved on <Link href="/gate">Review</Link>.
+                  </span>
+                )}
+              </div>
+            )}
+            {mayWord && (
+              <WorkForm action={writeProposalAction} submit="Record these words" small>
+                <input type="hidden" name="showing_id" value={showingId} />
+                <input type="hidden" name="node_id" value={node.node_id} />
+                <div className="w-field">
+                  <label htmlFor={`words-${node.node_id}`}>
+                    The node as it is to be proposed to the public graph{" "}
+                    <Tip>
+                      Left blank, the node&apos;s own wording is used. These words are public once sent: they go to the public graph as a
+                      proposal under the organisation&apos;s account, reviewed there like anyone&apos;s. They go through the gate to outside
+                      first, unless they are word for word a wording that already went through it with the node&apos;s page.
+                    </Tip>
+                  </label>
+                  <textarea id={`words-${node.node_id}`} className="w-input" name="text" rows={3} defaultValue={node.proposal?.text} />
+                </div>
+              </WorkForm>
+            )}
+            {packages.length > 0 && (
+              <table className="w-t" aria-label="Packages" style={{ background: "var(--w-panel)", border: "1px solid var(--w-rule)" }}>
+                <thead>
+                  <tr>
+                    <th>Package</th>
+                    <th>What it tells the outside</th>
+                    <th>Sent, or carried</th>
+                    <th className="w-act" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {packages.map((p) => (
+                    <tr key={p.package_id}>
+                      <td className="w-small" style={{ whiteSpace: "nowrap" }}>
+                        #{p.sequence} <span className="w-faint">built {shortDay(p.built_at)}</span>
+                      </td>
+                      <td className="w-small">{STATE_WORDS[p.state] ?? `Gives the node's state as ${p.state.replace(/_/g, " ")}`}.</td>
+                      <td className="w-small">
+                        {p.sends.length === 0 ? (
+                          <span className="w-faint">Not sent. It waits here.</span>
+                        ) : (
+                          p.sends.map((s, i) => (
+                            <div key={i}>
+                              <Pill tone={sendPill(s).tone}>{sendPill(s).text}</Pill> {shortWhen(s.at)}
+                              {s.by ? ` by ${s.by}` : ""}
+                              {s.holding.length > 0 && <> <Tip>{`Holding ${s.holding.join(", ")}`}</Tip></>}
+                              {s.the_public_graph_said && <div className="w-faint">The public graph answered: {s.the_public_graph_said}</div>}
+                            </div>
+                          ))
+                        )}
+                      </td>
+                      <td className="w-act">
+                        {mayDirect && (
+                          <form method="post" action={`/api/outbound/packages/${p.package_id}/file`}>
+                            <button className="w-btn w-ghost w-sm" type="submit" title="Take it as a file to submit by hand · recorded with your name">
+                              Download
+                            </button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </td>
+      </tr>
+    </tbody>
+  );
+}
+
+// ---- reports ----------------------------------------------------------------------
+
+function severityTone(s: string): Tone {
+  if (/critical|high|severe/i.test(s)) return "bad";
+  if (/medium|moderate/i.test(s)) return "warn";
+  return "neu";
+}
+
+function Reports({ listed, problem }: { listed: Awaited<ReturnType<typeof fetchReportsForSending>> | null; problem: string | null }) {
+  if (problem) return <Note tone="bad">{problem}</Note>;
+  if (!listed) return null;
+  const offered = listed.reports.filter((r) => r.offered_to_the_gate);
+  const kept = listed.reports.filter((r) => !r.offered_to_the_gate);
+  return (
+    <>
+      <Section
+        title="At the gate to outside"
+        aside={
+          <>
+            reports about Minerval&apos;s machinery go to its maintainers <Tip>{british(listed.how_a_report_goes)}</Tip>
+          </>
+        }
+      >
+        {offered.length === 0 ? (
+          <div className="w-tbox">
+            <Empty>No report at a label you read is about Minerval&apos;s machinery.</Empty>
+          </div>
+        ) : (
+          <Table label="Reports at the gate to outside">
+            <thead>
+              <tr>
+                <th>Report</th>
+                <th>Filed by</th>
+                <th>Kind</th>
+                <th>At the gate</th>
+                <th>What came back</th>
+                <th className="w-act" />
+              </tr>
+            </thead>
+            {offered.map((r) => (
+              <ReportRow key={r.report_id} r={r} />
             ))}
-          </section>
-        );
-      })}
-    </div>
+          </Table>
+        )}
+      </Section>
+
+      <Section title="Kept inside" aside={british(listed.listed)}>
+        {kept.length === 0 ? (
+          <div className="w-tbox">
+            <Empty>No other report at a label you read.</Empty>
+          </div>
+        ) : (
+          <Table label="Reports kept inside">
+            <thead>
+              <tr>
+                <th>Report</th>
+                <th>Filed by</th>
+                <th>What it is about</th>
+                <th>Audit&apos;s note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {kept.map((r) => (
+                <tr key={r.report_id}>
+                  <td style={{ fontWeight: 500 }}>{r.as_written.title}</td>
+                  <td className="w-small">{r.filed_by}</td>
+                  <td className="w-small">{r.about ?? <span className="w-faint">—</span>}</td>
+                  <td className="w-small w-muted">{r.audit_note ?? <span className="w-faint">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Section>
+    </>
+  );
+}
+
+function ReportRow({ r }: { r: ReportForSending }) {
+  const back = r.sent?.came_back;
+  const waiting = !!r.at_the_gate && !r.sent;
+  return (
+    <tbody className="w-pub-xg">
+      <tr>
+        <td style={{ fontWeight: 500, maxWidth: 300 }}>{r.as_written.title}</td>
+        <td className="w-small">{r.filed_by}</td>
+        <td>
+          <span className="w-row" style={{ gap: 4 }}>
+            <Pill tone="neu">{r.facts.kind.replace(/_/g, " ")}</Pill>
+            <Pill tone={severityTone(r.facts.severity)}>{r.facts.severity}</Pill>
+          </span>
+        </td>
+        <td className="w-small">
+          {r.sent ? (
+            <>
+              <Pill tone="ok">Sent</Pill> <span className="w-muted">{shortDay(r.sent.at)}</span>
+            </>
+          ) : r.at_the_gate ? (
+            <>
+              <span>{british(r.at_the_gate.stands)}</span>
+              {waiting && (
+                <>
+                  {" "}
+                  <Link href="/gate">Review</Link>
+                </>
+              )}
+            </>
+          ) : (
+            <span className="w-faint">Not yet offered</span>
+          )}
+        </td>
+        <td className="w-small">
+          {back ? (
+            <>
+              <Pill tone="info">{back.status.replace(/_/g, " ")}</Pill>
+              {back.issue_url && (
+                <>
+                  {" "}
+                  <a href={back.issue_url} target="_blank" rel="noreferrer">
+                    Issue ↗
+                  </a>
+                </>
+              )}
+              {back.maintainers_note && <div className="w-muted">{back.maintainers_note}</div>}
+            </>
+          ) : (
+            <span className="w-faint">{r.sent ? "Nothing yet" : "—"}</span>
+          )}
+        </td>
+        <td className="w-act">
+          <details className="w-pub-tg">
+            <summary className="w-btn w-ghost w-sm" aria-label="Show the report">
+              More
+            </summary>
+          </details>
+        </td>
+      </tr>
+      <tr className="w-detail w-pub-xrow">
+        <td colSpan={6}>
+          <div className="w-col" style={{ gap: 10, padding: "4px 0" }}>
+            <span className="w-small w-muted">
+              The facts, in fixed words: {r.facts.tool ? <code className="w-mono">{r.facts.tool}</code> : "no tool of Minerval's own named"} · seen{" "}
+              {plural(r.facts.seen, "time")}, {r.facts.first_seen} to {r.facts.last_seen} · Minerval at migration {r.facts.minerval.migration},
+              prompt set <span className="w-mono">{r.facts.minerval.prompt_set.slice(0, 12)}…</span> · triage: {r.triage.replace(/_/g, " ")}
+              {r.audit_note ? ` · Audit: ${r.audit_note}` : ""}
+            </span>
+            <div>
+              <span className="w-pub-k">
+                As written. What goes is what the gate lets through, each removal marked and each held part named.
+              </span>
+              <pre className="w-code" style={{ whiteSpace: "pre-wrap" }}>
+                {r.as_written.title}
+                {"\n\n"}
+                {r.as_written.body}
+              </pre>
+            </div>
+            {r.sent && (
+              <span className="w-small w-muted">
+                Sent {shortWhen(r.sent.at)}, filed with Minerval&apos;s maintainers as private
+                {r.sent.on_the_public_graph ? ` (${r.sent.on_the_public_graph})` : ""}.
+                {back && ` What came back as of ${shortWhen(back.asked_at)}: ${back.status}. ${back.maintainers_note ?? "They have left no note."}`}
+              </span>
+            )}
+          </div>
+        </td>
+      </tr>
+    </tbody>
   );
 }
