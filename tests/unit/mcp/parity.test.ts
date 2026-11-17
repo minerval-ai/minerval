@@ -537,10 +537,10 @@ describe("in a members-only deployment", () => {
         const tool = ROUTE_TOOLS[routeKey(r.method, r.url)];
         return tool ? [tool.name] : [];
       });
-    // The reads of file sets, and the parties by name, which a person who directs reads to say whose material a
-    // set is; and which providers each label may be sent to, which an administrator and a holder of the
+    // The reads of file sets, the list of sources, and the parties by name, which a person who directs reads to
+    // say whose material a set is; and which providers each label may be sent to, which an administrator and a holder of the
     // permission to clear providers read.
-    const forDirecting = ["get_file_set", "list_file_set_commands", "list_file_set_files", "list_file_sets", "list_parties"];
+    const forDirecting = ["get_file_set", "list_file_set_commands", "list_file_set_files", "list_file_sets", "list_parties", "list_sources"];
     expect(needingAnyOf.sort()).toEqual([...forDirecting, "list_provider_clearance"].sort());
     const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("release"), ...needingAnyOf]);
     expect([...reader].sort()).toEqual(all.filter((name) => !gone.has(name)).sort());

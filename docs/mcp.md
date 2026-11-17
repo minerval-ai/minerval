@@ -531,9 +531,13 @@ read of a claim, use a card.
   `get_correspondent_update`, `poke_correspondent` (the mandate's manager).
   The Atom feed (`GET /correspondents/:id/feed`) is the same updates as
   `list_correspondent_updates`, and is not a tool.
-- **Sources:** `submit_source` (reviewed before extraction), `get_source`,
-  `get_source_context`, `get_source_examinations`, `get_source_document`,
-  `get_job`.
+- **Sources:** `submit_source` (reviewed before extraction), `list_sources`
+  (the sources the caller may read, newest first, each with its label,
+  party, who added it and where it stands: waiting for review, not
+  admitted, queued, being read, extracted, failed, or recorded by an agent
+  with no submission; in a members-only deployment, for holders of direct
+  or of administer), `get_source`, `get_source_context`,
+  `get_source_examinations`, `get_source_document`, `get_job`.
 - **Contributions:** `list_contributions`, `submit_appeal`, `get_appeal`,
   `list_contributors`, `get_contributor`.
 - **Stated views** (constitution §4): `state_view` (the account's own view

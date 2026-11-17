@@ -36,8 +36,8 @@ export async function addSourceAction(_previous: AddSourceState, form: FormData)
       ...(content.trim() ? { content } : {}),
       ...(label ? { label } : {}),
     });
-    // The page shows the balance, which the submission has just drawn on.
-    revalidatePath("/sources/new");
+    // The page shows the balance, which the submission has just drawn on, and the list the new source is in.
+    revalidatePath("/sources");
     return {
       submitted: {
         sourceId: result.source_id,

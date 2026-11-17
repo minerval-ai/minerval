@@ -1,0 +1,20 @@
+/* The file-set pages (app/file-sets): the upload zone and the list of files on their way. */
+
+.w-fs-drop {
+  border: 1.5px dashed var(--w-rule2); border-radius: 8px; background: var(--w-sunk); padding: 22px;
+  display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; color: var(--w-soft); cursor: pointer;
+}
+.w-fs-drop.w-fs-over { border-color: var(--w-accent); background: var(--w-accent-wash); }
+.w-fs-drop[aria-disabled="true"] { opacity: .6; cursor: progress; }
+.w-fs-drop input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.w-fs-drop svg { width: 22px; height: 22px; color: var(--w-muted); }
+.w-fs-prog {
+  display: grid; grid-template-columns: minmax(0, 1fr) 90px 220px 170px; gap: 14px; align-items: center;
+  padding: 9px 14px; border-bottom: 1px solid var(--w-rule); font-size: 13px;
+}
+.w-fs-prog:last-child { border-bottom: 0; }
+.w-fs-prog .w-bar > i.w-fs-run { background: var(--w-accent); }
+.w-fs-trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+@media (max-width: 900px) {
+  .w-fs-prog { grid-template-columns: minmax(0, 1fr) auto; }
+}

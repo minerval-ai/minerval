@@ -1,0 +1,34 @@
+/* The connection pages (app/admin/connections): a tool's switch, and the rows of the tools table as picks change. */
+
+.w-conn-tg { position: relative; display: inline-block; width: 30px; height: 17px; flex: 0 0 30px; vertical-align: middle; }
+.w-conn-tg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; z-index: 1; }
+.w-conn-tg input:disabled { cursor: not-allowed; }
+.w-conn-tg span { position: absolute; inset: 0; border-radius: 9px; background: var(--w-rule2); transition: background .15s; }
+.w-conn-tg span::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%;
+  background: var(--w-panel); box-shadow: 0 1px 2px rgb(0 0 0 / .25); transition: left .15s;
+}
+.w-conn-tg input:checked + span { background: var(--w-accent); }
+.w-conn-tg input:checked + span::after { left: 15px; background: var(--w-accent-ink); }
+.w-conn-tg input:disabled + span { opacity: .4; }
+.w-conn-tg input:focus-visible + span { outline: 2px solid var(--w-accent); outline-offset: 2px; }
+
+.w-t tr.w-conn-chg > td { background: var(--w-accent-wash); }
+.w-t tr.w-conn-chg > td:first-child { box-shadow: inset 2px 0 0 var(--w-accent); }
+.w-t tr.w-conn-wd > td:first-child { box-shadow: inset 2px 0 0 var(--w-warn); }
+.w-t tr.w-conn-open > td { border-bottom: 0; }
+.w-t tr.w-conn-det > td { background: var(--w-sunk); padding: 12px 16px 14px 58px; }
+.w-conn-tagline { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-family: var(--sans); flex-wrap: wrap; }
+.w-conn-trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 280px; }
+.w-conn-detail { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.w-conn-detail .w-kv { grid-template-columns: 90px minmax(0, 1fr); font-size: 12.5px; }
+.w-conn-icon {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 5px; border: 0;
+  background: transparent; color: var(--w-faint); cursor: pointer;
+}
+.w-conn-icon:hover { background: var(--w-hover); color: var(--w-ink); }
+.w-conn-icon[aria-expanded="true"] svg { transform: rotate(90deg); }
+@media (max-width: 900px) {
+  .w-conn-detail { grid-template-columns: minmax(0, 1fr); }
+  .w-t tr.w-conn-det > td { padding-left: 16px; }
+}
