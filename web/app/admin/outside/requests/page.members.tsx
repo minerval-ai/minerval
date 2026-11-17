@@ -3,7 +3,8 @@ import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
 import { LabelChoice } from "@/components/admin/LabelChoice";
-import { AdminNav, Notice, can, viewer, when } from "@/components/admin/access";
+import { Notice, can, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { fetchMyLabels } from "@/lib/admin-api";
 import { british, fetchPublicRequests, type PublicRequest } from "@/lib/outside-api";
 import { adoptRequestAction, declineRequestAction, takeUpRequestAction } from "../actions";
@@ -108,7 +109,7 @@ export default async function PublicRequestsPage() {
         title="Public requests"
         lede="A request on the public graph records something someone could do that would improve what the graph knows, and can be addressed to whoever holds the evidence. These are read from the mirror, so reading them tells the public graph nothing."
       />
-      <AdminNav current="/admin/outside/requests" />
+      <WorkNav who={who} current="/admin/outside/requests" />
 
       <section className="acct-section admin-first" id="how">
         <div className="acct-head">

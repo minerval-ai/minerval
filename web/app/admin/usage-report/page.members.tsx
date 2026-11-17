@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
+import { NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { fetchUsageReports, type OutgoingUsageReports, type UsageReport } from "@/lib/admin-api";
 import { count } from "@/lib/admin-words";
 import { sendUsageReportsAction } from "../actions";
@@ -29,7 +30,7 @@ export default async function UsageReportPage() {
         title="The usage report"
         lede="On the metered price, a private deployment reports to the public graph the owls its agents' runs spent each day, as one total, because that price is in proportion to it. This page shows everything that leaves the deployment for that purpose."
       />
-      <AdminNav current="/admin/usage-report" />
+      <WorkNav who={who} current="/admin/usage-report" />
 
       <section className="acct-section admin-first" id="what">
         <div className="acct-head">

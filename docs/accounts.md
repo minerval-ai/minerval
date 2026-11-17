@@ -473,15 +473,17 @@ their code, and runs no proxy in front of its requests
 (`tests/unit/web/members-gate.test.ts`). What a private deployment adds to
 the site is named this way.
 
-**The pages a members-only build adds.** A line above each page, placed by
-the gate for a member (`web/components/MembersBand.tsx`), links the ones a
-person's permissions open: "Showings" for a member who reads at a label
-besides `public` or who directs or releases, "At the gate" for holders of
-`release`, "File sets" for holders of `direct` or `administer`, "Add a
-source" for holders of `direct`, "Administration" for holders of
-`administer`. The administration pages link to one another down the left
-side of the page, and in a line above it at a phone's width
-(`AdminNav` in `web/components/admin/access.tsx`). A person who lacks a
+**The pages a members-only build adds.** They fall into four sections, kept
+in one list (`WORK_SECTIONS` in `web/components/inside/nav.tsx`): Showings
+(showings, gates, "At the gate" for holders of `release`, redaction
+policies), Material ("Add a source" for holders of `direct`, file sets for
+holders of `direct` or `administer`), The public graph (for holders of
+`direct` or `release`) and Administration (for holders of `administer`). A
+line above each page, placed by the gate for a member
+(`web/components/MembersBand.tsx`), names the sections a person has a page
+in and marks the one they are in. The pages of that section, and only those,
+run down the left side of the page, and in a line above it at a phone's
+width (`WorkNav`). A person who lacks a
 permission is not shown a control that needs it, and a page reached directly
 says which permission it needs.
 

@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
+import { NeedsPermission, Notice, can, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { AccountApiError } from "@/lib/account-api";
 import {
   fetchConnection,
@@ -89,7 +90,7 @@ export default async function ConnectionPage({
           </>
         }
       />
-      <AdminNav current="/admin/connections" />
+      <WorkNav who={who} current="/admin/connections" />
       <Notice>{notice}</Notice>
 
       {/* ------------------------------------------------ how it stands */}

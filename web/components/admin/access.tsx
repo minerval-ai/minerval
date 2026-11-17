@@ -45,43 +45,6 @@ export function NeedsPermission({ title, permission }: { title: string; permissi
   );
 }
 
-const PAGES: Array<{ href: string; name: string }> = [
-  { href: "/admin", name: "Setup" },
-  { href: "/admin/people", name: "People and permissions" },
-  { href: "/admin/labels", name: "Labels and parties" },
-  { href: "/admin/connections", name: "Connections" },
-  { href: "/admin/owls", name: "Owls" },
-  { href: "/admin/usage-report", name: "Usage report" },
-  // What passes between this deployment and the public graph besides pages (docs/outward-acts.md).
-  { href: "/admin/outside", name: "The public graph" },
-  { href: "/admin/outside/requests", name: "Public requests" },
-  { href: "/admin/outside/said-back", name: "What readers said back" },
-  { href: "/admin/outside/reports", name: "Agents' reports" },
-  // Read by every member; an administrator who reads the label the pages are written at saves a version.
-  { href: "/redaction-policies", name: "Redaction policies" },
-  { href: "/file-sets", name: "File sets" },
-  { href: "/showings", name: "Showings" },
-];
-
-/** The administration pages, as a line of links with the current one marked. For administrators. */
-export function AdminNav({ current }: { current: string }) {
-  return (
-    <nav className="acct-nav admin-nav" aria-label="Administration">
-      {PAGES.map((page) =>
-        page.href === current ? (
-          <span key={page.href} aria-current="page">
-            {page.name}
-          </span>
-        ) : (
-          <Link key={page.href} href={page.href}>
-            {page.name}
-          </Link>
-        )
-      )}
-    </nav>
-  );
-}
-
 /** A date and time as the log writes them: the day, the minute, and that it is UTC. */
 export function when(iso: string | null | undefined): string {
   if (!iso) return "";

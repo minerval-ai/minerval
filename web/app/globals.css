@@ -272,6 +272,8 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 .frame:has(.ask-shell) .members-band + .ask-shell { flex: 1; height: auto; min-height: 0; }
 .members-band a, .members-band a:visited { color: var(--ink-soft); }
 .members-band a:hover { color: var(--link); text-decoration: none; }
+/* the section the page being read is in (components/inside/nav.tsx) */
+.members-band a[aria-current], .members-band a[aria-current]:visited { color: var(--ink); font-weight: 600; }
 
 .frame { max-width: var(--frame); margin: 0 auto; padding: 2.6rem 1.6rem 5rem; }
 
@@ -285,7 +287,7 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 .admin-facts td:first-child {
   white-space: nowrap; font-family: var(--sans); font-size: 0.74rem; color: var(--muted);
 }
-.admin-nav span[aria-current] { color: var(--ink); font-weight: 600; }
+.admin-nav span[aria-current], .admin-nav a[aria-current] { color: var(--ink); font-weight: 600; }
 /* The administration pages' links run down the left side, beside the page,
    wherever there is room for a column of them: the masthead is one line and
    stays one. Each page puts the links among its own children, so the page is

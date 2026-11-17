@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PageHead } from "@/components/PageHead";
-import { AdminNav, NeedsPermission, can, viewer } from "@/components/admin/access";
+import { NeedsPermission, can, viewer } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import { AccountApiError } from "@/lib/account-api";
 import { fetchSetupChecklist, type PreflightCheck, type SetupChecklist } from "@/lib/admin-api";
 import {
@@ -36,7 +37,7 @@ export default async function AdministrationPage() {
     return (
       <div className="col">
         <PageHead kicker="Administration" title={TITLE} />
-        <AdminNav current="/admin" />
+        <WorkNav who={who} current="/admin" />
         <p>
           The deployment could not be read just now
           {err instanceof AccountApiError ? <>: <em>{err.message}</em></> : "."} Nothing is shown
@@ -56,7 +57,7 @@ export default async function AdministrationPage() {
         title={TITLE}
         lede="Each line below is read from the deployment itself. Nothing is ticked by hand: a thing is in place when the system can see that it is, and each line that is not says what to do next and who can do it."
       />
-      <AdminNav current="/admin" />
+      <WorkNav who={who} current="/admin" />
 
       <section className="acct-section admin-first">
         <div className="acct-head">

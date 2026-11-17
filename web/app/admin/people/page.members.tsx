@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { PageHead } from "@/components/PageHead";
 import { ActionForm } from "@/components/admin/ActionForm";
-import { AdminNav, can, viewer, when } from "@/components/admin/access";
+import { can, viewer, when } from "@/components/admin/access";
+import { WorkNav } from "@/components/inside/nav";
 import {
   fetchAccounts,
   fetchGrants,
@@ -81,7 +82,7 @@ export default async function PeoplePage() {
         title="People and permissions"
         lede="Six permissions, each granted on its own, to a person or to a group your identity provider names. One person may hold several. Nothing in the deployment decides who should hold which: its administrators do, and every grant and removal is logged below for every member to read."
       />
-      {administers && <AdminNav current="/admin/people" />}
+      {administers && <WorkNav who={who} current="/admin/people" />}
 
       <section className="acct-section admin-first" id="permissions">
         <div className="acct-head">
