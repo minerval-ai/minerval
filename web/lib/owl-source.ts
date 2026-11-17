@@ -29,7 +29,7 @@ export const CREATES_OWLS = "administer";
 /** Where on the account page owls are bought. */
 export const BUY_OWLS_HREF = "/account#buy-owls";
 /** Where owls are created, by a holder of CREATES_OWLS. */
-export const CREATE_OWLS_HREF = "/admin/owls";
+export const CREATE_OWLS_HREF = "/admin/budget?drawer=create";
 /** Who holds which permission: every member may read it. */
 export const WHO_HOLDS_HREF = "/admin/people";
 

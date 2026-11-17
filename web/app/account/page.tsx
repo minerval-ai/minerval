@@ -388,7 +388,7 @@ export default async function AccountPage({
                 <p className="acct-prose">
                   To add to your balance, ask an administrator of this deployment. How many owls
                   have been created, by whom, and what the agents&rsquo; runs have spent is open
-                  to every member on <a href="/admin/owls">the Owls page →</a>
+                  to every member on <a href="/admin/budget">the Budget page →</a>
                 </p>
               </>
             ) : (
