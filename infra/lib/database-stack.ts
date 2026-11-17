@@ -35,9 +35,14 @@ export class DatabaseStack extends cdk.Stack {
       engine: rds.DatabaseInstanceEngine.postgres({
         version: rds.PostgresEngineVersion.VER_16,
       }),
+      // Medium (4 GB). On a micro (1 GB) the primary ran out of memory under
+      // ordinary load and RDS restarted it four times in about thirty hours
+      // (November 2026), and a small (2 GB) would have been tight on the
+      // measured use. The read replica is left as it is: it was not the one
+      // restarting.
       instanceType: ec2.InstanceType.of(
         ec2.InstanceClass.T4G,
-        ec2.InstanceSize.MICRO
+        ec2.InstanceSize.MEDIUM
       ),
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
