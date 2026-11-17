@@ -81,6 +81,8 @@ afterAll(async () => {
   await rawQuery(`DELETE FROM permission_grants`);
   await rawQuery(`DELETE FROM account_groups`);
   // The organization's own party, made when this file's first administrator signed in.
+  // Another file on this database may have left a source that names a party.
+  await rawQuery(`UPDATE sources SET party_id = NULL WHERE party_id IS NOT NULL`);
   await rawQuery(`DELETE FROM parties`);
   await rawQuery(
     `UPDATE grants SET status = 'completed' WHERE is_platform = true OR policy IN ('general', 'governance')`
