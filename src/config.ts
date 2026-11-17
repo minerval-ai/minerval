@@ -1463,13 +1463,27 @@ const configSchema = z.object({
     .default("false")
     .transform((s) => s === "true"),
   mirrorSigningKey: z.string().default("").transform(normalizePrivateKey),
+  // Where a publisher's cuts run. "false" (the starting value): in the API
+  // process, beside the routes that serve the feed. "true": in a process of
+  // their own (`npm run worker:mirror-publisher`), and the API only serves.
+  // A snapshot cut holds batches in memory while it builds them (472 MB of
+  // batches for the public graph in November 2026, peaking at 544 MB at
+  // 8 MB batches), which a small API task serving requests cannot also hold.
+  mirrorPublisherWorker: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true"),
   // How often a cut is made. Each cut reads and hashes the replicated
   // tables, so this is also what the feed costs the database.
   mirrorPublishIntervalSeconds: z.coerce.number().default(900),
   // The most bytes of rows one batch holds. A cut larger than this (a
   // snapshot, mostly) is split into consecutive batches, so that no batch
-  // outgrows what one process can hold and one request can carry.
-  mirrorBatchMaxBytes: z.coerce.number().default(24_000_000),
+  // outgrows what one process can hold and one request can carry. A cut
+  // holds the batch it is building and the one before it, as objects several
+  // times their JSON size: measured on the public graph, a snapshot cut
+  // peaked at 972 MB with 24 MB batches, 544 MB with 8 MB, 474 MB with 4 MB.
+  // Each batch is also read whole to be served and whole to be applied.
+  mirrorBatchMaxBytes: z.coerce.number().default(8_000_000),
   // Applying. Where this deployment's mirror of the public graph is fed
   // from: the publisher's API address, or a directory of batch files where
   // the network does not reach it. Either makes this deployment an applier.
@@ -1897,6 +1911,7 @@ export function loadConfig(): Config {
     sqsArbitrationQueue: process.env.SQS_ARBITRATION_QUEUE,
     sqsStewardQueue: process.env.SQS_STEWARD_QUEUE,
     mirrorPublish: process.env.MIRROR_PUBLISH,
+    mirrorPublisherWorker: process.env.MIRROR_PUBLISHER_WORKER,
     mirrorSigningKey: process.env.MIRROR_SIGNING_KEY,
     mirrorPublishIntervalSeconds: process.env.MIRROR_PUBLISH_INTERVAL_SECONDS,
     mirrorBatchMaxBytes: process.env.MIRROR_BATCH_MAX_BYTES,

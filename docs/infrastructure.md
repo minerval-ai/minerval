@@ -354,10 +354,16 @@ is unsuitable for either.
 ## The mirror feed
 
 A private deployment holds the public graph as a read-only copy, kept from
-a feed of signed batches the public graph publishes (docs/mirror.md). The
-API publishes it when `mirrorPublish` in `infra/cdk.json` is `"true"`: the
-task then runs with `MIRROR_PUBLISH=true` and reads `MIRROR_SIGNING_KEY`
-from the Secrets Manager entry `episteme/mirror-signing-key`. It starts
+a feed of signed batches the public graph publishes (docs/mirror.md). It is
+published when `mirrorPublish` in `infra/cdk.json` is `"true"`: the API then
+serves `/mirror/feed`, and a service of its own, `MirrorPublisherService`
+(one 2 GB task running `npm run worker:mirror-publisher`), makes the cuts.
+Both run with `MIRROR_PUBLISH=true` and `MIRROR_PUBLISHER_WORKER=true` and
+read `MIRROR_SIGNING_KEY` from the Secrets Manager entry
+`episteme/mirror-signing-key`. The cuts are kept out of the API because the
+first snapshot does not fit beside it: turned on in November 2026 with the
+cuts in the 1 GB API task, every API task was killed for memory within
+minutes (docs/mirror.md, "What a cut costs"). It starts
 `"false"`, and while it is, `/mirror/feed` is not mounted and a private
 deployment cannot mirror the public graph, which also means it cannot
 publish a page to it (a page goes to the node the mirror gave it).
@@ -375,7 +381,7 @@ To turn it on:
    refuses to start with the feed on and no key, so the entry must exist
    before this deploys.
 4. Check: `GET https://api.claimgraph.io/mirror/feed/key` answers with the
-   public key, and the API's log shows `Mirror feed publisher started` and
+   public key, and the mirror publisher service's log (`episteme-mirror-publisher`) shows `Mirror feed publisher started` and
    then the first cut, a snapshot of every public row in batches of at most
    `MIRROR_BATCH_MAX_BYTES`.
 

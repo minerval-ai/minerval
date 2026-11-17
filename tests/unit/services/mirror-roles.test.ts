@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { generateSigningKey } from "../../../src/services/mirror-batch.js";
-import { mirrorConfigProblems, mirrorRoles } from "../../../src/services/mirror-roles.js";
+import { cutsInApiProcess, mirrorConfigProblems, mirrorRoles } from "../../../src/services/mirror-roles.js";
 import { describeCut } from "../../../src/workers/mirror-publisher.js";
 import { describeSync } from "../../../src/workers/mirror-applier.js";
 import { MirrorRefusal } from "../../../src/services/mirror-batch.js";
@@ -14,6 +14,7 @@ import { MirrorRefusal } from "../../../src/services/mirror-batch.js";
 const MIRROR_ENV = [
   "MIRROR_PUBLISH",
   "MIRROR_SIGNING_KEY",
+  "MIRROR_PUBLISHER_WORKER",
   "MIRROR_PUBLISH_INTERVAL_SECONDS",
   "MIRROR_BATCH_MAX_BYTES",
   "MIRROR_FEED_URL",
@@ -174,5 +175,36 @@ describe("what the workers log", () => {
       info: "Mirror: applied 1 batch, now at batch 5: the public graph as of 2026-11-12T00:05:00.000Z",
       error: "Mirror: Batch 6 was not applied: its signature does not verify.",
     });
+  });
+});
+
+describe("where a publisher's cuts run", () => {
+  it("cuts in the API process by default, so a single-machine deployment needs nothing more", () => {
+    expect(cutsInApiProcess({ mirrorPublish: true })).toBe(true);
+    expect(cutsInApiProcess({ mirrorPublish: true, mirrorPublisherWorker: false })).toBe(true);
+  });
+
+  it("leaves the cuts to their own worker when MIRROR_PUBLISHER_WORKER is set; the API still publishes", () => {
+    const config = { mirrorPublish: true, mirrorPublisherWorker: true };
+    expect(cutsInApiProcess(config)).toBe(false);
+    // Still a publisher: the API serves /mirror/feed.
+    expect(mirrorRoles(config).publisher).toBe(true);
+  });
+
+  it("cuts nowhere on a deployment that does not publish", () => {
+    expect(cutsInApiProcess({})).toBe(false);
+    expect(cutsInApiProcess({ mirrorPublish: false, mirrorPublisherWorker: false })).toBe(false);
+  });
+
+  it("reads MIRROR_PUBLISHER_WORKER from the environment, and batches default to 8 MB", async () => {
+    process.env.MIRROR_PUBLISH = "true";
+    process.env.MIRROR_PUBLISHER_WORKER = "true";
+    vi.resetModules();
+    const { loadConfig } = await import("../../../src/config.js");
+    const config = loadConfig();
+    expect(config.mirrorPublisherWorker).toBe(true);
+    expect(config.mirrorBatchMaxBytes).toBe(8_000_000);
+    const roles = await import("../../../src/services/mirror-roles.js");
+    expect(roles.cutsInApiProcess(config)).toBe(false);
   });
 });
