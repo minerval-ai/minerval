@@ -5,6 +5,7 @@ import {
   proposeClaimIntake,
   AccountApiError,
 } from "../../../../lib/account-api";
+import { gettingOwlsFor } from "../../../../lib/load-owl-source";
 
 // Propose-a-claim intake (#174 → #157): a signed-in reader suggests something
 // the graph does not hold (the Matcher decides its kind, §7a), with or without saying why. Nothing is written directly; the proposal is queued for
@@ -12,7 +13,7 @@ import {
 
 export const runtime = "nodejs";
 
-function friendlyError(err: AccountApiError): { status: number; error: string } {
+function friendlyError(err: AccountApiError, gettingOwls: string): { status: number; error: string } {
   switch (err.code) {
     case "DEPOSIT_REQUIRED":
       return {
@@ -35,7 +36,8 @@ function friendlyError(err: AccountApiError): { status: number; error: string } 
       return {
         status: 402,
         error:
-          "Proposing a claim or question holds up to 2 owls while its assessment runs, and your balance cannot cover it. You can buy owls from your account page; the unused part of the hold comes back when the run finishes.",
+          "Proposing a claim or question holds up to 2 owls while its assessment runs, and your " +
+          `balance cannot cover it; the unused part of the hold comes back when the run finishes. ${gettingOwls}`,
       };
     case "LABEL_REQUIRED":
     case "LABEL_NOT_READABLE":
@@ -89,7 +91,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ contribution }, { status: 202 });
   } catch (err) {
     if (err instanceof AccountApiError) {
-      const { status, error } = friendlyError(err);
+      const gettingOwls = err.code === "INSUFFICIENT_OWLS" ? await gettingOwlsFor(session.externalId) : "";
+      const { status, error } = friendlyError(err, gettingOwls);
       return NextResponse.json({ error, code: err.code }, { status });
     }
     console.error("[minerval] claim proposal failed:", err);

@@ -8,6 +8,7 @@ import {
   type AssistantConversationView,
 } from "../../../../lib/account-api";
 import { AssistantConversation } from "../../AssistantConversation";
+import { loadOwlSource } from "../../../../lib/load-owl-source";
 
 export async function generateMetadata(): Promise<Metadata> {
   return { title: "Ask · Minerval" };
@@ -27,6 +28,8 @@ export default async function AskConversationPage({
   if (!accountApiConfigured()) notFound();
 
   let convo: AssistantConversationView;
+  // Where owls come from here, for the notice shown when the balance is 0.
+  const owlSource = loadOwlSource(session.externalId);
   try {
     convo = await getAssistantConversation(session.externalId, id);
   } catch (err) {
@@ -42,6 +45,7 @@ export default async function AskConversationPage({
       balanceMicroUsd={convo.balance_micro_usd}
       allowedAlways={convo.allowed_kinds.always}
       kindLabels={convo.allowed_kinds.labels}
+      owlSource={await owlSource}
     />
   );
 }

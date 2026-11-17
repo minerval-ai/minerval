@@ -7,6 +7,8 @@ import { ClaimPreview, Cited, Owls, Prose } from "./prose";
 import { PageView } from "./pages/[id]/PageView";
 import { StartAtLabel, labelReady } from "../../components/inside/StartAtLabel";
 import type { MyLabels } from "../../lib/admin-api";
+import { GettingOwls } from "../../components/GettingOwls";
+import type { OwlSource } from "../../lib/owl-source";
 import {
   MandateProposal,
   type MandateView,
@@ -403,6 +405,7 @@ export function AssistantConversation({
   nodeId,
   question,
   startLabels,
+  owlSource,
   children,
 }: {
   initial: Convo | null;
@@ -416,6 +419,8 @@ export function AssistantConversation({
   question?: string;
   /** Where the deployment holds material at more than one label: the labels a new conversation may start at. */
   startLabels?: MyLabels | null;
+  /** Where the person gets more owls here: bought, or created by an administrator (#1095). */
+  owlSource: OwlSource;
   /** What an empty conversation shows above the composer. */
   children?: ReactNode;
 }) {
@@ -795,7 +800,7 @@ export function AssistantConversation({
             <p className="ask-notice">
               Your balance is 0 owls. The Assistant&rsquo;s work is charged in owls at what it
               costs, so it needs some to reply. Searching and reading the graph stay free.{" "}
-              <Link href="/account#buy-owls">Buy owls</Link>
+              <GettingOwls source={owlSource} />
             </p>
           ) : (
             <div className="ask-composer">
