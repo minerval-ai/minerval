@@ -1,0 +1,11 @@
+/* The status of a version of a page under a showing (Pipeline.tsx): four small
+   step bars and a word. Tokens only, so both themes come free. */
+.w-pipe { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; vertical-align: middle; }
+.w-pipe-s { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.w-pipe-s i { width: 12px; height: 4px; border-radius: 2px; background: var(--w-rule2); }
+.w-pipe-s i.w-done { background: var(--w-ok); }
+.w-pipe-s i.w-now { background: var(--w-accent); }
+.w-pipe-s i.w-warn { background: var(--w-warn); }
+.w-pipe-s i.w-bad { background: var(--w-bad); }
+.w-pipe-s i.w-part { background: linear-gradient(90deg, var(--w-ok) 0 55%, var(--w-warn) 55% 100%); }
+.w-pipe.w-dashed .w-pipe-s i { background: transparent; box-shadow: inset 0 0 0 1px var(--w-rule2); }
