@@ -27,7 +27,11 @@ It then copies the migrated database once per worker
 (`episteme_dbtest_w1` to `_w4`, and each worker's mirror databases), and
 the files run four at a time, each worker on its own copy.
 `DB_TEST_WORKERS=1 npm run test:db` runs them one after another, which is
-slower but easier to read when a test is being debugged.
+slower but easier to read when a test is being debugged. Four workers
+want about 200 connections of the server (`max_connections`; Postgres's
+default is 100): the compose file starts Postgres with 300, CI raises its
+service container to the same, and the setup stops at once, saying so,
+when the server has too few.
 
 Non-default Postgres? Override the URLs:
 

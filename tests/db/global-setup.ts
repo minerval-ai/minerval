@@ -132,6 +132,20 @@ export default async function globalSetup(project: {
   const admin = new pg.Client({ connectionString: TEST_DATABASE_ADMIN_URL });
   await admin.connect();
   try {
+    // Each worker is a process with pools of its own, and a file may start
+    // the app as a second process: four workers were seen to hold about 126
+    // connections at once. A server with fewer than this fails files
+    // part-way with 53300, which reads as a broken test; say so here instead.
+    const [{ max_connections: max }] = (await admin.query<{ max_connections: string }>(`SHOW max_connections`)).rows as [
+      { max_connections: string },
+    ];
+    const wanted = CONNECTIONS_PER_WORKER * DB_TEST_WORKERS;
+    if (Number(max) < wanted) {
+      throw new Error(
+        `The test server allows ${max} connections and ${DB_TEST_WORKERS} workers want about ${wanted}. ` +
+          `Raise max_connections (docker-compose.yml starts Postgres with 300) or run fewer workers (DB_TEST_WORKERS=1).`
+      );
+    }
     await admin.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE)`);
     if (separateOwner) {
       const existing = await admin.query(`SELECT rolsuper FROM pg_roles WHERE rolname = $1`, [ownerRole]);
@@ -209,6 +223,9 @@ export default async function globalSetup(project: {
     })
   );
 }
+
+/** The connections the server should have room for per worker: about 32 were seen at the peak, with headroom for bursts. */
+const CONNECTIONS_PER_WORKER = 50;
 
 function databaseName(url: string): string {
   const name = new URL(url).pathname.replace(/^\//, "");
