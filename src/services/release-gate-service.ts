@@ -1760,8 +1760,8 @@ export async function askedShowings(): Promise<Array<Record<string, unknown>>> {
   );
   const out: Array<Record<string, unknown>> = [];
   for (const s of rows) {
-    const pages = await rawQuery<{ id: string; node_id: string; stage: PageStage; round: number; judged_at: Date; redact_action_id: string | null; audit_run_id: string | null; cannot_cross_category: string | null; cannot_cross_note: string | null; audit_reasons: string | null }>(
-      `SELECT id, node_id, stage, round, judged_at, redact_action_id, audit_run_id, cannot_cross_category, cannot_cross_note, audit_reasons
+    const pages = await rawQuery<{ id: string; node_id: string; stage: PageStage; round: number; judged_at: Date; redact_action_id: string | null; audit_run_id: string | null; cannot_cross_category: string | null; cannot_cross_note: string | null; audit_reasons: string | null; funds_wanted_at: Date | null }>(
+      `SELECT id, node_id, stage, round, judged_at, redact_action_id, audit_run_id, cannot_cross_category, cannot_cross_note, audit_reasons, funds_wanted_at
          FROM showing_pages WHERE showing_id = $1 ORDER BY judged_at DESC`,
       [s.id]
     );
@@ -1808,7 +1808,9 @@ export async function askedShowings(): Promise<Array<Record<string, unknown>>> {
         node_id: p.node_id,
         version_of: p.judged_at.toISOString(),
         stage: p.stage,
-        stage_in_words: STAGE_WORDS[p.stage],
+        // A page whose redaction or check the budget could not pay says so,
+        // as it does on the side it goes to (stageWords above).
+        stage_in_words: (p.funds_wanted_at ? STAGE_WORDS_UNPAID[p.stage] : undefined) ?? STAGE_WORDS[p.stage],
         round: p.round,
         redact_action_id: p.redact_action_id,
         ...(p.cannot_cross_category ? { cannot_cross: { category: p.cannot_cross_category, note: p.cannot_cross_note } } : {}),

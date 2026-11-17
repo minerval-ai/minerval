@@ -258,7 +258,7 @@ describe("the gate", () => {
     if (Array.isArray(node)) return node.map(textOf).join("");
     if (node && typeof node === "object" && "props" in node) {
       const { props } = node as Node;
-      return [props.title, props.lede, props.children].map(textOf).join("");
+      return [props.title, props.lede, props.value, props.children].map(textOf).join("");
     }
     return "";
   }
@@ -319,7 +319,7 @@ describe("the gate", () => {
     expect(headersOf(init)["x-acting-user"]).toBe("oidc:carol-0003");
     const text = textOf(tree);
     expect(text).toContain("No access yet");
-    expect(text).toContain("You are signed in as Carol Newcomer, and hold no permission in this deployment");
+    expect(text).toContain("You are signed in as Carol Newcomer, and hold no permission in this deployment. An administrator grants access");
     expect(text).toContain("oidc:carol-0003");
     expect(text).toContain("FIRST_ADMINISTRATOR");
     expect(text).not.toContain("the page");
@@ -332,31 +332,10 @@ describe("the gate", () => {
       answer(200, { account: { id: "a", display_name: "Alice", external_id: "oidc:alice" }, member: true, permissions: ["read"] })
     );
     const tree = (await gate("members")) as Node;
-    // The page, under the line of links a member's permissions open
-    // (components/MembersBand.tsx).
-    const [band, page] = tree.props.children as [Node, unknown];
-    expect(page).toBe(PAGE);
-    const sections = (who: string[], clearance: string[] = ["public"]) => {
-      const rendered = (band.type as (props: unknown) => Node | null)({
-        mine: { account: {}, member: true, permissions: who, grants: [], clearance, raw_source_labels: [], groups: [] },
-      });
-      return rendered === null ? null : (rendered.props.sections as Array<{ name: string; href: string }>);
-    };
-    const links = (who: string[], clearance?: string[]) => sections(who, clearance)?.map((s) => s.name).join(" · ") ?? null;
-    // A member who reads only what everyone reads, and can neither direct, release nor administer, is shown no line at all.
-    expect(links(["read"])).toBeNull();
-    // The line names the sections a person has a page in (components/inside/nav.tsx): showings for whoever reads at
-    // a label besides `public` or acts on showings, material for whoever directs or administers, the pages about the
-    // public graph for whoever directs or releases, since sending an agent's report on takes release, and
-    // administration for whoever administers. The pages of the section are down the side of the page itself.
-    expect(links(["read"], ["public", "finance"])).toBe("Showings");
-    expect(links(["release"])).toBe("Showings · The public graph");
-    expect(links(["read", "direct"])).toBe("Showings · Material · The public graph");
-    expect(links(["administer"])).toBe("Showings · Material · Administration");
-    expect(links(["direct", "fund", "administer"])).toBe("Showings · Material · The public graph · Administration");
-    // Each section links to the first of its pages the person is shown.
-    expect(sections(["administer"])?.map((s) => s.href)).toEqual(["/gates", "/file-sets", "/admin"]);
-    expect(sections(["read", "direct"])?.map((s) => s.href)).toEqual(["/showings", "/sources/new", "/admin/outside"]);
+    // The page, in the workspace's shell, whose sidebar lists the pages the
+    // member's permissions open (components/work/Shell.tsx, lib/work-sections.ts).
+    expect(tree.props.children).toBe(PAGE);
+    expect((tree.props.mine as { member: boolean }).member).toBe(true);
   });
 
   it("shows nothing when it cannot find out what the person may see", async () => {

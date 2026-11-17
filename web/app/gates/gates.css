@@ -1,0 +1,176 @@
+/* Boundaries: the list (gates/page) and one boundary (gates/[id]). Only what workspace.css lacks. */
+
+.w-shell a.w-gates-name {
+  color: var(--w-ink);
+  display: inline-flex;
+}
+.w-shell a.w-gates-name:hover {
+  text-decoration: none;
+}
+.w-gates-total {
+  font-weight: 600;
+  min-width: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* starting positions: the kinds in two tables side by side */
+.w-gates-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.w-gates-split > .w-t:first-child {
+  border-right: 1px solid var(--w-rule);
+}
+.w-gates-split .w-t {
+  width: 100%;
+}
+
+/* the rule drawer: the field for a scope's reference shows only under that scope */
+.w-gates-ref {
+  display: none;
+}
+.w-form:has(input[name="scope"][value="mandate"]:checked) .w-gates-ref-mandate,
+.w-form:has(input[name="scope"][value="under"]:checked) .w-gates-ref-under,
+.w-form:has(input[name="scope"][value="request"]:checked) .w-gates-ref-request {
+  display: flex;
+}
+.w-gates-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.w-gates-seg {
+  display: flex;
+}
+.w-gates-seg > label {
+  flex: 1 1 auto;
+  text-align: center;
+  white-space: nowrap;
+  position: relative;
+}
+
+/* policy categories */
+.w-gates-cat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.w-gates-cat.w-gates-bad {
+  border-color: color-mix(in srgb, var(--w-bad) 50%, transparent);
+}
+.w-gates-cat-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 250px) 32px;
+  gap: 12px;
+  align-items: end;
+}
+.w-gates-mark {
+  height: 32px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.w-gates-err {
+  font-size: 12px;
+  color: var(--w-bad);
+}
+.w-gates-cat .w-input[aria-invalid="true"] {
+  border-color: var(--w-bad);
+}
+.w-gates-cat .w-gates-edited {
+  border-color: var(--w-accent);
+}
+.w-gates-fixed {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px dashed var(--w-rule2);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.w-gates-fixed > details {
+  margin-left: auto;
+}
+.w-gates-fixed > details[open] {
+  flex-basis: 100%;
+  margin-left: 0;
+}
+.w-gates-fixed summary {
+  color: var(--w-accent);
+  cursor: pointer;
+}
+.w-gates-fixed .w-code {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  max-height: 480px;
+  overflow: auto;
+}
+
+/* versions */
+.w-gates-versions {
+  display: flex;
+  flex-direction: column;
+}
+.w-shell a.w-gates-ver {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--w-rule);
+  color: var(--w-soft);
+}
+.w-shell a.w-gates-ver:last-child {
+  border-bottom: 0;
+}
+.w-shell a.w-gates-ver:hover {
+  text-decoration: none;
+  background: var(--w-hover);
+}
+.w-shell a.w-gates-ver[aria-current] {
+  background: var(--w-raised);
+  color: var(--w-ink);
+  box-shadow: inset 2px 0 0 var(--w-accent);
+}
+.w-gates-ver b {
+  font-weight: 600;
+}
+
+@media (max-width: 760px) {
+  .w-gates-split,
+  .w-gates-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .w-gates-split > .w-t:first-child {
+    border-right: 0;
+  }
+  .w-gates-cat-top {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+  .w-gates-cat-top > .w-gates-markf {
+    display: none;
+  }
+}
+
+/* the boundary as a page's title */
+.w-gates-title .w-lbl {
+  font-size: 18px;
+  color: var(--w-ink);
+  gap: 8px;
+}
+.w-gates-title .w-lbl::before {
+  width: 11px;
+  height: 11px;
+}
+.w-gates-title .w-arrow {
+  font-weight: 400;
+}
+
+.w-gates-kv .w-kv {
+  grid-template-columns: 86px minmax(0, 1fr);
+  font-size: 12.5px;
+  padding: 0 4px;
+}

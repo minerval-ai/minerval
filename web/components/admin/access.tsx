@@ -2,9 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import type { MyPermissions } from "../../lib/account-api";
-import { needsPermission } from "../../lib/admin-words";
+import { permissionPhrase } from "../../lib/admin-words";
 import { loadStanding } from "../../lib/standing";
-import { PageHead } from "../PageHead";
+import { Empty, WorkHead, WorkPage } from "../work/ui";
 
 // Who is looking at an administration page, and whether they may.
 //
@@ -35,13 +35,19 @@ export function can(viewer: Viewer, permission: string): boolean {
 /** What a page shows a member who reached it without the permission it needs. */
 export function NeedsPermission({ title, permission }: { title: string; permission: string }) {
   return (
-    <div className="col">
-      <PageHead title={title} lede={needsPermission(permission)} />
-      <p>
-        What you hold in this deployment, and who granted what to whom, is on{" "}
-        <Link href="/admin/people">People and permissions</Link>, which every member may read.
-      </p>
-    </div>
+    <WorkPage>
+      <WorkHead title={title} />
+      <div className="w-card">
+        <Empty>
+          <p style={{ margin: "0 0 6px", color: "var(--w-ink)", fontWeight: 500 }}>
+            You need the permission to {permissionPhrase(permission)}.
+          </p>
+          <p style={{ margin: 0 }}>
+            An administrator grants it. <Link href="/admin/people">See your access</Link>
+          </p>
+        </Empty>
+      </div>
+    </WorkPage>
   );
 }
 

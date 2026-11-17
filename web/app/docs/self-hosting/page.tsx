@@ -89,7 +89,7 @@ docker compose logs -f api`}</Code>
         </li>
         <li>
           <strong>Follow the setup checklist</strong>
-          <p><code>/admin</code> says what needs someone now: the deployment's own checks of its configuration, then permissions, labels, the General mandate, owls and material. From there: define labels and tick the model providers and outside services each may be sent to (<code>/admin/labels</code>), grant permissions (<code>/admin/people</code>), set up the General mandate and owls, and add material.</p>
+          <p>Health (<code>/admin</code>) says what needs someone now: the deployment's own checks of its configuration, then permissions, labels, the General mandate, owls and material, each item marked as one the operator or an administrator puts right. From there: define labels and tick the model providers and outside services each may be sent to (<code>/admin/labels</code>), grant permissions (<code>/admin/people</code>), set up the General mandate and owls (<code>/admin/budget</code>), and add material (<code>/sources</code>).</p>
         </li>
       </ol>
       <p>To stop: <code>docker compose down</code>; the database and file sets stay in Docker volumes. <code>docker compose down -v</code> deletes them. To upgrade: <code>git pull</code>, <code>docker compose build</code>, <code>docker compose up -d</code>.</p>
@@ -209,7 +209,7 @@ docker compose logs -f api`}</Code>
         </li>
         <li>
           <strong>Register the key on the public graph</strong>
-          <p>An administrator presses <b>Register this deployment&rsquo;s key on the public graph</b> on <code>/outbound</code>. The deployment signs the registration for the organisation&rsquo;s account and sends it there. Without a connection, sign it with <code>POST /outbound/registration</code> and submit it from that account with <code>register_publisher_key</code> (<code>POST /publishers</code>). The registration and the key are public.</p>
+          <p>An administrator presses <b>Register key</b> on the public graph&rsquo;s Overview (<code>/admin/outside</code>). The deployment signs the registration for the organisation&rsquo;s account and sends it there. Without a connection, sign it with <code>POST /outbound/registration</code> and submit it from that account with <code>register_publisher_key</code> (<code>POST /publishers</code>). The registration and the key are public.</p>
         </li>
       </ol>
       <p>On the public graph a package is checked against the registered key, kept as signed, and the first one for a node files an ordinary contribution, reviewed like any other and charged as a source submission (refunded if not admitted). Once admitted it is a source on the node, weighed by that node's Steward. It gets no special trust. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/published-pages.md">docs/published-pages.md</a> has the package format and the check.</p>

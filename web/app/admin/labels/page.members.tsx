@@ -1,473 +1,371 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PageHead } from "@/components/PageHead";
-import { ActionForm } from "@/components/admin/ActionForm";
-import { NeedsPermission, Notice, can, viewer } from "@/components/admin/access";
-import { WorkNav } from "@/components/inside/nav";
-import { dateish } from "@/lib/account-format";
+import { NeedsPermission, can, viewer } from "@/components/admin/access";
+import { WorkForm } from "@/components/work/WorkForm";
+import {
+  Banner,
+  ButtonLink,
+  Drawer,
+  Empty,
+  Lbl,
+  Lock,
+  Pill,
+  Section,
+  Table,
+  Tip,
+  WorkHead,
+  WorkPage,
+  plural,
+  shortDay,
+  type Tone,
+} from "@/components/work/ui";
 import {
   fetchGrants,
   fetchLabels,
-  fetchParties,
   fetchProviderClearance,
   fetchSetupChecklist,
   type GrantView,
   type ProviderClearance,
   type ProviderView,
   type SetupChecklist,
+  type StandingMandateState,
 } from "@/lib/admin-api";
-import { capitalised, count, holdersText, labelClearanceFacts } from "@/lib/admin-words";
-import {
-  addLabelReadAction,
-  addPartyAction,
-  defineLabelAction,
-  removeLabelReadAction,
-  setProviderClearanceAction,
-  setSourcePartyAction,
-} from "../actions";
+import { capitalised, holdersText, labelClearanceFacts, listed, providerName } from "@/lib/admin-words";
+import { addLabelReadAction, defineLabelAction } from "../actions";
+import { ClearanceMatrix, type MatrixProvider } from "./ClearanceMatrix";
+import { ReadChip } from "./ReadChip";
+import "./labels.css";
 
-// The name the organisation's own party carries from setup until an administrator names it
-// (OWN_ORGANIZATION_SETUP_NAME in the API's permission service).
-const OWN_ORGANISATION_SETUP_NAME = "This organization";
-
-export const metadata: Metadata = { title: "Labels and parties · Minerval" };
+export const metadata: Metadata = { title: "Labels · Minerval" };
 export const dynamic = "force-dynamic";
 
-// Labels say who may read a thing; parties say whose material a source is.
-// Both are the administrators' to define, and neither is ever removed,
-// because rows carry them. This is one of the few pages that names labels:
-// it is where they are managed.
+// Labels say who may read a thing. They are the administrators' to define,
+// and never removed, because rows carry them. This is one of the few pages
+// that names labels: it is where they are managed, with what each reads,
+// who reads at it, whether a General mandate pays for its upkeep, and which
+// model providers and outside services its text may be sent to. Parties,
+// which once shared this page, are on /admin/parties.
 
-const holdersOf = (grants: GrantView[]) =>
-  capitalised(
-    holdersText({
-      accounts: new Set(grants.filter((g) => g.account).map((g) => g.account!.id)).size,
-      groups: new Set(grants.filter((g) => g.group !== null).map((g) => g.group)).size,
-    })
-  );
-
-// The providers a label may be cleared for, ticked where it is, and the
-// "same as public" box, which stands for every one listed: every provider is
-// cleared for public. Nothing is ticked that nobody ticked.
-function ProviderChecks({ providers, cleared }: { providers: ProviderView[]; cleared: readonly string[] }) {
-  return (
-    <>
-      {providers.map((p) => (
-        <label key={p.name} className="admin-check">
-          <input type="checkbox" name="providers" value={p.name} defaultChecked={cleared.includes(p.name)} />
-          <span>
-            <code>{p.name}</code>
-            <small>
-              {" "}
-              {p.description}
-              {!p.configured && " Not set up in this deployment."}
-            </small>
-          </span>
-          <input type="hidden" name="offered" value={p.name} />
-        </label>
-      ))}
-      <label className="admin-check">
-        <input type="checkbox" name="same_as_public" />
-        <span>
-          The same as public: every one listed above
-          <small> Ticking this clears them all, whatever else is ticked.</small>
-        </span>
-      </label>
-    </>
-  );
-}
+const PAGE = "/admin/labels";
 
 /**
- * What the labels page offers to clear: the providers this deployment has
- * set up, and any already cleared, so that a clearance can be taken back
- * after a provider is no longer set up.
+ * What the page offers to clear: the providers this deployment has set up,
+ * and any already cleared, so that a clearance can be taken back after a
+ * provider is no longer set up.
  */
 function offeredProviders(clearance: ProviderClearance): ProviderView[] {
   const cleared = new Set(clearance.labels.flatMap((l) => l.cleared));
   return clearance.providers.filter((p) => p.configured || cleared.has(p.name));
 }
 
-export default async function LabelsPage() {
+const heading = (name: string) => {
+  const known = providerName(name);
+  return known !== name ? known : capitalised(name.replace(/_/g, " "));
+};
+
+export default async function LabelsPage({ searchParams }: { searchParams: Promise<{ drawer?: string }> }) {
   const who = await viewer();
   if (!who) return null;
-  if (!can(who, "administer")) return <NeedsPermission title="Labels and parties" permission="administer" />;
+  if (!can(who, "administer")) return <NeedsPermission title="Labels" permission="administer" />;
+  const { drawer } = await searchParams;
 
-  const [labels, parties, grants, checklist, clearance] = await Promise.all([
+  const [labels, grants, checklist, clearance] = await Promise.all([
     fetchLabels(who.externalId),
-    fetchParties(who.externalId),
     fetchGrants(who.externalId),
-    // For the providers cleared for each label and the count of sources by
-    // party. The page reads without them.
+    // For the General mandate at each label and what each label leaves
+    // unserved. The page reads without it.
     fetchSetupChecklist(who.externalId).catch(() => null as SetupChecklist | null),
-    // Which providers each label may be sent to, and what each is sent. The
-    // page reads without it, offering no change.
+    // Which providers each label may be sent to. The page reads without it, offering no change.
     fetchProviderClearance(who.externalId).catch(() => null as ProviderClearance | null),
   ]);
   // Clearing is offered where the settings do not fix it, to a holder of the permission for it.
   const clears = clearance !== null && !clearance.fixed_by_settings && can(who, "clear_providers");
   const offered = clearance ? offeredProviders(clearance) : [];
   const clearedFor = new Map((clearance?.labels ?? []).map((l) => [l.label, l.cleared]));
-  const cleared = new Map((checklist?.labels ?? []).map((l) => [l.name, l]));
-  const sourcesBy = new Map((checklist?.material.sources_by_party ?? []).map((p) => [p.party.id, p.sources]));
+  const facts = new Map((checklist?.labels ?? []).map((l) => [l.name, l]));
   const ownLabels = labels.filter((l) => l.name !== "public");
-  const ownParty = parties.find((p) => p.is_own_organization);
   const generalAt = generalMandateAt(checklist);
+  const readGrants = grants.filter((g) => g.permission === "read" && !g.removed_at);
 
   return (
-    <div className="admin-page">
-      <PageHead
-        kicker="Administration"
-        title="Labels and parties"
-        lede="A label says who may read a thing. A party is whoever a source belongs to. Neither is ever removed once defined, because sources, judgments and runs carry them."
+    <WorkPage>
+      <WorkHead
+        title="Labels"
+        sub={`${plural(labels.length, "label")} · labels are never removed`}
+        actions={
+          <ButtonLink href={`${PAGE}?drawer=add`} primary icon="plus">
+            Add label
+          </ButtonLink>
+        }
       />
-      <WorkNav who={who} current="/admin/labels" />
 
-      <section className="acct-section admin-first" id="labels">
-        <div className="acct-head">
-          <h2>Labels</h2>
-        </div>
-        <p className="acct-prose acct-measure">
-          Labels are not ranked. A person reads at the labels they are granted, and at whatever
-          those labels are recorded here as reading, and nothing else. Two labels that do not read
-          each other stay apart. An agent&rsquo;s run works at one label and reads on the same
-          terms.
-        </p>
-        <div className="acct-scroll">
-          <table className="account-table acct-table">
-            <thead>
-              <tr>
-                <th>label</th>
-                <th>what it is for</th>
-                <th>also reads</th>
-                <th>who reads at it</th>
-                <th>General mandate</th>
-                <th>defined</th>
+      <Table label="Labels">
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Purpose</th>
+            <th>
+              Also reads{" "}
+              <Tip>
+                Labels are not ranked. A holder reads at the labels granted to them and at whatever those labels read, and nothing else. An agent&apos;s run works at one label and reads on the same terms. Every label reads public.
+              </Tip>
+            </th>
+            <th className="w-num">Readers</th>
+            <th>
+              Upkeep{" "}
+              <Tip>
+                Upkeep and audits at a label are paid by a General mandate at that label, set up on Budget by an administrator who reads it. None is needed at a label that will hold only work someone asks for and pays for.
+              </Tip>
+            </th>
+            <th className="w-num">Defined</th>
+          </tr>
+        </thead>
+        <tbody>
+          {labels.map((l) => {
+            const candidates = ownLabels.filter((o) => o.name !== l.name && !l.reads.includes(o.name));
+            const readBy = labels.filter((o) => o.reads.includes(l.name)).map((o) => o.name);
+            return (
+              <tr key={l.name}>
+                <td>
+                  <Lbl name={l.name} />
+                </td>
+                <td className="w-muted">{l.description}</td>
+                <td>
+                  {l.name === "public" ? (
+                    <span className="w-faint w-small">Never reads another label</span>
+                  ) : (
+                    <div className="w-row" style={{ gap: 6 }}>
+                      {l.reads.length === 0 && <span className="w-faint w-small">Only itself</span>}
+                      {l.reads.map((r) => (
+                        <ReadChip key={r} label={l.name} reads={r} chip={<Lbl name={r} />} />
+                      ))}
+                      {candidates.length > 0 && <AddRead label={l.name} candidates={candidates.map((c) => c.name)} />}
+                    </div>
+                  )}
+                </td>
+                <td className="w-num">
+                  {l.name === "public" ? (
+                    <span className="w-muted" style={{ whiteSpace: "nowrap" }}>Every member</span>
+                  ) : (
+                    <Readers label={l.name} grants={readGrants.filter((g) => g.label === l.name)} readBy={readBy} />
+                  )}
+                </td>
+                <td>
+                  <UpkeepCell label={l.name} state={generalAt(l.name)} />
+                </td>
+                <td className="w-num w-muted" style={{ whiteSpace: "nowrap" }}>{shortDay(l.created_at)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {labels.map((l) => (
-                <tr key={l.name}>
-                  <td>
-                    <code>{l.name}</code>
-                  </td>
-                  <td>{l.description}</td>
-                  <td>
-                    {l.name === "public" ? (
-                      <span className="acct-quiet">Nothing. Public never reads another label.</span>
-                    ) : l.reads.length === 0 ? (
-                      <span className="acct-quiet">Only itself</span>
-                    ) : (
-                      <ul className="admin-grants">
-                        {l.reads.map((r) => (
-                          <li key={r}>
-                            <code>{r}</code>
-                            <ActionForm action={removeLabelReadAction} submit="take back" inline danger>
-                              <input type="hidden" name="label" value={l.name} />
-                              <input type="hidden" name="reads" value={r} />
-                            </ActionForm>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </td>
-                  <td>
-                    {l.name === "public"
-                      ? "Every member"
-                      : holdersOf(grants.filter((g) => g.permission === "read" && g.label === l.name))}
-                  </td>
-                  <td>
-                    <GeneralMandateCell label={l.name} state={generalAt(l.name)} />
-                  </td>
-                  <td className="acct-num-left">{dateish(l.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {ownLabels.length === 0 && (
-          <p className="account-empty">
-            The only label is public, so everything in this deployment can be read by every member.
-            Define a label below for material that is not for everyone.
-          </p>
-        )}
+            );
+          })}
+        </tbody>
+      </Table>
 
-        {ownLabels.length > 0 && (
-          <>
-            <div className="acct-sub admin-gap" id="providers">
-              <h3>What each label may be sent to</h3>
-            </div>
-            {clearance?.fixed_by_settings ? (
-              <p className="acct-prose acct-measure">
-                Text at a label reaches a model provider or an outside service only if that provider
-                is cleared for the label. Here that is fixed by the deployment&rsquo;s settings (its{" "}
-                <code>PROVIDER_LABELS</code> setting, or <code>[provider_labels]</code> in its config
-                file), so it is not changed from this page. Whoever runs the deployment changes it there.
-              </p>
-            ) : (
-              <p className="acct-prose acct-measure">
-                Text at a label reaches a model provider or an outside service only if that provider
-                is cleared for the label. Every provider is cleared for public, and none for any other
-                label until someone ticks it here: which outside party may read private text is never
-                a default. Ticking one sends it the text of every agent run at that label, as the list
-                below says. Each change is logged, and is in force within a few seconds, with no restart.
-                {!can(who, "clear_providers") && " Changing it takes the permission to clear providers, which you do not hold."}
-              </p>
-            )}
-            <ul className="admin-checks">
-              {ownLabels.flatMap((l) => {
-                const facts = cleared.get(l.name);
-                return (facts ? labelClearanceFacts(facts) : []).map((fact) => <li key={fact}>{fact}</li>);
-              })}
-            </ul>
-            {clears && (
-              <div className="acct-cols">
-                {ownLabels.map((l) => (
-                  <div key={l.name} className="acct-main">
-                    <h4>
-                      <code>{l.name}</code> may be sent to
-                    </h4>
-                    <ActionForm action={setProviderClearanceAction} submit={`Save what ${l.name} may be sent to`}>
-                      <input type="hidden" name="label" value={l.name} />
-                      <fieldset className="admin-fieldset">
-                        <legend>Cleared for {l.name}</legend>
-                        <ProviderChecks providers={offered} cleared={clearedFor.get(l.name) ?? []} />
-                      </fieldset>
-                    </ActionForm>
-                  </div>
+      {ownLabels.length === 0 ? (
+        <Empty>The only label is public, so every member can read everything here. Add a label for material that is not for everyone.</Empty>
+      ) : (
+        <Section
+          title="Provider clearance"
+          id="providers"
+          aside={
+            <span className="w-row" style={{ gap: 8 }}>
+              <Tip>
+                Text at a label reaches a model provider or outside service only if it is cleared for that label. Every provider is cleared for public; for any other label, never by default. Each one ticked is sent the text of every agent run at the label. Each change is logged and in force within seconds, with no restart.
+              </Tip>
+              {clearance &&
+                (clearance.fixed_by_settings ? (
+                  <Pill tone="neu" title="PROVIDER_LABELS, or [provider_labels] in the config file">
+                    Fixed by PROVIDER_LABELS
+                  </Pill>
+                ) : (
+                  <Pill tone="info">Set on this page</Pill>
                 ))}
+            </span>
+          }
+        >
+          {clearance === null ? (
+            <Empty>What each label may be sent to could not be read just now.</Empty>
+          ) : (
+            <>
+              <ClearanceMatrix
+                editable={clears}
+                publicChip={<Lbl name="public" />}
+                providers={clearance.providers.map(
+                  (p): MatrixProvider => ({
+                    name: p.name,
+                    heading: heading(p.name),
+                    kind: p.kind,
+                    description: p.description,
+                    configured: p.configured,
+                  })
+                )}
+                rows={ownLabels.map((l) => {
+                  const f = facts.get(l.name);
+                  return {
+                    label: l.name,
+                    chip: <Lbl name={l.name} />,
+                    cleared: clearedFor.get(l.name) ?? [],
+                    problem: f ? problemLine(f) : null,
+                  };
+                })}
+              />
+              <div className="w-labels-legend">
+                {clears && (
+                  <span>
+                    <span className="w-labels-swatch" aria-hidden />
+                    Changed, not saved
+                  </span>
+                )}
+                <span className="w-faint">A column in grey is not set up in this deployment.</span>
+                {clearance.fixed_by_settings ? (
+                  <span className="w-spacer">
+                    Fixed by the deployment&rsquo;s <code className="w-mono">PROVIDER_LABELS</code> setting: whoever runs it changes it there.
+                  </span>
+                ) : (
+                  !can(who, "clear_providers") && (
+                    <span className="w-spacer">Changing it takes the permission to clear providers, which you don&rsquo;t hold.</span>
+                  )
+                )}
               </div>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </Section>
+      )}
 
-        <div className="acct-cols">
-          <div className="acct-main">
-            <h3>Define a label</h3>
-            {ownLabels.length === 0 && (
-              <p className="acct-prose">
-                The first label besides <code>public</code> changes how the whole deployment
-                reads: from then on the database holds every reader, and every agent&rsquo;s run,
-                to the labels they are cleared for. Defining it takes about ten seconds, while
-                every running process is given time to notice.
-              </p>
-            )}
-            <ActionForm action={defineLabelAction} submit="Define the label">
-              <label>
-                Name
-                <input name="name" required pattern="[a-z][a-z0-9_\-]{0,62}" autoComplete="off" />
-                <small>
-                  Lower-case letters, digits, hyphens and underscores, starting with a letter. The
-                  name is shown to everyone cleared for the label and cannot be changed.
-                </small>
-              </label>
-              <label>
-                What it is for
-                <input name="description" required maxLength={500} autoComplete="off" />
-              </label>
-              {clears && (
-                <fieldset className="admin-fieldset">
-                  <legend>Its text may be sent to</legend>
-                  <small>
-                    Nothing is ticked: a label is served by no model provider or outside service until
-                    one is cleared for it, and each one ticked is sent the text of every agent run at the
-                    label, as it says. This can be changed later, below the list of labels.
-                  </small>
-                  <ProviderChecks providers={offered} cleared={[]} />
-                </fieldset>
-              )}
-              {ownLabels.length > 0 && (
-                <fieldset className="admin-fieldset">
-                  <legend>Its holders may also read</legend>
+      {drawer === "add" && (
+        <Drawer title="Add label" close={PAGE}>
+          {ownLabels.length === 0 && (
+            <Banner tone="warn">
+              <span>
+                The first label besides public makes the database hold every reader and run to their labels; it takes about ten seconds.{" "}
+                <Tip>
+                  From then on the deployment is treated as holding private material, and the checks on Health that protect it must pass before agent work starts. Defining it takes about ten seconds while every running process is given time to notice.
+                </Tip>
+              </span>
+            </Banner>
+          )}
+          <WorkForm action={defineLabelAction} submit="Add label" primary extra={<Link href={PAGE} className="w-btn w-ghost">Cancel</Link>}>
+            <div className="w-field">
+              <label htmlFor="label-name">Name</label>
+              <input id="label-name" className="w-input w-mono" name="name" required pattern="[a-z][a-z0-9_\-]{0,62}" autoComplete="off" />
+              <span className="w-row" style={{ gap: 10 }}>
+                <span className="w-help">Lower-case letters, digits, - and _, starting with a letter.</span>
+                <Lock>Can&rsquo;t be changed</Lock>
+              </span>
+            </div>
+            <div className="w-field">
+              <label htmlFor="label-purpose">Purpose</label>
+              <input id="label-purpose" className="w-input" name="description" required maxLength={500} autoComplete="off" />
+              <span className="w-help">Shown to everyone who reads at it.</span>
+            </div>
+            {ownLabels.length > 0 && (
+              <div className="w-field">
+                <span className="w-label">Its holders may also read</span>
+                <div className="w-row" style={{ gap: 14 }}>
                   {ownLabels.map((l) => (
-                    <label key={l.name} className="admin-check">
+                    <label key={l.name} className="w-check">
                       <input type="checkbox" name="reads" value={l.name} />
-                      <code>{l.name}</code>
+                      <Lbl name={l.name} />
                     </label>
                   ))}
-                </fieldset>
-              )}
-            </ActionForm>
-            <p className="acct-note">
-              Upkeep and audits at a label are paid by a General mandate at that label, because a
-              mandate&rsquo;s work runs at its label. A new label has none until an administrator who
-              reads it sets one up on <Link href="/admin/owls#standing-mandates">Owls</Link>; the
-              column above links to the form for each label. None is needed at a label that will
-              hold only work someone asks for and pays for. The setup page lists a label with none as
-              to do while it holds nothing, and as failing once nodes or judgments are held there.
-            </p>
-            <p className="acct-note">
-              Every label reads public without it being said. Defining a label gives nobody the
-              right to read at it: that is granted on{" "}
-              <Link href="/admin/people#grant">People and permissions</Link>. From the moment a
-              deployment has a label besides public it is treated as holding private material, and
-              the checks on the <Link href="/admin#checks">setup page</Link> that protect private
-              material must pass before agent work starts.
-            </p>
-          </div>
-
-          {ownLabels.length > 1 && (
-            <aside className="acct-side acct-side-wide">
-              <h3>Say that one label reads another</h3>
-              <Notice>
-                Adding a pair widens what every holder of the first label may read, at once.
-                Everyone who reads at it can then read everything at the second label too, and so
-                can every agent run that works at it. It can be taken back, and both acts are
-                logged.
-              </Notice>
-              <ActionForm action={addLabelReadAction} submit="Record the pair">
-                <label>
-                  Holders of
-                  <select name="label" required defaultValue="">
-                    <option value="" disabled>
-                      Choose a label
-                    </option>
-                    {ownLabels.map((l) => (
-                      <option key={l.name} value={l.name}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  may also read
-                  <select name="reads" required defaultValue="">
-                    <option value="" disabled>
-                      Choose a label
-                    </option>
-                    {ownLabels.map((l) => (
-                      <option key={l.name} value={l.name}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </ActionForm>
-            </aside>
-          )}
-        </div>
-      </section>
-
-      <section className="acct-section" id="parties">
-        <div className="acct-head">
-          <h2>Parties</h2>
-        </div>
-        <p className="acct-prose acct-measure">
-          Every source belongs to a party: this organisation, or an outside party that supplied
-          it, such as a customer, a supplier or a partner. The party is recorded so that its stake
-          in what a source says can be weighed, and because release is granted party by party: the
-          holders of release for a party are who decides whether anything resting on its material
-          leaves the deployment, at the gates (<Link href="/gates">Gates</Link>, and the queue at{" "}
-          <Link href="/gate">At the gate</Link>).
-        </p>
-        {parties.length === 0 ? (
-          <p className="account-empty">
-            No party is recorded yet. Add this organisation first, then any outside party whose
-            material the graph will hold.
-          </p>
-        ) : (
-          <div className="acct-scroll">
-            <table className="account-table acct-table">
-              <thead>
-                <tr>
-                  <th>party</th>
-                  <th className="admin-num">sources</th>
-                  <th>who holds release for it</th>
-                  <th>added</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parties.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      {p.name}
-                      {p.is_own_organization && <span className="acct-detail">this organisation</span>}
-                    </td>
-                    <td className="admin-num">{(sourcesBy.get(p.id) ?? 0).toLocaleString("en-GB")}</td>
-                    <td>{holdersOf(grants.filter((g) => g.permission === "release" && g.party?.id === p.id))}</td>
-                    <td className="acct-num-left">{dateish(p.created_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="acct-cols">
-          <div className="acct-main">
-            <h3>Add a party</h3>
-            <ActionForm action={addPartyAction} submit="Add the party">
-              <label>
-                Name
-                <input name="name" required maxLength={200} autoComplete="off" />
-                <small>Shown wherever the party&rsquo;s material is, to the people entitled to know of it.</small>
-              </label>
-              {/* The organisation itself is a party from setup, under a name that stands in for
-                  its own until an administrator gives it. It is offered here until then. */}
-              {(!ownParty || ownParty.name === OWN_ORGANISATION_SETUP_NAME) && (
-                <label className="admin-check">
-                  <input type="checkbox" name="is_own_organization" />
+                </div>
+              </div>
+            )}
+            {clears && (
+              <div className="w-field">
+                <span className="w-label">
+                  Its text may be sent to{" "}
+                  <Tip>
+                    Nothing is ticked: a label is served by no model provider or outside service until one is cleared for it. Each one ticked is sent the text of every agent run at the label. This can be changed later in Provider clearance.
+                  </Tip>
+                </span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 14px" }}>
+                  {offered.map((p) => (
+                    <label key={p.name} className="w-check" title={p.description}>
+                      <input type="checkbox" name="providers" value={p.name} />
+                      <span>
+                        {heading(p.name)}
+                        {!p.configured && <span className="w-faint"> · not set up</span>}
+                      </span>
+                      <input type="hidden" name="offered" value={p.name} />
+                    </label>
+                  ))}
+                </div>
+                <label className="w-check">
+                  <input type="checkbox" name="same_as_public" />
                   <span>
-                    This is the organisation that runs this deployment
-                    {ownParty && (
-                      <small>
-                        {" "}
-                        It is a party already, listed above as &ldquo;{ownParty.name}&rdquo;. Ticking
-                        this gives it the name you enter.
-                      </small>
-                    )}
+                    The same as public <span className="w-faint">· every one above</span>
                   </span>
                 </label>
-              )}
-            </ActionForm>
-          </div>
-
-          <aside className="acct-side acct-side-wide" id="sources">
-            <h3>Whose material a source is</h3>
-            {checklist && (
-              <p className="acct-prose">
-                {count(checklist.material.sources, "source")} recorded
-                {checklist.material.sources > 0 && (
-                  <>
-                    , {checklist.material.sources_with_no_party.toLocaleString("en-GB")} of them as
-                    no party&rsquo;s
-                  </>
-                )}
-                . The table gives the count for each party.
-              </p>
+              </div>
             )}
-            <p className="acct-prose">
-              A source added by a person starts as no party&rsquo;s. A reading kept through a
-              connection is the material of the party whose system it was read from. Each change
-              made here is logged with what the party was before.
-            </p>
-            {parties.length > 0 && (
-              <ActionForm action={setSourcePartyAction} submit="Record whose it is">
-                <label>
-                  The source
-                  <input name="source" required autoComplete="off" />
-                  <small>The address of the source&rsquo;s page, or its id.</small>
-                </label>
-                <label>
-                  Is the material of
-                  <select name="party_id" defaultValue="">
-                    <option value="">No party</option>
-                    {parties.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </ActionForm>
-            )}
-          </aside>
-        </div>
-      </section>
-    </div>
+            <span className="w-help">
+              Nobody reads at a new label until it is granted on <Link href="/admin/people">People</Link>.
+            </span>
+          </WorkForm>
+        </Drawer>
+      )}
+    </WorkPage>
   );
 }
 
-type GeneralState = "set_up" | "none" | "not_read" | "unknown";
+/** The direct read grants at a label, counted; the labels that read it, said on hover. */
+function Readers({ label, grants, readBy }: { label: string; grants: GrantView[]; readBy: string[] }) {
+  const accounts = new Set(grants.filter((g) => g.account).map((g) => g.account!.id)).size;
+  const groups = new Set(grants.filter((g) => g.group !== null).map((g) => g.group)).size;
+  const tip =
+    `${capitalised(holdersText({ accounts, groups }))} granted read at ${label} directly.` +
+    (readBy.length > 0 ? ` Holders of ${listed(readBy)} also read it, through what ${readBy.length === 1 ? "that label reads" : "those labels read"}.` : "");
+  return (
+    <span className="w-row" style={{ gap: 6, justifyContent: "flex-end", flexWrap: "nowrap" }}>
+      <Link href="/admin/people" style={{ color: "var(--w-ink)" }}>
+        {(accounts + groups).toLocaleString("en-GB")}
+      </Link>
+      <Tip>{tip}</Tip>
+    </span>
+  );
+}
+
+/** "+ Add": a small form, opened in the row, to say this label also reads another. */
+function AddRead({ label, candidates }: { label: string; candidates: string[] }) {
+  return (
+    <details className="w-labels-add">
+      <summary className="w-btn w-ghost w-sm" style={{ height: 22, padding: "0 6px" }}>
+        + Add
+      </summary>
+      <div className="w-labels-add-b">
+        <span className="w-help">Widens at once what holders of {label}, and runs at it, read. Logged.</span>
+        <WorkForm action={addLabelReadAction} submit="Add" inline small primary>
+          <input type="hidden" name="label" value={label} />
+          <select className="w-select" name="reads" required defaultValue="" aria-label={`${label} may also read`} style={{ height: 26, width: "auto" }}>
+            <option value="" disabled>
+              Choose a label
+            </option>
+            {candidates.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </WorkForm>
+      </div>
+    </details>
+  );
+}
+
+/**
+ * What cannot be served at a label as it is cleared now, in one line: the
+ * checklist's facts about it, without the one that only lists what is cleared.
+ */
+function problemLine(label: SetupChecklist["labels"][number]): string | null {
+  const said = labelClearanceFacts(label).filter((f) => !f.startsWith(`${label.name}: cleared for `));
+  return said.length > 0 ? said.join(" ") : null;
+}
+
+type GeneralState =
+  | { kind: "set_up"; mandate: StandingMandateState }
+  | { kind: "none" }
+  | { kind: "not_read" }
+  | { kind: "unknown" };
 
 // Whether a General mandate is set up at each label, as the setup checklist
 // says: at the labels the reader reads, where the deployment holds more than
@@ -475,36 +373,54 @@ type GeneralState = "set_up" | "none" | "not_read" | "unknown";
 function generalMandateAt(checklist: SetupChecklist | null): (label: string) => GeneralState {
   const general = checklist?.standing_mandates.find((m) => m.name === "general");
   return (label) => {
-    if (!general) return "unknown";
+    if (!general) return { kind: "unknown" };
     if (general.by_label) {
       const at = general.by_label.find((l) => l.label === label);
-      return at ? (at.mandate ? "set_up" : "none") : "not_read";
+      if (!at) return { kind: "not_read" };
+      return at.mandate ? { kind: "set_up", mandate: at.mandate } : { kind: "none" };
     }
-    if (label === "public") return general.mandate ? "set_up" : "none";
-    return "not_read";
+    if (label === "public") return general.mandate ? { kind: "set_up", mandate: general.mandate } : { kind: "none" };
+    return { kind: "not_read" };
   };
 }
 
-function GeneralMandateCell({ label, state }: { label: string; state: GeneralState }) {
-  const owlsAt = `/admin/owls#standing-mandate-${label}`;
-  switch (state) {
-    case "set_up":
-      return <Link href={owlsAt}>Set up</Link>;
+/** The state of a General mandate, as a pill: also used on Budget. */
+function mandatePill(m: StandingMandateState): { tone: Tone; text: string } {
+  if (m.running) return { tone: "ok", text: "Running" };
+  if (m.budget_owls <= 0) return { tone: "warn", text: "No budget" };
+  return { tone: "warn", text: "Not running" };
+}
+
+function UpkeepCell({ label, state }: { label: string; state: GeneralState }) {
+  const at = `/admin/budget#general-${label}`;
+  switch (state.kind) {
+    case "set_up": {
+      const pill = mandatePill(state.mandate);
+      return (
+        <Link href={at} style={{ textDecoration: "none" }} title={`The General mandate at ${label}`}>
+          <Pill tone={pill.tone}>{pill.text}</Pill>
+        </Link>
+      );
+    }
     case "none":
       return (
-        <>
-          None, so nothing pays for upkeep or audits here. <Link href={owlsAt}>Set one up</Link>, unless
-          the label will hold only work someone asks for and pays for.
-        </>
+        <span className="w-row" style={{ gap: 6, flexWrap: "nowrap" }}>
+          <Pill tone="warn" title="Nothing pays for upkeep or audits at this label">
+            Not set up
+          </Pill>
+          <ButtonLink href={`/admin/budget?drawer=general&label=${encodeURIComponent(label)}`} small>
+            Set up
+          </ButtonLink>
+        </span>
       );
     case "not_read":
       return (
-        <span className="acct-quiet">
-          Not shown: you do not read this label. An administrator who reads it sets one up on{" "}
-          <Link href="/admin/owls#standing-mandates">Owls</Link>.
+        <span className="w-row" style={{ gap: 6, flexWrap: "nowrap" }}>
+          <span className="w-faint w-small">Not shown</span>
+          <Tip>{`You don't read ${label}. An administrator who reads it sees its General mandate on Budget.`}</Tip>
         </span>
       );
     default:
-      return <span className="acct-quiet">Could not be read just now.</span>;
+      return <span className="w-faint w-small">Could not be read</span>;
   }
 }

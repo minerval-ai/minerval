@@ -1,182 +1,124 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PageHead } from "@/components/PageHead";
-import { ActionForm } from "@/components/admin/ActionForm";
 import { NeedsPermission, can, viewer } from "@/components/admin/access";
-import { WorkNav, day } from "@/components/inside/nav";
-import { fetchMyLabels } from "@/lib/admin-api";
-import { fetchClaimDetail } from "@/lib/api";
-import { askShowingAction } from "../actions";
+import { Drawer, Empty } from "@/components/work/ui";
+import { fetchMyLabels, type MyLabel } from "@/lib/admin-api";
+import { fetchClaimDetail, fetchSearch } from "@/lib/api";
+import type { SearchResultItem } from "@/lib/types";
+import { ShowingsView } from "../ShowingsView";
+import { loadGates } from "../showings";
+import { NewShowingForm } from "./NewShowingForm";
 
-export const metadata: Metadata = { title: "Show a page · Minerval" };
+export const metadata: Metadata = { title: "New showing · Minerval" };
 export const dynamic = "force-dynamic";
 
 // Asking for a node's page to be shown to people who do not read the label
-// it was written at (POST /showings; docs/showing-a-page.md, "Asking"). The
-// form says, beside each choice, what it shows and to whom, and what a
-// standing showing undertakes. Nothing is preselected: how a page is shown
-// is chosen each time it is asked for.
+// it was written at (POST /showings; docs/showing-a-page.md, "Asking"), in a
+// drawer over the list of showings. A node's page links here with
+// ?node=&at=; without a node, the drawer first finds one, by the same search
+// /claims uses. Nothing about how the page is shown is preselected: it is
+// chosen each time it is asked for.
 
-export default async function AskShowingPage({ searchParams }: { searchParams: Promise<{ node?: string; at?: string }> }) {
+const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+export default async function NewShowingPage({ searchParams }: { searchParams: Promise<{ node?: string; at?: string; q?: string }> }) {
   const who = await viewer();
   if (!who) return null;
-  if (!can(who, "direct")) return <NeedsPermission title="Show a page" permission="direct" />;
-  const { node: nodeId, at } = await searchParams;
+  if (!can(who, "direct")) return <NeedsPermission title="New showing" permission="direct" />;
+  const { node, at, q } = await searchParams;
+  // A node's address or id pasted into the search is taken as that node.
+  const nodeId = node ?? q?.match(UUID)?.[0];
   const detail = nodeId ? await fetchClaimDetail(nodeId).catch(() => null) : null;
+
+  let body;
   if (!detail) {
-    return (
-      <div className="admin-page">
-        <PageHead title="Show a page" lede="A showing is asked for from a node's page." />
-        <WorkNav who={who} current="/showings/new" />
-        <p className="account-empty admin-first">
-          Open the node on <Link href="/claims">the list of claims</Link>, choose the assessment made at the label you want shown, and follow
-          &ldquo;Ask for this page to be shown&rdquo;.
+    const query = (q ?? "").trim();
+    const results: SearchResultItem[] = query && !nodeId ? await fetchSearch(query).catch(() => []) : [];
+    body = (
+      <>
+        <form method="get" action="/showings/new" className="w-field" role="search">
+          <label htmlFor="ns-q">Node</label>
+          <div className="w-row" style={{ flexWrap: "nowrap" }}>
+            <input id="ns-q" className="w-input" type="search" name="q" defaultValue={query} placeholder="Search nodes, or paste a node's address" autoFocus />
+            <button className="w-btn" type="submit">
+              Find
+            </button>
+          </div>
+          {nodeId && <span className="w-said w-error">No node you read has that id.</span>}
+        </form>
+        {query && !nodeId && (
+          <div className="w-tbox">
+            {results.length === 0 ? (
+              <Empty>No node found for &ldquo;{query}&rdquo;.</Empty>
+            ) : (
+              <table className="w-t" aria-label="Nodes">
+                <tbody>
+                  {results.slice(0, 8).map((r) => (
+                    <tr key={r.id}>
+                      <td>
+                        <Link className="w-node w-sm" href={`/showings/new?node=${r.id}`} style={{ color: "var(--w-ink)" }}>
+                          {r.text}
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+        <p className="w-help" style={{ margin: 0 }}>
+          Or open the node, choose the assessment made at the label you want shown, and follow &ldquo;Ask for this page to be shown&rdquo;.
         </p>
-      </div>
+      </>
+    );
+  } else {
+    // One page per label, the one in force first; public is read by every member already.
+    const byLabel = new Map<string, { label: string; assessedAt: string }>();
+    for (const v of [...(detail.versions ?? [])].sort((a, b) => Number(b.in_force) - Number(a.in_force))) {
+      if (v.label !== "public" && !byLabel.has(v.label)) byLabel.set(v.label, { label: v.label, assessedAt: v.assessed_at });
+    }
+    const [mine, gates] = await Promise.all([fetchMyLabels(who.externalId).catch(() => null), loadGates(who.externalId)]);
+    body = (
+      <>
+        <div className="w-field">
+          <span className="w-label">Node</span>
+          <div className="w-row" style={{ flexWrap: "nowrap", alignItems: "baseline" }}>
+            <Link className="w-node" href={`/claims/${detail.claim.id}`} style={{ color: "var(--w-ink)", flex: 1, minWidth: 0 }}>
+              {detail.claim.text}
+            </Link>
+            <Link className="w-small" href="/showings/new">
+              Change
+            </Link>
+          </div>
+        </div>
+        {byLabel.size === 0 ? (
+          <Empty>
+            This node has no assessment that some members cannot read, among the labels you read, so there is nothing to show: everyone who can open
+            the node already reads all of it that you do.
+          </Empty>
+        ) : (
+          <NewShowingForm
+            nodeId={detail.claim.id}
+            pages={[...byLabel.values()]}
+            at={at ?? null}
+            labels={(mine?.labels ?? []).map((l: MyLabel & { reads?: string[] }) => ({ name: l.name, whoReads: l.who_reads, reads: l.reads ?? [] }))}
+            gates={(gates ?? []).map((g) => ({ id: g.gate_id, from: g.from, to: g.to_outside ? "outside" : g.to }))}
+          />
+        )}
+      </>
     );
   }
-  const versions = (detail.versions ?? []).filter((v) => v.label !== "public");
-  const mine = await fetchMyLabels(who.externalId);
 
   return (
-    <div className="admin-page">
-      <PageHead
-        back={{ href: `/claims/${detail.claim.id}`, label: "the node" }}
-        title="Show a page"
-        lede="Often the evidence for something is more sensitive than the thing itself. Showing a page lets people who may not read the evidence read what this node's Steward concluded from it: the page as written, with the passages a redaction policy covers removed and marked."
-      />
-      <WorkNav who={who} current="/showings/new" />
-
-      <section className="acct-section admin-first">
-        <div className="acct-head">
-          <h2>The node</h2>
-        </div>
-        <p className="acct-prose acct-measure">
-          <Link href={`/claims/${detail.claim.id}`}>{detail.claim.text}</Link>
-        </p>
-      </section>
-
-      {versions.length === 0 ? (
-        <p className="account-empty">
-          This node has no assessment that some members cannot read, among the labels you read, so there is nothing to show: everyone who
-          can open the node already reads all of it that you do.
-        </p>
-      ) : (
-        <ActionForm action={askShowingAction} submit="Ask for this page to be shown">
-          <input type="hidden" name="node_id" value={detail.claim.id} />
-
-          <fieldset className="admin-fieldset inside-choices">
-            <legend>Which page</legend>
-            {versions.map((v) => (
-              <label key={v.id} className="admin-check">
-                <input type="radio" name="page_label" value={v.label} required defaultChecked={versions.length === 1 || at === v.label} />
-                <span>
-                  The page written at <code>{v.label}</code>, whose assessment is of {day(v.assessed_at)}.
-                </span>
-              </label>
-            ))}
-            <small className="inside-note">
-              What is shown is that page and what was written at its label: the assessment, its arguments and their evaluations, the readings
-              of its sources, its subclaims. Something written at another label that this one reads is that label&rsquo;s page, and showing
-              it is a separate showing.
-            </small>
-          </fieldset>
-
-          <fieldset className="admin-fieldset inside-choices">
-            <legend>Who it is shown to</legend>
-            {mine.labels.map((l) => (
-              <label key={l.name} className="admin-check">
-                <input type="radio" name="to" value={`label:${l.name}`} required />
-                <span>
-                  People who read at <code>{l.name}</code>.<small>{l.who_reads} The page arrives there as a source, and a fresh assessment of the node at that label is opened to weigh it, which runs when someone pays for it.</small>
-                </span>
-              </label>
-            ))}
-            <label className="admin-check">
-              <input type="radio" name="to" value="outside" required />
-              <span>
-                People outside this deployment.
-                <small>
-                  Anyone. What is released is put in a signed package and submitted to the public graph under the organisation&rsquo;s
-                  account, where it is reviewed like any contribution and then weighed as a source by the node&rsquo;s Steward there. A node
-                  that exists only in this deployment is first proposed to the public graph, in words a person here writes or approves.
-                </small>
-              </span>
-            </label>
-            <small className="inside-note">
-              A destination that already reads the label the page was written at is refused, since those people have the page whole. Labels
-              you do not read are not offered here, because the name of a label is not shown to people who may not read it.
-            </small>
-          </fieldset>
-
-          <fieldset className="admin-fieldset inside-choices">
-            <legend>Once, or standing</legend>
-            <label className="admin-check">
-              <input type="radio" name="form" value="once" required />
-              <span>
-                Once.
-                <small>
-                  The page goes as it stands today, with its date. Nothing is undertaken about later assessments, and the people it is shown
-                  to are told so. They can see that the moment was chosen by someone who could already read the verdict.
-                </small>
-              </span>
-            </label>
-            <label className="admin-check">
-              <input type="radio" name="form" value="standing" required />
-              <span>
-                Standing.
-                <small>
-                  Each later assessment of the node at this label goes through the same steps. The people it is shown to see every one of
-                  them: an assessment that is not released shows to them as held, with why and for how long, and stays in the showing&rsquo;s
-                  history. That is what a standing showing undertakes: later results cannot be left out without that being seen. You can end
-                  it; the end is dated, with a reason from a fixed list, and what was shown stays shown.
-                </small>
-              </span>
-            </label>
-          </fieldset>
-
-          <fieldset className="admin-fieldset inside-choices">
-            <legend>What it covers</legend>
-            <label className="admin-check">
-              <input type="radio" name="scope" value="node" required />
-              <span>
-                This node alone.
-                <small>A subclaim of it appears on the page with how it bears, and its own page is not shown.</small>
-              </span>
-            </label>
-            <label className="admin-check">
-              <input type="radio" name="scope" value="under" required />
-              <span>
-                This node and what sits under it.
-                <small>
-                  Each node under it has its page shown in the same way. Under a standing showing, a node that later comes to sit under this
-                  one is covered from then and shows as not yet assessed until it is; one that leaves stays in the record with the date and
-                  the reason. So the shape of the work shows on the other side as it grows.
-                </small>
-              </span>
-            </label>
-          </fieldset>
-
-          <div className="acct-prose acct-measure inside-next">
-            <p>
-              <strong>Asking shows nothing by itself.</strong> The page goes to the gate between the two sides. Unless the gate is set
-              otherwise, the Redactor removes what the policy for this boundary protects, Audit checks its work, and what the Redactor let
-              through is then shown, with nobody waiting on a person. Both runs are paid from the budget of the work that produced the page.
-              The gate&rsquo;s settings, and whether what is released outside is sent as it is released, are on <Link href="/gates">Gates</Link>.
-            </p>
-            <p>
-              Some things are shown whenever the page is shown, and nothing is removed from them: the verdict with any credence, what
-              kinds of evidence it was made on, that each source exists and whether an outside party supplied it, how the page was made, and
-              how many passages were removed under each category. Holding them holds the whole page. The <Link href="/redaction-policies">redaction policy</Link> for the
-              boundary lists them, and everyone the page is shown to can read that policy in full.
-            </p>
-            <p>
-              Your name and the permissions you hold now are recorded on the showing, where the people it is shown to can read them. For a
-              showing outside, the record says a person holding these permissions asked, and does not give the name.
-            </p>
-          </div>
-        </ActionForm>
-      )}
-    </div>
+    <ShowingsView
+      who={who}
+      query={{}}
+      drawer={
+        <Drawer title="New showing" close="/showings" wide>
+          {body}
+        </Drawer>
+      }
+    />
   );
 }

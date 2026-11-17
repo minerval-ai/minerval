@@ -1,26 +1,38 @@
 "use client";
 
-import { useActionState, useRef, useState, type ReactNode } from "react";
+import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
 import type { FormState } from "@/components/admin/ActionForm";
+import { Icon } from "@/components/work/icons";
 
-// The form for what waits on one party at a gate: the items are whatever
-// the page puts inside it, each with a tick box, and the foot approves,
+// The form for the item chosen at a gate: the parts are whatever the page
+// puts inside it, each with a tick box, and the bar at its foot approves,
 // releases, holds, delays or lifts on the ticked ones in one act, or
-// removes a passage from a ticked part. Each button is disabled while
-// the act runs, since a release is not taken back and must not be sent
-// twice.
+// removes a passage from a ticked part. Each button is disabled while the
+// act runs, since a release is not taken back and must not be sent twice.
 export function QueueForm({
   action,
   partyId,
+  itemKey,
   reasons,
   anyHeld,
+  categories,
+  fromPolicy,
+  acts,
   children,
 }: {
   action: (previous: FormState, formData: FormData) => Promise<FormState>;
   partyId: string;
+  /** The item shown: when it changes, the count of ticks is taken again. */
+  itemKey: string;
   reasons: Record<string, string>;
-  /** Whether any item here is held by this party, so that lifting a hold is offered. */
+  /** Whether anything of the item is held or delayed, so that lifting is offered. */
   anyHeld: boolean;
+  /** The categories a passage can be removed under: the policy's, or those seen in this item's removals. */
+  categories: string[];
+  /** Whether `categories` are the boundary policy's own, so that a choice from them is all that is offered. */
+  fromPolicy: boolean;
+  /** The acts at a gate, in the API's words. */
+  acts: Record<string, string>;
   children: ReactNode;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
@@ -28,6 +40,20 @@ export function QueueForm({
   // with its ticks cleared, and a person who forgot the reason should not
   // have to tick everything again.
   const [missing, setMissing] = useState<string | null>(null);
+  const [ticked, setTicked] = useState(0);
+  const [total, setTotal] = useState(0);
+  const form = useRef<HTMLFormElement>(null);
+  const boxes = () => [...(form.current?.querySelectorAll<HTMLInputElement>('input[name="item"]') ?? [])];
+  const count = () => {
+    const all = boxes();
+    setTotal(all.length);
+    setTicked(all.filter((b) => b.checked).length);
+  };
+  useEffect(() => {
+    count();
+    setMissing(null);
+  }, [itemKey, state]);
+
   const check = (event: React.FormEvent<HTMLFormElement>) => {
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const data = new FormData(event.currentTarget);
@@ -38,90 +64,139 @@ export function QueueForm({
           ? "A hold gives a reason from the list. It is all the other side is told."
           : submitter?.value === "delay" && !data.get("until")
             ? "A delay gives the date and time it runs until."
-            : null;
+            : submitter?.value === "remove" && (!data.get("passage") || !data.get("category"))
+              ? "Give the passage exactly as it appears in the part, and the policy's category that covers it."
+              : null;
     setMissing(problem);
     if (problem) event.preventDefault();
   };
-  const form = useRef<HTMLFormElement>(null);
   const tickAll = (on: boolean) => {
-    form.current?.querySelectorAll<HTMLInputElement>('input[name="item"]').forEach((box) => {
+    boxes().forEach((box) => {
       box.checked = on;
     });
+    count();
   };
+  const said = missing ?? state.error ?? null;
+
   return (
-    <form ref={form} action={formAction} onSubmit={check} className="queue-form">
+    <form ref={form} action={formAction} onSubmit={check} onChange={count} className="w-review-doc" aria-label="The item chosen">
       <input type="hidden" name="party_id" value={partyId} />
-      {children}
-      <div className="queue-foot">
-        <span className="queue-ticks">
-          <button type="button" className="linklike" onClick={() => tickAll(true)}>
-            tick every item
-          </button>
-          {" · "}
-          <button type="button" className="linklike" onClick={() => tickAll(false)}>
-            untick all
-          </button>
-        </span>
-        <button className="order-button" type="submit" name="decision" value="approve" disabled={pending}>
-          {pending ? "Working…" : "Approve the ticked items as the Redactor left them"}
-        </button>
-        <button className="order-button queue-secondary" type="submit" name="decision" value="release" disabled={pending}>
-          Release the ticked items
-        </button>
-        <label className="queue-reason">
-          Reason for a hold
-          <select name="reason" defaultValue="">
-            <option value="">Choose a reason</option>
-            {Object.entries(reasons).map(([key, words]) => (
-              <option key={key} value={key}>
-                {words}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="order-button queue-secondary" type="submit" name="decision" value="hold" disabled={pending}>
-          Hold the ticked items
-        </button>
-        <label className="queue-reason">
-          Delay until
-          <input type="datetime-local" name="until" style={{ maxWidth: "100%", minWidth: 0 }} />
-        </label>
-        <button className="order-button queue-secondary" type="submit" name="decision" value="delay" disabled={pending}>
-          Delay the ticked items
-        </button>
-        {anyHeld && (
-          <button className="order-button queue-secondary" type="submit" name="decision" value="lift" disabled={pending}>
-            Lift the hold or delay on the ticked items
-          </button>
-        )}
-        <details className="admin-args">
-          <summary>remove a passage from the ticked part</summary>
-          <label className="queue-reason">
-            The passage, exactly as it appears
-            <input type="text" name="passage" style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }} />
+      <div className="w-review-doc-s">{children}</div>
+      <div className="w-review-bar" role="toolbar" aria-label="Decide on the ticked parts">
+        <div className="w-review-bar-r">
+          <label className="w-review-bar-n" title={ticked < total ? "Tick every part" : "Untick every part"}>
+            <input
+              type="checkbox"
+              checked={total > 0 && ticked === total}
+              ref={(box) => {
+                if (box) box.indeterminate = ticked > 0 && ticked < total;
+              }}
+              onChange={(e) => tickAll(e.target.checked)}
+              aria-label="Tick every part"
+            />
+            <b>{ticked}</b> of {total}
           </label>
-          <label className="queue-reason">
-            The policy&rsquo;s category that covers it
-            <input type="text" name="category" style={{ width: "100%", minWidth: 0, boxSizing: "border-box" }} />
-          </label>
-          <button className="order-button queue-secondary" type="submit" name="decision" value="remove" disabled={pending}>
-            Remove it and leave the category&rsquo;s mark
+          <button className="w-btn w-sm w-pri" type="submit" name="decision" value="approve" disabled={pending}>
+            {pending ? "Working…" : "Approve as redacted"}
           </button>
-        </details>
-        {missing && (
-          <span className="admin-form-said admin-form-error" role="alert">
-            {missing}
+          <span
+            className="w-tip"
+            role="img"
+            title="Releases what nobody holds, as the Redactor left it. The Redactor's holds and delays stay."
+            aria-label="Releases what nobody holds, as the Redactor left it. The Redactor's holds and delays stay."
+          >
+            i
           </span>
+          <button className="w-btn w-sm" type="submit" name="decision" value="release" disabled={pending} title={`${acts.release ?? "Release"} Can't be undone.`}>
+            <Icon name="lock" size={13} />
+            Release
+          </button>
+          <details className="w-menu">
+            <summary className="w-btn w-sm">Hold…</summary>
+            <div className="w-pop">
+              <div className="w-field">
+                <label htmlFor="gate-reason">Reason</label>
+                <select id="gate-reason" className="w-select" name="reason" defaultValue="">
+                  <option value="">Choose a reason</option>
+                  {Object.entries(reasons).map(([key, words]) => (
+                    <option key={key} value={key}>
+                      {words}
+                    </option>
+                  ))}
+                </select>
+                <span className="w-help">All the other side is told, with who holds it and since when.</span>
+              </div>
+              <button className="w-btn w-sm w-pri" type="submit" name="decision" value="hold" disabled={pending}>
+                Hold the ticked parts
+              </button>
+            </div>
+          </details>
+          <details className="w-menu">
+            <summary className="w-btn w-sm">Delay…</summary>
+            <div className="w-pop">
+              <div className="w-field">
+                <label htmlFor="gate-until">Until</label>
+                <input id="gate-until" className="w-input" type="datetime-local" name="until" />
+                <span className="w-help">Parts delayed to the same time go together.</span>
+              </div>
+              <button className="w-btn w-sm w-pri" type="submit" name="decision" value="delay" disabled={pending}>
+                Delay the ticked parts
+              </button>
+            </div>
+          </details>
+          {anyHeld && (
+            <button className="w-btn w-sm w-ghost" type="submit" name="decision" value="lift" disabled={pending} title={acts.lift}>
+              Lift
+            </button>
+          )}
+          <details className="w-menu w-review-end">
+            <summary className="w-btn w-sm w-ghost" title={acts.remove}>Remove…</summary>
+            <div className="w-pop">
+              <div className="w-field">
+                <label htmlFor="gate-passage">Passage, exactly as it appears</label>
+                <input id="gate-passage" className="w-input" type="text" name="passage" autoComplete="off" />
+              </div>
+              <div className="w-field">
+                <label htmlFor="gate-category">Category</label>
+                {fromPolicy ? (
+                  <select id="gate-category" className="w-select" name="category" defaultValue="">
+                    <option value="">Choose a category</option>
+                    {categories.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <input id="gate-category" className="w-input" type="text" name="category" list="gate-categories" autoComplete="off" />
+                    <datalist id="gate-categories">
+                      {categories.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </>
+                )}
+                <span className="w-help">
+                  {fromPolicy ? "From this boundary's policy. " : "A category of this boundary's policy. "}The category&rsquo;s mark takes the
+                  passage&rsquo;s place; no word is changed.
+                </span>
+              </div>
+              <button className="w-btn w-sm w-pri" type="submit" name="decision" value="remove" disabled={pending}>
+                Remove from the ticked part
+              </button>
+            </div>
+          </details>
+        </div>
+        {said && (
+          <div className="w-said w-error" role="alert">
+            {said}
+          </div>
         )}
-        {!missing && state.error && (
-          <span className="admin-form-said admin-form-error" role="alert">
-            {state.error}
-          </span>
-        )}
-        {!missing && state.notice && (
-          <span className="admin-form-said" role="status">
+        {!said && state.notice && (
+          <div className="w-said" role="status">
             {state.notice}
-          </span>
+          </div>
         )}
       </div>
     </form>

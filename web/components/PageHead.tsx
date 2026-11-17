@@ -16,6 +16,12 @@ import type { ReactNode } from "react";
 //            page is about (a claim, a request's ask, a source's title).
 //   meta     one muted line of facts about the thing (dates, owner, version).
 //   lede     the paragraph that says what the page is.
+//
+// A page of the members' workspace (components/work) passes `tool`: the same
+// slots drawn as a tool's head, compact and in sans-serif, with `crumbs`
+// above the title, `meta` as the line under it, `tags` as chips beside it,
+// and `actions` at the far end. Such a page has no lede; one line of `meta`
+// says what needs saying.
 
 export type PageBackTarget = { href: string; label: string };
 
@@ -37,6 +43,8 @@ export function PageHead({
   actions,
   meta,
   lede,
+  tool = false,
+  crumbs,
 }: {
   back?: PageBackTarget;
   kicker?: ReactNode;
@@ -49,7 +57,28 @@ export function PageHead({
   actions?: ReactNode;
   meta?: ReactNode;
   lede?: ReactNode;
+  /** Draw the head of a workspace page (components/work). */
+  tool?: boolean;
+  /** Where the page sits, above its title, on a workspace page. */
+  crumbs?: ReactNode;
 }) {
+  if (tool) {
+    return (
+      <header className="page-head w-head">
+        {crumbs && <nav className="w-crumbs" aria-label="Where this page is">{crumbs}</nav>}
+        <div className="w-ph">
+          <div>
+            {kicker && <p className="page-kicker w-kicker">{kicker}</p>}
+            <h1 className={variant === "statement" ? "page-title w-title statement" : "page-title w-title"}>{title}</h1>
+            {meta && <p className="page-meta w-sub">{meta}</p>}
+            {tags && <div className="w-ph-tags">{tags}</div>}
+          </div>
+          {actions && <div className="w-ph-actions">{actions}</div>}
+        </div>
+        {lede && <p className="page-lede w-sub">{lede}</p>}
+      </header>
+    );
+  }
   const h1 = (
     <h1 className={variant === "statement" ? "page-title statement" : "page-title"}>{title}</h1>
   );

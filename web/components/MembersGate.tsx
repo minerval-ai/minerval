@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { signOut } from "../auth";
 import { membersOnly } from "../lib/members";
 import { loadStanding } from "../lib/standing";
-import { MembersBand } from "./MembersBand";
+import { CopyId } from "./work/CopyId";
+import { WorkShell } from "./work/Shell";
 import { PageHead } from "./PageHead";
 import { signInOptions } from "./sign-in-options";
 
@@ -18,8 +19,8 @@ import { signInOptions } from "./sign-in-options";
 //   - signed in with no permission: who they are signed in as, the identity
 //     an administrator will know them by, and that there is nothing to show
 //     until one grants them something;
-//   - a member: the page, under a line of links to the pages their
-//     permissions open in this deployment (components/MembersBand.tsx).
+//   - a member: the page, in the workspace's shell, with a sidebar of the
+//     pages their permissions open (components/work/Shell.tsx).
 //
 // The API is what refuses a read (it serves nothing to anyone who is not a
 // signed-in member); this is what tells a person why they see nothing and
@@ -40,58 +41,65 @@ async function Gate({ children }: { children: ReactNode }) {
   if (standing.state === "open") return <>{children}</>;
   if (standing.state === "anonymous") {
     return (
-      <div className="col">
+      <GateCard>
         <PageHead
+          tool
           title="Sign in"
           lede="This is a private deployment of Minerval. Nothing in it is shown to anyone who is not signed in."
         />
         {signInOptions({})}
-      </div>
+      </GateCard>
     );
   }
   if (standing.state === "unavailable") {
     return (
-      <div className="col">
+      <GateCard>
         <PageHead
+          tool
           title="Not available"
           lede="This deployment could not check what you may see, so it is showing nothing. Try again in a moment."
         />
         {signOutForm()}
-      </div>
+      </GateCard>
     );
   }
   const { mine } = standing;
-  if (mine.member) {
-    return (
-      <>
-        <MembersBand mine={mine} />
-        {children}
-      </>
-    );
-  }
+  if (mine.member) return <WorkShell mine={mine}>{children}</WorkShell>;
 
   const identity = mine.account.external_id ?? standing.externalId;
   return (
-    <div className="col">
+    <GateCard>
       <PageHead
+        tool
         title="No access yet"
         lede={
           <>
             You are signed in{mine.account.display_name ? <> as {mine.account.display_name}</> : null},
-            and hold no permission in this deployment, so there is nothing to show you yet. An
-            administrator of the deployment grants permissions.
+            and hold no permission in this deployment. An administrator grants access: send them this ID.
           </>
         }
       />
-      <p>
-        An administrator will know you by this sign-in identity: <code>{identity}</code>
-      </p>
-      <p className="signin-note">
-        If you are setting this deployment up, put that identity in its{" "}
-        <code>FIRST_ADMINISTRATOR</code> setting and sign in again. The setting works once, for
-        the deployment&rsquo;s first administrator.
+      <CopyId value={identity} />
+      <p className="w-help">
+        Setting this deployment up? Put that ID in its <code>FIRST_ADMINISTRATOR</code> setting and sign in
+        again. It works once, for the first administrator.
       </p>
       {signOutForm()}
+    </GateCard>
+  );
+}
+
+// The sign-in screens stand alone, centred, with nothing of the deployment behind them.
+function GateCard({ children }: { children: ReactNode }) {
+  return (
+    <div className="w-gate">
+      <div className="w-gate-card">
+        <div className="w-brand">
+          <span className="w-brand-name">Minerval</span>
+          <span className="w-pill w-neu">Private</span>
+        </div>
+        {children}
+      </div>
     </div>
   );
 }
@@ -99,13 +107,13 @@ async function Gate({ children }: { children: ReactNode }) {
 function signOutForm() {
   return (
     <form
-      className="signin-options"
+      className="w-form"
       action={async () => {
         "use server";
         await signOut({ redirectTo: "/" });
       }}
     >
-      <button className="signin-button" type="submit">
+      <button className="w-btn" type="submit">
         Sign out
       </button>
     </form>

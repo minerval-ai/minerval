@@ -1,147 +1,255 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PageHead } from "@/components/PageHead";
-import { ActionForm } from "@/components/admin/ActionForm";
-import { LabelChoice } from "@/components/admin/LabelChoice";
-import { Notice, can, viewer, when } from "@/components/admin/access";
-import { WorkNav } from "@/components/inside/nav";
-import { fetchMyLabels } from "@/lib/admin-api";
+import { can, viewer } from "@/components/admin/access";
+import { WorkForm } from "@/components/work/WorkForm";
+import { Empty, Pill, Tabs, Tip, WorkHead, WorkPage, shortDay, type Tone } from "@/components/work/ui";
+import { fetchMyLabels, type MyLabels } from "@/lib/admin-api";
 import { british, fetchPublicRequests, type PublicRequest } from "@/lib/outside-api";
 import { adoptRequestAction, declineRequestAction, takeUpRequestAction } from "../actions";
+import { HeadSub, Note, loadAccount, tryRead } from "../parts";
 
-export const metadata: Metadata = { title: "Public requests · Minerval" };
+export const metadata: Metadata = { title: "Requests · Minerval" };
 export const dynamic = "force-dynamic";
 
 // The public graph's requests, read from the mirror (docs/outward-acts.md).
-// A request can be adopted, which makes it an ordinary request here and
-// says nothing outside; and a person who directs the graph can say in
-// public, in the organisation's name, that this graph is taking it up.
+// A request can be adopted, which makes it an ordinary request here and says
+// nothing outside; and a person who directs the graph can say in public, in
+// the organisation's name, that this graph is taking it up, or later that the
+// work will not be done, with a reason from a fixed list.
 
 const REASONS: Array<[string, string]> = [
-  ["cannot_be_shown", "What the request asks for could not be shown outside this graph"],
-  ["not_held", "This graph does not hold the evidence the request asks about"],
-  ["asks_for_a_result", "The request asks for a particular result"],
-  ["moot", "The request no longer bears on anything"],
-  ["intrusion", "The request could be met only by intrusion"],
+  ["cannot_be_shown", "It can't be shown outside this graph"],
+  ["not_held", "We don't hold the evidence it asks about"],
+  ["asks_for_a_result", "It asks for a particular result"],
+  ["moot", "It no longer bears on anything"],
+  ["intrusion", "It could be met only by intrusion"],
   ["no_reason", "No reason given"],
 ];
 
-export default async function PublicRequestsPage() {
+const LIVE = ["open", "addressed", "in_progress"];
+const STATE_TONE: Record<string, Tone> = { open: "neu", addressed: "info", in_progress: "warn", met: "ok", declined: "bad", withdrawn: "neu", moot: "neu" };
+
+type Tab = "open" | "adopted" | "closed";
+
+export default async function PublicRequestsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   const who = await viewer();
   if (!who) return null;
-  const [listed, labels] = await Promise.all([fetchPublicRequests(who.externalId), fetchMyLabels(who.externalId).catch(() => null)]);
+  const { tab } = await searchParams;
+  const [{ data: account, problem: accountProblem }, { data: listed, problem }, { data: labels }] = await Promise.all([
+    loadAccount(who.externalId),
+    tryRead(() => fetchPublicRequests(who.externalId), "The public graph's requests could not be read"),
+    tryRead(() => fetchMyLabels(who.externalId), "Your labels could not be read"),
+  ]);
   const direct = can(who, "direct");
-  const live = listed.requests.filter((r) => ["open", "addressed", "in_progress"].includes(r.state_on_the_public_graph));
-  const mine = listed.requests.filter((r) => r.here.length > 0);
-
-  const Request = ({ r }: { r: PublicRequest }) => (
-    <div className="admin-report">
-      <div className="acct-sub">
-        <h3>{r.ask}</h3>
-        <span className="acct-note">
-          {r.state_on_the_public_graph.replace(/_/g, " ")} on the public graph · filed {when(r.filed_at)}
-          {r.addressed_to ? ` · addressed to ${r.addressed_to}` : ""}
-        </span>
-      </div>
-      <p className="acct-prose acct-measure">
-        <strong>Why:</strong> {r.why} <strong>What would satisfy it:</strong> {r.satisfied_by}
-      </p>
-      {r.bears_on.length > 0 && (
-        <p className="acct-note">
-          Bears on{" "}
-          {r.bears_on.map((b, i) => (
-            <span key={b.id}>
-              {i > 0 && "; "}
-              <Link href={`/claims/${b.id}`}>{b.text}</Link>
-            </span>
-          ))}
-        </p>
-      )}
-      {r.here.map((h) => (
-        <div key={h.adoption_id} className="admin-item-body">
-          <p>
-            Adopted here on {when(h.adopted_at)} as <Link href={`/requests/${h.request_id}`}>an ordinary request</Link>, which stands as{" "}
-            {h.state_here.replace(/_/g, " ")}.{" "}
-            {h.taken_up_in_public_at
-              ? `This graph said in public on ${when(h.taken_up_in_public_at)} that it is taking it up.`
-              : "Nothing has been said outside."}{" "}
-            {h.declined_in_public && `On ${when(h.declined_in_public.at)} it said in public that it will not do the work: ${h.declined_in_public.because}.`}
-          </p>
-          {direct && !h.taken_up_in_public_at && (
-            <ActionForm action={takeUpRequestAction} submit="Say in public that this graph is taking it up">
-              <input type="hidden" name="adoption_id" value={h.adoption_id} />
-              <label className="admin-check">
-                <input type="checkbox" name="understood" value="yes" /> I have read what this shows outside, above.
-              </label>
-            </ActionForm>
-          )}
-          {direct && h.taken_up_in_public_at && !h.declined_in_public && (
-            <ActionForm action={declineRequestAction} submit="Say in public that the work will not be done">
-              <input type="hidden" name="adoption_id" value={h.adoption_id} />
-              <label>
-                Reason, from a fixed list
-                <select name="reason" defaultValue="cannot_be_shown">
-                  {REASONS.map(([value, words]) => (
-                    <option key={value} value={value}>
-                      {words}
-                    </option>
-                  ))}
-                </select>
-                <small>The reason is shown on the request&rsquo;s public record as the organisation&rsquo;s own. Nobody checks it.</small>
-              </label>
-            </ActionForm>
-          )}
-        </div>
-      ))}
-      {direct && r.here.length === 0 && (
-        <ActionForm action={adoptRequestAction} submit="Adopt it here">
-          <input type="hidden" name="public_request_id" value={r.public_request_id} />
-          {labels && <LabelChoice mine={labels} what="The label the work on this request is done at. The request is then read by the readers of that label." />}
-        </ActionForm>
-      )}
-    </div>
-  );
+  const all = listed?.requests ?? [];
+  const groups: Record<Tab, PublicRequest[]> = {
+    open: all.filter((r) => r.here.length === 0 && LIVE.includes(r.state_on_the_public_graph)),
+    adopted: all.filter((r) => r.here.length > 0),
+    closed: all.filter((r) => r.here.length === 0 && !LIVE.includes(r.state_on_the_public_graph)),
+  };
+  const current: Tab = tab === "adopted" || (tab === "closed" && groups.closed.length > 0) ? tab : "open";
+  const shown = groups[current];
+  const asOf = listed?.as_of ? british(listed.as_of) : null;
 
   return (
-    <div className="admin-page">
-      <PageHead
-        kicker="The public graph"
-        title="Public requests"
-        lede="A request on the public graph records something someone could do that would improve what the graph knows, and can be addressed to whoever holds the evidence. These are read from the mirror, so reading them tells the public graph nothing."
+    <WorkPage>
+      <WorkHead
+        title="Requests"
+        sub={
+          <HeadSub account={account} problem={accountProblem}>
+            From the public graph&apos;s mirror · reading them tells the public graph nothing{" "}
+            <Tip>{asOf ?? "These are the public graph's requests as the mirror last brought them."}</Tip>
+          </HeadSub>
+        }
       />
-      <WorkNav who={who} current="/admin/outside/requests" />
 
-      <section className="acct-section admin-first" id="how">
-        <div className="acct-head">
-          <h2>Adopting, and taking up in public</h2>
+      {accountProblem && <Note tone="bad">{accountProblem}</Note>}
+      {problem && <Note tone="bad">{problem}</Note>}
+
+      <Tabs
+        current={current}
+        tabs={[
+          { key: "open", label: "Open", href: "/admin/outside/requests", count: groups.open.length },
+          { key: "adopted", label: "Adopted", href: "/admin/outside/requests?tab=adopted", count: groups.adopted.length },
+          ...(groups.closed.length > 0
+            ? [{ key: "closed", label: "Closed", href: "/admin/outside/requests?tab=closed", count: groups.closed.length }]
+            : []),
+        ]}
+      />
+
+      {listed && (
+        <div className="w-toolbar">
+          <span className="w-faint w-small">
+            Adopting files a private request · taking up in public goes through the gate{" "}
+            <Tip>{`${british(listed.adopting)} ${british(listed.taking_up_in_public)}`}</Tip>
+          </span>
         </div>
-        <p className="acct-prose acct-measure">{british(listed.adopting)}</p>
-        <Notice>{british(listed.taking_up_in_public)}</Notice>
-      </section>
-
-      {mine.length > 0 && (
-        <section className="acct-section" id="adopted">
-          <div className="acct-head">
-            <h2>Adopted here</h2>
-            <span className="acct-note">at labels you read</span>
-          </div>
-          {mine.map((r) => (
-            <Request key={r.public_request_id} r={r} />
-          ))}
-        </section>
       )}
 
-      <section className="acct-section" id="open">
-        <div className="acct-head">
-          <h2>Open on the public graph</h2>
-          <span className="acct-note">{british(listed.as_of)}</span>
-        </div>
-        {live.filter((r) => r.here.length === 0).length === 0 ? (
-          <p className="account-empty">The mirror holds no other open request.</p>
+      <div className="w-feed">
+        {shown.length === 0 ? (
+          <Empty>
+            {current === "open"
+              ? "The mirror holds no open request that is not adopted here."
+              : current === "adopted"
+                ? "No request is adopted here at a label you read."
+                : "No closed request."}
+          </Empty>
         ) : (
-          live.filter((r) => r.here.length === 0).map((r) => <Request key={r.public_request_id} r={r} />)
+          shown.map((r) => <Request key={r.public_request_id} r={r} direct={direct} labels={labels} />)
         )}
-      </section>
+      </div>
+    </WorkPage>
+  );
+}
+
+function Request({ r, direct, labels }: { r: PublicRequest; direct: boolean; labels: MyLabels | null }) {
+  const state = r.state_on_the_public_graph;
+  return (
+    <div className="w-pub-req">
+      <div style={{ minWidth: 0 }}>
+        <div className="w-pub-req-ask">{r.ask}</div>
+        <div className="w-pub-req-line">{r.why}</div>
+        <div className="w-pub-req-line w-muted">Satisfied by: {r.satisfied_by}</div>
+        {(r.bears_on.length > 0 || r.bears_on_text) && (
+          <div className="w-pub-req-meta">
+            <span>Bears on</span>
+            {r.bears_on.map((b) => (
+              <Link key={b.id} className="w-node w-sm" href={`/claims/${b.id}`}>
+                {b.text}
+              </Link>
+            ))}
+            {r.bears_on_text && <span className="w-node w-sm">{r.bears_on_text}</span>}
+          </div>
+        )}
+        <div className="w-pub-req-meta">
+          <span>Who could: {r.who_could ?? "anyone"}</span>
+          <span>·</span>
+          <span>To: {r.addressed_to ?? "anyone"}</span>
+          <span>·</span>
+          <span>Filed {shortDay(r.filed_at)}</span>
+          <span>·</span>
+          <span className="w-mono w-faint" title="Its id on the public graph">
+            {r.public_request_id.slice(0, 8)}
+          </span>
+        </div>
+        {r.here.map((h) => (
+          <Adopted key={h.adoption_id} h={h} state={state} direct={direct} />
+        ))}
+      </div>
+      <div className="w-pub-req-r">
+        <Pill tone={STATE_TONE[state] ?? "neu"}>{cap(state.replace(/_/g, " "))}</Pill>
+        {direct && r.here.length === 0 && LIVE.includes(state) && (
+          <details className="w-pub-pop">
+            <summary className="w-btn w-sm">Adopt…</summary>
+            <div className="w-pop">
+              <WorkForm action={adoptRequestAction} submit="Adopt privately" primary small>
+                <input type="hidden" name="public_request_id" value={r.public_request_id} />
+                {labels?.must_choose && (
+                  <div className="w-field">
+                    <label htmlFor={`lbl-${r.public_request_id}`}>Label</label>
+                    <select id={`lbl-${r.public_request_id}`} className="w-select" name="label" required defaultValue="">
+                      <option value="" disabled>
+                        Choose a label
+                      </option>
+                      {labels.labels.map((l) => (
+                        <option key={l.name} value={l.name} title={l.who_reads}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <span className="w-help">The work is done and read at that label. Says nothing outside.</span>
+              </WorkForm>
+            </div>
+          </details>
+        )}
+      </div>
     </div>
   );
+}
+
+function Adopted({ h, state, direct }: { h: PublicRequest["here"][number]; state: string; direct: boolean }) {
+  const takenUp = !!h.taken_up_in_public_at;
+  const declined = h.declined_in_public;
+  const met = state === "met";
+  return (
+    <div>
+      <div className="w-pub-track">
+        <span className="w-pub-step">
+          <span className="w-dot w-ok" aria-hidden />
+          <b>Adopted</b> {shortDay(h.adopted_at)} as <Link href={`/requests/${h.request_id}`}>a request here</Link>
+          <span className="w-faint">({h.state_here.replace(/_/g, " ")})</span>
+        </span>
+        <span className="w-pub-step-ln" aria-hidden />
+        <span className="w-pub-step">
+          <span className={takenUp ? "w-dot w-ok" : "w-dot"} aria-hidden />
+          <b>Taken up in public</b> {takenUp ? shortDay(h.taken_up_in_public_at) : <span className="w-faint">not said outside</span>}
+        </span>
+        <span className="w-pub-step-ln" aria-hidden />
+        <span className="w-pub-step">
+          <span className={declined ? "w-dot w-bad" : met ? "w-dot w-ok" : "w-dot"} aria-hidden />
+          {declined ? (
+            <>
+              <b>Declined</b> {shortDay(declined.at)}: {declined.because}
+            </>
+          ) : met ? (
+            <b>Met</b>
+          ) : (
+            <span className="w-faint">Met / declined</span>
+          )}
+        </span>
+      </div>
+      {direct && !takenUp && (
+        <details className="w-pub-more" style={{ marginTop: 8 }}>
+          <summary>Take up in public…</summary>
+          <div className="w-pub-sub">
+            <WorkForm action={takeUpRequestAction} submit="Take up in public" primary small lock="Said in the organisation's name · not taken back">
+              <input type="hidden" name="adoption_id" value={h.adoption_id} />
+              <label className="w-check">
+                <input type="checkbox" name="understood" value="yes" required /> I have read what this shows outside
+              </label>
+            </WorkForm>
+          </div>
+        </details>
+      )}
+      {direct && takenUp && !declined && !met && (
+        <details className="w-pub-more" style={{ marginTop: 8 }}>
+          <summary>Decline in public…</summary>
+          <div className="w-pub-sub">
+            <WorkForm action={declineRequestAction} submit="Decline in public" danger small lock="Public as the organisation's own · not taken back">
+              <input type="hidden" name="adoption_id" value={h.adoption_id} />
+              <div className="w-row" style={{ alignItems: "flex-start" }}>
+                <div className="w-field" style={{ flex: "1 1 220px" }}>
+                  <label htmlFor={`why-${h.adoption_id}`}>Reason</label>
+                  <select id={`why-${h.adoption_id}`} className="w-select" name="reason" required defaultValue="">
+                    <option value="" disabled>
+                      Choose a reason
+                    </option>
+                    {REASONS.map(([value, words]) => (
+                      <option key={value} value={value}>
+                        {words}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-field" style={{ flex: "1 1 220px" }}>
+                  <label htmlFor={`note-${h.adoption_id}`}>
+                    Note <span className="w-faint">optional</span>
+                  </label>
+                  <input id={`note-${h.adoption_id}`} className="w-input" name="note" maxLength={1000} placeholder="Shown on the request's public record" />
+                </div>
+              </div>
+              <span className="w-help">The reason is shown on the request&apos;s public record as the organisation&apos;s own. Nobody checks it.</span>
+            </WorkForm>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function cap(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }

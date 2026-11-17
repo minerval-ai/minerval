@@ -14,7 +14,9 @@ import { getSourceFacts } from "../services/source-facts-service.js";
 import { getSourceDocument } from "../services/source-segment-service.js";
 import { listExaminations } from "../services/examination-service.js";
 import { getSourceContext } from "../services/source-context-service.js";
-import { requirePermission } from "../server/require-permission.js";
+import { requireAnyPermission, requirePermission } from "../server/require-permission.js";
+import { standingOf } from "../permissions.js";
+import { SOURCE_LIST_MAX_LIMIT, SOURCE_LIST_STATUSES, listSources } from "../services/source-list-service.js";
 import { rawSourceLabelsOf } from "../raw-sources.js";
 
 // Contributor-gate errors ({error: {code, message}}), shared with
@@ -33,6 +35,94 @@ const errorEnvelopeSchema = {
 } as const;
 
 export async function sourceRoutes(app: FastifyInstance): Promise<void> {
+  // GET /sources — the sources the caller may read, newest first, each with
+  // where its admission and reading stand, whose material it is and who
+  // added it (services/source-list-service.ts). The list the people who
+  // bring material in work from. In a members-only deployment it is theirs:
+  // the holders of direct, who add sources, and of administer, who say whose
+  // material each is; it is held to the caller's clearance, so a source at a
+  // label they may not read is neither listed nor counted. No document text
+  // is returned.
+  app.get<{ Querystring: { limit?: number; offset?: number; at_label?: string; party?: string } }>("/", {
+    schema: {
+      tags: ["sources"],
+      summary: "List the sources you may read, newest first, with where each stands (holders of direct or of administer)",
+      description:
+        "Each source with its title, address, kind, label, party (whose material it is; null until an " +
+        "administrator says), status, the submission the status is read from, who added it and when. " +
+        "status is one of: pending_review (its submission waits for review), not_admitted (rejected; " +
+        "nothing was read), queued (admitted, its reading waits), reading, extracted, failed (its reading " +
+        "stopped with an error), recorded (no submission: an agent kept it, or the system wrote it). " +
+        "`counts` is over every source you may read; `total` is how many match at_label and party, for paging " +
+        "with limit and offset. party=none lists the sources no party is recorded for.",
+      querystring: {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: SOURCE_LIST_MAX_LIMIT, default: 50 },
+          offset: { type: "integer", minimum: 0, default: 0 },
+          at_label: { type: "string", description: "Only sources at this label." },
+          party: {
+            type: "string",
+            pattern: "^(none|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+            description: "Only this party's sources, by its id, or `none` for those no party is recorded for.",
+          },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            sources: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string", format: "uuid" },
+                  title: { type: "string" },
+                  url: { type: "string", nullable: true },
+                  kind: { type: "string" },
+                  label: { type: "string" },
+                  party: {
+                    type: "object",
+                    nullable: true,
+                    properties: { id: { type: "string", format: "uuid" }, name: { type: "string" } },
+                  },
+                  status: { type: "string", enum: [...SOURCE_LIST_STATUSES] },
+                  contribution_id: { type: "string", format: "uuid", nullable: true },
+                  added_by: { type: "string", nullable: true },
+                  added_at: { type: "string", format: "date-time" },
+                },
+              },
+            },
+            counts: {
+              type: "object",
+              properties: {
+                sources: { type: "integer" },
+                with_no_party: { type: "integer" },
+                pending_review: { type: "integer" },
+              },
+            },
+            total: { type: "integer" },
+          },
+        },
+      },
+    },
+    // A list of every document with who added it is for an account, on the
+    // public graph too, where the permission guard lets every account through.
+    preHandler: [app.authenticate, requireAnyPermission(["direct", "administer"])],
+    handler: async (request, reply) => {
+      const q = request.query;
+      return reply.send(
+        await listSources(standingOf(request.auth).clearance, {
+          limit: q.limit,
+          offset: q.offset,
+          ...(q.at_label ? { label: q.at_label } : {}),
+          ...(q.party ? { party: q.party.toLowerCase() } : {}),
+        })
+      );
+    },
+  });
+
   // GET /sources/:source_id/context — the document across the whole graph
   // (#507): its lineage (what it draws on and what draws on it, by relation
   // and fidelity, on how many claims), its prominence (reach, where it stands

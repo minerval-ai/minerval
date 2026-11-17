@@ -191,6 +191,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       SPENDS_OWLS +
       " There is no hourly cap: your balance is the bound.",
   },
+  "GET /sources": {
+    name: "list_sources",
+    note: "Titles, addresses and where each stands, never a document's text: get_source_document reads that.",
+  },
   "GET /sources/:source_id": { name: "get_source" },
   "GET /sources/:source_id/context": { name: "get_source_context" },
   "GET /sources/:source_id/examinations": { name: "get_source_examinations" },

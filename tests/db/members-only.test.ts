@@ -529,6 +529,8 @@ describe("what a permission guards", () => {
       "GET /parties": [["administer", "direct"]],
       // Which providers each label may be sent to: for an administrator, and for whoever clears them.
       "GET /labels/providers": [["administer", "clear_providers"]],
+      // The deployment's sources, for whoever adds them and for an administrator, who says whose material each is.
+      "GET /sources": [["direct", "administer"]],
     });
   });
 

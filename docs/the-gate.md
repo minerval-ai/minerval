@@ -208,8 +208,9 @@ that they were taken up, an answer, or nothing yet.
 It is shown to the readers of the destination label unless the gate's
 administrators turn that off. A long wait on the Redactor's hold or on a
 person says that the policy or the setting needs changing, and the people
-waiting are the ones placed to notice. `/gates` in the web app shows it,
-and to a gate's authorities shows the settings beside it.
+waiting are the ones placed to notice. Boundaries (`/gates`) in the web
+app shows it, and a boundary's page (`/gates/:id`) shows its authorities
+the rules and settings beside it.
 
 ## Outside
 

@@ -1,19 +1,42 @@
 import type { MyPermissions } from "./account-api";
 
-// The sections of the pages a member works in (components/inside/nav.tsx has
-// what they are for). Kept apart from the components so that what decides
-// where a page belongs needs nothing of Next's.
+// The sidebar of a members-only deployment: every page a member works in,
+// in sections, with the graph's own reading pages among them. One list feeds
+// the sidebar (components/work/Sidebar.tsx) and anything that asks which
+// section a page is in, so the two cannot disagree. Kept apart from the
+// components so that what decides where a page belongs needs nothing of
+// Next's (tests/unit/web/work-nav.test.ts).
+//
+// A person is shown what they can use: a page whose `shown` says no is not
+// listed, and a section with no page left is not named. The API still decides
+// every read and every act; a page reached by its address says which
+// permission it needs.
 
 export type Mine = Pick<MyPermissions, "permissions" | "clearance">;
+
+/** The icon a sidebar entry carries (components/work/icons.tsx). */
+export type WorkIcon =
+  | "inbox" | "review" | "ask" | "claims" | "mandates" | "findings" | "requests" | "docs"
+  | "showings" | "boundaries" | "sources" | "file-sets" | "connections"
+  | "globe" | "public-requests" | "replies" | "outbox"
+  | "health" | "people" | "labels" | "parties" | "budget" | "log";
+
+/** What the sidebar shows beside an entry once the counts are read (app/api/work/counts). */
+export type WorkSignal = "inbox" | "review" | "public_requests" | "replies" | "health" | "connections";
 
 export interface WorkPage {
   href: string;
   name: string;
+  icon: WorkIcon;
+  /** Other addresses that are this page (a page it replaced, a page under it that is not listed). */
+  also?: string[];
+  signal?: WorkSignal;
   shown?: (m: Mine) => boolean;
 }
 
 export interface WorkSection {
-  name: string;
+  /** Null for the first section, which has no heading. */
+  name: string | null;
   pages: WorkPage[];
 }
 
@@ -21,85 +44,92 @@ const has = (m: Mine, ...ps: string[]) => ps.some((p) => m.permissions.includes(
 // Where the deployment holds material at more than one label, pages are shown
 // from one label to another, and every member may read the showings their labels reach.
 const readsShowings = (m: Mine) => m.clearance.some((label) => label !== "public") || has(m, "release", "direct");
+const administers = (m: Mine) => has(m, "administer");
 
 export const WORK_SECTIONS: WorkSection[] = [
   {
-    name: "Showings",
+    name: null,
     pages: [
-      { href: "/showings", name: "Showings", shown: readsShowings },
-      // How much waits at each gate is for every member it concerns; its settings are an administrator's and a release holder's.
+      // What waits on the person, from every part of the deployment.
+      { href: "/inbox", name: "Inbox", icon: "inbox", signal: "inbox" },
+      // The queue of what waits at a gate on a release holder's decision.
+      { href: "/gate", name: "Review", icon: "review", signal: "review", shown: (m) => has(m, "release") },
+    ],
+  },
+  {
+    name: "Graph",
+    pages: [
+      { href: "/ask", name: "Ask", icon: "ask" },
+      { href: "/claims", name: "Claims", icon: "claims", also: ["/arguments", "/contributions"] },
+      { href: "/mandates", name: "Mandates", icon: "mandates" },
+      { href: "/findings", name: "Findings", icon: "findings", also: ["/tags"] },
+      { href: "/requests", name: "Requests", icon: "requests" },
+      { href: "/docs", name: "Docs", icon: "docs" },
+    ],
+  },
+  {
+    // Pages shown from one label to another, or outside, and the boundaries they cross.
+    name: "Sharing",
+    pages: [
+      { href: "/showings", name: "Showings", icon: "showings", shown: readsShowings },
       {
+        // A boundary is one gate and one redaction policy.
         href: "/gates",
-        name: "Gates",
-        shown: (m) => readsShowings(m) || has(m, "administer"),
-      },
-      { href: "/gate", name: "At the gate", shown: (m) => has(m, "release") },
-      // Read by every member; an administrator who reads the label the pages are written at saves a version.
-      {
-        href: "/redaction-policies",
-        name: "Redaction policies",
-        shown: (m) => readsShowings(m) || has(m, "administer"),
+        name: "Boundaries",
+        icon: "boundaries",
+        also: ["/redaction-policies"],
+        shown: (m) => readsShowings(m) || administers(m),
       },
     ],
   },
   {
+    // What the agents read: sources, sets of files, and the organisation's own systems.
     name: "Material",
     pages: [
-      {
-        href: "/sources/new",
-        name: "Add a source",
-        shown: (m) => has(m, "direct"),
-      },
-      // Administrators register directories.
-      {
-        href: "/file-sets",
-        name: "File sets",
-        shown: (m) => has(m, "direct", "administer"),
-      },
+      { href: "/sources", name: "Sources", icon: "sources", shown: (m) => has(m, "direct", "administer") },
+      { href: "/file-sets", name: "File sets", icon: "file-sets", shown: (m) => has(m, "direct", "administer") },
+      { href: "/admin/connections", name: "Connections", icon: "connections", signal: "connections", shown: administers },
     ],
   },
   {
     // Everything that passes between this deployment and the public graph (docs/outward-acts.md).
-    name: "The public graph",
+    name: "Public graph",
     pages: [
-      {
-        href: "/admin/outside",
-        name: "Overview",
-        shown: (m) => has(m, "direct", "release"),
-      },
-      // Pages leave in signed packages, listed here.
-      {
-        href: "/outbound",
-        name: "Pages sent outside",
-        shown: (m) => has(m, "direct"),
-      },
+      { href: "/admin/outside", name: "Overview", icon: "globe", shown: (m) => has(m, "direct", "release") },
       {
         href: "/admin/outside/requests",
-        name: "Public requests",
+        name: "Requests",
+        icon: "public-requests",
+        signal: "public_requests",
         shown: (m) => has(m, "direct", "release"),
       },
       {
         href: "/admin/outside/said-back",
-        name: "What readers said back",
+        name: "Replies",
+        icon: "replies",
+        signal: "replies",
         shown: (m) => has(m, "direct", "release"),
       },
       {
-        href: "/admin/outside/reports",
-        name: "Agents' reports",
+        // Pages sent outside, and agents' reports to Minerval's maintainers.
+        href: "/outbound",
+        name: "Outbox",
+        icon: "outbox",
+        also: ["/admin/outside/reports"],
         shown: (m) => has(m, "direct", "release"),
       },
     ],
   },
   {
-    name: "Administration",
+    name: "Admin",
     pages: [
-      { href: "/admin", name: "Setup" },
-      { href: "/admin/people", name: "People and permissions" },
-      { href: "/admin/labels", name: "Labels and parties" },
-      { href: "/admin/connections", name: "Connections" },
-      { href: "/admin/owls", name: "Owls" },
-      { href: "/admin/usage-report", name: "Usage report" },
-    ].map((p) => ({ ...p, shown: (m: Mine) => has(m, "administer") })),
+      { href: "/admin", name: "Health", icon: "health", signal: "health" },
+      { href: "/admin/people", name: "People", icon: "people" },
+      { href: "/admin/labels", name: "Labels", icon: "labels" },
+      { href: "/admin/parties", name: "Parties", icon: "parties" },
+      { href: "/admin/budget", name: "Budget", icon: "budget", also: ["/admin/owls", "/admin/usage-report"] },
+      { href: "/admin/activity", name: "Activity log", icon: "log" },
+    ].map((p) => ({ ...p, icon: p.icon as WorkIcon, signal: p.signal as WorkSignal | undefined, shown: administers })),
   },
 ];
 
@@ -111,11 +141,21 @@ export function workSections(mine: Mine): WorkSection[] {
   })).filter((s) => s.pages.length > 0);
 }
 
-/** The page a path belongs to: the listed page whose address is the longest leading part of it. */
-export function pageOf(sections: Array<{ pages: Array<{ href: string }> }>, path: string): string | null {
-  let best: string | null = null;
+const under = (path: string, href: string) =>
+  href.endsWith("/") ? path.startsWith(href) : path === href || path.startsWith(`${href}/`);
+
+/**
+ * The page a path belongs to: the listed page whose address, or one of its
+ * other addresses, is the longest leading part of it.
+ */
+export function pageOf(
+  sections: Array<{ pages: Array<{ href: string; also?: string[] }> }>,
+  path: string,
+): string | null {
+  let best: { href: string; length: number } | null = null;
   for (const s of sections)
     for (const p of s.pages)
-      if ((path === p.href || path.startsWith(`${p.href}/`)) && (!best || p.href.length > best.length)) best = p.href;
-  return best;
+      for (const a of [p.href, ...(p.also ?? [])])
+        if (under(path, a) && (!best || a.length > best.length)) best = { href: p.href, length: a.length };
+  return best?.href ?? null;
 }

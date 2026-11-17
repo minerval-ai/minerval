@@ -161,12 +161,13 @@ starts with public Minerval's own settings and you change the ones you need.
    again. The first sign-in by that identity, while the deployment has never
    had an administrator, is granted every permission. It works once.
 
-6. **Open the setup checklist.** It is the page at `/admin`. It reads the
-   deployment and says what needs someone now: the deployment's own checks
+6. **Open Health.** It is the page at `/admin`, under Admin in the sidebar.
+   It reads the deployment and says what needs someone now: the deployment's own checks
    of its configuration (the preflight; [deployment.md](deployment.md),
    "Preflight"), then permissions, labels, the General mandate, owls and
-   material. Read what the checks say fails: a wrong setting is named there
-   with what to change. Once a label is defined, agent work does not start
+   material, each item marked as one the deployment's operator or an
+   administrator puts right. Read what the checks say fails: a wrong setting
+   is named there with what to change. Once a label is defined, agent work does not start
    until the checks that block it pass, and the API's log says which.
 
 7. **Define your labels.** On `/admin/labels`, define a label and say which
@@ -187,9 +188,10 @@ starts with public Minerval's own settings and you change the ones you need.
 8. **Carry on in the web app.** Grant permissions (`/admin/people`),
    define your labels and tick the model providers and outside services
    each may be sent to (`/admin/labels`; nothing is ticked until you tick
-   it, and a change is in force within seconds, with no restart), create
-   owls and set up the General mandate, and add material. The checklist
-   page says where each of these stands.
+   it, and a change is in force within seconds, with no restart), add the
+   parties (`/admin/parties`), create owls and set up the General mandate
+   (`/admin/budget`), and add material (`/sources`). Health says where each
+   of these stands.
 
 To stop: `docker compose down`. The database and the uploaded file sets are
 kept in Docker volumes and are there at the next start. `docker compose
@@ -218,8 +220,8 @@ public graph that belongs to the organization, not to a person: make one on
 | `PUBLISH_SIGNING_KEY` | `npx tsx scripts/published-page.ts keygen` makes one; keep a copy |
 | `DEPLOYMENT_HOSTING` | `own_machines`, for this package |
 
-Then an administrator presses "Register this deployment's key on the public
-graph" on `/outbound`: the deployment signs the registration for the
+Then an administrator presses "Register key" on the public graph's Overview
+(`/admin/outside`): the deployment signs the registration for the
 organization's account and sends it there through that account
 ([published-pages.md](published-pages.md), "Who a publisher is"). Until the public graph's feed answers at that address, nothing can be
 mirrored ([infrastructure.md](infrastructure.md), "The mirror feed").

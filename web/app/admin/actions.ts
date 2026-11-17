@@ -126,7 +126,7 @@ export async function defineLabelAction(_previous: FormState, form: FormData): P
         ? `Its text may be sent to ${listed(providers)}.`
         : "No model provider or outside service is cleared for it yet, so no agent can work at it until one is.") +
       " " +
-      `Upkeep and audits at ${name} are paid by a General mandate at ${name}, which an administrator who reads it sets up on the Owls page ` +
+      `Upkeep and audits at ${name} are paid by a General mandate at ${name}, which an administrator who reads it sets up on the Budget page ` +
       `(its row in the table above links there). None is needed if it will hold only work someone asks for and pays for.`,
   };
 }

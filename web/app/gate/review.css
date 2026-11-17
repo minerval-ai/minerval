@@ -1,0 +1,127 @@
+/* Review (app/gate): the queue, the item chosen as a document with the bar
+   that decides on it, and its context, in three panes. Tokens only. */
+
+.w-review {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr) 244px;
+  height: max(560px, calc(100vh - 250px));
+  border: 1px solid var(--w-rule);
+  border-radius: 8px;
+  background: var(--w-panel);
+  overflow: hidden;
+}
+.w-review-legend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--w-faint); }
+.w-review-legend .w-dot { margin-left: 6px; }
+.w-dot.w-review-info { background: var(--w-accent); }
+
+/* the queue */
+.w-review-list { border-right: 1px solid var(--w-rule); display: flex; flex-direction: column; min-height: 0; }
+.w-review-list-h {
+  display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; flex: 0 0 auto;
+  border-bottom: 1px solid var(--w-rule); background: var(--w-sunk); font-size: 12px; color: var(--w-muted);
+}
+.w-review-rows { flex: 1; overflow: auto; }
+.w-shell a.w-review-row {
+  display: block; padding: 11px 14px 11px 12px; border-bottom: 1px solid var(--w-rule);
+  border-left: 2px solid transparent; color: var(--w-ink);
+}
+.w-shell a.w-review-row:hover { background: var(--w-row-hover); text-decoration: none; }
+.w-shell a.w-review-row[aria-current] { background: var(--w-raised); border-left-color: var(--w-accent); }
+.w-review-row-t { display: flex; gap: 8px; align-items: flex-start; }
+.w-review-row-t .w-dot { margin-top: 6px; }
+.w-review-row-node, .w-review-row-sans {
+  flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.w-review-row-node { font: 400 14px/1.35 var(--serif); }
+.w-review-row-sans { font-weight: 500; font-size: 13px; line-height: 1.35; }
+.w-review-row-m { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--w-muted); }
+.w-review-row-m .w-lbl { font-size: 11.5px; }
+.w-review-row-m + .w-review-row-m { margin-top: 3px; }
+.w-review-flag { font-size: 11.5px; }
+.w-review-flag.w-warn { color: var(--w-warn); }
+.w-review-flag.w-bad { color: var(--w-bad); }
+.w-review-flag.w-info { color: var(--w-accent); }
+
+/* the item chosen */
+.w-review-doc { position: relative; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--w-rule); background: var(--w-bg); }
+.w-review-doc-s { flex: 1; overflow: auto; padding: 18px 22px 24px; }
+.w-review-doc-k { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--w-muted); }
+.w-page .w-review-doc-t { margin: 8px 0 10px; font: 400 20px/1.3 var(--serif); color: var(--w-ink); }
+.w-page .w-review-doc-t.w-sans { font: 600 17px/1.3 var(--sans); }
+.w-review-facts { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12.5px; color: var(--w-soft); }
+.w-review-facts + .w-review-facts { margin-top: 8px; }
+.w-review-unread {
+  margin-top: 12px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--w-rule);
+  background: var(--w-sunk); font-size: 12.5px; color: var(--w-muted);
+}
+.w-review-part { border: 1px solid var(--w-rule); border-radius: 8px; background: var(--w-panel); margin-top: 8px; }
+.w-review-facts + .w-review-part, .w-review-unread + .w-review-part { margin-top: 16px; }
+.w-review-part:has(> .w-review-part-h input:checked) { border-color: var(--w-accent); background: var(--w-accent-wash); }
+.w-review-part.w-unsure { box-shadow: inset 3px 0 0 var(--w-warn); }
+.w-review-part-h { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 12px; font-size: 12.5px; color: var(--w-muted); flex-wrap: wrap; }
+.w-review-part-h input { accent-color: var(--w-accent); margin: 0; width: 14px; height: 14px; }
+.w-review-part-h label { display: flex; gap: 6px; align-items: center; color: var(--w-soft); cursor: pointer; }
+.w-review-part-h label b { font-weight: 600; color: var(--w-ink); }
+.w-review-part-b { padding: 0 14px 12px 34px; font: 400 14.5px/1.6 var(--serif); color: var(--w-soft); white-space: pre-wrap; overflow-wrap: anywhere; }
+.w-review-part-b del.w-removed { white-space: pre-wrap; }
+.w-review-part-n { padding: 0 14px 11px 34px; font-size: 12px; color: var(--w-muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.w-review-part-n.w-warn { color: var(--w-warn); }
+.w-review-part-n svg { width: 13px; height: 13px; flex: 0 0 13px; }
+details.w-review-part-n { display: block; }
+details.w-review-part-n > summary { cursor: pointer; color: var(--w-muted); }
+details.w-review-part-n > .w-code { margin-top: 8px; max-height: 280px; overflow: auto; }
+.w-ok-ink { color: var(--w-ok); }
+.w-bad-ink { color: var(--w-bad); }
+
+/* the bar at the foot of the item */
+.w-review-bar {
+  flex: 0 0 auto; border-top: 1px solid var(--w-rule2); background: var(--w-panel); padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.w-review-bar-r { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.w-review-bar .w-btn.w-sm { padding: 0 8px; }
+.w-review-bar-n { font-size: 12.5px; color: var(--w-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.w-review-bar-n { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; cursor: pointer; }
+.w-review-bar-n input { accent-color: var(--w-accent); margin: 0; }
+.w-review-bar-n b { font-weight: 600; }
+.w-review-bar details.w-menu > .w-pop {
+  top: auto; bottom: calc(100% + 8px); left: 0; right: auto; display: flex; flex-direction: column; gap: 10px; width: 300px;
+}
+.w-review-bar details.w-menu.w-review-end > .w-pop { left: auto; right: 0; }
+.w-review-bar details.w-menu > summary { cursor: pointer; }
+.w-review-bar details.w-menu[open] > summary { background: var(--w-hover); }
+.w-review-bar .w-pop .w-btn { align-self: flex-start; }
+
+/* the context */
+.w-review-ctx { overflow: auto; min-height: 0; }
+.w-review-ctx-s { padding: 14px 16px; border-bottom: 1px solid var(--w-rule); }
+.w-review-ctx-s:last-child { border-bottom: 0; }
+.w-page .w-review-ctx-s h3 { font: 600 10.5px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--w-faint); margin: 0 0 10px; }
+.w-review-ctx-r { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 0; }
+.w-shell .w-review-ctx-r a:hover { text-decoration: none; }
+
+/* what can be done here */
+.w-review-rules { border: 1px solid var(--w-rule); border-radius: 8px; background: var(--w-panel); padding: 10px 14px; font-size: 13px; }
+.w-review-rules > summary { cursor: pointer; font-weight: 500; color: var(--w-soft); }
+.w-review-rules ul { margin: 10px 0 6px; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--w-soft); }
+.w-review-rules b { font-weight: 600; color: var(--w-ink); }
+.w-review-rules .w-help { margin: 6px 0 0; }
+
+@media (max-width: 1180px) {
+  .w-review { grid-template-columns: 260px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: max(720px, calc(100vh - 160px)); }
+  .w-review-bar { position: relative; }
+  .w-review-bar details.w-menu { position: static; }
+  .w-review-bar details.w-menu > .w-pop, .w-review-bar details.w-menu.w-review-end > .w-pop { left: 12px; right: auto; }
+  .w-review-ctx { grid-column: 1 / -1; border-top: 1px solid var(--w-rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); max-height: 260px; }
+  .w-review-ctx-s { border-bottom: 0; border-right: 1px solid var(--w-rule); }
+  .w-review-doc { border-right: 0; }
+}
+@media (max-width: 760px) {
+  .w-review { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; height: auto; overflow: visible; }
+  .w-review-list { border-right: 0; border-bottom: 1px solid var(--w-rule); max-height: 320px; }
+  .w-review-doc-s { overflow: visible; }
+  .w-review-bar { position: sticky; bottom: 0; z-index: 5; }
+  .w-review-bar details.w-menu { position: static; }
+  .w-review-bar details.w-menu > .w-pop, .w-review-bar details.w-menu.w-review-end > .w-pop { left: 12px; right: 12px; width: auto; }
+  .w-review-ctx { max-height: none; }
+}

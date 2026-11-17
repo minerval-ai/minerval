@@ -24,6 +24,12 @@ const NOT_DESCRIBED: Record<string, string> = {
   "/account/grants": "A redirect kept for old links: the Mandates list's own tab.",
   "/account/grants/new": "A redirect kept for old links: starting a mandate is in Ask.",
   "/account/grants/:id": "A redirect kept for old links: a grant and its mandate have one page.",
+  "/admin/owls": "A redirect kept for old links: owls are on /admin/budget.",
+  "/admin/usage-report": "A redirect kept for old links: the usage reports are a tab of /admin/budget.",
+  "/admin/outside/reports": "A redirect kept for old links: agents' reports are a tab of /outbound.",
+  "/redaction-policies": "A redirect kept for old links: a boundary's policy is a tab of /gates/:id.",
+  "/redaction-policies/:id": "A redirect kept for old links: a boundary's policy is a tab of /gates/:id.",
+  "/sources/new": "A redirect kept for old links: adding a source opens a drawer on /sources.",
 };
 
 /**

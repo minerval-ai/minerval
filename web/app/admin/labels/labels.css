@@ -1,0 +1,29 @@
+/* The labels page: the matrix of what each label may be sent to, and the
+   small form that opens in a row to say that one label reads another. */
+
+.w-labels-matrix th.w-labels-group {
+  text-align: center; font: 600 10.5px/1 var(--sans); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--w-faint); background: var(--w-panel); border-bottom: 0;
+}
+.w-labels-matrix th.w-labels-group + th.w-labels-group,
+.w-labels-matrix .w-labels-first-service { border-left: 1px solid var(--w-rule); }
+.w-labels-matrix th.w-labels-col, .w-labels-matrix td.w-labels-cell { text-align: center; }
+.w-labels-matrix th.w-labels-off { color: var(--w-faint); font-weight: 400; }
+.w-labels-matrix td.w-labels-off { background: var(--w-sunk); }
+.w-labels-matrix td.w-labels-changed,
+.w-labels-matrix tbody tr:hover > td.w-labels-changed { background: var(--w-accent-wash); box-shadow: inset 0 0 0 1px var(--w-accent); }
+.w-labels-matrix td.w-labels-all { text-align: center; color: var(--w-faint); background: var(--w-sunk); }
+.w-labels-matrix tr.w-labels-has-problem > td { border-bottom: 0; }
+.w-labels-matrix tr.w-labels-problem > td { padding: 0 12px 9px 30px; font-size: 12.5px; color: var(--w-warn); }
+.w-labels-matrix input[type="checkbox"] { accent-color: var(--w-accent); width: 15px; height: 15px; }
+
+.w-labels-legend { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 12.5px; color: var(--w-muted); }
+.w-labels-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; background: var(--w-accent-wash); box-shadow: inset 0 0 0 1px var(--w-accent); vertical-align: -2px; margin-right: 6px; }
+
+details.w-labels-add { display: inline-block; }
+details.w-labels-add > summary { list-style: none; cursor: pointer; }
+details.w-labels-add > summary::-webkit-details-marker { display: none; }
+details.w-labels-add[open] > .w-labels-add-b {
+  margin-top: 8px; padding: 10px; border: 1px solid var(--w-rule2); border-radius: 8px; background: var(--w-panel);
+  display: flex; flex-direction: column; gap: 8px; min-width: 240px;
+}

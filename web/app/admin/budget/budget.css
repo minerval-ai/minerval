@@ -1,0 +1,26 @@
+/* Budget: the usage reports, each a row that opens to the text that is sent. */
+
+details.w-budget-said { border-bottom: 1px solid var(--w-rule); padding: 9px 14px; }
+details.w-budget-said:last-child { border-bottom: 0; }
+details.w-budget-said > summary {
+  cursor: pointer; list-style: none; display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: baseline;
+}
+details.w-budget-said > summary::-webkit-details-marker { display: none; }
+details.w-budget-said > summary > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--w-soft); }
+details.w-budget-said[open] > summary > span:last-child { white-space: normal; }
+details.w-budget-said > summary > span:first-child { color: var(--w-muted); font-size: 12.5px; }
+
+details.w-budget-report { border-bottom: 1px solid var(--w-rule); }
+details.w-budget-report:last-child { border-bottom: 0; }
+details.w-budget-report > summary {
+  cursor: pointer; list-style: none; display: grid; grid-template-columns: 170px 190px minmax(0, 1fr) auto; gap: 12px;
+  align-items: center; padding: 9px 14px;
+}
+details.w-budget-report > summary::-webkit-details-marker { display: none; }
+details.w-budget-report > summary:hover { background: var(--w-row-hover); }
+details.w-budget-report[open] > summary { background: var(--w-sunk); }
+.w-budget-report-b { padding: 4px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+@media (max-width: 900px) {
+  details.w-budget-said > summary, details.w-budget-report > summary { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
