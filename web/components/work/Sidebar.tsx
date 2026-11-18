@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { pageOf, type WorkIcon, type WorkSignal } from "../../lib/work-sections";
 import type { WorkCounts } from "../../lib/work-counts";
+import { Mark } from "../../app/Mark";
 import { Icon } from "./icons";
 
 // The sidebar of a members-only deployment (components/work/Shell.tsx places
@@ -51,7 +52,7 @@ export function Sidebar({
   return (
     <nav className="w-side" aria-label="Workspace">
       <Link className="w-brand" href="/inbox">
-        <OwlMark />
+        <Mark size={20} />
         <span className="w-brand-name">Minerval</span>
         {counts?.deployment && <span className="w-brand-dep" title={counts.deployment}>{counts.deployment}</span>}
       </Link>
@@ -109,16 +110,4 @@ function Signal({ signal, counts }: { signal: WorkSignal; counts: WorkCounts | n
   const n = counts[signal];
   if (!n) return null;
   return <span className={signal === "inbox" ? "w-count w-hot" : "w-count"}>{n > 99 ? "99+" : n}</span>;
-}
-
-function OwlMark() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--w-owl)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden focusable="false">
-      <path d="M7 4c-1 2-1 4 0 5M17 4c1 2 1 4 0 5" />
-      <circle cx="9" cy="10" r="2" />
-      <circle cx="15" cy="10" r="2" />
-      <path d="M6 9c-1 5 1 10 6 11 5-1 7-6 6-11" />
-      <path d="M11.3 13.2 12 14l.7-.8" />
-    </svg>
-  );
 }

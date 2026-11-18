@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { signOut } from "../auth";
 import { membersOnly } from "../lib/members";
 import { loadStanding } from "../lib/standing";
+import { Mark } from "../app/Mark";
 import { CopyId } from "./work/CopyId";
 import { WorkShell } from "./work/Shell";
 import { PageHead } from "./PageHead";
@@ -95,6 +96,7 @@ function GateCard({ children }: { children: ReactNode }) {
     <div className="w-gate">
       <div className="w-gate-card">
         <div className="w-brand">
+          <Mark size={20} />
           <span className="w-brand-name">Minerval</span>
           <span className="w-pill w-neu">Private</span>
         </div>
