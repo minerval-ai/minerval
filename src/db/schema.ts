@@ -2776,6 +2776,128 @@ export const accountConversions = pgTable(
   ]
 );
 
+// ---------------------------------------------------------------------------
+// Connected deployments (docs/organizations.md, "A deployment's identity")
+//
+// A private deployment that belongs to an organization and signs its own
+// requests to the public graph with a key that never leaves it. What it may
+// do is the grants an admin of the organization gave it. None of these
+// tables carries a label: they say who a request is, as api_keys does.
+// ---------------------------------------------------------------------------
+export const DEPLOYMENT_GRANTS = ["read_feed", "report_usage", "publish", "act"] as const;
+export type DeploymentGrant = (typeof DEPLOYMENT_GRANTS)[number];
+
+export const deployments = pgTable(
+  "deployments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // As the deployment stated it: one of HOSTING_WORDS in src/published-page/verify.ts.
+    hosting: text("hosting").notNull(),
+    // The connection key: the base64 of its 32 raw bytes, and its id (hex sha-256 of them).
+    publicKey: text("public_key").notNull(),
+    keyId: text("key_id").notNull(),
+    // The identifier the deployment puts on its usage reports (docs/usage-report.md).
+    reportIdentifier: uuid("report_identifier"),
+    approvedBy: uuid("approved_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }).notNull().defaultNow(),
+    retiredBy: uuid("retired_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_deployments_live_key").on(table.keyId).where(sql`${table.retiredAt} IS NULL`),
+    index("idx_deployments_org").on(table.organizationId),
+    check("ck_deployments_hosting", sql`${table.hosting} IN ('own_machines', 'minerval', 'third_party')`),
+  ]
+);
+
+// One row per grant given. Withdrawing sets withdrawn_at; nothing is edited.
+export const deploymentGrants = pgTable(
+  "deployment_grants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    deploymentId: uuid("deployment_id")
+      .notNull()
+      .references((): AnyPgColumn => deployments.id, { onDelete: "cascade" }),
+    grant: text("grant").$type<DeploymentGrant>().notNull(),
+    grantedBy: uuid("granted_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
+    withdrawnBy: uuid("withdrawn_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_deployment_grants_live").on(table.deploymentId, table.grant).where(sql`${table.withdrawnAt} IS NULL`),
+    check("ck_deployment_grants_grant", sql`${table.grant} IN ('read_feed', 'report_usage', 'publish', 'act')`),
+  ]
+);
+
+// A deployment asking to be connected (RFC 8628, with the key standing in
+// for the device code). The code is shown on the deployment and typed or
+// followed by an admin of the organization, who approves or denies.
+export const deploymentConnectRequests = pgTable(
+  "deployment_connect_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: text("code").notNull().unique(),
+    publicKey: text("public_key").notNull(),
+    keyId: text("key_id").notNull(),
+    suggestedName: text("suggested_name").notNull(),
+    hosting: text("hosting").notNull(),
+    askedGrants: text("asked_grants").array().notNull(),
+    reportIdentifier: uuid("report_identifier"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    // 'waiting', 'approved' or 'denied'.
+    state: text("state").notNull().default("waiting"),
+    decidedBy: uuid("decided_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    deploymentId: uuid("deployment_id").references((): AnyPgColumn => deployments.id, { onDelete: "set null" }),
+  },
+  (table) => [
+    index("idx_deployment_connect_requests_key").on(table.keyId),
+    check("ck_deployment_connect_requests_state", sql`${table.state} IN ('waiting', 'approved', 'denied')`),
+    check("ck_deployment_connect_requests_hosting", sql`${table.hosting} IN ('own_machines', 'minerval', 'third_party')`),
+  ]
+);
+
+// One row per signed request that wrote, for the organization's members.
+// Reads are not recorded: the public graph keeps no record of what a
+// deployment looks at.
+export const deploymentRequests = pgTable(
+  "deployment_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    deploymentId: uuid("deployment_id")
+      .notNull()
+      .references((): AnyPgColumn => deployments.id, { onDelete: "cascade" }),
+    method: text("method").notNull(),
+    route: text("route").notNull(),
+    status: integer("status").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("idx_deployment_requests_deployment").on(table.deploymentId, table.at)]
+);
+
+// Nonces of signed writes seen in the last ten minutes, so a write cannot
+// be replayed. Pruned as new ones arrive.
+export const deploymentRequestNonces = pgTable(
+  "deployment_request_nonces",
+  {
+    keyId: text("key_id").notNull(),
+    nonce: text("nonce").notNull(),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.keyId, table.nonce] }),
+    index("idx_deployment_request_nonces_seen").on(table.seenAt),
+  ]
+);
+
+export type Deployment = typeof deployments.$inferSelect;
+
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type OrganizationInvitation = typeof organizationInvitations.$inferSelect;
 export type AccountConversion = typeof accountConversions.$inferSelect;

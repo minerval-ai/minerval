@@ -93,6 +93,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/mcp/dispatch.ts:inFlight": "The caller's own authentication for one tool call, under a nonce made for that call and removed when it ends.",
   "src/server/optional-auth.ts:optionalAuthHooks": "Which route hooks are the optional-authentication hook. Functions, no rows.",
   "src/server/plugins/auth.ts:alreadyAuthenticated": "Which requests in flight have been authenticated. Request objects, no rows.",
+  "src/server/plugins/auth.ts:signedBodyHash": "The sha-256 of a deployment's signed request body while it is in flight, keyed by the request. A hash, no rows.",
   "src/server/plugins/members-only.ts:labelOfRequest": "The fixed label of the key or token each request in flight came with. Request objects and a label's name, no rows.",
   "src/server/plugins/quota.ts:windows": "Times of recent requests for each caller, for the rate limit. No content.",
   "src/server/require-permission.ts:permissionOfGuard": "Which permission each route guard checks. Functions, no rows.",
