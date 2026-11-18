@@ -68,7 +68,7 @@ of the variable to use. The secrets are:
 | `ELICIT_API_KEY`, `PANGRAM_API_KEY` | The two paid research services. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Payments. |
 | `GITHUB_APP_PRIVATE_KEY`, `GITHUB_TOKEN` | The credential for filing reports as GitHub issues. |
-| `PUBLISH_SIGNING_KEY` | The Ed25519 private key, in PEM form, that signs packages of pages shown outside ([published-pages.md](published-pages.md)). |
+| `PUBLISH_SIGNING_KEY` | The Ed25519 private key, in PEM form, that signs packages of pages released outside ([published-pages.md](published-pages.md)). |
 | `PUBLIC_GRAPH_API_KEY` | The organization's own account key on the public graph, for everything the deployment sends or does there ([outward-acts.md](outward-acts.md)). |
 | `USAGE_REPORT_API_KEY` | The key usage reports are sent to the public graph with ([usage-report.md](usage-report.md)). |
 | `SANDBOX_TOKEN` | The secret the API and the sandbox service share ([file-sets.md](file-sets.md)). |
@@ -127,7 +127,7 @@ declares under `[[model_providers.endpoints]]`, below.
 | `researcher_strong`, `researcher_standard`, `researcher_cheap` | The researcher's three tiers. | `RESEARCHER_STRONG_MODEL`, `RESEARCHER_STANDARD_MODEL`, `RESEARCHER_CHEAP_MODEL` |
 | `solver` | The solver's proof attempts. | `SOLVER_MODEL` |
 | `judge` | The judge that grades evaluation runs. | `JUDGE_MODEL` |
-| `redactor` | The Redactor, where a page is shown to readers who do not read its label. `""` runs it on `steward`. | `REDACTOR_MODEL` |
+| `redactor` | The Redactor, where a page is released to readers who do not read its label. `""` runs it on `steward`. | `REDACTOR_MODEL` |
 
 #### `[model_providers]`
 
@@ -305,7 +305,7 @@ output_usd_per_mtok = 1.5
 
 | Name | What it sets | Environment variable |
 |---|---|---|
-| `hosting` | Where the deployment runs: `"own_machines"`, `"minerval"` or `"third_party"`. It is stated in every package of a page shown outside, and no package is built until it is set ([published-pages.md](published-pages.md)). | `DEPLOYMENT_HOSTING` |
+| `hosting` | Where the deployment runs: `"own_machines"`, `"minerval"` or `"third_party"`. It is stated in every package of a page released outside, and no package is built until it is set ([published-pages.md](published-pages.md)). | `DEPLOYMENT_HOSTING` |
 
 The signing key is a secret (above).
 
@@ -471,7 +471,7 @@ at that label does not run at all.
 | `usage_report` | On the metered price: the report's destination is an address with its key or a directory that can be written, not both. With neither it passes and says reports are kept. Not applicable on the flat price or on a deployment anyone may read. | no |
 | `standing_mandates` | In a members-only deployment, a General mandate is set up, and at every label that holds material of the deployment's own. It names the labels that have none. A label with none that holds nothing yet (no source, node or mandate) is to do, not a failure, so that it is on the list while the label is being decided about; a label that will hold only work someone asks for and pays for needs none. | no |
 | `own_organization` | In a members-only deployment, a party is marked as the organization itself. Without one a request to show a page is refused. | no |
-| `publishing` | Where a page is shown outside or hosting is set: `PUBLISH_SIGNING_KEY` is an Ed25519 private key and `publishing.hosting` is set. Not applicable where nothing is shown outside. The key is never printed. | no |
+| `publishing` | Where a page is released outside or hosting is set: `PUBLISH_SIGNING_KEY` is an Ed25519 private key and `publishing.hosting` is set. Not applicable where nothing is released outside. The key is never printed. | no |
 | `public_graph` | `public_graph.api_url` is an https address and `PUBLIC_GRAPH_API_KEY` is set with it. With a signing key and no address it passes and says packages are carried as files. The public graph is not called. | no |
 | `public_acts` | Which permission's holders may act on the public graph in the organization's name, and how many grants of it are live. With none it passes and says nobody can act there. | no |
 | `private_run_fetches` | Whether runs that read a private label fetch any address or only addresses the deployment was given, with what the second guards against and what it costs. It passes either way: it is the organization's choice. | no |
@@ -480,7 +480,7 @@ at that label does not run at all.
 | `sandbox` | With `sandbox.url` set: `SANDBOX_TOKEN` is set and the service answers, with its version and image. File sets with no sandbox pass, saying they cannot be explored. | no |
 | `sandbox_confinement` | The sandbox's own probe, check by check: a command is held to its run's file sets, the sets cannot be written, and an attempt to connect out fails. Not applicable with no sandbox or one that does not answer. | yes |
 
-Some of these are about rows at every label: showings, mandates, connections
+Some of these are about rows at every label: releases, mandates, connections
 and file sets. The preflight is read by whoever holds the operator key and,
 through the setup checklist, by administrators, and neither reads every
 label. So those facts are read as the tables' owner and reported as counts

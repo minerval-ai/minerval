@@ -199,7 +199,7 @@ cap_text_analysis_owls = 0.1
 # [private_runs]
 # fetches = "any"
 
-# Showing pages outside. hosting says where this deployment runs
+# Releasing pages outside. hosting says where this deployment runs
 # (own_machines, minerval or third_party) and is stated in every package.
 # The signing key is PUBLISH_SIGNING_KEY.
 # [publishing]

@@ -1,7 +1,7 @@
 # The rest of the way out of a private graph, and what comes back
 
 A private graph reaches the public graph in two ways. It can show a page
-([showing-a-page.md](showing-a-page.md), [published-pages.md](published-pages.md)).
+([releasing-a-page.md](releasing-a-page.md), [published-pages.md](published-pages.md)).
 Or it can act there as any account does: take up a request, open or fund a
 mandate, pay for a node's assessment, send its agents' reports of faults in
 Minerval's machinery to the people who maintain it. This document is the
@@ -30,7 +30,7 @@ Four things hold for every part.
   or a token alone does not act. Each act is a row in `outward_acts` with
   who, holding what (or "the gate" where its setting sent it), exactly
   what was sent, and what the public graph answered (`GET /outside/log`).
-- **Nothing private crosses except through showing a page.** A call here
+- **Nothing private crosses except through releasing a page.** A call here
   carries ids the public graph already holds, amounts, a reason from a
   fixed list, or words a person wrote for the outside from a signed-in
   session. Words written at a label leave only through the gate. `tests/db/outward-acts.test.ts` tries to make something private
@@ -53,7 +53,7 @@ everywhere, as all its routes are.
 graph in the organization's name: `direct` unless set (`fund` and
 `administer` are the others). What goes through the gate to outside is
 decided there, by its settings and, where they say so, by holders of
-`release` for the parties it rests on.
+`consent` for the parties it rests on.
 
 | Act | Takes | A person present | A tool |
 | --- | --- | --- | --- |
@@ -62,8 +62,8 @@ decided there, by its settings and, where they say so, by holders of
 | Open a public mandate; write to the public Grantmaker | `PUBLIC_ACTS_BY` | session | no: the words are a person's |
 | Fund a drafted public mandate; add public owls to one; fund a mirrored node; ask a public mandate about a node | `PUBLIC_ACTS_BY` | session or card | yes |
 | Register the deployment's signing key to the organization's account there | `administer` | session | no: it decides who speaks for the deployment |
-| Name the mandate that keeps public versions current; set the gate to outside | `administer` (a party's own setting: `release` for it) | any credential | yes |
-| Approve, hold or remove at the gate to outside where a person decides | `release` for the parties an item rests on | any credential | yes |
+| Name the mandate that keeps public versions current; set the gate to outside | `administer` (a party's own setting: `consent` for it) | any credential | yes |
+| Approve, hold or remove at the gate to outside where a person decides | `consent` for the parties an item rests on | any credential | yes |
 
 ## 1. What the public says back
 
@@ -95,7 +95,7 @@ reads through the mirror already, and an agent that has not read a
 challenge cannot answer it. Every agent is told that what it reads is
 data; nothing more is said of that here. The message opens a reassessment
 at that label, which runs when a mandate or a person pays for it. Under a
-standing showing its result goes out as the next version by the path every
+standing release its result goes out as the next version by the path every
 version takes.
 
 Members read the same on `GET /outside/said-back` and on the page made
@@ -225,7 +225,7 @@ report Audit's triage finds to be about Minerval's machinery (`about` on
 `GET /publishers/:account_id` adds `record`: what the public graph's own
 record holds of the publisher, as counts and dates
 (`src/services/publisher-record-service.ts`). Pages published and in which
-form; how they stand; versions held and for how long; showings ended;
+form; how they stand; versions held and for how long; releases ended;
 contributions made through them and what followed; requests taken up and
 what followed; and where the public graph's later assessment of a node
 moved toward or away from the credence a published page gave. It is

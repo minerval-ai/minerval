@@ -1,10 +1,10 @@
-# A shown page leaves the deployment and is read on the public graph
+# A released page leaves the deployment and is read on the public graph
 
 Often the best evidence for something is more sensitive than the thing
-itself. [showing-a-page.md](showing-a-page.md) describes how a deployment
-shows what an agent concluded from evidence without showing the evidence:
+itself. [releasing-a-page.md](releasing-a-page.md) describes how a deployment
+releases what an agent concluded from evidence and holds the evidence back:
 redaction under a policy, Audit's check, a fingerprint recorded before
-anyone decides what is released, and a release gate. For a showing outside
+any party consents, and a gate where each party consents. For a release outside
 the deployment those steps end with what was released recorded inside, at
 `public`. This document is the rest of the way: out of the deployment in a
 form anyone can check, onto the public graph as a source its publisher
@@ -18,7 +18,7 @@ One codebase serves both sides. A deployment uses the side it is on.
 
 ## The package
 
-A package is one JSON document: one node under one showing outside, as the
+A package is one JSON document: one node under one release outside, as the
 outside is to read it, at the moment it was built
 (`src/published-page/verify.ts` has the whole form).
 
@@ -27,26 +27,26 @@ outside is to read it, at the moment it was built
 | `format` | `minerval-published-page/1` |
 | `publisher` | The signing key: its id and its 32 bytes |
 | `deployment` | Where the deployment runs, as one of three fixed words (the organization's own machines; Minerval's; a third party's), and what outside the publisher's control attests to the run. Today nothing can, and the field says so |
-| `showing` | Its id, form (once or standing), scope, when it was asked for, how its packages are sent, and its ending with date and reason |
-| `node` | The node's id on the public graph, when the showing came to cover it, when it was first assessed at the page's label, which came first, and its leaving |
-| `sequence`, `previous_hash` | 1, 2, 3, ... for this node under this showing, each naming the one before |
+| `showing` | The release: its id, form (once or standing), scope, when it was asked for, how its packages are sent, and its ending with date and reason |
+| `node` | The node's id on the public graph, when the release came to cover it, when it was first assessed at the page's label, which came first, and its leaving |
+| `sequence`, `previous_hash` | 1, 2, 3, ... for this node under this release, each naming the one before |
 | `state` | The node's state now: not yet assessed, released whole, released in part, or held |
-| `page` | The latest version that is shown: what is always shown, as hashed, with its salt; each released part with its text, marks and salt; each held part with its hash, its kind, who holds it, any reason given and since when; the fingerprint. Where no version has been shown, the latest version as held, by kind and hash alone |
+| `page` | The latest version that is released: what is always shown, as hashed, with its salt; each released part with its text, marks and salt; each held part with its hash, its kind, who holds it, any reason given and since when; the fingerprint. Where no version has been shown, the latest version as held, by kind and hash alone |
 | `policy` | The version the page was redacted under, in full |
 | `record.made` | The prompt-set hash, the model that assessed and the model that redacted, any addition to a role's prompt, the seal of the assessing run's log with whether its chain checked out, and how the assessment was paid for |
-| `record.acts` | Everything a person, a rule or the process did on the showing, each with the permissions the person held. People are numbered; no name crosses |
-| `record.versions` | Every version made while the showing stood, held ones as held; for each version released, `released_under`: for each party it rests on, how the publisher's gate was set when it went (open, the Redactor's decision, or a person's as well), how wide the setting was and the day it was set |
+| `record.acts` | Everything a person, a rule or the process did on the release, each with the permissions the person held. People are numbered; no name crosses |
+| `record.versions` | Every version made while the release stood, held ones as held; for each version released, `released_under`: for each party it rests on, how the publisher's gate was set when it went (open, the Redactor's decision, or a person's as well), how wide the setting was and the day it was set |
 | `hash`, `signature` | sha256 over the canonical JSON of everything above; Ed25519 over the hash |
 
 The record is facts the system stamps. Nobody writes a word of it.
 
 A package is built whenever what the outside would read has changed: a page
-shown, more of it released, a hold placed or lifted, a later version opened
-or held, a node come under the showing or left it, the showing ended. It
+released, more of it released, a hold placed or lifted, a later version opened
+or held, a node come under the release or left it, the release ended. It
 is built by comparing, so nothing has to remember to build one. A later
-version that is held does not take the last shown page away: the package
+version that is held does not take the last released page away: the package
 says the node is held, lists the held version in its history, and still
-carries the page last shown.
+carries the page last released.
 
 ### Nothing else crosses
 
@@ -55,9 +55,9 @@ database holds to `public` alone, from the rows the gate wrote there
 (`outsideRecord` in `release-gate-service.ts`,
 `buildOutboundPackages` in `outbound-service.ts`). A row at any other label
 cannot be read by that work, whatever the code asks for. So what a package
-can hold is what the destination side of a showing outside holds: fixed
-words, ids of the showing and its pages, dates, hashes, counts, party
-names, and the text of a part once every party it rests on has released
+can hold is what the destination side of a release outside holds: fixed
+words, ids of the release and its pages, dates, hashes, counts, party
+names, and the text of a part once every party it rests on has consented to
 it. `tests/db/published-pages.test.ts` tries to make other content cross
 (a held part's text, a removed passage, a removal's note, a row written at
 another label under the same page, a label's name, a person's name, the
@@ -111,7 +111,7 @@ It also says, every time, what a check of this kind cannot show:
 
 ## Inside the deployment
 
-Mounted where `READS=members`, beside the showing routes
+Mounted where `READS=members`, beside the release routes
 (`src/routes/outbound.ts`).
 
 ### Which node on the public graph
@@ -123,9 +123,9 @@ It is first proposed there, as any contributor would propose it:
 1. A person who holds `direct` writes or approves the words
    (`POST /outbound/proposals`). Left unsaid, they are the node's own
    wording.
-2. Each party the node's wording rests on releases them
+2. Each party the node's wording rests on consents to them
    (`POST /outbound/proposals/:proposal_id/release`), unless they are word
-   for word a wording those parties already released at the gate.
+   for word a wording those parties already consented to at the gate.
 3. The proposal is sent with the next send. On the public graph it is an
    ordinary proposal under the organization's account: reviewed, and placed
    by the Matcher, which may find that the public graph already holds the
@@ -213,12 +213,12 @@ its key.
    node this graph does not hold, or that is not the next in its sequence.
 2. It is kept as signed (`published_page_packages`). Every package received
    is kept; a later one is a later row.
-3. Where it carries a shown page, the page becomes a source of the kind
+3. Where it carries a released page, the page becomes a source of the kind
    `published_page`, whose text is the page with its record and what the
    check confirmed and could not show. The publisher's interest in the node
    is recorded on the source, as a fact about it: it chose to show this
    page.
-4. Nothing attaches itself. The first package for a node under a showing
+4. Nothing attaches itself. The first package for a node under a release
    files an ordinary contribution on that node, which the Contribution
    Reviewer reviews as any contribution: that it is made in good faith and
    that the page is a page of this node. It is charged as a source
