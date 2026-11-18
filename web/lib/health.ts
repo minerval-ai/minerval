@@ -102,7 +102,7 @@ const CHECK_SHORT: Record<string, { title: string; owner?: Owner }> = {
   usage_report: { title: "Usage report not set up" },
   standing_mandates: { title: "A label has no General mandate", owner: "admin" },
   own_organization: { title: "Organisation not recorded as a party", owner: "admin" },
-  publishing: { title: "Pages shown outside can't be signed" },
+  publishing: { title: "Pages released outside can't be signed" },
   public_graph: { title: "Public graph not reachable" },
   public_acts: { title: "Who acts on the public graph is unclear" },
   private_run_fetches: { title: "Private runs may fetch any address" },
@@ -145,18 +145,18 @@ export function labelsWithoutMandate(message: string): string[] {
  */
 export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = []): AttentionItem[] {
   const out: AttentionItem[] = [];
-  // Parties a person must release for somewhere, with nobody who may.
+  // Parties a person must consent for somewhere, with nobody who may.
   for (const { party, boundaries } of partiesReleasedByNobody(c, gates)) {
     out.push({
       key: `release-nobody-${party.id}`,
-      title: `Nobody releases for ${party.name}`,
+      title: `Nobody can consent for ${party.name}`,
       consequence: `A person decides at ${boundaries.length === 1 ? "1 boundary" : `${boundaries.length} boundaries`}; what rests on its material waits there`,
       owner: "admin",
       href: "/admin/people?drawer=grant",
       action: "Grant",
       tone: "warn",
       blocks: false,
-      detail: `Where a boundary's rule says a person decides, each part that rests on ${party.name}'s material waits for a holder of release for ${party.name}, and nobody holds it: ${boundaries.join(", ")}.`,
+      detail: `Where a boundary's rule says a person decides, each part that rests on ${party.name}'s material waits for someone who consents for ${party.name}, and nobody can: ${boundaries.join(", ")}.`,
     });
   }
   // The checks a row from the checklist already speaks for.
@@ -451,13 +451,13 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
     });
   }
 
-  // Pages are shown outside and the public graph is reached from here, but the key they are signed with was never registered from here.
+  // Pages are released outside and the public graph is reached from here, but the key they are signed with was never registered from here.
   const key = c.public_graph?.signing_key;
   if (c.public_graph?.account_set && key && key.shown_outside > 0 && key.fingerprint && !key.registered_from_here_at) {
     out.push({
       key: "signing-key-unregistered",
       title: "Signing key not registered",
-      consequence: `${key.shown_outside === 1 ? "1 page is" : `${key.shown_outside} pages are`} shown outside; the public graph takes none signed with an unregistered key`,
+      consequence: `${key.shown_outside === 1 ? "1 page is" : `${key.shown_outside} pages are`} released outside; the public graph takes none signed with an unregistered key`,
       owner: "admin",
       href: "/admin/outside?drawer=key",
       action: "Register",
@@ -706,11 +706,12 @@ export interface GateLike {
 }
 
 /**
- * The parties nobody holds release for, at the boundaries where a person
+ * The parties nobody can consent for (the permission stored as `release`),
+ * at the boundaries where a person
  * decides for them: a rule there that a person decides, for that party or
  * for every party, or, for the organisation's own material, a kind that
  * starts with a person deciding (an agent's report). There what rests on
- * the party's material waits for a holder of release, and with none it
+ * the party's material waits for someone who consents for it, and with none it
  * waits for good.
  */
 export function partiesReleasedByNobody(

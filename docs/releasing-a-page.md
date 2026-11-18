@@ -1,20 +1,20 @@
-# Showing a page to readers who do not read its label
+# Releasing a page to readers who do not read its label
 
 Often the best evidence for something is more sensitive than the thing
 itself. A deployment that holds material at more than one label
-([architecture.md](architecture.md), "Labels and clearance") can show what
-an agent concluded from evidence without showing the evidence. A node's
-page written at one label is shown to readers who may not read that label,
+([architecture.md](architecture.md), "Labels and clearance") can release
+what an agent concluded from evidence and hold the evidence back. A node's
+page written at one label is released to readers who may not read that label,
 at another label inside the deployment or outside it, with what was removed
 marked in its place, and in a form those readers can check.
 
 A node's page is one kind of thing that passes a gate, and the gate is the
 same at every boundary ([the-gate.md](the-gate.md): its acts, its settings,
-what flows, who pays, the backlog). Showing what was concluded at one label
-to the readers of another, and showing it outside the deployment, are the
+what flows, who pays, the backlog). Releasing what was concluded at one label
+to the readers of another, and releasing it outside the deployment, are the
 same steps with a different destination. This document describes a page's
 own part of those steps as built: what a page is, its parts, the policy,
-the fingerprint, and what its readers see. A showing outside goes through every step below, and what it
+the fingerprint, and what its readers see. A release outside goes through every step below, and what it
 releases is then carried out of the deployment in a signed package and read
 on the public graph: [published-pages.md](published-pages.md).
 
@@ -22,11 +22,20 @@ The public graph has one label, which everyone reads. Nothing below exists
 there: the routes are not mounted, the tables are empty, and no run is told
 any of it.
 
-In the code this is called showing a page below its label. Labels are not
-ranked, and nothing a person or an agent reads says "below": a page is
-shown to readers who do not read its label.
+In the code this is still called showing a page below its label (see "Old
+names in the code", at the end). Labels are not ranked, and nothing a person
+or an agent reads says "below": a page is released to readers who do not
+read its label.
 
-## What is shown
+A *release* is the standing arrangement or the single act: a page, or a
+flow of pages, going from one label to readers who do not read it, or
+outside to the public graph. It is once or standing, and it ends. Each
+party whose material a part rests on *consents* to that part going out,
+and a part is *released* once every party it rests on has consented; until
+then it is *held*. Authority over a release is holding the permission to
+consent for a party.
+
+## What is released
 
 The ordinary page of a claim, a quantity or a question at one label: the
 version of its judgment at that label (the status, estimate or answer, with
@@ -37,31 +46,31 @@ a stated view where one is recorded. No run produces it and no table holds
 a special form of it. It is read from the rows the Steward's ordinary work
 wrote (`readPage` in `src/services/showing-service.ts`).
 
-A showing covers the rows at the page's label and no others. A row that the
+A release covers the rows at the page's label and no others. A row that the
 page's label merely reads belongs to that other label's page: where the
-destination reads it too it has it already, and where it does not, showing
-it is a showing across that other boundary, under that boundary's policy.
+destination reads it too it has it already, and where it does not, releasing
+it is a release across that other boundary, under that boundary's policy.
 
 ## Asking
 
 A person who holds the permission to direct the graph sets a flow of pages
-at a label they read toward a named label, or outside (`POST /showings`):
+at a label they read toward a named label, or outside (`set_page_flow`, `POST /showings`):
 for one node, a node with what sits under it, every node one mandate's
 work assessed, or every node assessed at the label
 ([the-gate.md](the-gate.md), "What flows"). The destination must not already read the page's label.
 The two labels need not be related in any other way: a page at one label
-can be shown at another that neither reads nor is read by it.
+can be released at another that neither reads nor is read by it.
 
-- **Once or standing.** Shown once, the page goes as it stands, dated, and
-  nothing is undertaken about later versions. Shown standing, each later
+- **Once or standing.** Released once, the page goes as it stands, dated, and
+  nothing is undertaken about later versions. Released standing, each later
   version follows: a page is opened for it and goes through the same steps.
 - **The node alone, or the node with what sits under it.** Under the wider
-  scope a node that later comes to sit under the shown node is covered from
-  then, as not yet assessed. A node that leaves stays in the showing's
+  scope a node that later comes to sit under the released node is covered from
+  then, as not yet assessed. A node that leaves stays in the release's
   record with the date and the reason, which is one of a fixed list read
   from the record (the link was removed, the node is no longer active, the
-  showing ended). A node that also sits under other things appears once, in
-  its place under the shown node.
+  release ended). A node that also sits under other things appears once, in
+  its place under the released node.
 - **A mandate's work, or the whole boundary.** A flow for a mandate covers
   every node whose judgment at the label that mandate's budget paid for; a
   flow for the boundary covers every node assessed at the label. Both are
@@ -70,16 +79,16 @@ can be shown at another that neither reads nor is read by it.
   mandate and the label only to a reader of the label.
 
 No page is offered to a gate that no flow covers. Ending a standing flow is
-a dated event with a reason from a fixed list; what was shown stays shown.
+a dated event with a reason from a fixed list; what was released stays released.
 
-Every act on a showing is a row that names who did it and the permissions
+Every act on a release is a row that names who did it and the permissions
 they held then (`showing_acts`), so a reader on the other side can see when
-a person who directed the work also released it.
+a person who directed the work also consented to it.
 
 A part that rests on no outside party's material is the organization's to
-release, so the organization itself must be a party
+consent to, so the organization itself must be a party
 (`parties.is_own_organization`). It is from setup, and the person who set
-the deployment up holds `release` for it ([accounts.md](accounts.md)). A
+the deployment up holds `consent` for it ([accounts.md](accounts.md)). A
 deployment set up before that was so is refused, with the reason, until an
 administrator adds the party.
 
@@ -104,7 +113,7 @@ An argument that is another label's row, evaluated at the page's label,
 contributes this label's evaluation and not the argument's text.
 
 **What is always shown** is not a part. It is the page's first leaf, shown
-whenever the page is shown and never without it: the verdict with its
+whenever the page is released and never without it: the verdict with its
 confidence and any credence or estimate; coverage; that each source read at
 the page's label exists, with its kind, its fingerprint, whether the
 organization itself or an outside party supplied it, and whether an interest
@@ -121,24 +130,24 @@ Coverage is said to the reader it is served to. Where a deployment has more
 than one label, a judgment's coverage lists `evidence_this_reader_can_read`
 and `evidence_this_reader_cannot_read` in place of `public_evidence`, which
 would be false of a judgment made on sources only some readers read
-(`src/services/coverage-service.ts`). On a shown page the reader is the
+(`src/services/coverage-service.ts`). On a released page the reader is the
 destination: a page made on sources at its own label says the second. A
-judgment at the destination label that took a shown page in says both, on
+judgment at the destination label that took a released page in says both, on
 that node's ordinary page as well. Where `public` is the only label coverage
 reads as it always did.
 
 A reader needs to know that an interested outside party supplied a source in
 order to weigh the page, and does not always need the name. So the
 supplier's name and the words of the interest are a part, resting on that
-source's party: a name that cannot be shown is held where the reader sees it
-is held, and the page is still shown.
+source's party: a name that cannot be released is held where the reader sees it
+is held, and the page is still released.
 
 ## The policy
 
 The policy says what a Redactor removes. It is a document for one boundary,
 and a boundary is a pair: the label the page was written at and where it is
-shown. Labels are rows and are not ranked, so a deployment has as many
-boundaries as it shows pages across.
+released. Labels are rows and are not ranked, so a deployment has as many
+boundaries as it releases pages across.
 
 Every boundary starts from one text (`DEFAULT_CATEGORIES` in
 `src/services/redaction-policy.ts`), whose categories are worded for any
@@ -148,11 +157,11 @@ internal identifiers; weaknesses in others' systems; detail that would help
 cause serious harm; test content. A deployment's administrators save later
 versions with the categories they want (`PUT /redaction-policies`). Two
 sections of every version are written by the code and are the same at every
-boundary: how removal works, and what is shown whenever a page is shown.
+boundary: how removal works, and what is shown whenever a page is released.
 When the code's wording of those two sections changes, the next use of a
 boundary saves a new version with the same categories, as any edit does
-(`ensureBoundaryPolicy`). A page already shown keeps the version, and the
-hash, it was shown under. The always-shown list names facts, never words: a
+(`ensureBoundaryPolicy`). A page already released keeps the version, and the
+hash, it was released under. The always-shown list names facts, never words: a
 supplier's name, the words of a recorded interest and the words of a gap are
 parts, and the policy says so after the list.
 
@@ -161,7 +170,7 @@ worded by how a passage reflects on someone ("anything unfavorable to the
 organization"), or names something that is always shown ("verdicts"). The
 check is a list of phrases and catches the plain cases. A category worded
 to get round it is not caught by it. What stands against that is that the
-policy is read by everyone a page is shown to, that the Redactor is told a
+policy is read by everyone a page is released to, that the Redactor is told a
 passage's favor is no ground for removal, and that Audit reads what was
 removed. That nothing is removed from what is always shown does not rest on
 the check at all: no tool can remove anything from it.
@@ -169,7 +178,7 @@ the check at all: no tool can remove anything from it.
 Each version is two rows with the same text, one at the page's label and
 one on the destination side, because the two sides may share no label. The
 Redactor, Audit and the assessing Steward read the first; everyone a page
-is shown to reads the second. Every removal records the version it was made
+is released to reads the second. Every removal records the version it was made
 under.
 
 `GET /redaction-policies` (`list_redaction_policies` on MCP) lists the
@@ -194,9 +203,9 @@ for each new version. A version replaced before its redaction ran is not
 redacted, and stays in the flow's history as that.
 
 A page is recorded from a finished version. While a Steward's pass on the
-node at the page's label is running, a standing showing does not record the
+node at the page's label is running, a standing release does not record the
 page, and takes it in at the next look after the pass has ended; a page
-asked to be shown once is refused until then, with that reason.
+asked to be released once is refused until then, with that reason.
 
 The Redactor (`src/llm/prompts/redactor.ts`) works at the page's label. Its
 tools:
@@ -205,7 +214,7 @@ tools:
 - `get_page_to_redact`: the page part by part as written, what is always
   shown, and the sources the page rests on with their labels; with a
   source, that source's stored text. The sources are the set the gate works
-  out whose release is needed from ("The gate", below), recorded when the
+  out whose consent is needed from ("The gate", below), recorded when the
   page is opened (`showing_pages.source_ids`): what the version rests on
   and what each part rests on, so a reading or an analysis kept in work on
   the node, and a source cited through an argument or a subclaim, can be
@@ -262,22 +271,22 @@ times a page comes back from Audit, are bounded by what the work is paid.
 When the Redactor finishes, each part as it left it is hashed with a salt of
 its own, and the hashes form a tree whose root is recorded on the
 destination side at once, with each part's place, kind and hash, before
-anyone decides what is released (`src/services/page-fingerprint.ts`, which
+any party consents to anything (`src/services/page-fingerprint.ts`, which
 gives the construction in full).
 
 A released part is then shown with its salt, and a held part with its hash
-and its kind. A reader rebuilds the root from what they were shown and
+and its kind. A reader rebuilds the root from what they were given and
 compares it with the root recorded earlier. A match says that every part
 they read is what was written, with the marked removals inside it; that the
 parts are in the order recorded; that none was added or dropped; and that a
-held part is of the kind it is said to be. `GET /showings/:id/pages/:page_id`
+held part is of the kind it is said to be. `get_release_page` (`GET /showings/:id/pages/:page_id`)
 returns the result of that check with everything needed to redo it.
 
 Released text is exactly what was written. Nothing normalizes it: spacing,
 markup and line ends are part of what is hashed.
 
 `verifyShownPage` is a pure function. The standalone verifier of a page
-shown outside rebuilds the same tree from a signed package
+released outside rebuilds the same tree from a signed package
 ([published-pages.md](published-pages.md), "The check").
 
 ## The check
@@ -316,7 +325,7 @@ After the check the page is at the gate, and the gate's setting decides
 what happens to each part for each party it rests on
 ([the-gate.md](the-gate.md), "Settings"): under the Redactor's decision,
 what the Redactor let through goes; under a person's decision as well, it
-waits for that party's holders of `release`.
+waits for the people who consent for that party.
 
 A part rests on the parties whose material it draws on, worked out from the
 record when the page is opened (`partiesFor`):
@@ -343,32 +352,32 @@ record when the page is opened (`partiesFor`):
   rests on the party of every set its command had mounted, since the
   deployment cannot tell which of their files a command opened.
 
-A source the destination already reads takes no release. A source with no
+A source the destination already reads takes no consent. A source with no
 party on record is the organization's. A part that rests on no party's
 material is the organization's. A part that rests on two parties' material
 needs both.
 
-`release` is granted for one party, by the deployment's administrators, to
+`consent` is granted for one party, by the deployment's administrators, to
 whoever they choose. The design does not decide who that is, and one person
-may hold `direct` and `release`.
+may hold `direct` and `consent`.
 
-- **No act changes a word.** A part is let through, has a passage removed
+- **No act changes a word.** A part is consented to, has a passage removed
   and marked, is held or is delayed: by the Redactor or by a person, with
   the same acts. A person's removal records the part's hash and the page's
-  fingerprint again, and can be made until the page itself is shown.
+  fingerprint again, and can be made until the page itself is released.
 - **A hold** carries who, when and a reason from a fixed list; it shows on
   the other side in place of the part ("An argument against, held by
   <party>", or "held by the Redactor"); it can be lifted; and it stays on
-  the record. A release is not taken back. A person who directs the graph
-  may hold a page that has not been shown.
-- **A part nobody has released shows as held**, with how long it has
+  the record. A consent is not taken back. A person who directs the graph
+  may hold a page that has not been released.
+- **A part not every party has consented to shows as held**, with how long it has
   waited, and is counted in the gate's backlog.
 - **The queue** (`GET /gate/queue`) lists what waits on a person: the
   items whose gate is set to a person's decision, and those the Redactor
   or a person holds or has delayed. It shows each item as it would be
-  shown if released: the part after the Redactor's removals, with the
+  released: the part after the Redactor's removals, with the
   marks, and with it what is always shown of the page and the node's
-  wording as they would be shown. The parts the Redactor was least sure of
+  wording as they would be released. The parts the Redactor was least sure of
   come first, and each item has its removals by category and Audit's
   answer. Each item says where it crosses: the gate, where it goes (a
   label, or outside), and the label it was written at, named as the
@@ -376,42 +385,42 @@ may hold `direct` and `release`.
   administrator, else by the face it shows where things arrive, else not
   at all). It carries the policy it was redacted under, with the names of
   its categories: a person removes a passage under one of those, and
-  `POST /gate/decisions` refuses any other with the policy's list. Every
-  holder of `release` for a party is shown that, whether or
-  not they read at the page's label: it is the text their decision would
+  `POST /gate/decisions` refuses any other with the policy's list.
+  Everyone who consents for a party is shown that, whether or
+  not they read at the page's label: it is the text their consent would
   release, to readers who read less than they are trusted to decide for,
   and a gate held by someone who cannot see what passes through it is not a
   gate. A holder who also reads at the page's label is given the part as
   written, each removed passage with the Redactor's note, and why a part
   was flagged. One who does not is given none of those, since they were
   written at the page's label, with one exception: a passage removed from a
-  part that rests only on the material of outside parties they release for
+  part that rests only on the material of outside parties they consent for
   is those parties' own, and is shown to them with its category and without
   the note. The organization's own party is not counted there. A part that
   rests on no outside party's material is the organization's by default, so
-  for a holder of `release` for the organization the exception would open
+  for someone who consents for the organization the exception would open
   every removed passage of every such page, at a label they do not read.
   They see that a part was flagged and not why. The queue says what they
   are and are not shown on each such item and once for the whole answer.
-- **Settings took the place of standing rules.** A party's holders of
-  `release` set the gate for that party's material to the Redactor's
+- **Settings took the place of standing rules.** The people who consent
+  for a party set the gate for that party's material to the Redactor's
   decision or to a person's, for the whole boundary or a narrower scope.
-  Each release the gate makes under a setting is recorded as made under
-  it. A deployment that had the two earlier rules has them as settings:
-  "release what rests on our material alone" became the Redactor's
-  decision for that party, and "release it only where nothing was removed"
-  became a person's decision, which releases nothing the party had not
+  Each consent the gate gives under a setting is recorded as given under
+  it. A deployment that had the two earlier consent rules has them as settings:
+  "consent to what rests on our material alone" became the Redactor's
+  decision for that party, and "consent only where nothing was removed"
+  became a person's decision, which consents to nothing the party had not
   allowed. A gate that existed before settings did keeps a person's
   decision until its administrators change it.
 
-The page is shown when every party its verdict rests on has released it,
-by the gate's setting or by a person, and neither the Redactor nor a
-person who directs the graph holds it. From then each part shows as
-its text once every party it rests on has released it.
+The page is released when every party its verdict rests on has consented to
+it, by the gate's setting or by a person, and neither the Redactor nor a
+person who directs the graph holds it. From then each part is released, and
+shows as its text, once every party it rests on has consented to it.
 
 ## What the destination sees
 
-For every node under a showing, one of four states, and no private content
+For every node under a release, one of four states, and no private content
 in any of them:
 
 - **not yet assessed**;
@@ -424,9 +433,9 @@ in any of them:
   Redactor, delayed until a time, or held by a person who directs the
   graph), and for how long.
 
-Every version made while a standing showing stands is in the showing's
+Every version made while a standing release stands is in the release's
 history, the held ones included. The record gives the date the node came
-under the showing and the date it was first assessed at the page's label,
+under the release and the date it was first assessed at the page's label,
 so a reader can see which came first.
 
 A destination-side row does not name the page's label. The name of a label
@@ -434,8 +443,8 @@ is not shown to people who may not read it.
 
 ## Arrival inside the deployment
 
-At a destination label the shown page becomes a source like any other
-there, of the kind `shown_page`: its text is the page as shown, with the
+At a destination label the released page becomes a source like any other
+there, of the kind `shown_page`: its text is the page as released, with the
 verdict, the policy version, the removals by category, what is held and by
 whom, and Audit's answer. Where the destination reads the node, the source
 is attached to it and a reassessment of the node is opened at the
@@ -456,7 +465,7 @@ A version at the destination label that changes only because its Steward
 took in such a page does not make the version at the page's label read as
 made against an earlier one, and no reassessment is opened for it
 (`minerval_only_shown_pages_between`): everything in the page was already
-in front of the version it was shown from.
+in front of the version it was released from.
 
 The gate is the one way text reaches a label that does not read the label
 it was written at.
@@ -470,7 +479,7 @@ it was written at.
   close it and would end the check against the fingerprint, so it is not
   done. Keeping the text of sealed sources from the page's writer would
   limit it, and is not done either: a Steward reads the evidence it judges,
-  on every node, because a page is worth showing only when its writer
+  on every node, because a page is worth releasing only when its writer
   examined the evidence. What there is: the Redactor's prompt says that
   the wording itself goes out and that it is the reader placed to notice
   wording that looks arranged to carry something other than its sense.
@@ -482,11 +491,11 @@ it was written at.
   decision is where a person looks at it first.
 - **The check against the fingerprint shows that what was released is what
   was written. It does not show that the logged run was the only run**, or
-  that the nodes shown were chosen without sight of their verdicts. The
+  that the nodes released were chosen without sight of their verdicts. The
   dates in the record are what bear on the second.
 - **The phrase check on a saved policy** catches plain cases only, as
   above.
-- **Whose release a part takes is worked out from what is recorded.** A run
+- **Whose consent a part takes is worked out from what is recorded.** A run
   that read a document without recording it as a source of the node leaves
   no trace for this to find. The same goes for a call through a connection,
   or a command over a set of files, that the run made and did not keep: its
@@ -499,8 +508,11 @@ it was written at.
 ## Routes and tools
 
 Every route is an MCP tool (`src/routes/showings.ts`,
-`src/mcp/route-tools.ts`). Each act at a gate takes its permission
-(`release` for a party, `direct`, `administer`) and is recorded with the
+`src/mcp/route-tools.ts`): `list_releases`, `get_release` and
+`get_release_page` read; `set_page_flow`, `end_page_flow`,
+`hold_gate_item` and `decide_at_gate` act; `fund_release_work` pays for an
+item's redaction or its check. Each act at a gate takes its permission
+(`consent` for a party, `direct`, `administer`) and is recorded with the
 account that made it. The account may act from a signed-in session or
 through a key or token of its own, so the person a gate's authorities put
 there can use their own agent or a script. The Assistant holds each act for
@@ -512,11 +524,57 @@ its user, under the kind "Act at a gate".
   could not be given: what the next piece of work on a page is expected to
   cost, so the person paying for a redaction names a budget with no figure
   beside the field. A reader of the page's label is told which kinds of
-  part wait on which party (`waiting_on` on `GET /showings`: kind and
+  part wait on which party (`waiting_on` on `list_releases`: kind and
   party, never text), a queue item names its node and carries the reason
   and date of a hold already placed, and the lists of hold and end reasons
-  are served with `GET /showings` and `GET /gate/queue`.
+  are served with `list_releases` and `get_gate_queue`.
 - A node at the destination label for a page whose node the destination
   cannot read.
 - Additions a deployment makes to a role's prompt. The record names none
   because none can be made yet.
+
+## Old names in the code
+
+What this document calls a release was called a *showing*, and the
+per-party act and permission were called *release*. People and agents now
+read the new words everywhere: the web app, the tools, the role prompts and
+these documents. The routes, the tables and the stored values still carry
+the old names, and will be renamed together with a migration. Until then:
+
+| In the code and the API | In words |
+| --- | --- |
+| `showings`, `showing_pages`, `showing_parts`, `showing_acts`, `showing_removals`, and the destination-side `shown_showings`, `shown_pages`, `shown_parts`, `shown_nodes` | releases, and their pages, parts, acts and removals |
+| `src/services/showing-service.ts`, `src/routes/showings.ts`, `showing_id` | the release service, its routes, a release's id |
+| `GET /showings`, `GET /showings/:showing_id`, `GET /showings/:showing_id/pages/:page_id` | `list_releases`, `get_release`, `get_release_page` (the tools were `list_showings`, `get_showing`, `get_shown_page`) |
+| `POST /showings/:showing_id/pages/:page_id/commission` | `fund_release_work` (was `fund_showing_work`) |
+| `shown` in the answer of `GET /showings`, `shown_to`, `shown_at` | released, released to, released at |
+| the permission `release` (`permission_grants.permission`) | `consent`, held for one party |
+| the gate act `release` (`POST /gate/decisions`, `decision`) and the recorded act `released` | consent, consented |
+| `release_rules` | the consent rules that settings replaced |
+| `outbound_proposals.state` `waiting_for_release` | waiting for consent |
+| the parties whose release a part takes (`needs`, `rests_on`) | the parties whose consent a part takes |
+| the source kind `shown_page`, the format `minerval-shown-page/1` | a released page arriving at a label |
+
+The fixed words a release's record is kept and sent in also keep the old
+names until then, because they are stored and go into every package sent
+outside, and changing them would build a new package for every node under
+every release outside: an act's `what` ("asked for the showing", "ended the
+showing", and "released" for a party's consent), the reasons for ending
+(`END_REASONS`), for a node's leaving (`LEFT_REASONS`) and for a hold
+(`HOLD_REASONS`, "not to be shown yet"), why a version is held, the words
+of a gate's setting stamped on what it let through (`GATE_MODES`), the
+text of a released page as it arrives as a source, and the two sections of
+a redaction policy the code writes. They change with the stored values, in
+one step with the package format. Until then the web app says them in the
+new words where it shows them (`web/lib/stored-words.ts`), and an agent
+reads them as the API gives them.
+
+Unchanged, because they name outcomes and not the decision: a part
+*released* or *held*, *released whole*, *released in part*, `released_at`,
+`released_under` and `send_as_released`. "Release" for money, leases and
+locks (`releaseHolds`, `releaseInboxLease`, ...) is that and nothing else,
+and `press_release` is a kind of source. `release-gate-service.ts` is the
+gate where a release's parts are consented to.
+
+The web app's old addresses, `/showings` and the pages under it, redirect
+to `/releases`.

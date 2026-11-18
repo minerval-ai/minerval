@@ -12,7 +12,7 @@ label a thing was produced at and where it goes, which is a label that does
 not read the first, or outside the deployment. The boundary between two
 inside labels and the boundary to the public graph are the same gate with a
 different destination. This document describes the gate as built.
-[showing-a-page.md](showing-a-page.md) describes one kind of item, a node's
+[releasing-a-page.md](releasing-a-page.md) describes one kind of item, a node's
 page, in full: its parts, the policy, the fingerprint. What a page released
 outside then does is in [published-pages.md](published-pages.md).
 
@@ -42,7 +42,7 @@ whose material it draws on. An answer's parts are where the request stands
 with its keeper's note, one sentence for each piece of work, and each
 paragraph of what the work found. Every part is text exactly as an agent
 or a person wrote it at the label, or a sentence in fixed words. The
-Redactor, Audit's check, the fingerprint and release then work on any item
+Redactor, Audit's check, the fingerprint and consent then work on any item
 as they do on a page.
 
 Work offers an item with one call, `offerToGate` in
@@ -64,8 +64,9 @@ Two kinds of actor have them, and each has all of them:
   `restore`, `hold_part`, `delay_part`, `lift_hold` and `finish_redaction`.
   What it does not hold or delay it lets through.
 - **A person** the gate's authorities put there: someone who holds
-  `release` for a party the item rests on. They act through
-  `POST /gate/decisions`, with `release`, `approve` (everything nobody
+  `consent` for a party the item rests on. They act through
+  `decide_at_gate` (`POST /gate/decisions`), with consent (sent as
+  `release`, its name in the API), `approve` (everything nobody
   holds, as the Redactor left it), `remove`, `hold`, `delay` and `lift`.
   They may act from the web app, or through a key or token of their own
   account, so their own agent or a script can do it: the queue
@@ -77,12 +78,12 @@ Two kinds of actor have them, and each has all of them:
 
 Every act is a row (`showing_acts`) naming who made it: the person and the
 permissions they held, the Redactor's run, or the gate's setting. A hold
-stays on the record after it is lifted. A release is not taken back.
+stays on the record after it is lifted. A consent is not taken back.
 
 A person's removal is the Redactor's act: the passage is replaced by the
 category's mark, the part's hash and the item's fingerprint are recorded
 again, and the fingerprint before it stays on the record. It can be done
-until the item itself has been shown, because what is always shown counts
+until the item itself has been released, because what is always shown counts
 the removals. After that a part not yet released can be held.
 
 Audit checks each round of the Redactor's work before the item goes on
@@ -100,7 +101,7 @@ A gate treats an item in one of three ways (`GATE_MODES`):
 - **`redactor`**: the Redactor works, Audit checks its work, and what the
   Redactor let through goes, with nobody waiting on a person.
 - **`person`**: the Redactor does the same work as a proposal, and each
-  part then waits for the people who hold `release` for the parties it
+  part then waits for the people who hold `consent` for the parties it
   rests on. They approve it as proposed, in one act for a whole item, or
   change it with the same acts.
 
@@ -126,17 +127,17 @@ A setting is for one kind of thing or every kind; for the whole boundary,
 one mandate's work, a node and everything under it, or one request; and
 for one party's material or for every party that has not said
 (`PUT /gates/:gate_id/settings`). A party's own setting is taken before
-one for the gate as a whole, since release is a party's to give. Within
+one for the gate as a whole, since consent is a party's to give. Within
 either, the narrowest scope that covers the item is taken, and a setting
 for the item's kind before one for every kind. A setting applies from when
 it is set to everything not yet released, so loosening one lets through
 what was waiting on it.
 
 A gate has two sets of authorities. The deployment's administrators set
-the gate as a whole. The holders of `release` for a party set it for that
+the gate as a whole. The holders of `consent` for a party set it for that
 party's material. Most tightening and loosening is done in neither place
 but in the boundary's redaction policy, which says what the Redactor
-removes ([showing-a-page.md](showing-a-page.md), "The policy").
+removes ([releasing-a-page.md](releasing-a-page.md), "The policy").
 
 Three things are set for the gate as a whole (`PUT /gates/:gate_id`): what
 flows to it, whether its backlog is shown, and, for the gate to outside,
@@ -150,7 +151,7 @@ produced.
 - **What was asked for from the other side flows by default**: that a
   request was taken up, the answer to it, the answer to a message.
 - **A node's page flows where a flow was set for it**
-  (`POST /showings`, people who direct): one node, a node with what sits
+  (`set_page_flow`, `POST /showings`, people who direct): one node, a node with what sits
   under it, every node one mandate's work assessed, or every node assessed
   at the label. Standing, each later version follows as it is finished.
 - **Everything** is one setting of the gate (`flow: everything`): a
@@ -182,13 +183,13 @@ each look of the scheduler tries again, every `STANDING_ORDER_RETRY_MINUTES`
 and not only at the six-hourly sweep, since what it waits on (a budget
 topped up, a pace's window opening) comes at any time. The rest of the
 gates' upkeep runs on the same look (`followTheGates` in
-`src/workers/allocation-scheduler.ts`): following standing showings, letting
+`src/workers/allocation-scheduler.ts`): following standing releases, letting
 through what a delay was keeping, and the outside's packages. A page let
 through to outside under a gate set to send what is released is packaged
 and sent at once (`followReleaseOutside`), and what the public graph says
 back is taken in when the mirror batch that carries it is applied
 (`afterMirrorApplied`); the scheduler is the backstop for both. A person who holds `fund` can also
-pay by hand (`POST /showings/:showing_id/pages/:page_id/commission`).
+pay by hand (`fund_release_work`, `POST /showings/:showing_id/pages/:page_id/commission`).
 
 ## The backlog
 
@@ -297,7 +298,7 @@ which pays on the public graph. Each asking is an item of the kind
 `funding`, under the gate's setting for that kind: open, the Redactor, or
 a person; for the whole boundary, one mandate's work, or a node and what
 sits under it; with a standing delay or batches where the setting has
-them. No mandate is named where a gate starts. Every page shown outside
+them. No mandate is named where a gate starts. Every page released outside
 says whether its gate asks.
 
 ### Delay and batches
@@ -323,6 +324,6 @@ at the gate may lift it.
 - **An answer to a message reaches a sender that is a Steward.** For any
   other sender it is listed among what came through
   (`GET /gate/items`).
-- **A holder of `release` who does not read the label things come from**
+- **A holder of `consent` who does not read the label things come from**
   is shown its face, or "a label you do not read" where it shows none.
   The destination's name is shown to them: they were put at that gate.

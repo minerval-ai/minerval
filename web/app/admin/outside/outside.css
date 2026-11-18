@@ -49,7 +49,7 @@
 .w-pub-seq > span.w-bad { background: var(--w-bad-wash); color: var(--w-bad); border-color: transparent; }
 .w-pub-seq > em { width: 8px; height: 1px; background: var(--w-rule2); }
 
-/* the head of a showing's group, above its table */
+/* the head of a release's group, above its table */
 .w-pub-grp { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--w-rule); }
 
 /* a short list behind a <details> */

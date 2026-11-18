@@ -88,7 +88,7 @@ export default async function BoundariesPage({ searchParams }: { searchParams: P
                 <th>
                   Flow{" "}
                   <Tip>
-                    Asked for: only what someone asked for, or set to flow on Showings, goes to the gate. Everything: every finished page
+                    Asked for: only what someone asked for, or set to flow on Releases, goes to the gate. Everything: every finished page
                     and every mandate&apos;s terms go, each paid for by the work that produced it.
                   </Tip>
                 </th>

@@ -3,9 +3,9 @@ import { fetchGates, fetchShowing, type AskedPage, type AskedShowingRow, type Ga
 import { capital } from "@/lib/inside-words";
 import { pipelineOf, type Pipeline } from "@/lib/pipeline";
 
-// What the pages for showings share: the words for a showing's kind, the two
+// What the pages for releases share: the words for a release's kind, the two
 // ends of its boundary, the one status of a version from whichever sides the
-// viewer reads, and a bounded fetch of showings' details.
+// viewer reads, and a bounded fetch of releases' details.
 
 /** "Standing" or "Once", and what it covers, as the Kind column says them. */
 const COVERS: Record<ShowingScope, string> = {
@@ -102,11 +102,11 @@ export async function fetchDetails(externalId: string, ids: string[], concurrenc
 }
 
 /**
- * What a showing with no single node is about, in place of a node's words:
+ * What a release with no single node is about, in place of a node's words:
  * the API's own words for what it covers where the viewer reads the side it
- * is shown to (GET /showings/:id, `scope`, which names the mandate and the
+ * is released to (GET /showings/:id, `scope`, which names the mandate and the
  * label where they may be told them), else words from its scope. Null for a
- * showing of a node.
+ * release of a node.
  */
 export function wholeOf(scope: ShowingScope, from: string | null, words?: string | null): string | null {
   if (scope === "node" || scope === "under") return null;

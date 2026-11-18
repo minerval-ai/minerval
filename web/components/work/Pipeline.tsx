@@ -4,7 +4,7 @@ import "./pipeline.css";
 export { pipelineOf, type PipelineInput };
 
 /**
- * Where one version of a node's page stands under a showing, as one status:
+ * Where one version of a node's page stands under a release, as one status:
  * four step bars (Redact, Audit, Release, Shown) and a word (lib/pipeline.ts).
  * Give it the version as either side describes it, or an already-made status.
  */

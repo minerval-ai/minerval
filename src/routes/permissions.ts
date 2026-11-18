@@ -106,6 +106,7 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
       reply.send({
         permissions: PERMISSIONS.map((name) => ({
           name,
+          called: PERMISSION_DEFINITIONS[name].called,
           scope: PERMISSION_DEFINITIONS[name].scope,
           covers: PERMISSION_DEFINITIONS[name].covers,
           never: PERMISSION_DEFINITIONS[name].never,
@@ -157,7 +158,7 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
       description:
         "Any member may read it. People appear by display name. The name of a label you are " +
         "not cleared to read, or of a party that is neither the organization itself nor one " +
-        "you hold release for, is replaced by {withheld: true}, and so is a source's title " +
+        "you consent for, is replaced by {withheld: true}, and so is a source's title " +
         "unless you read the source's label; that the act happened, who did it, to whom and " +
         "when is always shown. Each entry has a `type`, one of " +
         LOG_TYPES.join(", ") +
@@ -221,8 +222,8 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
       summary: "Grant one permission to one account or one group (administrators, from a signed-in session)",
       description:
         "A grant is to an account (account_id) or to a group the identity provider names " +
-        "(group), never both. read and read_sources are granted at one label; release for " +
-        "one party (party_id); direct, fund and administer take no scope. The grant is " +
+        "(group), never both. read and read_sources are granted at one label; release (consent) " +
+        "for one party (party_id); direct, fund and administer take no scope. The grant is " +
         "logged with who made it and is never deleted.",
       body: {
         type: "object",

@@ -1,5 +1,5 @@
 /**
- * The fingerprint of a shown page (docs/showing-a-page.md, "The fingerprint").
+ * The fingerprint of a shown page (docs/releasing-a-page.md, "The fingerprint").
  *
  * When a Redactor finishes, each part of the page as it left it is hashed
  * with a salt of its own, and the hashes form a tree whose root is recorded

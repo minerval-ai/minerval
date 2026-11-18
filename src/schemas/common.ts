@@ -349,7 +349,7 @@ export const SOURCE_KIND_DESCRIPTIONS = {
   broadcast: "a podcast, programme or video that is not a verbatim record of one remark or event",
   webpage: "a web page of none of the kinds above: an organization's page, documentation, a product page",
   shown_page:
-    "a page of this graph, written at a label this one does not read and shown here with what was removed or held marked in its place",
+    "a page of this graph, written at a label this one does not read and released here with what was removed or held marked in its place",
   published_page:
     "a page of another graph, made there on evidence that is not public and published with what was removed or held marked in its place",
   unknown: "not yet identified",

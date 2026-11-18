@@ -336,12 +336,12 @@ source's text ([accounts.md](accounts.md), "Opening raw sources"). A kept
 reading is a source, and its document view is held to the same permission.
 What the agent quoted from it is what reading at the label covers.
 
-**When the node's page is shown to readers who do not read its label.** A
+**When the node's page is released to readers who do not read its label.** A
 kept reading is a source the page rests on: it is among the sources the
 Redactor may open, among the sources the page
 says exist, the supplier's name and the words of its stake are a part of
 the page, and the party whose system it was read from is among those whose
-holders of `release` are asked ([showing-a-page.md](showing-a-page.md),
+consent is asked ([releasing-a-page.md](releasing-a-page.md),
 "The gate"). That holds whether or not an instance was recorded from the
 reading: the call's row says which node its run was working on, and keeping
 a reading is the agent saying a judgment rests on it. A call that was made

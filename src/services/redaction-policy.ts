@@ -1,5 +1,5 @@
 /**
- * The redaction policy of a boundary (docs/showing-a-page.md, "The policy").
+ * The redaction policy of a boundary (docs/releasing-a-page.md, "The policy").
  *
  * A boundary is a pair: the label a page was written at, and where it is
  * shown (another label, or outside the deployment). Labels are rows and
@@ -206,7 +206,7 @@ export function policyProblems(categories: readonly PolicyCategory[]): PolicyPro
           `This category names something that is shown whenever a page is shown ("${alwaysShown[0]}"). A reader ` +
           `cannot weigh a page without its verdict, its confidence, its coverage, its sources' existence, its gaps, ` +
           `how it was made and the count of removals, so no category covers them. A page whose verdict cannot be ` +
-          `shown is held whole, which the people who direct the graph or hold release for a party can do.`,
+          `released is held whole, which the people who direct the graph or consent for a party can do.`,
       });
     }
   }

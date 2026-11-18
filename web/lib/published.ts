@@ -2,6 +2,7 @@
 // the API serves of it, and the few words the site says about it in more
 // than one place.
 import { showingCovers, type PublishedPageShape } from "./published-page/shape";
+import { storedWords } from "./stored-words";
 import type { PackageAct, PackageCheck, PackageVersion } from "./published-page/verify";
 
 export interface PublishedOnNode {
@@ -89,7 +90,7 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
   /**
    * Set when the page was not published from another graph but shown inside
    * this deployment, to a label its reader reads, from a label they do not
-   * (docs/showing-a-page.md). It is the same tab, drawn by the same
+   * (docs/releasing-a-page.md). It is the same tab, drawn by the same
    * components; what differs is whose page it is said to be and where its
    * record is read from (components/claim/InsideVersions.tsx).
    */
@@ -119,7 +120,7 @@ export function stateWords(p: { state: string | null; parts?: number; parts_held
     case "released_in_part":
       return `Released in part: ${p.parts_held} of ${p.parts} parts held (${p.held_kinds})`;
     case "held":
-      return `Held${p.held?.because ? `: ${p.held.because}` : ""}${p.held?.since ? `, since ${day(p.held.since)}` : ""}`;
+      return `Held${p.held?.because ? `: ${storedWords(p.held.because)}` : ""}${p.held?.since ? `, since ${day(p.held.since)}` : ""}`;
     case "not_redacted":
       return "Replaced by a later version before it was redacted";
     default:
@@ -127,11 +128,11 @@ export function stateWords(p: { state: string | null; parts?: number; parts_held
   }
 }
 
-/** How a showing was asked for, in a sentence. */
+/** How a release was asked for, in a sentence. */
 export function showingWords(p: { form: string | null; scope: string | null; asked_at: string | null; showing_began: string | null; ended: { at: string; because: string } | null }): string {
   const form =
     p.form === "standing"
       ? `Kept published since ${day(p.asked_at)}, so each later version follows and a version that is held shows as held`
-      : `Shown once, on ${day(p.asked_at)}, with nothing undertaken about later versions`;
-  return `${form}; covering ${showingCovers(p.scope)}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${p.ended.because}.` : ""}`;
+      : `Released once, on ${day(p.asked_at)}, with nothing undertaken about later versions`;
+  return `${form}; covering ${showingCovers(p.scope)}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${storedWords(p.ended.because)}.` : ""}`;
 }

@@ -93,7 +93,7 @@ async function followTheGates(): Promise<void> {
   // and nodes that came under a shown node or left it are recorded. Opening
   // a redaction runs nothing; it runs when it is paid for.
   await followShowings().catch((err: unknown) =>
-    console.error(`[allocation-scheduler] following showings failed: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(`[allocation-scheduler] following releases failed: ${err instanceof Error ? err.message : String(err)}`)
   );
 
   // The rest of the gate's own upkeep (docs/the-gate.md): pay again
@@ -124,7 +124,7 @@ async function followTheGates(): Promise<void> {
   // built for each change in what the outside would read, and sent where
   // the person who asked for the showing chose that. It runs no agent.
   await followOutbound().catch((err: unknown) =>
-    console.error(`[allocation-scheduler] following pages shown outside failed: ${err instanceof Error ? err.message : String(err)}`)
+    console.error(`[allocation-scheduler] following pages released outside failed: ${err instanceof Error ? err.message : String(err)}`)
   );
 }
 

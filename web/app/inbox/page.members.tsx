@@ -64,7 +64,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
         actions={
           can(who, "direct") && (
             <>
-              <ButtonLink href="/showings/new" icon="plus">New showing</ButtonLink>
+              <ButtonLink href="/releases/new" icon="plus">New release</ButtonLink>
               <ButtonLink href="/sources?drawer=add" icon="plus">Add source</ButtonLink>
             </>
           )

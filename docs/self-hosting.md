@@ -309,7 +309,7 @@ sandbox, and an administrator registers directories under it as file sets.
     the step above does not need it.
   - **`PUBLISH_SIGNING_KEY` cannot be made again.** A new key can be
     registered on the public graph, which retires the old registration,
-    but every page already shown outside is a chain of packages signed
+    but every page already released outside is a chain of packages signed
     with the old key. The new key cannot continue it: each page's record
     starts again.
 

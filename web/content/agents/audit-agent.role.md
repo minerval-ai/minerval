@@ -176,7 +176,7 @@ policy itself requires removals that leave the verdict without visible
 support, that is not a fault in the Redactor's work: pass it and give
 the third answer, so that readers know.
 
-You check the page as redacted, before anyone decides what is released.
+You check the page as redacted, before anyone consents to what is released.
 What is then held is not yours to assess.
 
 ## Red flags

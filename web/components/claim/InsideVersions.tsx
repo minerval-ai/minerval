@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { actWords, storedWords } from "@/lib/stored-words";
 import type { InsideNode, ShownTab } from "@/lib/inside-node";
 import { modelDisplayName } from "@/lib/model-names";
 import { isStatus } from "@/lib/ontology";
@@ -28,7 +29,7 @@ const quiet = { color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8r
 
 /** What a tab is called. Outside, the second tab is "Redacted assessment on sealed evidence"; inside, the evidence is open to colleagues at another label, so it is named by what it is to this reader. */
 export const SHOWN_TAB_INSIDE = "Redacted assessment on evidence you cannot read";
-export const SHOWN_TAB_OUTSIDE = "Redacted assessment, as shown outside";
+export const SHOWN_TAB_OUTSIDE = "Redacted assessment, as released outside";
 
 export function versionTabName(label: string): string {
   return label === "public" ? "Public assessment" : `Assessment at ${label}`;
@@ -37,7 +38,7 @@ export function versionTabName(label: string): string {
 function shownTabName(tab: ShownTab): string {
   if (tab.outside) return SHOWN_TAB_OUTSIDE;
   // A reader of the label the page was written at can read the evidence: to them it is the page as others are shown it.
-  return tab.from_label ? `Redacted assessment, as shown to ${tab.shown_to}` : SHOWN_TAB_INSIDE;
+  return tab.from_label ? `Redacted assessment, as released to ${tab.shown_to}` : SHOWN_TAB_INSIDE;
 }
 
 
@@ -281,19 +282,19 @@ export function SeveralInForce({ claimId, detail, versions, texts }: { claimId: 
   );
 }
 
-/** A line for whoever may ask for the page to be shown, on the tab of an assessment that some members cannot read. */
+/** A line for whoever may release the page, on the tab of an assessment that some members cannot read. */
 export function AskToShow({ claimId, version }: { claimId: string; version: NodeVersion }) {
   if (version.label === "public") return null;
   return (
     <p style={quiet}>
       People who do not read at {version.label} cannot read this assessment.{" "}
-      <Link href={`/showings/new?node=${claimId}&at=${encodeURIComponent(version.label)}`}>Ask for this page to be shown to them</Link>, with what
+      <Link href={`/releases/new?node=${claimId}&at=${encodeURIComponent(version.label)}`}>Release this page to them</Link>, with what
       a redaction policy covers removed and marked.
     </p>
   );
 }
 
-/** Under the title on the tab of a page shown from a label the reader does not read. */
+/** Under the title on the tab of a page released from a label the reader does not read. */
 export function ShownIntro({ view }: { view: PublishedPageView }) {
   const inside = view.inside!;
   const shape = view.page;
@@ -303,20 +304,20 @@ export function ShownIntro({ view }: { view: PublishedPageView }) {
       <p style={{ ...quiet, margin: 0 }}>
         {inside.tab.outside ? (
           <>
-            This is the page as people outside this deployment are shown it. It is this node&rsquo;s Steward&rsquo;s page as written at one of this
-            deployment&rsquo;s labels, after redaction under the policy for showing pages outside: each passage removed is marked where it stood, and
+            This is the page as it was released to people outside this deployment. It is this node&rsquo;s Steward&rsquo;s page as written at one of this
+            deployment&rsquo;s labels, after redaction under the policy for releasing pages outside: each passage removed is marked where it stood, and
             each part held back is named in its place. On the public graph it is a source that the node&rsquo;s Steward there weighs.
           </>
         ) : inside.tab.from_label ? (
           <>
-            This is the page written at {inside.tab.from_label} as {inside.tab.shown_to} are shown it: this node&rsquo;s Steward&rsquo;s page as
+            This is the page written at {inside.tab.from_label} as it was released to {inside.tab.shown_to}: this node&rsquo;s Steward&rsquo;s page as
             written, after redaction under the policy for that boundary. Each passage removed is marked where it stood, and each part held
             back is named in its place. You read at {inside.tab.from_label}, so the page without marks is on its own tab.
           </>
         ) : (
           <>
             This page was written by this node&rsquo;s Steward working at a label you do not read, on evidence filed there. It is that
-            Steward&rsquo;s page as written, shown to {inside.tab.shown_to} after redaction under the policy for that boundary: each passage removed is
+            Steward&rsquo;s page as written, released to {inside.tab.shown_to} after redaction under the policy for that boundary: each passage removed is
             marked where it stood, and each part held back is named in its place. The assessment made at your own label weighs it as a source
             and is not bound by it.
           </>
@@ -342,7 +343,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** How the page was shown, closed to one line at the foot like Full reasoning, opening to the record and the check. */
+/** How the page was released, closed to one line at the foot like Full reasoning, opening to the record and the check. */
 export function ShownRecord({ view }: { view: PublishedPageView }) {
   const { showing, page, tab } = view.inside!;
   const shape = view.page;
@@ -351,47 +352,47 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
   return (
     <details className="reasoning-detail publication-record">
       <summary>
-        How this page was shown: asked for on {day(showing.asked_at)}
+        How this page was released: asked for on {day(showing.asked_at)}
         {showing.asked_by ? ` by ${showing.asked_by}` : ""};{" "}
         {shape ? (shape.held_parts === 0 ? `all ${shape.parts} parts released` : `${shape.held_parts} of ${shape.parts} parts held`) : "nothing released"}; the
         fingerprint {page.verification?.ok ? "matched" : "did not match"} when the page was read for you
       </summary>
       <dl className="record-rows">
-        <Row label="Shown to">{showing.shown_to === "outside this deployment" ? "People outside this deployment." : `${showing.shown_to.charAt(0).toUpperCase()}${showing.shown_to.slice(1)}.`}</Row>
+        <Row label="Released to">{showing.shown_to === "outside this deployment" ? "People outside this deployment." : `${showing.shown_to.charAt(0).toUpperCase()}${showing.shown_to.slice(1)}.`}</Row>
         <Row label="Asked for">
           On {day(showing.asked_at)}
           {showing.asked_by ? ` by ${showing.asked_by}` : ""}, who then held: {showing.asked_holding.join(", ") || "nothing recorded"}.{" "}
           {showing.form === "standing"
-            ? "It is a standing showing: each later assessment follows, and one that is not released shows as held."
-            : "The page was shown once, as it stood, and nothing is undertaken about later assessments."}{" "}
-          It covers {showing.scope}.{node ? ` The showing began ${node.showing_began}.` : ""}
-          {showing.ended_at ? ` It ended on ${day(showing.ended_at)}: ${showing.ended_because}. What was shown stays shown.` : ""}
+            ? "It is a standing release: each later assessment follows, and one that is not released shows as held."
+            : "The page was released once, as it stood, and nothing is undertaken about later assessments."}{" "}
+          It covers {showing.scope}.{node ? ` The release began ${node.showing_began}.` : ""}
+          {showing.ended_at ? ` It ended on ${day(showing.ended_at)}: ${storedWords(showing.ended_because)}. What was released stays released.` : ""}
         </Row>
         {showing.policy && (
           <Row label="Redaction policy">
             <Link href={`/redaction-policies/${showing.policy.policy_id}`}>Version {showing.policy.version}</Link> (
-            <span className="mono">{showing.policy.hash.slice(0, 16)}</span>), which everyone this page is shown to can read in full.
+            <span className="mono">{showing.policy.hash.slice(0, 16)}</span>), which everyone this page is released to can read in full.
           </Row>
         )}
-        <Row label="Audit's check">{page.audit ?? "Not recorded."} It was made of the redaction, before anyone decided what to release.</Row>
+        <Row label="Audit's check">{page.audit ?? "Not recorded."} It was made of the redaction, before any party consented.</Row>
         <Row label="Fingerprint">
-          <span className="mono">{page.fingerprint?.slice(0, 16)}</span>, recorded when the redaction finished and before anyone decided what to
-          release.
+          <span className="mono">{page.fingerprint?.slice(0, 16)}</span>, recorded when the redaction finished and before any party
+          consented.
           {(page.earlier_fingerprints ?? []).length > 1 ? ` An earlier round of redaction was returned by the check; its fingerprint is kept too.` : ""}
         </Row>
         <Row label="Who acted">
           <ul>
             {acts.map((a, i) => (
               <li key={i}>
-                {day(a.at)}: {a.by} {a.what}
+                {day(a.at)}: {a.by} {actWords(a.what)}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
-                {a.reason ? ` (${a.reason})` : ""}
+                {a.reason ? ` (${storedWords(a.reason)})` : ""}
                 {a.holding.length > 0 ? `, holding ${a.holding.join(", ")}` : ""}.
               </li>
             ))}
           </ul>
-          Where one person holds both direct and release, whoever directed the work also released it.
+          Where one person both directs and consents, whoever directed the work also consented to it.
         </Row>
         {node && (
           <Row label="Assessments">
@@ -402,7 +403,7 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
                 </li>
               ))}
             </ul>
-            Every assessment made while the showing stood is listed, the held ones as held.
+            Every assessment made while the release stood is listed, the held ones as held.
           </Row>
         )}
         <Row label="Check">
@@ -410,7 +411,7 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
         </Row>
       </dl>
       <p style={quiet}>
-        The whole record, with each part&rsquo;s place and who released it, is on <Link href={`/showings/${showing.showing_id}`}>the showing&rsquo;s own page</Link>.
+        The whole record, with each part&rsquo;s place and who consented to it, is on <Link href={`/releases/${showing.showing_id}`}>the release&rsquo;s own page</Link>.
       </p>
     </details>
   );

@@ -41,7 +41,7 @@ export async function setupChecklistRoutes(app: FastifyInstance): Promise<void> 
         "owls and which configured models have no price. `usage_report` says whether usage is " +
         "reported, where to, and how many reports wait to be sent. `connections` counts the " +
         "connections at labels the caller reads and names those that need a look, and says how " +
-        "many more there are at labels the caller does not read. `public_graph.signing_key` counts the showings outside that are open, " +
+        "many more there are at labels the caller does not read. `public_graph.signing_key` counts the releases outside that are open, " +
         "at every label, and says when the key the deployment signs with now was last registered on the public graph from here " +
         "(null where its log has no such registration). `material` counts the sources " +
         "recorded in the whole deployment, by the party each belongs to, the submitted sources " +
