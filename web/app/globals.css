@@ -1653,6 +1653,16 @@ html { scroll-behavior: smooth; }
 }
 .key-create button:hover:not(:disabled) { background: var(--paper-sunk); }
 .key-create button:disabled { color: var(--faint); cursor: default; }
+/* the key form when it asks for a label: the choice above, name and button below */
+.key-create-stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.7rem; max-width: 30rem; margin: 0.8rem 0; }
+.key-create-stack > .key-create { margin: 0; max-width: none; }
+.key-create-stack > label { display: grid; gap: 0.2rem; font-family: var(--sans); font-size: 0.74rem; color: var(--ink-soft); }
+.key-create-stack > label small { font-size: 0.68rem; color: var(--muted); line-height: 1.45; }
+.key-create-stack select {
+  font-family: var(--sans); font-size: 0.86rem; padding: 0.45rem 0.6rem;
+  border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-card);
+  color: var(--ink); width: 100%;
+}
 .form-error { font-family: var(--sans); font-size: 0.8rem; color: var(--st-contradicted); }
 
 /* owl balance + purchase packs */
@@ -1841,7 +1851,8 @@ a.acct-buy:hover { background: var(--ink-soft); text-decoration: none; }
 .acct-cols { display: flex; flex-wrap: wrap; gap: 2.2rem 3.2rem; margin-top: 1.15rem; }
 .acct-cols-flush { margin-top: 0; }
 .acct-cols-end { align-items: flex-end; gap: 0.6rem 3.2rem; }
-.acct-cols-end .key-create { margin: 0 0 0.3rem; max-width: none; }
+.acct-cols-end .key-create, .acct-cols-end .key-create-stack { margin: 0 0 0.3rem; max-width: none; }
+.acct-cols-end .key-create-stack > .key-create { margin: 0; }
 .acct-main { flex: 999 1 26rem; min-width: 0; }
 .acct-side { flex: 1 1 16.5rem; min-width: 0; }
 .acct-side-wide { flex-basis: 20rem; }

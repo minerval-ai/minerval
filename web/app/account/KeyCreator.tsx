@@ -23,26 +23,40 @@ export function KeyCreator({
     {}
   );
 
+  // With a label to choose, the form stacks: the choice and its account of
+  // who reads each label above, the name and the button on one row below.
+  // On one row the three crushed the name field to nothing.
+  const choosing = labels?.must_choose === true;
+  const nameAndSubmit = (
+    <>
+      <input
+        name="name"
+        placeholder={extension ? 'key name, e.g. "browser extension"' : "key name"}
+        maxLength={120}
+        required
+        autoComplete="off"
+      />
+      <button type="submit" disabled={pending}>
+        {pending ? "creating…" : "Create key"}
+      </button>
+    </>
+  );
+
   return (
     <div>
-      <form action={formAction} className="key-create">
-        <input
-          name="name"
-          placeholder={extension ? 'key name, e.g. "browser extension"' : "key name"}
-          maxLength={120}
-          required
-          autoComplete="off"
-        />
-        {labels && (
+      {choosing && labels ? (
+        <form action={formAction} className="key-create-stack">
           <LabelChoice
             mine={labels}
             what="The label the key works at, for its whole life: whatever holds it reads what that label reads and files what it adds there. Make one key for each label you want an agent to work at."
           />
-        )}
-        <button type="submit" disabled={pending}>
-          {pending ? "creating…" : "Create key"}
-        </button>
-      </form>
+          <div className="key-create">{nameAndSubmit}</div>
+        </form>
+      ) : (
+        <form action={formAction} className="key-create">
+          {nameAndSubmit}
+        </form>
+      )}
       {state.error && <p className="form-error">{state.error}</p>}
       {state.plaintext && (
         <div className="key-reveal" role="status">
