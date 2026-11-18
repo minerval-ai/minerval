@@ -24,10 +24,10 @@ outside is to read it, at the moment it was built
 
 | Field | |
 | --- | --- |
-| `format` | `minerval-published-page/1` |
+| `format` | `minerval-published-page/2` (a package signed in `/1` names the release `showing` and `node.release_began` `node.showing_began`, and is checked and read as it was signed) |
 | `publisher` | The signing key: its id and its 32 bytes |
 | `deployment` | Where the deployment runs, as one of three fixed words (the organization's own machines; Minerval's; a third party's), and what outside the publisher's control attests to the run. Today nothing can, and the field says so |
-| `showing` | The release: its id, form (once or standing), scope (the node alone, the node with what sits under it, one mandate's work, or every node assessed at the label), when it was asked for, how its packages are sent, and its ending with date and reason |
+| `release` | The release: its id, form (once or standing), scope (the node alone, the node with what sits under it, one mandate's work, or every node assessed at the label), when it was asked for, how its packages are sent, and its ending with date and reason |
 | `node` | The node's id on the public graph, when the release came to cover it, when it was first assessed at the page's label, which came first, and its leaving |
 | `sequence`, `previous_hash` | 1, 2, 3, ... for this node under this release, each naming the one before |
 | `state` | The node's state now: not yet assessed, released whole, released in part, or held |
@@ -36,7 +36,7 @@ outside is to read it, at the moment it was built
 | `record.made` | The prompt-set hash, the model that assessed and the model that redacted, any addition to a role's prompt, the seal of the assessing run's log with whether its chain checked out, and how the assessment was paid for |
 | `record.acts` | Everything a person, a rule or the process did on the release, each with the permissions the person held. People are numbered; no name crosses |
 | `record.versions` | Every version made while the release stood, held ones as held; for each version released, `released_under`: for each party it rests on, how the publisher's gate was set when it went (open, the Redactor's decision, or a person's as well), how wide the setting was and the day it was set |
-| `hash`, `signature` | sha256 over the canonical JSON of everything above; Ed25519 over the hash |
+| `hash`, `signature` | sha256 over the format, a line feed and the canonical JSON of everything above; Ed25519 over the hash |
 
 The record is facts the system stamps. Nobody writes a word of it.
 
@@ -123,9 +123,10 @@ It is first proposed there, as any contributor would propose it:
 1. A person who holds `direct` writes or approves the words
    (`POST /outbound/proposals`). Left unsaid, they are the node's own
    wording.
-2. Each party the node's wording rests on consents to them
-   (`POST /outbound/proposals/:proposal_id/release`), unless they are word
-   for word a wording those parties already consented to at the gate.
+2. Each party the node's wording rests on consents to them at the gate
+   to outside, where they wait as an item of the kind `proposal`, unless
+   they are word for word a wording those parties already consented to
+   with the node's page.
 3. The proposal is sent with the next send. On the public graph it is an
    ordinary proposal under the organization's account: reviewed, and placed
    by the Matcher, which may find that the public graph already holds the
