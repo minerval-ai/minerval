@@ -3,14 +3,17 @@
  *
  * Diff the providers' live model lists against what this codebase declares:
  *   - NEW: a provider id we do not register anywhere (a candidate to adopt);
- *   - DEPRECATED: an id we register (a default, a pin, a rate-table entry)
- *     that its provider no longer lists — the silent-drift case the guard
- *     stage cannot see, because the guard checks our tables against
- *     themselves, not against the provider;
- *   - PRICING DRIFT: a model priced in src/llm/pricing.ts that OpenRouter
- *     also lists (as vendor/model) at a different list rate. OpenRouter is a
- *     reseller, so its rate is a hint, not the vendor's word — but a
- *     mismatch is worth a look either way.
+ *   - DEPRECATED: an id we register (a default or a pin) that its provider
+ *     no longer lists — the silent-drift case the guard stage cannot see,
+ *     because the guard checks our tables against themselves, not against
+ *     the provider. A model only the price snapshot names is not reported:
+ *     the snapshot keeps a retired model's price on purpose, for the usage
+ *     rows that name it;
+ *   - PRICING DRIFT: a model in the price snapshot (src/llm/price-snapshot.ts)
+ *     that OpenRouter lists at a different rate. A running deployment reads
+ *     the lists itself (services/model-price-service.ts), so drift here only
+ *     says the snapshot a fresh install starts from is behind: run
+ *     `npm run prices:snapshot`.
  *
  * No network here: models-discover.ts fetches and prints, this module diffs
  * fixture-shaped responses so the unit suite can pin the logic.
@@ -50,7 +53,7 @@ export type ProviderName = "anthropic" | "openai" | "openrouter";
 /** Where a registered id comes from, so a deprecation names what to edit. */
 export interface RegisteredModel {
   id: string;
-  /** e.g. "MODELS.sonnet", "OPENROUTER_MODELS.flash", "pin STEWARD_MODEL", "pricing prefix". */
+  /** e.g. "MODELS.sonnet", "OPENROUTER_MODELS.flash", "pin STEWARD_MODEL", "price snapshot". */
   source: string;
 }
 
@@ -131,7 +134,7 @@ export function isCandidateId(provider: ProviderName, id: string): boolean {
 }
 
 /**
- * Whether a pricing prefix accounts for a listed id: the id itself, or a
+ * Whether a priced id accounts for a listed id: the id itself, or a
  * dated snapshot of it ("claude-haiku-4-5" → "claude-haiku-4-5-20251001",
  * "gpt-5-nano" → "gpt-5-nano-2025-08-07"). NOT any id that merely starts
  * with it: ratesForModel would price "gpt-5.7" off the "gpt-5" entry, but
@@ -144,15 +147,20 @@ export function coveredByPrefix(prefix: string, id: string): boolean {
   return rest !== null && /^-(\d{8}|\d{4}-\d{2}-\d{2})$/.test(rest);
 }
 
+/** The source a price-snapshot id is registered under. */
+export const PRICE_SNAPSHOT_SOURCE = "price snapshot";
+
+const isPriceEntry = (source: string) => source === PRICE_SNAPSHOT_SOURCE;
+
 /**
  * Whether a registered id is "present" in a provider list. Anthropic and
  * OpenAI list exact ids, so a registered id (a default, a pin, a dated
- * snapshot) is present when listed exactly; a pricing PREFIX is present when
+ * snapshot) is present when listed exactly; a priced id is present when
  * the list carries it or a dated snapshot of it.
  */
 export function isPresent(registered: RegisteredModel, listed: Set<string>): boolean {
   if (listed.has(registered.id)) return true;
-  if (registered.source.startsWith("pricing")) {
+  if (isPriceEntry(registered.source)) {
     for (const id of listed) if (coveredByPrefix(registered.id, id)) return true;
   }
   return false;
@@ -167,7 +175,7 @@ export function vendorStripped(openrouterId: string): string | null {
 export function diffModels(input: {
   registry: RegisteredModel[];
   providers: ProviderLists;
-  /** Our explicit rates for an id, or null when pricing.ts has no entry (OpenRouter-priced, or fallback). */
+  /** Our explicit rates for an id, or null when the price catalog has no entry (OpenRouter-priced, or fallback). */
   ratesFor: (id: string) => Rates | null;
   /** Relative drift beyond which a rate difference is reported (default 1%). */
   driftTolerance?: number;
@@ -181,8 +189,8 @@ export function diffModels(input: {
   const consider = (provider: ProviderName, id: string, released: string | null, rates: Rates | null) => {
     listed[provider].add(id);
     if (registeredIds.has(id)) return;
-    // A pricing prefix covers its dated snapshots: not new.
-    if (input.registry.some((r) => r.source.startsWith("pricing") && coveredByPrefix(r.id, id))) return;
+    // A priced id covers its dated snapshots: not new.
+    if (input.registry.some((r) => isPriceEntry(r.source) && coveredByPrefix(r.id, id))) return;
     if (!isCandidateId(provider, id)) return;
     candidates.push({ provider, id, released, rates });
   };
@@ -205,6 +213,7 @@ export function diffModels(input: {
   for (const [id, sources] of byId) {
     const provider = providerOf(id);
     if (!provider || unavailable.includes(provider)) continue;
+    if (sources.every(isPriceEntry)) continue;
     const present = sources.some((source) => isPresent({ id, source }, listed[provider]));
     if (!present) deprecated.push({ provider, id, sources });
   }
@@ -226,19 +235,6 @@ export function diffModels(input: {
   return { candidates: candidates.sort(byDate), deprecated: deprecated.sort((a, b) => a.id.localeCompare(b.id)), pricingDrift, unavailable };
 }
 
-/**
- * The rate-table prefixes in src/llm/pricing.ts, read from its source the
- * way production-pins.ts reads the CDK stack: MODEL_RATES is private by
- * design (ratesForModel is the API), and an id in that table is a model the
- * codebase claims to know the price of — which is exactly what a deprecation
- * should name. Matches `"<prefix>": { inputPerMtok` lines only.
- */
-export function parsePricingPrefixes(pricingSource: string): string[] {
-  const out: string[] = [];
-  for (const m of pricingSource.matchAll(/^\s*"([^"]+)":\s*\{\s*inputPerMtok/gm)) out.push(m[1]!);
-  return out;
-}
-
 /** Plain table for the terminal. */
 export function renderDiscovery(diff: DiscoveryDiff): string {
   const out: string[] = [];
@@ -249,7 +245,7 @@ export function renderDiscovery(diff: DiscoveryDiff): string {
   }
   out.push(`Deprecated (registered here, missing from the provider's list): ${diff.deprecated.length}`);
   for (const d of diff.deprecated) out.push(`  ${d.provider.padEnd(10)} ${d.id.padEnd(44)} ← ${d.sources.join(", ")}`);
-  out.push(`Pricing drift (pricing.ts vs OpenRouter list rate): ${diff.pricingDrift.length}`);
+  out.push(`Pricing drift (the price snapshot vs OpenRouter's rate): ${diff.pricingDrift.length}`);
   for (const p of diff.pricingDrift) {
     out.push(`  ${p.id.padEnd(30)} ours ${rate(p.ours).padEnd(26)} openrouter ${rate(p.openrouter)}  (${p.openrouterId})`);
   }

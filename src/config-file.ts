@@ -305,6 +305,13 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   },
   // Whether owls are sold or the deployment's administrators create them.
   { key: "pricing.owls", env: "OWLS", kind: "text", field: "owls" },
+  // How often the public price lists are read (services/model-price-service.ts).
+  {
+    key: "pricing.model_price_refresh_hours",
+    env: "MODEL_PRICE_REFRESH_HOURS",
+    kind: "number",
+    field: "modelPriceRefreshHours",
+  },
   // Prices the deployment states for models (src/llm/model-prices.ts).
   // Written last in its group: a [[...]] heading ends the plain settings above it.
   {
@@ -391,8 +398,8 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
   pricing:
     "What an owl costs, whether owls are sold or created here, what is given away, and the most each paid operation can cost.",
   "pricing.model_prices":
-    "A price this deployment states for a model, in US dollars per million tokens: for a model the rate table " +
-    "does not know, or in place of the table's. Where owls are created, a run on a model with no price is refused.",
+    "A price this deployment states for a model, in US dollars per million tokens: for a model the price catalog " +
+    "does not know, or in place of the catalog's. Where owls are created, a run on a model with no price is refused.",
   private_runs:
     "Runs that read a private label. fetches is \"any\" (the starting value: a tool takes any address, as on the " +
     "public graph) or \"given\": a tool takes only an address the deployment was given from outside, which guards " +

@@ -524,6 +524,16 @@ export interface CreatedOwls {
   prices: {
     stated: Array<{ model: string; input_usd_per_mtok: number; output_usd_per_mtok: number }>;
     unpriced_models: Array<{ setting: string; model: string }>;
+    /** Absent from a build before the vendors' list prices were read live. */
+    in_use?: Array<{
+      setting: string;
+      model: string;
+      priced_by: "stated" | "catalog" | "provider" | "none";
+      input_usd_per_mtok?: number;
+      output_usd_per_mtok?: number;
+    }>;
+    list_prices_checked_at?: string | null;
+    lists?: Array<{ source: string; ok: boolean }>;
   };
 }
 

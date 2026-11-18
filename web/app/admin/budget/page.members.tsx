@@ -659,44 +659,107 @@ function Ledger({ created }: { created: CreatedOwls }) {
 
 // ---- model prices --------------------------------------------------------
 
-function Prices({ created }: { created: CreatedOwls }) {
+const PRICED_BY: Record<string, { text: string; tone: Tone; title: string }> = {
+  catalog: { text: "List price", tone: "neu", title: "The vendor's list price, read from the public price lists" },
+  stated: { text: "Stated", tone: "neu", title: "A price this deployment states in MODEL_PRICES" },
+  provider: { text: "Provider reports", tone: "neu", title: "The provider reports the cost of each call itself" },
+  none: { text: "No price", tone: "warn", title: "Calls to it are refused before anything is sent" },
+};
+
+const LIST_NAMES: Record<string, string> = { openrouter: "OpenRouter", litellm: "LiteLLM" };
+
+function PricesInUse({ prices }: { prices: CreatedOwls["prices"] }) {
+  const inUse = prices.in_use;
+  if (!inUse) return null;
+  const checked = prices.list_prices_checked_at;
+  const unread = (prices.lists ?? []).filter((l) => !l.ok).map((l) => LIST_NAMES[l.source] ?? l.source);
   return (
     <Section
-      title="Stated prices"
+      title="Prices in use"
       aside={
         <span className="w-row" style={{ gap: 6 }}>
-          Dollars per million tokens
+          {checked ? `List prices read ${shortWhen(checked)}` : "List prices not read yet"}
           <Tip>
-            One owl covers one dollar of metered cost. A call is priced by the rate table that ships with Minerval, by a provider that reports the cost of each call itself, or by a price this deployment states for a model in its MODEL_PRICES setting. A model with no price is refused before anything is sent, because a guessed rate would be a number nobody chose.
+            Anthropic's and OpenAI's prices are read every few hours from two public lists, OpenRouter's model list and LiteLLM's price file. A price in force changes only when both state the new one; a new model is priced from either. Until the lists are first read, calls are priced at the prices this release carries. A call already made keeps the cost it was metered at.
           </Tip>
+          {unread.length > 0 && <Pill tone="warn">{unread.join(" and ")} not reached last time</Pill>}
         </span>
       }
     >
-      {created.prices.stated.length === 0 ? (
-        <div className="w-card">
-          <Empty>This deployment states no price of its own: every model it runs is priced by the rate table or by its provider.</Empty>
-        </div>
-      ) : (
-        <Table label="Stated prices">
-          <thead>
-            <tr>
-              <th>Model</th>
-              <th className="w-num">In</th>
-              <th className="w-num">Out</th>
-            </tr>
-          </thead>
-          <tbody>
-            {created.prices.stated.map((p) => (
-              <tr key={p.model}>
+      <Table label="Prices in use">
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Model</th>
+            <th>Priced by</th>
+            <th className="w-num">In</th>
+            <th className="w-num">Out</th>
+          </tr>
+        </thead>
+        <tbody>
+          {inUse.map((p) => {
+            const by = PRICED_BY[p.priced_by] ?? PRICED_BY.none!;
+            return (
+              <tr key={p.setting}>
+                <td className="w-mono">{p.setting}</td>
                 <td className="w-mono">{p.model}</td>
-                <td className="w-num">{p.input_usd_per_mtok}</td>
-                <td className="w-num">{p.output_usd_per_mtok}</td>
+                <td>
+                  <Pill tone={by.tone} title={by.title}>
+                    {by.text}
+                  </Pill>
+                </td>
+                <td className="w-num">{p.input_usd_per_mtok ?? "—"}</td>
+                <td className="w-num">{p.output_usd_per_mtok ?? "—"}</td>
               </tr>
-            ))}
-          </tbody>
-        </Table>
-      )}
+            );
+          })}
+        </tbody>
+      </Table>
     </Section>
+  );
+}
+
+function Prices({ created }: { created: CreatedOwls }) {
+  return (
+    <>
+      <PricesInUse prices={created.prices} />
+      <Section
+        title="Stated prices"
+        aside={
+          <span className="w-row" style={{ gap: 6 }}>
+            Dollars per million tokens
+            <Tip>
+              One owl covers one dollar of metered cost. A call is priced by the vendors' list prices, which this deployment reads every few hours, by a provider that reports the cost of each call itself, or by a price this deployment states for a model in its MODEL_PRICES setting. A model with no price is refused before anything is sent, because a guessed rate would be a number nobody chose.
+            </Tip>
+          </span>
+        }
+      >
+        {created.prices.stated.length === 0 ? (
+          <div className="w-card">
+            <Empty>This deployment states no price of its own: every model it runs is priced by the vendors' list prices or by its provider.</Empty>
+          </div>
+        ) : (
+          <Table label="Stated prices">
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th className="w-num">In</th>
+                <th className="w-num">Out</th>
+              </tr>
+            </thead>
+            <tbody>
+              {created.prices.stated.map((p) => (
+                <tr key={p.model}>
+                  <td className="w-mono">{p.model}</td>
+                  <td className="w-num">{p.input_usd_per_mtok}</td>
+                  <td className="w-num">{p.output_usd_per_mtok}</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        )}
+      </Section>
+    </>
   );
 }
 

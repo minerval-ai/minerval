@@ -103,16 +103,21 @@ describe("a stated price in the meter", () => {
     ).toBe(50_000 + 625_000);
   });
 
-  it("wins over the table for a model the table knows, and keeps the table's cache multipliers", async () => {
-    process.env.MODEL_PRICES = '[{"model":"claude-opus-5-5","inputUsdPerMtok":2,"outputUsdPerMtok":10}]';
+  it("wins over the catalog for a model the catalog knows, and keeps the catalog's cache multipliers", async () => {
     const pricing = await import("../../../src/llm/pricing.js");
-    expect(pricing.ratesForModel("claude-opus-5-5")).toEqual({
+    const listed = pricing.ratesForModel("claude-opus-5-5");
+    const opus5 = pricing.ratesForModel("claude-opus-5").inputPerMtok;
+    process.env.MODEL_PRICES = '[{"model":"claude-opus-5-5","inputUsdPerMtok":2,"outputUsdPerMtok":10}]';
+    vi.resetModules();
+    const stated = await import("../../../src/llm/pricing.js");
+    expect(stated.ratesForModel("claude-opus-5-5")).toEqual({
       inputPerMtok: 2,
       outputPerMtok: 10,
-      cacheReadMultiplier: 0.05,
+      cacheReadMultiplier: listed.cacheReadMultiplier,
+      cacheWriteMultiplier: listed.cacheWriteMultiplier,
     });
-    // Another model of the family keeps the table's price.
-    expect(pricing.ratesForModel("claude-opus-5").inputPerMtok).toBe(5);
+    // Another model of the family keeps the catalog's price.
+    expect(stated.ratesForModel("claude-opus-5").inputPerMtok).toBe(opus5);
   });
 
   it("takes the longest match among stated prices", async () => {
@@ -127,11 +132,11 @@ describe("a stated price in the meter", () => {
 
   it("changes nothing where no price is stated", async () => {
     const pricing = await import("../../../src/llm/pricing.js");
+    const { PRICE_SNAPSHOT } = await import("../../../src/llm/price-snapshot.js");
     expect(pricing.ratesForModel("claude-hypothetical-9")).toEqual({ inputPerMtok: 10, outputPerMtok: 50 });
-    expect(pricing.ratesForModel("claude-opus-5-5")).toEqual({
-      inputPerMtok: 4,
-      outputPerMtok: 20,
-      cacheReadMultiplier: 0.05,
+    expect(pricing.ratesForModel("claude-opus-5-5")).toMatchObject({
+      inputPerMtok: PRICE_SNAPSHOT["claude-opus-5-5"]!.inputPerMtok,
+      outputPerMtok: PRICE_SNAPSHOT["claude-opus-5-5"]!.outputPerMtok,
     });
   });
 });

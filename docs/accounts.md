@@ -724,20 +724,20 @@ there enters a balance by an administrator's logged act, and a grant by
 setting would create owls that no act records.
 
 **The price of an owl.** Cost is metered as everywhere (below, "The
-per-token meter"). Three things can price a call: the rate table in
-`src/llm/pricing.ts`; a provider that reports the cost of each call itself
-(OpenRouter, and an endpoint a deployment declares with its prices); and a
-price the deployment states, `MODEL_PRICES`:
+per-token meter"). Three things can price a call: the price catalog (below,
+"Where model prices come from"); a provider that reports the cost of each
+call itself (OpenRouter, and an endpoint a deployment declares with its
+prices); and a price the deployment states, `MODEL_PRICES`:
 
 ```
 MODEL_PRICES=[{"model":"gpt-oss-120b","inputUsdPerMtok":0.5,"outputUsdPerMtok":1.5}]
 ```
 
-US dollars per million input and output tokens, for a model the table does
-not know, or in place of the table's price for one it does (a negotiated
-rate). `model` is a model ID or the start of one; the longest match wins,
-and a stated price wins over the table. `cacheReadMultiplier` and
-`cacheWriteMultiplier` are optional.
+US dollars per million input and output tokens, for a model the catalog
+does not know, or in place of the catalog's price for one it does (a
+negotiated rate). `model` is a model ID or the start of one; the longest
+match wins, and a stated price wins over the catalog. `cacheReadMultiplier`
+and `cacheWriteMultiplier` are optional.
 
 On the public graph a model with no price meters at a conservative fallback
 rate. Where owls are created that rate would be a number nobody chose, so a
@@ -745,6 +745,32 @@ call to a model with no price is refused before anything is sent, with a
 message that says how to state one (`ModelNotPricedError`). `GET
 /owls/created` lists the models the deployment is configured to run that
 have no price, so the gap can be closed before a run meets it.
+
+**Where model prices come from.** Nobody types in what Anthropic and
+OpenAI charge. Neither vendor publishes its prices where a program can read
+them, so the deployment reads two public lists that carry both vendors'
+list rates, cache rates and long-prompt rates: OpenRouter's model list and
+LiteLLM's price file. It reads them every `MODEL_PRICE_REFRESH_HOURS` hours
+(6 to start; `0` never) and keeps what it takes in one row of
+`platform_flags` (`model_prices`), which every process meters from
+(`src/services/model-price-service.ts`). The lists are kept by different
+people, so a price already in force changes only when both state the new
+one. A model with no price yet, such as a new release, is priced from
+either list alone, which is nearer the truth than the fallback rate. Where
+the lists disagree, or one states a price that cannot be right (zero, or
+above $1,000 per million tokens), the price in force stays, and the refresh
+logs what it held and why. A model the lists stop carrying keeps its last
+price. A model is priced by its own entry or, for a dated snapshot
+(`claude-haiku-4-5-20251001`), its family's, never by a sibling whose name
+it starts with. A usage row keeps the cost worked out when its call was
+made, so a price change applies to later calls only. The `Model prices`
+tab of the budget page shows what each configured model is metered at,
+from where, and when the lists were last read.
+
+Before a deployment has read the lists, and where it cannot reach them, it
+meters at the snapshot the release carries (`src/llm/price-snapshot.ts`).
+`npm run prices:snapshot` writes the snapshot from the same lists by the
+same rules, and nobody edits it by hand.
 
 ### Asking a label you do not read
 

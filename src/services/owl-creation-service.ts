@@ -29,7 +29,8 @@ import { deploymentHoldsLabels, rawQuery, withTransaction, type TxQuery } from "
 import { withSystemClearance } from "../db/clearance.js";
 import { currentClearance, currentLabel } from "../llm/usage-context.js";
 import { membersOnly } from "../permissions.js";
-import { unpricedConfiguredModels } from "../llm/pricing.js";
+import { configuredModels, priceOrigin, ratesForModel, unpricedConfiguredModels } from "../llm/pricing.js";
+import { storedModelPrices } from "./model-price-service.js";
 import { CREATED_OWLS_STATEMENT, microUsdToOwls, owlsCreatedHere, owlsToMicroUsd } from "./owl.js";
 import { OWL_REASONS } from "./owl-ledger-service.js";
 import { logAdministrativeEvent } from "./permission-service.js";
@@ -465,11 +466,31 @@ export interface CreatedOwlsSummary {
     standing_mandate?: string;
     note?: string;
   }>;
-  /** The prices an owl is counted at here, beyond the built-in table. */
+  /** The prices an owl is counted at here. */
   prices: {
     stated: Array<{ model: string; input_usd_per_mtok: number; output_usd_per_mtok: number }>;
     /** Models this deployment is configured to run that have no price, so a run on one is refused. */
     unpriced_models: Array<{ setting: string; model: string }>;
+    /**
+     * Each model this deployment is configured to run, with what prices it
+     * and, where this deployment prices it, the rate it is metered at now.
+     * "catalog" is the vendors' list prices (services/model-price-service.ts);
+     * "provider" is a provider that reports the cost of each call itself.
+     */
+    in_use: Array<{
+      setting: string;
+      model: string;
+      priced_by: "stated" | "catalog" | "provider" | "none";
+      input_usd_per_mtok?: number;
+      output_usd_per_mtok?: number;
+    }>;
+    /**
+     * When the vendors' list prices were last read, or null where they have
+     * not been (calls are then metered at the prices the release carries).
+     */
+    list_prices_checked_at: string | null;
+    /** Each list read, and whether the last read reached it. */
+    lists: Array<{ source: string; ok: boolean }>;
   };
 }
 
@@ -534,6 +555,7 @@ export async function createdOwlsSummary(limit = 50): Promise<CreatedOwlsSummary
       `SELECT COALESCE(SUM(cost_micro_usd), 0)::bigint AS total, MIN(created_at) AS since FROM llm_usage`
     )
   );
+  const listPrices = await storedModelPrices();
   const ownAccountId = await getPlatformAccountId();
   const [own] = await rawQuery<{ balance: string }>(
     `SELECT COALESCE(SUM(amount_micro_usd), 0)::bigint AS balance FROM owl_ledger WHERE user_id = $1`,
@@ -588,6 +610,20 @@ export async function createdOwlsSummary(limit = 50): Promise<CreatedOwlsSummary
         output_usd_per_mtok: p.outputUsdPerMtok,
       })),
       unpriced_models: unpricedConfiguredModels(config),
+      in_use: configuredModels(config).map(({ setting, model }) => {
+        const pricedBy = priceOrigin(model);
+        if (pricedBy !== "stated" && pricedBy !== "catalog") return { setting, model, priced_by: pricedBy };
+        const rates = ratesForModel(model);
+        return {
+          setting,
+          model,
+          priced_by: pricedBy,
+          input_usd_per_mtok: rates.inputPerMtok,
+          output_usd_per_mtok: rates.outputPerMtok,
+        };
+      }),
+      list_prices_checked_at: listPrices?.checked_at || null,
+      lists: (listPrices?.sources ?? []).map((l) => ({ source: l.source, ok: l.ok })),
     },
   };
 }

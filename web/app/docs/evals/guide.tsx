@@ -904,7 +904,7 @@ npm run predictions -- score`}</Cmd> },
                   </tbody>
                 </table>
               </div>
-              <p className={s.small}>List rates from <a href={`${GH}/src/llm/pricing.ts`}>pricing.ts</a>, the table the system bills through. Pins from <a href={`${GH}/infra/lib/api-stack.ts`}>api-stack.ts</a>. <code>--profile=production</code> applies exactly these.</p>
+              <p className={s.small}>List rates from <a href={`${GH}/src/llm/price-snapshot.ts`}>price-snapshot.ts</a>, the vendors' list prices as the release carries them; a running deployment reads the same lists every few hours. Pins from <a href={`${GH}/infra/lib/api-stack.ts`}>api-stack.ts</a>. <code>--profile=production</code> applies exactly these.</p>
             </>
           ),
         },

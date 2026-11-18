@@ -93,17 +93,21 @@
     "claude-opus-5-5": {
       "inputPerMtok": 4,
       "outputPerMtok": 20,
-      "cacheReadMultiplier": 0.05
+      "cacheReadMultiplier": 0.05,
+      "cacheWriteMultiplier": 1.25
     },
     "claude-fable-5-2": {
       "inputPerMtok": 8,
       "outputPerMtok": 40,
-      "cacheReadMultiplier": 0.025
+      "cacheReadMultiplier": 0.025,
+      "cacheWriteMultiplier": 1.25
     },
     "openai/gpt-6-luna": null,
     "claude-sonnet-5-5": {
       "inputPerMtok": 2,
-      "outputPerMtok": 10
+      "outputPerMtok": 10,
+      "cacheReadMultiplier": 0.05,
+      "cacheWriteMultiplier": 1.25
     }
   },
   "clusters": [

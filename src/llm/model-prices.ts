@@ -1,11 +1,12 @@
 /**
  * Prices a deployment states for itself: MODEL_PRICES.
  *
- * Cost is metered in dollars, and a call is priced from the rate table in
- * pricing.ts unless its provider reports the cost itself. A deployment can
- * state a price here for a model the table does not know, or its own price
- * for one the table does (a negotiated rate, for instance). A stated price
- * wins over the table.
+ * Cost is metered in dollars, and a call is priced from the price catalog
+ * (pricing.ts, kept from the vendors' public list prices) unless its
+ * provider reports the cost itself. A deployment can state a price here for
+ * a model the catalog does not know, or its own price for one the catalog
+ * does (a negotiated rate, for instance). A stated price wins over the
+ * catalog.
  *
  * MODEL_PRICES is a JSON list, one object per model:
  *
@@ -13,15 +14,17 @@
  *      "inputUsdPerMtok": 0.5,
  *      "outputUsdPerMtok": 1.5 }]
  *
- *  - model: a model ID, or the start of one, matched the way the rate table
- *    matches: a dated snapshot resolves to its family, and the longest
- *    match wins.
+ *  - model: a model ID, or the start of one: a price stated for "gpt-oss"
+ *    covers every model whose ID starts with it, and the longest match
+ *    wins. (The catalog is stricter: it prices a model by its own entry
+ *    or a dated snapshot's family. A deployment that names a prefix here
+ *    chose it.)
  *  - inputUsdPerMtok, outputUsdPerMtok: what a call costs, in US dollars
  *    per million tokens. Both are required; a deployment that counts a
  *    model as free writes 0 and says so.
  *  - cacheReadMultiplier, cacheWriteMultiplier: optional. What a cached
  *    read and a cache write cost, as a multiple of the input price. Left
- *    out, they are the table's for a model the table knows, and 0.1 and
+ *    out, they are the catalog's for a model the catalog knows, and 0.1 and
  *    1.25 otherwise.
  *
  * The field names are the ones MODEL_ENDPOINTS uses for an endpoint's

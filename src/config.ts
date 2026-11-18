@@ -161,9 +161,16 @@ const configSchema = z.object({
   // administrator's act and only a members-only deployment has
   // administrators, and it refuses to load beside a Stripe key.
   owls: z.enum(["sold", "created"]).default("sold"),
+  // How many hours apart this process reads the public price lists and
+  // updates the price catalog calls are metered at
+  // (services/model-price-service.ts). 0 never reads them: calls are then
+  // metered at whatever a refresh stored before, or at the committed
+  // snapshot (src/llm/price-snapshot.ts). Every task may read them; the
+  // write holds a lock.
+  modelPriceRefreshHours: z.coerce.number().min(0).default(6),
   // Prices this deployment states for models, in US dollars per million
-  // tokens (src/llm/model-prices.ts): for a model the rate table does not
-  // know, or in place of the table's for one it does. A JSON list, empty by
+  // tokens (src/llm/model-prices.ts): for a model the price catalog does not
+  // know, or in place of the catalog's for one it does. A JSON list, empty by
   // default. A value that cannot be read fails the load with what is wrong.
   modelPrices: z
     .string()
@@ -1665,6 +1672,7 @@ export function loadConfig(): Config {
     firstAdministrator: process.env.FIRST_ADMINISTRATOR,
     signInValidHours: process.env.SIGN_IN_VALID_HOURS || undefined,
     owls: process.env.OWLS || undefined,
+    modelPriceRefreshHours: process.env.MODEL_PRICE_REFRESH_HOURS,
     modelPrices: process.env.MODEL_PRICES,
     publicGraphPrice: process.env.PUBLIC_GRAPH_PRICE || undefined,
     usageReportUrl: process.env.USAGE_REPORT_URL,

@@ -240,7 +240,7 @@ function checkOwls(facts: DeploymentCheckFacts): DeploymentOutcome {
 
 function checkModelPrices({ config }: DeploymentCheckFacts): DeploymentOutcome {
   const stated = config.modelPrices.length;
-  const said = stated > 0 ? `${plural(stated, "model price")} ${stated === 1 ? "is" : "are"} stated (pricing.model_prices).` : "No model price is stated; the rate table prices every call.";
+  const said = stated > 0 ? `${plural(stated, "model price")} ${stated === 1 ? "is" : "are"} stated (pricing.model_prices).` : "No model price is stated; the price catalog prices every call.";
   if (config.owls !== "created") return pass(said);
   const unpriced = unpricedConfiguredModels(config);
   if (unpriced.length === 0) return pass(`${said} Every model a role is set to has a price.`);

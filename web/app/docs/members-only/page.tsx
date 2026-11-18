@@ -204,7 +204,7 @@ export default function Page() {
         <li>An administrator creates owls from a signed-in session (<code>POST /owls/created</code>, or Budget at <code>/admin/budget</code>) into an account's balance or straight into a mandate's budget. Each act is logged with the amount, the recipient and a note.</li>
         <li>There is no cap: a ceiling here would be a number nobody chose. In its place, <code>get_created_owls</code> (<code>GET /owls/created</code>) shows every member how much has been created, by whom, into what, and what the deployment's runs have spent.</li>
         <li>No signup or monthly grant is given in any members-only deployment unless it sets one, and with <code>OWLS=created</code> neither can be set.</li>
-        <li>A model the rate table does not price needs a price in <code>MODEL_PRICES</code>; with <code>OWLS=created</code> a call to an unpriced model is refused before anything is sent.</li>
+        <li>A model the price catalog does not price needs a price in <code>MODEL_PRICES</code>; with <code>OWLS=created</code> a call to an unpriced model is refused before anything is sent.</li>
       </ul>
       <p>No agent work runs except by allocation, so each label whose upkeep and audits are to be paid for needs its own <b>General mandate</b>, set up by an administrator from a signed-in session (Budget, <code>/admin/budget</code>; <code>list_standing_mandates</code> reads it). The administrator sets its pace, the most owls it may commit in a rolling day; where owls are created, its budget is created with it, and where they are sold it is funded from a balance like any mandate.</p>
       <h2 id="outside">Between the deployment and the public graph</h2>
