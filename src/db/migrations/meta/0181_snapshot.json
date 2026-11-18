@@ -1,5 +1,5 @@
 {
-  "id": "6f5b02bf-32bf-487d-8bf2-4d32fceabe9e",
+  "id": "3b419b62-799c-451a-a76d-8fbebc2eaf89",
   "prevId": "34d7904e-a005-4907-8f5a-943c70cd3410",
   "version": "7",
   "dialect": "postgresql",
@@ -17405,7 +17405,13 @@
           "name": "grant_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "node_id": {
+          "name": "node_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "title": {
           "name": "title",
@@ -17425,6 +17431,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
+        },
+        "paused_for_fund": {
+          "name": "paused_for_fund",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "heartbeat_hours": {
           "name": "heartbeat_hours",
@@ -17576,6 +17589,22 @@
           "method": "btree",
           "with": {}
         },
+        "idx_lookouts_node": {
+          "name": "idx_lookouts_node",
+          "columns": [
+            {
+              "expression": "node_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "node_id IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_lookouts_due": {
           "name": "idx_lookouts_due",
           "columns": [
@@ -17607,6 +17636,19 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
+        "lookouts_node_id_claims_id_fk": {
+          "name": "lookouts_node_id_claims_id_fk",
+          "tableFrom": "lookouts",
+          "tableTo": "claims",
+          "columnsFrom": [
+            "node_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "lookouts_sensitivity_label_labels_name_fk": {
           "name": "lookouts_sensitivity_label_labels_name_fk",
           "tableFrom": "lookouts",
@@ -17625,6 +17667,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "ck_lookouts_one_owner": {
+          "name": "ck_lookouts_one_owner",
+          "value": "(\"lookouts\".\"grant_id\" IS NULL) <> (\"lookouts\".\"node_id\" IS NULL)"
+        },
         "ck_lookouts_status": {
           "name": "ck_lookouts_status",
           "value": "\"lookouts\".\"status\" IN ('active', 'paused', 'retired')"
@@ -22545,166 +22591,6 @@
         "ck_provider_clearances_not_public": {
           "name": "ck_provider_clearances_not_public",
           "value": "\"provider_clearances\".\"label\" <> 'public'"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.public_graph_connection": {
-      "name": "public_graph_connection",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "'this'"
-        },
-        "api_url": {
-          "name": "api_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "private_key_pem": {
-          "name": "private_key_pem",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "public_key": {
-          "name": "public_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_id": {
-          "name": "key_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verification_uri": {
-          "name": "verification_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "code_expires_at": {
-          "name": "code_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "asked_grants": {
-          "name": "asked_grants",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "deployment_id": {
-          "name": "deployment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deployment_name": {
-          "name": "deployment_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "organization_name": {
-          "name": "organization_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "grants": {
-          "name": "grants",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "started_by": {
-          "name": "started_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "connected_at": {
-          "name": "connected_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_checked_at": {
-          "name": "last_checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "public_graph_connection_started_by_contributors_id_fk": {
-          "name": "public_graph_connection_started_by_contributors_id_fk",
-          "tableFrom": "public_graph_connection",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "started_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_public_graph_connection_one": {
-          "name": "ck_public_graph_connection_one",
-          "value": "\"public_graph_connection\".\"id\" = 'this'"
-        },
-        "ck_public_graph_connection_state": {
-          "name": "ck_public_graph_connection_state",
-          "value": "\"public_graph_connection\".\"state\" IN ('waiting', 'connected', 'denied', 'expired')"
         }
       },
       "isRLSEnabled": false

@@ -37,12 +37,18 @@ import { requestQuoteNote } from "./request-service.js";
 import { stewardPark, stewardParkNote, type StewardPark } from "./steward-park-reason.js";
 import { faultWaitSentence, type FaultWait } from "./deployment-fault.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { LOOKOUT_FUND_GROUP } from "./lookout-fund-group.js";
 
 export type CommissionPayer =
   | { kind: "grant"; grantId: string }
   | { kind: "user"; userId: string }
   /** A running agent paying from its own budget: the action it is running. */
-  | { kind: "run"; actionId: string };
+  | { kind: "run"; actionId: string }
+  /**
+   * A Steward's lookout paying from the fund its Steward put up
+   * (lookout-fund.ts): its runs, and what it commissions within its limit.
+   */
+  | { kind: "fund"; lookoutId: string };
 
 export type CommissionTier = "standard" | "strong";
 
@@ -139,6 +145,8 @@ export type CommissionResult =
         | "OVER_LOOKOUT_WINDOW"
         | "INSUFFICIENT_OWLS"
         | "OVER_RUN_BUDGET"
+        /** More than a Steward's lookout has left in its fund (lookout-fund.ts). */
+        | "OVER_LOOKOUT_FUND"
         | "PAYER_INACTIVE";
       message: string;
       /**
@@ -468,7 +476,8 @@ function placeExclusive(input: PlaceInput): Promise<Placed | { ok: false; live: 
 
 interface PlaceInput {
   group: string;
-  actionId: string;
+  /** The row it pays for; null for money placed on a group as a whole (a lookout's fund). */
+  actionId: string | null;
   claimId: string | null;
   payer: CommissionPayer;
   budget: number;
@@ -584,30 +593,51 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
     return { ok: true, allocationId: id };
   }
 
-  // A running agent paying from its own budget: move the amount from the
-  // allocations paying for that run onto the new one, payer by payer.
+  // A running agent paying from its own budget, or a lookout from its fund:
+  // move the amount from the allocations that hold it onto the new one,
+  // payer by payer, so the money keeps its payer.
   return withTransaction(async (tx) => {
     const live = await liveInGroup(tx);
     if (live) return { ok: false, live } as const;
-    const sources = await tx.query<{ id: string; grant_id: string | null; user_id: string | null; unspent: number }>(
-      `SELECT al.id, al.grant_id, al.user_id,
-              (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent
-         FROM minerval_whole.allocation_money al
-         JOIN actions a ON a.id = $1
-        WHERE al.exclusion_group = a.exclusion_group
-          AND al.released_at IS NULL
-          AND (al.action_id IS NULL OR al.action_id = a.id)
-          AND al.spent_micro_usd < al.amount_micro_usd
-        ORDER BY al.created_at
-        FOR UPDATE OF al`,
-      [payer.actionId]
+    const fund = payer.kind === "fund";
+    const sources = await tx.query<{
+      id: string; grant_id: string | null; user_id: string | null; unspent: number; created_at: Date;
+    }>(
+      fund
+        ? // The fund's rows (lookout-fund.ts), less a mandate's that has
+          // since closed: its money is not the lookout's to spend any more.
+          `SELECT al.id, al.grant_id, al.user_id, al.created_at,
+                  (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent
+             FROM minerval_whole.allocation_money al
+            WHERE al.exclusion_group = $1
+              AND al.action_id IS NULL
+              AND al.released_at IS NULL
+              AND al.spent_micro_usd < al.amount_micro_usd
+              AND (al.grant_id IS NULL
+                   OR EXISTS (SELECT 1 FROM grants g WHERE g.id = al.grant_id AND g.status = 'active'))
+            ORDER BY al.created_at
+            FOR UPDATE OF al`
+        : `SELECT al.id, al.grant_id, al.user_id, al.created_at,
+                  (al.amount_micro_usd - al.spent_micro_usd)::bigint AS unspent
+             FROM minerval_whole.allocation_money al
+             JOIN actions a ON a.id = $1
+            WHERE al.exclusion_group = a.exclusion_group
+              AND al.released_at IS NULL
+              AND (al.action_id IS NULL OR al.action_id = a.id)
+              AND al.spent_micro_usd < al.amount_micro_usd
+            ORDER BY al.created_at
+            FOR UPDATE OF al`,
+      [fund ? LOOKOUT_FUND_GROUP(payer.lookoutId) : payer.actionId]
     );
     const available = sources.reduce((s, r) => s + Number(r.unspent), 0);
     if (available < budget) {
       return {
         ok: false,
-        code: "OVER_RUN_BUDGET",
-        message: `A budget of ${owls(budget)} owls is more than the paying run holds (${owls(available)} owls).`,
+        code: fund ? "OVER_LOOKOUT_FUND" : "OVER_RUN_BUDGET",
+        message: fund
+          ? `A budget of ${owls(budget)} owls is more than your fund holds (${owls(available)} owls).`
+          : `A budget of ${owls(budget)} owls is more than the paying run holds (${owls(available)} owls).`,
+        roomMicroUsd: available,
       } as const;
     }
     let left = budget;
@@ -633,17 +663,21 @@ async function place(input: PlaceInput, exclusive: boolean): Promise<Placed | { 
           [src.id, take]
         );
       }
+      // Money drawn from a fund keeps the time it was placed: its funder's
+      // pace counted it when the Steward put it up, and a run it pays for
+      // weeks later is not a new placement in that funder's window.
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO action_allocations
            (exclusion_group, action_id, claim_id, grant_id, user_id, amount_micro_usd,
-            commissioned_by, brief, reason, parent_action_id, sensitivity_label)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            commissioned_by, brief, reason, parent_action_id, sensitivity_label, lookout_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::timestamptz, now()))
          ON CONFLICT (grant_id, exclusion_group, (COALESCE(action_id::text, '')))
            WHERE released_at IS NULL AND grant_id IS NOT NULL AND spent_micro_usd < amount_micro_usd
          DO UPDATE SET amount_micro_usd = action_allocations.amount_micro_usd + EXCLUDED.amount_micro_usd
          RETURNING id`,
         [input.group, input.actionId, input.claimId, src.grant_id, src.user_id, take,
-         input.commissionedBy, input.brief, input.reason, payer.actionId, currentLabel()]
+         input.commissionedBy, input.brief, input.reason, fund ? null : payer.actionId, currentLabel(),
+         input.lookoutId ?? null, fund ? src.created_at : null]
       );
       first ??= row!.id;
       left -= take;

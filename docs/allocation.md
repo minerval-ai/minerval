@@ -608,8 +608,54 @@ primitive (#332).
 
 Known next: more trigger sources (arXiv version bumps, a re-fetch hash
 on non-DOI sources, dependency-changed events routed through the
-ledger), and a Steward's own request for a lookout on its claim once
-Stewards hold a budget (#300).
+ledger).
+
+### A Steward's own lookout
+
+A Steward's attention ends with its pass, and the things its judgment
+rests on can move after it: a trial it weighed is retracted, a
+replication it waited for lands, a subclaim's verdict changes. So every
+kind of Steward (of a claim, a question, a quantity or a list) can post a
+lookout of its own (`post_lookout`, llm/tools/steward-lookout-tools.ts),
+and the node's later passes read its lookouts in their task message, with
+each one's fund, runs and flags and what those flags came to, and may
+amend, top up, pause or retire them (`amend_lookout`). Only the node's
+own Steward does: a lookout posted for a node belongs to the node, not to
+the pass that posted it.
+
+**It runs on a fund.** A Steward holds no escrow; it holds the budget of
+the pass it is running. Posting a lookout puts up a **fund** from that
+budget (`budget_owls`), which leaves the pass at once and keeps its payer:
+the money is moved off the allocations paying for the pass, funder by
+funder, as a commission from a run is (services/lookout-fund.ts,
+commission-service.ts's `fund` payer). The fund is allocations on a group
+no ledger row runs on (`lookout-fund:<id>`), so nothing counts it as
+cover. A mandate's escrow counts it as committed from the moment it is
+put up, and a person's owls have already left their balance with the
+pass. A due run is paid from the fund whole, at the run's cap
+(`CAP_LOOKOUT_RUN_OWLS`), on the executor's tick
+(`fundStewardLookoutRuns`), with the time the money was first placed, so
+a funder's pace counts it once, when the Steward put it up. What a run
+does not spend goes back to the fund rather than to the funders
+(`returnUnspentToFund`, from the settlement), so the fund drains by what
+the watch costs. A mandate's share stops counting once the mandate is no
+longer active. When the fund cannot pay for a run, the lookout pauses
+(`paused_for_fund`) and its node's inbox is told; a top-up resumes it, and
+retiring it returns what is left to whoever put it up. There is no count
+of runs: the fund is the bound, and the lookout and its Steward both see
+it.
+
+**What it raises goes to its Steward.** It has the mandate lookout's
+reading tools and its triggers less feeds (`retraction`, `graph`, `manual`),
+and a territory that defaults to its own node with everything beneath
+it. Within the per-item limit its Steward set (`commission_limit_owls`,
+0 by default) it commissions a pass or an ingest from its fund; anything
+else it raises, and every note it leaves, goes to its Steward's inbox as
+a message, free, for the node's next pass. A pass it flags on its own node
+leaves its brief in that inbox already. It has no feeds and no paid
+contribution review, which are a mandate's: evidence it finds goes to its
+Steward with `leave_note`. Its role prompt and briefing say which kind of
+lookout it is and what follows.
 
 ## Correspondents: making things from the graph
 

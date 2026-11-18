@@ -88,6 +88,7 @@ import { getPlatformAccountId, getReserveJob } from "../services/bounty-service.
 import { loadConfig } from "../config.js";
 import { submitSource } from "../services/source-service.js";
 import { fundGrantSelfActions } from "../services/allocation-service.js";
+import { fundStewardLookoutRuns } from "../services/lookout-fund.js";
 import type { OperatingPolicy } from "../services/operating-policy-service.js";
 import { invokeStewardDirect } from "./steward-direct.js";
 import { runResearcher } from "../llm/agents/researcher.js";
@@ -199,6 +200,8 @@ export async function processNextEngineAction(
   // waited on it are tried at once (deployment-fault-service.ts).
   await deploymentFaultsTick();
   await fundGrantSelfActions().catch(() => 0);
+  // A Steward's lookouts are paid from their own funds (lookout-fund.ts).
+  await fundStewardLookoutRuns().catch(() => 0);
 
   // Request rows wait, funded, while the operator has the researcher off
   // or paused: the run that would take them up is the Researcher's.
@@ -1372,33 +1375,45 @@ async function runLookoutAction(
   opts: { model?: string }
 ): Promise<EngineProcessResult> {
   const lookoutId = action.target_ref ?? "";
+  // A mandate's lookout, or a Steward's (node_id; its fund pays, lookout-fund.ts).
   const [lookout] = await rawQuery<{
     id: string;
     status: string;
-    grant_id: string;
-    grant_status: string;
-    funder_user_id: string;
-    budget_job_id: string;
+    grant_id: string | null;
+    owner_active: boolean;
+    funder_user_id: string | null;
   }>(
-    `SELECT l.id, l.status, g.id AS grant_id, g.status AS grant_status,
-            g.funder_user_id, g.budget_job_id
-       FROM lookouts l JOIN grants g ON g.id = l.grant_id
+    `SELECT l.id, l.status, l.grant_id,
+            COALESCE(g.status = 'active', n.state = 'active', false) AS owner_active,
+            g.funder_user_id
+       FROM lookouts l
+       LEFT JOIN grants g ON g.id = l.grant_id
+       LEFT JOIN claims n ON n.id = l.node_id
       WHERE l.id = $1`,
     [lookoutId]
   );
-  if (!lookout || lookout.status !== "active" || lookout.grant_status !== "active") {
+  if (!lookout || lookout.status !== "active" || !lookout.owner_active) {
     await cancelGroup(action.exclusion_group);
     return { status: "empty" };
   }
   const funder: { jobId?: string; userId?: string; grantId?: string } =
     await largestActionFunder(action.id).catch(() => ({}));
+  // Whose run it is: the mandate's funder; for a Steward's lookout, the
+  // largest funder of its fund, a person or a mandate's funder.
+  const runUserId =
+    lookout.funder_user_id ??
+    funder.userId ??
+    (funder.grantId
+      ? (await rawQuery<{ funder_user_id: string }>(`SELECT funder_user_id FROM grants WHERE id = $1`, [funder.grantId]))[0]
+          ?.funder_user_id
+      : undefined);
   try {
     let note: string | null = null;
     let flagsRaised = 0;
     const { billedMicroUsd } = await runWithUsageContext(
-      { userId: lookout.funder_user_id, jobId: funder.jobId ?? null },
+      { userId: runUserId, jobId: funder.jobId ?? null },
       () =>
-        withPassBudget(actionBudget(action, "the mandate's allocation for this lookout run"), async () => {
+        withPassBudget(actionBudget(action, lookout.grant_id ? "the mandate's allocation for this lookout run" : "your fund's payment for this run"), async () => {
           const run = await runLookout({ lookoutId: lookout.id, model: opts.model });
           note = run.note;
           flagsRaised = run.flagsRaised;
@@ -1418,7 +1433,7 @@ async function runLookoutAction(
       status: "processed",
       actionId: action.id,
       kind: "lookout_run",
-      grantId: lookout.grant_id,
+      grantId: lookout.grant_id ?? undefined,
       ok: true,
     };
   } catch (err) {
@@ -1433,7 +1448,7 @@ async function runLookoutAction(
         status: "transient",
         actionId: action.id,
         kind: "lookout_run",
-        grantId: lookout.grant_id,
+        grantId: lookout.grant_id ?? undefined,
         error: msg,
       };
     }
@@ -1451,7 +1466,7 @@ async function runLookoutAction(
       status: "processed",
       actionId: action.id,
       kind: "lookout_run",
-      grantId: lookout.grant_id,
+      grantId: lookout.grant_id ?? undefined,
       ok: false,
       error: msg,
     };

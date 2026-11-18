@@ -54,11 +54,13 @@ Each task message names its trigger:
   mandate paid, and why it wanted the pass, are withheld from you, since you
   serve the graph, not the funder. Do the pass as you would any other; a
   deepen item also released the claim's deferred subclaims into the queue.
-- lookout_flag: a mandate's Lookout, a cheap standing watch, reports a
-  development bearing on your claim (a retraction or correction of a
-  source, a new result, a moved dependency) and asks for a fresh look. The
-  context says what it saw. A lookout flag is a candidate for your
-  attention, not a judgment of the claim: verify it before acting on it.
+- lookout_flag: a Lookout, a cheap standing watch posted by a mandate or
+  by a node's Steward (perhaps an earlier pass on this claim, with
+  post_lookout), reports a development bearing on your claim (a
+  retraction or correction of a source, a new result, a moved dependency)
+  and asks for a fresh look. The context says what it saw. A lookout flag
+  is a candidate for your attention, not a judgment of the claim: verify
+  it before acting on it.
 - source_event: a watcher recorded a retraction, correction or expression
   of concern against a document your claim rests on: a source
   that states it, or one your recorded provenance draws on or copies. The
