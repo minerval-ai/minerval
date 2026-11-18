@@ -2,16 +2,28 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "../../../../auth";
-import { AccountApiError, fetchAccount, type GrantView, type OwlLedgerEntry, type OwlPack } from "../../../../lib/account-api";
+import {
+  AccountApiError,
+  fetchAccount,
+  type GrantConversationSummary,
+  type GrantConversationView,
+  type GrantView,
+  type OwlLedgerEntry,
+  type OwlPack,
+} from "../../../../lib/account-api";
 import {
   getOrganization,
+  listDeployments,
   listInvitations,
   listLog,
   listMembers,
   listOldKeys,
   organizationAccount,
+  organizationConversation,
+  organizationConversations,
   organizationLedger,
   organizationMandates,
+  type DeploymentView,
   type InvitationView,
   type LogEntry,
   type MemberView,
@@ -42,12 +54,15 @@ import {
   addToMandateAction,
   buyOwlsAction,
   cancelInvitationAction,
+  continueMandateAction,
   fundClaimAction,
+  fundMandateAction,
   inviteAction,
   removeMemberAction,
   renameAction,
   revokeOldKeyAction,
   setRoleAction,
+  startMandateAction,
 } from "../actions";
 
 export const metadata: Metadata = { title: "Organization · Minerval" };
@@ -57,8 +72,8 @@ export const dynamic = "force-dynamic";
 // members read every tab but the two that act with its money; its admins
 // change it and act for it, from their own session, as themselves.
 
-type Tab = "overview" | "members" | "acts" | "billing" | "log";
-const TABS: Tab[] = ["overview", "members", "acts", "billing", "log"];
+type Tab = "overview" | "members" | "deployments" | "acts" | "billing" | "log";
+const TABS: Tab[] = ["overview", "members", "deployments", "acts", "billing", "log"];
 const ADMIN_TABS: ReadonlySet<Tab> = new Set(["acts", "billing"]);
 
 /** A log entry in words. */
@@ -88,6 +103,8 @@ function logLine(e: LogEntry, names: Map<string, string>): string {
       return "accepted, as first admin, that the shared account becomes this organization";
     case "old_key_revoked":
       return `revoked the old key ${String(d.key_prefix)}…`;
+    case "deployment_approved":
+      return `approved the deployment ${String(d.name)}, with ${Array.isArray(d.grants) ? (d.grants as string[]).join(", ") : "its grants"}`;
     case "acted":
       return `acted for the organization: ${String(d.method)} ${String(d.route)} (${String(d.status)})`;
     default:
@@ -100,10 +117,10 @@ export default async function OrganizationPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; drawer?: string }>;
+  searchParams: Promise<{ tab?: string; drawer?: string; conversation?: string }>;
 }) {
   const { id } = await params;
-  const { tab: askedTab, drawer } = await searchParams;
+  const { tab: askedTab, drawer, conversation: conversationId } = await searchParams;
   const session = await auth();
   if (!session?.externalId) redirect("/signin");
   const me = session.externalId;
@@ -129,10 +146,16 @@ export default async function OrganizationPage({
     tab === "log" || tab === "overview" ? listLog(me, id, tab === "log" ? 200 : 6).catch(() => [] as LogEntry[]) : Promise.resolve([] as LogEntry[]),
     admin ? organizationAccount(me, id).catch(() => null) : Promise.resolve(null),
   ]);
-  const [mandates, ledger] = await Promise.all([
+  const [mandates, ledger, deployments, conversations, conversation] = await Promise.all([
     admin && tab === "acts" ? organizationMandates(me, id).catch(() => [] as GrantView[]) : Promise.resolve([] as GrantView[]),
     admin && tab === "billing" ? organizationLedger(me, id, 100).catch(() => [] as OwlLedgerEntry[]) : Promise.resolve([] as OwlLedgerEntry[]),
+    tab === "deployments" || tab === "overview" ? listDeployments(me, id).catch(() => [] as DeploymentView[]) : Promise.resolve([] as DeploymentView[]),
+    admin && tab === "acts" ? organizationConversations(me, id).catch(() => [] as GrantConversationSummary[]) : Promise.resolve([] as GrantConversationSummary[]),
+    admin && tab === "acts" && conversationId
+      ? organizationConversation(me, id, conversationId).catch(() => null as GrantConversationView | null)
+      : Promise.resolve(null as GrantConversationView | null),
   ]);
+  const liveDeployments = deployments.filter((d) => !d.retired_at);
   const names = new Map(members.map((m) => [m.account_id, m.display_name]));
   const admins = members.filter((m) => m.role === "admin").length;
   const openInvitations = invitations.filter((i) => i.state === "open");
@@ -141,6 +164,7 @@ export default async function OrganizationPage({
   const tabs = [
     { key: "overview", label: "Overview", href: here("overview") },
     { key: "members", label: "Members", href: here("members"), count: members.length },
+    { key: "deployments", label: "Deployments", href: here("deployments"), count: liveDeployments.length },
     ...(admin
       ? [
           { key: "acts", label: "Public acts", href: here("acts") },
@@ -177,6 +201,7 @@ export default async function OrganizationPage({
           <Stats>
             <Stat k="Public owls" v={balance === undefined ? "—" : owls(balance)} s={admin ? "Bought on minerval.ai" : "Admins see the balance"} />
             <Stat k="Members" v={members.length} s={`${plural(admins, "admin")} · ${plural(openInvitations.length, "invitation")} open`} />
+            <Stat k="Deployments" v={liveDeployments.length} s={liveDeployments.length ? "Connected" : "None connected"} />
             <Stat k="Old keys still live" v={oldKeys.length} s={oldKeys.length ? "From before it was an organization" : "None"} />
           </Stats>
           {oldKeys.length > 0 && (
@@ -365,6 +390,87 @@ export default async function OrganizationPage({
         </>
       )}
 
+      {tab === "deployments" && (
+        <>
+          <Section title="Deployments" aside="Private deployments that act for the organization with their own keys">
+            {deployments.length === 0 ? (
+              <Empty>
+                None connected. On a deployment, an administrator presses Connect to minerval.ai on its public-graph Overview; it shows a code
+                and a link, which an admin opens here.
+              </Empty>
+            ) : (
+              <Table label="Deployments">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Runs on</th>
+                    <th>Grants</th>
+                    <th>Approved</th>
+                    <th>Last write</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deployments.map((d) => (
+                    <tr key={d.id}>
+                      <td>
+                        <b>{d.name}</b>
+                        <div className="w-mono w-muted">{d.key_id.slice(0, 8)}</div>
+                        {d.retired_at && <Pill>Retired {shortDay(d.retired_at)}</Pill>}
+                      </td>
+                      <td>{d.hosting_words} <span className="w-muted">(stated)</span></td>
+                      <td>
+                        <div className="w-row" style={{ flexWrap: "wrap", gap: 4 }}>
+                          {d.grants.map((g) => (
+                            <Pill key={g}>{g}</Pill>
+                          ))}
+                        </div>
+                      </td>
+                      <td>
+                        {shortDay(d.approved_at)}
+                        {d.approved_by ? ` by ${d.approved_by}` : ""}
+                      </td>
+                      <td>{d.last_write_at ? shortWhen(d.last_write_at) : "None"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Section>
+          {liveDeployments.some((d) => d.recent_writes.length > 0) && (
+            <Section title="Recent writes" aside="Reads are not recorded: the public graph keeps no record of what a deployment looks at">
+              <Table label="Recent writes">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Deployment</th>
+                    <th>Route</th>
+                    <th>Answer</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liveDeployments
+                    .flatMap((d) => d.recent_writes.map((w) => ({ ...w, deployment: d.name })))
+                    .sort((a, b) => b.at.localeCompare(a.at))
+                    .slice(0, 30)
+                    .map((w, i) => (
+                      <tr key={i}>
+                        <td>{shortWhen(w.at)}</td>
+                        <td>{w.deployment}</td>
+                        <td className="w-mono">
+                          {w.method} {w.route}
+                        </td>
+                        <td>
+                          <Pill tone={w.status < 400 ? "ok" : "warn"}>{w.status}</Pill>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </Table>
+            </Section>
+          )}
+        </>
+      )}
+
       {tab === "acts" && admin && (
         <>
           <Banner>
@@ -409,6 +515,106 @@ export default async function OrganizationPage({
               </Table>
             )}
           </Section>
+          {conversation ? (
+            <Section
+              title={conversation.mandate?.title ?? "A mandate in conversation"}
+              aside={`With the public Grantmaker · ${conversation.status}`}
+              actions={<Link href={here("acts")}>All conversations</Link>}
+            >
+              <Card>
+                <div className="w-col" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {conversation.messages.map((m, i) => (
+                    <div key={i}>
+                      <div className="w-muted" style={{ fontSize: 12 }}>
+                        {m.role === "user" ? org.name : "The Grantmaker"} · {shortWhen(m.at)}
+                      </div>
+                      <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+              {conversation.status !== "funded" && conversation.status !== "declined" && (
+                <WorkForm action={continueMandateAction} submit="Send">
+                  <input type="hidden" name="organization_id" value={id} />
+                  <input type="hidden" name="conversation_id" value={conversation.id} />
+                  <div className="w-field">
+                    <label htmlFor="mandate-reply">Your reply, as {org.name}</label>
+                    <textarea id="mandate-reply" className="w-input" name="message" required />
+                  </div>
+                </WorkForm>
+              )}
+              {conversation.mandate && conversation.status === "proposed" && (
+                <Card title="Fund it">
+                  <p className="w-muted" style={{ marginTop: 0 }}>
+                    {conversation.mandate.objective} Expected cost: {owls(conversation.mandate.expected_cost_owls)} owls.
+                  </p>
+                  {(conversation.mandate.warnings ?? []).map((w) => (
+                    <Banner key={w.id} tone="warn">
+                      {w.text}
+                    </Banner>
+                  ))}
+                  <WorkForm action={fundMandateAction} submit={`Fund from ${org.name}`} primary lock="Escrows the organization's owls">
+                    <input type="hidden" name="organization_id" value={id} />
+                    <input type="hidden" name="conversation_id" value={conversation.id} />
+                    <div className="w-field">
+                      <label htmlFor="mandate-budget">Budget in owls</label>
+                      <input
+                        id="mandate-budget"
+                        className="w-input w-narrow"
+                        name="owls"
+                        inputMode="decimal"
+                        required
+                        defaultValue={String(Math.ceil(conversation.mandate.expected_cost_owls))}
+                      />
+                    </div>
+                    {(conversation.mandate.warnings ?? []).length > 0 && (
+                      <label className="w-check">
+                        <input type="checkbox" name="acknowledge" value="1" required />
+                        <span>I have read the warnings above.</span>
+                      </label>
+                    )}
+                  </WorkForm>
+                </Card>
+              )}
+            </Section>
+          ) : (
+            <Section title="Open a public mandate" aside="In conversation with the public Grantmaker, which designs and quotes it, and may decline">
+              <Card>
+                <WorkForm action={startMandateAction} submit="Start the conversation" primary>
+                  <input type="hidden" name="organization_id" value={id} />
+                  <div className="w-field">
+                    <label htmlFor="mandate-message">What it is for</label>
+                    <textarea id="mandate-message" className="w-input" name="message" required />
+                    <span className="w-help">Sent as {org.name}, as you write it.</span>
+                  </div>
+                </WorkForm>
+              </Card>
+              {conversations.length > 0 && (
+                <Table label="Conversations">
+                  <thead>
+                    <tr>
+                      <th>Conversation</th>
+                      <th>State</th>
+                      <th>Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {conversations.map((c) => (
+                      <tr key={c.id}>
+                        <td>
+                          <Link href={here("acts", `&conversation=${c.id}`)}>{c.title ?? "Untitled draft"}</Link>
+                        </td>
+                        <td>
+                          <Pill>{c.turn.state === "replying" ? "The Grantmaker is writing" : c.status}</Pill>
+                        </td>
+                        <td>{shortWhen(c.updated_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Section>
+          )}
           <Section title="Pay for a claim's assessment">
             <Card>
               <WorkForm action={fundClaimAction} submit={`Pay from ${org.name}`} primary>

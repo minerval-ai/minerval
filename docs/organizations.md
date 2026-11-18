@@ -2,8 +2,10 @@
 
 The design agreed in #1118, with the questions its review raised
 answered ("Decisions", at the end). Phase 1, organizations on minerval.ai,
-is built ([accounts.md](accounts.md), "Organizations"); the phases after it
-are not ("Phases", below). It replaces the shared login and the bearer keys a private deployment uses
+is built ([accounts.md](accounts.md), "Organizations"), and so is the public
+graph's side of phase 2: signed requests, grants and connecting. The
+deployment's side of phase 2, and the phases after it, are not ("Phases",
+below). It replaces the shared login and the bearer keys a private deployment uses
 to reach minerval.ai. It covers both kinds of private deployment: one an
 organization runs itself (`own_machines`, or `third_party` for a host it
 hires), and one Minerval runs for it (`minerval`). The two differ where
@@ -720,7 +722,12 @@ Each phase is one pull request or a few, and leaves things working.
    workspace kit, buying owls as the organization, acting from
    minerval.ai, and converting a shared account. No deployment changes
    yet.
-2. **Connected deployments.** `deployments`, `deployment_grants`,
+2. **Connected deployments.** The public graph's side is built: the five
+   tables, the signed method in the auth plugin, `deployment-grants.ts` and
+   its test, `POST /deployments/connect` and its poll, the approve page at
+   `/connect`, `GET /organizations/me`, and the organization's Deployments
+   tab, with opening a public mandate as the organization on Public acts
+   folded in. The deployment's side is next. In full: `deployments`, `deployment_grants`,
    `deployment_requests`, `deployment_request_nonces`, the signed-request
    method in the auth plugin, `deployment-grants.ts` and its test, the
    connect flow on both sides, the connection on Overview with its Health
