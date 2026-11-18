@@ -483,7 +483,8 @@ read of a claim, use a card.
   listed in `not_found`; one call where a list of claims would otherwise
   take a `get_claim` each), `cite_claim`, `get_claim_provenance`,
   `export_claim_nanopub`, `export_claim_scasp`, `export_claim_mira`,
-  `get_claim_record`, `get_assessment_history`, `get_assessment_trajectory`,
+  `get_claim_record`, `get_node_lookouts` (the watches its Steward posted on
+  it, with their funds and flags), `get_assessment_history`, `get_assessment_trajectory`,
   `get_judgment_inputs` (what a node's judgment in force was made against,
   and what has changed since: premises judged again (and whether each one's
   verdict moved), added or removed,

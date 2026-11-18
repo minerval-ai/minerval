@@ -657,6 +657,12 @@ contribution review, which are a mandate's: evidence it finds goes to its
 Steward with `leave_note`. Its role prompt and briefing say which kind of
 lookout it is and what follows.
 
+**On the record.** A node's lookouts are public with the node, as a
+mandate's are with its mandate: `GET /claims/:id/lookouts` (MCP
+`get_node_lookouts`) gives each one's brief, status, cadence, triggers,
+fund, commission limit, workspace, last note, precision and recent flags.
+Who put up the fund is not shown; the Steward is not told either.
+
 ## Correspondents: making things from the graph
 
 No one can read every claim and argument in a large graph. A

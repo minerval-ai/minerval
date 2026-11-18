@@ -42,7 +42,7 @@ const GROUPS: { key: string; title: string; test: RegExp }[] = [
   {
     key: "read",
     title: "Reading the graph",
-    test: /^(search_claims|get_claim|get_claim_card|get_claim_cards|list_claims|get_decomposition|get_dependents|get_argument|list_tags|get_tag|get_claim_provenance|get_judgment_inputs|get_assessment_history|get_assessment_trajectory|get_claim_events|get_claim_record)$/,
+    test: /^(search_claims|get_claim|get_claim_card|get_claim_cards|list_claims|get_decomposition|get_dependents|get_argument|list_tags|get_tag|get_claim_provenance|get_judgment_inputs|get_assessment_history|get_assessment_trajectory|get_claim_events|get_claim_record|get_node_lookouts)$/,
   },
   { key: "follow", title: "Following change", test: /^(list_graph_changes|list_findings|get_finding)$|correspondent/ },
   { key: "sources", title: "Sources", test: /source|^get_job$/ },
