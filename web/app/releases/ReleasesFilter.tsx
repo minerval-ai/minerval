@@ -6,7 +6,7 @@
 
 import type { ChangeEvent } from "react";
 
-export function ShowingsFilter({
+export function ReleasesFilter({
   tab,
   q,
   boundary,

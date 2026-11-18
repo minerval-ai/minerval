@@ -65,7 +65,7 @@ afterAll(async () => {
  * tables name them, the app built here does not have them, and the last
  * block builds the app that does.
  */
-const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|asks|showings|gates?|redaction-policies|outbound|outside|connections|file-sets|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$|^\/setup\/checklist$|^\/requests\/:request_id\/adopt$/;
+const MEMBERS_ONLY_ROUTE = /^\/(permissions|parties|labels|asks|releases|gates?|redaction-policies|outbound|outside|connections|file-sets|standing-mandates|usage-reports\/outgoing)(\/|$)|^\/sources\/:source_id\/party$|^\/operator\/administrators$|^\/setup\/checklist$|^\/requests\/:request_id\/adopt$/;
 /** Mounted only by a members-only deployment that creates its own owls. */
 const CREATED_OWLS_ROUTE = /^\/owls\/created$/;
 /** Not mounted where owls are created: the routes that sell them. */
@@ -505,7 +505,7 @@ describe("in a members-only deployment", () => {
   });
 
   it("offers a caller who holds every permission every tool", () => {
-    const tools = toolsOf(["direct", "fund", "administer", "release"]);
+    const tools = toolsOf(["direct", "fund", "administer", "consent"]);
     for (const [key, tool] of Object.entries(ROUTE_TOOLS)) {
       if (createdOwlsRoute(key)) expect(tools, tool.name).not.toContain(tool.name);
       else expect(tools, tool.name).toContain(tool.name);
@@ -514,7 +514,7 @@ describe("in a members-only deployment", () => {
   });
 
   it("leaves out the tools of a permission the caller lacks, and nothing else", () => {
-    const all = toolsOf(["direct", "fund", "administer", "release"]);
+    const all = toolsOf(["direct", "fund", "administer", "consent"]);
     const needing = (permission: string) =>
       membersApp.routeCatalog
         .filter((r) => r.permissions.includes(permission as "direct"))
@@ -527,7 +527,7 @@ describe("in a members-only deployment", () => {
     expect(needing("administer").length).toBeGreaterThan(3);
 
     const reader = toolsOf([]);
-    expect(needing("release").sort()).toEqual(["decide_at_gate", "get_gate_queue"]);
+    expect(needing("consent").sort()).toEqual(["decide_at_gate", "get_gate_queue"]);
     // A route that any one of several permissions opens (the reads of the
     // file sets, for a person who directs or an administrator) is left out
     // for a caller who holds none of them, and offered to one who holds any.
@@ -542,7 +542,7 @@ describe("in a members-only deployment", () => {
     // permission to clear providers read.
     const forDirecting = ["get_file_set", "list_file_set_commands", "list_file_set_files", "list_file_sets", "list_parties", "list_sources"];
     expect(needingAnyOf.sort()).toEqual([...forDirecting, "list_provider_clearance"].sort());
-    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("release"), ...needingAnyOf]);
+    const gone = new Set([...needing("direct"), ...needing("fund"), ...needing("administer"), ...needing("consent"), ...needingAnyOf]);
     expect([...reader].sort()).toEqual(all.filter((name) => !gone.has(name)).sort());
     for (const [holding, names] of [
       [["direct"], forDirecting],

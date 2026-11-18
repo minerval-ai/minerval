@@ -78,7 +78,7 @@ describe("publishing and the public graph", () => {
   });
 
   it("fails an open release outside with no key, a key that is not Ed25519, and a key with no hosting, and never prints the key", () => {
-    expect(run("publishing", facts({ tables: { showingsOutside: 2 } })).message).toMatch(/2 releases to readers outside are open and PUBLISH_SIGNING_KEY is not set/);
+    expect(run("publishing", facts({ tables: { releasesOutside: 2 } })).message).toMatch(/2 releases to readers outside are open and PUBLISH_SIGNING_KEY is not set/);
     const rsa = run("publishing", facts({ config: config({ publishSigningKey: RSA, deploymentHosting: "own_machines" }) }));
     expect(rsa).toMatchObject({ status: "fail" });
     expect(rsa.message).toContain("is not an Ed25519 private key");

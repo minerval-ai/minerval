@@ -214,7 +214,7 @@ describe("parties nobody can consent for", () => {
   function withParties(): SetupChecklist {
     const c = healthy();
     c.permissions.push({
-      permission: "release",
+      permission: "consent",
       scope: "party",
       accounts: 1,
       groups: 0,

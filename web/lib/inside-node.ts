@@ -1,6 +1,5 @@
 import "server-only";
-import { storedWords } from "./stored-words";
-import { fetchShowing, fetchShowings, fetchShownPage, type ShownPage, type ShownShowing } from "./inside-api";
+import { fetchRelease, fetchReleases, fetchShownPage, type ShownPage, type ShownRelease } from "./inside-api";
 import { membersOnly } from "./members";
 import type { PublishedPageView } from "./published";
 import { shapeOfPublishedPage } from "./published-page/shape";
@@ -24,7 +23,7 @@ export { assessmentOf, byLabelName, detailAt, detailWithoutJudgment } from "./in
 
 /** A page of this node that was released to a label the reader reads, or outside, and has been released at least in part. */
 export interface ShownTab {
-  showing_id: string;
+  release_id: string;
   page_id: string;
   outside: boolean;
   /** The label it was released to, as the API words it: readers at "public". */
@@ -56,7 +55,7 @@ export interface InsideNode {
 }
 
 /** A released page in the shape the claim page's second tab takes, built from what the API serves of it. */
-function viewOfShownPage(tab: ShownTab, showing: ShownShowing, page: ShownPage): PublishedPageView {
+function viewOfShownPage(tab: ShownTab, release: ShownRelease, page: ShownPage): PublishedPageView {
   const pseudo = {
     page: {
       version_of: page.version_of,
@@ -70,21 +69,21 @@ function viewOfShownPage(tab: ShownTab, showing: ShownShowing, page: ShownPage):
           ? { text: p.text, marks: p.removals_marked ?? [], salt: p.salt }
           : {
               // "[An argument against, held by Acme]": the API's own words name the holders after "held by".
-              held: { by: heldBy(p.held), ...holdOf(showing, tab.page_id, p.part) },
+              held: { by: heldBy(p.held), ...holdOf(release, tab.page_id, p.part) },
             }),
       })),
     },
   } as unknown as PublishedPagePackage;
-  const node = showing.nodes.find((n) => n.versions.some((v) => v.page_id === tab.page_id));
+  const node = release.nodes.find((n) => n.versions.some((v) => v.page_id === tab.page_id));
   const latest = node?.versions[0];
   return {
     published_page_id: tab.page_id,
     node_id: node?.node_id ?? "",
-    form: showing.form,
-    scope: showing.scope_code === "item" ? null : showing.scope_code,
-    showing_began: node?.showing_began ?? null,
-    asked_at: showing.asked_at,
-    ended: showing.ended_at ? { at: showing.ended_at, because: showing.ended_because ?? "no reason given" } : null,
+    form: release.form,
+    scope: release.scope_code === "item" ? null : release.scope_code,
+    release_began: node?.release_began ?? null,
+    asked_at: release.asked_at,
+    ended: release.ended_at ? { at: release.ended_at, because: release.ended_because ?? "no reason given" } : null,
     // A later version that is not shown is said above the page, as on the public graph.
     state: latest && latest.page_id !== tab.page_id && latest.state === "held" ? "held" : page.state,
     version_of: latest?.version_of ?? page.version_of,
@@ -107,15 +106,15 @@ function viewOfShownPage(tab: ShownTab, showing: ShownShowing, page: ShownPage):
     versions: [],
     check: { ok: page.verification?.ok ?? false, confirmed: [], failed: page.verification?.problems ?? [], cannot_show: [] } as unknown as PublishedPageView["check"],
     packages: [],
-    inside: { tab, showing, page },
+    inside: { tab, release, page },
   };
 }
 
 /** The reason given for the hold on a part and since when, from the release's acts: the latest hold that stands. */
-function holdOf(showing: ShownShowing, pageId: string, part: number): { reasons: string[]; since: string | null } {
-  const acts = showing.acts.filter((a) => a.page_id === pageId && a.on === `part ${part}`);
+function holdOf(release: ShownRelease, pageId: string, part: number): { reasons: string[]; since: string | null } {
+  const acts = release.acts.filter((a) => a.page_id === pageId && a.on === `part ${part}`);
   const held = [...acts].reverse().find((a) => a.what === "held");
-  return { reasons: held?.reason ? [storedWords(held.reason)] : [], since: held?.at ?? null };
+  return { reasons: held?.reason ? [held.reason] : [], since: held?.at ?? null };
 }
 
 function heldBy(words: string | undefined): string[] {
@@ -142,22 +141,22 @@ export async function loadInsideNode(
   // Pages of this node released to a label this reader reads, or outside. A
   // failure loses the tabs, never the page.
   const shown: ShownTab[] = [];
-  const showings = new Map<string, ShownShowing>();
-  const listed = await fetchShowings(who, detail.claim.id).catch(() => ({ shown: [], asked: [] }));
+  const releases = new Map<string, ShownRelease>();
+  const listed = await fetchReleases(who, detail.claim.id).catch(() => ({ shown: [], asked: [] }));
   for (const row of listed.shown) {
-    const showing = await fetchShowing(who, row.showing_id).catch(() => null);
-    if (!showing) continue;
-    showings.set(row.showing_id, showing);
-    const node = showing.nodes.find((n) => n.node_id === detail.claim.id);
+    const release = await fetchRelease(who, row.release_id).catch(() => null);
+    if (!release) continue;
+    releases.set(row.release_id, release);
+    const node = release.nodes.find((n) => n.node_id === detail.claim.id);
     const released = node?.versions.find((v) => v.state === "released_whole" || v.state === "released_in_part");
     if (!released) continue;
     shown.push({
-      showing_id: row.showing_id,
+      release_id: row.release_id,
       page_id: released.page_id,
       outside: row.shown_to === "outside this deployment",
       shown_to: row.shown_to,
       version_of: released.version_of,
-      from_label: listed.asked.find((a) => a.showing_id === row.showing_id)?.page_label,
+      from_label: listed.asked.find((a) => a.release_id === row.release_id)?.page_label,
     });
   }
   const multiLabel = standing.mine.clearance.some((l) => l !== "public") || versions.some((v) => v.label !== "public") || versions.length > 1;
@@ -173,9 +172,9 @@ export async function loadInsideNode(
   };
   const wantedShown = query.shown ? shown.find((t) => t.page_id === query.shown) : undefined;
   if (wantedShown) {
-    const page = await fetchShownPage(who, wantedShown.showing_id, wantedShown.page_id).catch(() => null);
-    const showing = showings.get(wantedShown.showing_id);
-    if (page && showing) return { ...base, open: { kind: "shown", tab: wantedShown, view: viewOfShownPage(wantedShown, showing, page) } };
+    const page = await fetchShownPage(who, wantedShown.release_id, wantedShown.page_id).catch(() => null);
+    const release = releases.get(wantedShown.release_id);
+    if (page && release) return { ...base, open: { kind: "shown", tab: wantedShown, view: viewOfShownPage(wantedShown, release, page) } };
   }
   return { ...base, open: whichToOpen(versions, query.at) };
 }

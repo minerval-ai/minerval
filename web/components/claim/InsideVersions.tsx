@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { actWords, storedWords } from "@/lib/stored-words";
 import type { InsideNode, ShownTab } from "@/lib/inside-node";
+import { holdingWords } from "@/lib/stored-words";
 import { modelDisplayName } from "@/lib/model-names";
 import { isStatus } from "@/lib/ontology";
 import { leftStandingLines, notExaminedLine, versionRef } from "@/lib/inside-versions";
@@ -345,33 +345,33 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 /** How the page was released, closed to one line at the foot like Full reasoning, opening to the record and the check. */
 export function ShownRecord({ view }: { view: PublishedPageView }) {
-  const { showing, page, tab } = view.inside!;
+  const { release, page, tab } = view.inside!;
   const shape = view.page;
-  const node = showing.nodes.find((n) => n.versions.some((v) => v.page_id === tab.page_id));
-  const acts = showing.acts.filter((a) => !a.page_id || a.page_id === tab.page_id);
+  const node = release.nodes.find((n) => n.versions.some((v) => v.page_id === tab.page_id));
+  const acts = release.acts.filter((a) => !a.page_id || a.page_id === tab.page_id);
   return (
     <details className="reasoning-detail publication-record">
       <summary>
-        How this page was released: asked for on {day(showing.asked_at)}
-        {showing.asked_by ? ` by ${showing.asked_by}` : ""};{" "}
+        How this page was released: asked for on {day(release.asked_at)}
+        {release.asked_by ? ` by ${release.asked_by}` : ""};{" "}
         {shape ? (shape.held_parts === 0 ? `all ${shape.parts} parts released` : `${shape.held_parts} of ${shape.parts} parts held`) : "nothing released"}; the
         fingerprint {page.verification?.ok ? "matched" : "did not match"} when the page was read for you
       </summary>
       <dl className="record-rows">
-        <Row label="Released to">{showing.shown_to === "outside this deployment" ? "People outside this deployment." : `${showing.shown_to.charAt(0).toUpperCase()}${showing.shown_to.slice(1)}.`}</Row>
+        <Row label="Released to">{release.shown_to === "outside this deployment" ? "People outside this deployment." : `${release.shown_to.charAt(0).toUpperCase()}${release.shown_to.slice(1)}.`}</Row>
         <Row label="Asked for">
-          On {day(showing.asked_at)}
-          {showing.asked_by ? ` by ${showing.asked_by}` : ""}, who then held: {showing.asked_holding.join(", ") || "nothing recorded"}.{" "}
-          {showing.form === "standing"
+          On {day(release.asked_at)}
+          {release.asked_by ? ` by ${release.asked_by}` : ""}, who then held: {holdingWords(release.asked_holding).join(", ") || "nothing recorded"}.{" "}
+          {release.form === "standing"
             ? "It is a standing release: each later assessment follows, and one that is not released shows as held."
             : "The page was released once, as it stood, and nothing is undertaken about later assessments."}{" "}
-          It covers {showing.scope}.{node ? ` The release began ${node.showing_began}.` : ""}
-          {showing.ended_at ? ` It ended on ${day(showing.ended_at)}: ${storedWords(showing.ended_because)}. What was released stays released.` : ""}
+          It covers {release.scope}.{node ? ` The release began ${node.release_began}.` : ""}
+          {release.ended_at ? ` It ended on ${day(release.ended_at)}: ${release.ended_because}. What was released stays released.` : ""}
         </Row>
-        {showing.policy && (
+        {release.policy && (
           <Row label="Redaction policy">
-            <Link href={`/redaction-policies/${showing.policy.policy_id}`}>Version {showing.policy.version}</Link> (
-            <span className="mono">{showing.policy.hash.slice(0, 16)}</span>), which everyone this page is released to can read in full.
+            <Link href={`/redaction-policies/${release.policy.policy_id}`}>Version {release.policy.version}</Link> (
+            <span className="mono">{release.policy.hash.slice(0, 16)}</span>), which everyone this page is released to can read in full.
           </Row>
         )}
         <Row label="Audit's check">{page.audit ?? "Not recorded."} It was made of the redaction, before any party consented.</Row>
@@ -384,11 +384,11 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
           <ul>
             {acts.map((a, i) => (
               <li key={i}>
-                {day(a.at)}: {a.by} {actWords(a.what)}
+                {day(a.at)}: {a.by} {a.what}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
-                {a.reason ? ` (${storedWords(a.reason)})` : ""}
-                {a.holding.length > 0 ? `, holding ${a.holding.join(", ")}` : ""}.
+                {a.reason ? ` (${a.reason})` : ""}
+                {a.holding.length > 0 ? `, holding ${holdingWords(a.holding).join(", ")}` : ""}.
               </li>
             ))}
           </ul>
@@ -407,11 +407,11 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
           </Row>
         )}
         <Row label="Check">
-          <CheckShownPage showingId={showing.showing_id} pageId={tab.page_id} arrivedOk={page.verification?.ok ?? false} />
+          <CheckShownPage releaseId={release.release_id} pageId={tab.page_id} arrivedOk={page.verification?.ok ?? false} />
         </Row>
       </dl>
       <p style={quiet}>
-        The whole record, with each part&rsquo;s place and who consented to it, is on <Link href={`/releases/${showing.showing_id}`}>the release&rsquo;s own page</Link>.
+        The whole record, with each part&rsquo;s place and who consented to it, is on <Link href={`/releases/${release.release_id}`}>the release&rsquo;s own page</Link>.
       </p>
     </details>
   );

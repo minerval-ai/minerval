@@ -248,7 +248,7 @@ describe("the first administrator", () => {
     expect(held).not.toContain("read@public");
     // The organization itself is a party from setup, and the person who set the deployment up releases for it.
     const own = await rawQuery<{ name: string; holds: boolean }>(
-      `SELECT p.name, EXISTS (SELECT 1 FROM permission_grants g WHERE g.party_id = p.id AND g.account_id = $1 AND g.permission = 'release' AND g.removed_at IS NULL) AS holds
+      `SELECT p.name, EXISTS (SELECT 1 FROM permission_grants g WHERE g.party_id = p.id AND g.account_id = $1 AND g.permission = 'consent' AND g.removed_at IS NULL) AS holds
          FROM parties p WHERE p.is_own_organization`,
       [admin.id]
     );
@@ -256,7 +256,7 @@ describe("the first administrator", () => {
 
     const mine = (await as(admin, { url: "/permissions/mine" })).json();
     expect(mine.member).toBe(true);
-    expect(mine.permissions).toEqual(["direct", "release", "fund", "read", "read_sources", "administer", "clear_providers"]);
+    expect(mine.permissions).toEqual(["direct", "consent", "fund", "read", "read_sources", "administer", "clear_providers"]);
   });
 
   it("is established once: signing in again grants nothing more", async () => {
@@ -361,7 +361,7 @@ describe("grants", () => {
     expect((await post({ permission: "read", account_id: person.id })).json().code).toBe("INVALID_SCOPE");
     expect((await post({ permission: "fund", account_id: person.id, label: "internal" })).json().code).toBe("INVALID_SCOPE");
     expect((await post({ permission: "read", account_id: person.id, label: "no-such" })).json().code).toBe("UNKNOWN_LABEL");
-    expect((await post({ permission: "release", account_id: person.id, party_id: UUID })).json().code).toBe("UNKNOWN_PARTY");
+    expect((await post({ permission: "consent", account_id: person.id, party_id: UUID })).json().code).toBe("UNKNOWN_PARTY");
     expect((await post({ permission: "fund" })).json().code).toBe("INVALID_SUBJECT");
     expect((await post({ permission: "fund", account_id: person.id, group: "g" })).json().code).toBe("INVALID_SUBJECT");
     expect((await post({ permission: "fund", account_id: UUID })).json().code).toBe("UNKNOWN_ACCOUNT");
@@ -440,12 +440,12 @@ describe("what a permission guards", () => {
       "POST /correspondents/:id/poke": ["direct"],
       "POST /sources": ["direct"],
       "POST /claims/:claim_id/stated-views": ["direct"],
-      "POST /showings": ["direct"],
-      "POST /showings/:showing_id/end": ["direct"],
-      "POST /showings/:showing_id/pages/:page_id/hold": ["direct"],
-      "POST /showings/:showing_id/pages/:page_id/commission": ["fund"],
-      "GET /gate/queue": ["release"],
-      "POST /gate/decisions": ["release"],
+      "POST /releases": ["direct"],
+      "POST /releases/:release_id/end": ["direct"],
+      "POST /releases/:release_id/pages/:page_id/hold": ["direct"],
+      "POST /releases/:release_id/pages/:page_id/commission": ["fund"],
+      "GET /gate/queue": ["consent"],
+      "POST /gate/decisions": ["consent"],
       "POST /gate/offers": ["direct"],
       "PUT /gates/:gate_id": ["administer"],
       "PUT /redaction-policies": ["administer"],
@@ -608,9 +608,9 @@ describe("parties and labels", () => {
 
     // Release is held for one party.
     const reviewer = await signIn("orrin-reviewer");
-    await grant(admin, { permission: "release", account_id: reviewer.id, party_id: orrin.id });
+    await grant(admin, { permission: "consent", account_id: reviewer.id, party_id: orrin.id });
     expect((await as(reviewer, { url: "/permissions/mine" })).json().grants).toEqual([
-      { permission: "release", party: { id: orrin.id, name: "Orrin Labs" } },
+      { permission: "consent", party: { id: orrin.id, name: "Orrin Labs" } },
     ]);
   });
 
@@ -658,7 +658,7 @@ describe("the log", () => {
     await grant(admin, { permission: "read", account_id: outsider.id, label: "internal" });
     const subject = await signIn("log-subject");
     await grant(admin, { permission: "read", account_id: subject.id, label: "partner-a" });
-    await grant(admin, { permission: "release", account_id: subject.id, party_id: orrin!.id });
+    await grant(admin, { permission: "consent", account_id: subject.id, party_id: orrin!.id });
 
     type Entry = Record<string, unknown>;
     const entriesFor = async (person: Person) =>
@@ -667,11 +667,11 @@ describe("the log", () => {
     const seen = await entriesFor(outsider);
     const about = seen.filter((e) => e.account === "log-subject");
     // That the grants happened, to whom, by whom and when is shown.
-    expect(about.map((e) => `${e.event}:${e.permission}`).sort()).toEqual(["granted:read", "granted:release"]);
+    expect(about.map((e) => `${e.event}:${e.permission}`).sort()).toEqual(["granted:consent", "granted:read"]);
     expect(about.every((e) => e.by === "first-admin" && typeof e.at === "string")).toBe(true);
     // The label they are not cleared for and the outside party's name are not.
     expect(about.find((e) => e.permission === "read")!.label).toEqual({ withheld: true });
-    expect(about.find((e) => e.permission === "release")!.party).toEqual({ withheld: true });
+    expect(about.find((e) => e.permission === "consent")!.party).toEqual({ withheld: true });
     // Their own label is named, and so is the organization itself.
     expect(seen.find((e) => e.account === "log-reader")!.label).toBe("internal");
     expect(JSON.stringify(seen)).not.toContain("Orrin Labs");
@@ -687,9 +687,9 @@ describe("the log", () => {
     const times = seen.map((e) => Date.parse(e.at as string));
     expect([...times].sort((a, b) => b - a)).toEqual(times);
 
-    // The holder of release for a party is shown its name; an administrator, everything.
+    // The holder of consent for a party is shown its name; an administrator, everything.
     const own = await entriesFor(subject);
-    expect(own.find((e) => e.account === "log-subject" && e.permission === "release")!.party).toBe("Orrin Labs");
+    expect(own.find((e) => e.account === "log-subject" && e.permission === "consent")!.party).toBe("Orrin Labs");
     const all = await entriesFor(admin);
     expect(JSON.stringify(all)).not.toContain("withheld");
 
@@ -805,7 +805,7 @@ describe("an MCP caller and the Assistant", () => {
     const wider = await openAccountTools(app, assistantAuth({ id: reader.id, externalId: reader.externalId }), "t2");
     expect(wider.definitions.map((d) => d.name)).toEqual(expect.arrayContaining(["fund_mandate", "start_grant_conversation", "submit_source"]));
     // Releasing is granted for one party, and this person holds it for none.
-    expect(wider.withheld!.every((w) => w.permission === "administer" || w.permission === "release")).toBe(true);
+    expect(wider.withheld!.every((w) => w.permission === "administer" || w.permission === "consent")).toBe(true);
     await wider.close();
 
     const everything = await openAccountTools(app, assistantAuth({ id: admin.id, externalId: admin.externalId }), "t3");
@@ -831,7 +831,7 @@ describe("an MCP caller and the Assistant", () => {
   });
 });
 
-describe("showing a page to readers who do not read its label, over HTTP", () => {
+describe("release a page to readers who do not read its label, over HTTP", () => {
   it("is asked for by a person who directs, read on the other side in fixed words, and released only by a holder of release", async () => {
     const { withSystemClearance } = await import("../../src/db/clearance.js");
     const { runAtLabel, withAgent } = await import("../../src/llm/usage-context.js");
@@ -850,10 +850,10 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
     const releaser = await signIn("releases-for-the-organization");
     await grant(admin, { permission: "read", account_id: releaser.id, label: "internal" });
 
-    const made = await as(admin, { method: "POST", url: "/parties", payload: { name: "The Showing Organization", is_own_organization: true } });
+    const made = await as(admin, { method: "POST", url: "/parties", payload: { name: "The Release Organization", is_own_organization: true } });
     const [org] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
     expect([201, 409]).toContain(made.statusCode);
-    await grant(admin, { permission: "release", account_id: releaser.id, party_id: org!.id });
+    await grant(admin, { permission: "consent", account_id: releaser.id, party_id: org!.id });
 
     const node = await system(async () => {
       const [claim] = await rawQuery<{ id: string }>(
@@ -870,14 +870,14 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
     try {
       // Asking takes the permission to direct and a page the person reads.
       const body = { node_id: node, page_label: "restricted", to_label: "internal", form: "standing", scope: "node" };
-      const byReader = await as(reader, { method: "POST", url: "/showings", payload: body });
+      const byReader = await as(reader, { method: "POST", url: "/releases", payload: body });
       expect(byReader.statusCode).toBe(403);
       expect(byReader.json().permission).toBe("direct");
-      const noDestination = await as(director, { method: "POST", url: "/showings", payload: { ...body, to_label: undefined } });
+      const noDestination = await as(director, { method: "POST", url: "/releases", payload: { ...body, to_label: undefined } });
       expect(noDestination.json()).toEqual({ error: "Say where the pages are to go: to_label, or outside.", code: "NO_DESTINATION" });
-      const asked = await as(director, { method: "POST", url: "/showings", payload: body });
+      const asked = await as(director, { method: "POST", url: "/releases", payload: body });
       expect(asked.statusCode, asked.body).toBe(201);
-      const showingId = asked.json().showing_id as string;
+      const releaseId = asked.json().release_id as string;
       // A gate starts from the Redactor's decision. This one is set to a person's decision as well, which is an
       // administrator's to set for the gate as a whole; a person who directs, or who releases, may not.
       const gateId = asked.json().boundary_id as string;
@@ -893,16 +893,16 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(backlog.gates[0].from).toBeUndefined();
       expect(JSON.stringify(backlog)).not.toContain("restricted");
 
-      // The other side reads the showing at once, with the page held and none of its words.
-      const listed = (await as(reader, { url: "/showings" })).json();
-      expect(listed.shown.map((s: { showing_id: string }) => s.showing_id)).toContain(showingId);
+      // The other side reads the release at once, with the page held and none of its words.
+      const listed = (await as(reader, { url: "/releases" })).json();
+      expect(listed.shown.map((s: { release_id: string }) => s.release_id)).toContain(releaseId);
       expect(listed.asked).toEqual([]);
-      const record = (await as(reader, { url: `/showings/${showingId}` })).json();
+      const record = (await as(reader, { url: `/releases/${releaseId}` })).json();
       expect(record.asked_by).toBe("shows-a-page");
       expect(record.asked_holding).toEqual(["direct"]);
       expect(record.nodes[0]).toMatchObject({ state: "held", text: null });
       const pageId = record.nodes[0].versions[0].page_id as string;
-      expect((await as(reader, { url: `/showings/${showingId}/pages/${pageId}` })).json()).toMatchObject({ state: "held", verification: null });
+      expect((await as(reader, { url: `/releases/${releaseId}/pages/${pageId}` })).json()).toMatchObject({ state: "held", verification: null });
       expect((await as(reader, { url: "/redaction-policies" })).json().policies).toHaveLength(1);
 
       // The Redactor and Audit, at the page's label.
@@ -912,7 +912,7 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(JSON.parse(await at("redactor", () => executeRedactorTool("finish_redaction", { least_sure: [] }, { pageId }))).success).toBe(true);
       expect(JSON.parse(await at("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: pageId, outcome: "pass", answer: "supports", reasons: "One code removed." }, {}))).success).toBe(true);
 
-      // The gate: a person who directs does not release. A holder of release for the organization who does not read the
+      // The gate: a person who directs does not release. A holder of consent for the organization who does not read the
       // label is shown each part as it would be shown if released, and not what the Redactor removed: a part that rests
       // on no outside party's material is the organization's by default, and what was removed from it stays at its label.
       expect((await as(director, { url: "/gate/queue" })).statusCode).toBe(403);
@@ -926,30 +926,30 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(JSON.stringify(queue)).not.toContain("A code.");
       expect(queue.items.every((i: Record<string, unknown>) => i.removals === undefined && i.as_written === undefined && typeof i.shown_as_released === "string")).toBe(true);
       expect(queue.items[4].removals_by_category).toEqual({ "security detail": 1 });
-      const refusedForDirector = await as(director, { method: "POST", url: "/gate/decisions", payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }] } });
+      const refusedForDirector = await as(director, { method: "POST", url: "/gate/decisions", payload: { party_id: org!.id, decision: "consent", items: [{ page_id: pageId }] } });
       expect(refusedForDirector.statusCode).toBe(403);
       const decided = await as(releaser, {
         method: "POST",
         url: "/gate/decisions",
-        payload: { party_id: org!.id, decision: "release", items: [{ page_id: pageId }, ...[1, 2, 3, 4].map((part) => ({ page_id: pageId, part }))] },
+        payload: { party_id: org!.id, decision: "consent", items: [{ page_id: pageId }, ...[1, 2, 3, 4].map((part) => ({ page_id: pageId, part }))] },
       });
       expect(decided.statusCode, decided.body).toBe(200);
       expect(decided.json()).toMatchObject({ decided: 5, refused: [], shown: [pageId] });
       // The same call sent again changes nothing: a script may retry.
-      const again = await as(releaser, { method: "POST", url: "/gate/decisions", payload: { decision: "release", items: [{ item_id: pageId }] } });
+      const again = await as(releaser, { method: "POST", url: "/gate/decisions", payload: { decision: "consent", items: [{ item_id: pageId }] } });
       expect(again.json()).toMatchObject({ decided: 0, unchanged: 1, refused: [] });
       // The person at the gate may act through a key of their own account, with no session: their agent or a script.
       const gatekeeperKey = await createApiKey({ userId: releaser.id, name: "dbtest gatekeeper's script" });
       const scripted = { "x-api-key": gatekeeperKey.plaintext };
       expect((await app.inject({ url: "/gate/queue", headers: scripted })).statusCode).toBe(200);
-      const byKey = await app.inject({ method: "POST", url: "/gate/decisions", headers: scripted, payload: { decision: "release", items: [{ item_id: pageId }] } });
+      const byKey = await app.inject({ method: "POST", url: "/gate/decisions", headers: scripted, payload: { decision: "consent", items: [{ item_id: pageId }] } });
       expect(byKey.statusCode, byKey.body).toBe(200);
       expect(byKey.json()).toMatchObject({ decided: 0, unchanged: 1, refused: [] });
       // A key carries its account's permissions and no others: the reader's key is refused.
       const readerKey = await createApiKey({ userId: reader.id, name: "dbtest reader's script" });
-      expect((await app.inject({ method: "POST", url: "/gate/decisions", headers: { "x-api-key": readerKey.plaintext }, payload: { decision: "release", items: [{ item_id: pageId }] } })).statusCode).toBe(403);
+      expect((await app.inject({ method: "POST", url: "/gate/decisions", headers: { "x-api-key": readerKey.plaintext }, payload: { decision: "consent", items: [{ item_id: pageId }] } })).statusCode).toBe(403);
 
-      const shown = (await as(reader, { url: `/showings/${showingId}/pages/${pageId}` })).json();
+      const shown = (await as(reader, { url: `/releases/${releaseId}/pages/${pageId}` })).json();
       expect(shown.state).toBe("released_whole");
       expect(shown.verification).toEqual({ ok: true, problems: [], checked: 5, held: 0 });
       expect(shown.parts[0]).toMatchObject({ kind: "wording" });
@@ -970,11 +970,11 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(words.length).toBeGreaterThan(5);
       expect(words.filter((w) => w.includes("9931"))).toEqual([]);
       expect(JSON.stringify(shown)).not.toContain("vault code");
-      const after = (await as(reader, { url: `/showings/${showingId}` })).json();
-      expect(after.acts.filter((a: { what: string }) => a.what === "released").every((a: { by: string; holding: string[] }) => a.by === "releases-for-the-organization" && a.holding.length === 1)).toBe(true);
+      const after = (await as(reader, { url: `/releases/${releaseId}` })).json();
+      expect(after.acts.filter((a: { what: string }) => a.what === "consented").every((a: { by: string; holding: string[] }) => a.by === "releases-for-the-organization" && a.holding.length === 1)).toBe(true);
 
       // A hold after the release is refused, and so is a hold of the page by the person who directs.
-      const hold = await as(director, { method: "POST", url: `/showings/${showingId}/pages/${pageId}/hold`, payload: { reason: "timing" } });
+      const hold = await as(director, { method: "POST", url: `/releases/${releaseId}/pages/${pageId}/hold`, payload: { reason: "timing" } });
       expect(hold.statusCode).toBe(409);
       expect(hold.json().code).toBe("ALREADY_SHOWN");
 
@@ -1006,7 +1006,7 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(JSON.stringify(reads)).not.toMatch(/oidc:|external_id/);
 
       // Ending it is the director's, with a reason from the list.
-      const ended = await as(director, { method: "POST", url: `/showings/${showingId}/end`, payload: { reason: "no_longer_needed" } });
+      const ended = await as(director, { method: "POST", url: `/releases/${releaseId}/end`, payload: { reason: "no_longer_needed" } });
       expect(ended.statusCode, ended.body).toBe(200);
       expect(ended.json().ended_because).toBe("it is no longer needed");
     } finally {
@@ -1021,10 +1021,10 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
         for (let pass = 0; pass < 5; pass++) {
           for (const table of tables) await rawQuery(`DELETE FROM "${table}" WHERE sensitivity_label = 'restricted'`).catch(() => undefined);
         }
-        for (const table of ["showing_acts", "shown_parts", "shown_pages", "shown_nodes", "shown_showings", "gates", "redaction_policies"]) {
+        for (const table of ["release_acts", "shown_parts", "shown_pages", "shown_nodes", "shown_releases", "gates", "redaction_policies"]) {
           await rawQuery(`DELETE FROM ${table} WHERE sensitivity_label = 'internal'`).catch(() => undefined);
         }
-        await rawQuery(`DELETE FROM sources WHERE source_type = 'shown_page'`).catch(() => undefined);
+        await rawQuery(`DELETE FROM sources WHERE source_type = 'released_page'`).catch(() => undefined);
         await rawQuery(`DELETE FROM claims WHERE id = $1`, [node]).catch(() => undefined);
       });
     }

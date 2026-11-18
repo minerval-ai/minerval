@@ -37,7 +37,7 @@ import { PUBLIC_LABEL } from "./labels.js";
 
 export const PERMISSIONS = [
   "direct",
-  "release",
+  "consent",
   "fund",
   "read",
   "read_sources",
@@ -57,14 +57,6 @@ export type PermissionScope = "none" | "label" | "party";
 interface PermissionDefinition {
   scope: PermissionScope;
   /**
-   * The permission's name in words, as people and agents read it. It is the
-   * stored identifier except for `release`, which is called consent: each
-   * party consents to its material going out, and a page is released once
-   * every party it rests on has (docs/releasing-a-page.md, "Old names in the
-   * code"). The identifier changes with the routes and the stored values.
-   */
-  called: string;
-  /**
    * The permission as a phrase that completes "the permission to ...":
    * used in refusals, and in what an agent is told when its user lacks it.
    */
@@ -82,7 +74,6 @@ interface PermissionDefinition {
 export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition> = {
   direct: {
     scope: "none",
-    called: "direct",
     phrase: "direct the graph",
     covers:
       "Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's " +
@@ -96,21 +87,19 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
       "assessment, and set whether public versions are kept current.",
     never: "Edit an assessment or a run's log.",
   },
-  release: {
+  consent: {
     scope: "party",
-    called: "consent",
     phrase: "consent for one party",
     covers:
       "Act at a gate on what rests on one party's material: consent, approve, remove a passage from, hold or delay " +
       "each part of a page or other item going to readers who do not read its label, set the gate for that " +
       "party's material, and consent to the words a node is proposed " +
       "to the public graph in. For the organization's own material: send an agent's report, as redacted, to Minerval's " +
-      "maintainers. It is granted for that party alone, and is stored as `release`.",
+      "maintainers. It is granted for that party alone.",
     never: "Edit what the agents wrote, or consent for another party.",
   },
   fund: {
     scope: "none",
-    called: "fund",
     phrase: "fund work",
     covers:
       "Put owls behind work: fund a drafted mandate, add to a mandate or a funded job, back a " +
@@ -119,14 +108,12 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
   },
   read: {
     scope: "label",
-    called: "read",
     phrase: "read at a label",
     covers: "Read what the agents wrote at one label and at the labels that label reads.",
     never: "Change anything the agents wrote.",
   },
   read_sources: {
     scope: "label",
-    called: "read_sources",
     phrase: "open raw sources at a label",
     covers:
       "Open the sources themselves at one label, and not only what the agents wrote from them.",
@@ -134,7 +121,6 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
   },
   administer: {
     scope: "none",
-    called: "administer",
     phrase: "administer the deployment",
     covers:
       "Grant and remove permissions, define labels and which label reads which, add parties, " +
@@ -150,7 +136,6 @@ export const PERMISSION_DEFINITIONS: Record<PermissionName, PermissionDefinition
   },
   clear_providers: {
     scope: "none",
-    called: "clear_providers",
     phrase: "clear model providers and outside services for a label",
     covers:
       "Choose, for each label besides public, which model providers and outside services may be sent the text " +

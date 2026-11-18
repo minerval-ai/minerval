@@ -58,7 +58,7 @@ import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "../services/judgment-version-service.js";
 import { slotColumnSql } from "../services/steward-lease.js";
 import { importanceSql } from "../services/overlay-service.js";
-import { followShowings, retryGatePayments } from "../services/showing-service.js";
+import { followReleases, retryGatePayments } from "../services/release-service.js";
 import { settleWaiting } from "../services/release-gate-service.js";
 import { offerMandatesWhereEverythingFlows } from "../services/gate-service.js";
 
@@ -88,11 +88,11 @@ import { withSystemClearance } from "../db/clearance.js";
  * a delay running out, a pace's window or an escrow opening.
  */
 async function followTheGates(): Promise<void> {
-  // Standing showings of a page below its label (showing-service.ts):
+  // Standing releases of a page below its label (release-service.ts):
   // a page is opened for each new version, with its redaction on the ledger,
   // and nodes that came under a shown node or left it are recorded. Opening
   // a redaction runs nothing; it runs when it is paid for.
-  await followShowings().catch((err: unknown) =>
+  await followReleases().catch((err: unknown) =>
     console.error(`[allocation-scheduler] following releases failed: ${err instanceof Error ? err.message : String(err)}`)
   );
 
@@ -122,7 +122,7 @@ async function followTheGates(): Promise<void> {
 
   // Pages shown outside (outbound-service.ts): a signed package is
   // built for each change in what the outside would read, and sent where
-  // the person who asked for the showing chose that. It runs no agent.
+  // the person who asked for the release chose that. It runs no agent.
   await followOutbound().catch((err: unknown) =>
     console.error(`[allocation-scheduler] following pages released outside failed: ${err instanceof Error ? err.message : String(err)}`)
   );

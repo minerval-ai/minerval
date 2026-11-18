@@ -2,19 +2,19 @@
  * A shown page leaves the deployment: the routes
  * (docs/published-pages.md, "Inside the deployment";
  * services/outbound-service.ts). Mounted only where READS=members, beside
- * the showing routes.
+ * the release routes.
  *
- *   GET  /outbound: where each node under a showing outside stands on
+ *   GET  /outbound: where each node under a release outside stands on
  *     its way out: the node on the public graph or the proposal of it, each
  *     package built, and each time one was sent, with who sent it.
- *   POST /outbound/send: send what waits under one showing (direct, and a
+ *   POST /outbound/send: send what waits under one release (direct, and a
  *     person present).
  *   POST /outbound/packages/:package_id/file: take one package as a file,
  *     to carry where the network does not reach (direct, session).
  *   POST /outbound/proposals: write or approve the words a node that
  *     exists only here is proposed to the public graph in (direct, session).
- *   POST /outbound/proposals/:proposal_id/release: a party's holder of
- *     `release` releases those words (release, session).
+ *     The words then go to the gate to outside as an item of the kind
+ *     `proposal`, where each party they rest on consents to them.
  *   POST /outbound/registration: the signed statement the organization's
  *     account presents on the public graph to register this deployment's
  *     key (administer, session).
@@ -29,10 +29,10 @@
  * shows its user for an outward act, which is the one mechanism for a
  * person approving what an agent proposes (llm/tools/assistant-tools.ts).
  * A key or a token alone does not send. The other way a package goes is the
- * choice a person made when they asked for a standing showing, which the
+ * choice a person made when they asked for a standing release, which the
  * scheduler follows. Writing the words of a proposal, releasing them,
  * taking a file and signing a registration decide what leaves or who
- * speaks for the deployment, and take a signed-in session as the showing
+ * speaks for the deployment, and take a signed-in session as the release
  * routes do.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -57,7 +57,7 @@ const UUID = { type: "string", format: "uuid" } as const;
 
 const STATUS: Record<string, number> = {
   NODE_NOT_FOUND: 404,
-  SHOWING_NOT_FOUND: 404,
+  RELEASE_NOT_FOUND: 404,
   PACKAGE_NOT_FOUND: 404,
   PROPOSAL_NOT_FOUND: 404,
   NOT_SHOWN_OUTSIDE: 404,
@@ -72,28 +72,28 @@ const STATUS: Record<string, number> = {
   NO_STANDING_CHOICE: 409,
 };
 
-/** The person acting, with the permissions they hold as the record will show them (routes/showings.ts has the same). */
+/** The person acting, with the permissions they hold as the record will show them (routes/releases.ts has the same). */
 export async function actorOf(request: FastifyRequest): Promise<GateActor> {
   const standing = standingOf(request.auth);
   const names = new Map((await listParties()).map((p) => [p.id, p.name]));
   const holding: string[] = [];
   for (const g of standing.grants) {
     if (g.permission === "read" || g.permission === "read_sources") continue;
-    const words = g.permission === "release" ? `release for ${names.get(g.partyId ?? "") ?? "a party"}` : g.permission;
+    const words = g.permission === "consent" ? `consent for ${names.get(g.partyId ?? "") ?? "a party"}` : g.permission;
     if (!holding.includes(words)) holding.push(words);
   }
   return {
     id: request.auth!.userId!,
     holding,
     clearance: standing.clearance,
-    releaseParties: standing.grants.filter((g) => g.permission === "release" && g.partyId).map((g) => g.partyId!),
+    consentParties: standing.grants.filter((g) => g.permission === "consent" && g.partyId).map((g) => g.partyId!),
     direct: holdsPermission(standing, "direct"),
   };
 }
 
 export async function outboundRoutes(app: FastifyInstance): Promise<void> {
   const signedIn = [app.authenticate, app.requireUser];
-  const session = (permission: "direct" | "release" | "administer") => [
+  const session = (permission: "direct" | "consent" | "administer") => [
     app.authenticate,
     app.requireSession,
     app.requireUser,
@@ -115,34 +115,34 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
     throw err;
   };
 
-  app.get<{ Querystring: { showing_id?: string } }>("/outbound", {
+  app.get<{ Querystring: { release_id?: string } }>("/outbound", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "Where each node released outside this deployment stands on its way out: the node on the public graph, each package built, and each time one was sent",
       description:
         "A page released outside leaves as signed packages, sent to the public graph under the organization's own account there. For each node under a " +
         "release outside this gives its node on the public graph, or, for a node that exists only here, where its proposal to the public graph stands; " +
         "each package built with the state it carries; and each send or handing over, with who did it and what the public graph answered.",
-      querystring: { type: "object", properties: { showing_id: UUID } },
+      querystring: { type: "object", properties: { release_id: UUID } },
     },
     preHandler: signedIn,
-    handler: async (request, reply) => reply.send(await outboundOverview({ showingId: request.query.showing_id })),
+    handler: async (request, reply) => reply.send(await outboundOverview({ releaseId: request.query.release_id })),
   });
 
-  app.post<{ Body: { showing_id: string } }>("/outbound/send", {
+  app.post<{ Body: { release_id: string } }>("/outbound/send", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "Send what waits under one release outside to the public graph: proposals of nodes that exist only here, then each node's packages in order",
       description:
         "What is sent has passed the gate: released parts as written, held parts by kind and hash, and the record of how the page was made. " +
         "It is submitted under the organization's account on the public graph, where it is reviewed and weighed as any contribution is. Sending shows " +
         "outside that this graph assessed the node and when. It is recorded here with who sent it.",
-      body: { type: "object", required: ["showing_id"], properties: { showing_id: UUID } },
+      body: { type: "object", required: ["release_id"], properties: { release_id: UUID } },
     },
     preHandler: [app.authenticate, app.requireUser, requirePermission("direct"), personPresent],
     handler: async (request, reply) => {
       try {
-        return reply.send(await sendOutbound({ showingId: request.body.showing_id, sender: { actor: await actorOf(request) } }));
+        return reply.send(await sendOutbound({ releaseId: request.body.release_id, sender: { actor: await actorOf(request) } }));
       } catch (err) {
         return refuse(reply, err);
       }
@@ -151,7 +151,7 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Params: { package_id: string } }>("/outbound/packages/:package_id/file", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "Take one package as a file, to submit on the public graph by hand (people who direct the graph, from a signed-in session)",
       description:
         "For a deployment the network does not join to the public graph. The file is the package exactly as signed; the public graph checks it the same " +
@@ -168,9 +168,9 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post<{ Body: { showing_id: string; node_id: string; text?: string } }>("/outbound/proposals", {
+  app.post<{ Body: { release_id: string; node_id: string; text?: string } }>("/outbound/proposals", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "Write or approve the words a node that exists only here is proposed to the public graph in (people who direct the graph, from a signed-in session)",
       description:
         "The public graph has no page for such a node's page to appear on until it holds the node, so the node is proposed there first, as anyone may " +
@@ -179,14 +179,14 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
         "page. Nothing is sent by this.",
       body: {
         type: "object",
-        required: ["showing_id", "node_id"],
-        properties: { showing_id: UUID, node_id: UUID, text: { type: "string", minLength: 1, maxLength: 2000 } },
+        required: ["release_id", "node_id"],
+        properties: { release_id: UUID, node_id: UUID, text: { type: "string", minLength: 1, maxLength: 2000 } },
       },
     },
     preHandler: session("direct"),
     handler: async (request, reply) => {
       try {
-        return reply.code(201).send(await writeProposal({ showingId: request.body.showing_id, nodeId: request.body.node_id, text: request.body.text, actor: await actorOf(request) }));
+        return reply.code(201).send(await writeProposal({ releaseId: request.body.release_id, nodeId: request.body.node_id, text: request.body.text, actor: await actorOf(request) }));
       } catch (err) {
         return refuse(reply, err);
       }
@@ -195,7 +195,7 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Body: { account: string } }>("/outbound/registration", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "The signed statement that registers this deployment's key to the organization's account on the public graph (administrators, from a signed-in session)",
       description:
         "`account` is the sign-in identity of the organization's account on the public graph. The answer is what that account sends to the public " +
@@ -215,7 +215,7 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
 
   app.post<{ Body: { declared_interest?: string } }>("/outbound/registration/send", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary:
         "Register this deployment's signing key to the organization's account on the public graph, through that account (administrators, from a signed-in session)",
       description:

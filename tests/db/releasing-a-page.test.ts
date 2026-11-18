@@ -1,5 +1,5 @@
 /**
- * Showing a node's page below its label (docs/releasing-a-page.md), against a
+ * Releasing a node's page below its label (docs/releasing-a-page.md), against a
  * real database held to clearances: labels `r3-a`, `r3-b`, `r3-c` as the
  * label tests use them (`r3-c` reads `r3-a`; `r3-a` and `r3-b` read
  * `public` and not each other).
@@ -19,16 +19,16 @@ import { madeBesideOf } from "../../src/services/judgment-version-service.js";
 import { verifyShownPage, type ShownPageForCheck } from "../../src/services/page-fingerprint.js";
 import { ensureBoundaryPolicy, hashPolicy, readablePolicies, savePolicyVersion } from "../../src/services/redaction-policy.js";
 import {
-  askedShowings,
+  askedReleases,
   decideAtGate,
   holdPage,
   gateQueue,
   shownPage,
-  shownShowing,
-  shownShowings,
+  shownRelease,
+  shownReleases,
   type GateActor,
 } from "../../src/services/release-gate-service.js";
-import { ShowingError, askShowing, endShowing, followShowings } from "../../src/services/showing-service.js";
+import { ReleaseError, askRelease, endRelease, followReleases } from "../../src/services/release-service.js";
 import { withTransaction } from "../../src/db/client.js";
 import { noteMirrorApplied, resetMirrorHeldForTests } from "../../src/services/mirrored-node-service.js";
 import { openReassessmentsForVersionsMadeBesideEarlier } from "../../src/services/version-upkeep.js";
@@ -73,10 +73,10 @@ beforeAll(async () => {
     id.borealis = await party("Borealis");
   });
   for (const who of ["director", "acmeReviewer", "borealisReviewer", "orgReviewer"]) id[who] = await seedUser();
-  actor.director = { id: id.director!, holding: ["direct"], clearance: [C, A, "public"], releaseParties: [], direct: true };
-  actor.acme = { id: id.acmeReviewer!, holding: ["release for Acme"], clearance: [C, A, "public"], releaseParties: [id.acme!], direct: false };
-  actor.borealis = { id: id.borealisReviewer!, holding: ["release for Borealis"], clearance: ["public"], releaseParties: [id.borealis!], direct: false };
-  actor.org = { id: id.orgReviewer!, holding: ["direct", "release for the organization"], clearance: [C, A, "public"], releaseParties: [id.org!], direct: true };
+  actor.director = { id: id.director!, holding: ["direct"], clearance: [C, A, "public"], consentParties: [], direct: true };
+  actor.acme = { id: id.acmeReviewer!, holding: ["consent for Acme"], clearance: [C, A, "public"], consentParties: [id.acme!], direct: false };
+  actor.borealis = { id: id.borealisReviewer!, holding: ["consent for Borealis"], clearance: ["public"], consentParties: [id.borealis!], direct: false };
+  actor.org = { id: id.orgReviewer!, holding: ["direct", "consent for the organization"], clearance: [C, A, "public"], consentParties: [id.org!], direct: true };
 
   // A public node with a version at a and a version at c, each resting on material at its own label.
   id.node = await seedNode("public", "The plant met its output target");
@@ -120,19 +120,19 @@ beforeAll(async () => {
 }, 180_000);
 
 afterAll(async () => {
-  // A showing outside, and one to `public`, keep their destination side at `public`, which the review labels' cleanup leaves.
+  // A release outside, and one to `public`, keep their destination side at `public`, which the review labels' cleanup leaves.
   await system(async () => {
-    for (const showingId of [id.outside, id.toPublic]) {
-      if (!showingId) continue;
-      const [showing] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_showings WHERE id = $1`, [showingId]);
-      await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showingId]);
-      await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showingId]);
-      await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = $1)`, [showingId]);
-      for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = $1`, [showingId]);
-      await rawQuery(`DELETE FROM shown_showings WHERE id = $1`, [showingId]);
-      await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [showing?.boundary_id ?? null]);
+    for (const releaseId of [id.outside, id.toPublic]) {
+      if (!releaseId) continue;
+      const [release] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_releases WHERE id = $1`, [releaseId]);
+      await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM shown_pages WHERE release_id = $1)`, [releaseId]);
+      await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM shown_pages WHERE release_id = $1)`, [releaseId]);
+      await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE release_id = $1)`, [releaseId]);
+      for (const table of ["release_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = $1`, [releaseId]);
+      await rawQuery(`DELETE FROM shown_releases WHERE id = $1`, [releaseId]);
+      await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [release?.boundary_id ?? null]);
     }
-  }).catch((err: unknown) => console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err));
+  }).catch((err: unknown) => console.warn("[releasing-a-page] cleanup:", err instanceof Error ? err.message : err));
   // Everything else this file wrote is at one of the review labels, on either side of a boundary, and goes with them.
   await unwall();
   if (id.mirrored) {
@@ -142,38 +142,38 @@ afterAll(async () => {
         await tx.query(`DELETE FROM assessments WHERE claim_id = $1`, [id.mirrored]);
         await tx.query(`DELETE FROM claims WHERE id = $1`, [id.mirrored]);
       })
-    ).catch((err: unknown) => console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err));
+    ).catch((err: unknown) => console.warn("[releasing-a-page] cleanup:", err instanceof Error ? err.message : err));
   }
   await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.acme, id.borealis, ...(id.orgMadeHere ? [id.org] : [])]])).catch((err: unknown) =>
-    console.warn("[showing-a-page] cleanup:", err instanceof Error ? err.message : err)
+    console.warn("[releasing-a-page] cleanup:", err instanceof Error ? err.message : err)
   );
 }, 180_000);
 
 describe("asking", () => {
   it("refuses a destination that already reads the page, a node the page's label does not read, and a page shown once with no assessment", async () => {
-    const ask = (over: Partial<Parameters<typeof askShowing>[0]>) =>
-      caught(() => askShowing({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director!, ...over }));
-    const already = (await ask({ pageLabel: A, toLabel: C })) as ShowingError;
+    const ask = (over: Partial<Parameters<typeof askRelease>[0]>) =>
+      caught(() => askRelease({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director!, ...over }));
+    const already = (await ask({ pageLabel: A, toLabel: C })) as ReleaseError;
     expect(already.code).toBe("ALREADY_READ");
     expect(already.message).toBe(`Readers at "${C}" already read what is written at "${A}", so the page is in front of them whole and there is nothing to release.`);
-    expect(((await ask({ nodeId: id.child!, pageLabel: A, toLabel: B })) as ShowingError).code).toBe("NODE_NOT_FOUND");
-    expect(((await ask({ nodeId: id.child!, pageLabel: C, toLabel: A })) as ShowingError).code).toBe("NOTHING_TO_SHOW");
-    expect(((await ask({ toLabel: "no-such-label" })) as ShowingError).code).toBe("UNKNOWN_LABEL");
+    expect(((await ask({ nodeId: id.child!, pageLabel: A, toLabel: B })) as ReleaseError).code).toBe("NODE_NOT_FOUND");
+    expect(((await ask({ nodeId: id.child!, pageLabel: C, toLabel: A })) as ReleaseError).code).toBe("NOTHING_TO_SHOW");
+    expect(((await ask({ toLabel: "no-such-label" })) as ReleaseError).code).toBe("UNKNOWN_LABEL");
   });
 
   it("opens the page, the boundary's policy on both sides and the redaction on the ledger, and shows nothing", async () => {
     await personDecidesAt(C, A);
-    const asked = await askShowing({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
-    id.showing = asked.showing_id;
+    const asked = await askRelease({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
+    id.release = asked.release_id;
     expect(asked.pages_opened).toBe(1);
     expect(asked.policy.version).toBe(1);
 
-    const record = (await atA(() => shownShowing(id.showing!)))!;
+    const record = (await atA(() => shownRelease(id.release!)))!;
     expect(record.shown_to).toBe(`readers at "${A}"`);
     expect(record.asked_holding).toEqual(["direct"]);
     const [node] = record.nodes as any[];
     expect(node.state).toBe("held");
-    expect(node.showing_began).toBe("after the node was first assessed");
+    expect(node.release_began).toBe("after the node was first assessed");
     expect(node.versions[0].held_because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
     id.page = node.versions[0].page_id;
 
@@ -269,7 +269,7 @@ describe("the Redactor's pass", () => {
 
   it("removes a passage given exactly and leaves the category's mark, and refuses anything else", async () => {
     const policy = await tool(id.page!, "get_redaction_policy");
-    expect(policy.policy).toContain("## What is shown whenever a page is shown");
+    expect(policy.policy).toContain("## What is shown whenever a page is released");
     const wrongCategory = await tool(id.page!, "redact", { part: 3, passage: SECRET, category: "unfavorable to Acme", note: "x" });
     expect(wrongCategory.code).toBe("NO_SUCH_CATEGORY");
     const notThere = await tool(id.page!, "redact", { part: 3, passage: "4711  units", category: "commercial figures", note: "x" });
@@ -302,7 +302,7 @@ describe("the Redactor's pass", () => {
     expect(page!.root).toBe(finished.root);
     expect(page!.header).toBeNull();
     expect(page!.stage).toBe("to_check");
-    expect(await system(() => rawQuery(`SELECT 1 FROM showing_acts WHERE page_id = $1`, [id.page]))).toEqual([]);
+    expect(await system(() => rawQuery(`SELECT 1 FROM release_acts WHERE page_id = $1`, [id.page]))).toEqual([]);
 
     // Audit's check is asked for at the page's label.
     const audits = await system(() => rawQuery<{ audit_type: string; sensitivity_label: string }>(`SELECT audit_type, sensitivity_label FROM audit_runs WHERE context LIKE '%' || $1 || '%'`, [id.page]));
@@ -317,16 +317,16 @@ describe("Audit's check", () => {
     expect(work.parts[2].as_redacted).not.toContain(SECRET);
     expect(work.parts[2].removals[0].note).toBe("An output figure a counterparty could use.");
     expect(work.least_sure).toHaveLength(1);
-    const [asked] = await system(() => rawQuery<{ context: string }>(`SELECT r.context FROM audit_runs r JOIN showing_pages p ON p.audit_run_id = r.id WHERE p.id = $1`, [id.page]));
+    const [asked] = await system(() => rawQuery<{ context: string }>(`SELECT r.context FROM audit_runs r JOIN release_pages p ON p.audit_run_id = r.id WHERE p.id = $1`, [id.page]));
     expect(asked!.context).toContain(
       "The policy protects what the readers on the other side do not already have: look_at_destination shows what is already where they read."
     );
 
     const returned = await audit("record_fidelity_outcome", { page_id: id.page, outcome: "return", reasons: `The target of 4500 in part 3 lets a reader bound the figure ${SECRET}.` });
     expect(returned.success).toBe(true);
-    const record = (await atA(() => shownShowing(id.showing!)))!;
+    const record = (await atA(() => shownRelease(id.release!)))!;
     expect((record.nodes as any[])[0].versions[0].held_because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
-    expect((record.acts as any[]).map((a) => a.what)).toEqual(["asked for the showing", "the check returned the redaction to be done again"]);
+    expect((record.acts as any[]).map((a) => a.what)).toEqual(["asked for the release", "the check returned the redaction to be done again"]);
     expect(JSON.stringify(record)).not.toContain("target of");
     const [action] = await system(() => rawQuery<{ status: string }>(`SELECT status FROM actions WHERE exclusion_group = $1`, [`redact:${id.page}`]));
     expect(action!.status).toBe("open");
@@ -347,7 +347,7 @@ describe("Audit's check", () => {
     expect((await audit("record_fidelity_outcome", { page_id: id.page, outcome: "pass", answer: "it is fine", reasons: "x" })).code).toBe("ANSWER_NEEDED");
     const passed = await audit("record_fidelity_outcome", { page_id: id.page, outcome: "pass", answer: "supports_in_part", reasons: "The figures are gone and nothing else was removed." });
     expect(passed.success).toBe(true);
-    const record = (await atA(() => shownShowing(id.showing!)))!;
+    const record = (await atA(() => shownRelease(id.release!)))!;
     const version = (record.nodes as any[])[0].versions[0];
     expect(version.audit).toBe("The reasoning shown supports the verdict in part.");
     expect(version.state).toBe("held");
@@ -373,13 +373,13 @@ describe("the gate", () => {
     expect((forAcme as any).not_reading_the_label).toBeUndefined();
     expect(forAcme.items.every((i) => i.shown_as_released === undefined)).toBe(true);
 
-    // Borealis's reviewer holds release for Borealis and reads `public` alone. They are shown what their decision would release.
+    // Borealis's reviewer holds consent for Borealis and reads `public` alone. They are shown what their decision would release.
     const forBorealis = (await gateQueue(actor.borealis!)) as { items: any[] };
     expect(forBorealis.items.map((i) => i.part)).toEqual([null, 4, 1, 2, 3, 5, 9, 11]);
     const recorded = await system(() =>
-      rawQuery<{ position: number; original: string; redacted: string | null }>(`SELECT position, original, redacted FROM showing_parts WHERE page_id = $1 ORDER BY position`, [id.page])
+      rawQuery<{ position: number; original: string; redacted: string | null }>(`SELECT position, original, redacted FROM release_parts WHERE page_id = $1 ORDER BY position`, [id.page])
     );
-    const [header] = await system(() => rawQuery<{ header: string }>(`SELECT header FROM showing_pages WHERE id = $1`, [id.page]));
+    const [header] = await system(() => rawQuery<{ header: string }>(`SELECT header FROM release_pages WHERE id = $1`, [id.page]));
     for (const item of forBorealis.items) {
       // What is always shown of the page is with every item, as recorded: no part is shown without it.
       expect(item.always_shown).toEqual(JSON.parse(header!.header));
@@ -426,7 +426,7 @@ describe("the gate", () => {
     // No page as written, no passage, no note and no reason on any item: only the keys below.
     const allowed = new Set([
       "item_id", "kind_of_thing", "kind_of_thing_in_words", "the_redactor_proposes",
-      "page_id", "showing_id", "node_id", "node", "always_shown", "audit", "waiting_since", "shown_as_released",
+      "page_id", "release_id", "node_id", "node", "always_shown", "audit", "waiting_since", "shown_as_released",
       "part", "kind", "decide_for", "rests_on", "held", "removals_by_category", "redactor_least_sure", "as_it_would_be_shown",
       // Where it crosses, as the gate's settings name it to them, and the policy with the categories a passage is removed under.
       "gate_id", "from", "from_named_by", "to", "to_outside", "policy",
@@ -440,7 +440,7 @@ describe("the gate", () => {
 
     // A passage removed from a part that rests only on the material of an outside party the holder releases for is
     // that party's own, and is shown: the passage and its category, without the Redactor's note. Here, a holder of
-    // release for Acme who reads `public` alone.
+    // consent for Acme who reads `public` alone.
     const acmeOutside: GateActor = { ...actor.acme!, clearance: ["public"] };
     const forAcmeOutside = (await gateQueue(acmeOutside)) as { items: any[] };
     const reading = forAcmeOutside.items.find((i) => i.part === 8);
@@ -458,11 +458,11 @@ describe("the gate", () => {
 
   it("releases a part that rests on two parties only when both have released it, and shows nothing until the page itself is released", async () => {
     const all = (parts: Array<number | null>) => parts.map((part) => ({ page_id: id.page!, part }));
-    const notTheirs = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([9]), decision: "release" });
+    const notTheirs = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([9]), decision: "consent" });
     expect(notTheirs.refused[0]!.why).toBe("This item does not rest on that party's material, so it is not that party's to consent to or hold.");
-    await expect(decideAtGate({ actor: actor.acme!, partyId: id.borealis!, items: all([9]), decision: "release" })).rejects.toThrow(/do not hold the permission to consent for/);
+    await expect(decideAtGate({ actor: actor.acme!, partyId: id.borealis!, items: all([9]), decision: "consent" })).rejects.toThrow(/do not hold the permission to consent for/);
 
-    const acme = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null, 1, 2, 3, 4, 5, 8, 10]), decision: "release" });
+    const acme = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null, 1, 2, 3, 4, 5, 8, 10]), decision: "consent" });
     expect(acme.decided).toBe(8);
     expect(acme.shown).toEqual([]);
     expect((await atA(() => shownPage(id.page!)))!.state).toBe("held");
@@ -471,9 +471,9 @@ describe("the gate", () => {
     // Borealis holds one paragraph and releases the rest; the organization holds the argument against.
     await expect(decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([4]), decision: "hold", reason: "because" })).rejects.toThrow(/reason from this list/);
     await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([4]), decision: "hold", reason: "confidentiality" });
-    await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([6, 12]), decision: "release" });
+    await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([6, 12]), decision: "consent" });
     await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([7]), decision: "hold", reason: "under_review" });
-    const borealis = await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([null, 1, 2, 3, 5, 9, 11]), decision: "release" });
+    const borealis = await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([null, 1, 2, 3, 5, 9, 11]), decision: "consent" });
     expect(borealis.shown).toEqual([id.page]);
   });
 
@@ -548,15 +548,15 @@ describe("what the destination sees", () => {
   });
 
   it("nothing at the page's label is read at the destination label, by a reader, a run, or an error", async () => {
-    for (const table of ["showings", "showing_pages", "showing_parts", "showing_removals"]) {
+    for (const table of ["releases", "release_pages", "release_parts", "release_removals"]) {
       expect(await atA(() => rawQuery(`SELECT 1 FROM ${table}`)), table).toEqual([]);
       expect(await runAtLabel(A, "a run at a", () => rawQuery(`SELECT 1 FROM ${table}`)), table).toEqual([]);
     }
-    expect((await atA(() => askedShowings())).length).toBe(0);
-    expect((await atC(() => askedShowings())).length).toBe(1);
-    // A reader at b, which the page was not shown to, finds no showing at all.
-    expect(await atB(() => shownShowings())).toEqual([]);
-    expect(await atB(() => shownShowing(id.showing!))).toBeNull();
+    expect((await atA(() => askedReleases())).length).toBe(0);
+    expect((await atC(() => askedReleases())).length).toBe(1);
+    // A reader at b, which the page was not shown to, finds no release at all.
+    expect(await atB(() => shownReleases())).toEqual([]);
+    expect(await atB(() => shownRelease(id.release!))).toBeNull();
     expect(await atB(() => shownPage(id.page!))).toBeNull();
     expect(await atB(() => rawQuery(`SELECT 1 FROM shown_parts`))).toEqual([]);
     // The Redactor's and Audit's tools at the destination label find no page.
@@ -564,8 +564,8 @@ describe("what the destination sees", () => {
     expect(fromA).toEqual({ success: false, code: "PAGE_NOT_FOUND", message: "No page under a release has that id at a label this work reads." });
     const everythingAtA = await atA(async () =>
       JSON.stringify([
-        await rawQuery(`SELECT * FROM shown_pages`), await rawQuery(`SELECT * FROM shown_parts`), await rawQuery(`SELECT * FROM showing_acts`),
-        await rawQuery(`SELECT * FROM shown_nodes`), await rawQuery(`SELECT * FROM shown_showings`), await rawQuery(`SELECT * FROM redaction_policies`),
+        await rawQuery(`SELECT * FROM shown_pages`), await rawQuery(`SELECT * FROM shown_parts`), await rawQuery(`SELECT * FROM release_acts`),
+        await rawQuery(`SELECT * FROM shown_nodes`), await rawQuery(`SELECT * FROM shown_releases`), await rawQuery(`SELECT * FROM redaction_policies`),
         await rawQuery(`SELECT raw_content, title FROM sources`), await rawQuery(`SELECT verbatim_text, context FROM claim_instances`),
         await rawQuery(`SELECT body FROM node_messages`),
       ])
@@ -579,7 +579,7 @@ describe("arrival at the destination label", () => {
     const [page] = await atA(() => rawQuery<{ source_id: string }>(`SELECT source_id FROM shown_pages WHERE id = $1`, [id.page]));
     id.shownSource = page!.source_id;
     const [source] = await atA(() => rawQuery<{ source_type: string; raw_content: string; sensitivity_label: string; content_hash: string }>(`SELECT source_type, raw_content, sensitivity_label, content_hash FROM sources WHERE id = $1`, [id.shownSource]));
-    expect(source!.source_type).toBe("shown_page");
+    expect(source!.source_type).toBe("released_page");
     expect(source!.sensitivity_label).toBe(A);
     expect(source!.raw_content).toContain("Status: supported. Confidence: 0.8. Credence: 0.85.");
     expect(source!.raw_content).toContain("Removals under the policy: commercial figures: 3.");
@@ -653,22 +653,22 @@ describe("arrival at the destination label", () => {
     const lifted = await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: [{ page_id: id.page!, part: 4 }], decision: "lift" });
     expect(lifted.decided).toBe(1);
     expect(((await atA(() => shownPage(id.page!)))!.parts as any[])[3].held).toMatch(/held by Borealis/);
-    const released = await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: [{ page_id: id.page!, part: 4 }], decision: "release" });
+    const released = await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: [{ page_id: id.page!, part: 4 }], decision: "consent" });
     expect(released.decided).toBe(1);
     const page = (await atA(() => shownPage(id.page!)))!;
     expect((page.parts as any[])[3].text).toBe("The meters were calibrated in March.");
     expect(page.parts_held).toBe(1);
     expect(page.verification!.ok).toBe(true);
 
-    const acts = ((await atA(() => shownShowing(id.showing!)))!.acts as any[]).filter((a) => a.on === "part 4" && /Borealis/.test(a.for_party ?? ""));
-    expect(acts.map((a) => a.what)).toEqual(["held", "lifted a hold", "released"]);
+    const acts = ((await atA(() => shownRelease(id.release!)))!.acts as any[]).filter((a) => a.on === "part 4" && /Borealis/.test(a.for_party ?? ""));
+    expect(acts.map((a) => a.what)).toEqual(["held", "lifted a hold", "consented"]);
     expect(acts[0].reason).toBe("confidential to the party");
-    expect(acts[0].holding).toEqual(["release for Borealis"]);
+    expect(acts[0].holding).toEqual(["consent for Borealis"]);
 
     // A source's text does not change: the page arrives again as a new source, and the earlier one gives way.
     const arrivals = await atA(() => rawQuery<{ id: string; detached: boolean }>(
       `SELECT s.id, i.detached_at IS NOT NULL AS detached FROM sources s JOIN claim_instances i ON i.source_id = s.id
-        WHERE s.source_type = 'shown_page' AND i.claim_id = $1 ORDER BY s.retrieved_at`, [id.node]));
+        WHERE s.source_type = 'released_page' AND i.claim_id = $1 ORDER BY s.retrieved_at`, [id.node]));
     expect(arrivals.map((a) => a.detached)).toEqual([true, false]);
     expect(arrivals[0]!.id).toBe(id.shownSource);
   });
@@ -678,20 +678,20 @@ describe("two people deciding at once", () => {
   it("settle the page one after the other, and it arrives once", async () => {
     for (let round = 0; round < 3; round++) {
       await personDecidesAt(C, A);
-      const asked = await askShowing({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
-      const record = (await atA(() => shownShowing(asked.showing_id)))!;
+      const asked = await askRelease({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
+      const record = (await atA(() => shownRelease(asked.release_id)))!;
       const pageId = (record.nodes as any[])[0].versions[0].page_id as string;
       await throughTheCheck(pageId);
       const all = (parts: Array<number | null>) => parts.map((part) => ({ page_id: pageId, part }));
       // Everything but the page itself, which rests on both outside parties.
-      await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([1, 2, 3, 4, 5, 8, 10]), decision: "release" });
-      await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([1, 2, 3, 4, 5, 9, 11]), decision: "release" });
-      await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([6, 7, 12]), decision: "release" });
+      await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([1, 2, 3, 4, 5, 8, 10]), decision: "consent" });
+      await decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([1, 2, 3, 4, 5, 9, 11]), decision: "consent" });
+      await decideAtGate({ actor: actor.org!, partyId: id.org!, items: all([6, 7, 12]), decision: "consent" });
       expect((await atA(() => shownPage(pageId)))!.state).toBe("held");
       // Both release the page in the same instant, and each then settles it.
       const both = await Promise.all([
-        decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null]), decision: "release" }),
-        decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([null]), decision: "release" }),
+        decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null]), decision: "consent" }),
+        decideAtGate({ actor: actor.borealis!, partyId: id.borealis!, items: all([null]), decision: "consent" }),
       ]);
       expect(both.map((r) => r.decided)).toEqual([1, 1]);
       expect((await atA(() => shownPage(pageId)))!.state).toBe("released_whole");
@@ -701,22 +701,22 @@ describe("two people deciding at once", () => {
   });
 });
 
-describe("a standing showing of a node with what sits under it", () => {
+describe("a standing release of a node with what sits under it", () => {
   it("covers a node before it is assessed, and follows a first version, a new subclaim, a removed edge and a later version", async () => {
     // A node at c, which a reader at a cannot read at all.
     id.root = await seedNode(C, "The line can run at full speed");
     await personDecidesAt(C, A);
-    const asked = await askShowing({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "standing", scope: "under", actor: actor.director! });
-    id.standing = asked.showing_id;
+    const asked = await askRelease({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "standing", scope: "under", actor: actor.director! });
+    id.standing = asked.release_id;
     expect(asked.pages_opened).toBe(0);
-    await expect(askShowing({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "standing", scope: "under", actor: actor.director! })).rejects.toThrow(/already stands/);
-    let record = (await atA(() => shownShowing(id.standing!)))!;
-    expect((record.nodes as any[]).map((n) => [n.state, n.text, n.showing_began])).toEqual([["not_yet_assessed", null, "before the node was first assessed"]]);
+    await expect(askRelease({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "standing", scope: "under", actor: actor.director! })).rejects.toThrow(/already stands/);
+    let record = (await atA(() => shownRelease(id.standing!)))!;
+    expect((record.nodes as any[]).map((n) => [n.state, n.text, n.release_began])).toEqual([["not_yet_assessed", null, "before the node was first assessed"]]);
 
     // The organization's holders of release set the gate, for its own material, to the Redactor's decision:
     // what the Redactor lets through goes without a person deciding each part.
     const { setGateMode } = await import("../../src/services/gate-settings-service.js");
-    const authority = { id: actor.org!.id, holding: actor.org!.holding, administer: false, releaseParties: actor.org!.releaseParties };
+    const authority = { id: actor.org!.id, holding: actor.org!.holding, administer: false, consentParties: actor.org!.consentParties };
     await expect(setGateMode({ boundaryId: asked.boundary_id, mode: "open", actor: authority })).rejects.toThrow(/gate as a whole is an administrator's/);
     const setting = await setGateMode({ boundaryId: asked.boundary_id, partyId: id.org!, mode: "redactor", actor: authority });
     expect(setting.changed).toBe(true);
@@ -732,9 +732,9 @@ describe("a standing showing of a node with what sits under it", () => {
     // A pass on the node is still running when its assessment appears: the page is not recorded from a half-finished pass.
     await system(() => rawQuery(`UPDATE claims SET steward_state = 'running' WHERE id = $1`, [id.root]));
     await version("First reading of the line speed.");
-    expect(await followShowings()).toBe(0);
-    expect(((await atA(() => shownShowing(id.standing!)))!.nodes as any[])[0].state).toBe("not_yet_assessed");
-    await expect(askShowing({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! })).rejects.toThrow(
+    expect(await followReleases()).toBe(0);
+    expect(((await atA(() => shownRelease(id.standing!)))!.nodes as any[])[0].state).toBe("not_yet_assessed");
+    await expect(askRelease({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! })).rejects.toThrow(
       `A pass on this node at "${C}" is running now, and a page released once is the page as it stands when it is asked for. Ask again when the pass has finished, so that the page is the finished one.`
     );
     // The pass adds an argument after its assessment and ends; the page recorded then has it.
@@ -742,17 +742,17 @@ describe("a standing showing of a node with what sits under it", () => {
       await rawQuery(`INSERT INTO arguments (claim_id, stance, name, content, created_by, sensitivity_label) VALUES ($1, 'for', 'Written last', 'Added after the assessment, in the same pass.', 'steward', $2)`, [id.root, C]);
       await rawQuery(`UPDATE claims SET steward_state = 'done' WHERE id = $1`, [id.root]);
     });
-    expect(await followShowings()).toBe(1);
-    const [recorded] = await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM showing_parts p JOIN showing_pages g ON g.id = p.page_id WHERE g.node_id = $1 AND p.kind = 'argument'`, [id.root]));
+    expect(await followReleases()).toBe(1);
+    const [recorded] = await system(() => rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM release_parts p JOIN release_pages g ON g.id = p.page_id WHERE g.node_id = $1 AND p.kind = 'argument'`, [id.root]));
     expect(recorded!.n).toBe(1);
-    record = (await atA(() => shownShowing(id.standing!)))!;
+    record = (await atA(() => shownRelease(id.standing!)))!;
     const firstPage = (record.nodes as any[])[0].versions[0].page_id;
     expect((record.nodes as any[])[0].state).toBe("held");
 
     // A later version before the first was redacted: the first is not redacted, and stays in the history.
     await version(`Second reading. The gearbox serial is ${SECRET}.`);
-    expect(await followShowings()).toBe(1);
-    record = (await atA(() => shownShowing(id.standing!)))!;
+    expect(await followReleases()).toBe(1);
+    record = (await atA(() => shownRelease(id.standing!)))!;
     const versions = (record.nodes as any[])[0].versions;
     expect(versions.map((v: any) => v.held_because)).toEqual([
       "waiting for funds: none of the budgets that pay for its redaction could pay for it",
@@ -765,16 +765,16 @@ describe("a standing showing of a node with what sits under it", () => {
     // A subclaim comes under it, and is covered from then as not yet assessed.
     id.under = await seedNode(C, "The gearbox was serviced");
     await system(() => rawQuery(`INSERT INTO claim_relationships (id, parent_claim_id, child_claim_id, relation_type, reasoning, sensitivity_label) VALUES (gen_random_uuid(), $1, $2, 'requires', 'A worn gearbox limits speed.', $3)`, [id.root, id.under, C]));
-    await followShowings();
-    record = (await atA(() => shownShowing(id.standing!)))!;
+    await followReleases();
+    record = (await atA(() => shownRelease(id.standing!)))!;
     expect((record.nodes as any[]).map((n) => [n.node_id, n.state, n.under])).toEqual([[id.root, "held", null], [id.under, "not_yet_assessed", id.root]]);
 
     // The edge is removed: the node leaves, with a dated event and the reason.
     await system(() => rawQuery(`DELETE FROM claim_relationships WHERE parent_claim_id = $1 AND child_claim_id = $2`, [id.root, id.under]));
-    await followShowings();
-    record = (await atA(() => shownShowing(id.standing!)))!;
+    await followReleases();
+    record = (await atA(() => shownRelease(id.standing!)))!;
     const left = (record.nodes as any[])[1];
-    expect(left.left_because).toBe("the link that placed it under the shown node was removed");
+    expect(left.left_because).toBe("the link that placed it under the released node was removed");
     expect(typeof left.left_at).toBe("string");
   });
 
@@ -795,8 +795,8 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(parts[0].text).toMatch(/^The line can run at full speed/);
     expect(parts[1].text).toContain("[redacted: commercial figures]");
     expect(parts[2].held).toBe("[A paragraph of reasoning, held by the Redactor]");
-    const all = (await atA(() => shownShowing(id.standing!)))!.acts as any[];
-    const acts = all.filter((a) => a.what === "released");
+    const all = (await atA(() => shownRelease(id.standing!)))!.acts as any[];
+    const acts = all.filter((a) => a.what === "consented");
     expect(acts.length).toBeGreaterThan(0);
     expect(acts.every((a) => a.by === "the gate's setting" && a.rule_id === id.rule)).toBe(true);
     // The Redactor's hold is on the record with its run's kind of actor and the reason in fixed words, and nothing of its note.
@@ -817,7 +817,7 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(whole.state).toBe("released_whole");
     expect(whole.removals_under_the_policy).toEqual({ "commercial figures": 2 });
     expect(JSON.stringify(whole)).not.toContain(SECRET);
-    const record = (await atA(() => shownShowing(id.standing!)))!;
+    const record = (await atA(() => shownRelease(id.standing!)))!;
     expect((record.nodes as any[])[0].state).toBe("released_whole");
   });
 
@@ -826,14 +826,14 @@ describe("a standing showing of a node with what sits under it", () => {
       await rawQuery(`UPDATE assessments SET is_current = false WHERE claim_id = $1 AND sensitivity_label = $2`, [id.root, C]);
       await rawQuery(`INSERT INTO assessments (claim_id, status, confidence, claim_credence, summary, reasoning_trace, is_current, sensitivity_label) VALUES ($1, 'contradicted', 0.9, 0.1, 'Third reading.', 'Third reading.', true, $2)`, [id.root, C]);
     });
-    await followShowings();
-    const record = (await atA(() => shownShowing(id.standing!)))!;
+    await followReleases();
+    const record = (await atA(() => shownRelease(id.standing!)))!;
     const pageId = (record.nodes as any[])[0].versions[0].page_id;
     // The Redactor holds the whole item, as a person could, and finishes; Audit passes its work.
     const said = await tool(pageId, "hold_part", { reason: "policy", note: `The verdict itself gives away the answer to a test still in use (${SECRET}).` });
     expect(said.success).toBe(true);
     await throughTheCheck(pageId, { answer: "supports" });
-    const after = (await atA(() => shownShowing(id.standing!)))!;
+    const after = (await atA(() => shownRelease(id.standing!)))!;
     const version = (after.nodes as any[])[0].versions[0];
     expect(version.state).toBe("held");
     expect(version.held_because).toBe("held by the Redactor (what the policy protects could not be removed from it)");
@@ -841,21 +841,21 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(JSON.stringify(after)).not.toContain(SECRET);
     expect((after.nodes as any[])[0].state).toBe("held");
     // Its note stays at the page's label, with what it was least sure of.
-    const [kept] = await atC(() => rawQuery<{ least_sure: Array<{ held?: boolean; why: string }> }>(`SELECT least_sure FROM showing_pages WHERE id = $1`, [pageId]));
+    const [kept] = await atC(() => rawQuery<{ least_sure: Array<{ held?: boolean; why: string }> }>(`SELECT least_sure FROM release_pages WHERE id = $1`, [pageId]));
     expect(kept!.least_sure.find((l) => l.held)!.why).toContain("test still in use");
-    expect((await atC(() => askedShowings())).some((s) => s.showing_id === id.standing)).toBe(true);
+    expect((await atC(() => askedReleases())).some((s) => s.release_id === id.standing)).toBe(true);
   });
 
   it("ends with a dated event and its reason, after which later versions do not follow", async () => {
-    await endShowing({ showingId: id.standing!, reason: "no_longer_needed", actor: actor.director! });
-    const record = (await atA(() => shownShowing(id.standing!)))!;
+    await endRelease({ releaseId: id.standing!, reason: "no_longer_needed", actor: actor.director! });
+    const record = (await atA(() => shownRelease(id.standing!)))!;
     expect(record.ended_because).toBe("it is no longer needed");
-    expect((record.acts as any[]).at(-1)).toMatchObject({ what: "ended the showing", reason: "it is no longer needed", holding: ["direct"] });
+    expect((record.acts as any[]).at(-1)).toMatchObject({ what: "ended the release", reason: "it is no longer needed", holding: ["direct"] });
     await system(() => rawQuery(`INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label) SELECT claim_id, 'supported', 0.5, 'Fourth.', 'Fourth.', false, sensitivity_label FROM assessments WHERE claim_id = $1 LIMIT 1`, [id.root]));
-    expect(await followShowings()).toBe(0);
-    await expect(endShowing({ showingId: id.standing!, reason: "no_longer_needed", actor: actor.director! })).rejects.toThrow(/already ended/);
-    // Nothing more is released from a showing that has ended. What was shown stays shown.
-    const late = await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: id.rootPage!, part: 1 }], decision: "release" });
+    expect(await followReleases()).toBe(0);
+    await expect(endRelease({ releaseId: id.standing!, reason: "no_longer_needed", actor: actor.director! })).rejects.toThrow(/already ended/);
+    // Nothing more is released from a release that has ended. What was shown stays shown.
+    const late = await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: id.rootPage!, part: 1 }], decision: "consent" });
     expect(late.refused[0]!.why).toBe("This page's release has ended, so nothing more is released from it. What was released stays released.");
     expect((await atA(() => shownPage(id.rootPage!)))!.state).toBe("released_whole");
   });
@@ -869,7 +869,7 @@ describe("the policy of a boundary", () => {
     expect((byFavor as any).message).toContain('worded by how a passage reflects on someone ("unfavorable")');
     const alwaysShown = await save([{ name: "bad verdicts", covers: "A status of contradicted.", examples: "" }]);
     expect(alwaysShown.ok).toBe(false);
-    expect((alwaysShown as any).message).toContain('names something that is shown whenever a page is shown ("verdicts")');
+    expect((alwaysShown as any).message).toContain('names something that is shown whenever a page is released ("verdicts")');
     const saved = await save([{ name: "personal data", covers: "Detail about an identifiable person.", examples: "A name." }, { name: "plant layout", covers: "Where machines stand on the floor.", examples: "A floor plan." }]);
     expect(saved.ok).toBe(true);
     expect((saved as any).policy.version).toBe(2);
@@ -905,14 +905,14 @@ describe("the policy of a boundary", () => {
 describe("two labels that do not read each other", () => {
   it("a page at a is shown to b across a boundary of its own", async () => {
     await personDecidesAt(A, B);
-    const asked = await askShowing({ nodeId: id.node!, pageLabel: A, toLabel: B, form: "once", scope: "node", actor: { ...actor.director!, clearance: [A, "public"] } });
+    const asked = await askRelease({ nodeId: id.node!, pageLabel: A, toLabel: B, form: "once", scope: "node", actor: { ...actor.director!, clearance: [A, "public"] } });
     expect(asked.pages_opened).toBe(1);
-    const forB = (await atB(() => shownShowing(asked.showing_id)))!;
+    const forB = (await atB(() => shownRelease(asked.release_id)))!;
     expect(forB.shown_to).toBe(`readers at "${B}"`);
     expect((forB.nodes as any[])[0].state).toBe("held");
     expect((await atB(() => readablePolicies())).map((p) => p.side)).toEqual(["destination"]);
     // The first boundary's readers do not see this one's record, since they do not read b.
-    expect(await atA(() => shownShowing(asked.showing_id))).toBeNull();
+    expect(await atA(() => shownRelease(asked.release_id))).toBeNull();
   });
 });
 
@@ -920,10 +920,10 @@ describe("a page shown outside the deployment", () => {
   it("goes through the same steps, rests on the parties a shown page it drew on rested on, and waits inside for the next piece", async () => {
     // The page at a, whose version took in the page shown from c.
     await personDecidesAt(A, null);
-    const asked = await askShowing({ nodeId: id.node!, pageLabel: A, toLabel: null, form: "once", scope: "node", actor: { ...actor.director!, clearance: [A, "public"] } });
-    id.outside = asked.showing_id;
+    const asked = await askRelease({ nodeId: id.node!, pageLabel: A, toLabel: null, form: "once", scope: "node", actor: { ...actor.director!, clearance: [A, "public"] } });
+    id.outside = asked.release_id;
     // Its record is kept where every member reads it, and names no label.
-    const record = (await atB(() => shownShowing(asked.showing_id)))!;
+    const record = (await atB(() => shownRelease(asked.release_id)))!;
     expect(record.shown_to).toBe("outside this deployment");
     const pageId = (record.nodes as any[])[0].versions[0].page_id as string;
     const atPage = async (agent: string, run: () => Promise<string>) => JSON.parse(await runAtLabel(A, "a run at a", () => withAgent(agent, run)));
@@ -931,12 +931,12 @@ describe("a page shown outside the deployment", () => {
     expect((await atPage("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: pageId, outcome: "pass", answer: "supports", reasons: "Nothing was removed." }, {}))).success).toBe(true);
 
     // The version at a rested on the page shown from c, so it takes the releases that page took, and the organization's for its own memos.
-    const [needs] = await system(() => rawQuery<{ rests_on: string[] }>(`SELECT rests_on FROM showing_pages WHERE id = $1`, [pageId]));
+    const [needs] = await system(() => rawQuery<{ rests_on: string[] }>(`SELECT rests_on FROM release_pages WHERE id = $1`, [pageId]));
     expect([...needs!.rests_on].sort()).toEqual([id.org, id.acme, id.borealis].sort());
     for (const [who, party] of [[actor.org!, id.org!], [actor.acme!, id.acme!], [actor.borealis!, id.borealis!]] as const) {
       const queue = (await gateQueue(who)) as { items: any[] };
       const mine = queue.items.filter((i) => i.page_id === pageId);
-      await decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
+      await decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "consent" });
     }
     const page = (await atB(() => shownPage(pageId)))!;
     expect(page.state).toBe("released_whole");
@@ -951,7 +951,7 @@ describe("a page shown outside the deployment", () => {
 async function releaseAllFor(who: GateActor, party: string, pageId: string, except: number[] = []) {
   const queue = (await gateQueue(who, { limit: 200 })) as { items: any[] };
   const mine = queue.items.filter((i) => i.page_id === pageId && !except.includes(i.part));
-  return decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "release" });
+  return decideAtGate({ actor: who, partyId: party, items: mine.map((i) => ({ page_id: pageId, part: i.part })), decision: "consent" });
 }
 
 describe("a quantity's page and a question's page", () => {
@@ -968,8 +968,8 @@ describe("a quantity's page and a question's page", () => {
       );
     });
     await personDecidesAt(C, A);
-    const asked = await askShowing({ nodeId: quantity, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
-    const pageId = ((await atA(() => shownShowing(asked.showing_id)))!.nodes as any[])[0].versions[0].page_id as string;
+    const asked = await askRelease({ nodeId: quantity, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
+    const pageId = ((await atA(() => shownRelease(asked.release_id)))!.nodes as any[])[0].versions[0].page_id as string;
     const page = await tool(pageId, "get_page_to_redact");
     expect(page.parts.map((p: any) => p.kind)).toEqual(["wording", "summary", "reasoning", "reasoning", "reading", "supplier"]);
     expect(page.always_shown.node_kind).toBe("quantity");
@@ -1017,8 +1017,8 @@ describe("a quantity's page and a question's page", () => {
       );
     });
     await personDecidesAt(C, A);
-    const asked = await askShowing({ nodeId: question, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
-    const pageId = ((await atA(() => shownShowing(asked.showing_id)))!.nodes as any[])[0].versions[0].page_id as string;
+    const asked = await askRelease({ nodeId: question, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! });
+    const pageId = ((await atA(() => shownRelease(asked.release_id)))!.nodes as any[])[0].versions[0].page_id as string;
     const page = await tool(pageId, "get_page_to_redact");
     expect(page.parts.map((p: any) => p.kind)).toEqual(["wording", "summary", "reasoning", "gap", "gap"]);
     expect(page.parts[3].text).toBe("Whether the fault was reported before the stoppage is not known.");
@@ -1070,9 +1070,9 @@ describe("a mirrored node's page shown to the public label", () => {
         )
       );
       await personDecidesAt(C, "public");
-      const asked = await askShowing({ nodeId: mirrored, pageLabel: C, toLabel: "public", form: "once", scope: "node", actor: actor.director! });
-      id.toPublic = asked.showing_id;
-      const forEveryone = (await asPerson(["public"], () => shownShowing(asked.showing_id)))!;
+      const asked = await askRelease({ nodeId: mirrored, pageLabel: C, toLabel: "public", form: "once", scope: "node", actor: actor.director! });
+      id.toPublic = asked.release_id;
+      const forEveryone = (await asPerson(["public"], () => shownRelease(asked.release_id)))!;
       expect(forEveryone.shown_to).toBe('readers at "public"');
       const pageId = (forEveryone.nodes as any[])[0].versions[0].page_id as string;
       await throughTheCheck(pageId, { answer: "supports" });

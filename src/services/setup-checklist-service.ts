@@ -404,7 +404,7 @@ async function publicGraphState(config: { publicGraphApiUrl?: string; publicGrap
   const fingerprint = signingKeyId();
   // Counted at every label, as the preflight counts them: the key signs every page shown outside, whoever reads its label.
   const [shown] = await withSystemClearance(SHOWN_OUTSIDE_COUNT_REASON, () =>
-    rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM showings WHERE to_outside AND ended_at IS NULL`)
+    rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM releases WHERE to_outside AND ended_at IS NULL`)
   );
   const registrations = await rawQuery<{ at: Date; public_key: string | null }>(
     `SELECT at, sent->>'public_key' AS public_key FROM outward_acts WHERE kind = 'register_publisher' AND result = 'done' ORDER BY at DESC`

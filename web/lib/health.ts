@@ -706,7 +706,7 @@ export interface GateLike {
 }
 
 /**
- * The parties nobody can consent for (the permission stored as `release`),
+ * The parties nobody can consent for (the permission `consent`),
  * at the boundaries where a person
  * decides for them: a rule there that a person decides, for that party or
  * for every party, or, for the organisation's own material, a kind that
@@ -718,7 +718,7 @@ export function partiesReleasedByNobody(
   c: SetupChecklist,
   gates: readonly GateLike[],
 ): Array<{ party: { id: string; name: string }; boundaries: string[] }> {
-  const release = c.permissions.find((p) => p.permission === "release");
+  const release = c.permissions.find((p) => p.permission === "consent");
   const own = new Set(c.material.sources_by_party.filter((p) => p.party.is_own_organization).map((p) => p.party.id));
   const out: Array<{ party: { id: string; name: string }; boundaries: string[] }> = [];
   for (const entry of release?.by_party ?? []) {

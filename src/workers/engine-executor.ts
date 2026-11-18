@@ -1089,7 +1089,7 @@ async function runRequestAction(action: RunnableAction): Promise<EngineProcessRe
 }
 
 /**
- * redact: one Redactor run on the page in target_ref (showing-service.ts),
+ * redact: one Redactor run on the page in target_ref (release-service.ts),
  * at the page's label, under its largest funder and to the budget its
  * allocations give it. The run finishes the redaction itself, by a tool
  * call that fingerprints the page and asks for Audit's check, or says the
@@ -1101,7 +1101,7 @@ async function runRedactAction(action: RunnableAction): Promise<EngineProcessRes
   const pageId = action.target_ref ?? "";
   const [page] = pageId
     ? await rawQuery<{ id: string; stage: string; node_id: string }>(
-        `SELECT id, stage, node_id FROM showing_pages WHERE id = $1`,
+        `SELECT id, stage, node_id FROM release_pages WHERE id = $1`,
         [pageId]
       )
     : [];
@@ -1123,9 +1123,9 @@ async function runRedactAction(action: RunnableAction): Promise<EngineProcessRes
         )
     );
     await close(billedMicroUsd);
-    const [after] = await rawQuery<{ stage: string }>(`SELECT stage FROM showing_pages WHERE id = $1`, [page.id]);
+    const [after] = await rawQuery<{ stage: string }>(`SELECT stage FROM release_pages WHERE id = $1`, [page.id]);
     if (after?.stage === "to_redact") {
-      const { ensureRedactAction } = await import("../services/showing-service.js");
+      const { ensureRedactAction } = await import("../services/release-service.js");
       await ensureRedactAction(page.id, page.node_id);
     }
     return { status: "processed", actionId: action.id, kind: "redact", grantId: context.grantId, ok: after?.stage !== "to_redact" };

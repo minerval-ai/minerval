@@ -1406,28 +1406,28 @@ export async function executeAuditTool(
       }
 
       case "get_redaction_to_check": {
-        const { redactionToCheck, ShowingError } = await import("../../services/showing-service.js");
+        const { redactionToCheck, ReleaseError } = await import("../../services/release-service.js");
         try {
           return JSON.stringify({ success: true, ...(await redactionToCheck(String(input.page_id ?? "").trim())) });
         } catch (err) {
-          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          if (err instanceof ReleaseError) return JSON.stringify({ success: false, code: err.code, message: err.message });
           throw err;
         }
       }
 
       case "look_at_destination": {
-        const { whatTheDestinationHolds, ShowingError } = await import("../../services/showing-service.js");
+        const { whatTheDestinationHolds, ReleaseError } = await import("../../services/release-service.js");
         try {
           const text = typeof input.text === "string" ? input.text : undefined;
           return JSON.stringify({ success: true, ...(await whatTheDestinationHolds(String(input.page_id ?? "").trim(), text)) });
         } catch (err) {
-          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          if (err instanceof ReleaseError) return JSON.stringify({ success: false, code: err.code, message: err.message });
           throw err;
         }
       }
 
       case "record_fidelity_outcome": {
-        const { recordFidelityOutcome, ShowingError } = await import("../../services/showing-service.js");
+        const { recordFidelityOutcome, ReleaseError } = await import("../../services/release-service.js");
         const outcome = String(input.outcome ?? "");
         if (outcome !== "pass" && outcome !== "return") {
           return JSON.stringify({ success: false, message: "outcome is 'pass' or 'return'." });
@@ -1447,7 +1447,7 @@ export async function executeAuditTool(
                 : "Recorded. The work is back with the Redactor with your reasons, and its redaction is open again.",
           });
         } catch (err) {
-          if (err instanceof ShowingError) return JSON.stringify({ success: false, code: err.code, message: err.message });
+          if (err instanceof ReleaseError) return JSON.stringify({ success: false, code: err.code, message: err.message });
           throw err;
         }
       }

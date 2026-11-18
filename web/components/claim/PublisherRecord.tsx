@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { PublishedMandate, PublisherRecord } from "@/lib/api";
-import { day, showingWords, stateWords } from "@/lib/published";
+import { day, releaseWords, stateWords } from "@/lib/published";
 
 // A publisher's public record, on its contributor page
 // (docs/published-pages.md): the keys it registered, where each deployment
@@ -62,7 +62,7 @@ export function PublisherRecordSection({ record }: { record: PublisherRecord }) 
             <li key={p.published_page_id} style={{ marginBottom: ".7rem" }}>
               <Link href={p.on_the_node.on_the_nodes_page ? `/claims/${p.node_id}?published=${p.published_page_id}` : `/claims/${p.node_id}`}>{p.node ?? "A node"}</Link>
               <br />
-              <span className="held-mark" aria-hidden /> {stateWords(p)}. {showingWords(p)}{" "}
+              <span className="held-mark" aria-hidden /> {stateWords(p)}. {releaseWords(p)}{" "}
               {p.on_the_node.review === "admitted"
                 ? p.on_the_node.on_the_nodes_page
                   ? "On the claim's page."

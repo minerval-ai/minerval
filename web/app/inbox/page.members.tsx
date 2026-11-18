@@ -44,7 +44,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { show } = await searchParams;
   const filter = GROUPS.some((g) => g.key === show) ? (show as InboxGroup | "all") : "all";
 
-  const outward = can(who, "direct") || can(who, "release");
+  const outward = can(who, "direct") || can(who, "consent");
   const [inbox, account, log] = await Promise.all([
     loadInbox(who.externalId, who.mine),
     outward ? fetchPublicAccount(who.externalId).catch(() => null) : null,

@@ -56,8 +56,8 @@ export interface PathFacts {
 
 /** What the deployment's own tables say, over every label, as counts and label names. */
 export interface DeploymentTables {
-  /** Standing or single showings to readers outside that have not ended. */
-  showingsOutside: number;
+  /** Standing or single releases to readers outside that have not ended. */
+  releasesOutside: number;
   /** Whether a party is marked as the organization itself. */
   ownOrganization: boolean;
   /** Live grants of the permission PUBLIC_ACTS_BY names, to accounts and groups. */
@@ -139,7 +139,7 @@ function checkPublishing(facts: DeploymentCheckFacts): DeploymentOutcome {
   const tables = facts.deployment.tables;
   const key = config.publishSigningKey.trim();
   const hosting = config.deploymentHosting;
-  const shown = tables?.showingsOutside ?? 0;
+  const shown = tables?.releasesOutside ?? 0;
   if (!(config.publishedPageMaxBytes > 0)) {
     return fail(`PUBLISHED_PAGE_MAX_BYTES is ${config.publishedPageMaxBytes}; it is the largest package built or admitted, in bytes, and must be above zero.`);
   }
@@ -539,14 +539,14 @@ const GENERAL_SEED_KEY = "general-assessment";
 
 async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
   const [one] = await rawQuery<{
-    showings_outside: number;
+    releases_outside: number;
     own_organization: boolean;
     holders: number;
     role: string;
     superuser: boolean;
     file_sets: number;
   }>(
-    `SELECT (SELECT count(*) FROM showings WHERE to_outside AND ended_at IS NULL)::int AS showings_outside,
+    `SELECT (SELECT count(*) FROM releases WHERE to_outside AND ended_at IS NULL)::int AS releases_outside,
             EXISTS (SELECT 1 FROM parties WHERE is_own_organization) AS own_organization,
             (SELECT count(*) FROM permission_grants WHERE permission = $1 AND removed_at IS NULL)::int AS holders,
             current_user::text AS role,
@@ -591,7 +591,7 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
   const order = (a: { label: string }, b: { label: string }) =>
     a.label === PUBLIC_LABEL ? -1 : b.label === PUBLIC_LABEL ? 1 : a.label < b.label ? -1 : a.label > b.label ? 1 : 0;
   return {
-    showingsOutside: one?.showings_outside ?? 0,
+    releasesOutside: one?.releases_outside ?? 0,
     ownOrganization: one?.own_organization === true,
     publicActsHolders: one?.holders ?? 0,
     owner: { role: one?.role ?? "", superuser: one?.superuser === true },
@@ -644,7 +644,7 @@ export async function gatherDeploymentFacts(config: Config, reachable: boolean):
 export function noDeploymentFacts(): DeploymentFacts {
   return {
     tables: {
-      showingsOutside: 0,
+      releasesOutside: 0,
       ownOrganization: false,
       publicActsHolders: 0,
       owner: { role: "minerval_owner", superuser: false },

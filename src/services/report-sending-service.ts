@@ -185,7 +185,7 @@ export async function offerReportsToGate(): Promise<number> {
     const due = await rawQuery<{ id: string; label: string }>(
       `SELECT r.id, r.sensitivity_label AS label FROM agent_reports r
         WHERE r.about = 'minerval'
-          AND NOT EXISTS (SELECT 1 FROM showings s WHERE s.kind = 'report' AND s.subject_ref = r.id)
+          AND NOT EXISTS (SELECT 1 FROM releases s WHERE s.kind = 'report' AND s.subject_ref = r.id)
           AND NOT EXISTS (SELECT 1 FROM report_sendings d WHERE d.report_id = r.id AND d.sent_at IS NOT NULL)
         ORDER BY r.last_seen_at LIMIT 50`
     );
@@ -257,7 +257,7 @@ export async function reportsOverview(opts: { limit?: number } = {}): Promise<Re
   const ids = reports.map((r) => r.id);
   const items = await rawQuery<{ report_id: string; item_id: string; stage: string; opened_at: Date }>(
     `SELECT s.subject_ref AS report_id, p.id AS item_id, p.stage, p.opened_at
-       FROM showings s JOIN showing_pages p ON p.showing_id = s.id
+       FROM releases s JOIN release_pages p ON p.release_id = s.id
       WHERE s.kind = 'report' AND s.subject_ref = ANY($1::uuid[]) AND p.stage <> 'overtaken' ORDER BY p.opened_at DESC`,
     [ids]
   );

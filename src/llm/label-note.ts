@@ -182,7 +182,7 @@ export function labelNote(
 
 /**
  * What a run that records judgments is told about its page being released to
- * readers who do not read its label (services/showing-service.ts). One
+ * readers who do not read its label (services/release-service.ts). One
  * passage, separate from the rest of the note: what the machinery does,
  * why, that the run writes what it concludes either way, and the one thing
  * it may do about it.

@@ -117,6 +117,31 @@ export function currentToolName(name: string): string {
 }
 
 /**
+ * A held action's input as its tool now takes it. An action held before
+ * the routes were renamed names its release `showing_id`, and a consent at a
+ * gate was the decision `release`; it runs, and its card reads, in the new
+ * names. Nothing else in an input is changed.
+ */
+export function currentToolInput(tool: string, input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const out: Record<string, unknown> = { ...(input as Record<string, unknown>) };
+  if ("showing_id" in out && !("release_id" in out)) {
+    out.release_id = out.showing_id;
+    delete out.showing_id;
+  }
+  if (currentToolName(tool) === "decide_at_gate") {
+    const consent = (d: unknown) => (d === "release" ? "consent" : d);
+    if ("decision" in out) out.decision = consent(out.decision);
+    if (Array.isArray(out.items)) {
+      out.items = out.items.map((item: unknown) =>
+        item && typeof item === "object" && "decision" in item ? { ...(item as Record<string, unknown>), decision: consent((item as { decision: unknown }).decision) } : item
+      );
+    }
+  }
+  return out;
+}
+
+/**
  * Held calls that wait for the user's press even when they allow the tool's
  * kind without asking, each with the reason. Acknowledging a drafted
  * mandate's warnings (fund_grant's acknowledge_warnings) is the funder's

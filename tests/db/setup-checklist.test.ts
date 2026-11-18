@@ -173,8 +173,8 @@ describe("what the checklist says", () => {
     expect(of(before, "administer")).toMatchObject({ scope: "none", accounts: 1, groups: 0 });
     expect(of(before, "read").by_label!.find((l) => l.label === LABEL)).toMatchObject({ accounts: 2, groups: 0 });
     expect(of(before, "read").by_label!.some((l) => l.label === "public")).toBe(false);
-    // The organization itself is a party from setup, and the first administrator holds release for it.
-    expect(of(before, "release").by_party).toEqual([
+    // The organization itself is a party from setup, and the first administrator holds consent for it.
+    expect(of(before, "consent").by_party).toEqual([
       { party: { id: expect.any(String), name: "This organization" }, accounts: 1, groups: 0 },
     ]);
 
@@ -184,18 +184,18 @@ describe("what the checklist says", () => {
     const group = await as(admin, {
       method: "POST",
       url: "/permissions/grants",
-      payload: { permission: "release", group: "orrin-reviewers", party_id: partyId },
+      payload: { permission: "consent", group: "orrin-reviewers", party_id: partyId },
     });
     expect(group.statusCode, group.body).toBe(201);
 
     const after = await checklist(admin);
-    expect(of(after, "release")).toMatchObject({ scope: "party", accounts: 1, groups: 1 });
-    expect(of(after, "release").by_party!.find((p) => p.party.id === partyId)).toEqual({
+    expect(of(after, "consent")).toMatchObject({ scope: "party", accounts: 1, groups: 1 });
+    expect(of(after, "consent").by_party!.find((p) => p.party.id === partyId)).toEqual({
       party: { id: partyId, name: "Orrin Labs (checklist)" },
       accounts: 0,
       groups: 1,
     });
-    expect(of(after, "release").by_party).toHaveLength(2);
+    expect(of(after, "consent").by_party).toHaveLength(2);
   });
 
   it("says which providers are cleared for each label, and which roles are left unserved at it", async () => {

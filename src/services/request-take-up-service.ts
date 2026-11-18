@@ -37,7 +37,7 @@ export class TakeUpError extends Error {
 
 /** Why an account says it will not do work it took up: a fixed list, chosen by the account and checked by nobody. */
 export const DECLINE_REASONS = {
-  cannot_be_shown: "what the request asks for could not be shown outside the graph that holds it",
+  cannot_be_shown: "what the request asks for could not be released outside the graph that holds it",
   not_held: "it does not hold the evidence the request asks about",
   asks_for_a_result: "the request asks for a particular result",
   moot: "the request no longer bears on anything",
@@ -196,7 +196,7 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
       followed = "a_page_held";
       const since = page.held_since ?? page.received_at;
       words =
-        `${took} Its graph's page of ${pageOf} is published as ${page.state === "not_yet_assessed" ? "not yet assessed" : "held"}, with nothing of it shown` +
+        `${took} Its graph's page of ${pageOf} is published as ${page.state === "not_yet_assessed" ? "not yet assessed" : "held"}, with nothing of it released` +
         (page.state === "not_yet_assessed" ? ` (${day(page.received_at)}).` : `: held since ${day(since)}, ${ago(since)}.`);
     } else {
       followed = "nothing_yet";

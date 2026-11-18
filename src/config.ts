@@ -1251,7 +1251,7 @@ const configSchema = z.object({
   // (auditModel) so it can run on Opus without also upgrading the reviewer.
   governanceModel: modelId(MODELS.sonnet),
   auditModel: modelId(MODELS.sonnet),
-  // The Redactor's model (services/showing-service.ts), where a deployment
+  // The Redactor's model (services/release-service.ts), where a deployment
   // shows pages to readers who do not read their label. Unset, it is the
   // Steward's (stewardModel): the Redactor reads a page a Steward wrote and
   // the sources behind it, and has to see what a passage gives away as well

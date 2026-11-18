@@ -1,5 +1,5 @@
 import "server-only";
-import { fetchGates, fetchShowing, type AskedPage, type AskedShowingRow, type Gate, type ShowingScope, type ShownShowing, type ShownVersion } from "@/lib/inside-api";
+import { fetchGates, fetchRelease, type AskedPage, type AskedReleaseRow, type Gate, type ReleaseScope, type ShownRelease, type ShownVersion } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
 import { pipelineOf, type Pipeline } from "@/lib/pipeline";
 
@@ -8,7 +8,7 @@ import { pipelineOf, type Pipeline } from "@/lib/pipeline";
 // viewer reads, and a bounded fetch of releases' details.
 
 /** "Standing" or "Once", and what it covers, as the Kind column says them. */
-const COVERS: Record<ShowingScope, string> = {
+const COVERS: Record<ReleaseScope, string> = {
   node: "This node",
   under: "Subtree",
   mandate: "A mandate's work",
@@ -16,12 +16,12 @@ const COVERS: Record<ShowingScope, string> = {
   item: "One item",
 };
 
-export function kindOf(form: string, scope: ShowingScope): { form: string; covers: string } {
+export function kindOf(form: string, scope: ReleaseScope): { form: string; covers: string } {
   return { form: form === "standing" ? "Standing" : "Once", covers: COVERS[scope] };
 }
 
 /** What the kind undertakes, in one line, for a Tip. */
-const SCOPE_TIPS: Record<ShowingScope, string> = {
+const SCOPE_TIPS: Record<ReleaseScope, string> = {
   node: "",
   under: " Subtree: nodes under this one are covered too, including ones that come later.",
   boundary: " Whole boundary: every node assessed at the label goes through.",
@@ -29,7 +29,7 @@ const SCOPE_TIPS: Record<ShowingScope, string> = {
   item: " One item: a thing offered to the gate that is not a node's page, such as an answer to a request.",
 };
 
-export function kindTip(form: string, scope: ShowingScope): string {
+export function kindTip(form: string, scope: ReleaseScope): string {
   const f =
     form === "standing"
       ? "Standing: each later assessment follows, and one not released shows on the other side as held."
@@ -37,7 +37,7 @@ export function kindTip(form: string, scope: ShowingScope): string {
   return f + SCOPE_TIPS[scope];
 }
 
-/** The label (or "outside") a showing goes to, from either side's way of saying it. */
+/** The label (or "outside") a release goes to, from either side's way of saying it. */
 export function destinationOf(shownTo: string): string {
   if (shownTo === "outside this deployment") return "outside";
   const m = shownTo.match(/^readers at "(.*)"$/);
@@ -75,25 +75,25 @@ export function statusOf(page: AskedPage | undefined, version: ShownVersion | un
   });
 }
 
-/** Every version of a showing, by page id, from the side it is shown to. */
-export function versionsById(showing: ShownShowing | null | undefined): Map<string, ShownVersion> {
+/** Every version of a release, by page id, from the side it is shown to. */
+export function versionsById(release: ShownRelease | null | undefined): Map<string, ShownVersion> {
   const out = new Map<string, ShownVersion>();
-  for (const n of showing?.nodes ?? []) for (const v of n.versions) out.set(v.page_id, v);
+  for (const n of release?.nodes ?? []) for (const v of n.versions) out.set(v.page_id, v);
   return out;
 }
 
 /**
- * The details of several showings, a few at a time. GET /showings lists the
+ * The details of several releases, a few at a time. GET /releases lists the
  * side shown to without the node's words or where its pages stand, so a list
  * of those asks for each; the bound keeps a long list from opening as many
  * requests at once.
  */
-export async function fetchDetails(externalId: string, ids: string[], concurrency = 4): Promise<Map<string, ShownShowing>> {
-  const out = new Map<string, ShownShowing>();
+export async function fetchDetails(externalId: string, ids: string[], concurrency = 4): Promise<Map<string, ShownRelease>> {
+  const out = new Map<string, ShownRelease>();
   const queue = [...new Set(ids)];
   async function worker() {
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
-      const d = await fetchShowing(externalId, id).catch(() => null);
+      const d = await fetchRelease(externalId, id).catch(() => null);
       if (d) out.set(id, d);
     }
   }
@@ -104,11 +104,11 @@ export async function fetchDetails(externalId: string, ids: string[], concurrenc
 /**
  * What a release with no single node is about, in place of a node's words:
  * the API's own words for what it covers where the viewer reads the side it
- * is released to (GET /showings/:id, `scope`, which names the mandate and the
+ * is released to (GET /releases/:id, `scope`, which names the mandate and the
  * label where they may be told them), else words from its scope. Null for a
  * release of a node.
  */
-export function wholeOf(scope: ShowingScope, from: string | null, words?: string | null): string | null {
+export function wholeOf(scope: ReleaseScope, from: string | null, words?: string | null): string | null {
   if (scope === "node" || scope === "under") return null;
   if (words) return capital(words);
   if (scope === "boundary") return from ? `Everything written at ${from}` : "Everything written at a label you do not read";
@@ -116,4 +116,4 @@ export function wholeOf(scope: ShowingScope, from: string | null, words?: string
   return "One item";
 }
 
-export type { AskedShowingRow };
+export type { AskedReleaseRow };

@@ -1,21 +1,20 @@
 // One status for one version of a node's page under a release, from the two
 // vocabularies the API describes it in: the stage on the side it was written
-// at (to_redact, to_check, at_gate, cannot_cross, overtaken; GET /showings,
+// at (to_redact, to_check, at_gate, cannot_cross, overtaken; GET /releases,
 // `asked`), and the state on the side it is released to (not_yet_assessed,
-// held, released_in_part, released_whole; GET /showings/:id). A reader of
+// held, released_in_part, released_whole; GET /releases/:id). A reader of
 // both sides sees both halves; a reader of one side sees that half only,
 // and what the other half would say is left unmarked rather than guessed.
 //
 // Four steps: Redact, Audit (its check of the redaction), Consent (the gate,
-// where each party consents; the step's key is `release`) and Released (on
+// where each party consents; key `consent`) and Released (on
 // the other side; key `shown`). Waiting for funds is a warning on Redact or
 // Audit, the step the money is for; a hold is a warning on Consent.
 //
 // Pure: components/work/Pipeline.tsx draws it, tests/unit/web/pipeline.test.ts checks it.
 
-import { storedWords } from "./stored-words";
 
-export type PipelineStep = "redact" | "audit" | "release" | "shown";
+export type PipelineStep = "redact" | "audit" | "consent" | "shown";
 /** todo: not reached, or not known from this side. now: under way. part: released in part. */
 export type StepMark = "todo" | "done" | "now" | "warn" | "bad" | "part";
 export type PipelineTone = "ok" | "warn" | "bad" | "info" | "neu";
@@ -58,8 +57,8 @@ export interface Pipeline {
   title: string;
 }
 
-const LABELS: Record<PipelineStep, string> = { redact: "Redact", audit: "Audit", release: "Consent", shown: "Released" };
-const ORDER: PipelineStep[] = ["redact", "audit", "release", "shown"];
+const LABELS: Record<PipelineStep, string> = { redact: "Redact", audit: "Audit", consent: "Consent", shown: "Released" };
+const ORDER: PipelineStep[] = ["redact", "audit", "consent", "shown"];
 
 const UNPAID = /^waiting for funds/i;
 
@@ -69,7 +68,7 @@ type Hold = { reason: string | null; by: "direct" | "redactor" };
 function readHeld(words: string | null | undefined): { stage?: SourceStage; unpaid?: boolean; hold?: Hold; delayed?: boolean } {
   const w = (words ?? "").trim();
   if (!w) return {};
-  const reason = storedWords((w.match(/\(([^)]*)\)\s*$/) ?? [])[1] ?? null);
+  const reason = ((w.match(/\(([^)]*)\)\s*$/) ?? [])[1] ?? null);
   if (/^held by a person who directs/i.test(w)) return { hold: { reason, by: "direct" } };
   if (/^held by the Redactor/i.test(w)) return { stage: "at_gate", hold: { reason, by: "redactor" } };
   if (UNPAID.test(w)) return { stage: /check of its redaction/i.test(w) ? "to_check" : "to_redact", unpaid: true };
@@ -87,7 +86,7 @@ function cap(s: string): string {
 }
 
 export function pipelineOf(input: PipelineInput): Pipeline {
-  const marks: Record<PipelineStep, StepMark> = { redact: "todo", audit: "todo", release: "todo", shown: "todo" };
+  const marks: Record<PipelineStep, StepMark> = { redact: "todo", audit: "todo", consent: "todo", shown: "todo" };
   const held = input.state === "held" ? readHeld(input.heldBecause) : {};
   const stage: SourceStage | undefined = input.stage ?? held.stage;
   const unpaid = UNPAID.test(input.stageInWords ?? "") || !!held.unpaid;
@@ -107,7 +106,7 @@ export function pipelineOf(input: PipelineInput): Pipeline {
     pill = { text: "Overtaken", tone: "neu" };
   } else if (shownWhole || shownInPart) {
     // Shown is the end of the way, whatever stage the other side last recorded.
-    marks.redact = marks.audit = marks.release = "done";
+    marks.redact = marks.audit = marks.consent = "done";
     marks.shown = shownWhole ? "done" : "part";
     key = shownWhole ? "shown_whole" : "shown_in_part";
     const of = input.ofParts ?? null;
@@ -133,7 +132,7 @@ export function pipelineOf(input: PipelineInput): Pipeline {
     if (unpaid) needs = "pay";
   } else if (stage === "at_gate") {
     marks.redact = marks.audit = "done";
-    marks.release = "now";
+    marks.consent = "now";
     key = held.delayed ? "delayed" : "gate";
     const parties = [...new Set((input.waitingOn ?? []).map((w) => w.party))];
     if (held.delayed) pill = { text: "Delayed", tone: "info" };
@@ -145,14 +144,14 @@ export function pipelineOf(input: PipelineInput): Pipeline {
     needs = "review";
   } else if (state === "held") {
     // Held, and nothing says where: the destination side's half alone.
-    marks.release = "warn";
+    marks.consent = "warn";
     key = "held";
     pill = { text: "Held", tone: "warn" };
   }
 
   // A hold placed by a person who directs, or by the Redactor, sits on Consent whatever came before it.
   if (held.hold && stage !== "overtaken" && stage !== "cannot_cross" && !shownWhole && !shownInPart) {
-    marks.release = "warn";
+    marks.consent = "warn";
     key = "held";
     pill = { text: held.hold.reason ? `Held: ${held.hold.reason}` : "Held", tone: "warn" };
     if (held.hold.by === "direct") needs = needs === "pay" ? "pay" : null;

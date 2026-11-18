@@ -22,8 +22,8 @@
  * SHA-256 and Ed25519:
  *
  *   hash of a package = hex SHA-256 of
- *       "minerval-published-page/1\n" + canonical JSON of the package
- *       without its `hash` and `signature`
+ *       its format ("minerval-published-page/2") + "\n" + canonical JSON
+ *       of the package without its `hash` and `signature`
  *     canonical JSON: object keys sorted, no whitespace, scalars as
  *     JSON.stringify writes them (the run log's form, services/run-log.ts)
  *   signature         = Ed25519 over the 32 bytes of the hash, base64
@@ -31,7 +31,19 @@
  *   the page's tree   = services/page-fingerprint.ts, repeated below
  */
 
-export const PUBLISHED_PAGE_FORMAT = "minerval-published-page/1";
+export const PUBLISHED_PAGE_FORMAT = "minerval-published-page/2";
+
+/**
+ * The format before it. A package in it is the same package with the
+ * release called `showing` and `node.release_began` called
+ * `node.showing_began` (docs/releasing-a-page.md, "Old names in the code").
+ * A package signed in it stays in it: it is checked as it was signed, and
+ * read through currentPackage.
+ */
+export const PUBLISHED_PAGE_FORMAT_1 = "minerval-published-page/1";
+
+/** The formats this check reads. */
+export const PUBLISHED_PAGE_FORMATS: readonly string[] = [PUBLISHED_PAGE_FORMAT, PUBLISHED_PAGE_FORMAT_1];
 const TREE_FORMAT = "minerval-shown-page/1";
 
 /** Where a deployment runs, in the only words a record may say it in. */
@@ -128,18 +140,18 @@ export interface PublishedPagePackage {
      */
     keeps_public_versions_current?: { setting: "on" | "off"; a_public_mandate_pays_for_it: boolean };
   };
-  showing: {
+  release: {
     id: string;
     form: "once" | "standing";
     /**
-     * What the showing covers: one node, the node with what sits under it,
+     * What the release covers: one node, the node with what sits under it,
      * every node one mandate's work assessed, or every node assessed at the
-     * label (shape.ts, showingCovers). The scope is not part of what the
+     * label (shape.ts, releaseCovers). The scope is not part of what the
      * check confirms beyond being one of these: it is the publisher's word.
      */
     scope: PageScope;
     asked_at: string;
-    /** Whether each package is sent by a person, or follows from a choice made when the showing was asked for. */
+    /** Whether each package is sent by a person, or follows from a choice made when the release was asked for. */
     send: "by_a_person_each_time" | "as_released";
     ended: null | { at: string; because: string };
   };
@@ -148,10 +160,10 @@ export interface PublishedPagePackage {
     public_id: string;
     covered_from: string;
     first_assessed_at: string | null;
-    showing_began: "before the node was first assessed" | "after the node was first assessed";
+    release_began: "before the node was first assessed" | "after the node was first assessed";
     left: null | { at: string; because: string };
   };
-  /** 1, 2, 3, ... for this node under this showing, each naming the hash of the one before. */
+  /** 1, 2, 3, ... for this node under this release, each naming the hash of the one before. */
   sequence: number;
   previous_hash: string | null;
   /** The node's state now: that of its latest version. */
@@ -265,10 +277,28 @@ async function sha256(input: string | Uint8Array): Promise<string> {
   return toHex(await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer));
 }
 
-/** The hash a package's signature is over. */
+/** The hash a package's signature is over, under the format the package names (the current one where it names none this check reads). */
 export async function packageHash(pkg: Record<string, unknown>): Promise<string> {
   const { hash: _hash, signature: _signature, ...body } = pkg;
-  return sha256(`${PUBLISHED_PAGE_FORMAT}\n${canonical(JSON.parse(JSON.stringify(body)))}`);
+  const format = typeof pkg.format === "string" && PUBLISHED_PAGE_FORMATS.includes(pkg.format) ? pkg.format : PUBLISHED_PAGE_FORMAT;
+  return sha256(`${format}\n${canonical(JSON.parse(JSON.stringify(body)))}`);
+}
+
+/**
+ * A package as the current format reads it. A package in the format before
+ * it is given with its release under `release` and `node.release_began`,
+ * and its own fields beside them; everything else is the same object. Read
+ * through this; check, hash and store the package as it was signed.
+ */
+export function currentPackage<T>(pkg: T): T {
+  const p = pkg as unknown as Record<string, unknown> | null;
+  if (!p || typeof p !== "object" || p.format !== PUBLISHED_PAGE_FORMAT_1 || "release" in p) return pkg;
+  const node = (p.node ?? null) as Record<string, unknown> | null;
+  return {
+    ...p,
+    release: p.showing,
+    node: node && typeof node === "object" ? { ...node, release_began: node.showing_began } : node,
+  } as unknown as T;
 }
 
 /** A key's short name: the hash of its 32 raw bytes, given as base64. */
@@ -315,20 +345,20 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? `1 ${one}` : `${n} ${many}`;
 }
 
-/** The scopes of a showing whose packages carry a node's page (services/showing-service.ts, SHOWING_SCOPES, less `item`). */
+/** The scopes of a release whose packages carry a node's page (services/release-service.ts, RELEASE_SCOPES, less `item`). */
 export const PAGE_SCOPES: readonly string[] = ["node", "under", "mandate", "boundary"];
 export type PageScope = "node" | "under" | "mandate" | "boundary";
 
 /** Whether the package has the form this check reads. Returns what is wrong, in words, or null. */
 function malformed(p: PublishedPagePackage): string | null {
   if (!p || typeof p !== "object" || Array.isArray(p)) return "it is not a JSON object";
-  if (p.format !== PUBLISHED_PAGE_FORMAT) return `its format is ${JSON.stringify(p.format)} and this check reads "${PUBLISHED_PAGE_FORMAT}"`;
+  if (!PUBLISHED_PAGE_FORMATS.includes(p.format)) return `its format is ${JSON.stringify(p.format)} and this check reads ${PUBLISHED_PAGE_FORMATS.map((f) => `"${f}"`).join(" and ")}`;
   if (!p.publisher || typeof p.publisher.key_id !== "string" || typeof p.publisher.public_key !== "string") return "it names no signing key";
   if (typeof p.hash !== "string" || !HEX64.test(p.hash)) return "it has no hash";
   if (typeof p.signature !== "string" || p.signature.length === 0) return "it has no signature";
   if (!p.deployment || !(p.deployment.hosting in HOSTING_WORDS)) return "it does not say where the deployment runs in one of the fixed ways";
   if (!(p.deployment.attested_by in ATTESTATION_WORDS)) return "it does not say what attests to the run in one of the fixed ways";
-  const s = p.showing;
+  const s = p.release;
   if (!s || typeof s.id !== "string" || (s.form !== "once" && s.form !== "standing") || !PAGE_SCOPES.includes(s.scope) || !isDate(s.asked_at)) {
     return "it does not describe the release: its form, its scope and when it was asked for";
   }
@@ -376,14 +406,15 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
   let held = 0;
   const done = (): PackageCheck => ({ ok: failed.length === 0, confirmed, failed, cannot_show: cannot, released_parts: released, held_parts: held });
 
-  let pkg: PublishedPagePackage;
+  let signed: PublishedPagePackage;
   try {
-    pkg = (typeof input === "string" ? JSON.parse(input) : input) as PublishedPagePackage;
+    signed = (typeof input === "string" ? JSON.parse(input) : input) as PublishedPagePackage;
   } catch {
     failed.push("This is not a published page's package: it is not JSON.");
     cannot.push("Nothing else was checked.");
     return done();
   }
+  const pkg = currentPackage(signed);
   const wrong = malformed(pkg);
   if (wrong) {
     failed.push(`This is not a published page's package this check can read: ${wrong}.`);
@@ -392,7 +423,7 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
   }
 
   // 1. The contents are what the hash was taken over.
-  const hash = await packageHash(pkg as unknown as Record<string, unknown>);
+  const hash = await packageHash(signed as unknown as Record<string, unknown>);
   if (hash === pkg.hash) confirmed.push("The package's contents match its hash: nothing in it was changed after it was signed.");
   else failed.push("The package's contents do not match its hash, so it was altered or damaged after it was signed.");
 

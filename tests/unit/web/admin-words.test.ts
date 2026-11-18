@@ -31,7 +31,7 @@ function dayOne(): SetupChecklist {
     },
     permissions: [
       { permission: "direct", scope: "none", accounts: 1, groups: 0 },
-      { permission: "release", scope: "party", accounts: 0, groups: 0, by_party: [] },
+      { permission: "consent", scope: "party", accounts: 0, groups: 0, by_party: [] },
       { permission: "fund", scope: "none", accounts: 1, groups: 0 },
       { permission: "read", scope: "label", accounts: 0, groups: 0, by_label: [] },
       { permission: "read_sources", scope: "label", accounts: 0, groups: 0, by_label: [] },
@@ -75,7 +75,7 @@ function setUp(): SetupChecklist {
     preflight: { ...c.preflight!, holds_private_material: true },
     permissions: [
       { permission: "direct", scope: "none", accounts: 2, groups: 0 },
-      { permission: "release", scope: "party", accounts: 1, groups: 0, by_party: [{ party: halden, accounts: 1, groups: 0 }] },
+      { permission: "consent", scope: "party", accounts: 1, groups: 0, by_party: [{ party: halden, accounts: 1, groups: 0 }] },
       { permission: "fund", scope: "none", accounts: 1, groups: 1 },
       { permission: "read", scope: "label", accounts: 2, groups: 1, by_label: [{ label: "internal", accounts: 2, groups: 1 }] },
       { permission: "read_sources", scope: "label", accounts: 0, groups: 0, by_label: [{ label: "internal", accounts: 0, groups: 0 }] },
@@ -337,7 +337,7 @@ describe("the log, as sentences", () => {
       "Alice granted Bob the permission to read at internal."
     );
     expect(
-      logSentence({ event: "removed", at, by: "Alice", permission: "release", group: "reviewers", party: "Orrin Labs" })
+      logSentence({ event: "removed", at, by: "Alice", permission: "consent", group: "reviewers", party: "Orrin Labs" })
     ).toBe("Alice removed from the group reviewers the permission to consent for Orrin Labs.");
     expect(
       logSentence({ event: "granted", at, by: null, via: "first_administrator", permission: "administer", account: "Alice" })
@@ -397,7 +397,7 @@ describe("small words", () => {
       "This page needs the permission to direct the graph, which you do not hold. An administrator of this deployment grants it."
     );
     expect(grantText({ permission: "read_sources", label: "internal" })).toBe("open raw sources at internal");
-    expect(grantText({ permission: "release", party: { name: "Orrin Labs" } })).toBe("consent for Orrin Labs");
+    expect(grantText({ permission: "consent", party: { name: "Orrin Labs" } })).toBe("consent for Orrin Labs");
   });
 
   it("gives a server's marking of a tool as the hint it is", () => {

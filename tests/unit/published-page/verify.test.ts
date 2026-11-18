@@ -17,6 +17,8 @@ import { canonicalContent } from "../../../src/services/run-log.js";
 import { kindInWords, publishedPageAsText, shapeOfPublishedPage } from "../../../src/published-page/shape.js";
 import {
   PUBLISHED_PAGE_FORMAT,
+  PUBLISHED_PAGE_FORMAT_1,
+  currentPackage,
   keyIdOfPublicKey,
   packageHash,
   verifyPublishedPage,
@@ -71,8 +73,8 @@ async function example(opts: { shown?: boolean } = {}): Promise<PublishedPagePac
     format: PUBLISHED_PAGE_FORMAT,
     publisher: { key_id: key.keyId, public_key: key.publicKey },
     deployment: { hosting: "own_machines", attested_by: "nothing" },
-    showing: { id: "11111111-1111-4111-8111-111111111111", form: "standing", scope: "node", asked_at: "2026-09-08T00:00:00.000Z", send: "by_a_person_each_time", ended: null },
-    node: { public_id: "22222222-2222-4222-8222-222222222222", covered_from: "2026-09-08T00:00:00.000Z", first_assessed_at: "2026-10-12T00:00:00.000Z", showing_began: "before the node was first assessed", left: null },
+    release: { id: "11111111-1111-4111-8111-111111111111", form: "standing", scope: "node", asked_at: "2026-09-08T00:00:00.000Z", send: "by_a_person_each_time", ended: null },
+    node: { public_id: "22222222-2222-4222-8222-222222222222", covered_from: "2026-09-08T00:00:00.000Z", first_assessed_at: "2026-10-12T00:00:00.000Z", release_began: "before the node was first assessed", left: null },
     sequence: 1,
     previous_hash: null,
     state,
@@ -93,7 +95,7 @@ async function example(opts: { shown?: boolean } = {}): Promise<PublishedPagePac
     policy: shown ? { version: 1, hash: hashPolicy(policy), text: policy } : null,
     record: {
       made: shown ? { prompt_set: "ab".repeat(32), assessed_by_model: "a-model", redacted_by_model: "r-model", role_additions: [], run_log: { sealed: true, seal: "cd".repeat(32), steps: 12, chain_verifies: true }, paid_for: { by: "a mandate", stake: "its funder declared no stake in the subject" } } : null,
-      acts: [{ at: "2026-09-08T00:00:00.000Z", what: "asked for the showing", by: "person 1", holding: ["direct"] }],
+      acts: [{ at: "2026-09-08T00:00:00.000Z", what: "asked for the release", by: "person 1", holding: ["direct"] }],
       versions: [{ page_id: "33333333-3333-4333-8333-333333333333", version_of: "2026-10-12T00:00:00.000Z", state, fingerprint }],
     },
     built_at: "2026-10-14T00:00:01.000Z",
@@ -116,6 +118,41 @@ describe("the check of a published page", () => {
     expect(check.cannot_show.join(" ")).toContain("What the held parts say.");
     // Taken as text, as a file is.
     expect((await verifyPublishedPage(JSON.stringify(pkg))).ok).toBe(true);
+  });
+
+  it("checks a package signed in the format before, where the release was called a showing, and reads it in the current names", async () => {
+    // A package of minerval-published-page/1, as a deployment signed it before the rename: the same package
+    // with `showing` for `release` and `node.showing_began` for `node.release_began`, and the old words of its acts.
+    const now = await example();
+    const { hash: _h, signature: _s, release, node, ...rest } = now;
+    const { release_began, ...nodeRest } = node;
+    const old = await sign({
+      ...rest,
+      format: PUBLISHED_PAGE_FORMAT_1,
+      showing: release,
+      node: { ...nodeRest, showing_began: release_began },
+      record: { ...rest.record, acts: [{ at: "2026-09-08T00:00:00.000Z", what: "asked for the showing", by: "person 1", holding: ["direct", "release for Acme"] }] },
+    } as unknown as Omit<PublishedPagePackage, "hash" | "signature">);
+    expect(old).not.toHaveProperty("release");
+    const check = await verifyPublishedPage(old, { publisherKey: key.publicKey });
+    expect(check.failed).toEqual([]);
+    expect(check.ok).toBe(true);
+    expect(check.confirmed[0]).toBe("The package's contents match its hash: nothing in it was changed after it was signed.");
+    // Its hash is taken under its own format: the same body under the current one is another hash.
+    expect(await packageHash({ ...(old as unknown as Record<string, unknown>), format: PUBLISHED_PAGE_FORMAT })).not.toBe(old.hash);
+    // Read in the current names, with what was signed beside it.
+    const read = currentPackage(old);
+    expect(read.release).toEqual(release);
+    expect(read.node.release_began).toBe("before the node was first assessed");
+    expect(read.hash).toBe(old.hash);
+    expect(currentPackage(now)).toBe(now);
+    // Tampering with a /1 package is caught as with any other.
+    const altered = JSON.parse(JSON.stringify(old)) as Record<string, { form: string }>;
+    altered.showing!.form = "once";
+    expect((await verifyPublishedPage(altered)).ok).toBe(false);
+    // A format this check does not read is refused for that.
+    const unknown = await verifyPublishedPage({ ...now, format: "minerval-published-page/9" });
+    expect(unknown.failed[0]).toContain('its format is "minerval-published-page/9" and this check reads "minerval-published-page/2" and "minerval-published-page/1"');
   });
 
   it("without the publisher's key from elsewhere, says the signature is good and not whose key it is", async () => {
@@ -154,11 +191,11 @@ describe("the check of a published page", () => {
   it("checks a package from a release of a mandate's work or a whole boundary, and refuses a scope no page is released under", async () => {
     const { hash: _h, signature: _s, ...body } = await example();
     for (const scope of ["mandate", "boundary"] as const) {
-      const check = await verifyPublishedPage(await sign({ ...body, showing: { ...body.showing, scope } }), { publisherKey: key.publicKey });
+      const check = await verifyPublishedPage(await sign({ ...body, release: { ...body.release, scope } }), { publisherKey: key.publicKey });
       expect(check.failed).toEqual([]);
       expect(check.ok).toBe(true);
     }
-    const item = await verifyPublishedPage(await sign({ ...body, showing: { ...body.showing, scope: "item" as never } }), { publisherKey: key.publicKey });
+    const item = await verifyPublishedPage(await sign({ ...body, release: { ...body.release, scope: "item" as never } }), { publisherKey: key.publicKey });
     expect(item.ok).toBe(false);
     expect(item.failed.join(" ")).toMatch(/does not describe the release/);
   });

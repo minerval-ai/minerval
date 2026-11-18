@@ -41,7 +41,7 @@ export type SourceKind =
   | "dataset" | "official_statistics" | "transcript" | "treaty" | "court_record" | "legislation"
   | "journal_article" | "preprint" | "conference_paper" | "book" | "book_chapter" | "thesis"
   | "report" | "standard" | "news_article" | "opinion" | "press_release" | "blog_post"
-  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "shown_page" | "published_page" | "unknown";
+  | "social_media_post" | "reference_work" | "broadcast" | "webpage" | "released_page" | "published_page" | "unknown";
 
 /** A label that has set an edge or an argument aside for its own readers, with its reason. */
 export interface SetAside {

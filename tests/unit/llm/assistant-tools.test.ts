@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import {
   assistantAuth,
   createAssistantTools,
+  currentToolInput,
   currentToolName,
   HELD_KINDS,
   HELD_TOOL_LABELS,
@@ -165,5 +166,16 @@ describe("a held tool that was renamed", () => {
     }
     expect(currentToolName("fund_showing_work")).toBe("fund_release_work");
     expect(currentToolName("cancel_order")).toBe("cancel_order");
+  });
+
+  it("reads a held action's input in the names its tool now takes", () => {
+    // Held before the routes were renamed: the release was `showing_id`, and consent was the decision `release`.
+    expect(currentToolInput("fund_showing_work", { showing_id: "s", page_id: "p", owls: 1 })).toEqual({ release_id: "s", page_id: "p", owls: 1 });
+    expect(
+      currentToolInput("decide_at_gate", { decision: "release", items: [{ item_id: "i", decision: "release" }, { item_id: "j", decision: "hold" }] })
+    ).toEqual({ decision: "consent", items: [{ item_id: "i", decision: "consent" }, { item_id: "j", decision: "hold" }] });
+    // A decision of another tool, and an input already in the new names, are left as they are.
+    expect(currentToolInput("cancel_order", { decision: "release" })).toEqual({ decision: "release" });
+    expect(currentToolInput("end_page_flow", { release_id: "r", reason: "replaced" })).toEqual({ release_id: "r", reason: "replaced" });
   });
 });

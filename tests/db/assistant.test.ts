@@ -472,6 +472,8 @@ describe("held actions", () => {
     await settleAssistantTurns();
     const card = (await read(convo.id, u.id)).held_actions[0]!;
     expect(card).toMatchObject({ tool: "fund_release_work", label: HELD_TOOL_LABELS.fund_release_work });
+    // Its input names the release as the route now does.
+    expect(card.input).toEqual({ release_id: order.claim_id, page_id: order.claim_id, owls: 1 });
     const pressed = await decideHeldAction({ app, user: u, conversationId: convo.id, actionId: card.id, decision: "run" });
     expect(pressed.ok).toBe(true);
     if (pressed.ok) {

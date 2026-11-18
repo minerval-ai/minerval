@@ -102,13 +102,13 @@ export async function unwall(extraNodes: string[] = []): Promise<void> {
   // which the rest of this cleanup leaves: what it shown there, its acts, its policy and its row go first.
   await system(async () => {
     const boundaries = (await rawQuery<{ id: string }>(`SELECT DISTINCT boundary_id AS id FROM redaction_policies WHERE from_label = ANY($1::text[])`, [LABELS])).map((b) => b.id);
-    const shown = (await rawQuery<{ id: string }>(`SELECT id FROM shown_showings WHERE sensitivity_label = 'public' AND boundary_id = ANY($1::uuid[])`, [boundaries])).map((s) => s.id);
-    await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM shown_pages WHERE showing_id = ANY($1::uuid[]))`, [shown]);
+    const shown = (await rawQuery<{ id: string }>(`SELECT id FROM shown_releases WHERE sensitivity_label = 'public' AND boundary_id = ANY($1::uuid[])`, [boundaries])).map((s) => s.id);
+    await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM shown_pages WHERE release_id = ANY($1::uuid[]))`, [shown]);
     await rawQuery(`DELETE FROM request_work WHERE sensitivity_label = 'public' AND by_label = 'Work at a label this one does not read'`);
-    await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM shown_pages WHERE showing_id = ANY($1::uuid[]))`, [shown]);
-    await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = ANY($1::uuid[]))`, [shown]);
-    for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = ANY($1::uuid[])`, [shown]);
-    await rawQuery(`DELETE FROM shown_showings WHERE id = ANY($1::uuid[])`, [shown]);
+    await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM shown_pages WHERE release_id = ANY($1::uuid[]))`, [shown]);
+    await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE release_id = ANY($1::uuid[]))`, [shown]);
+    for (const table of ["release_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = ANY($1::uuid[])`, [shown]);
+    await rawQuery(`DELETE FROM shown_releases WHERE id = ANY($1::uuid[])`, [shown]);
     for (const table of ["gates", "redaction_policies"]) await rawQuery(`DELETE FROM ${table} WHERE sensitivity_label = 'public' AND boundary_id = ANY($1::uuid[])`, [boundaries]);
   }).catch((err: unknown) => console.warn("[review-3] cleanup of what was shown at public:", err instanceof Error ? err.message : err));
   await system(async () => {
@@ -151,12 +151,12 @@ export async function personDecidesAt(from: string, to: string | null, mode: "pe
   const { ensureBoundaryPolicy } = await import("../../src/services/redaction-policy.js");
   const { setGateMode } = await import("../../src/services/gate-settings-service.js");
   const policy = await ensureBoundaryPolicy({ from, to });
-  await setGateMode({ boundaryId: policy.boundary_id, mode, actor: { id: await seedUser(), holding: ["administer"], administer: true, releaseParties: [] } });
+  await setGateMode({ boundaryId: policy.boundary_id, mode, actor: { id: await seedUser(), holding: ["administer"], administer: true, consentParties: [] } });
   return policy.boundary_id;
 }
 
 /** Set, as an administrator would, whether what the gate to outside releases is sent as it is released. */
 export async function sendAsReleasedAt(gateId: string, on: boolean): Promise<void> {
   const { setGate } = await import("../../src/services/gate-settings-service.js");
-  await setGate({ boundaryId: gateId, sendAsReleased: on, actor: { id: await seedUser(), holding: ["administer"], administer: true, releaseParties: [] } });
+  await setGate({ boundaryId: gateId, sendAsReleased: on, actor: { id: await seedUser(), holding: ["administer"], administer: true, consentParties: [] } });
 }

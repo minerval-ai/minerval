@@ -3,14 +3,14 @@
  *
  * Information going from a label to readers who do not read it passes a
  * gate, whatever kind of thing it is. A node's page is offered by a flow
- * (showing-service.ts). Everything else is offered here, by the work that
+ * (release-service.ts). Everything else is offered here, by the work that
  * produced it, with one call: an answer to a request taken up from the
  * other side, the fact that it was taken up, a mandate's funding of work
  * there, that a mandate exists with its terms, an answer to a message.
  *
  * An item of any kind is recorded the way a node's page is: what is always
  * shown of it, and its parts as written, each resting on the parties whose
- * material it draws on (showing-service.ts, recordVersion). From there the
+ * material it draws on (release-service.ts, recordVersion). From there the
  * gate is the same for all of them: the setting, the Redactor's run and
  * Audit's check of it, a person where the setting asks for one, the
  * fingerprint, and arrival on the other side (release-gate-service.ts).
@@ -28,14 +28,14 @@ import { oneLabelOnly } from "./judgment-version-service.js";
 import { paragraphsOf } from "./page-parts.js";
 import { ensureBoundaryPolicy } from "./redaction-policy.js";
 import {
-  SHOWING_COLUMNS,
-  ShowingError,
+  RELEASE_COLUMNS,
+  ReleaseError,
   bothSides,
   ownOrganizationParty,
   recordVersion,
   type RecordedVersion,
-  type ShowingRow,
-} from "./showing-service.js";
+  type ReleaseRow,
+} from "./release-service.js";
 
 export type OfferedKind = Exclude<GateKind, "page">;
 
@@ -96,7 +96,7 @@ interface Composed {
 
 /** What an account says when it will not do work a request asks for: the public graph's fixed list (request-take-up-service.ts). */
 const DECLINED_BECAUSE: Record<string, string> = {
-  cannot_be_shown: "what the request asks for could not be shown outside the graph that holds it",
+  cannot_be_shown: "what the request asks for could not be released outside the graph that holds it",
   not_held: "it does not hold the evidence the request asks about",
   asks_for_a_result: "the request asks for a particular result",
   moot: "the request no longer bears on anything",
@@ -384,27 +384,27 @@ export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; 
     const gate = (await gateOf(policy.boundary_id))!;
     const subjectRef = subjectRefOf(offer.subject);
     const replyRef = replyRefOf(offer.replyTo);
-    let [showing] = await rawQuery<ShowingRow>(
-      `SELECT ${SHOWING_COLUMNS} FROM showings WHERE boundary_id = $1 AND kind = $2 AND subject_ref = $3 AND ended_at IS NULL AND sensitivity_label = $4
+    let [release] = await rawQuery<ReleaseRow>(
+      `SELECT ${RELEASE_COLUMNS} FROM releases WHERE boundary_id = $1 AND kind = $2 AND subject_ref = $3 AND ended_at IS NULL AND sensitivity_label = $4
           AND payer_grant_id IS NOT DISTINCT FROM $5`,
       [policy.boundary_id, offer.kind, subjectRef, offer.fromLabel, offer.payer?.grantId ?? null]
     );
-    if (!showing) {
+    if (!release) {
       await withTransaction(async (tx) => {
         const [row] = await tx.query<{ id: string; asked_at: Date }>(
-          `INSERT INTO showings (kind, subject_ref, reply_ref, payer_grant_id, to_label, to_outside, boundary_id, form, scope, sensitivity_label)
+          `INSERT INTO releases (kind, subject_ref, reply_ref, payer_grant_id, to_label, to_outside, boundary_id, form, scope, sensitivity_label)
            VALUES ($1, $2, $3, $4, $5, $6, $7, 'standing', 'item', $8) RETURNING id, asked_at`,
           [offer.kind, subjectRef, replyRef, offer.payer?.grantId ?? null, offer.toLabel, offer.toLabel === null, policy.boundary_id, offer.fromLabel]
         );
         await tx.query(
-          `INSERT INTO shown_showings (id, kind, reply_ref, to_outside, boundary_id, form, scope, asked_at, send_as_released, sensitivity_label)
+          `INSERT INTO shown_releases (id, kind, reply_ref, to_outside, boundary_id, form, scope, asked_at, send_as_released, sensitivity_label)
            VALUES ($1, $2, $3, $4, $5, 'standing', 'item', $6, $7, $8)`,
           [row!.id, offer.kind, replyRef, offer.toLabel === null, policy.boundary_id, row!.asked_at, offer.toLabel === null && gate.send_as_released, destination]
         );
-        await tx.query(`INSERT INTO showing_acts (showing_id, act, at, sensitivity_label) VALUES ($1, 'offered', $2, $3)`, [row!.id, row!.asked_at, destination]);
+        await tx.query(`INSERT INTO release_acts (release_id, act, at, sensitivity_label) VALUES ($1, 'offered', $2, $3)`, [row!.id, row!.asked_at, destination]);
       });
-      [showing] = await rawQuery<ShowingRow>(
-        `SELECT ${SHOWING_COLUMNS} FROM showings WHERE boundary_id = $1 AND kind = $2 AND subject_ref = $3 AND ended_at IS NULL AND sensitivity_label = $4
+      [release] = await rawQuery<ReleaseRow>(
+        `SELECT ${RELEASE_COLUMNS} FROM releases WHERE boundary_id = $1 AND kind = $2 AND subject_ref = $3 AND ended_at IS NULL AND sensitivity_label = $4
             AND payer_grant_id IS NOT DISTINCT FROM $5`,
         [policy.boundary_id, offer.kind, subjectRef, offer.fromLabel, offer.payer?.grantId ?? null]
       );
@@ -412,7 +412,7 @@ export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; 
     const versionKey = createHash("sha256")
       .update(JSON.stringify([composed.header, composed.parts]), "utf8")
       .digest("hex");
-    const [existing] = await rawQuery<{ id: string }>(`SELECT id FROM showing_pages WHERE showing_id = $1 AND version_key = $2`, [showing!.id, versionKey]);
+    const [existing] = await rawQuery<{ id: string }>(`SELECT id FROM release_pages WHERE release_id = $1 AND version_key = $2`, [release!.id, versionKey]);
     const version: RecordedVersion = {
       nodeId: null,
       judgmentKind: null,
@@ -427,7 +427,7 @@ export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; 
       sourceIds: [],
       parts: composed.parts.map((p) => ({ kind: p.kind, descriptor: p.kind, refId: null, original: p.text, needs: [...new Set([own.id, ...(p.needs ?? [])])] })),
     };
-    const itemId = existing?.id ?? (await recordVersion(showing!, destination, version));
+    const itemId = existing?.id ?? (await recordVersion(release!, destination, version));
     return { item_id: itemId, state: await stateOf(itemId) };
   });
 }
@@ -435,8 +435,8 @@ export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; 
 async function stateOf(itemId: string): Promise<OfferState> {
   const [row] = await rawQuery<{ shown_at: Date | null; stage: string; held: boolean }>(
     `SELECT p.shown_at, p.stage,
-            EXISTS (SELECT 1 FROM showing_acts a WHERE a.page_id = p.id AND a.act = 'held'
-                     AND NOT EXISTS (SELECT 1 FROM showing_acts l WHERE l.page_id = p.id AND l.part_id IS NOT DISTINCT FROM a.part_id
+            EXISTS (SELECT 1 FROM release_acts a WHERE a.page_id = p.id AND a.act = 'held'
+                     AND NOT EXISTS (SELECT 1 FROM release_acts l WHERE l.page_id = p.id AND l.part_id IS NOT DISTINCT FROM a.part_id
                                       AND l.party_id IS NOT DISTINCT FROM a.party_id AND l.act = 'hold_lifted' AND l.at > a.at)) AS held
        FROM shown_pages p WHERE p.id = $1`,
     [itemId]
@@ -450,7 +450,7 @@ export async function gateItemFor(input: { kind: OfferedKind; subjectRef: string
   const from = currentLabel();
   return bothSides(async () => {
     const [row] = await rawQuery<{ id: string; opened_at: Date }>(
-      `SELECT p.id, p.opened_at FROM showing_pages p JOIN showings s ON s.id = p.showing_id
+      `SELECT p.id, p.opened_at FROM release_pages p JOIN releases s ON s.id = p.release_id
         WHERE s.kind = $1 AND s.subject_ref = $2 AND s.to_label IS NOT DISTINCT FROM $3 AND s.sensitivity_label = $4 AND p.stage <> 'overtaken'
         ORDER BY p.opened_at DESC LIMIT 1`,
       [input.kind, input.subjectRef, input.toLabel, from]
@@ -483,7 +483,7 @@ export async function publishedMandateAskedBy(publicRequestId: string): Promise<
   return bothSides(async () => {
     const [row] = await rawQuery<{ face_id: string; grant_id: string; label: string }>(
       `SELECT s.id AS face_id, s.subject_ref AS grant_id, s.sensitivity_label AS label
-         FROM feed_requests f JOIN showings s ON s.id = f.asked_of_face_id
+         FROM feed_requests f JOIN releases s ON s.id = f.asked_of_face_id
         WHERE f.id = $1 AND f.origin = 'mirror' AND s.kind = 'mandate' AND s.to_outside AND s.ended_at IS NULL`,
       [publicRequestId]
     );
@@ -554,7 +554,7 @@ export const offerStatementBelow = (requestIdAbove: string, opts: BelowOpts = {}
  */
 export async function fundBelow(input: { grantId: string; nodeId: string; toLabel: string; amountMicroUsd: number }): Promise<{ item_id: string; state: OfferState } | null> {
   const [grant] = await rawQuery<{ label: string }>(`SELECT sensitivity_label AS label FROM grants WHERE id = $1`, [input.grantId]);
-  if (!grant) throw new ShowingError("MANDATE_NOT_FOUND", "No mandate with that id is read here.");
+  if (!grant) throw new ReleaseError("MANDATE_NOT_FOUND", "No mandate with that id is read here.");
   return offerToGate({
     kind: "funding",
     fromLabel: grant.label,
@@ -567,7 +567,7 @@ export async function fundBelow(input: { grantId: string; nodeId: string; toLabe
 /**
  * Where a gate's flow is set to everything: offer each mandate at the
  * label, with its terms, once and again when its terms change. The
- * scheduler's work, with followShowings.
+ * scheduler's work, with followReleases.
  */
 export async function offerMandatesWhereEverythingFlows(): Promise<number> {
   if (oneLabelOnly()) return 0;

@@ -4,15 +4,15 @@ import Link from "next/link";
 import { useState } from "react";
 import { WorkForm } from "@/components/work/WorkForm";
 import { Boundary, Lbl, Tip, shortDay } from "@/components/work/ui";
-import { askShowingAction } from "../actions";
-import "../showings.css";
+import { askReleaseAction } from "../actions";
+import "../releases.css";
 
 // The choices of a new release, each a card, and what follows from them in
 // at most four lines beside. A client component only so that those lines
 // follow the choices as they are made; the form posts to the same server
-// action as before (askShowingAction), which redirects to the new showing.
+// action as before (askReleaseAction), which redirects to the new release.
 
-export function NewShowingForm({
+export function NewReleaseForm({
   nodeId,
   pages,
   at,
@@ -36,7 +36,7 @@ export function NewShowingForm({
   const reads = (l: { name: string; reads: string[] }) => !!page && (l.name === page || l.reads.includes(page));
 
   return (
-    <WorkForm action={askShowingAction} submit="Release" primary extra={<Link className="w-btn" href="/releases">Cancel</Link>}>
+    <WorkForm action={askReleaseAction} submit="Release" primary extra={<Link className="w-btn" href="/releases">Cancel</Link>}>
       <input type="hidden" name="node_id" value={nodeId} />
 
       <fieldset className="w-field" style={{ border: 0, margin: 0, padding: 0 }}>
@@ -47,13 +47,13 @@ export function NewShowingForm({
             label&apos;s page is a separate release.
           </Tip>
         </legend>
-        <div className="w-showings-opts">
+        <div className="w-releases-opts">
           {pages.map((p) => (
             <label key={p.label} className="w-option">
               <input type="radio" name="page_label" value={p.label} required checked={page === p.label} onChange={() => setPage(p.label)} />
               <span>
                 <Lbl name={p.label} />
-                <span className="w-showings-m">assessed {shortDay(p.assessedAt)}</span>
+                <span className="w-releases-m">assessed {shortDay(p.assessedAt)}</span>
               </span>
             </label>
           ))}
@@ -65,7 +65,7 @@ export function NewShowingForm({
           Release to{" "}
           <Tip>Labels you do not read are not offered, because a label&apos;s name is not shown to people who may not read it.</Tip>
         </legend>
-        <div className="w-showings-opts">
+        <div className="w-releases-opts">
           {labels.map((l) => {
             const off = reads(l);
             return (
@@ -81,7 +81,7 @@ export function NewShowingForm({
                 />
                 <span>
                   <Lbl name={l.name} />
-                  <span className="w-showings-m">{off ? `Already reads ${page}` : l.name === "public" ? "every member" : "arrives as a source there"}</span>
+                  <span className="w-releases-m">{off ? `Already reads ${page}` : l.name === "public" ? "every member" : "arrives as a source there"}</span>
                 </span>
               </label>
             );
@@ -90,7 +90,7 @@ export function NewShowingForm({
             <input type="radio" name="to" value="outside" required checked={to === "outside"} onChange={() => setTo("outside")} />
             <span>
               <Lbl name="outside" />
-              <span className="w-showings-m">
+              <span className="w-releases-m">
                 the public graph{" "}
                 <Tip>
                   Released parts go in a signed package to the public graph under the organisation&apos;s account, reviewed there like any contribution. A
@@ -104,7 +104,7 @@ export function NewShowingForm({
 
       <div className="w-field">
         <span className="w-label">Kind</span>
-        <div className="w-seg w-showings-seg" role="radiogroup" aria-label="Kind">
+        <div className="w-seg w-releases-seg" role="radiogroup" aria-label="Kind">
           <label>
             <input type="radio" name="form" value="once" required checked={form === "once"} onChange={() => setForm("once")} />
             Once
@@ -114,7 +114,7 @@ export function NewShowingForm({
             Standing
           </label>
         </div>
-        <div className="w-showings-help">
+        <div className="w-releases-help">
           <span>This page, as it stands today</span>
           <span>
             Every later assessment follows{" "}
@@ -125,7 +125,7 @@ export function NewShowingForm({
 
       <div className="w-field">
         <span className="w-label">Covers</span>
-        <div className="w-seg w-showings-seg" role="radiogroup" aria-label="Covers">
+        <div className="w-seg w-releases-seg" role="radiogroup" aria-label="Covers">
           <label>
             <input type="radio" name="scope" value="node" required checked={scope === "node"} onChange={() => setScope("node")} />
             This node
@@ -135,14 +135,14 @@ export function NewShowingForm({
             With what&apos;s under it
           </label>
         </div>
-        <div className="w-showings-help">
+        <div className="w-releases-help">
           <span>Subclaims show only how they bear</span>
           <span>Each node under it is released the same way; later ones join</span>
         </div>
       </div>
 
-      <div className="w-showings-what" aria-live="polite">
-        <div className="w-showings-what-h">What happens</div>
+      <div className="w-releases-what" aria-live="polite">
+        <div className="w-releases-what-h">What happens</div>
         {page && dest ? (
           <div>
             Through the{" "}
@@ -167,7 +167,7 @@ export function NewShowingForm({
         {dest === "outside" && <div>Released parts leave in a signed package, under the organisation&apos;s account.</div>}
       </div>
 
-      <details className="w-showings-always">
+      <details className="w-releases-always">
         <summary>Always shown with the page</summary>
         <ul>
           <li>The verdict, with any credence</li>

@@ -322,7 +322,7 @@ function Grant({ entry }: { entry: LogEntry }) {
           <LabelOf v={entry.label} />
         </>
       )}
-      {p === "release" && (
+      {p === "consent" && (
         <>
           {" · "}
           <PartyOf v={entry.party} />

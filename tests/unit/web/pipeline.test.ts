@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 
-// One status for a version of a page under a showing (web/lib/pipeline.ts),
+// One status for a version of a page under a release (web/lib/pipeline.ts),
 // from the stage on the side it was written at, the state on the side it is
 // shown to, or both.
 import { pipelineOf, NOT_YET_ASSESSED } from "../../../web/lib/pipeline";

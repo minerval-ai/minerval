@@ -121,7 +121,7 @@ async function main(): Promise<number> {
         const { withSystemClearance } = await import("../src/db/clearance.js");
         const rows = await withSystemClearance("An operator exports the packages of pages shown outside, which are at `public`.", () =>
           rawQuery<{ public_node_id: string; sequence: number; package: unknown }>(
-            `SELECT public_node_id, sequence, package FROM outbound_packages ORDER BY showing_id, node_id, sequence`
+            `SELECT public_node_id, sequence, package FROM outbound_packages ORDER BY release_id, node_id, sequence`
           )
         );
         mkdirSync(arg, { recursive: true });

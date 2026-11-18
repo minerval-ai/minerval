@@ -85,7 +85,7 @@ export function auditPill(audit: string | null | undefined): { text: string; ton
 
 /**
  * A label as a boundary names it, from where a release goes: the bare label
- * (as GET /showings lists it), `readers at "<label>"` (as one release says
+ * (as GET /releases lists it), `readers at "<label>"` (as one release says
  * it), or the outside, which is "outside".
  */
 export function labelOf(shownTo: string | null | undefined): string {

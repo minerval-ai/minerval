@@ -1,6 +1,6 @@
 /**
  * The gate: the routes (docs/the-gate.md, docs/releasing-a-page.md;
- * services/gate-service.ts, gate-settings-service.ts, showing-service.ts,
+ * services/gate-service.ts, gate-settings-service.ts, release-service.ts,
  * release-gate-service.ts). Mounted only where READS=members
  * (server/app.ts): the public graph has one label and no gate.
  *
@@ -16,20 +16,20 @@
  *   GET    /gate/backlog: how much waits at each gate, of what kinds, for
  *     how long and on whom. No content.
  *   GET    /gate/queue: what waits on the caller at a gate (consent).
- *   POST   /gate/decisions: consent (sent as `release`), approve, remove,
+ *   POST   /gate/decisions: consent, approve, remove,
  *     hold, delay or lift, many items at once (consent).
  *   GET    /gate/items: what came through a gate to a label the caller
  *     reads, other than nodes' pages.
  *   POST   /gate/offers: offer a mandate, or a mandate's funding of work,
  *     to a gate (direct).
- *   GET    /showings, /showings/:showing_id, /showings/:showing_id/pages/:page_id:
+ *   GET    /releases, /releases/:release_id, /releases/:release_id/pages/:page_id:
  *     releases: flows of nodes' pages and what they released, from either side.
- *   POST   /showings: set a flow of pages for a node, what sits under it,
+ *   POST   /releases: set a flow of pages for a node, what sits under it,
  *     a mandate's work or a whole boundary (direct).
- *   POST   /showings/:showing_id/end: end a standing flow (direct).
- *   POST   /showings/:showing_id/pages/:page_id/hold: hold an item not yet
+ *   POST   /releases/:release_id/end: end a standing flow (direct).
+ *   POST   /releases/:release_id/pages/:page_id/hold: hold an item not yet
  *     released, or lift that hold (direct).
- *   POST   /showings/:showing_id/pages/:page_id/commission: pay by hand
+ *   POST   /releases/:release_id/pages/:page_id/commission: pay by hand
  *     for an item's redaction or its check (fund).
  *   GET    /redaction-policies: the version in force at each boundary, or
  *     every version of one (boundary_id, all), with who saved each.
@@ -38,7 +38,7 @@
  *     (administer).
  *
  * Who may act. Each act at a gate takes a permission (consent for a
- * party, stored as `release`; `direct`, `administer`) and is recorded with the account that
+ * party, `consent`; `direct`, `administer`) and is recorded with the account that
  * made it and the permissions it held. The account may act from a
  * signed-in session or through a key or token of its own, so the person a
  * gate's authorities put there can use their own agent or a script: every
@@ -62,7 +62,7 @@ import { FLOW_WORDS, GateError, endGateSetting, gatesFor, keepCurrentWords, setG
 import { policyVersionRecord, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
 import {
   HOLD_REASONS,
-  askedShowings,
+  askedReleases,
   decideAtGate,
   gateBacklog,
   gateQueue,
@@ -70,19 +70,19 @@ import {
   settleWaiting,
   shownItems,
   shownPage,
-  shownShowing,
-  shownShowings,
+  shownRelease,
+  shownReleases,
   type GateActor,
 } from "../services/release-gate-service.js";
 import {
   END_REASONS,
-  SHOWING_FORMS,
-  SHOWING_SCOPES,
-  ShowingError,
-  askShowing,
-  endShowing,
-  showingPage,
-} from "../services/showing-service.js";
+  RELEASE_FORMS,
+  RELEASE_SCOPES,
+  ReleaseError,
+  askRelease,
+  endRelease,
+  releasePage,
+} from "../services/release-service.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
 
@@ -94,7 +94,7 @@ export const OFFERING_OUTSIDE_SHOWS =
 
 const STATUS: Record<string, number> = {
   NODE_NOT_FOUND: 404,
-  SHOWING_NOT_FOUND: 404,
+  RELEASE_NOT_FOUND: 404,
   PAGE_NOT_FOUND: 404,
   RULE_NOT_FOUND: 404,
   UNKNOWN_LABEL: 404,
@@ -120,39 +120,39 @@ async function actorOf(request: FastifyRequest): Promise<GateActor & { administe
   for (const g of standing.grants) {
     // A reading permission names a label, which is not shown to people who may not read it.
     if (g.permission === "read" || g.permission === "read_sources") continue;
-    // Stored with each act (showing_acts.holding), so it keeps the stored name until the
+    // Stored with each act (release_acts.holding), so it keeps the stored name until the
     // rename (docs/releasing-a-page.md, "Old names in the code").
-    const words = g.permission === "release" ? `release for ${names.get(g.partyId ?? "") ?? "a party"}` : g.permission;
+    const words = g.permission === "consent" ? `consent for ${names.get(g.partyId ?? "") ?? "a party"}` : g.permission;
     if (!holding.includes(words)) holding.push(words);
   }
   return {
     id: request.auth!.userId!,
     holding,
     clearance: standing.clearance,
-    releaseParties: standing.grants.filter((g) => g.permission === "release" && g.partyId).map((g) => g.partyId!),
+    consentParties: standing.grants.filter((g) => g.permission === "consent" && g.partyId).map((g) => g.partyId!),
     direct: holdsPermission(standing, "direct"),
     administer: holdsPermission(standing, "administer"),
   };
 }
 
-export async function showingRoutes(app: FastifyInstance): Promise<void> {
+export async function releaseRoutes(app: FastifyInstance): Promise<void> {
   const signedIn = [app.authenticate, app.requireUser];
   // An account that holds the permission, from a session or through a key or token of its own.
-  const holder = (permission: "direct" | "release" | "administer") => [app.authenticate, app.requireUser, requirePermission(permission)];
+  const holder = (permission: "direct" | "consent" | "administer") => [app.authenticate, app.requireUser, requirePermission(permission)];
   // An authority of some gate: an administrator, or someone who consents for a party.
   const authority = [
     app.authenticate,
     app.requireUser,
     async (request: FastifyRequest, reply: { code: (n: number) => { send: (b: unknown) => unknown } }) => {
       const standing = standingOf(request.auth);
-      if (!holdsPermission(standing, "administer") && !standing.grants.some((g) => g.permission === "release")) {
+      if (!holdsPermission(standing, "administer") && !standing.grants.some((g) => g.permission === "consent")) {
         return reply.code(403).send({ error: "A gate is set by an administrator, or by someone who consents for a party.", code: "NOT_YOURS_TO_SET" });
       }
     },
   ];
 
   const refuse = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }, err: unknown) => {
-    if (err instanceof ShowingError || err instanceof GateError) {
+    if (err instanceof ReleaseError || err instanceof GateError) {
       return reply.code(STATUS[err.code] ?? 400).send({ error: err.message, code: err.code });
     }
     throw err;
@@ -160,9 +160,9 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- reading ----
 
-  app.get<{ Querystring: { node_id?: string } }>("/showings", {
+  app.get<{ Querystring: { node_id?: string } }>("/releases", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "The releases of pages to readers who do not read their label, as far as you can read them: those released to a label you read, and those asked for at a label you read",
       description:
         "A node's page written at one label can be released to readers who may not read that label, with what a policy " +
@@ -176,17 +176,17 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     preHandler: signedIn,
     handler: async (request, reply) =>
       reply.send({
-        shown: await shownShowings({ nodeId: request.query.node_id }),
-        asked: await askedShowings(),
+        shown: await shownReleases({ nodeId: request.query.node_id }),
+        asked: await askedReleases(),
         // The two fixed lists a hold and an ending take their reason from, each key with the words the other side is told.
         hold_reasons: HOLD_REASONS,
         end_reasons: END_REASONS,
       }),
   });
 
-  app.get<{ Params: { showing_id: string } }>("/showings/:showing_id", {
+  app.get<{ Params: { release_id: string } }>("/releases/:release_id", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "One release as the readers it is released to see it: each node's state, every version made while it stood, and every act on it",
       description:
         "Each node under the release is in one of four states: not_yet_assessed, released_whole, " +
@@ -195,27 +195,27 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "held, so you can see when a person who directed the work also consented to it. `scope` says in words what the release " +
         "covers (the node alone, the node with what sits under it, every node one mandate's work assessed, every node assessed " +
         "at a label, or one item), naming the mandate and the label only where you read the label the pages are written at; " +
-        "`scope_code` is the scope as GET /showings lists it (node, under, mandate, boundary, item).",
-      params: { type: "object", required: ["showing_id"], properties: { showing_id: UUID } },
+        "`scope_code` is the scope as GET /releases lists it (node, under, mandate, boundary, item).",
+      params: { type: "object", required: ["release_id"], properties: { release_id: UUID } },
     },
     preHandler: signedIn,
     handler: async (request, reply) => {
-      const showing = await shownShowing(request.params.showing_id);
-      if (!showing) return reply.code(404).send({ error: "No release with that id is released to a label you read.", code: "SHOWING_NOT_FOUND" });
-      return reply.send(showing);
+      const release = await shownRelease(request.params.release_id);
+      if (!release) return reply.code(404).send({ error: "No release with that id is released to a label you read.", code: "RELEASE_NOT_FOUND" });
+      return reply.send(release);
     },
   });
 
-  app.get<{ Params: { showing_id: string; page_id: string } }>("/showings/:showing_id/pages/:page_id", {
+  app.get<{ Params: { release_id: string; page_id: string } }>("/releases/:release_id/pages/:page_id", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "One page under a release: what is always shown, each released part as written with its removals marked, each held part named, and the check against its fingerprint",
       description:
         "A released part is its author's text, with `[redacted: <category>]` where a policy removed a passage. A " +
         "held part shows its kind and who holds it. `verification` is the result of rebuilding the fingerprint from " +
         "what you are shown and comparing it with the one recorded before anyone decided what to release; the salts " +
         "and hashes are included so that you can redo it yourself.",
-      params: { type: "object", required: ["showing_id", "page_id"], properties: { showing_id: UUID, page_id: UUID } },
+      params: { type: "object", required: ["release_id", "page_id"], properties: { release_id: UUID, page_id: UUID } },
     },
     preHandler: signedIn,
     handler: async (request, reply) => {
@@ -227,7 +227,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{ Querystring: { boundary_id?: string; all?: boolean } }>("/redaction-policies", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary:
         "The redaction policies you can read: the version in force for each boundary a page is released across, or with all=true every version, with who saved each",
       description:
@@ -267,7 +267,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { policy_id: string } }>("/redaction-policies/:policy_id", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "One version of a redaction policy in full, with who saved it and whether it is the version in force",
       description: "`saved_by` is the display name of the person who saved the version, or null where the system saved it.",
       params: { type: "object", required: ["policy_id"], properties: { policy_id: UUID } },
@@ -294,7 +294,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
   // ---- asking ----
 
   app.post<{ Body: { node_id?: string; mandate_id?: string; page_label: string; to_label?: string | null; outside?: boolean; form?: "once" | "standing"; scope: "node" | "under" | "mandate" | "boundary" } }>(
-    "/showings",
+    "/releases",
     {
       schema: {
         tags: ["gate"],
@@ -315,8 +315,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
             page_label: { type: "string", minLength: 1 },
             to_label: { type: ["string", "null"] },
             outside: { type: "boolean" },
-            form: { type: "string", enum: [...SHOWING_FORMS] },
-            scope: { type: "string", enum: SHOWING_SCOPES.filter((x) => x !== "item") },
+            form: { type: "string", enum: [...RELEASE_FORMS] },
+            scope: { type: "string", enum: RELEASE_SCOPES.filter((x) => x !== "item") },
           },
         },
       },
@@ -335,7 +335,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           return reply.code(404).send({ error: `No active node with that id is read at "${page_label}".`, code: "NODE_NOT_FOUND" });
         }
         try {
-          return reply.code(201).send(await askShowing({ nodeId: node_id ?? null, scopeRef: mandate_id ?? null, pageLabel: page_label, toLabel, form, scope, actor }));
+          return reply.code(201).send(await askRelease({ nodeId: node_id ?? null, scopeRef: mandate_id ?? null, pageLabel: page_label, toLabel, form, scope, actor }));
         } catch (err) {
           return refuse(reply, err);
         }
@@ -343,37 +343,37 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
-  app.post<{ Params: { showing_id: string }; Body: { reason: keyof typeof END_REASONS } }>("/showings/:showing_id/end", {
+  app.post<{ Params: { release_id: string }; Body: { reason: keyof typeof END_REASONS } }>("/releases/:release_id/end", {
     schema: {
-      tags: ["showings"],
+      tags: ["releases"],
       summary: "End a standing flow of pages (people who direct the graph)",
       description: "Later versions no longer follow. What was released stays released, and the release stays on the record with the date and the reason.",
-      params: { type: "object", required: ["showing_id"], properties: { showing_id: UUID } },
+      params: { type: "object", required: ["release_id"], properties: { release_id: UUID } },
       body: { type: "object", required: ["reason"], properties: { reason: { type: "string", enum: Object.keys(END_REASONS) } } },
     },
     preHandler: holder("direct"),
     handler: async (request, reply) => {
       const actor = await actorOf(request);
-      const [mine] = await rawQuery(`SELECT 1 FROM showings WHERE id = $1`, [request.params.showing_id]);
-      if (!mine) return reply.code(404).send({ error: "No release with that id was asked for at a label you read.", code: "SHOWING_NOT_FOUND" });
+      const [mine] = await rawQuery(`SELECT 1 FROM releases WHERE id = $1`, [request.params.release_id]);
+      if (!mine) return reply.code(404).send({ error: "No release with that id was asked for at a label you read.", code: "RELEASE_NOT_FOUND" });
       try {
-        await endShowing({ showingId: request.params.showing_id, reason: request.body.reason, actor });
-        return reply.send(await shownShowing(request.params.showing_id).then((s) => s ?? { ended: true }));
+        await endRelease({ releaseId: request.params.release_id, reason: request.body.reason, actor });
+        return reply.send(await shownRelease(request.params.release_id).then((s) => s ?? { ended: true }));
       } catch (err) {
         return refuse(reply, err);
       }
     },
   });
 
-  app.post<{ Params: { showing_id: string; page_id: string }; Body: { lift?: boolean; reason?: keyof typeof HOLD_REASONS } }>(
-    "/showings/:showing_id/pages/:page_id/hold",
+  app.post<{ Params: { release_id: string; page_id: string }; Body: { lift?: boolean; reason?: keyof typeof HOLD_REASONS } }>(
+    "/releases/:release_id/pages/:page_id/hold",
     {
       schema: {
-        tags: ["showings"],
+        tags: ["releases"],
         summary: "Hold an item that has not been released, or lift that hold (people who direct the graph)",
         description:
           "The hold shows on the other side with its date and its reason, which is one of a fixed list. It can be lifted and is never deleted. A page already released cannot be held.",
-        params: { type: "object", required: ["showing_id", "page_id"], properties: { showing_id: UUID, page_id: UUID } },
+        params: { type: "object", required: ["release_id", "page_id"], properties: { release_id: UUID, page_id: UUID } },
         body: { type: "object", properties: { lift: { type: "boolean" }, reason: { type: "string", enum: Object.keys(HOLD_REASONS) } } },
       },
       preHandler: holder("direct"),
@@ -390,27 +390,27 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
 
   // ---- paying ----
 
-  app.post<{ Params: { showing_id: string; page_id: string }; Body: { owls: number } }>(
-    "/showings/:showing_id/pages/:page_id/commission",
+  app.post<{ Params: { release_id: string; page_id: string }; Body: { owls: number } }>(
+    "/releases/:release_id/pages/:page_id/commission",
     {
       schema: {
-        tags: ["showings"],
+        tags: ["releases"],
         summary: "Pay for the next piece of work on a page that is to be released: its redaction, or the check of its redaction",
         description:
           "Each is a run on the ledger that happens when it is paid for. You set its budget in owls and pay it " +
           "whole; what the run does not spend comes back. Paying buys the work, not what it removes or concludes.",
-        params: { type: "object", required: ["showing_id", "page_id"], properties: { showing_id: UUID, page_id: UUID } },
+        params: { type: "object", required: ["release_id", "page_id"], properties: { release_id: UUID, page_id: UUID } },
         body: { type: "object", required: ["owls"], properties: { owls: { type: "number", exclusiveMinimum: 0 } } },
       },
       preHandler: [...signedIn, requirePermission("fund")],
       handler: async (request, reply) => {
-        const page = await showingPage(request.params.page_id);
+        const page = await releasePage(request.params.page_id);
         if (!page) return reply.code(404).send({ error: "No page under a release has that id at a label you read.", code: "PAGE_NOT_FOUND" });
         let actionId: string | null = null;
         if (page.stage === "to_redact") actionId = page.redact_action_id;
         if (page.stage === "to_check") {
           const [audit] = await rawQuery<{ action_id: string | null }>(
-            `SELECT a.action_id FROM showing_pages p JOIN audit_runs a ON a.id = p.audit_run_id WHERE p.id = $1`,
+            `SELECT a.action_id FROM release_pages p JOIN audit_runs a ON a.id = p.audit_run_id WHERE p.id = $1`,
             [page.id]
           );
           actionId = audit?.action_id ?? null;
@@ -499,16 +499,16 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         });
         // "Everything" is a standing flow of every page at the label, set under this administrator's name; "asked" ends it.
         if (request.body.flow === "everything") {
-          await askShowing({ pageLabel: gate.from_label, toLabel: gate.to_label, form: "standing", scope: "boundary", actor }).catch((err: unknown) => {
-            if (!(err instanceof ShowingError && err.code === "ALREADY_STANDING")) throw err;
+          await askRelease({ pageLabel: gate.from_label, toLabel: gate.to_label, form: "standing", scope: "boundary", actor }).catch((err: unknown) => {
+            if (!(err instanceof ReleaseError && err.code === "ALREADY_STANDING")) throw err;
           });
         }
         if (request.body.flow === "asked") {
           const [flow] = await rawQuery<{ id: string }>(
-            `SELECT id FROM shown_showings WHERE boundary_id = $1 AND scope = 'boundary' AND ended_at IS NULL`,
+            `SELECT id FROM shown_releases WHERE boundary_id = $1 AND scope = 'boundary' AND ended_at IS NULL`,
             [gate.boundary_id]
           );
-          if (flow) await endShowing({ showingId: flow.id, reason: "no_longer_needed", actor });
+          if (flow) await endRelease({ releaseId: flow.id, reason: "no_longer_needed", actor });
         }
         return reply.send({
           gate_id: gate.boundary_id,
@@ -629,7 +629,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "each removed passage with the Redactor's note, and why a part was flagged. `kind` narrows it to one kind of thing.",
       querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 200 }, kind: { type: "string", enum: Object.keys(GATE_KINDS) } } },
     },
-    preHandler: holder("release"),
+    preHandler: holder("consent"),
     handler: async (request, reply) => reply.send(await gateQueue(await actorOf(request), { limit: request.query.limit, kind: request.query.kind })),
   });
 
@@ -685,7 +685,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         },
       },
     },
-    preHandler: holder("release"),
+    preHandler: holder("consent"),
     handler: async (request, reply) => {
       try {
         return reply.send(
@@ -730,7 +730,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "`funding`: the mandate pays `owls` for a pass on `node_id` at `to_label`; the pass is commissioned there from the mandate's budget " +
         "when the offer is through the gate. " +
         "Either goes through the gate under its setting. Offering the same thing again returns the item already there. Ending the offer " +
-        "(POST /showings/:showing_id/end, with the offer's id) withdraws a mandate that was offered outside.",
+        "(POST /releases/:release_id/end, with the offer's id) withdraws a mandate that was offered outside.",
       body: {
         type: "object",
         required: ["kind", "mandate_id"],
@@ -770,8 +770,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
           });
         }
         if (outside) {
-          const [offer] = await rawQuery<{ showing_id: string }>(`SELECT showing_id FROM shown_pages WHERE id = $1`, [offered.item_id]);
-          return reply.code(201).send({ ...offered, offer_id: offer?.showing_id ?? null, addressed_on_the_public_graph_as: offer?.showing_id ?? null, what_it_shows_outside: OFFERING_OUTSIDE_SHOWS });
+          const [offer] = await rawQuery<{ release_id: string }>(`SELECT release_id FROM shown_pages WHERE id = $1`, [offered.item_id]);
+          return reply.code(201).send({ ...offered, offer_id: offer?.release_id ?? null, addressed_on_the_public_graph_as: offer?.release_id ?? null, what_it_shows_outside: OFFERING_OUTSIDE_SHOWS });
         }
         return reply.code(201).send(offered);
       } catch (err) {
@@ -786,7 +786,7 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     "/redaction-policies",
     {
       schema: {
-        tags: ["showings"],
+        tags: ["releases"],
         summary: "Save a new version of one boundary's redaction policy, which is how a gate is mostly tightened or loosened (administrators)",
         description:
           "Give the whole list of categories for the boundary. How removal works and what is shown whenever a page " +

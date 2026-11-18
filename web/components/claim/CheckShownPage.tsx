@@ -12,12 +12,12 @@ import { checkShownPage, type PageToCheck, type ShownPageCheck } from "@/lib/sho
 // as the page of a shown version does; the claim's own page keeps the
 // reading column's.
 export function CheckShownPage({
-  showingId,
+  releaseId,
   pageId,
   arrivedOk,
   work = false,
 }: {
-  showingId: string;
+  releaseId: string;
   pageId: string;
   arrivedOk: boolean;
   work?: boolean;
@@ -28,7 +28,7 @@ export function CheckShownPage({
   async function run() {
     setState("checking");
     try {
-      const res = await fetch(`/api/showings/${showingId}/pages/${pageId}`);
+      const res = await fetch(`/api/releases/${releaseId}/pages/${pageId}`);
       if (!res.ok) throw new Error("unavailable");
       setCheck(await checkShownPage((await res.json()) as PageToCheck));
       setState("done");

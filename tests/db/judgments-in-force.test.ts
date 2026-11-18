@@ -132,7 +132,7 @@ describe("coverage of a mirrored node's public judgment", () => {
     // A page shown to `public` from a label this reader does not read arrives as a source on the node, of this
     // deployment's own. The public graph's judgment was made before it and elsewhere.
     const shown = await attachSource(id.mirrored!, "public", "Status: doubtful.", "mentions");
-    await system(() => rawQuery(`UPDATE sources SET source_type = 'shown_page', url = $2 WHERE id = $1`, [shown.source, `minerval:shown-page/${shown.instance}/1`]));
+    await system(() => rawQuery(`UPDATE sources SET source_type = 'released_page', url = $2 WHERE id = $1`, [shown.source, `minerval:shown-page/${shown.instance}/1`]));
     const said = coverage((await asPerson(["public"], () => summarizeCoverage([id.mirrored!]))).get(id.mirrored!));
     expect(said).toEqual({ examined: true, on: ["evidence_this_reader_can_read"] });
   });

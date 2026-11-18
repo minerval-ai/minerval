@@ -185,7 +185,7 @@ export async function restampPublishedMandates(): Promise<number> {
   if (oneLabelOnly()) return 0;
   const live = await asOwner(() =>
     rawQuery<{ grant_id: string; label: string; payer: string | null }>(
-      `SELECT subject_ref AS grant_id, sensitivity_label AS label, payer_grant_id AS payer FROM showings WHERE kind = 'mandate' AND to_outside AND ended_at IS NULL`
+      `SELECT subject_ref AS grant_id, sensitivity_label AS label, payer_grant_id AS payer FROM releases WHERE kind = 'mandate' AND to_outside AND ended_at IS NULL`
     )
   );
   const { offerToGate } = await import("./gate-service.js");

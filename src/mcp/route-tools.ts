@@ -307,14 +307,14 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   // key or token of the account: the person a gate's authorities put there
   // may act through their own agent or a script. The Assistant holds each
   // act for its user (llm/tools/assistant-tools.ts).
-  "GET /showings": { name: "list_releases" },
-  "GET /showings/:showing_id": {
+  "GET /releases": { name: "list_releases" },
+  "GET /releases/:release_id": {
     name: "get_release",
     note:
       "Free. Report a node's state as given: a page that is held, or released in part, is a fact about the " +
       "release and says nothing about what the held text contains.",
   },
-  "GET /showings/:showing_id/pages/:page_id": { name: "get_release_page" },
+  "GET /releases/:release_id/pages/:page_id": { name: "get_release_page" },
   "GET /redaction-policies": { name: "list_redaction_policies" },
   "GET /redaction-policies/:policy_id": { name: "get_redaction_policy" },
   "GET /gates": { name: "list_gates" },
@@ -329,17 +329,14 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "DELETE /gates/settings/:setting_id": { name: "end_gate_setting", note: GATE_ACT },
   "POST /gate/decisions": {
     name: "decide_at_gate",
-    note:
-      "To consent for a party, send the decision `release`: the act's name in the API until the routes are " +
-      "renamed (docs/releasing-a-page.md, \"Old names in the code\"). " +
-      GATE_ACT,
+    note: GATE_ACT,
   },
   "POST /gate/offers": { name: "offer_to_gate", note: GATE_ACT },
-  "POST /showings": { name: "set_page_flow", note: GATE_ACT },
-  "POST /showings/:showing_id/end": { name: "end_page_flow", note: GATE_ACT },
-  "POST /showings/:showing_id/pages/:page_id/hold": { name: "hold_gate_item", note: GATE_ACT },
+  "POST /releases": { name: "set_page_flow", note: GATE_ACT },
+  "POST /releases/:release_id/end": { name: "end_page_flow", note: GATE_ACT },
+  "POST /releases/:release_id/pages/:page_id/hold": { name: "hold_gate_item", note: GATE_ACT },
   "PUT /redaction-policies": { name: "save_redaction_policy", note: GATE_ACT },
-  "POST /showings/:showing_id/pages/:page_id/commission": { name: "fund_release_work", note: ESCROWS_OWLS },
+  "POST /releases/:release_id/pages/:page_id/commission": { name: "fund_release_work", note: ESCROWS_OWLS },
   // A released page leaves the deployment (docs/published-pages.md). Reading
   // where it stands, and sending, which takes a person: the Assistant
   // holds it for its user, and a key or a token alone is refused.

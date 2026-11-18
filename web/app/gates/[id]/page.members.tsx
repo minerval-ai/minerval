@@ -331,8 +331,8 @@ function Rules({ gate, gates, mandates, nodes }: { gate: Gate; gates: Gates; man
                   <td>
                     {s.set_by ? (
                       <span title={s.set_holding.length > 0 ? `holding ${s.set_holding.join(", ")}` : undefined}>{s.set_by}</span>
-                    ) : s.made_from_release_rule ? (
-                      <span className="w-chip" title={s.made_from_release_rule}>
+                    ) : s.made_from_consent_rule ? (
+                      <span className="w-chip" title={s.made_from_consent_rule}>
                         Consent rule
                       </span>
                     ) : (
@@ -521,7 +521,7 @@ async function PolicyTab({
   row: BoundaryRow;
   administers: boolean;
   externalId: string;
-  /** A version by its id (`?policy=<id>`), as a showing's record links to it. */
+  /** A version by its id (`?policy=<id>`), as a release's record links to it. */
   asked?: string;
   /** A version by its number (`?version=N`), as the versions rail links to it. */
   version?: string;

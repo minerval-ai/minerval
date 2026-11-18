@@ -6,12 +6,12 @@ import { auth } from "../../auth";
 import type { FormState } from "../../components/admin/ActionForm";
 import { AccountApiError } from "../../lib/account-api";
 import {
-  askShowing,
+  askRelease,
   decideAtGate,
   endGateSetting,
-  endShowing,
+  endRelease,
   holdShownPage,
-  payForShowingWork,
+  payForReleaseWork,
   registerPublisherOutside,
   savePolicy,
   sendOutside,
@@ -51,7 +51,7 @@ const text = (form: FormData, name: string) => String(form.get(name) ?? "").trim
 
 // --- asking, ending, holding, paying ----------------------------------------------
 
-export async function askShowingAction(_previous: FormState, form: FormData): Promise<FormState> {
+export async function askReleaseAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   const nodeId = text(form, "node_id");
@@ -64,30 +64,30 @@ export async function askShowingAction(_previous: FormState, form: FormData): Pr
   if (formOf !== "once" && formOf !== "standing") return { error: "Choose once or standing." };
   if (scope !== "node" && scope !== "under") return { error: "Choose what the release covers." };
   const outside = to === "outside";
-  let showingId: string;
+  let releaseId: string;
   try {
-    const asked = await askShowing(user, {
+    const asked = await askRelease(user, {
       node_id: nodeId,
       page_label: pageLabel,
       form: formOf,
       scope,
       ...(outside ? { outside: true } : { to_label: to.replace(/^label:/, "") }),
     });
-    showingId = asked.showing_id;
+    releaseId = asked.release_id;
   } catch (err) {
     return refused(err);
   }
   revalidatePath("/releases");
-  redirect(`/releases/${showingId}`);
+  redirect(`/releases/${releaseId}`);
 }
 
-export async function endShowingAction(_previous: FormState, form: FormData): Promise<FormState> {
+export async function endReleaseAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   const reason = text(form, "reason");
   if (!reason) return { error: "Choose a reason. It is recorded with the date, where the people the page is released to can read it." };
   try {
-    await endShowing(user, text(form, "showing_id"), reason);
+    await endRelease(user, text(form, "release_id"), reason);
   } catch (err) {
     return refused(err);
   }
@@ -102,7 +102,7 @@ export async function holdPageAction(_previous: FormState, form: FormData): Prom
   const reason = text(form, "reason");
   if (!lift && !reason) return { error: "Choose a reason for the hold. It is all the other side is told." };
   try {
-    await holdShownPage(user, text(form, "showing_id"), text(form, "page_id"), lift ? { lift: true } : { reason });
+    await holdShownPage(user, text(form, "release_id"), text(form, "page_id"), lift ? { lift: true } : { reason });
   } catch (err) {
     return refused(err);
   }
@@ -116,7 +116,7 @@ export async function payForWorkAction(_previous: FormState, form: FormData): Pr
   const owls = Number(text(form, "owls"));
   if (!Number.isFinite(owls) || owls <= 0) return { error: "Give a budget in owls, more than zero." };
   try {
-    const paid = await payForShowingWork(user, text(form, "showing_id"), text(form, "page_id"), owls);
+    const paid = await payForReleaseWork(user, text(form, "release_id"), text(form, "page_id"), owls);
     revalidatePath("/releases", "layout");
     return { notice: paid.note ?? `Paid for ${paid.work}. It runs now; what it does not spend comes back to you.` };
   } catch (err) {
@@ -126,7 +126,7 @@ export async function payForWorkAction(_previous: FormState, form: FormData): Pr
 
 // --- at the gate ------------------------------------------------------------------
 
-const DECISIONS: readonly GateDecision[] = ["release", "approve", "hold", "lift", "delay", "remove"];
+const DECISIONS: readonly GateDecision[] = ["consent", "approve", "hold", "lift", "delay", "remove"];
 
 export async function decideAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
@@ -166,7 +166,7 @@ export async function decideAction(_previous: FormState, form: FormData): Promis
     const n = result.decided;
     const s = n === 1 ? "" : "s";
     const done =
-      decision === "release"
+      decision === "consent"
         ? `Consented to ${n} item${s}. Consent is not taken back.`
         : decision === "approve"
           ? `Approved ${n} item${s} as the Redactor left ${n === 1 ? "it" : "them"}. What it held or delayed stays back.`
@@ -293,7 +293,7 @@ export async function sendOutsideAction(_previous: FormState, form: FormData): P
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   try {
-    const report = await sendOutside(user, text(form, "showing_id"));
+    const report = await sendOutside(user, text(form, "release_id"));
     revalidatePath("/outbound");
     revalidatePath("/releases", "layout");
     if (report.sent.length === 0 && report.proposals.length === 0) return { notice: "Nothing was waiting to be sent." };
@@ -330,7 +330,7 @@ export async function writeProposalAction(_previous: FormState, form: FormData):
   const words = text(form, "text");
   try {
     const written = await writeProposal(user, {
-      showing_id: text(form, "showing_id"),
+      release_id: text(form, "release_id"),
       node_id: text(form, "node_id"),
       ...(words ? { text: words } : {}),
     });

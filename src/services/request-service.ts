@@ -779,7 +779,7 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
     ? []
     : await rawQuery<{ reply_ref: string; kind: string; shown_at: Date | null; source_id: string | null }>(
         `SELECT s.reply_ref, p.kind, p.shown_at, p.source_id
-           FROM shown_pages p JOIN shown_showings s ON s.id = p.showing_id
+           FROM shown_pages p JOIN shown_releases s ON s.id = p.release_id
           WHERE s.reply_ref = ANY($1::uuid[]) AND p.kind IN ('taken_up', 'answer') AND p.stage <> 'overtaken'
           ORDER BY p.opened_at`,
         [ids]

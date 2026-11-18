@@ -1,5 +1,5 @@
 /**
- * A private graph acting on the public graph, other than by showing a page
+ * A private graph acting on the public graph, other than by releasing a page
  * (docs/outward-acts.md).
  *
  * A deployment acts on the public graph as an ordinary account and only as
@@ -31,7 +31,7 @@
  * Nothing private crosses here. A call carries ids the public graph already
  * holds, amounts, a reason from a fixed list, or words a person wrote for
  * the outside from a signed-in session. No text an agent wrote is sent by
- * anything in this file: that leaves through showing a page.
+ * anything in this file: that leaves through the release of a page.
  *
  * Nothing here reads the live public graph to learn about a node or a
  * request: those reads are of the mirror. The only reads of the public
@@ -380,7 +380,7 @@ export async function declineInPublic(input: { adoptionId: string; reason: strin
   // On the public graph an account declines what it said it was taking up, or what was addressed to a mandate it
   // published. Anything else was asked of nobody here, and there is nothing to answer there.
   const answerable = await runAtLabel(adoption.label, `checking whether request ${adoption.request_id} can be declined in public`, async () => {
-    const [offered] = await rawQuery(`SELECT 1 FROM showings WHERE kind = 'taken_up' AND subject_ref = $1 AND to_outside`, [adoption.request_id]);
+    const [offered] = await rawQuery(`SELECT 1 FROM releases WHERE kind = 'taken_up' AND subject_ref = $1 AND to_outside`, [adoption.request_id]);
     if (offered) return true;
     const { publishedMandateAskedBy } = await import("./gate-service.js");
     return (await publishedMandateAskedBy(adoption.public_request_id)) !== null;

@@ -2,7 +2,7 @@ import "server-only";
 import { accountFetch, pathSegment } from "./account-api";
 
 // Server-only client for what a member of a private deployment works
-// through once it holds material at more than one label: showing a node's
+// through once it holds material at more than one label: release a node's
 // page to readers who do not read its label, the gates, a
 // boundary's redaction policy, sending outside, and sets of files
 // (docs/releasing-a-page.md, docs/published-pages.md, docs/file-sets.md).
@@ -14,31 +14,31 @@ import { accountFetch, pathSegment } from "./account-api";
 
 const seg = pathSegment;
 
-// --- showings (GET /showings, GET /showings/:id, GET /showings/:id/pages/:page_id) ---
+// --- releases (GET /releases, GET /releases/:id, GET /releases/:id/pages/:page_id) ---
 
-/** One of the four states a node under a showing is in, as the readers it is shown to are told. */
+/** One of the four states a node under a release is in, as the readers it is shown to are told. */
 export type NodeState = "not_yet_assessed" | "released_whole" | "released_in_part" | "held";
 
 /**
- * What a showing covers: one node, the node with what sits under it, every
+ * What a release covers: one node, the node with what sits under it, every
  * node one mandate's work assessed, every node assessed at the label, or
  * one item that is not a node's page. Only the first two name a node.
  */
-export type ShowingScope = "node" | "under" | "mandate" | "boundary" | "item";
+export type ReleaseScope = "node" | "under" | "mandate" | "boundary" | "item";
 
-/** A showing as the side it is shown to lists it. */
-export interface ShownShowingRow {
-  showing_id: string;
+/** A release as the side it is shown to lists it. */
+export interface ShownReleaseRow {
+  release_id: string;
   /** The node, for scope `node` or `under`; null for every other scope. */
   node_id: string | null;
   shown_to: string;
   form: "once" | "standing";
-  scope: ShowingScope;
+  scope: ReleaseScope;
   asked_at: string;
   ended_at: string | null;
 }
 
-/** One page under a showing, as the side it was asked for at sees it: where its redaction stands. */
+/** One page under a release, as the side it was asked for at sees it: where its redaction stands. */
 export interface AskedPage {
   page_id: string;
   node_id: string;
@@ -53,16 +53,16 @@ export interface AskedPage {
   waiting_on?: Array<{ part: number | null; kind: string; party: string; standing: "held" | "waiting" }>;
 }
 
-/** A showing as the side it was asked for at lists it. */
-export interface AskedShowingRow {
-  showing_id: string;
+/** A release as the side it was asked for at lists it. */
+export interface AskedReleaseRow {
+  release_id: string;
   /** The node, for scope `node` or `under`; null for every other scope. */
   node_id: string | null;
   node: string | null;
   page_label: string;
   shown_to: string;
   form: "once" | "standing";
-  scope: ShowingScope;
+  scope: ReleaseScope;
   asked_at: string;
   ended_at: string | null;
   pages: AskedPage[];
@@ -94,12 +94,12 @@ export interface ShownNode {
   left_at?: string;
   left_because?: string;
   first_assessed_at: string | null;
-  showing_began: string;
+  release_began: string;
   state: NodeState;
   versions: ShownVersion[];
 }
 
-export interface ShowingAct {
+export interface ReleaseAct {
   at: string;
   what: string;
   page_id?: string;
@@ -111,13 +111,13 @@ export interface ShowingAct {
   reason?: string;
 }
 
-export interface ShownShowing {
-  showing_id: string;
+export interface ShownRelease {
+  release_id: string;
   shown_to: string;
   form: "once" | "standing";
-  /** What the showing covers, in the API's words, naming the mandate and the label where the reader reads that label. */
+  /** What the release covers, in the API's words, naming the mandate and the label where the reader reads that label. */
   scope: string;
-  scope_code: ShowingScope;
+  scope_code: ReleaseScope;
   asked_at: string;
   asked_by: string | null;
   asked_holding: string[];
@@ -125,7 +125,7 @@ export interface ShownShowing {
   ended_because: string | null;
   policy: { policy_id: string; version: number; hash: string } | null;
   nodes: ShownNode[];
-  acts: ShowingAct[];
+  acts: ReleaseAct[];
 }
 
 export interface ShownMark {
@@ -154,23 +154,23 @@ export interface ShownPage extends ShownVersion {
   verification: { ok: boolean; problems: string[]; checked: number; held: number } | null;
 }
 
-export async function fetchShowings(
+export async function fetchReleases(
   externalId: string,
   nodeId?: string
-): Promise<{ shown: ShownShowingRow[]; asked: AskedShowingRow[]; hold_reasons: Record<string, string>; end_reasons: Record<string, string> }> {
+): Promise<{ shown: ShownReleaseRow[]; asked: AskedReleaseRow[]; hold_reasons: Record<string, string>; end_reasons: Record<string, string> }> {
   const query = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : "";
-  return accountFetch(`/showings${query}`, { actingUser: externalId });
+  return accountFetch(`/releases${query}`, { actingUser: externalId });
 }
 
-export function fetchShowing(externalId: string, id: string): Promise<ShownShowing> {
-  return accountFetch(`/showings/${seg(id)}`, { actingUser: externalId });
+export function fetchRelease(externalId: string, id: string): Promise<ShownRelease> {
+  return accountFetch(`/releases/${seg(id)}`, { actingUser: externalId });
 }
 
-export function fetchShownPage(externalId: string, showingId: string, pageId: string): Promise<ShownPage> {
-  return accountFetch(`/showings/${seg(showingId)}/pages/${seg(pageId)}`, { actingUser: externalId });
+export function fetchShownPage(externalId: string, releaseId: string, pageId: string): Promise<ShownPage> {
+  return accountFetch(`/releases/${seg(releaseId)}/pages/${seg(pageId)}`, { actingUser: externalId });
 }
 
-export interface AskShowing {
+export interface AskRelease {
   node_id: string;
   page_label: string;
   to_label?: string;
@@ -179,37 +179,37 @@ export interface AskShowing {
   scope: "node" | "under";
 }
 
-export function askShowing(
+export function askRelease(
   externalId: string,
-  body: AskShowing
-): Promise<{ showing_id: string; pages_opened: number; sending?: string }> {
-  return accountFetch("/showings", { method: "POST", actingUser: externalId, body });
+  body: AskRelease
+): Promise<{ release_id: string; pages_opened: number; sending?: string }> {
+  return accountFetch("/releases", { method: "POST", actingUser: externalId, body });
 }
 
-export function endShowing(externalId: string, id: string, reason: string): Promise<unknown> {
-  return accountFetch(`/showings/${seg(id)}/end`, { method: "POST", actingUser: externalId, body: { reason } });
+export function endRelease(externalId: string, id: string, reason: string): Promise<unknown> {
+  return accountFetch(`/releases/${seg(id)}/end`, { method: "POST", actingUser: externalId, body: { reason } });
 }
 
 export function holdShownPage(
   externalId: string,
-  showingId: string,
+  releaseId: string,
   pageId: string,
   body: { lift?: boolean; reason?: string }
 ): Promise<unknown> {
-  return accountFetch(`/showings/${seg(showingId)}/pages/${seg(pageId)}/hold`, {
+  return accountFetch(`/releases/${seg(releaseId)}/pages/${seg(pageId)}/hold`, {
     method: "POST",
     actingUser: externalId,
     body,
   });
 }
 
-export function payForShowingWork(
+export function payForReleaseWork(
   externalId: string,
-  showingId: string,
+  releaseId: string,
   pageId: string,
   owls: number
 ): Promise<{ status: string; work: string; note?: string }> {
-  return accountFetch(`/showings/${seg(showingId)}/pages/${seg(pageId)}/commission`, {
+  return accountFetch(`/releases/${seg(releaseId)}/pages/${seg(pageId)}/commission`, {
     method: "POST",
     actingUser: externalId,
     body: { owls },
@@ -220,7 +220,7 @@ export function payForShowingWork(
 
 export interface QueueStanding {
   party: { id: string; name: string };
-  standing: "released" | "held" | "waiting";
+  standing: "consented" | "held" | "waiting";
 }
 
 export interface QueueItem {
@@ -229,7 +229,7 @@ export interface QueueItem {
   /** What kind of thing the item is: a node's page, an answer, a mandate, a message, funding. */
   kind_of_thing: string;
   kind_of_thing_in_words: string;
-  showing_id: string;
+  release_id: string;
   /** The gate it crosses. */
   gate_id: string;
   /**
@@ -297,7 +297,7 @@ export function fetchGateQueue(externalId: string): Promise<GateQueue> {
   return accountFetch("/gate/queue?limit=200", { actingUser: externalId });
 }
 
-export type GateDecision = "release" | "approve" | "remove" | "hold" | "delay" | "lift";
+export type GateDecision = "consent" | "approve" | "remove" | "hold" | "delay" | "lift";
 
 export interface Decided {
   decided: number;
@@ -331,7 +331,7 @@ export interface GateSetting {
   set_by: string | null;
   set_holding: string[];
   set_at: string;
-  made_from_release_rule?: string;
+  made_from_consent_rule?: string;
   delay_hours?: number;
   batch_hours?: number;
 }
@@ -500,7 +500,7 @@ export interface OutboundPackage {
 }
 
 export interface OutboundNode {
-  showing_id: string;
+  release_id: string;
   node_id: string;
   node: string | null;
   public_node_id: string | null;
@@ -520,9 +520,9 @@ export interface OutboundNode {
 
 export function fetchOutbound(
   externalId: string,
-  showingId?: string
+  releaseId?: string
 ): Promise<{ nodes: OutboundNode[]; how_sending_works: Record<string, string> }> {
-  const query = showingId ? `?showing_id=${encodeURIComponent(showingId)}` : "";
+  const query = releaseId ? `?release_id=${encodeURIComponent(releaseId)}` : "";
   return accountFetch(`/outbound${query}`, { actingUser: externalId });
 }
 
@@ -553,8 +553,8 @@ export function registerPublisherOutside(
   });
 }
 
-export function sendOutside(externalId: string, showingId: string): Promise<SendReport> {
-  return accountFetch("/outbound/send", { method: "POST", actingUser: externalId, body: { showing_id: showingId } });
+export function sendOutside(externalId: string, releaseId: string): Promise<SendReport> {
+  return accountFetch("/outbound/send", { method: "POST", actingUser: externalId, body: { release_id: releaseId } });
 }
 
 export function takePackageFile(
@@ -570,7 +570,7 @@ export function takePackageFile(
 
 export function writeProposal(
   externalId: string,
-  body: { showing_id: string; node_id: string; text?: string }
+  body: { release_id: string; node_id: string; text?: string }
 ): Promise<{ proposal_id: string; state: string; in_words: string }> {
   return accountFetch("/outbound/proposals", { method: "POST", actingUser: externalId, body });
 }

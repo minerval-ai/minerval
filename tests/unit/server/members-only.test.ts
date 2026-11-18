@@ -297,7 +297,7 @@ describe("permissions in words", () => {
   it("names each permission once, with its scope, what it covers and what it never lets anyone do", async () => {
     const { PERMISSIONS, PERMISSION_DEFINITIONS, holdsPermission, heldPermissions, PUBLIC_STANDING, standingOf, membersOnly } =
       await import("../../../src/permissions.js");
-    expect([...PERMISSIONS]).toEqual(["direct", "release", "fund", "read", "read_sources", "administer", "clear_providers"]);
+    expect([...PERMISSIONS]).toEqual(["direct", "consent", "fund", "read", "read_sources", "administer", "clear_providers"]);
     for (const name of PERMISSIONS) {
       const d = PERMISSION_DEFINITIONS[name];
       expect(d.covers.length, name).toBeGreaterThan(30);
@@ -305,7 +305,7 @@ describe("permissions in words", () => {
       expect(d.phrase, name).not.toMatch(/[.—]/);
     }
     expect(PERMISSIONS.filter((p) => PERMISSION_DEFINITIONS[p].scope === "label")).toEqual(["read", "read_sources"]);
-    expect(PERMISSIONS.filter((p) => PERMISSION_DEFINITIONS[p].scope === "party")).toEqual(["release"]);
+    expect(PERMISSIONS.filter((p) => PERMISSION_DEFINITIONS[p].scope === "party")).toEqual(["consent"]);
 
     // No standing is the public one: nothing held, public to read.
     expect(standingOf(null)).toBe(PUBLIC_STANDING);
@@ -318,14 +318,14 @@ describe("permissions in words", () => {
       member: true,
       grants: [
         { permission: "read" as const, label: "internal", partyId: null, group: null },
-        { permission: "release" as const, label: null, partyId: "p1", group: "reviewers" },
+        { permission: "consent" as const, label: null, partyId: "p1", group: "reviewers" },
       ],
     };
-    expect(heldPermissions(standing)).toEqual(["release", "read"]);
+    expect(heldPermissions(standing)).toEqual(["consent", "read"]);
     expect(holdsPermission(standing, "read", { label: "internal" })).toBe(true);
     expect(holdsPermission(standing, "read", { label: "restricted" })).toBe(false);
-    expect(holdsPermission(standing, "release", { partyId: "p1" })).toBe(true);
-    expect(holdsPermission(standing, "release", { partyId: "p2" })).toBe(false);
+    expect(holdsPermission(standing, "consent", { partyId: "p1" })).toBe(true);
+    expect(holdsPermission(standing, "consent", { partyId: "p2" })).toBe(false);
     expect(holdsPermission(standing, "administer")).toBe(false);
 
     expect(membersOnly({})).toBe(false);
@@ -405,7 +405,7 @@ describe("what an outside MCP caller is told", () => {
     expect(limited.instructions).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
     expect(limited.instructions).not.toMatch(/Without the permission to fund work/);
 
-    const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }, { permission: "release" }]);
+    const all = await instructionsFor({ READS: "members" }, [{ permission: "fund" }, { permission: "direct" }, { permission: "administer" }, { permission: "consent" }]);
     expect(all.instructions).toBe(all.base);
   });
 });

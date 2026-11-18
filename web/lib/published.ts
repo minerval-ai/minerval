@@ -1,7 +1,7 @@
 // A page another graph publishes of a node (docs/published-pages.md): what
 // the API serves of it, and the few words the site says about it in more
 // than one place.
-import { showingCovers, type PublishedPageShape } from "./published-page/shape";
+import { releaseCovers, type PublishedPageShape } from "./published-page/shape";
 import { storedWords } from "./stored-words";
 import type { PackageAct, PackageCheck, PackageVersion } from "./published-page/verify";
 
@@ -22,7 +22,7 @@ export interface PublishedPageSummary {
   publisher: { account_id: string; name: string; key_id: string };
   form: "once" | "standing" | null;
   scope: "node" | "under" | "mandate" | "boundary" | null;
-  showing_began: string | null;
+  release_began: string | null;
   asked_at: string | null;
   ended: { at: string; because: string } | null;
   state: "not_yet_assessed" | "released_whole" | "released_in_part" | "held" | null;
@@ -95,8 +95,8 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
    * record is read from (components/claim/InsideVersions.tsx).
    */
   inside?: {
-    tab: { showing_id: string; page_id: string; outside: boolean; shown_to: string; version_of: string; from_label?: string };
-    showing: import("./inside-api").ShownShowing;
+    tab: { release_id: string; page_id: string; outside: boolean; shown_to: string; version_of: string; from_label?: string };
+    release: import("./inside-api").ShownRelease;
     page: import("./inside-api").ShownPage;
   };
 }
@@ -129,10 +129,10 @@ export function stateWords(p: { state: string | null; parts?: number; parts_held
 }
 
 /** How a release was asked for, in a sentence. */
-export function showingWords(p: { form: string | null; scope: string | null; asked_at: string | null; showing_began: string | null; ended: { at: string; because: string } | null }): string {
+export function releaseWords(p: { form: string | null; scope: string | null; asked_at: string | null; release_began: string | null; ended: { at: string; because: string } | null }): string {
   const form =
     p.form === "standing"
       ? `Kept published since ${day(p.asked_at)}, so each later version follows and a version that is held shows as held`
       : `Released once, on ${day(p.asked_at)}, with nothing undertaken about later versions`;
-  return `${form}; covering ${showingCovers(p.scope)}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${storedWords(p.ended.because)}.` : ""}`;
+  return `${form}; covering ${releaseCovers(p.scope)}. It began ${p.release_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${storedWords(p.ended.because)}.` : ""}`;
 }

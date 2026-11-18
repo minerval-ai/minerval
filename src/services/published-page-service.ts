@@ -27,18 +27,19 @@
  *    the source stays on the node's page is that Steward's judgment, as
  *    for any source.
  *  - Later packages of an admitted publication (more of a page released, a
- *    later version, a version held, the showing ended) are stored and the
+ *    later version, a version held, the release ended) are stored and the
  *    Steward is told. Every package received is kept.
  */
 import { createHash, verify as cryptoVerify } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
-import { publishedPageAsText, shapeOfPublishedPage, showingCovers, type PublishedPageShape } from "../published-page/shape.js";
+import { publishedPageAsText, shapeOfPublishedPage, releaseCovers, type PublishedPageShape } from "../published-page/shape.js";
 import {
   ATTESTATION_WORDS,
   HOSTING_WORDS,
   registrationStatement,
+  currentPackage,
   verifyPublishedPage,
   type Hosting,
   type PackageCheck,
@@ -249,10 +250,10 @@ export function sourceTextOf(
     `Published by ${publisher.name} (key ${pkg.publisher.key_id.slice(0, 16)}), whose deployment is recorded as running on ` +
       `${HOSTING_WORDS[pkg.deployment.hosting]}; ${ATTESTATION_WORDS[pkg.deployment.attested_by]}.`,
     publisher.declared_interest ? `The publisher says of its own interest: ${publisher.declared_interest}` : "The publisher has said nothing of its own interest.",
-    `The showing: ${pkg.showing.form === "standing" ? "standing, so each later version follows" : "once, so nothing is undertaken about later versions"}; ` +
-      `covering ${showingCovers(pkg.showing.scope)}; asked for on ${day(pkg.showing.asked_at)}; ` +
-      `it began ${pkg.node.showing_began}.` +
-      (pkg.showing.ended ? ` It ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}.` : ""),
+    `The release: ${pkg.release.form === "standing" ? "standing, so each later version follows" : "once, so nothing is undertaken about later versions"}; ` +
+      `covering ${releaseCovers(pkg.release.scope)}; asked for on ${day(pkg.release.asked_at)}; ` +
+      `it began ${pkg.node.release_began}.` +
+      (pkg.release.ended ? ` It ended on ${day(pkg.release.ended.at)}: ${pkg.release.ended.because}.` : ""),
     `Version of ${day(pkg.page!.version_of)}. ${verdictWords(shape.verdict)}`,
     `Coverage there: ${(shape.coverage?.on ?? []).join(", ") || "examined"}.`,
     shape.sources.length === 0
@@ -273,10 +274,10 @@ export function sourceTextOf(
     `Removals under the policy: ${removals.length === 0 ? "none" : removals.map(([c, n]) => `${c}: ${n}`).join(", ")}.`,
     `Audit's check of the redaction there: ${pkg.page!.audit ?? "not recorded"}`,
     shape.held_parts === 0 ? `Parts: ${shape.parts}, all released.` : `Parts: ${shape.parts}, of which ${shape.held_parts} ${shape.held_parts === 1 ? "is" : "are"} held (${shape.held_kinds}).`,
-    `Who acted on the showing: ${pkg.record.acts
+    `Who acted on the release: ${pkg.record.acts
       .map((a) => `${day(a.at)} ${a.by}${a.holding.length > 0 ? ` (holding ${a.holding.join(", ")})` : ""} ${a.what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${a.reason}` : ""}`)
       .join("; ")}.`,
-    `Versions made while the showing stood: ${pkg.record.versions.map(versionLine).join("; ")}.`,
+    `Versions made while the release stood: ${pkg.record.versions.map(versionLine).join("; ")}.`,
     ...(pkg.deployment.keeps_public_versions_current
       ? [
           `The deployment's setting for asking this graph for a fresh public assessment when its own version of a public node changes: ${pkg.deployment.keeps_public_versions_current.setting}` +
@@ -336,8 +337,8 @@ export function submissionWords(pkg: PublishedPagePackage, publisher: { name: st
   return [
     `A published page, submitted by its publisher. ${publisher.name} asks for the page its deployment shows of this node to be admitted as one of the node's sources.`,
     `It is another graph's Steward's assessment of this node, made on evidence that is not public, and sent as that Steward wrote it, less what a policy removed and what is held.`,
-    `The showing is ${pkg.showing.form === "standing" ? "standing: each later version follows, and a version that is held is sent as held" : "once: the page as it stood, and nothing later"}. ` +
-      `It was asked for on ${day(pkg.showing.asked_at)} and began ${pkg.node.showing_began}.`,
+    `The release is ${pkg.release.form === "standing" ? "standing: each later version follows, and a version that is held is sent as held" : "once: the page as it stood, and nothing later"}. ` +
+      `It was asked for on ${day(pkg.release.asked_at)} and began ${pkg.node.release_began}.`,
     stateSentence(pkg),
     `The package is signed with key ${pkg.publisher.key_id.slice(0, 16)}, which this account registered. Checked when it arrived: ${check.confirmed.join(" ")}`,
     address ? `The page with its record is this contribution's source (${address}).` : "There is no page to read yet. What is admitted is the publication: that it exists, its state, and each version as it follows.",
@@ -354,7 +355,7 @@ export function arrivalMessage(input: { pkg: PublishedPagePackage; publisher: st
   if (!shape) {
     return (
       `${lead} ${stateSentence(pkg)}` +
-      (pkg.showing.ended ? ` The showing ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}.` : "") +
+      (pkg.release.ended ? ` The release ended on ${day(pkg.release.ended.at)}: ${pkg.release.ended.because}.` : "") +
       ` That a version exists and is not shown is part of this node's record, for you to read as you read any omission.`
     );
   }
@@ -364,11 +365,11 @@ export function arrivalMessage(input: { pkg: PublishedPagePackage; publisher: st
       ? `It is attached to this node as a source of the kind published_page (${input.address}). `
       : `It is a source of the kind published_page (${input.address}), and is not attached to this node, because this node's Steward detached an earlier package of it. `) +
     `The source's text is the page with its record: the prompt set and model it was made under, what the assessing run's log shows, where the deployment runs, ` +
-    `how the assessment was paid for, who acted on the showing and with which permissions, whether the showing began before the node was first assessed, and every ` +
+    `how the assessment was paid for, who acted on the release and with which permissions, whether the release began before the node was first assessed, and every ` +
     `version made since. This graph checked the package's signature and that the text sent is what was fingerprinted before anyone decided what to release; the ` +
     `source says what that check cannot show. ` +
     (shape.wording ? `The page gives the node's wording as it was assessed there. Where that differs from this node's wording, the verdict is of that wording. ` : "") +
-    (pkg.showing.ended ? `The showing ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}. ` : "") +
+    (pkg.release.ended ? `The release ended on ${day(pkg.release.ended.at)}: ${pkg.release.ended.because}. ` : "") +
     `It is evidence for you to weigh as you weigh any source, and whether it belongs on this node's page is your judgment (detach_claim_instance takes it off). ` +
     `It does not replace this node's assessment, which is yours to reach.`
   );
@@ -380,14 +381,14 @@ interface PublicationRow {
   id: string;
   account_id: string;
   key_id: string;
-  showing_id: string;
+  release_id: string;
   node_id: string;
   contribution_id: string | null;
   latest_sequence: number;
   first_received_at: Date;
 }
 
-const PUBLICATION_COLUMNS = `id, account_id, key_id, showing_id, node_id, contribution_id, latest_sequence, first_received_at`;
+const PUBLICATION_COLUMNS = `id, account_id, key_id, release_id, node_id, contribution_id, latest_sequence, first_received_at`;
 
 export interface Admission {
   published_page_id: string;
@@ -395,18 +396,20 @@ export interface Admission {
   status: "received" | "already_received";
   source_id: string | null;
   contribution_id: string | null;
-  /** Whether this package is the first for its node under its showing, which is what is charged for. */
+  /** Whether this package is the first for its node under its release, which is what is charged for. */
   first: boolean;
   in_words: string;
 }
 
 /**
  * Check a package before anything is charged or written. Returns the
- * package as read, its publisher, the node, and the check's result; throws
- * with the reason when it is not admitted.
+ * package as read (in the current format's names) and as signed, its
+ * publisher, the node, and the check's result; throws with the reason when
+ * it is not admitted.
  */
 export async function examinePackage(input: { accountId: string; pkg: unknown }): Promise<{
   pkg: PublishedPagePackage;
+  signed: unknown;
   publisher: PublisherRow;
   check: PackageCheck;
   publication: PublicationRow | null;
@@ -424,7 +427,7 @@ export async function examinePackage(input: { accountId: string; pkg: unknown })
   if (!check.ok) {
     throw new PublishedPageError("DOES_NOT_VERIFY", `This package was not admitted, and nothing of it was kept: ${check.failed.join(" ")}`, { failed: check.failed });
   }
-  const pkg = input.pkg as PublishedPagePackage;
+  const pkg = currentPackage(input.pkg as PublishedPagePackage);
   if (!publisher) {
     throw new PublishedPageError(
       "UNREGISTERED_KEY",
@@ -456,8 +459,8 @@ export async function examinePackage(input: { accountId: string; pkg: unknown })
     [pkg.hash]
   );
   const [publication] = await rawQuery<PublicationRow>(
-    `SELECT ${PUBLICATION_COLUMNS} FROM published_pages WHERE key_id = $1 AND showing_id = $2 AND node_id = $3`,
-    [pkg.publisher.key_id, pkg.showing.id, pkg.node.public_id]
+    `SELECT ${PUBLICATION_COLUMNS} FROM published_pages WHERE key_id = $1 AND release_id = $2 AND node_id = $3`,
+    [pkg.publisher.key_id, pkg.release.id, pkg.node.public_id]
   );
   if (!already) {
     const have = publication?.latest_sequence ?? 0;
@@ -486,7 +489,7 @@ export async function examinePackage(input: { accountId: string; pkg: unknown })
       }
     }
   }
-  return { pkg, publisher, check, publication: publication ?? null, already: already ?? null };
+  return { pkg, signed: input.pkg, publisher, check, publication: publication ?? null, already: already ?? null };
 }
 
 /**
@@ -509,21 +512,21 @@ export async function admitPackage(examined: Awaited<ReturnType<typeof examinePa
   }
   const shown = shapeOfPublishedPage(pkg) !== null;
   const stored = await withTransaction(async (tx) => {
-    await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`published-page:${pkg.publisher.key_id}:${pkg.showing.id}:${pkg.node.public_id}`]);
+    await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`published-page:${pkg.publisher.key_id}:${pkg.release.id}:${pkg.node.public_id}`]);
     let publication = examined.publication;
     if (!publication) {
       // Under the lock above: another request may have made the row since this one was examined.
-      const [made] = await tx.query<PublicationRow>(`SELECT ${PUBLICATION_COLUMNS} FROM published_pages WHERE key_id = $1 AND showing_id = $2 AND node_id = $3`, [
+      const [made] = await tx.query<PublicationRow>(`SELECT ${PUBLICATION_COLUMNS} FROM published_pages WHERE key_id = $1 AND release_id = $2 AND node_id = $3`, [
         pkg.publisher.key_id,
-        pkg.showing.id,
+        pkg.release.id,
         pkg.node.public_id,
       ]);
       publication =
         made ??
         (
           await tx.query<PublicationRow>(
-            `INSERT INTO published_pages (account_id, key_id, showing_id, node_id, sensitivity_label) VALUES ($1, $2, $3, $4, $5) RETURNING ${PUBLICATION_COLUMNS}`,
-            [publisher.account_id, pkg.publisher.key_id, pkg.showing.id, pkg.node.public_id, currentLabel()]
+            `INSERT INTO published_pages (account_id, key_id, release_id, node_id, sensitivity_label) VALUES ($1, $2, $3, $4, $5) RETURNING ${PUBLICATION_COLUMNS}`,
+            [publisher.account_id, pkg.publisher.key_id, pkg.release.id, pkg.node.public_id, currentLabel()]
           )
         )[0]!;
     }
@@ -562,7 +565,7 @@ export async function admitPackage(examined: Awaited<ReturnType<typeof examinePa
     await tx.query(
       `INSERT INTO published_page_packages (published_page_id, sequence, hash, state, package, checked, source_id, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8)`,
-      [publication!.id, pkg.sequence, pkg.hash, pkg.state, JSON.stringify(pkg), JSON.stringify(check), sourceId, currentLabel()]
+      [publication!.id, pkg.sequence, pkg.hash, pkg.state, JSON.stringify(examined.signed), JSON.stringify(check), sourceId, currentLabel()]
     );
     await tx.query(`UPDATE published_pages SET latest_sequence = $2 WHERE id = $1`, [publication!.id, pkg.sequence]);
     return { publication: publication!, sourceId, address: shown ? address : null };
@@ -617,7 +620,7 @@ export async function publicationOfContribution(contributionId: string): Promise
  */
 export async function takeIn(publishedPageId: string, opts: { first: boolean }): Promise<{ attached: boolean }> {
   const [publication] = await rawQuery<PublicationRow & { publisher: string }>(
-    `SELECT p.id, p.account_id, p.key_id, p.showing_id, p.node_id, p.contribution_id, p.latest_sequence, p.first_received_at, c.display_name AS publisher
+    `SELECT p.id, p.account_id, p.key_id, p.release_id, p.node_id, p.contribution_id, p.latest_sequence, p.first_received_at, c.display_name AS publisher
        FROM published_pages p JOIN contributors c ON c.id = p.account_id WHERE p.id = $1`,
     [publishedPageId]
   );
@@ -627,7 +630,7 @@ export async function takeIn(publishedPageId: string, opts: { first: boolean }):
     [publishedPageId]
   );
   if (!latest) return { attached: false };
-  const pkg = latest.package;
+  const pkg = currentPackage(latest.package);
   const prefix = `minerval:published-page/${publication.id}/%`;
   let attached = false;
   if (latest.source_id) {
@@ -740,16 +743,16 @@ async function standingOnNode(publication: PublicationRow): Promise<Record<strin
 }
 
 function summaryOf(publication: PublicationRow, publisher: string, latest: PackageRow | undefined): Record<string, unknown> {
-  const pkg = latest?.package;
+  const pkg = latest ? currentPackage(latest.package) : undefined;
   return {
     published_page_id: publication.id,
     node_id: publication.node_id,
     publisher: { account_id: publication.account_id, name: publisher, key_id: publication.key_id },
-    form: pkg?.showing.form ?? null,
-    scope: pkg?.showing.scope ?? null,
-    showing_began: pkg?.node.showing_began ?? null,
-    asked_at: pkg?.showing.asked_at ?? null,
-    ended: pkg?.showing.ended ?? null,
+    form: pkg?.release.form ?? null,
+    scope: pkg?.release.scope ?? null,
+    release_began: pkg?.node.release_began ?? null,
+    asked_at: pkg?.release.asked_at ?? null,
+    ended: pkg?.release.ended ?? null,
     // The node's state there now: that of its latest version.
     state: pkg?.state ?? null,
     version_of: (pkg ? latestVersion(pkg)?.version_of : null) ?? null,
@@ -772,7 +775,7 @@ function summaryOf(publication: PublicationRow, publisher: string, latest: Packa
 /** The published pages of a node, or of a publisher: each publication with its state now and where it stands on the node. */
 export async function listPublishedPages(opts: { nodeId?: string; accountId?: string }): Promise<Array<Record<string, unknown>>> {
   const rows = await rawQuery<PublicationRow & { publisher: string; node: string | null }>(
-    `SELECT p.id, p.account_id, p.key_id, p.showing_id, p.node_id, p.contribution_id, p.latest_sequence, p.first_received_at,
+    `SELECT p.id, p.account_id, p.key_id, p.release_id, p.node_id, p.contribution_id, p.latest_sequence, p.first_received_at,
             c.display_name AS publisher, n.text AS node
        FROM published_pages p JOIN contributors c ON c.id = p.account_id LEFT JOIN claims n ON n.id = p.node_id
       WHERE ($1::uuid IS NULL OR p.node_id = $1) AND ($2::uuid IS NULL OR p.account_id = $2)
@@ -809,7 +812,7 @@ export interface PublishedPageView extends Record<string, unknown> {
  */
 export async function readPublishedPage(publishedPageId: string, opts: { sequence?: number } = {}): Promise<PublishedPageView | null> {
   const [publication] = await rawQuery<PublicationRow & { publisher: string }>(
-    `SELECT p.id, p.account_id, p.key_id, p.showing_id, p.node_id, p.contribution_id, p.latest_sequence, p.first_received_at, c.display_name AS publisher
+    `SELECT p.id, p.account_id, p.key_id, p.release_id, p.node_id, p.contribution_id, p.latest_sequence, p.first_received_at, c.display_name AS publisher
        FROM published_pages p JOIN contributors c ON c.id = p.account_id WHERE p.id = $1`,
     [publishedPageId]
   );
@@ -822,8 +825,8 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
   if (!chosen) return null;
   // A package carries the latest version that is shown, so the newest package has the page to show.
   const shownRow = chosen;
-  const pkg = chosen.package;
-  const shownPkg = shownRow.package;
+  const pkg = currentPackage(chosen.package);
+  const shownPkg = currentPackage(shownRow.package);
   const registration = await livePublisher(publication.key_id);
   const made = shownPkg.record.made;
   return {
@@ -852,7 +855,7 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
     record: {
       made,
       prompt_set_is_this_graphs: made?.prompt_set ? made.prompt_set === getPromptSet().hash : null,
-      sent: pkg.showing.send === "as_released" ? "as each package was built, by the publisher's standing setting" : "by a person each time",
+      sent: pkg.release.send === "as_released" ? "as each package was built, by the publisher's standing setting" : "by a person each time",
       acts: pkg.record.acts,
     },
     versions: pkg.record.versions,

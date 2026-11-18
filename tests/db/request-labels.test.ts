@@ -1573,7 +1573,7 @@ describe("every route that writes, driven against a private target", () => {
       expect(backed.statusCode, backed.body).toBe(200);
       return () => post(both, `/mandates/${grantId}/raise`, { node_id: claimAt[A]! });
     },
-    "POST /showings/:showing_id/pages/:page_id/commission": async () => {
+    "POST /releases/:release_id/pages/:page_id/commission": async () => {
       // A page at rl-a, asked to be shown at rl-b: its redaction waits on the ledger at rl-a.
       const id = await seedClaimAt(A);
       await rawQuery(
@@ -1585,10 +1585,10 @@ describe("every route that writes, driven against a private target", () => {
         `INSERT INTO parties (name, is_own_organization) SELECT $1, true WHERE NOT EXISTS (SELECT 1 FROM parties WHERE is_own_organization)`,
         [OWN_ORGANIZATION]
       );
-      const { askShowing } = await import("../../src/services/showing-service.js");
-      const asked = await askShowing({ nodeId: id, pageLabel: A, toLabel: B, form: "once", scope: "node", actor: { id: both.id, holding: ["direct"] } });
-      const [page] = await rawQuery<{ id: string }>(`SELECT id FROM showing_pages WHERE showing_id = $1`, [asked.showing_id]);
-      return () => post(both, `/showings/${asked.showing_id}/pages/${page!.id}/commission`, { owls: 2 });
+      const { askRelease } = await import("../../src/services/release-service.js");
+      const asked = await askRelease({ nodeId: id, pageLabel: A, toLabel: B, form: "once", scope: "node", actor: { id: both.id, holding: ["direct"] } });
+      const [page] = await rawQuery<{ id: string }>(`SELECT id FROM release_pages WHERE release_id = $1`, [asked.release_id]);
+      return () => post(both, `/releases/${asked.release_id}/pages/${page!.id}/commission`, { owls: 2 });
     },
     "POST /grants/:id/approve": async () => {
       const { grantId } = await mandateAt(A, both);
@@ -1832,7 +1832,7 @@ describe("every route that writes, driven against a private target", () => {
     "POST /requests/:request_id/take-up",
     "POST /mandates/:id/raise",
     "POST /reports",
-    "POST /showings/:showing_id/pages/:page_id/commission",
+    "POST /releases/:release_id/pages/:page_id/commission",
     "POST /grant-conversations/:id/fund",
     "POST /correspondents/:id/poke",
     "DELETE /assistant/conversations/:id",

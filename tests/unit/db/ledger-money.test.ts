@@ -49,7 +49,7 @@ const ON_THE_TABLE: Record<string, string[]> = {
     "FROM regrants: the note of a regrant out of this mandate, read at the labels the reader holds.",
     "INTO regrants: a regrant, added at the label of the work that moved the money.",
   ],
-  "src/services/showing-service.ts": [
+  "src/services/release-service.ts": [
     "FROM action_allocations: which mandates placed money on a request's ledger row, read at the request's own label, so that sending its answer down is paid from the same budget.",
   ],
 };

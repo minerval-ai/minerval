@@ -34,7 +34,7 @@ const NOT_EXAMINED: CoverageSummary = { examined: false, on: [] };
 // shared, and a file that ran earlier may have left a second label defined.
 // Coverage is then said to its reader in the words a deployment with more
 // than one label uses (coverage-service.ts), and the same facts are checked
-// in those words. tests/db/showing-a-page.test.ts holds what they mean.
+// in those words. tests/db/releasing-a-page.test.ts holds what they mean.
 const PUBLIC: CoverageSummary = { examined: true, on: ["public_evidence"] };
 const NOT_SHOWN: CoverageSummary = { examined: true, on: ["public_evidence", "evidence_not_shown"] };
 

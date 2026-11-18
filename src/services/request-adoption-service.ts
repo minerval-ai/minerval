@@ -232,7 +232,7 @@ async function flowWhereThePublicAsked(requestIdHere: string, claimIds: readonly
   const gate = await import("./gate-service.js");
   const mandate = await gate.publishedMandateAskedBy(publicRequestId);
   if (!mandate) return;
-  const { flowForWhatWasAsked } = await import("./showing-service.js");
+  const { flowForWhatWasAsked } = await import("./release-service.js");
   for (const nodeId of claimIds) await flowForWhatWasAsked({ nodeId, pageLabel: currentLabel(), toLabel: null, askedBy: publicRequestId });
 }
 

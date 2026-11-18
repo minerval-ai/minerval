@@ -3,7 +3,7 @@
  * (docs/releasing-a-page.md, "The parts of a page").
  *
  * A page shown below its label is divided into parts, and a part is what
- * the holders of `release` release or hold. The division is mechanical and
+ * the holders of `consent` consent to or hold. The division is mechanical and
  * follows the page's own structure: no agent divides text or sorts it into
  * kinds. A text column is divided at its blank lines, and every other part
  * is one row of the page (an argument with its evaluation, a source's

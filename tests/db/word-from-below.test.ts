@@ -384,7 +384,7 @@ describe.each([
   it("a label takes a request up once, a person who directs can do it by name, and a request at the label itself is not taken up", async () => {
     const asked = requests[below[0]!]!;
     const person = await seedUser();
-    const actor = { id: person, holding: ["direct"], clearance: [PUBLIC, A, C], releaseParties: [], direct: true };
+    const actor = { id: person, holding: ["direct"], clearance: [PUBLIC, A, C], consentParties: [], direct: true };
     const first = await runWithUsageContext({ clearance: actor.clearance }, () => adoptRequestFromBelow({ requestId: asked, label: top, actor }));
     const again = await at(top, () => takeUpFromBelow({ requestId: asked }, { filer: { kind: "admin", agent: "curator" } }));
     expect(again).toMatchObject({ request_id: first.request_id, already: true });

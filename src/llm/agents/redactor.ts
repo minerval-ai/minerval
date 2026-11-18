@@ -1,6 +1,6 @@
 /**
  * The Redactor: one run on one page that is to be shown below its label
- * (prompts/redactor.ts; services/showing-service.ts).
+ * (prompts/redactor.ts; services/release-service.ts).
  *
  * The run works at the page's label, which is the label of its ledger row
  * (workers/engine-executor.ts). It is told its budget and its turn guard in
@@ -41,8 +41,8 @@ export function runRedactor(input: { pageId: string; model?: string }): Promise<
     // gives away as well as the writer could have. Audit, which checks its
     // work, has a setting of its own, so the two need not share a model.
     const model = input.model ?? (config.redactorModel || config.stewardModel);
-    const { showingPage } = await import("../../services/showing-service.js");
-    const page = await showingPage(input.pageId);
+    const { releasePage } = await import("../../services/release-service.js");
+    const page = await releasePage(input.pageId);
     if (!page) throw new Error(`No page ${input.pageId} is read at this run's label.`);
     const reportTools = createReportTools({ model });
     let finished = false;

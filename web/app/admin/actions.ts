@@ -64,7 +64,7 @@ export async function grantAction(_previous: FormState, form: FormData): Promise
   if ((permission === "read" || permission === "read_sources") && !label) {
     return { error: "This permission is granted at one label. Choose the label." };
   }
-  if (permission === "release" && !partyId) {
+  if (permission === "consent" && !partyId) {
     return { error: "Consent is granted for one party. Choose the party." };
   }
   try {
@@ -72,7 +72,7 @@ export async function grantAction(_previous: FormState, form: FormData): Promise
       permission,
       ...(accountId ? { account_id: accountId } : { group }),
       ...(permission === "read" || permission === "read_sources" ? { label } : {}),
-      ...(permission === "release" ? { party_id: partyId } : {}),
+      ...(permission === "consent" ? { party_id: partyId } : {}),
     });
   } catch (err) {
     return refused(err);

@@ -61,8 +61,8 @@ describe("a source's stored text", () => {
     // person: source-segment-service (the document view, which withholds).
     // Used and not returned: the rest (facts parsed from the page, a quote
     // checked against it, its length, whether there is any). Two belong to
-    // the showing of a page: release-gate-service writes the page as shown
-    // into a new source's text and returns none, and showing-service hands a
+    // the release of a page: release-gate-service writes the page as shown
+    // into a new source's text and returns none, and release-service hands a
     // Redactor a window of a source its page drew on, through a tool named
     // below. published-page-service writes a published page's text into a
     // new source when its package is admitted, and returns none.
@@ -80,7 +80,7 @@ describe("a source's stored text", () => {
       "services/published-page-service.ts",
       "services/reading-service.ts",
       "services/release-gate-service.ts",
-      "services/showing-service.ts",
+      "services/release-service.ts",
       "services/source-content.ts",
       "services/source-context-service.ts",
       "services/source-facts-service.ts",

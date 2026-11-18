@@ -6,7 +6,7 @@
  * for a kind of thing or for every kind, for the whole boundary or for a
  * narrower scope, and for one party's material or for every party that has
  * not said. Two sets of people are a gate's authorities: the deployment's
- * administrators, for the gate as a whole, and the holders of `release` for
+ * administrators, for the gate as a whole, and the holders of `consent` for
  * a party, for that party's material.
  *
  * Which setting an item falls under is read here, each time the gate looks
@@ -248,7 +248,7 @@ export interface GateAuthority {
   id: string;
   holding: string[];
   administer: boolean;
-  releaseParties: readonly string[];
+  consentParties: readonly string[];
 }
 
 const settingView = (r: SettingRow, names: Map<string, string>, setters: Map<string, string>) => ({
@@ -265,13 +265,13 @@ const settingView = (r: SettingRow, names: Map<string, string>, setters: Map<str
   set_by: r.set_by ? (setters.get(r.set_by) ?? null) : null,
   set_holding: r.set_holding,
   set_at: r.set_at.toISOString(),
-  ...(r.from_rule ? { made_from_release_rule: r.from_rule } : {}),
+  ...(r.from_rule ? { made_from_consent_rule: r.from_rule } : {}),
 });
 
 /**
  * Set how a gate treats a kind of thing in a scope. A setting for the gate
  * as a whole is an administrator's; one for a party's material is set by
- * someone who holds `release` for that party. Setting what already stands
+ * someone who holds `consent` for that party. Setting what already stands
  * changes nothing and says so. A setting it replaces is ended, and stays on
  * the record.
  */
@@ -296,7 +296,7 @@ export async function setGateMode(input: {
   if ((scope === "boundary") !== !input.scopeRef) {
     throw new GateError("BAD_SCOPE", scope === "boundary" ? "A setting for the whole boundary names nothing narrower." : `Say which ${scope === "under" ? "node" : scope} with scope_ref.`);
   }
-  if (partyId === null ? !input.actor.administer : !input.actor.releaseParties.includes(partyId)) {
+  if (partyId === null ? !input.actor.administer : !input.actor.consentParties.includes(partyId)) {
     throw new GateError(
       "NOT_YOURS_TO_SET",
       partyId === null
@@ -349,7 +349,7 @@ async function restampWhereOutside(gate: Pick<GateRow, "to_outside">): Promise<v
 export async function endGateSetting(input: { settingId: string; actor: GateAuthority }): Promise<{ changed: boolean }> {
   return asOwner(async () => {
     const [row] = await rawQuery<{ party_id: string | null; ended_at: Date | null; boundary_id: string }>(`SELECT party_id, ended_at, boundary_id FROM gate_settings WHERE id = $1`, [input.settingId]);
-    const mine = row && (row.party_id === null ? input.actor.administer : input.actor.releaseParties.includes(row.party_id));
+    const mine = row && (row.party_id === null ? input.actor.administer : input.actor.consentParties.includes(row.party_id));
     if (!row || !mine) throw new GateError("SETTING_NOT_FOUND", "No setting you may change has that id.");
     if (row.ended_at) return { changed: false };
     await rawQuery(`UPDATE gate_settings SET ended_at = now(), ended_by = $2 WHERE id = $1`, [input.settingId, input.actor.id]);
@@ -404,9 +404,9 @@ export async function setGate(input: {
         [input.boundaryId, mandate, pays]
       );
     }
-    // A showing outside carries the gate's choice, which is what the sender reads (outbound-service.ts).
+    // A release outside carries the gate's choice, which is what the sender reads (outbound-service.ts).
     if (input.sendAsReleased !== undefined && gate.to_outside) {
-      await rawQuery(`UPDATE shown_showings SET send_as_released = $2 WHERE boundary_id = $1`, [input.boundaryId, input.sendAsReleased]);
+      await rawQuery(`UPDATE shown_releases SET send_as_released = $2 WHERE boundary_id = $1`, [input.boundaryId, input.sendAsReleased]);
     }
   });
   return (await gateOf(input.boundaryId))!;
@@ -414,7 +414,7 @@ export async function setGate(input: {
 
 /**
  * The gates this person has a say over or reads from the side things come
- * from, each with its settings. A person who holds `release` for a party
+ * from, each with its settings. A person who holds `consent` for a party
  * and does not read the label is shown the settings for that party and for
  * the gate as a whole. The label things come from is named to those who
  * read it and to administrators, who define the labels; anyone else is
@@ -431,10 +431,10 @@ export async function gatesFor(actor: GateAuthority & { clearance: readonly stri
     const out: Array<Record<string, unknown>> = [];
     for (const p of pairs) {
       const reads = actor.clearance.includes(p.from_label);
-      if (!reads && !actor.administer && actor.releaseParties.length === 0) continue;
+      if (!reads && !actor.administer && actor.consentParties.length === 0) continue;
       const gate = (await gateOf(p.boundary_id))!;
       const settings = (await liveSettings(p.boundary_id)).filter(
-        (s) => reads || actor.administer || s.party_id === null || actor.releaseParties.includes(s.party_id)
+        (s) => reads || actor.administer || s.party_id === null || actor.consentParties.includes(s.party_id)
       );
       out.push({
         gate_id: gate.boundary_id,
@@ -453,7 +453,7 @@ export async function gatesFor(actor: GateAuthority & { clearance: readonly stri
         settings: settings.map((s) => settingView(s, names, setters)),
         you_may_set: {
           the_gate_as_a_whole: actor.administer,
-          for_parties: actor.releaseParties.map((id) => ({ id, name: names.get(id) ?? "" })),
+          for_parties: actor.consentParties.map((id) => ({ id, name: names.get(id) ?? "" })),
         },
       });
     }

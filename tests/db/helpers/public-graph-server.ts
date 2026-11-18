@@ -8,7 +8,7 @@
  * agent takes (the Contribution Reviewer's decision on a submission, and
  * the node's Steward taking a source off its page, and an agent of the
  * public graph filing a request) are driven through the agents' own tools
- * on a second port, as the showing tests drive the
+ * on a second port, as the release tests drive the
  * Redactor's and Audit's.
  */
 import { createServer } from "node:http";

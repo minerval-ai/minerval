@@ -99,7 +99,7 @@ async function runAuditImpl(input: {
     ...getGovernanceToolDefinitions(),
     // Less the prize tools while the prizes feature is off (src/features.ts).
     // And less the two that check a redaction where the graph has one label
-    // and nothing is redacted (services/showing-service.ts).
+    // and nothing is redacted (services/release-service.ts).
     ...withoutOffFeatureTools(getAuditToolDefinitions()).filter(
       (t) => !oneLabelOnly() || !REDACTION_CHECK_TOOLS.has(t.name)
     ),

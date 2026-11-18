@@ -152,8 +152,8 @@ export type ActionKind =
   // mandates like any action, and fundable by anyone.
   | "request"
   // One Redactor run on a page that is to be shown below its label
-  // (showing-service.ts): group `redact:<showing_pages.id>`, target_ref the
-  // page, at the page's label. Opened when a showing takes in a version and
+  // (release-service.ts): group `redact:<release_pages.id>`, target_ref the
+  // page, at the page's label. Opened when a release takes in a version and
   // again each time Audit returns the work; it runs when a mandate that
   // values it or the person who asked pays for it.
   | "redact";

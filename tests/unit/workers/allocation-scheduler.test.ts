@@ -114,8 +114,8 @@ vi.mock("../../../src/services/queue-service.js", () => ({
   ),
 }));
 
-vi.mock("../../../src/services/showing-service.js", () => ({
-  followShowings: vi.fn(async () => (state.gateSteps.push("followShowings"), 0)),
+vi.mock("../../../src/services/release-service.js", () => ({
+  followReleases: vi.fn(async () => (state.gateSteps.push("followReleases"), 0)),
   retryGatePayments: vi.fn(async () => (state.gateSteps.push("retryGatePayments"), 0)),
 }));
 vi.mock("../../../src/services/release-gate-service.js", () => ({
@@ -243,7 +243,7 @@ describe("allocationSchedulerTick", () => {
     // In the first run with real models a page released outside waited for the
     // next sweep to be packaged and sent, and items whose redaction could not be
     // paid waited six hours to be paid. None of these steps runs a model.
-    const steps = ["followShowings", "offerMandates", "retryGatePayments", "settleWaiting", "followOutwardActs", "followOutbound"];
+    const steps = ["followReleases", "offerMandates", "retryGatePayments", "settleWaiting", "followOutwardActs", "followOutbound"];
     await allocationSchedulerTick(1_000_000);
     expect(state.gateSteps).toEqual(steps);
     state.gateSteps = [];

@@ -61,7 +61,7 @@ export async function noticeChangedVersions(): Promise<number> {
            AND CASE WHEN $3::text IS NULL THEN c.origin = 'mirror'
                     ELSE c.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$3::text])) END
            AND NOT EXISTS (
-             SELECT 1 FROM showing_pages sp JOIN showings s ON s.id = sp.showing_id
+             SELECT 1 FROM release_pages sp JOIN releases s ON s.id = sp.release_id
               WHERE s.kind = 'funding' AND s.boundary_id = $4 AND s.subject_ref = v.node_id
                 AND sp.header::jsonb ->> 'version_of' = to_char(v.at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))
          ORDER BY v.at`,

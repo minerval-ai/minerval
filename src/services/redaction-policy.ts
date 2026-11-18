@@ -99,7 +99,7 @@ const HOW_REMOVAL_WORKS: readonly string[] = [
   'Each removal is marked where it was made with the name of its category, as in "[redacted: personal data]". The mark says nothing else: not how long the passage was, and not what it concerned.',
   "A passage is judged by what it gives away, alone and together with what stays around it. A figure removed from one sentence that can be worked out from two others has not been removed.",
   "A passage is removed because a category below covers it. Whether it is favorable or unfavorable to anyone is not a reason to remove it or to keep it.",
-  "Where it is in real doubt whether a category covers a passage, the passage is removed and marked: what has been shown cannot be taken back, and every removal is counted where readers can see the count.",
+  "Where it is in real doubt whether a category covers a passage, the passage is removed and marked: what has been released cannot be taken back, and every removal is counted where readers can see the count.",
   "Each removal is recorded with its category, the version of this policy, and the Redactor's note of why. The note stays at the label the page was written at.",
 ];
 
@@ -108,21 +108,21 @@ export function renderPolicy(categories: readonly PolicyCategory[], version: num
   return [
     `# Redaction policy, version ${version}`,
     "",
-    "This policy says what is removed from a page of this graph when the page is shown to readers who may not " +
+    "This policy says what is removed from a page of this graph when the page is released to readers who may not " +
       "read the label it was written at. It applies at one boundary: from the label the page was written at, to " +
-      "the readers it is shown to. It governs removal only. It does not decide what is assessed, which pages are " +
-      "shown, or what the people who hold the permission to release then release or hold.",
+      "the readers it is released to. It governs removal only. It does not decide what is assessed, which pages are " +
+      "released, or what the people who consent for each party then consent to or hold.",
     "",
     "## How removal works",
     "",
     ...HOW_REMOVAL_WORKS.map((line, i) => `${i + 1}. ${line}`),
     "",
-    "## What is shown whenever a page is shown",
+    "## What is shown whenever a page is released",
     "",
     ...ALWAYS_SHOWN.map((line) => `- ${line}`),
     "",
     "No category covers any of these. Where one of them could not be shown without giving away what a category " +
-      "protects, the page is not shown, and readers on the other side see that it is held.",
+      "protects, the page is not released, and readers on the other side see that it is held.",
     "",
     "A supplier's name, the words of a recorded interest and the words of a gap are not among these. They are " +
       "parts of the page like any other: a category covers them as it covers any passage, and removing one does " +
@@ -134,7 +134,7 @@ export function renderPolicy(categories: readonly PolicyCategory[], version: num
     "## Changing this policy",
     "",
     "The deployment's administrators save a new version to add, reword or drop categories. A version cannot " +
-      "change how removal works or what is shown whenever a page is shown, and cannot define a category by " +
+      "change how removal works or what is shown whenever a page is released, and cannot define a category by " +
       "whether a passage is favorable. Every removal records the version it was made under.",
   ].join("\n");
 }
@@ -203,7 +203,7 @@ export function policyProblems(categories: readonly PolicyCategory[]): PolicyPro
       problems.push({
         category: name,
         problem:
-          `This category names something that is shown whenever a page is shown ("${alwaysShown[0]}"). A reader ` +
+          `This category names something that is shown whenever a page is released ("${alwaysShown[0]}"). A reader ` +
           `cannot weigh a page without its verdict, its confidence, its coverage, its sources' existence, its gaps, ` +
           `how it was made and the count of removals, so no category covers them. A page whose verdict cannot be ` +
           `released is held whole, which the people who direct the graph or consent for a party can do.`,
