@@ -55,14 +55,14 @@ export default function Page() {
             <tr>
               <td><code>direct</code></td>
               <td />
-              <td>Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources (among them sets of files they upload), state the organisation's own view on a node, ask for a node's page to be shown to readers who do not read its label, end a standing showing, hold a page that has not been shown, send what a showing outside has released to the public graph, and write the words a node is proposed there in. Adopt a request from the public graph. Unless the deployment names another permission for it (<code>PUBLIC_ACTS_BY</code>), act on the public graph in the organisation's name</td>
+              <td>Open a mandate and shape it with its Grantmaker, approve its plan, ask a mandate's Correspondent for an update, add sources (among them sets of files they upload), state the organisation's own view on a node, release a node's page to readers who do not read its label, end a standing release, hold a page that has not been released, send the pages a release outside has released to the public graph, and write the words a node is proposed there in. Adopt a request from the public graph. Unless the deployment names another permission for it (<code>PUBLIC_ACTS_BY</code>), act on the public graph in the organisation's name</td>
               <td>Edit an assessment or a run's log</td>
             </tr>
             <tr>
-              <td><code>release</code></td>
+              <td><code>consent</code> (stored as <code>release</code>)</td>
               <td>for one party</td>
-              <td>Act at a gate on what rests on that party's material: approve, release, remove a passage from, hold or delay each part of a page or other item going to readers who do not read its label; set the gate for that party's material; release the words a node is proposed to the public graph in. For the organisation's own material, send an agent's report, as redacted, to Minerval's maintainers</td>
-              <td>Edit what the agents wrote, or release another party's material</td>
+              <td>Act at a gate on what rests on that party's material: consent, approve, remove a passage from, hold or delay each part of a page or other item going to readers who do not read its label; set the gate for that party's material; consent to the words a node is proposed to the public graph in. For the organisation's own material, send an agent's report, as redacted, to Minerval's maintainers</td>
+              <td>Edit what the agents wrote, or consent for another party</td>
             </tr>
             <tr>
               <td><code>fund</code></td>
@@ -97,7 +97,7 @@ export default function Page() {
           </tbody>
         </table>
       </div>
-      <p>Every administrative write needs a signed-in session as well as the permission, so a leaked key, an access token, or an agent acting on text it read can never widen what anyone may read or release. For the same reason those writes are not MCP tools; the matching reads are (<code>list_permission_grants</code>, <code>list_parties</code>, <code>list_labels</code>). An MCP client or the Assistant is not offered a tool whose route needs a permission its account lacks, and is told which. Taking money back (withdrawing from a mandate, cancelling a grant, job or order) needs no permission, and neither do proposing, contributing or appealing.</p>
+      <p>Every administrative write needs a signed-in session as well as the permission, so a leaked key, an access token, or an agent acting on text it read can never widen what anyone may read or consent to. For the same reason those writes are not MCP tools; the matching reads are (<code>list_permission_grants</code>, <code>list_parties</code>, <code>list_labels</code>). An MCP client or the Assistant is not offered a tool whose route needs a permission its account lacks, and is told which. Taking money back (withdrawing from a mandate, cancelling a grant, job or order) needs no permission, and neither do proposing, contributing or appealing.</p>
       <p>A grant to a group reaches every account whose latest sign-in carried that group. A sign-in vouches for its groups for <code>SIGN_IN_VALID_HOURS</code> (12 by default), after which the person signs in again. Grants are never deleted: removing one marks it with who removed it and when, and the log of every grant, removal and administrative act is open to every member on the Activity log (<code>/admin/activity</code>). The last live grant of <code>administer</code> cannot be removed.</p>
       <p><b>The first administrator.</b> Set <code>FIRST_ADMINISTRATOR</code> to your sign-in identity (<code>oidc:{"<"}subject{">"}</code>). Your first sign-in, while the deployment has never had an administrator, grants you every permission, at every label and for every party that exists. It works once. If a deployment loses all its administrators, <code>POST /operator/administrators</code> with the operator key grants <code>administer</code> again, and nothing else.</p>
       <h2 id="request-label">The label a request works at</h2>

@@ -1,6 +1,6 @@
 "use client";
 
-// The filters over the list of showings: a GET form, so a filtered list is an
+// The filters over the list of releases: a GET form, so a filtered list is an
 // address. A choice in a select sends it at once; without script, the button
 // does.
 
@@ -25,10 +25,10 @@ export function ShowingsFilter({
 }) {
   const submit = (e: ChangeEvent<HTMLSelectElement>) => e.currentTarget.form?.requestSubmit();
   return (
-    <form method="get" action="/showings" className="w-row" role="search" style={{ gap: 8 }}>
+    <form method="get" action="/releases" className="w-row" role="search" style={{ gap: 8 }}>
       <input type="hidden" name="tab" value={tab} />
       {ended && <input type="hidden" name="ended" value="1" />}
-      <input className="w-input" type="search" name="q" defaultValue={q} placeholder="Search nodes" aria-label="Search showings" style={{ width: 240 }} />
+      <input className="w-input" type="search" name="q" defaultValue={q} placeholder="Search nodes" aria-label="Search releases" style={{ width: 240 }} />
       <select className="w-select" name="boundary" defaultValue={boundary} onChange={submit} aria-label="Boundary" style={{ width: "auto" }}>
         <option value="">All boundaries</option>
         {boundaries.map((b) => (

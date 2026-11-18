@@ -1,4 +1,4 @@
-/* The status of a version of a page under a showing (Pipeline.tsx): four small
+/* The status of a version of a page under a release (Pipeline.tsx): four small
    step bars and a word. Tokens only, so both themes come free. */
 .w-pipe { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; vertical-align: middle; }
 .w-pipe-s { display: inline-flex; gap: 2px; flex: 0 0 auto; }

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { checkShownPage, type PageToCheck, type ShownPageCheck } from "@/lib/shown-page-check";
 
 // "Check this page", for a page shown inside the deployment
-// (docs/showing-a-page.md, "The fingerprint"): fetches the page as the API
+// (docs/releasing-a-page.md, "The fingerprint"): fetches the page as the API
 // serves it to this reader and rebuilds its fingerprint here, in the
 // reader's own browser, from the parts and salts they were shown. It says
 // what it confirmed, what failed, and what a check of this kind cannot show.
@@ -42,7 +42,7 @@ export function CheckShownPage({
       ? `Checked just now, in your browser: ${check.released} released part${check.released === 1 ? " is" : "s are"} word for word what was recorded when the redaction finished, with each removal marked where it was made, and ${check.held} held part${check.held === 1 ? " is" : "s are"} in the recorded place and of the recorded kind.`
       : "Checked just now, in your browser: the page does not match its fingerprint."
     : arrivedOk
-      ? "When this page was read for you, the deployment rebuilt its fingerprint from the parts shown and it matched the one recorded before anyone decided what to release."
+      ? "When this page was read for you, the deployment rebuilt its fingerprint from the parts released and it matched the one recorded before any party consented."
       : "When this page was read for you, the deployment's own check of it did not match.";
   const cannot = [
     "What the held parts say. The check confirms their kinds, their places and that they have not changed.",

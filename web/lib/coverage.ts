@@ -64,8 +64,8 @@ export function evidenceNotShownLine(
  * In a deployment that holds material at more than one label, what a
  * judgment was made on is said to the person reading it: evidence they can
  * read, evidence they cannot, or both. A reader's own judgment rests on
- * evidence they cannot read when its Steward weighed a page shown from a
- * label the reader does not read (docs/showing-a-page.md). One line under the verdict, or null
+ * evidence they cannot read when its Steward weighed a page released from a
+ * label the reader does not read (docs/releasing-a-page.md). One line under the verdict, or null
  * where the API does not say (the public graph, where everything is read by
  * everyone).
  */
@@ -79,12 +79,12 @@ export function readerEvidenceLine(
   if (can && cannot) {
     return (
       `This ${judgment} was made partly on evidence you can read and partly on evidence you cannot: ` +
-      "among what it rests on is a page shown from a label you do not read, with what was removed or held marked."
+      "among what it rests on is a page released from a label you do not read, with what was removed or held marked."
     );
   }
   if (cannot) {
     return (
-      `This ${judgment} was made on evidence you cannot read: what it rests on is a page shown ` +
+      `This ${judgment} was made on evidence you cannot read: what it rests on is a page released ` +
       "from a label you do not read, with what was removed or held marked."
     );
   }

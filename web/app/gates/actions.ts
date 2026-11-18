@@ -6,9 +6,9 @@ import { auth } from "../../auth";
 import type { FormState } from "../../components/admin/ActionForm";
 import { AccountApiError } from "../../lib/account-api";
 import { savePolicy, type PolicyCategory } from "../../lib/inside-api";
-import { endGateSettingAction, setGateAction, setGateModeAction } from "../showings/actions";
+import { endGateSettingAction, setGateAction, setGateModeAction } from "../releases/actions";
 
-// The forms on a boundary's page. The gate's own acts are the showings
+// The forms on a boundary's page. The gate's own acts are the releases
 // actions, used as they are; these only fit the boundary page's fields to
 // them and refresh the boundary's own address as well as /gates. Saving a
 // policy version is done here so that a refusal comes back with each

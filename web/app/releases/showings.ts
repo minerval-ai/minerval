@@ -2,9 +2,9 @@ import "server-only";
 import { fetchGates, fetchShowing, type AskedPage, type AskedShowingRow, type Gate, type ShownShowing, type ShownVersion } from "@/lib/inside-api";
 import { pipelineOf, type Pipeline } from "@/lib/pipeline";
 
-// What the pages for showings share: the words for a showing's kind, the two
+// What the pages for releases share: the words for a release's kind, the two
 // ends of its boundary, the one status of a version from whichever sides the
-// viewer reads, and a bounded fetch of showings' details.
+// viewer reads, and a bounded fetch of releases' details.
 
 /** "Standing" or "Once", and what it covers, as the Kind column says them. */
 export function kindOf(form: string, scope: string): { form: string; covers: string } {

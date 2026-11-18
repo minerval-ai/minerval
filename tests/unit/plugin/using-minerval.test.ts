@@ -30,6 +30,10 @@ const NOT_DESCRIBED: Record<string, string> = {
   "/redaction-policies": "A redirect kept for old links: a boundary's policy is a tab of /gates/:id.",
   "/redaction-policies/:id": "A redirect kept for old links: a boundary's policy is a tab of /gates/:id.",
   "/sources/new": "A redirect kept for old links: adding a source opens a drawer on /sources.",
+  "/showings": "A redirect kept for old links: a showing is a release, at /releases.",
+  "/showings/new": "A redirect kept for old links: to /releases/new.",
+  "/showings/:id": "A redirect kept for old links: to /releases/:id.",
+  "/showings/:id/pages/:pageId": "A redirect kept for old links: to /releases/:id/pages/:pageId.",
 };
 
 /**

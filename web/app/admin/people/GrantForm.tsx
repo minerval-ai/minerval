@@ -5,7 +5,7 @@ import { grantAction } from "../actions";
 
 // The form in the Grant access drawer. A client component only so that the
 // label or party it asks for follows the permission chosen: reading and
-// opening raw sources are granted at one label, release for one party, and
+// opening raw sources are granted at one label, consent for one party, and
 // the rest take neither. The act is the shared grantAction, unchanged.
 
 export interface GrantChoices {

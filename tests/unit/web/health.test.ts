@@ -177,7 +177,7 @@ describe("a model setting's role", () => {
   });
 });
 
-describe("parties nobody releases for", () => {
+describe("parties nobody can consent for", () => {
   const gate = (settings: Array<{ mode: string; party: { id: string } | null }>, starting: Record<string, string> = { page: "redactor" }) => ({
     from: "board",
     to: "public",
@@ -185,7 +185,7 @@ describe("parties nobody releases for", () => {
     starting_positions: starting,
     settings,
   });
-  /** Release is held for the own organisation; nobody holds it for Halvorsen. */
+  /** Consent is held for the own organisation; nobody holds it for Halvorsen. */
   function withParties(): SetupChecklist {
     const c = healthy();
     c.permissions.push({
@@ -201,14 +201,14 @@ describe("parties nobody releases for", () => {
     return c;
   }
 
-  it("names a party nobody releases for where a person decides for it", () => {
+  it("names a party nobody can consent for where a person decides for it", () => {
     const found = partiesReleasedByNobody(withParties(), [gate([{ mode: "person", party: { id: "p2" } }])]);
     expect(found).toEqual([{ party: { id: "p2", name: "Halvorsen" }, boundaries: ["board → public"] }]);
     const rows = attentionItems(withParties(), [gate([{ mode: "person", party: null }])]);
-    expect(rows.find((r) => r.key === "release-nobody-p2")).toMatchObject({ title: "Nobody releases for Halvorsen", owner: "admin", action: "Grant" });
+    expect(rows.find((r) => r.key === "release-nobody-p2")).toMatchObject({ title: "Nobody can consent for Halvorsen", owner: "admin", action: "Grant" });
   });
 
-  it("says nothing where the Redactor decides, or where somebody releases", () => {
+  it("says nothing where the Redactor decides, or where somebody consents", () => {
     expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "redactor", party: { id: "p2" } }])])).toEqual([]);
     expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "person", party: { id: "p1" } }])])).toEqual([]);
   });

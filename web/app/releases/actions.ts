@@ -22,7 +22,7 @@ import {
   type PolicyCategory,
 } from "../../lib/inside-api";
 
-// What the forms on the pages for showings, the gates, a boundary's
+// What the forms on the pages for releases, the gates, a boundary's
 // policy and sending outside do. Each acts for the person in the server's
 // own session, never for anyone a form names, and the API decides whether
 // they may. What the API refuses is said beside the form in the API's own
@@ -43,7 +43,7 @@ function refused(err: unknown): FormState {
     if (more.length > 0) return { error: `${err.message} ${more.join(" ")}` };
     return { error: err.message };
   }
-  console.error("[showings] an action failed:", err);
+  console.error("[releases] an action failed:", err);
   return { error: "That did not work, and nothing was changed. Try again in a moment." };
 }
 
@@ -59,10 +59,10 @@ export async function askShowingAction(_previous: FormState, form: FormData): Pr
   const to = text(form, "to");
   const formOf = text(form, "form");
   const scope = text(form, "scope");
-  if (!pageLabel) return { error: "Choose which assessment's page is to be shown." };
-  if (!to) return { error: "Choose who the page is to be shown to." };
+  if (!pageLabel) return { error: "Choose which assessment's page is to be released." };
+  if (!to) return { error: "Choose who the page is to be released to." };
   if (formOf !== "once" && formOf !== "standing") return { error: "Choose once or standing." };
-  if (scope !== "node" && scope !== "under") return { error: "Choose what the showing covers." };
+  if (scope !== "node" && scope !== "under") return { error: "Choose what the release covers." };
   const outside = to === "outside";
   let showingId: string;
   try {
@@ -77,22 +77,22 @@ export async function askShowingAction(_previous: FormState, form: FormData): Pr
   } catch (err) {
     return refused(err);
   }
-  revalidatePath("/showings");
-  redirect(`/showings/${showingId}`);
+  revalidatePath("/releases");
+  redirect(`/releases/${showingId}`);
 }
 
 export async function endShowingAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   const reason = text(form, "reason");
-  if (!reason) return { error: "Choose a reason. It is recorded with the date, where the people the page is shown to can read it." };
+  if (!reason) return { error: "Choose a reason. It is recorded with the date, where the people the page is released to can read it." };
   try {
     await endShowing(user, text(form, "showing_id"), reason);
   } catch (err) {
     return refused(err);
   }
-  revalidatePath("/showings", "layout");
-  return { notice: "Ended. Later assessments no longer follow, and what was shown stays shown." };
+  revalidatePath("/releases", "layout");
+  return { notice: "Ended. Later assessments no longer follow, and what was released stays released." };
 }
 
 export async function holdPageAction(_previous: FormState, form: FormData): Promise<FormState> {
@@ -106,7 +106,7 @@ export async function holdPageAction(_previous: FormState, form: FormData): Prom
   } catch (err) {
     return refused(err);
   }
-  revalidatePath("/showings", "layout");
+  revalidatePath("/releases", "layout");
   return { notice: lift ? "The hold is lifted. It stays on the record." : "Held. The hold shows on the other side with its date and its reason." };
 }
 
@@ -117,7 +117,7 @@ export async function payForWorkAction(_previous: FormState, form: FormData): Pr
   if (!Number.isFinite(owls) || owls <= 0) return { error: "Give a budget in owls, more than zero." };
   try {
     const paid = await payForShowingWork(user, text(form, "showing_id"), text(form, "page_id"), owls);
-    revalidatePath("/showings", "layout");
+    revalidatePath("/releases", "layout");
     return { notice: paid.note ?? `Paid for ${paid.work}. It runs now; what it does not spend comes back to you.` };
   } catch (err) {
     return refused(err);
@@ -162,12 +162,12 @@ export async function decideAction(_previous: FormState, form: FormData): Promis
     });
     revalidatePath("/gate");
     revalidatePath("/gates");
-    revalidatePath("/showings", "layout");
+    revalidatePath("/releases", "layout");
     const n = result.decided;
     const s = n === 1 ? "" : "s";
     const done =
       decision === "release"
-        ? `Released ${n} item${s}. A release is not taken back.`
+        ? `Consented to ${n} item${s}. Consent is not taken back.`
         : decision === "approve"
           ? `Approved ${n} item${s} as the Redactor left ${n === 1 ? "it" : "them"}. What it held or delayed stays back.`
           : decision === "hold"
@@ -177,7 +177,7 @@ export async function decideAction(_previous: FormState, form: FormData): Promis
               : decision === "remove"
                 ? `Removed the passage from ${n} part${s}, with the category's mark in its place.`
                 : `Lifted the hold or delay on ${n} item${s}.`;
-    const shown = result.shown.length > 0 ? ` ${result.shown.length === 1 ? "An item is" : `${result.shown.length} items are`} now shown.` : "";
+    const shown = result.shown.length > 0 ? ` ${result.shown.length === 1 ? "An item is" : `${result.shown.length} items are`} now released.` : "";
     const same = result.unchanged > 0 ? ` ${result.unchanged} already stood that way.` : "";
     const not = result.refused.length > 0 ? ` Not done for ${result.refused.length}: ${[...new Set(result.refused.map((r) => r.why))].join(" ")}` : "";
     return n === 0 && result.refused.length > 0 ? { error: not.trim() } : { notice: `${done}${shown}${same}${not}` };
@@ -295,7 +295,7 @@ export async function sendOutsideAction(_previous: FormState, form: FormData): P
   try {
     const report = await sendOutside(user, text(form, "showing_id"));
     revalidatePath("/outbound");
-    revalidatePath("/showings", "layout");
+    revalidatePath("/releases", "layout");
     if (report.sent.length === 0 && report.proposals.length === 0) return { notice: "Nothing was waiting to be sent." };
     const admitted = report.sent.filter((s) => s.result === "admitted").length;
     const not = report.sent.filter((s) => s.result !== "admitted");

@@ -27,7 +27,7 @@ export const dynamic = "force-dynamic";
 
 // Parties say whose material a source is: this organisation, or an outside
 // party that supplied it. A party is recorded so that its stake in what a
-// source says can be weighed, and because release is granted party by party.
+// source says can be weighed, and because consent is granted party by party.
 // Parties are the administrators' to add, and never removed, because sources
 // carry them.
 
@@ -79,9 +79,9 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
         title="Parties"
         sub={
           <span className="w-row" style={{ gap: 6 }}>
-            Whose material a source is · who may release it
+            Whose material a source is · who consents for it
             <Tip>
-              Every source belongs to a party: this organisation, or an outside party that supplied it, such as a customer, a supplier or a partner. Release is granted party by party: the holders of release for a party decide whether anything resting on its material leaves the deployment, at the gates. Parties are never removed.
+              Every source belongs to a party: this organisation, or an outside party that supplied it, such as a customer, a supplier or a partner. Consent is granted party by party: the people who consent for a party decide whether anything resting on its material leaves the deployment, at the gates. Parties are never removed.
             </Tip>
           </span>
         }
@@ -103,7 +103,7 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
               <th>Party</th>
               <th className="w-num">Sources</th>
               <th>
-                Release holders <Tip>Who decides, at the gates, whether anything resting on the party&apos;s material leaves the deployment.</Tip>
+                Who consents <Tip>Who decides, at the gates, whether anything resting on the party&apos;s material leaves the deployment.</Tip>
               </th>
               <th className="w-num">Added</th>
             </tr>
@@ -228,7 +228,7 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
                 <br />
                 <span className="w-help">
                   {!ownParty
-                    ? "Add it first: release and connections name it."
+                    ? "Add it first: consent and connections name it."
                     : ownOffered
                       ? `It is a party already, as "${ownParty.name}". Ticking this gives it the name you enter.`
                       : `${ownParty.name} already is.`}
@@ -278,7 +278,7 @@ function PartySelect({ parties, label }: { parties: PartyView[]; label: string }
   );
 }
 
-/** Who holds release for a party, by name; "Nobody" with the way to grant it. */
+/** Who consents for a party, by name; "Nobody" with the way to grant it. */
 function Holders({ grants }: { grants: GrantView[] }) {
   const people = [...new Map(grants.filter((g) => g.account).map((g) => [g.account!.id, g.account!.display_name])).values()];
   const groups = [...new Set(grants.filter((g) => g.group !== null).map((g) => g.group!))];

@@ -55,7 +55,7 @@ export function holdersText(h: Holders): string {
 /** What each permission is called on a page, and in the middle of a sentence. */
 const PERMISSION_WORDS: Record<string, { name: string; to: string }> = {
   direct: { name: "Direct the graph", to: "direct the graph" },
-  release: { name: "Release a party's material", to: "release a party's material" },
+  release: { name: "Consent for a party", to: "consent for a party" },
   fund: { name: "Fund work", to: "fund work" },
   read: { name: "Read at a label", to: "read at a label" },
   read_sources: { name: "Open raw sources at a label", to: "open raw sources at a label" },
@@ -73,7 +73,7 @@ export function permissionName(permission: string): string {
 /** The permission in a word or two, for a chip: "Read", "Raw sources", "Clear providers". */
 const PERMISSION_SHORT: Record<string, string> = {
   direct: "Direct",
-  release: "Release",
+  release: "Consent",
   fund: "Fund",
   read: "Read",
   read_sources: "Raw sources",
@@ -90,7 +90,7 @@ export function permissionPhrase(permission: string): string {
   return PERMISSION_WORDS[permission]?.to ?? permission.replace(/_/g, " ");
 }
 
-/** A grant with its scope: "read at internal", "release for Orrin Labs", "fund work". */
+/** A grant with its scope: "read at internal", "consent for Orrin Labs", "fund work". */
 export function grantText(grant: {
   permission: string;
   label?: string | null;
@@ -98,7 +98,7 @@ export function grantText(grant: {
 }): string {
   if (grant.permission === "read" && grant.label) return `read at ${grant.label}`;
   if (grant.permission === "read_sources" && grant.label) return `open raw sources at ${grant.label}`;
-  if (grant.permission === "release" && grant.party) return `release for ${grant.party.name}`;
+  if (grant.permission === "release" && grant.party) return `consent for ${grant.party.name}`;
   return permissionPhrase(grant.permission);
 }
 
@@ -160,7 +160,7 @@ const PREFLIGHT_WORDS: Record<string, { title: string; todo?: string }> = {
   usage_report: { title: "The usage report" },
   standing_mandates: { title: "A General mandate at each label" },
   own_organization: { title: "The organisation as a party" },
-  publishing: { title: "Signing pages shown outside" },
+  publishing: { title: "Signing pages released outside" },
   public_graph: { title: "The public graph" },
   public_acts: { title: "Who may act on the public graph" },
   private_run_fetches: { title: "The addresses a private run may fetch" },
@@ -330,7 +330,7 @@ function peopleItem(c: SetupChecklist): ChecklistItem {
       facts.push(`${name}: no party is recorded yet.`);
       continue;
     }
-    for (const party of parties) facts.push(`Release for ${party.party.name}: ${holdersText(party)}.`);
+    for (const party of parties) facts.push(`Consent for ${party.party.name}: ${holdersText(party)}.`);
   }
   return {
     key: "people",
@@ -749,15 +749,15 @@ export function logSentence(entry: LogEntry): string {
     : entry.group
       ? `the group ${entry.group}`
       : "an account";
-  // The permission with what it is held at: "read at internal", "release
-  // the material of Orrin Labs", "fund work".
+  // The permission with what it is held at: "read at internal", "consent
+  // for Orrin Labs", "fund work".
   const permission =
     entry.permission === "read"
       ? `read at ${labelWords(entry.label)}`
       : entry.permission === "read_sources"
         ? `open raw sources at ${labelWords(entry.label)}`
         : entry.permission === "release"
-          ? `release the material of ${partyWords(entry.party)}`
+          ? `consent for ${partyWords(entry.party)}`
           : permissionPhrase(entry.permission ?? "");
   switch (entry.event) {
     case "granted":

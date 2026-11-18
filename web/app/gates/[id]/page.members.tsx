@@ -332,7 +332,7 @@ function Rules({ gate, gates, mandates, nodes }: { gate: Gate; gates: Gates; man
                       <span title={s.set_holding.length > 0 ? `holding ${s.set_holding.join(", ")}` : undefined}>{s.set_by}</span>
                     ) : s.made_from_release_rule ? (
                       <span className="w-chip" title={s.made_from_release_rule}>
-                        Release rule
+                        Consent rule
                       </span>
                     ) : (
                       <span className="w-muted">The deployment</span>
@@ -501,7 +501,7 @@ function RuleForm({ gate, gates, mandates, from }: { gate: Gate; gates: Gates; m
           Hold keeps each item back for a time; batching then sends what is ready together, every so many hours. Left empty, neither.
         </Tip>
       </div>
-      {only && <div className="w-help">You hold release for {only.name}: a rule you add is for its material.</div>}
+      {only && <div className="w-help">You consent for {only.name}: a rule you add is for its material.</div>}
       {gate.to_outside && <Lock>Changes show publicly, with their date, on each mandate your organisation has published</Lock>}
     </WorkForm>
   );
@@ -665,7 +665,7 @@ async function PolicyTab({
                     </>
                   )}
                   <Tip>
-                    The policy in force is read in full by everyone a page is shown to across this boundary; a page shown outside carries
+                    The policy in force is read in full by everyone a page is released to across this boundary; a page released outside carries
                     the whole text with it.
                   </Tip>
                 </span>,
@@ -752,7 +752,7 @@ function Settings({ gate, gates, mandates }: { gate: Gate; gates: Gates; mandate
                 <input type="radio" name="flow" value="asked" defaultChecked={gate.flow === "asked"} />
                 <span style={{ fontSize: "inherit", color: "inherit" }}>
                   <b>Asked for</b>
-                  <span>Answers, that a request was taken up, and pages set to flow on Showings</span>
+                  <span>Answers, that a request was taken up, and pages set to flow on Releases</span>
                 </span>
               </label>
               <label className="w-option" title={gates.flows.everything}>

@@ -41,7 +41,7 @@ import {
   type ShownShowing,
 } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
-import { decideAction } from "../showings/actions";
+import { decideAction } from "../releases/actions";
 import { QueueForm } from "./QueueForm";
 import "./review.css";
 
@@ -49,20 +49,20 @@ export const metadata: Metadata = { title: "Review · Minerval" };
 export const dynamic = "force-dynamic";
 
 // What waits on a person at a gate (GET /gate/queue; docs/the-gate.md): for
-// a person who holds release for a party, the parts of items that rest on
+// a person who consents for a party, the parts of items that rest on
 // that party's material and have not gone through. These are the items
 // whose gate is set to a person's decision, and those the Redactor or a
 // person holds or has delayed; everything else went as the Redactor left it.
 //
 // One party at a time (`?party=`), narrowed by kind (`?kind=`). On the left
 // the queue, one row per item, oldest first; in the centre the item chosen
-// (`?item=`) as a document, each part as it would be shown with a box to
+// (`?item=`) as a document, each part as it would be released with a box to
 // tick and the acts beneath; on the right what it belongs to and rests on.
 // Where the person reads at the label the page was written at, the
 // Redactor's removals are a difference against what the Steward wrote, with
 // its notes. Where they do not, they see the marks and not what was removed,
 // except in a part that rests only on the material of an outside party they
-// release for, and the API's sentence says so once.
+// consent for, and the API's sentence says so once.
 
 type Search = { party?: string; kind?: string; item?: string };
 
@@ -87,7 +87,7 @@ function titleOf(item: QueueItem): { text: string; serif: boolean; faint?: boole
   return { text: "A page of a node you do not read", serif: false, faint: true };
 }
 
-/** A part as it would be shown: each removed passage struck through in front of the mark that replaces it, where the person may see it. */
+/** A part as it would be released: each removed passage struck through in front of the mark that replaces it, where the person may see it. */
 function Shown({ item }: { item: QueueItem }) {
   const shown = item.as_it_would_be_shown ?? "";
   const removals = item.removals ?? [];
@@ -128,7 +128,8 @@ function Shown({ item }: { item: QueueItem }) {
   return <>{out}</>;
 }
 
-const STANDING: Record<"released" | "held" | "waiting", string> = { released: "released", held: "holding", waiting: "not decided" };
+// A party's standing on a part. The API calls a party's consent `released`.
+const STANDING: Record<"released" | "held" | "waiting", string> = { released: "consented", held: "holding", waiting: "not decided" };
 
 export default async function ReviewPage({ searchParams }: { searchParams: Promise<Search> }) {
   const who = await viewer();
@@ -137,7 +138,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const params = await searchParams;
   const [queue, showings] = await Promise.all([fetchGateQueue(who.externalId), fetchShowings(who.externalId).catch(() => null)]);
 
-  // The parties the person releases for: from their grants, and any the queue names besides.
+  // The parties the person consents for: from their grants, and any the queue names besides.
   const partyMap = new Map<string, { id: string; name: string }>();
   for (const g of who.mine.grants) if (g.permission === "release" && g.party) partyMap.set(g.party.id, { id: g.party.id, name: g.party.name });
   for (const i of queue.items) for (const p of i.decide_for) if (!partyMap.has(p.id)) partyMap.set(p.id, { id: p.id, name: p.name });
@@ -188,11 +189,11 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const entries = kind ? ofParty.filter((e) => e.first.kind_of_thing === kind) : ofParty;
   const selected = entries.find((e) => e.id === params.item || e.first.page_id === params.item) ?? entries[0];
 
-  // Where each item crosses: the label the page was written at, where the person reads the showing's side, and where it goes.
+  // Where each item crosses: the label the page was written at, where the person reads the release's side, and where it goes.
   const boundaryOf = new Map<string, { from: string | null; to: string }>();
   for (const s of showings?.asked ?? []) boundaryOf.set(s.showing_id, { from: s.page_label, to: labelOf(s.shown_to) });
 
-  // For the item chosen: its showing (who asked, its acts, its policy) and the categories of that policy.
+  // For the item chosen: its release (who asked, its acts, its policy) and the categories of that policy.
   let showing: ShownShowing | null = null;
   let categories: string[] = [];
   let fromPolicy = false;
@@ -435,7 +436,7 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
               </label>
               {row.part === null && (
                 <Tip>
-                  {`Releasing this releases what is shown whenever the ${isPage ? "page" : "item"} is shown${isPage ? ": its verdict" : ""}. Holding it holds the whole item, whatever is decided about its parts.`}
+                  {`Consenting to this releases what is shown whenever the ${isPage ? "page" : "item"} is released${isPage ? ": its verdict" : ""}. Holding it holds the whole item, whatever is decided about its parts.`}
                 </Tip>
               )}
               <span className="w-spacer w-row" style={{ gap: 6 }}>
@@ -496,7 +497,7 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
                     {i < others.length - 1 && <span className="w-faint">·</span>}
                   </span>
                 ))}
-                <span className="w-faint">· shown once every party releases</span>
+                <span className="w-faint">· released once every party consents</span>
               </div>
             )}
           </div>
@@ -541,9 +542,9 @@ function Context({
   return (
     <aside className="w-review-ctx" aria-label="Context">
       <div className="w-review-ctx-s">
-        <h3>Showing</h3>
-        <Link href={`/showings/${first.showing_id}`} style={{ fontWeight: 500 }}>
-          {showing ? `Shown to ${showing.shown_to}` : "The showing it belongs to"}
+        <h3>Release</h3>
+        <Link href={`/releases/${first.showing_id}`} style={{ fontWeight: 500 }}>
+          {showing ? `Released to ${showing.shown_to}` : "The release it belongs to"}
         </Link>
         {showing && (
           <div className="w-small w-muted" style={{ marginTop: 3 }}>
@@ -596,7 +597,7 @@ function Context({
               ) : s.waiting > 0 ? (
                 <Pill tone="neu">not decided</Pill>
               ) : (
-                <Pill tone="ok">released</Pill>
+                <Pill tone="ok">consented</Pill>
               )}
             </span>
           </div>
@@ -665,15 +666,15 @@ function Rules({ queue }: { queue: { acts: Record<string, string>; note: string;
       <ul>
         {Object.entries(queue.acts).map(([act, words]) => (
           <li key={act}>
-            <b>{capital(act)}.</b> {words}
+            <b>{act === "release" ? "Consent" : capital(act)}.</b> {words}
           </li>
         ))}
         <li>
-          <b>No text is edited.</b> Each part is hashed as it stands, and the people it is shown to check what they read against that hash.
+          <b>No text is edited.</b> Each part is hashed as it stands, and the people it is released to check what they read against that hash.
           A passage can be removed and marked, and a part can be held; no word can be changed.
         </li>
         <li>
-          <b>A release is not taken back.</b> Once a part is shown, people have read it. A hold or a delay can be lifted later; a release
+          <b>Consent is not taken back.</b> Once a part is released, people have read it. A hold or a delay can be lifted later; a consent
           cannot be undone.
         </li>
         <li>

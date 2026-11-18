@@ -8,11 +8,11 @@ import { NOT_YET_ASSESSED, type Pipeline as Status, type PipelineKey } from "@/l
 import { ShowingsFilter } from "./ShowingsFilter";
 import { destinationOf, fetchDetails, gateFor, kindOf, latestPage, loadGates, statusOf, versionsById, wholeOf } from "./showings";
 
-// The list of showings (GET /showings), in two tabs: those asked for from a
+// The list of releases (GET /showings), in two tabs: those asked for from a
 // label the viewer reads, with where each one's latest page stands on its way
-// across, and those shown to a label the viewer reads, or outside. One row
-// per showing, one status per row (lib/pipeline.ts), and the act that is
-// due, where one is. /showings/new draws this list behind its drawer.
+// across, and those released to a label the viewer reads, or outside. One row
+// per release, one status per row (lib/pipeline.ts), and the act that is
+// due, where one is. /releases/new draws this list behind its drawer.
 
 export interface ShowingsQuery {
   tab?: string;
@@ -43,8 +43,8 @@ const STATUSES: Array<{ key: PipelineKey | "needs"; label: string }> = [
   { key: "audit", label: "Audit check" },
   { key: "gate", label: "At the gate" },
   { key: "held", label: "Held" },
-  { key: "shown_whole", label: "Shown whole" },
-  { key: "shown_in_part", label: "Shown in part" },
+  { key: "shown_whole", label: "Released whole" },
+  { key: "shown_in_part", label: "Released in part" },
   { key: "cannot_cross", label: "Can't cross" },
   { key: "overtaken", label: "Overtaken" },
   { key: "not_yet_assessed", label: "Not yet assessed" },
@@ -132,15 +132,15 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries({ tab, q: query.q, boundary: query.boundary, status: query.status, ended: query.ended, ...extra })) if (v) p.set(k, v);
     const s = p.toString();
-    return `/showings${s ? `?${s}` : ""}`;
+    return `/releases${s ? `?${s}` : ""}`;
   };
 
   return (
     <WorkPage>
       <WorkHead
-        title="Showings"
-        sub={total === 0 ? "None yet" : `${plural(total, "showing")}${needing > 0 ? ` · ${needing} ${needing === 1 ? "needs" : "need"} something` : ""}`}
-        actions={can(who, "direct") && <ButtonLink href="/showings/new" primary icon="plus">New showing</ButtonLink>}
+        title="Releases"
+        sub={total === 0 ? "None yet" : `${plural(total, "release")}${needing > 0 ? ` · ${needing} ${needing === 1 ? "needs" : "need"} something` : ""}`}
+        actions={can(who, "direct") && <ButtonLink href="/releases/new" primary icon="plus">New release</ButtonLink>}
       />
 
       <div className="w-col">
@@ -149,12 +149,12 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
             <Tabs
               current={tab}
               tabs={[
-                { key: "asked", label: "From your labels", href: "/showings?tab=asked", count: asked.length },
-                { key: "shown", label: "Shown to you", href: "/showings?tab=shown", count: shown.length },
+                { key: "asked", label: "From your labels", href: "/releases?tab=asked", count: asked.length },
+                { key: "shown", label: "Released to you", href: "/releases?tab=shown", count: shown.length },
               ]}
             />
           </div>
-          <Tip>From your labels: pages written at a label you read, asked to be shown elsewhere. Shown to you: pages shown to a label you read, or outside.</Tip>
+          <Tip>From your labels: pages written at a label you read, asked to be released elsewhere. Released to you: pages released to a label you read, or outside.</Tip>
         </div>
 
         {rows.length > 0 && (
@@ -172,11 +172,11 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
               <span className="w-muted w-small w-spacer">
                 {showEnded ? (
                   <>
-                    Ended showings shown · <Link href={here({ ended: undefined })}>Hide {endedCount}</Link>
+                    Ended releases shown · <Link href={here({ ended: undefined })}>Hide {endedCount}</Link>
                   </>
                 ) : (
                   <>
-                    Ended showings hidden · <Link href={here({ ended: "1" })}>Show {endedCount}</Link>
+                    Ended releases hidden · <Link href={here({ ended: "1" })}>Show {endedCount}</Link>
                   </>
                 )}
               </span>
@@ -189,26 +189,26 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
             <Empty>
               {filtered || (rows.length > 0 && !showEnded) ? (
                 <>
-                  No showing here matches. <Link href={`/showings?tab=${tab}${rows.length > 0 && !filtered ? "&ended=1" : ""}`}>{filtered ? "Clear filters" : "Show ended"}</Link>
+                  No release here matches. <Link href={`/releases?tab=${tab}${rows.length > 0 && !filtered ? "&ended=1" : ""}`}>{filtered ? "Clear filters" : "Show ended"}</Link>
                 </>
               ) : tab === "asked" ? (
                 <>
-                  No page at a label you read has been asked to be shown.{" "}
+                  No page at a label you read has been asked to be released.{" "}
                   {can(who, "direct") ? (
                     <>
-                      Start with <Link href="/showings/new">New showing</Link>, or from a node&rsquo;s page.
+                      Start with <Link href="/releases/new">New release</Link>, or from a node&rsquo;s page.
                     </>
                   ) : (
                     "A person who holds the permission to direct asks for one."
                   )}
                 </>
               ) : (
-                "Nothing is shown to a label you read, or outside."
+                "Nothing is released to a label you read, or outside."
               )}
             </Empty>
           </div>
         ) : (
-          <Table label={tab === "asked" ? "Showings from your labels" : "Showings shown to you"}>
+          <Table label={tab === "asked" ? "Releases from your labels" : "Releases to you"}>
             <thead>
               <tr>
                 <th>Node</th>
@@ -216,7 +216,7 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
                 <th>Kind</th>
                 <th>Latest version</th>
                 <th>
-                  Status <Tip>One status per page version: Redact, then Audit&apos;s check, then Release at the gate, then Shown on the other side.</Tip>
+                  Status <Tip>One status per page version: Redact, then Audit&apos;s check, then Consent at the gate, then Released on the other side.</Tip>
                 </th>
                 <th className="w-act" aria-label="Acts" />
               </tr>
@@ -228,7 +228,7 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
                 return (
                   <tr key={r.id} className={r.ended ? "w-muted-row" : undefined}>
                     <td style={{ maxWidth: 380 }}>
-                      <Link href={`/showings/${r.id}`} className={r.node ? "w-node" : undefined} style={{ color: "var(--w-ink)" }}>
+                      <Link href={`/releases/${r.id}`} className={r.node ? "w-node" : undefined} style={{ color: "var(--w-ink)" }}>
                         {r.node ?? r.whole ?? "A node you do not read"}
                       </Link>
                       {(r.more > 0 || r.ended) && (
@@ -252,7 +252,7 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
                     </td>
                     <td className="w-act">
                       {!r.ended && r.status.needs === "pay" && can(who, "fund") && (
-                        <ButtonLink href={`/showings/${r.id}`} small>
+                        <ButtonLink href={`/releases/${r.id}`} small>
                           Pay
                         </ButtonLink>
                       )}

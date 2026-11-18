@@ -1,19 +1,20 @@
-// One status for one version of a node's page under a showing, from the two
+// One status for one version of a node's page under a release, from the two
 // vocabularies the API describes it in: the stage on the side it was written
 // at (to_redact, to_check, at_gate, cannot_cross, overtaken; GET /showings,
-// `asked`), and the state on the side it is shown to (not_yet_assessed,
+// `asked`), and the state on the side it is released to (not_yet_assessed,
 // held, released_in_part, released_whole; GET /showings/:id). A reader of
 // both sides sees both halves; a reader of one side sees that half only,
 // and what the other half would say is left unmarked rather than guessed.
 //
-// Four steps: Redact, Audit (its check of the redaction), Release (the gate)
-// and Shown (on the other side). Waiting for funds is a warning on Redact or
-// Audit, the step the money is for; a hold is a warning on Release.
+// Four steps: Redact, Audit (its check of the redaction), Consent (the gate,
+// where each party consents; the step's key is `release`) and Released (on
+// the other side; key `shown`). Waiting for funds is a warning on Redact or
+// Audit, the step the money is for; a hold is a warning on Consent.
 //
 // Pure: components/work/Pipeline.tsx draws it, tests/unit/web/pipeline.test.ts checks it.
 
 export type PipelineStep = "redact" | "audit" | "release" | "shown";
-/** todo: not reached, or not known from this side. now: under way. part: shown in part. */
+/** todo: not reached, or not known from this side. now: under way. part: released in part. */
 export type StepMark = "todo" | "done" | "now" | "warn" | "bad" | "part";
 export type PipelineTone = "ok" | "warn" | "bad" | "info" | "neu";
 /** What the version waits on someone for: money, a decision at the gate, or the boundary's policy. */
@@ -27,7 +28,7 @@ export interface PipelineInput {
   stage?: SourceStage | null;
   /** The API's sentence for the stage; an unpaid stage begins "waiting for funds". */
   stageInWords?: string | null;
-  /** The state, where the viewer reads the side the page is shown to. */
+  /** The state, where the viewer reads the side the page is released to. */
   state?: DestinationState | null;
   /** The API's fixed words for why a version not shown is held (ShownVersion.held_because). */
   heldBecause?: string | null;
@@ -55,7 +56,7 @@ export interface Pipeline {
   title: string;
 }
 
-const LABELS: Record<PipelineStep, string> = { redact: "Redact", audit: "Audit", release: "Release", shown: "Shown" };
+const LABELS: Record<PipelineStep, string> = { redact: "Redact", audit: "Audit", release: "Consent", shown: "Released" };
 const ORDER: PipelineStep[] = ["redact", "audit", "release", "shown"];
 
 const UNPAID = /^waiting for funds/i;
@@ -110,8 +111,8 @@ export function pipelineOf(input: PipelineInput): Pipeline {
     const of = input.ofParts ?? null;
     const heldParts = input.partsHeld ?? null;
     pill = shownWhole
-      ? { text: "Shown whole", tone: "ok" }
-      : { text: heldParts !== null && of !== null ? `Shown in part (${heldParts} of ${of} held)` : "Shown in part", tone: "ok" };
+      ? { text: "Released whole", tone: "ok" }
+      : { text: heldParts !== null && of !== null ? `Released in part (${heldParts} of ${of} held)` : "Released in part", tone: "ok" };
   } else if (stage === "cannot_cross") {
     marks.redact = "bad";
     key = "cannot_cross";
@@ -147,7 +148,7 @@ export function pipelineOf(input: PipelineInput): Pipeline {
     pill = { text: "Held", tone: "warn" };
   }
 
-  // A hold placed by a person who directs, or by the Redactor, sits on Release whatever came before it.
+  // A hold placed by a person who directs, or by the Redactor, sits on Consent whatever came before it.
   if (held.hold && stage !== "overtaken" && stage !== "cannot_cross" && !shownWhole && !shownInPart) {
     marks.release = "warn";
     key = "held";
@@ -170,5 +171,5 @@ export function pipelineOf(input: PipelineInput): Pipeline {
   };
 }
 
-/** The status of a node under a showing that has no version yet. */
+/** The status of a node under a release that has no version yet. */
 export const NOT_YET_ASSESSED: Pipeline = pipelineOf({ state: "not_yet_assessed" });

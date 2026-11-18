@@ -7,7 +7,7 @@ import { Boundary, Lbl, Tip, shortDay } from "@/components/work/ui";
 import { askShowingAction } from "../actions";
 import "../showings.css";
 
-// The choices of a new showing, each a card, and what follows from them in
+// The choices of a new release, each a card, and what follows from them in
 // at most four lines beside. A client component only so that those lines
 // follow the choices as they are made; the form posts to the same server
 // action as before (askShowingAction), which redirects to the new showing.
@@ -36,7 +36,7 @@ export function NewShowingForm({
   const reads = (l: { name: string; reads: string[] }) => !!page && (l.name === page || l.reads.includes(page));
 
   return (
-    <WorkForm action={askShowingAction} submit="Ask to show" primary extra={<Link className="w-btn" href="/showings">Cancel</Link>}>
+    <WorkForm action={askShowingAction} submit="Release" primary extra={<Link className="w-btn" href="/releases">Cancel</Link>}>
       <input type="hidden" name="node_id" value={nodeId} />
 
       <fieldset className="w-field" style={{ border: 0, margin: 0, padding: 0 }}>
@@ -44,7 +44,7 @@ export function NewShowingForm({
           Page{" "}
           <Tip>
             What was written at that label: the assessment, its arguments and their evaluations, the readings of its sources, its subclaims. Another
-            label&apos;s page is a separate showing.
+            label&apos;s page is a separate release.
           </Tip>
         </legend>
         <div className="w-showings-opts">
@@ -62,7 +62,7 @@ export function NewShowingForm({
 
       <fieldset className="w-field" style={{ border: 0, margin: 0, padding: 0 }}>
         <legend className="w-label" style={{ marginBottom: 5 }}>
-          Show to{" "}
+          Release to{" "}
           <Tip>Labels you do not read are not offered, because a label&apos;s name is not shown to people who may not read it.</Tip>
         </legend>
         <div className="w-showings-opts">
@@ -118,7 +118,7 @@ export function NewShowingForm({
           <span>This page, as it stands today</span>
           <span>
             Every later assessment follows{" "}
-            <Tip>One not released shows to them as held, with why. Later results can&apos;t be left out unseen. You can end it; what was shown stays shown.</Tip>
+            <Tip>One not released shows to them as held, with why. Later results can&apos;t be left out unseen. You can end it; what was released stays released.</Tip>
           </span>
         </div>
       </div>
@@ -137,7 +137,7 @@ export function NewShowingForm({
         </div>
         <div className="w-showings-help">
           <span>Subclaims show only how they bear</span>
-          <span>Each node under it is shown the same way; later ones join</span>
+          <span>Each node under it is released the same way; later ones join</span>
         </div>
       </div>
 
@@ -153,7 +153,7 @@ export function NewShowingForm({
             <Link href={gate ? `/gates/${gate.id}` : "/gates"}>{gate ? "Boundary" : "Boundaries"}</Link>
           </div>
         ) : (
-          <div className="w-muted">Choose the page and who it is shown to.</div>
+          <div className="w-muted">Choose the page and who it is released to.</div>
         )}
         {form && (
           <div>
@@ -181,7 +181,7 @@ export function NewShowingForm({
 
       <span className="w-help">
         Recorded with your name and permissions{" "}
-        <Tip>The people it is shown to can read who asked and what they held. For a showing outside, only the permissions are given, not the name.</Tip>
+        <Tip>The people it is released to can read who asked and what they held. For a release outside, only the permissions are given, not the name.</Tip>
       </span>
     </WorkForm>
   );

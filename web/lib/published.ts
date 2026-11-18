@@ -89,7 +89,7 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
   /**
    * Set when the page was not published from another graph but shown inside
    * this deployment, to a label its reader reads, from a label they do not
-   * (docs/showing-a-page.md). It is the same tab, drawn by the same
+   * (docs/releasing-a-page.md). It is the same tab, drawn by the same
    * components; what differs is whose page it is said to be and where its
    * record is read from (components/claim/InsideVersions.tsx).
    */
@@ -127,12 +127,12 @@ export function stateWords(p: { state: string | null; parts?: number; parts_held
   }
 }
 
-/** How a showing was asked for, in a sentence. */
+/** How a release was asked for, in a sentence. */
 export function showingWords(p: { form: string | null; scope: string | null; asked_at: string | null; showing_began: string | null; ended: { at: string; because: string } | null }): string {
   const form =
     p.form === "standing"
       ? `Kept published since ${day(p.asked_at)}, so each later version follows and a version that is held shows as held`
-      : `Shown once, on ${day(p.asked_at)}, with nothing undertaken about later versions`;
+      : `Released once, on ${day(p.asked_at)}, with nothing undertaken about later versions`;
   const scope = p.scope === "under" ? "this node and what sits under it" : "this node alone";
   return `${form}; ${scope}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${p.ended.because}.` : ""}`;
 }
