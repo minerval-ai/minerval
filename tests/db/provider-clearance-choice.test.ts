@@ -89,6 +89,10 @@ afterAll(async () => {
   await rawQuery(`DELETE FROM provider_clearances`);
   await rawQuery(`DELETE FROM administrative_events`);
   await rawQuery(`DELETE FROM permission_grants`);
+  // The first administrator's setting records the organisation as a party,
+  // under its setup name. Left behind, it is the one "organisation itself"
+  // the next file in this worker finds (permissions-schema.test.ts).
+  await rawQuery(`DELETE FROM parties WHERE is_own_organization AND name = 'This organization'`);
   await rawQuery(`DELETE FROM labels WHERE name = ANY($1::text[])`, [definedLabels]);
 });
 

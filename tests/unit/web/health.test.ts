@@ -69,7 +69,7 @@ describe("what needs attention", () => {
     const c = healthy();
     c.preflight!.agent_work = "refused";
     c.preflight!.checks.push(
-      check("model_prices", "fail", true, "1 configured model has none: MODELS_RESEARCHER (claude-x)."),
+      check("model_prices", "fail", false, "1 configured model has none: MODELS_RESEARCHER (claude-x)."),
       check("web_search", "fail", false, "Open-web search for researcher goes through OpenRouter, and OPENROUTER_API_KEY is not set, so those searches fail."),
       check("standing_mandates", "to_do", false, 'A General mandate is set up at "public", "board". None is set up at "legal", which holds nothing yet.'),
     );
