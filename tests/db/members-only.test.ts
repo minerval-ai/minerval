@@ -22,6 +22,10 @@ vi.hoisted(() => {
   process.env.API_KEYS = "members-web-tier-key";
   process.env.MINERVAL_OPERATOR_KEY = "members-operator-key";
   process.env.FIRST_ADMINISTRATOR = "oidc:dbtest-first-administrator";
+  // The first test asks every route as nobody, more than the anonymous limit
+  // allows a minute from one address; the limit is tested on its own
+  // (anonymous-rate-limit tests), and here it would refuse what follows.
+  process.env.ANONYMOUS_RATE_LIMIT_PER_MINUTE = "100000";
   process.env.LOG_LEVEL = "fatal";
 });
 
@@ -454,6 +458,8 @@ describe("what a permission guards", () => {
       "POST /outbound/proposals": ["direct"],
       "POST /outbound/registration": ["administer"],
       "POST /outbound/registration/send": ["administer"],
+      "POST /outside/connection": ["administer"],
+      "DELETE /outside/connection": ["administer"],
       // Acts on the public graph in the organization's name take the permission the deployment names for them (PUBLIC_ACTS_BY, `direct` unless set).
       "GET /outside/mandates/conversations": ["direct"],
       "GET /outside/mandates/conversations/:conversation_id": ["direct"],

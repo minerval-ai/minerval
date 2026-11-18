@@ -657,6 +657,12 @@ contribution review, which are a mandate's: evidence it finds goes to its
 Steward with `leave_note`. Its role prompt and briefing say which kind of
 lookout it is and what follows.
 
+**On the record.** A node's lookouts are public with the node, as a
+mandate's are with its mandate: `GET /claims/:id/lookouts` (MCP
+`get_node_lookouts`) gives each one's brief, status, cadence, triggers,
+fund, commission limit, workspace, last note, precision and recent flags.
+Who put up the fund is not shown; the Steward is not told either.
+
 ## Correspondents: making things from the graph
 
 No one can read every claim and argument in a large graph. A
@@ -2259,7 +2265,7 @@ makes that run private, as anywhere.
 
 The conversations and mandates made before this rule were made under a
 promise that a funder's words were private, and they keep it. Migration
-0182 marks them (`grant_conversations.in_public`,
+0183 marks them (`grant_conversations.in_public`,
 `grants.directed_in_public`, false on every row then present but the
 platform's, whose were always public). A mandate takes the flag from the
 conversation it was funded from, and one a mandate spawns takes its

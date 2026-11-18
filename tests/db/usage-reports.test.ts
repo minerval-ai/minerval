@@ -335,7 +335,7 @@ describe("sending", () => {
     expect(await sendUsageReports({ fetch: deliver })).toEqual({ sent: 0, stopped: null });
     expect(crossed).toEqual([]);
     const page = (await as(admin, { url: "/usage-reports/outgoing" })).json();
-    expect(page.destination).toEqual({ kind: "online", url: PUBLIC_GRAPH, ready: true });
+    expect(page.destination).toEqual({ kind: "online", url: PUBLIC_GRAPH, ready: true, signed: false });
     expect(page.reports.every((r: { sent_via: string }) => r.sent_via === "online")).toBe(true);
   });
 });

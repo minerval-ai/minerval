@@ -8,7 +8,7 @@
  *
  * The conversations and mandates made before that rule were made under a
  * promise that a funder's words were private (grant_conversations.in_public,
- * grants.directed_in_public, both false on those rows, migration 0182). A
+ * grants.directed_in_public, both false on those rows, migration 0183). A
  * run that works for one of them keeps the promise: it marks itself private
  * with PRIVATE_GRANTMAKING_REASON when it opens. No other reason keeps such
  * a run from the public; information that cannot be published belongs with

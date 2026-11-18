@@ -163,6 +163,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     note: "Returns owls to your balance; confirm with your user before withdrawing their share.",
   },
   "GET /mandates/:id/lookouts/:lookoutId": { name: "get_mandate_lookout" },
+  "GET /claims/:claim_id/lookouts": {
+    name: "get_node_lookouts",
+    note: "Free. The watches a node's own Steward keeps on it; a mandate's lookouts are on get_mandate_lookout.",
+  },
 
   // ---- the Assistant (#646): reads of the account's own conversations ----
   "GET /assistant/conversations": { name: "list_assistant_conversations" },
@@ -247,6 +251,8 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /organizations/:id/log": { name: "get_organization_log" },
   "GET /organizations/:id/old-keys": { name: "list_organization_old_keys" },
   "GET /organizations/:id/deployments": { name: "list_organization_deployments" },
+  // This deployment's own connection to minerval.ai (docs/organizations.md, "Connecting").
+  "GET /outside/connection": { name: "get_public_graph_connection" },
   "GET /account-conversion": { name: "get_account_conversion" },
   "GET /account-conversions/for-me": { name: "list_account_conversions_for_me" },
 
@@ -537,6 +543,9 @@ const DEPLOYMENT_SIGNED =
 const CONNECT_CODE =
   "A deployment's connect code is shown on that deployment and approved by a person in their browser, " +
   "signed in as themselves; reading it is the first step of that act.";
+const PUBLIC_GRAPH_CONNECTION_SESSION =
+  "Connecting this deployment to minerval.ai, or disconnecting it, decides who speaks for it outside, so it is an " +
+  "administrator's act from a signed-in session, as registering the signing key is (docs/organizations.md).";
 const ORGANIZATION_OPERATOR =
   "The way back for an organization whose admins are all gone: requires the operator key, held " +
   "outside every deployment surface (docs/organizations.md).";
@@ -712,9 +721,13 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /deployments/connect": DEPLOYMENT_SIGNED,
   "GET /deployments/connect/:code": DEPLOYMENT_SIGNED,
   "GET /organizations/me": DEPLOYMENT_SIGNED,
+  "POST /deployments/me/retire": DEPLOYMENT_SIGNED,
   "GET /connect-requests/:code": CONNECT_CODE,
   "POST /connect-requests/:code/approve": ORGANIZATION_SESSION,
   "POST /connect-requests/:code/deny": ORGANIZATION_SESSION,
+  "POST /outside/connection": PUBLIC_GRAPH_CONNECTION_SESSION,
+  "DELETE /outside/connection": PUBLIC_GRAPH_CONNECTION_SESSION,
+  "POST /outside/connection/check": "get_public_graph_connection checks a waiting connection, and reads a connected one's grants again, when it is called; this is the same, pressed from the page.",
   "POST /billing/webhook": "Stripe's signature-verified callback, not a caller surface.",
 
   "GET /setup/preflight":

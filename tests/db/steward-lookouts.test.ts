@@ -9,6 +9,7 @@
  * returns what is left. Only the node's own Steward amends it.
  */
 import { describe, it, expect } from "vitest";
+import type { FastifyInstance } from "fastify";
 import { rawQuery } from "../../src/db/client.js";
 import { ASSESS_GROUP, completeAction, openDueAgentRuns } from "../../src/services/action-service.js";
 import { commissionNodePass } from "../../src/services/commission-service.js";
@@ -239,5 +240,26 @@ describe("a Steward's own lookout", () => {
     // A mandate that closes takes its money out of the fund's reach.
     await rawQuery(`UPDATE grants SET status = 'completed' WHERE id = $1`, [s.grantId]);
     expect(await lookoutFundLeftMicroUsd(id)).toBe(0);
+  });
+
+  it("is on the record: GET /claims/:id/lookouts shows its brief, fund and flags, and not who paid", async () => {
+    const s = await stewardPass("user");
+    const { lookout_id: id } = await s.call("post_lookout", { title: "Trial watch", brief: BRIEF, budget_owls: 1 });
+    await flagNote({ lookoutId: id, text: "The second trial's registry entry changed its primary outcome." });
+    const { buildApp } = await import("../../src/server/app.js");
+    const app: FastifyInstance = await buildApp();
+    try {
+      const res = await app.inject({ method: "GET", url: `/claims/${s.node}/lookouts` });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.lookouts).toHaveLength(1);
+      expect(body.lookouts[0]).toMatchObject({ id, title: "Trial watch", brief: BRIEF, status: "active", fund_owls: 1 });
+      expect(body.lookouts[0].flags[0]).toMatchObject({ kind: "note" });
+      expect(res.body).not.toContain(s.user);
+      const missing = await app.inject({ method: "GET", url: `/claims/00000000-0000-4000-8000-000000000000/lookouts` });
+      expect(missing.statusCode).toBe(404);
+    } finally {
+      await app.close();
+    }
   });
 });

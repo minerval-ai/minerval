@@ -244,7 +244,7 @@ export async function sendThroughOutside(opts: { itemId?: string; releaseId?: st
     );
     let graph: PublicGraph | null = null;
     try {
-      graph = publicGraph();
+      graph = await publicGraph();
     } catch (err) {
       if (!(err instanceof OutboundError)) throw err;
     }
@@ -322,7 +322,7 @@ export async function mandateWithdrawnOutside(releaseId: string, by: Actor): Pro
     if (!item) return false;
     let graph: PublicGraph;
     try {
-      graph = publicGraph();
+      graph = await publicGraph();
     } catch {
       return false;
     }

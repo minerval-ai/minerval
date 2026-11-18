@@ -65,6 +65,15 @@ import {
 import { REPORT_AT_GATE_TOLD, ReportSendingError, reportsOverview } from "../services/report-sending-service.js";
 import { DECLINE_REASONS } from "../services/request-take-up-service.js";
 import { actorOf } from "./outbound.js";
+import type { DeploymentGrant } from "../db/schema.js";
+import {
+  ConnectionError,
+  checkConnect,
+  connectionStatus,
+  disconnect,
+  refreshConnection,
+  startConnect,
+} from "../services/public-graph-connection.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
 const TAG = ["the public graph, from inside"];
@@ -96,6 +105,95 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
       return refuse(reply, err);
     }
   };
+
+  // ---- the connection to minerval.ai (docs/organizations.md, "Connecting") ----
+
+  const connectionRefused = (reply: FastifyReply, err: unknown) => {
+    if (err instanceof ConnectionError) return reply.code(err.status).send({ error: err.message, code: err.code });
+    throw err;
+  };
+
+  app.get("/outside/connection", {
+    schema: {
+      tags: TAG,
+      summary:
+        "This deployment's connection to minerval.ai: none; waiting, with the code and the link for an admin of the organization; denied or " +
+        "expired; or connected, with the organization, the deployment's name there and the grants it holds (read_feed, report_usage, publish, act)",
+      description:
+        "A waiting connection is checked with minerval.ai when this is read, and a connected one read again now and then, so a withdrawn grant " +
+        "is seen here. The connection key's private half is never returned.",
+    },
+    preHandler: signedIn,
+    handler: async (_request, reply) => reply.send({ connection: await connectionStatus() }),
+  });
+
+  app.post<{ Body: { name: string; grants: DeploymentGrant[]; api_url?: string; replace?: boolean } }>("/outside/connection", {
+    schema: {
+      tags: TAG,
+      summary:
+        "Connect this deployment to minerval.ai (administrators, from a signed-in session): make a new connection key, ask for the grants named, " +
+        "and get a code and a link for an admin of the organization to approve",
+      description:
+        "The key is made here and kept in this deployment's database, the owner's alone; it never leaves the machine. Connecting a deployment " +
+        "that is connected already needs `replace`, and a new approval. Recorded on the log of acts on the public graph.",
+      body: {
+        type: "object",
+        required: ["name", "grants"],
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 120 },
+          grants: { type: "array", minItems: 1, items: { type: "string", enum: ["read_feed", "report_usage", "publish", "act"] } },
+          api_url: { type: "string", maxLength: 500 },
+          replace: { type: "boolean" },
+        },
+      },
+    },
+    preHandler: inSession("administer"),
+    handler: async (request, reply) => {
+      try {
+        return reply.code(201).send({
+          connection: await startConnect({
+            name: request.body.name,
+            grants: request.body.grants,
+            apiUrl: request.body.api_url ?? null,
+            replace: request.body.replace === true,
+            actor: { actor: await actorOf(request) },
+          }),
+        });
+      } catch (err) {
+        return connectionRefused(reply, err);
+      }
+    },
+  });
+
+  app.post("/outside/connection/check", {
+    schema: {
+      tags: TAG,
+      summary: "Ask minerval.ai now whether a waiting connection has been approved, or read a connected one's grants again",
+    },
+    preHandler: signedIn,
+    handler: async (_request, reply) => {
+      await checkConnect();
+      await refreshConnection();
+      return reply.send({ connection: await connectionStatus({ check: false }) });
+    },
+  });
+
+  app.delete("/outside/connection", {
+    schema: {
+      tags: TAG,
+      summary:
+        "Disconnect this deployment from minerval.ai (administrators, from a signed-in session): retire it there with one last signed request, " +
+        "and forget the key. Connecting again makes a new key and needs a new approval",
+    },
+    preHandler: inSession("administer"),
+    handler: async (request, reply) => {
+      try {
+        return reply.send(await disconnect({ actor: { actor: await actorOf(request) } }));
+      } catch (err) {
+        return connectionRefused(reply, err);
+      }
+    },
+  });
 
   // ---- reads ----
 

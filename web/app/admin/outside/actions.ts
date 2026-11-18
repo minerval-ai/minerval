@@ -11,7 +11,11 @@ import {
   askPublicMandate,
   backPublicMandate,
   british,
+  checkConnection,
   declinePublicRequest,
+  disconnectConnection,
+  startConnection,
+  type DeploymentGrant,
   fundPublicMandate,
   fundPublicNode,
   openPublicMandate,
@@ -179,4 +183,57 @@ export async function offerMandateOutsideAction(_previous: FormState, form: Form
         "Offered to the gate to outside. It goes under the gate's setting for mandates; where a person decides as well, it waits for them on At the gate.",
     };
   });
+}
+
+// ---- the connection to minerval.ai ----
+
+const GRANTS: readonly DeploymentGrant[] = ["read_feed", "report_usage", "publish", "act"];
+
+export async function connectAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await actingUser();
+  if (!who) return NOT_SIGNED_IN;
+  const grants = form.getAll("grant").map(String).filter((g): g is DeploymentGrant => (GRANTS as readonly string[]).includes(g));
+  if (grants.length === 0) return { error: "Ask for at least one grant." };
+  const apiUrl = String(form.get("api_url") ?? "").trim();
+  try {
+    await startConnection(who, {
+      name: String(form.get("name") ?? "").trim(),
+      grants,
+      ...(apiUrl ? { api_url: apiUrl } : {}),
+      ...(form.get("replace") === "1" ? { replace: true } : {}),
+    });
+  } catch (err) {
+    return refused(err);
+  }
+  redirect("/admin/outside?drawer=connect");
+}
+
+export async function checkConnectionAction(_prev: FormState, _form: FormData): Promise<FormState> {
+  const who = await actingUser();
+  if (!who) return NOT_SIGNED_IN;
+  try {
+    const { connection } = await checkConnection(who);
+    revalidatePath("/admin/outside");
+    if (connection?.connected) return { notice: `Connected for ${connection.organization?.name ?? "the organisation"}.` };
+    if (connection?.state === "denied") return { error: "An admin of the organisation denied it." };
+    if (connection?.state === "expired") return { error: "The code expired. Start again." };
+    return { notice: "Still waiting for an admin of the organisation." };
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+export async function disconnectAction(_prev: FormState, _form: FormData): Promise<FormState> {
+  const who = await actingUser();
+  if (!who) return NOT_SIGNED_IN;
+  try {
+    const out = await disconnectConnection(who);
+    if (!out.retired_there && out.said) {
+      revalidatePath("/admin/outside");
+      return { notice: `Disconnected here. ${british(out.said)} An admin of the organisation can retire it on minerval.ai.` };
+    }
+  } catch (err) {
+    return refused(err);
+  }
+  redirect("/admin/outside");
 }

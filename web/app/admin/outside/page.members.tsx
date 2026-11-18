@@ -7,6 +7,7 @@ import {
   ButtonLink,
   Drawer,
   Empty,
+  Kv,
   Pill,
   Section,
   Seg,
@@ -22,9 +23,19 @@ import {
   shortWhen,
   type Tone,
 } from "@/components/work/ui";
-import { british, fetchOutwardLog, fetchPublicConversations, type OutwardAct, type PublicAccount, type PublicConversation } from "@/lib/outside-api";
+import {
+  british,
+  fetchConnection,
+  fetchOutwardLog,
+  fetchPublicConversations,
+  type ConnectionView,
+  type DeploymentGrant,
+  type OutwardAct,
+  type PublicAccount,
+  type PublicConversation,
+} from "@/lib/outside-api";
 import { registerPublisherAction } from "../../releases/actions";
-import { backPublicMandateAction, openPublicMandateAction } from "./actions";
+import { backPublicMandateAction, checkConnectionAction, connectAction, disconnectAction, openPublicMandateAction } from "./actions";
 import { HeadSub, Note, loadAccount, tryRead } from "./parts";
 
 export const metadata: Metadata = { title: "Public graph · Minerval" };
@@ -56,6 +67,8 @@ const KINDS: Record<string, { verb: string; group: Group }> = {
   send_report: { verb: "Sent an agent's report", group: "reports" },
   send_failure_facts: { verb: "Sent a tool failure's facts", group: "reports" },
   register_publisher: { verb: "Registered the signing key", group: "key" },
+  connect_deployment: { verb: "Asked to connect to minerval.ai", group: "key" },
+  disconnect_deployment: { verb: "Disconnected from minerval.ai", group: "key" },
 };
 
 type Group = "requests" | "mandates" | "nodes" | "reports" | "key";
@@ -95,13 +108,14 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
   const filter = GROUPS.some((g) => g.key === kind) ? (kind as Group | "all") : "all";
 
   const mayAct = can(who, "direct");
-  const [{ data: account, problem: accountProblem }, { data: log, problem: logProblem }, { data: talks, problem: talksProblem }] = await Promise.all([
+  const [{ data: account, problem: accountProblem }, { data: log, problem: logProblem }, { data: talks, problem: talksProblem }, connection] = await Promise.all([
     loadAccount(who.externalId),
     tryRead(() => fetchOutwardLog(who.externalId), "The log of acts on the public graph could not be read"),
     // The conversations with the public Grantmaker are read by those who may act there, who are the ones who open and fund them.
     mayAct
       ? tryRead(() => fetchPublicConversations(who.externalId), "The conversations with the public Grantmaker could not be read")
       : Promise.resolve({ data: null, problem: null }),
+    fetchConnection(who.externalId).catch(() => null as ConnectionView | null),
   ]);
   const acts = log ?? [];
   const mayAdminister = can(who, "administer");
@@ -140,7 +154,24 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
       {accountProblem && <Note tone="bad">{accountProblem}</Note>}
       {account && !connected && <Note tone="warn">{british(account.in_words ?? "This deployment is not connected to the public graph.")}</Note>}
 
+      <ConnectionCard connection={connection} mayAdminister={mayAdminister} connectHref={drawerHref("connect")} disconnectHref={drawerHref("disconnect")} />
+
       {account && <AccountStats account={account} mayAdminister={mayAdminister} keyHref={drawerHref("key")} />}
+
+      {mayAdminister && drawer === "connect" && (
+        <Drawer title={connection?.state === "waiting" ? "Waiting for your organisation" : "Connect to minerval.ai"} close={close}>
+          <ConnectDrawer connection={connection} />
+        </Drawer>
+      )}
+      {mayAdminister && drawer === "disconnect" && connection && (
+        <Drawer title="Disconnect from minerval.ai" close={close}>
+          <p className="w-muted" style={{ marginTop: 0 }}>
+            This deployment tells minerval.ai to retire it, with one last signed request, and forgets its connection key. Nothing it sent
+            there is taken back. Connecting again makes a new key and needs a new approval.
+          </p>
+          <WorkForm action={disconnectAction} submit="Disconnect" danger lock="Retires the key on minerval.ai" />
+        </Drawer>
+      )}
 
       {connected && (
         <Section
@@ -459,4 +490,139 @@ function ActRow({ a }: { a: OutwardAct }) {
 
 function cap(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+const GRANT_WORDS: Record<DeploymentGrant, string> = {
+  read_feed: "Pull the whole mirror feed. It shows only that this deployment exists and when it pulls.",
+  report_usage: "Send one day's total of owls spent, privately to Minerval, for the metered price.",
+  publish: "Register the signing key, and send pages and mandates released at the gate to outside.",
+  act: "Take up requests, open and fund mandates, and spend the organisation's public owls.",
+};
+
+/** This deployment's connection to minerval.ai (docs/organizations.md, "Connecting"). */
+function ConnectionCard({
+  connection,
+  mayAdminister,
+  connectHref,
+  disconnectHref,
+}: {
+  connection: ConnectionView | null;
+  mayAdminister: boolean;
+  connectHref: string;
+  disconnectHref: string;
+}) {
+  const state = connection?.state ?? "none";
+  if (state === "connected" && connection) {
+    return (
+      <Section
+        title={connection.organization?.name ?? "Connected"}
+        aside={`This deployment is ${connection.deployment?.name ?? "connected"} on minerval.ai, since ${shortDay(connection.connected_at)}`}
+        actions={mayAdminister ? <ButtonLink href={disconnectHref} danger small>Disconnect</ButtonLink> : undefined}
+      >
+        <div className="w-row" style={{ flexWrap: "wrap", gap: 6 }}>
+          <Pill tone="ok">Connected</Pill>
+          {(["read_feed", "report_usage", "publish", "act"] as DeploymentGrant[]).map((g) => (
+            <span key={g} title={GRANT_WORDS[g]}>
+              <Pill tone={connection.grants.includes(g) ? "ok" : "neu"}>
+                <span className="w-mono">{g}</span> {connection.grants.includes(g) ? "held" : "not held"}
+              </Pill>
+            </span>
+          ))}
+        </div>
+        <p className="w-muted" style={{ margin: "8px 0 0", fontSize: 12.5 }}>
+          Every request to minerval.ai is signed with this deployment&apos;s own key (<span className="w-mono">{connection.key_id?.slice(0, 8)}</span>
+          ), at {connection.api_url}. Grants are set by an admin of {connection.organization?.name ?? "the organisation"} on minerval.ai.
+        </p>
+        {connection.problem && <Note tone="warn">{british(connection.problem)}</Note>}
+      </Section>
+    );
+  }
+  return (
+    <Section
+      title="minerval.ai"
+      aside={state === "waiting" ? "Waiting for an admin of your organisation" : "Not connected"}
+      actions={
+        mayAdminister ? (
+          <ButtonLink href={connectHref} primary small>
+            {state === "waiting" ? "See the code" : "Connect to minerval.ai"}
+          </ButtonLink>
+        ) : undefined
+      }
+    >
+      <p className="w-muted" style={{ margin: 0 }}>
+        {state === "waiting"
+          ? `Code ${connection?.code ?? ""}: an admin of your organisation approves it on minerval.ai.`
+          : state === "denied"
+            ? "An admin of the organisation denied the last request. Connect again to ask anew."
+            : state === "expired"
+              ? "The last code expired before anyone approved it. Connect again for a new one."
+              : "Until it is connected, this deployment reaches minerval.ai with the account key in its settings, where it has one. Connecting replaces that with this deployment's own key and the grants an organisation admin chooses."}
+      </p>
+    </Section>
+  );
+}
+
+function ConnectDrawer({ connection }: { connection: ConnectionView | null }) {
+  if (connection?.state === "waiting") {
+    return (
+      <>
+        <p className="w-muted" style={{ marginTop: 0 }}>
+          Give this link to an admin of your organisation on minerval.ai. They sign in as themselves, check the code and key id below, and
+          choose what this deployment may do.
+        </p>
+        <div className="w-mono" style={{ fontSize: 30, letterSpacing: "0.08em", textAlign: "center", padding: "16px 0", border: "1px dashed var(--w-rule2)", borderRadius: 10 }}>
+          {connection.code}
+        </div>
+        {connection.link && (
+          <p>
+            <a href={connection.link}>{connection.link}</a>
+          </p>
+        )}
+        <Kv
+          rows={[
+            ["Key id", <span key="k" className="w-mono">{connection.key_id?.slice(0, 8)} (first eight)</span>],
+            ["Asked for", connection.asked_grants.join(", ")],
+            ["Expires", shortWhen(connection.code_expires_at)],
+          ]}
+        />
+        <WorkForm action={checkConnectionAction} submit="Check now" />
+        <p className="w-muted" style={{ fontSize: 12.5 }}>This page checks when it is opened. Nothing restarts when it is approved.</p>
+      </>
+    );
+  }
+  const replacing = connection?.state === "connected";
+  return (
+    <>
+      <p className="w-muted" style={{ marginTop: 0 }}>
+        This deployment makes a key of its own and asks your organisation to approve it. You get a short code and a link for an admin of the
+        organisation. The key is kept in this deployment&apos;s database, the owner&apos;s alone, and never leaves the machine.
+      </p>
+      <WorkForm action={connectAction} submit="Get a code" primary>
+        {replacing && <input type="hidden" name="replace" value="1" />}
+        <div className="w-field">
+          <label htmlFor="connect-name">Name to suggest</label>
+          <input id="connect-name" className="w-input" name="name" required maxLength={120} defaultValue={connection?.deployment?.name ?? ""} />
+        </div>
+        <div className="w-field">
+          <span className="w-label">Ask for</span>
+          <div className="w-options">
+            {(["read_feed", "report_usage", "publish", "act"] as DeploymentGrant[]).map((g) => (
+              <label key={g} className="w-option">
+                <input type="checkbox" name="grant" value={g} defaultChecked />
+                <div>
+                  <b className="w-mono">{g}</b>
+                  <span>{GRANT_WORDS[g]}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="w-field">
+          <label htmlFor="connect-url">Public graph address</label>
+          <input id="connect-url" className="w-input" name="api_url" placeholder="https://api.claimgraph.io" />
+          <span className="w-help">Minerval&apos;s, unless you were told another.</span>
+        </div>
+      </WorkForm>
+    </>
+  );
 }

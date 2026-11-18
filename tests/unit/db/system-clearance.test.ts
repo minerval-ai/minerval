@@ -100,6 +100,18 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A connect request, the deployment an admin approved with its grants and the organization's log entry for it, the nonces of signed writes, and the record of those writes: all for a key whose signature was checked or an admin of the organization. Nothing that carries a label.",
     ],
   ],
+  "src/services/public-graph-client.ts": [
+    [
+      "The deployment's connection key is the owner's alone; it is read to sign a request to the public graph and goes nowhere else.",
+      "Nothing: it reads the one row of public_graph_connection, which carries no label.",
+    ],
+  ],
+  "src/services/public-graph-connection.ts": [
+    [
+      "The deployment's connection key is the owner's alone; it is written when an administrator connects and read to sign requests to the public graph.",
+      "The one row of public_graph_connection: the key made here and what minerval.ai said of it. Nothing that carries a label.",
+    ],
+  ],
   "src/services/organization-service.ts": [
     [
       "Organizations say who acts for an account, so their rows are written on the owner's connection, as API keys are. The caller has been checked against the organization's members.",

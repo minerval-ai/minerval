@@ -1286,6 +1286,94 @@ export async function claimRoutes(app: FastifyInstance): Promise<void> {
   // omits it (§10), [[claim:...]] resolved in prose (§12), CC0 stated. No
   // response schema, as for /nanopub: JSON-LD is an opaque serialization,
   // checked against MIRA's SHACL shapes in the tests.
+  // GET /claims/:claim_id/lookouts — the standing watches the node's
+  // Steward posted (lookout-fund.ts): each one's brief, cadence, fund and
+  // what its flags came to, as a mandate's lookout is shown on its route.
+  // Who put the fund up is not shown: the Steward is never told either.
+  app.get<{ Params: { claim_id: string }; Querystring: { flags?: number; include_retired?: boolean } }>(
+    "/:claim_id/lookouts",
+    {
+      schema: {
+        tags: ["claims"],
+        summary:
+          "The lookouts a node's Steward posted to keep watch over it between passes: each one's brief, " +
+          "status, cadence and triggers, the fund it runs on, its commission limit, its last note, how often " +
+          "its flags bought a pass that moved a verdict, and its recent flags with what became of each",
+        params: {
+          type: "object",
+          properties: { claim_id: { type: "string", format: "uuid" } },
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            flags: { type: "integer", minimum: 0, maximum: 100, default: 20, description: "Recent flags shown for each lookout." },
+            include_retired: { type: "boolean", default: false },
+          },
+        },
+      },
+      handler: async (request, reply) => {
+        const node = await getClaimById(request.params.claim_id);
+        if (!node) {
+          return reply.code(404).send({
+            error: { code: "NOT_FOUND", message: "Claim not found", request_id: request.id },
+          });
+        }
+        const { listNodeLookouts, listLookoutFlags, lookoutPrecision } = await import("../services/lookout-service.js");
+        const { lookoutFundLeftMicroUsd, lookoutRunCostMicroUsd } = await import("../services/lookout-fund.js");
+        const owls = (micro: number) => Math.round(micro / 10_000) / 100;
+        const rows = (await listNodeLookouts(node.id)).filter(
+          (l) => request.query.include_retired === true || l.status !== "retired"
+        );
+        const flagLimit = request.query.flags ?? 20;
+        const lookouts = await Promise.all(
+          rows.map(async (l) => {
+            const [fund, precision, flags] = await Promise.all([
+              lookoutFundLeftMicroUsd(l.id),
+              lookoutPrecision(l.id),
+              flagLimit > 0 ? listLookoutFlags(l.id, { limit: flagLimit }) : Promise.resolve([]),
+            ]);
+            return {
+              id: l.id,
+              title: l.title,
+              brief: l.brief,
+              status: l.status,
+              paused_for_fund: l.paused_for_fund,
+              heartbeat_hours: l.heartbeat_hours,
+              triggers: l.triggers ?? [],
+              model: l.model,
+              fund_owls: owls(fund),
+              commission_limit_owls: owls(Number(l.commission_limit_micro_usd ?? 0)),
+              territory: { claim_ids: l.territory_claim_ids ?? [], tag_ids: l.territory_tag_ids ?? [] },
+              workspace: l.workspace,
+              last_note: l.last_note,
+              last_run_at: l.last_run_at ? new Date(l.last_run_at).toISOString() : null,
+              runs: l.runs,
+              flag_count: l.flags,
+              precision,
+              created_at: new Date(l.created_at).toISOString(),
+              flags: flags.map((f) => ({
+                id: f.id,
+                kind: f.kind,
+                claim_id: f.claim_id,
+                claim_text: f.claim_text,
+                url: f.url,
+                rationale: f.rationale,
+                action_status: f.action_status,
+                ran: f.ran,
+                moved: f.moved,
+                status_at_flag: f.status_at_flag,
+                status_now: f.status_now,
+                repeats: f.repeats,
+                created_at: new Date(f.created_at).toISOString(),
+              })),
+            };
+          })
+        );
+        return reply.send({ claim_id: node.id, run_cost_owls: owls(lookoutRunCostMicroUsd()), lookouts });
+      },
+    }
+  );
+
   app.get<{ Params: { claim_id: string } }>(
     "/:claim_id/mira",
     {

@@ -95,11 +95,20 @@ describe("publishing and the public graph", () => {
     expect(run("public_graph", facts()).status).toBe("not_applicable");
     expect(run("public_graph", facts({ config: config({ publishSigningKey: ED25519 }) })).message).toContain("carried as files");
     expect(run("public_graph", facts({ config: config({ publicGraphApiUrl: "http://api.minerval.ai" }) })).message).toContain("not an https address");
-    expect(run("public_graph", facts({ config: config({ publicGraphApiUrl: "https://api.minerval.ai" }) })).message).toContain("PUBLIC_GRAPH_API_KEY is not");
+    const unconnected = run("public_graph", facts({ config: config({ publicGraphApiUrl: "https://api.minerval.ai" }) }));
+    expect(unconnected.status).toBe("fail");
+    expect(unconnected.message).toContain("not connected to minerval.ai");
     const ok = run("public_graph", facts({ config: config({ publicGraphApiUrl: "https://api.minerval.ai", publicGraphApiKey: "mk_secret" }) }));
     expect(ok.status).toBe("pass");
     expect(ok.message).not.toContain("mk_secret");
-    expect(ok.message).toContain("nothing is sent to the public graph by this check");
+    expect(ok.message).toContain("The key is not tried here");
+    // A connection needs no key, and says what it holds.
+    const connection = { state: "connected", apiUrl: "https://api.minerval.ai", organizationName: "Acme Corp", grants: ["act", "read_feed"] };
+    const connected = run("public_graph", facts({ deployment: { connection } }));
+    expect(connected.status).toBe("pass");
+    expect(connected.message).toContain("Connected to minerval.ai for Acme Corp, holding act, read_feed");
+    const waiting = run("public_graph", facts({ deployment: { connection: { ...connection, state: "waiting" } } }));
+    expect(waiting.status).toBe("to_do");
   });
 
   it("says who may act on the public graph, and when nobody can", () => {
@@ -149,7 +158,15 @@ describe("owls, prices and the usage report", () => {
     expect(run("usage_report", facts()).status).toBe("not_applicable");
     expect(run("usage_report", facts({ config: members({ publicGraphPrice: "flat" }) })).status).toBe("not_applicable");
     expect(run("usage_report", facts({ config: members() })).message).toContain("reports are prepared and kept until one is");
-    expect(run("usage_report", facts({ config: members({ usageReportUrl: "https://api.minerval.ai/usage-reports" }) })).message).toContain("USAGE_REPORT_API_KEY is not");
+    expect(run("usage_report", facts({ config: members({ usageReportUrl: "https://api.minerval.ai/usage-reports" }) })).message).toContain("not connected to minerval.ai");
+    // Connected: reports go to the connection's address, signed, where report_usage is held, and are refused where it is not.
+    const connection = { state: "connected", apiUrl: "https://api.minerval.ai", organizationName: "Acme Corp", grants: ["report_usage"] };
+    const signed = run("usage_report", facts({ config: members(), deployment: { connection } }));
+    expect(signed).toMatchObject({ status: "pass" });
+    expect(signed.message).toContain("https://api.minerval.ai/usage-reports, for billing, signed with this deployment's own key");
+    const withheld = run("usage_report", facts({ config: members(), deployment: { connection: { ...connection, grants: ["read_feed"] } } }));
+    expect(withheld.status).toBe("fail");
+    expect(withheld.message).toContain("does not hold report_usage");
     const sent = run("usage_report", facts({ config: members({ usageReportUrl: "https://api.minerval.ai/usage-reports", usageReportApiKey: "mk_x", usageReportFrom: "2026-11-01" }) }));
     expect(sent).toMatchObject({ status: "pass" });
     expect(sent.message).toContain("The first day reported is 2026-11-01.");

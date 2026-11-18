@@ -77,7 +77,7 @@ before launch:
   shown as "a reader" unless named, and the agents' runs that direct a
   Mandate public with what they read (docs/allocation.md, "Directing the
   public graph is public"). Conversations and Mandates begun before the
-  change keep the privacy they were promised (migration 0182). Confirm that
+  change keep the privacy they were promised (migration 0183). Confirm that
   the notice on the conversation page before the first message is enough
   notice, and settle the GDPR basis for publishing what a funder writes
   there, given that it is published by design and the person was told so.

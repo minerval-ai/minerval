@@ -3,7 +3,7 @@
  * conversation and the mandate it makes are public from the first message,
  * funded or not, and the runs that direct the mandate are public runs. The
  * conversations and mandates made before that rule were promised privacy
- * and keep it (migration 0182, src/llm/private-grantmaking.ts).
+ * and keep it (migration 0183, src/llm/private-grantmaking.ts).
  */
 import { describe, it, expect } from "vitest";
 import { rawQuery } from "../../src/db/client.js";

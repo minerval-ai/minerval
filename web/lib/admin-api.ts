@@ -99,6 +99,8 @@ export interface SetupChecklist {
     reporting: boolean;
     destination: "online" | "file" | "none";
     destination_ready: boolean;
+    /** Reports go over the connection to minerval.ai and wait on report_usage, which an admin of the organization grants. */
+    waits_on_organization?: boolean;
     prepared: number;
     unsent: number;
     last_error: string | null;
@@ -106,6 +108,14 @@ export interface SetupChecklist {
   /** Keeping public versions current: the setting, whether anything is behind it, and the last request the public graph did not take. Absent from an older API. */
   public_graph?: {
     account_set: boolean;
+    /** This deployment's connection to minerval.ai, with the grants its settings need and it lacks. Absent from an older API; null where never connected. */
+    connection?: {
+      state: "waiting" | "connected" | "denied" | "expired";
+      organization_name: string | null;
+      grants: string[];
+      problem: string | null;
+      missing_grants: Array<{ grant: string; why: string }>;
+    } | null;
     keep_public_current: { setting: "on" | "off"; sends: boolean; in_words: string };
     last_not_taken: string | null;
     /** Pages shown outside that are open, the signing key's fingerprint, and when that key was last registered on the public graph from here. Absent from an older API. */
@@ -617,9 +627,11 @@ export interface OutgoingUsageReports {
   what_is_never_sent: string | null;
   corrections: string | null;
   destination:
-    | { kind: "online"; url: string; ready: boolean }
+    | { kind: "online"; url: string; ready: boolean; signed?: boolean }
     | { kind: "file"; directory: string }
     | { kind: "none" };
+  /** The organization the reports are billed to, where this deployment is connected to minerval.ai. Absent from an older API. */
+  billed_to?: string | null;
   reports: UsageReport[];
 }
 

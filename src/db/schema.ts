@@ -2898,6 +2898,47 @@ export const deploymentRequestNonces = pgTable(
 
 export type Deployment = typeof deployments.$inferSelect;
 
+// ---------------------------------------------------------------------------
+// public_graph_connection: this deployment's own connection to the public
+// graph (docs/organizations.md, "The deployment's own key"). One row at most.
+// The private key never leaves the deployment: the table is the owner's
+// alone, revoked from the cleared and SQL-view roles by the enforcement step
+// (migration 0181, owner_only), read and written on the owner's connection
+// only (services/public-graph-connection.ts), and no route, view or tool
+// returns it.
+// ---------------------------------------------------------------------------
+export const publicGraphConnection = pgTable(
+  "public_graph_connection",
+  {
+    id: text("id").primaryKey().default("this"),
+    apiUrl: text("api_url").notNull(),
+    privateKeyPem: text("private_key_pem").notNull(),
+    publicKey: text("public_key").notNull(),
+    keyId: text("key_id").notNull(),
+    // 'waiting' (a code shown, not yet approved), 'connected', 'denied' or 'expired'.
+    state: text("state").notNull(),
+    code: text("code"),
+    verificationUri: text("verification_uri"),
+    codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
+    askedGrants: text("asked_grants").array().notNull().default(sql`'{}'::text[]`),
+    // What the public graph said when it was approved, and last read.
+    deploymentId: uuid("deployment_id"),
+    deploymentName: text("deployment_name"),
+    organizationId: uuid("organization_id"),
+    organizationName: text("organization_name"),
+    grants: text("grants").array().notNull().default(sql`'{}'::text[]`),
+    startedBy: uuid("started_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    connectedAt: timestamp("connected_at", { withTimezone: true }),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastError: text("last_error"),
+  },
+  (table) => [
+    check("ck_public_graph_connection_one", sql`${table.id} = 'this'`),
+    check("ck_public_graph_connection_state", sql`${table.state} IN ('waiting', 'connected', 'denied', 'expired')`),
+  ]
+);
+
 export type OrganizationMember = typeof organizationMembers.$inferSelect;
 export type OrganizationInvitation = typeof organizationInvitations.$inferSelect;
 export type AccountConversion = typeof accountConversions.$inferSelect;
@@ -4029,7 +4070,7 @@ export const grants = pgTable(
     // graph is public; private reasons belong with the Assistant or in a
     // private graph. False on the mandates made before that rule, which were
     // made under a promise that their funder's words were private, and keep
-    // it (migration 0182). The platform's own mandates were always public.
+    // it (migration 0183). The platform's own mandates were always public.
     directedInPublic: boolean("directed_in_public").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -4959,7 +5000,7 @@ export const grantConversations = pgTable(
     // to the Grantmaker is directing the public graph, so a conversation is
     // public from its first message, funded or not. False on the
     // conversations held before that rule, under a promise that they were
-    // private (migration 0182).
+    // private (migration 0183).
     inPublic: boolean("in_public").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

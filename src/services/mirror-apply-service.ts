@@ -72,6 +72,7 @@
  * Applying a batch runs no agent and funds nothing. Mirrored claims arrive
  * deferred and marked as tagged, so they are in neither drain.
  */
+import { publicGraphFetch } from "./public-graph-client.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import type { KeyObject } from "node:crypto";
@@ -1124,12 +1125,19 @@ export function directorySource(dir: string): BatchSource {
 }
 
 /** A publisher's API (routes/mirror.ts). */
-export function urlSource(baseUrl: string, apiKey: string, fetchImpl: typeof fetch = fetch): BatchSource {
+/**
+ * The feed at an address. Where this deployment is connected to the public
+ * graph, each fetch is signed with its connection key (services/
+ * public-graph-client.ts); otherwise it carries `apiKey`, the account key
+ * from the settings. A test passes its own `fetchImpl`, which is sent the
+ * account key as before.
+ */
+export function urlSource(baseUrl: string, apiKey: string, fetchImpl?: typeof fetch): BatchSource {
   const base = baseUrl.replace(/\/+$/, "");
   const headers: Record<string, string> = apiKey ? { "x-api-key": apiKey } : {};
   const get = async (path: string): Promise<Response> => {
-    const res = await fetchImpl(`${base}${path}`, { headers, signal: AbortSignal.timeout(120_000) });
-    return res;
+    if (fetchImpl) return fetchImpl(`${base}${path}`, { headers, signal: AbortSignal.timeout(120_000) });
+    return publicGraphFetch(`${base}${path}`, { fallbackKey: apiKey, signal: AbortSignal.timeout(120_000) });
   };
   const listing = async (): Promise<{ head?: number | null; latest_snapshot?: number | null }> => {
     const res = await get("/mirror/feed?limit=1");
@@ -1154,7 +1162,9 @@ export function urlSource(baseUrl: string, apiKey: string, fetchImpl: typeof fet
       if (!res.ok) {
         throw new MirrorConfigError(
           `The mirror feed at ${base} answered ${res.status} to GET /mirror/feed/${sequence}` +
-            (res.status === 401 || res.status === 403 ? " (check MIRROR_FEED_API_KEY)." : ".")
+            (res.status === 401 || res.status === 403
+              ? " (where the deployment is connected, its read_feed grant on minerval.ai; otherwise MIRROR_FEED_API_KEY)."
+              : ".")
         );
       }
       return res.text();

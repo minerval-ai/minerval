@@ -159,6 +159,34 @@ const get = <T>(path: string, externalId: string) => accountFetch<T>(path, { act
 const post = <T>(path: string, externalId: string, body: unknown = {}, method = "POST") => accountFetch<T>(path, { method, actingUser: externalId, body });
 
 export const fetchPublicAccount = (who: string) => get<PublicAccount>("/outside/account", who);
+
+// ---- this deployment's connection to minerval.ai (docs/organizations.md, "Connecting") ----
+
+export type DeploymentGrant = "read_feed" | "report_usage" | "publish" | "act";
+
+export interface ConnectionView {
+  connected: boolean;
+  state: "none" | "waiting" | "connected" | "denied" | "expired";
+  api_url: string | null;
+  key_id: string | null;
+  code: string | null;
+  link: string | null;
+  code_expires_at: string | null;
+  asked_grants: DeploymentGrant[];
+  organization: { id: string; name: string } | null;
+  deployment: { id: string; name: string } | null;
+  grants: DeploymentGrant[];
+  connected_at: string | null;
+  last_checked_at: string | null;
+  problem: string | null;
+}
+
+export const fetchConnection = async (who: string) => (await get<{ connection: ConnectionView | null }>("/outside/connection", who)).connection;
+export const startConnection = (who: string, body: { name: string; grants: DeploymentGrant[]; api_url?: string; replace?: boolean }) =>
+  post<{ connection: ConnectionView }>("/outside/connection", who, body);
+export const checkConnection = (who: string) => post<{ connection: ConnectionView | null }>("/outside/connection/check", who);
+export const disconnectConnection = (who: string) =>
+  accountFetch<{ retired_there: boolean; said: string | null }>("/outside/connection", { method: "DELETE", actingUser: who });
 export const fetchOutwardLog = async (who: string) => (await get<{ acts: OutwardAct[] }>("/outside/log?limit=100", who)).acts;
 export const fetchPublicRequests = (who: string, nodeId?: string) => get<PublicRequests>(`/outside/requests${nodeId ? `?node_id=${seg(nodeId)}` : ""}`, who);
 export const fetchSaidBack = (who: string) => get<{ contributions: ReceivedContribution[]; how_it_works: string }>("/outside/said-back", who);

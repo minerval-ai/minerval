@@ -206,19 +206,38 @@ starts.
 A deployment can keep a read-only copy of the public graph, so its own
 judgments sit beside the public ones, and can publish to it and act there in
 the organization's name ([mirror.md](mirror.md),
-[outward-acts.md](outward-acts.md)). Both go through an account on the
-public graph that belongs to the organization, not to a person: make one on
-`https://minerval.ai`, and an API key for it on its account page.
+[outward-acts.md](outward-acts.md)). Both go through the deployment's
+connection to minerval.ai, which belongs to an organization there, not to a
+person ([organizations.md](organizations.md), "Connecting"):
+
+1. Someone makes the organization on minerval.ai, signed in as themselves
+   (Account, Organizations). They are its first admin.
+2. Set `DEPLOYMENT_HOSTING` (`own_machines`, for this package). An
+   organization admin is shown it when they approve the deployment.
+3. An administrator of the deployment presses "Connect to minerval.ai" on the
+   public graph's Overview (`/admin/outside`) and chooses which grants to ask
+   for. The deployment makes a key of its own, kept in its database and never
+   in `.env`, and shows a short code and a link.
+4. An admin of the organization opens the link, checks the code and key id,
+   and approves it with the grants they choose. The deployment learns it the
+   next time the Overview is opened. No restart.
+
+From then on every request to minerval.ai is signed with that key and carries
+no bearer secret. The organization's admins see the deployment, its grants
+and the writes it signed on the organization's Deployments tab.
 
 | Setting | For Minerval's public graph |
 | --- | --- |
-| `MIRROR_FEED_URL` | `https://api.claimgraph.io` |
-| `MIRROR_FEED_API_KEY` | the organization account's API key |
-| `MIRROR_FEED_PUBLIC_KEYS` | the `public_key` that `https://api.claimgraph.io/mirror/feed/key` answers |
-| `PUBLIC_GRAPH_API_URL` | `https://api.claimgraph.io` |
-| `PUBLIC_GRAPH_API_KEY` | the organization account's API key |
-| `PUBLISH_SIGNING_KEY` | `npx tsx scripts/published-page.ts keygen` makes one; keep a copy |
 | `DEPLOYMENT_HOSTING` | `own_machines`, for this package |
+| `MIRROR_FEED_URL` | `https://api.claimgraph.io`, to follow the mirror (with the `read_feed` grant) |
+| `MIRROR_FEED_PUBLIC_KEYS` | the `public_key` that `https://api.claimgraph.io/mirror/feed/key` answers |
+| `PUBLISH_SIGNING_KEY` | `npx tsx scripts/published-page.ts keygen` makes one; keep a copy |
+
+`PUBLIC_GRAPH_API_KEY`, `MIRROR_FEED_API_KEY` and `USAGE_REPORT_API_KEY`, the
+account keys an earlier version needed, still work for a deployment that is
+not connected, and are not used by one that is. They go in a later version.
+`PUBLIC_GRAPH_API_URL` and `USAGE_REPORT_URL`, where set, override the
+connection's address.
 
 Then an administrator presses "Register key" on the public graph's Overview
 (`/admin/outside`): the deployment signs the registration for the

@@ -21,8 +21,13 @@ import {
   type ItemState,
 } from "./admin-words";
 
-/** Who puts a thing right: whoever runs the deployment (its config and environment), or an administrator working here. */
-export type Owner = "operator" | "admin";
+/**
+ * Who puts a thing right: whoever runs the deployment (its config and
+ * environment), an administrator working here, or an admin of the
+ * organization on minerval.ai, who sets what this deployment may do there
+ * (docs/organizations.md, "What changes inside a deployment").
+ */
+export type Owner = "operator" | "admin" | "organization";
 
 export interface AttentionItem {
   key: string;
@@ -45,6 +50,7 @@ export interface AttentionItem {
 export const OWNER_WORDS: Record<Owner, { name: string; title: string }> = {
   operator: { name: "Operator", title: "Whoever runs the deployment: set in its config file or environment" },
   admin: { name: "Admin", title: "An administrator of this deployment, on these pages" },
+  organization: { name: "Organization", title: "An admin of the organization, on minerval.ai: grants what this deployment may do there" },
 };
 
 /** Where each area of the checklist is worked on. */
@@ -55,7 +61,7 @@ export const AREA_HREF: Record<string, string> = {
   standing_mandates: "/admin/budget",
   owls: "/admin/budget",
   usage_report: "/admin/budget",
-  public_graph: "/gates",
+  public_graph: "/admin/outside",
   connections: "/admin/connections",
   material: "/sources",
 };
@@ -408,6 +414,19 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
         blocks: false,
         detail: "USAGE_REPORT_URL with USAGE_REPORT_API_KEY to send them, or USAGE_REPORT_DIR to write each one as a file.",
       });
+    } else if (!u.destination_ready && u.waits_on_organization) {
+      covered.add("usage_report");
+      out.push({
+        key: "usage-grant",
+        title: "This deployment does not hold report_usage",
+        consequence: u.unsent > 0 ? `${count(u.unsent, "report")} waiting, sent oldest first once it is granted` : "Usage reports can't be sent",
+        owner: "organization",
+        href: "/admin/outside",
+        action: "View",
+        tone: "warn",
+        blocks: false,
+        detail: "Ask an admin of the organization to grant report_usage to this deployment on minerval.ai.",
+      });
     } else if (!u.destination_ready) {
       covered.add("usage_report");
       out.push({
@@ -432,6 +451,50 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
         tone: "bad",
         blocks: false,
         detail: u.last_error,
+      });
+    }
+  }
+
+  // The connection to minerval.ai: waiting on an approval, withdrawn there, or short of a grant the settings need.
+  const conn = c.public_graph?.connection;
+  if (conn?.state === "waiting") {
+    out.push({
+      key: "connection-waiting",
+      title: "Connection to minerval.ai waits for approval",
+      consequence: "Its code expires fifteen minutes after it was made",
+      owner: "organization",
+      href: "/admin/outside?drawer=connect",
+      action: "View",
+      tone: "warn",
+      blocks: false,
+      detail: "An admin of the organization approves the code on minerval.ai.",
+    });
+  } else if (conn?.state === "connected") {
+    if (conn.problem) {
+      out.push({
+        key: "connection-problem",
+        title: "minerval.ai no longer takes this deployment",
+        consequence: "Nothing is sent or fetched there until it is connected again",
+        owner: "organization",
+        href: "/admin/outside",
+        action: "View",
+        tone: "bad",
+        blocks: false,
+        detail: conn.problem,
+      });
+    }
+    for (const m of conn.missing_grants) {
+      if (m.grant === "report_usage" && u.waits_on_organization) continue;
+      out.push({
+        key: `connection-grant-${m.grant}`,
+        title: `This deployment does not hold ${m.grant}`,
+        consequence: m.why,
+        owner: "organization",
+        href: "/admin/outside",
+        action: "View",
+        tone: "warn",
+        blocks: false,
+        detail: `Ask an admin of ${conn.organization_name ?? "the organization"} to grant ${m.grant} to this deployment on minerval.ai.`,
       });
     }
   }

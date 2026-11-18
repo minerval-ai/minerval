@@ -102,12 +102,18 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
     for (const a of attentionItems(checklist, gates)) {
       items.push({
         key: `setup-${a.key}`,
-        group: "setup",
+        // What waits on the organization on minerval.ai is about the public graph (docs/organizations.md).
+        group: a.owner === "organization" ? "public" : "setup",
         icon: "warn",
         tone: a.tone,
         title: a.title,
         facts: [a.consequence],
-        pill: a.owner === "operator" ? { text: "Operator", tone: "neu" } : undefined,
+        pill:
+          a.owner === "operator"
+            ? { text: "Operator", tone: "neu" }
+            : a.owner === "organization"
+              ? { text: "Organization", tone: "warn" }
+              : undefined,
         action: { href: a.href, label: a.action },
       });
     }
@@ -235,5 +241,16 @@ export async function loadWorkCounts(who: string, mine: MyPermissions): Promise<
     replies: inbox.items.filter((i) => i.key.startsWith("reply-")).length,
     health,
     connections: connections ? (failing ? "bad" : withdrawn ? "warn" : "ok") : null,
+    public_graph: publicGraphSignal(checklist),
   };
+}
+
+/** The Overview's dot: this deployment's connection to minerval.ai, from the checklist (docs/organizations.md). */
+function publicGraphSignal(checklist: Inbox["checklist"]): "ok" | "warn" | "bad" | null {
+  const pg = checklist?.public_graph;
+  if (!pg || pg.connection === undefined) return null;
+  const c = pg.connection;
+  if (!c) return pg.account_set ? "ok" : null;
+  if (c.state === "connected") return c.problem ? "bad" : c.missing_grants.length > 0 ? "warn" : "ok";
+  return "warn";
 }
