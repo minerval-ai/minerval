@@ -83,7 +83,7 @@ export type ShowingScope = (typeof SHOWING_SCOPES)[number];
 /** Why a standing showing was ended. The person ending it picks one; nobody checks it. */
 export const END_REASONS = {
   no_longer_needed: "it is no longer needed",
-  replaced: "another release replaces it",
+  replaced: "another showing replaces it",
   asked_in_error: "it was asked for in error",
   no_reason_given: "no reason given",
 } as const;
@@ -93,7 +93,7 @@ export type EndReason = keyof typeof END_REASONS;
 export const LEFT_REASONS = {
   link_removed: "the link that placed it under the shown node was removed",
   node_not_active: "the node was merged into another or retired",
-  showing_ended: "the release ended",
+  showing_ended: "the showing ended",
 } as const;
 export type LeftReason = keyof typeof LEFT_REASONS;
 

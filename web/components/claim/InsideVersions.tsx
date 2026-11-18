@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { actWords, storedWords } from "@/lib/stored-words";
 import type { InsideNode, ShownTab } from "@/lib/inside-node";
 import { modelDisplayName } from "@/lib/model-names";
 import { isStatus } from "@/lib/ontology";
@@ -365,7 +366,7 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
             ? "It is a standing release: each later assessment follows, and one that is not released shows as held."
             : "The page was released once, as it stood, and nothing is undertaken about later assessments."}{" "}
           It covers {showing.scope}.{node ? ` The release began ${node.showing_began}.` : ""}
-          {showing.ended_at ? ` It ended on ${day(showing.ended_at)}: ${showing.ended_because}. What was released stays released.` : ""}
+          {showing.ended_at ? ` It ended on ${day(showing.ended_at)}: ${storedWords(showing.ended_because)}. What was released stays released.` : ""}
         </Row>
         {showing.policy && (
           <Row label="Redaction policy">
@@ -383,10 +384,10 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
           <ul>
             {acts.map((a, i) => (
               <li key={i}>
-                {day(a.at)}: {a.by} {a.what}
+                {day(a.at)}: {a.by} {actWords(a.what)}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
-                {a.reason ? ` (${a.reason})` : ""}
+                {a.reason ? ` (${storedWords(a.reason)})` : ""}
                 {a.holding.length > 0 ? `, holding ${a.holding.join(", ")}` : ""}.
               </li>
             ))}

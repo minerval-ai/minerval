@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { actWords, storedWords } from "@/lib/stored-words";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArgumentText } from "@/components/ArgumentText";
@@ -34,7 +35,7 @@ function stateTone(page: ShownPage): Tone {
 }
 
 function actLine(a: ShowingAct): string {
-  return `${capital(a.by)} ${a.what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${a.reason}` : ""}${a.rule_id ? ", under a setting of the gate" : ""}`;
+  return `${capital(a.by)} ${actWords(a.what)}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${storedWords(a.reason)}` : ""}${a.rule_id ? ", under a setting of the gate" : ""}`;
 }
 
 export default async function ShownPagePage({ params }: { params: Promise<{ id: string; pageId: string }> }) {
@@ -170,7 +171,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
                       <span>{(p.held ?? "").replace(/^\[|\]$/g, "")}</span>
                       {last && (
                         <span className="w-spacer">
-                          {last.reason ? `${last.reason} · ` : ""}
+                          {last.reason ? `${storedWords(last.reason)} · ` : ""}
                           {shortDay(last.at)}
                         </span>
                       )}

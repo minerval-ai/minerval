@@ -13,6 +13,8 @@
 //
 // Pure: components/work/Pipeline.tsx draws it, tests/unit/web/pipeline.test.ts checks it.
 
+import { storedWords } from "./stored-words";
+
 export type PipelineStep = "redact" | "audit" | "release" | "shown";
 /** todo: not reached, or not known from this side. now: under way. part: released in part. */
 export type StepMark = "todo" | "done" | "now" | "warn" | "bad" | "part";
@@ -67,7 +69,7 @@ type Hold = { reason: string | null; by: "direct" | "redactor" };
 function readHeld(words: string | null | undefined): { stage?: SourceStage; unpaid?: boolean; hold?: Hold; delayed?: boolean } {
   const w = (words ?? "").trim();
   if (!w) return {};
-  const reason = (w.match(/\(([^)]*)\)\s*$/) ?? [])[1] ?? null;
+  const reason = storedWords((w.match(/\(([^)]*)\)\s*$/) ?? [])[1] ?? null);
   if (/^held by a person who directs/i.test(w)) return { hold: { reason, by: "direct" } };
   if (/^held by the Redactor/i.test(w)) return { stage: "at_gate", hold: { reason, by: "redactor" } };
   if (UNPAID.test(w)) return { stage: /check of its redaction/i.test(w) ? "to_check" : "to_redact", unpaid: true };

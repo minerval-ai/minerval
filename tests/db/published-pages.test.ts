@@ -353,7 +353,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(first.record.made!.prompt_set).toMatch(/^[0-9a-f]{64}$/);
     // Who acted, by the permissions they held and with no name.
     expect(first.record.acts.map((a) => a.by)).toContain("person 1");
-    expect(first.record.acts.find((a) => a.what === "asked for the release")).toMatchObject({ by: "person 1", holding: ["direct"] });
+    expect(first.record.acts.find((a) => a.what === "asked for the showing")).toMatchObject({ by: "person 1", holding: ["direct"] });
     expect(first.record.acts.some((a) => a.what === "held" && a.reason === "confidential to the party" && a.for_party === id.orgName)).toBe(true);
     expect(first.record.versions).toHaveLength(1);
 
@@ -661,7 +661,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(read.parts_held).toBe(1);
     expect(read.page.arguments[1]).toMatchObject({ stance: "against", name: "From the missing logs", content: HELD_TEXT });
     // The hold stays on the record after it is lifted.
-    expect(read.record.acts.map((a: any) => a.what)).toEqual(expect.arrayContaining(["held", "lifted a hold", "consented"]));
+    expect(read.record.acts.map((a: any) => a.what)).toEqual(expect.arrayContaining(["held", "lifted a hold", "released"]));
     // The page on the node is now the later package; the earlier source is kept, detached.
     const attached = await pubRows<{ url: string; detached: boolean }>(
       `SELECT s.url, i.detached_at IS NOT NULL AS detached FROM claim_instances i JOIN sources s ON s.id = i.source_id WHERE i.claim_id = $1 ORDER BY s.url`,

@@ -475,7 +475,7 @@ function renderShownPage(
   const gaps = (header.gaps ?? {}) as { requests?: Array<{ state: string }>; names_what_remains_open?: boolean };
   const made = (header.made ?? {}) as Record<string, unknown>;
   const lines = [
-    "A page of this graph, written at a label this one does not read and released here. The text below is as its " +
+    "A page of this graph, written at a label this one does not read and shown here. The text below is as its " +
       "author wrote it. What a policy removed is marked where it was removed, and each part that is held is named in its place.",
     "",
     `Version of ${page.judged_at.toISOString().slice(0, 10)}.`,
@@ -511,7 +511,7 @@ function renderShownPage(
 /** What the Steward at the destination label is told when a shown page arrives among its node's sources. */
 export function pageShownMessage(input: { heldParts: number; parts: number; removals: number; again: boolean }): string {
   return (
-    `A page of this node, written at a label this one does not read, ${input.again ? "has had more of it released and is released here again" : "has been released here"}. ` +
+    `A page of this node, written at a label this one does not read, ${input.again ? "has had more of it released and is shown here again" : "has been shown here"}. ` +
     `It is now one of this node's sources, of the kind shown_page. It is that label's Steward's assessment as written, ` +
     `made on material this label cannot read: ${input.removals} passage${input.removals === 1 ? " was" : "s were"} removed under the boundary's ` +
     `policy and marked in place, and ${input.heldParts} of its ${input.parts} part${input.parts === 1 ? "" : "s"} ${input.heldParts === 1 ? "is" : "are"} held. ` +
@@ -563,7 +563,7 @@ async function arrive(pageId: string, showing: ShowingRow): Promise<void> {
        VALUES ($1, $2, $3, $4, 'shown_page', '', $5) RETURNING id`,
       [
         `minerval:shown-page/${pageId}/${n + 1}`,
-        `A page released from a label this one does not read (version of ${page.judged_at.toISOString().slice(0, 10)})`,
+        `A page shown from a label this one does not read (version of ${page.judged_at.toISOString().slice(0, 10)})`,
         createHash("sha256").update(text, "utf8").digest("hex"),
         text,
         destination,
@@ -575,7 +575,7 @@ async function arrive(pageId: string, showing: ShowingRow): Promise<void> {
       await tx.query(
         `UPDATE claim_instances i
             SET detached_at = now(), detached_by = 'showing',
-                detached_reason = 'A later release of this page replaced it.'
+                detached_reason = 'A later showing of this page replaced it.'
           WHERE i.claim_id = $1 AND i.detached_at IS NULL AND i.created_by = 'showing' AND i.sensitivity_label = $3
             AND EXISTS (SELECT 1 FROM sources s WHERE s.id = i.source_id AND s.url LIKE ANY (
                   SELECT 'minerval:shown-page/' || o.id || '/%' FROM shown_pages o WHERE o.showing_id = $2 AND o.node_id = $1))`,
@@ -588,7 +588,7 @@ async function arrive(pageId: string, showing: ShowingRow): Promise<void> {
           nodeId,
           source!.id,
           verdictLine(JSON.parse(page.header!) as Record<string, unknown>),
-          "The verdict of a page of this node written at a label this one does not read. The source's text is the page as released, with removals marked and held parts named.",
+          "The verdict of a page of this node written at a label this one does not read. The source's text is the page as shown, with removals marked and held parts named.",
           destination,
         ]
       );
@@ -1505,7 +1505,7 @@ const STAGE_WORDS: Record<PageStage, string> = {
   to_redact: "waiting for the Redactor's run, which is paid for from the budget of the work that produced it",
   to_check: "redacted, and waiting for Audit's check of the redaction",
   at_gate: "at the gate",
-  cannot_cross: "it cannot be released under this boundary's policy: something that is always shown with a page could not be released here",
+  cannot_cross: "it cannot be shown under this boundary's policy: something that is always shown with a page could not be shown here",
   overtaken: "a later version was recorded before this one was redacted, so this one was not",
 };
 
@@ -1519,15 +1519,15 @@ const ACT_WORDS: Record<string, string> = {
   removed: "removed a passage",
   delayed: "delayed",
   delay_lifted: "lifted a delay",
-  asked: "asked for the release",
-  ended: "ended the release",
-  released: "consented",
+  asked: "asked for the showing",
+  ended: "ended the showing",
+  released: "released",
   held: "held",
   hold_lifted: "lifted a hold",
   page_held: "held the page",
   page_hold_lifted: "lifted a hold on the page",
   returned_by_check: "the check returned the redaction to be done again",
-  cannot_cross: "the Redactor found that the page cannot be released under the policy",
+  cannot_cross: "the Redactor found that the page cannot be shown under the policy",
 };
 
 /** What an act was, in words. A flow set because a request on the other side asked for the page says so. */
@@ -1570,7 +1570,7 @@ function heldBecause(page: ShownPageRow, acts: readonly ActRow[], waitingOn: rea
   if (redactor) return `held by the Redactor (${HOLD_REASONS[(redactor.reason ?? "no_reason_given") as HoldReason]})`;
   const delay = delayOn(acts, null);
   if (delay) return `delayed until ${delay.until!.toISOString()}`;
-  return `waiting on ${waitingOn.join(" and ") || "the people who consent for its parties"}`;
+  return `waiting on ${waitingOn.join(" and ") || "the people who decide what is released"}`;
 }
 
 /** One version of a node's page as the destination side may describe it without any of its text. */

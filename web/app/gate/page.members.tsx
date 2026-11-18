@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { actWords, storedList, storedWords } from "@/lib/stored-words";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { NeedsPermission, can, viewer } from "@/components/admin/access";
@@ -260,7 +261,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
             action={decideAction}
             partyId={party.id}
             itemKey={selected.id}
-            reasons={queue.hold_reasons}
+            reasons={storedList(queue.hold_reasons)}
             anyHeld={selected.rows.some(
               (r) => r.held_by_the_redactor || r.delayed_until || r.rests_on.some((s) => s.party.id === party.id && s.standing === "held")
             )}
@@ -331,7 +332,7 @@ function QueueList({
                 <span title={waitingParts < e.rows.length ? "Counting the item itself, with what is always shown of it" : undefined}>{plural(e.rows.length, "part")}</span>
                 {unsure > 0 && <span className="w-review-flag w-warn">{unsure} least sure</span>}
                 {holds.length > 0 && (
-                  <span className="w-review-flag w-bad" title={holds.map((h) => h.held_by_the_redactor!.reason).join("; ")}>
+                  <span className="w-review-flag w-bad" title={holds.map((h) => storedWords(h.held_by_the_redactor!.reason)).join("; ")}>
                     Redactor holds {holds.length}
                   </span>
                 )}
@@ -444,12 +445,12 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
                 {mine && (
                   <Pill tone="bad" title={mine.since ? `Since ${shortWhen(mine.since)}` : undefined}>
                     Held for {mine.party.name}
-                    {mine.reason ? `: ${mine.reason}` : ""}
+                    {mine.reason ? `: ${storedWords(mine.reason)}` : ""}
                   </Pill>
                 )}
                 {row.held_by_the_redactor ? (
                   <Pill tone="bad" title={`Since ${shortWhen(row.held_by_the_redactor.since)}`}>
-                    Redactor: hold · {row.held_by_the_redactor.reason}
+                    Redactor: hold · {storedWords(row.held_by_the_redactor.reason)}
                   </Pill>
                 ) : row.delayed_until ? (
                   <Pill tone="info">Redactor: delay to {shortWhen(row.delayed_until)}</Pill>
@@ -624,14 +625,14 @@ function Context({
               <b style={{ fontWeight: 500 }}>{place(r)}</b>
               {r.held_by_the_redactor && (
                 <div className="w-muted">
-                  Held by the Redactor · {r.held_by_the_redactor.reason} · {shortDay(r.held_by_the_redactor.since)}
+                  Held by the Redactor · {storedWords(r.held_by_the_redactor.reason)} · {shortDay(r.held_by_the_redactor.since)}
                 </div>
               )}
               {r.delayed_until && <div className="w-muted">Delayed to {shortWhen(r.delayed_until)}</div>}
               {(r.held ?? []).map((h) => (
                 <div className="w-muted" key={h.party.id}>
                   Held for {h.party.name}
-                  {h.reason ? ` · ${h.reason}` : ""}
+                  {h.reason ? ` · ${storedWords(h.reason)}` : ""}
                   {h.since ? ` · ${shortDay(h.since)}` : ""}
                 </div>
               ))}
@@ -646,10 +647,10 @@ function Context({
             <div className="w-line" key={i}>
               <time dateTime={a.at}>{shortDay(a.at)}</time>
               <span>
-                {capital(a.by)} {a.what}
+                {capital(a.by)} {actWords(a.what)}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
-                {a.reason ? `: ${a.reason}` : ""}
+                {a.reason ? `: ${storedWords(a.reason)}` : ""}
               </span>
             </div>
           ))}

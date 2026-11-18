@@ -42,7 +42,7 @@ export const GATE_MODES = {
   redactor:
     "The Redactor decides: it removes what the policy protects, may hold or delay a part, and Audit checks its work. What it let through goes, with nobody waiting on a person.",
   person:
-    "A person decides as well: the Redactor does the same work as a proposal, and each part then waits for the people who consent for the parties it rests on. They approve it as proposed or change it with the same acts.",
+    "A person decides as well: the Redactor does the same work as a proposal, and each part then waits for the people who hold release for the parties it rests on. They approve it as proposed or change it with the same acts.",
 } as const;
 export type GateMode = keyof typeof GATE_MODES;
 export const isGateMode = (m: unknown): m is GateMode => typeof m === "string" && m in GATE_MODES;
@@ -96,7 +96,7 @@ export const HOLD_REASONS = {
   confidentiality: "confidential to the party",
   legal: "a legal or contractual reason",
   security: "a safety or security reason",
-  timing: "not to be released yet",
+  timing: "not to be shown yet",
   disputed: "the party disputes what it says",
   policy: "what the policy protects could not be removed from it",
   no_reason_given: "no reason given",

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { actWords, storedList, storedWords } from "@/lib/stored-words";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
@@ -91,8 +92,9 @@ function removedCount(removals: Record<string, number> | undefined): number {
 }
 
 function actLine(a: ShowingAct): string {
-  const what = a.what.charAt(0).toUpperCase() + a.what.slice(1);
-  return `${what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${a.reason}` : ""}`;
+  const words = actWords(a.what);
+  const what = words.charAt(0).toUpperCase() + words.slice(1);
+  return `${what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${storedWords(a.reason)}` : ""}`;
 }
 
 export default async function ShowingPage({
@@ -278,7 +280,7 @@ export default async function ShowingPage({
               )}
             </span>,
           ],
-          !!ended && ["Ended", `${shortDay(ended)}${showing?.ended_because ? `: ${showing.ended_because}` : ""}`],
+          !!ended && ["Ended", `${shortDay(ended)}${showing?.ended_because ? `: ${storedWords(showing.ended_because)}` : ""}`],
         ]}
       />
 
@@ -409,7 +411,7 @@ export default async function ShowingPage({
                     <td>
                       <Pipeline status={v?.status ?? NOT_YET_ASSESSED} />
                     </td>
-                    <td>{g.left ? `${shortDay(g.left.at)}${g.left.because ? `: ${g.left.because}` : ""}` : <span className="w-faint">—</span>}</td>
+                    <td>{g.left ? `${shortDay(g.left.at)}${g.left.because ? `: ${storedWords(g.left.because)}` : ""}` : <span className="w-faint">—</span>}</td>
                   </tr>
                 );
               })}
@@ -500,7 +502,7 @@ export default async function ShowingPage({
                 <option value="" disabled>
                   Choose a reason
                 </option>
-                {Object.entries(listed.hold_reasons).map(([key, words]) => (
+                {Object.entries(storedList(listed.hold_reasons)).map(([key, words]) => (
                   <option key={key} value={key}>
                     {words}
                   </option>
@@ -526,7 +528,7 @@ export default async function ShowingPage({
                 <option value="" disabled>
                   Choose a reason
                 </option>
-                {Object.entries(listed.end_reasons).map(([key, words]) => (
+                {Object.entries(storedList(listed.end_reasons)).map(([key, words]) => (
                   <option key={key} value={key}>
                     {words}
                   </option>
@@ -577,7 +579,7 @@ function GroupRows({
           <span className="w-faint w-small" style={{ fontWeight: 400 }}>
             · {g.main ? "released node" : "under it"}
             {g.since && ` · since ${shortDay(g.since)}`}
-            {g.left && ` · left ${shortDay(g.left.at)}${g.left.because ? `: ${g.left.because}` : ""}`}
+            {g.left && ` · left ${shortDay(g.left.at)}${g.left.because ? `: ${storedWords(g.left.because)}` : ""}`}
           </span>
         </td>
       </tr>
@@ -670,7 +672,7 @@ function Sees({ v, showingVisible }: { v: Version; showingVisible: boolean }) {
   if (v.status.key === "overtaken") return <span className="w-faint">Never sent</span>;
   if (ver.state === "held")
     return (
-      <span className="w-muted" title={ver.held_because}>
+      <span className="w-muted" title={storedWords(ver.held_because) ?? undefined}>
         Nothing yet{ver.held_for ? <div className="w-faint">held {ver.held_for === "0 hours" ? "under an hour" : ver.held_for}</div> : null}
       </span>
     );

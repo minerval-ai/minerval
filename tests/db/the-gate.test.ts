@@ -180,7 +180,7 @@ describe("a node's page, finance to company", () => {
     expect(page.verification).toMatchObject({ ok: true });
     expect(await personActs(item)).toEqual([]);
     const acts = (await atCompany(() => shownShowing(asked.showing_id)))!.acts as any[];
-    expect(acts.filter((a) => a.what === "consented").every((a) => a.by === "the gate's setting")).toBe(true);
+    expect(acts.filter((a) => a.what === "released").every((a) => a.by === "the gate's setting")).toBe(true);
     // It arrived at company as a source on the node, and a pass was opened there.
     const [arrived] = await atCompany(() => rawQuery<{ source_id: string }>(`SELECT source_id FROM shown_pages WHERE id = $1`, [item]));
     expect(await atCompany(() => rawQuery(`SELECT 1 FROM claim_instances WHERE source_id = $1 AND claim_id = $2`, [arrived!.source_id, id.node]))).toHaveLength(1);

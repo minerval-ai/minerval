@@ -87,7 +87,7 @@ export function answerOf(input: {
     state: "made",
     in_words:
       pkg?.showing.form === "once"
-        ? `${received} A reassessment was made there on ${day(madeAt)}. The page was released once, with nothing undertaken about later versions, so it is not published under this release.`
+        ? `${received} A reassessment was made there on ${day(madeAt)}. The page was shown once, with nothing undertaken about later versions, so it is not published under this showing.`
         : `${received} A reassessment was made there on ${day(madeAt)}. No version of it has been published or held yet.`,
   };
 }
@@ -240,7 +240,7 @@ export function publisherFactsLines(facts: PublisherFacts, of: "its pages" | "it
   const p = facts.pages;
   if (p.published > 0) {
     lines.push(
-      `${of === "its other pages" ? "Other pages it has published here" : "Pages it has published here"}: ${p.published} (${p.standing} kept published so that each later version follows, ${p.shown_once} released once` +
+      `${of === "its other pages" ? "Other pages it has published here" : "Pages it has published here"}: ${p.published} (${p.standing} kept published so that each later version follows, ${p.shown_once} shown once` +
         (p.with_what_sits_under > 0 ? `; ${p.with_what_sits_under} with what sits under the node` : "") +
         ")."
     );
@@ -249,7 +249,7 @@ export function publisherFactsLines(facts: PublisherFacts, of: "its pages" | "it
     lines.push(
       `As they stand: ${now.released_whole} released whole, ${now.released_in_part} released in part, ${now.held} held` +
         (held.length > 0 ? ` (for ${held.map((d) => n(d, "day", "days")).join(", ")})` : "") +
-        `, ${now.not_yet_assessed} not yet assessed. Versions held at some time: ${facts.holds.versions_ever_held}. Releases ended: ${facts.showings_ended}.`
+        `, ${now.not_yet_assessed} not yet assessed. Versions held at some time: ${facts.holds.versions_ever_held}. Showings ended: ${facts.showings_ended}.`
     );
     const s = facts.said_back;
     lines.push(

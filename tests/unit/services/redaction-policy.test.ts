@@ -80,14 +80,14 @@ describe("what a version may not do", () => {
     }
   });
 
-  it("name something that is shown whenever a page is released", () => {
+  it("name something that is shown whenever a page is shown", () => {
     for (const [name, covers] of [
       ["bad verdicts", "A status of contradicted."],
       ["uncertainty", "The credence, where it is low."],
       ["method", "The prompt set and the policy version."],
     ] as const) {
       const [problem] = policyProblems(category(name, covers));
-      expect(problem?.problem, name).toContain("names something that is shown whenever a page is released");
+      expect(problem?.problem, name).toContain("names something that is shown whenever a page is shown");
     }
   });
 

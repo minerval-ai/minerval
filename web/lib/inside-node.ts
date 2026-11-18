@@ -1,4 +1,5 @@
 import "server-only";
+import { storedWords } from "./stored-words";
 import { fetchShowing, fetchShowings, fetchShownPage, type ShownPage, type ShownShowing } from "./inside-api";
 import { membersOnly } from "./members";
 import type { PublishedPageView } from "./published";
@@ -114,7 +115,7 @@ function viewOfShownPage(tab: ShownTab, showing: ShownShowing, page: ShownPage):
 function holdOf(showing: ShownShowing, pageId: string, part: number): { reasons: string[]; since: string | null } {
   const acts = showing.acts.filter((a) => a.page_id === pageId && a.on === `part ${part}`);
   const held = [...acts].reverse().find((a) => a.what === "held");
-  return { reasons: held?.reason ? [held.reason] : [], since: held?.at ?? null };
+  return { reasons: held?.reason ? [storedWords(held.reason)] : [], since: held?.at ?? null };
 }
 
 function heldBy(words: string | undefined): string[] {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { actWords, storedWords } from "@/lib/stored-words";
 import type { ClaimDetail, Assessment, Stance } from "@/lib/types";
 import type { ArgumentGroup } from "@/lib/ontology";
 import { RELATION, DEFINED_IN } from "@/lib/ontology";
@@ -172,13 +173,13 @@ export function TakenOut({ view }: { view: PublishedPageView }) {
       {view.state === "held" && (
         <p className="published-later" style={quiet}>
           <span className="held-mark" aria-hidden /> A later version, of {day(view.version_of)}, exists and is not released
-          {view.held?.because ? `: ${view.held.because}` : ""}
+          {view.held?.because ? `: ${storedWords(view.held.because)}` : ""}
           {view.held?.since ? `, since ${day(view.held.since)}` : ""}. What follows is the version of {day(view.shown_version_of)}.
         </p>
       )}
       {view.ended && (
         <p style={quiet}>
-          The release ended on {day(view.ended.at)}: {view.ended.because}. What was released stays released.
+          The release ended on {day(view.ended.at)}: {storedWords(view.ended.because)}. What was released stays released.
         </p>
       )}
     </>
@@ -489,10 +490,10 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
             {view.record.acts.map((a, i) => (
               <li key={i}>
                 {day(a.at)}: {a.by}
-                {a.holding.length > 0 ? `, holding ${a.holding.join(" and ")},` : ""} {a.what}
+                {a.holding.length > 0 ? `, holding ${a.holding.join(" and ")},` : ""} {actWords(a.what)}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
-                {a.reason ? ` (${a.reason})` : ""}
+                {a.reason ? ` (${storedWords(a.reason)})` : ""}
               </li>
             ))}
           </ul>

@@ -531,6 +531,20 @@ the old names, and will be renamed together with a migration. Until then:
 | the parties whose release a part takes (`needs`, `rests_on`) | the parties whose consent a part takes |
 | the source kind `shown_page`, the format `minerval-shown-page/1` | a released page arriving at a label |
 
+The fixed words a release's record is kept and sent in also keep the old
+names until then, because they are stored and go into every package sent
+outside, and changing them would build a new package for every node under
+every release outside: an act's `what` ("asked for the showing", "ended the
+showing", and "released" for a party's consent), the reasons for ending
+(`END_REASONS`), for a node's leaving (`LEFT_REASONS`) and for a hold
+(`HOLD_REASONS`, "not to be shown yet"), why a version is held, the words
+of a gate's setting stamped on what it let through (`GATE_MODES`), the
+text of a released page as it arrives as a source, and the two sections of
+a redaction policy the code writes. They change with the stored values, in
+one step with the package format. Until then the web app says them in the
+new words where it shows them (`web/lib/stored-words.ts`), and an agent
+reads them as the API gives them.
+
 Unchanged, because they name outcomes and not the decision: a part
 *released* or *held*, *released whole*, *released in part*, `released_at`,
 `released_under` and `send_as_released`. "Release" for money, leases and

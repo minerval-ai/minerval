@@ -96,7 +96,7 @@ interface Composed {
 
 /** What an account says when it will not do work a request asks for: the public graph's fixed list (request-take-up-service.ts). */
 const DECLINED_BECAUSE: Record<string, string> = {
-  cannot_be_shown: "what the request asks for could not be released outside the graph that holds it",
+  cannot_be_shown: "what the request asks for could not be shown outside the graph that holds it",
   not_held: "it does not hold the evidence the request asks about",
   asks_for_a_result: "the request asks for a particular result",
   moot: "the request no longer bears on anything",

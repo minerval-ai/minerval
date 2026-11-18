@@ -3,6 +3,7 @@
 // API's, served with GET /showings and GET /gate/queue.
 
 import type { ShownVersion } from "./inside-api";
+import { storedWords } from "./stored-words";
 
 /** One of the four states a node under a release is in, as the people it is released to are told. */
 export function stateOfVersion(v: Pick<ShownVersion, "state" | "held_because" | "held_for" | "parts_held" | "of_parts" | "held_kinds">): string {
@@ -14,7 +15,7 @@ export function stateOfVersion(v: Pick<ShownVersion, "state" | "held_because" | 
     case "released_in_part":
       return `Released in part: ${v.parts_held} of ${v.of_parts} parts held (${v.held_kinds})`;
     case "held":
-      return `Held${v.held_because ? `: ${v.held_because}` : ""}${v.held_for ? `, for ${v.held_for === "0 hours" ? "less than an hour" : v.held_for}` : ""}`;
+      return `Held${v.held_because ? `: ${storedWords(v.held_because)}` : ""}${v.held_for ? `, for ${v.held_for === "0 hours" ? "less than an hour" : v.held_for}` : ""}`;
     default:
       return "Not recorded";
   }

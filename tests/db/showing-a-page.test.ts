@@ -267,7 +267,7 @@ describe("the Redactor's pass", () => {
 
   it("removes a passage given exactly and leaves the category's mark, and refuses anything else", async () => {
     const policy = await tool(id.page!, "get_redaction_policy");
-    expect(policy.policy).toContain("## What is shown whenever a page is released");
+    expect(policy.policy).toContain("## What is shown whenever a page is shown");
     const wrongCategory = await tool(id.page!, "redact", { part: 3, passage: SECRET, category: "unfavorable to Acme", note: "x" });
     expect(wrongCategory.code).toBe("NO_SUCH_CATEGORY");
     const notThere = await tool(id.page!, "redact", { part: 3, passage: "4711  units", category: "commercial figures", note: "x" });
@@ -324,7 +324,7 @@ describe("Audit's check", () => {
     expect(returned.success).toBe(true);
     const record = (await atA(() => shownShowing(id.showing!)))!;
     expect((record.nodes as any[])[0].versions[0].held_because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
-    expect((record.acts as any[]).map((a) => a.what)).toEqual(["asked for the release", "the check returned the redaction to be done again"]);
+    expect((record.acts as any[]).map((a) => a.what)).toEqual(["asked for the showing", "the check returned the redaction to be done again"]);
     expect(JSON.stringify(record)).not.toContain("target of");
     const [action] = await system(() => rawQuery<{ status: string }>(`SELECT status FROM actions WHERE exclusion_group = $1`, [`redact:${id.page}`]));
     expect(action!.status).toBe("open");
@@ -654,7 +654,7 @@ describe("arrival at the destination label", () => {
     expect(page.verification!.ok).toBe(true);
 
     const acts = ((await atA(() => shownShowing(id.showing!)))!.acts as any[]).filter((a) => a.on === "part 4" && /Borealis/.test(a.for_party ?? ""));
-    expect(acts.map((a) => a.what)).toEqual(["held", "lifted a hold", "consented"]);
+    expect(acts.map((a) => a.what)).toEqual(["held", "lifted a hold", "released"]);
     expect(acts[0].reason).toBe("confidential to the party");
     expect(acts[0].holding).toEqual(["release for Borealis"]);
 
@@ -789,7 +789,7 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(parts[1].text).toContain("[redacted: commercial figures]");
     expect(parts[2].held).toBe("[A paragraph of reasoning, held by the Redactor]");
     const all = (await atA(() => shownShowing(id.standing!)))!.acts as any[];
-    const acts = all.filter((a) => a.what === "consented");
+    const acts = all.filter((a) => a.what === "released");
     expect(acts.length).toBeGreaterThan(0);
     expect(acts.every((a) => a.by === "the gate's setting" && a.rule_id === id.rule)).toBe(true);
     // The Redactor's hold is on the record with its run's kind of actor and the reason in fixed words, and nothing of its note.
@@ -843,7 +843,7 @@ describe("a standing showing of a node with what sits under it", () => {
     await endShowing({ showingId: id.standing!, reason: "no_longer_needed", actor: actor.director! });
     const record = (await atA(() => shownShowing(id.standing!)))!;
     expect(record.ended_because).toBe("it is no longer needed");
-    expect((record.acts as any[]).at(-1)).toMatchObject({ what: "ended the release", reason: "it is no longer needed", holding: ["direct"] });
+    expect((record.acts as any[]).at(-1)).toMatchObject({ what: "ended the showing", reason: "it is no longer needed", holding: ["direct"] });
     await system(() => rawQuery(`INSERT INTO assessments (claim_id, status, confidence, summary, reasoning_trace, is_current, sensitivity_label) SELECT claim_id, 'supported', 0.5, 'Fourth.', 'Fourth.', false, sensitivity_label FROM assessments WHERE claim_id = $1 LIMIT 1`, [id.root]));
     expect(await followShowings()).toBe(0);
     await expect(endShowing({ showingId: id.standing!, reason: "no_longer_needed", actor: actor.director! })).rejects.toThrow(/already ended/);
@@ -862,7 +862,7 @@ describe("the policy of a boundary", () => {
     expect((byFavor as any).message).toContain('worded by how a passage reflects on someone ("unfavorable")');
     const alwaysShown = await save([{ name: "bad verdicts", covers: "A status of contradicted.", examples: "" }]);
     expect(alwaysShown.ok).toBe(false);
-    expect((alwaysShown as any).message).toContain('names something that is shown whenever a page is released ("verdicts")');
+    expect((alwaysShown as any).message).toContain('names something that is shown whenever a page is shown ("verdicts")');
     const saved = await save([{ name: "personal data", covers: "Detail about an identifiable person.", examples: "A name." }, { name: "plant layout", covers: "Where machines stand on the floor.", examples: "A floor plan." }]);
     expect(saved.ok).toBe(true);
     expect((saved as any).policy.version).toBe(2);

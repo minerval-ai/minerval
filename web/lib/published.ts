@@ -2,6 +2,7 @@
 // the API serves of it, and the few words the site says about it in more
 // than one place.
 import type { PublishedPageShape } from "./published-page/shape";
+import { storedWords } from "./stored-words";
 import type { PackageAct, PackageCheck, PackageVersion } from "./published-page/verify";
 
 export interface PublishedOnNode {
@@ -119,7 +120,7 @@ export function stateWords(p: { state: string | null; parts?: number; parts_held
     case "released_in_part":
       return `Released in part: ${p.parts_held} of ${p.parts} parts held (${p.held_kinds})`;
     case "held":
-      return `Held${p.held?.because ? `: ${p.held.because}` : ""}${p.held?.since ? `, since ${day(p.held.since)}` : ""}`;
+      return `Held${p.held?.because ? `: ${storedWords(p.held.because)}` : ""}${p.held?.since ? `, since ${day(p.held.since)}` : ""}`;
     case "not_redacted":
       return "Replaced by a later version before it was redacted";
     default:
@@ -134,5 +135,5 @@ export function showingWords(p: { form: string | null; scope: string | null; ask
       ? `Kept published since ${day(p.asked_at)}, so each later version follows and a version that is held shows as held`
       : `Released once, on ${day(p.asked_at)}, with nothing undertaken about later versions`;
   const scope = p.scope === "under" ? "this node and what sits under it" : "this node alone";
-  return `${form}; ${scope}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${p.ended.because}.` : ""}`;
+  return `${form}; ${scope}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${storedWords(p.ended.because)}.` : ""}`;
 }
