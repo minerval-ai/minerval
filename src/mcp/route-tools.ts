@@ -448,6 +448,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /outside/requests": { name: "list_public_requests", note: "Free. Read from the mirror, so it tells the public graph nothing." },
   "GET /outside/said-back": { name: "list_public_contributions_received", note: "Free." },
   "GET /outside/reports": { name: "list_agents_reports", note: "Free." },
+  "GET /outside/mandates/conversations": { name: "list_public_mandate_conversations", note: "Free." },
   "GET /outside/mandates/conversations/:conversation_id": { name: "get_public_mandate_conversation", note: "Free." },
   "POST /outside/requests/adopted/:adoption_id/take-up": {
     name: "take_up_public_request",

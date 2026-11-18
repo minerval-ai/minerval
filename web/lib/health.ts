@@ -451,6 +451,24 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
     });
   }
 
+  // Pages are shown outside and the public graph is reached from here, but the key they are signed with was never registered from here.
+  const key = c.public_graph?.signing_key;
+  if (c.public_graph?.account_set && key && key.shown_outside > 0 && key.fingerprint && !key.registered_from_here_at) {
+    out.push({
+      key: "signing-key-unregistered",
+      title: "Signing key not registered",
+      consequence: `${key.shown_outside === 1 ? "1 page is" : `${key.shown_outside} pages are`} shown outside; the public graph takes none signed with an unregistered key`,
+      owner: "admin",
+      href: "/admin/outside?drawer=key",
+      action: "Register",
+      tone: "warn",
+      blocks: false,
+      detail:
+        "This deployment's log has no registration of the key it signs with now. Registering it from the Public graph page names the organisation's " +
+        "account there as the publisher. A registration made elsewhere is not in the log; the Public graph page reads the public graph's own record.",
+    });
+  }
+
   // Connections.
   const k = c.connections;
   for (const f of k.failing) {

@@ -455,6 +455,7 @@ describe("what a permission guards", () => {
       "POST /outbound/registration": ["administer"],
       "POST /outbound/registration/send": ["administer"],
       // Acts on the public graph in the organization's name take the permission the deployment names for them (PUBLIC_ACTS_BY, `direct` unless set).
+      "GET /outside/mandates/conversations": ["direct"],
       "GET /outside/mandates/conversations/:conversation_id": ["direct"],
       "POST /outside/requests/:public_request_id/adopt": ["direct"],
       "POST /outside/requests/adopted/:adoption_id/take-up": ["direct"],
@@ -698,6 +699,75 @@ describe("the log", () => {
   });
 });
 
+describe("the log, filtered", () => {
+  it("is kept to a kind, an actor and a text before the limit, and names a source only to a reader of its label", async () => {
+    const { withSystemClearance } = await import("../../src/db/clearance.js");
+    const system = <T>(fn: () => Promise<T>) => withSystemClearance("A test files a source at a label and removes it.", fn);
+    const [orrin] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE name = 'Orrin Labs'`);
+    const reader = await signIn("filters-the-log");
+    await grant(admin, { permission: "read", account_id: reader.id, label: "internal" });
+    type Entry = Record<string, unknown>;
+    const log = async (person: Person, query: string) => {
+      const res = await as(person, { url: `/permissions/log?${query}` });
+      expect(res.statusCode, res.body).toBe(200);
+      return res.json() as { entries: Entry[]; next_before: string | null };
+    };
+
+    // A source at a label the reader does not read, said to be Orrin's.
+    const source = await getOrCreateSource({ url: `https://example.org/members-only-log/${randomUUID()}`, title: "The restricted survey" });
+    await system(() => rawQuery(`UPDATE sources SET sensitivity_label = 'restricted' WHERE id = $1`, [source.id]));
+    try {
+      expect((await as(admin, { method: "PUT", url: `/sources/${source.id}/party`, payload: { party_id: orrin!.id } })).statusCode).toBe(200);
+
+      // Every entry carries its kind.
+      const all = (await log(reader, "limit=500")).entries;
+      expect(all.every((e) => typeof e.type === "string")).toBe(true);
+      expect(all.find((e) => e.event === "granted")!.type).toBe("access");
+      expect(all.find((e) => e.event === "party_added")!.type).toBe("parties");
+
+      // By kind, before the limit: one entry of a kind, though newer entries of other kinds abound.
+      const parties = await log(reader, "type=parties&limit=1");
+      expect(parties.entries).toHaveLength(1);
+      expect(parties.entries[0]!.event).toBe("source_party_set");
+      expect(parties.next_before).toBe(parties.entries[0]!.at);
+      const both = (await log(reader, "type=access,labels&limit=500")).entries;
+      expect(both.length).toBeGreaterThan(0);
+      expect(new Set(both.map((e) => e.type))).toEqual(new Set(["access", "labels"]));
+      expect((await as(reader, { url: "/permissions/log?type=nonsense" })).statusCode).toBe(400);
+
+      // The source's title, to a reader of its label only.
+      expect(parties.entries[0]!.source_id).toBe(source.id);
+      expect(parties.entries[0]!.source_title).toEqual({ withheld: true });
+      const forAdmin = (await log(admin, "type=parties&limit=1")).entries[0]!;
+      expect(forAdmin.source_title).toBe("The restricted survey");
+
+      // By who acted: an account by its id, or what acts where no person does.
+      const byAdmin = (await log(reader, `by=${admin.id}&limit=500`)).entries;
+      expect(byAdmin.length).toBeGreaterThan(0);
+      expect(byAdmin.every((e) => e.by === "first-admin")).toBe(true);
+      const bySetting = (await log(reader, "by=first_administrator&limit=500")).entries;
+      expect(bySetting.length).toBeGreaterThan(0);
+      expect(bySetting.every((e) => e.by === null && e.via === "first_administrator")).toBe(true);
+      expect((await log(reader, `by=${randomUUID()}`)).entries).toEqual([]);
+      expect((await log(reader, "by=someone")).entries).toEqual([]);
+
+      // By text, in the words the reader is shown: never a withheld name.
+      const named = (await log(reader, "q=FILTERS-THE-LOG&limit=500")).entries;
+      expect(named.length).toBeGreaterThan(0);
+      expect(named.every((e) => e.account === "filters-the-log")).toBe(true);
+      expect((await log(reader, "q=restricted survey")).entries).toEqual([]);
+      expect((await log(reader, "q=Orrin Labs")).entries).toEqual([]);
+      expect((await log(admin, "q=Orrin Labs")).entries.length).toBeGreaterThan(0);
+      expect((await log(admin, "q=restricted survey")).entries.map((e) => e.event)).toEqual(["source_party_set"]);
+      const nothing = await log(reader, "q=no entry says this");
+      expect(nothing).toEqual({ entries: [], next_before: null });
+    } finally {
+      await rawQuery(`UPDATE sources SET party_id = NULL WHERE id = $1`, [source.id]);
+      await system(() => rawQuery(`DELETE FROM sources WHERE id = $1`, [source.id]));
+    }
+  });
+});
+
 describe("an MCP caller and the Assistant", () => {
   it("are offered only the tools the person's permissions allow, and the Assistant is told why", async () => {
     const reader = await signIn("assistant-user");
@@ -918,6 +988,22 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       const saved = await as(admin, { method: "PUT", url: "/redaction-policies", payload: { ...policyBody, categories: [{ name: "security detail", covers: "Codes and keys.", examples: "A door code." }] } });
       expect(saved.statusCode, saved.body).toBe(201);
       expect(saved.json().version).toBe(2);
+      // Every version of the boundary, with who saved each: once each, from the side the reader reads.
+      for (const person of [admin, reader]) {
+        const versions = await as(person, { url: `/redaction-policies?boundary_id=${gateId}&all=true` });
+        expect(versions.statusCode, versions.body).toBe(200);
+        expect(versions.json().policies.map((p: Record<string, unknown>) => [p.version, p.in_force, p.saved_by])).toEqual([
+          [2, true, "first-admin"],
+          [1, false, null],
+        ]);
+      }
+      const reads = (await as(reader, { url: `/redaction-policies?boundary_id=${gateId}&all=true` })).json().policies;
+      expect(reads.every((p: Record<string, unknown>) => p.from_label === undefined)).toBe(true);
+      expect((await as(reader, { url: `/redaction-policies?boundary_id=${gateId}` })).json().policies.map((p: { version: number }) => p.version)).toEqual([2]);
+      const one = (await as(reader, { url: `/redaction-policies/${reads[1].policy_id}` })).json();
+      expect(one).toMatchObject({ version: 1, in_force: false, saved_by: null, starting_text: true });
+      expect((await as(reader, { url: `/redaction-policies/${reads[0].policy_id}` })).json()).toMatchObject({ version: 2, in_force: true, saved_by: "first-admin" });
+      expect(JSON.stringify(reads)).not.toMatch(/oidc:|external_id/);
 
       // Ending it is the director's, with a reason from the list.
       const ended = await as(director, { method: "POST", url: `/showings/${showingId}/end`, payload: { reason: "no_longer_needed" } });

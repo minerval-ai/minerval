@@ -108,6 +108,8 @@ export interface SetupChecklist {
     account_set: boolean;
     keep_public_current: { setting: "on" | "off"; sends: boolean; in_words: string };
     last_not_taken: string | null;
+    /** Pages shown outside that are open, the signing key's fingerprint, and when that key was last registered on the public graph from here. Absent from an older API. */
+    signing_key?: { shown_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
   };
   connections: {
     total: number;
@@ -171,8 +173,12 @@ export type Withheld = { withheld: true };
 
 export interface LogEntry {
   event: string;
+  /** The kind of act, as GET /permissions/log filters by it (LOG_TYPES in src/services/permission-service.ts). */
+  type: string;
   at: string;
   by: string | null;
+  /** Who did it, by account id, as `by` on the log takes it; null where no person did it. */
+  by_id?: string | null;
   via?: string;
   permission?: string;
   account?: string;
@@ -182,6 +188,8 @@ export interface LogEntry {
   party?: string | Withheld;
   previous_party?: string | Withheld | null;
   source_id?: string;
+  /** For source_party_set: the source's title, withheld unless the reader reads the source's label. */
+  source_title?: string | Withheld;
   connection?: string | Withheld;
   previous_label?: string | Withheld;
   changed?: string[];
@@ -195,6 +203,10 @@ export interface LogEntry {
   amount_owls?: number;
   mandate?: { id: string; title: string };
   note?: string;
+  /** For the file_set_* events: the set, by name; on its closing, how many files it holds; on a set switched off or on. */
+  file_set?: string | Withheld;
+  files?: number;
+  enabled?: boolean;
 }
 
 export async function fetchPermissionDefinitions(externalId: string): Promise<PermissionDefinition[]> {

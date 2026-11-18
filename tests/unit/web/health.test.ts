@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { SetupChecklist } from "../../../web/lib/admin-api";
-import { logActor, logType } from "../../../web/lib/admin-words";
+import { LOG_TYPES, LOG_TYPE_WORDS, logActor, logType } from "../../../web/lib/admin-words";
+import { LOG_TYPES as API_LOG_TYPES } from "../../../src/services/permission-service";
 import { areaTiles, attentionItems, checkCounts, firstLine, labelsWithoutMandate, partiesReleasedByNobody, roleOfSetting } from "../../../web/lib/health";
 
 // The Health page's short rows (web/lib/health.ts): what needs someone, each
@@ -103,6 +104,27 @@ describe("what needs attention", () => {
     expect(item).toMatchObject({ title: "Embeddings not cleared for board", owner: "operator" });
   });
 
+  it("says when pages are shown outside and the key they are signed with was never registered from here", () => {
+    const c = healthy();
+    c.public_graph!.signing_key = { shown_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
+    expect(attentionItems(c).map((i) => [i.title, i.owner, i.href])).toEqual([["Signing key not registered", "admin", "/admin/outside?drawer=key"]]);
+    // Registered from here, nothing shown outside, no key, or no route to the public graph: nothing to say.
+    for (const change of [
+      () => (c.public_graph!.signing_key!.registered_from_here_at = "2026-11-01T00:00:00Z"),
+      () => (c.public_graph!.signing_key = { shown_outside: 0, fingerprint: "ab12", registered_from_here_at: null }),
+      () => (c.public_graph!.signing_key = { shown_outside: 2, fingerprint: null, registered_from_here_at: null }),
+      () => {
+        c.public_graph!.signing_key = { shown_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
+        c.public_graph!.account_set = false;
+      },
+    ]) {
+      change();
+      expect(attentionItems(c)).toEqual([]);
+      c.public_graph!.account_set = true;
+      c.public_graph!.signing_key = { shown_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
+    }
+  });
+
   it("names a permission nobody holds and a label nobody reads", () => {
     const c = healthy();
     c.permissions[1] = { permission: "fund", scope: "none", accounts: 0, groups: 0 };
@@ -157,15 +179,18 @@ describe("small pieces", () => {
     expect(checkCounts(healthy().preflight!.checks)).toEqual({ pass: 2, fail: 0, to_do: 0, not_applicable: 1 });
   });
 
-  it("sorts the log's acts into kinds, and says who acted where no person did", () => {
-    expect(logType({ event: "granted" })).toBe("Access");
-    expect(logType({ event: "label_read_added" })).toBe("Labels");
-    expect(logType({ event: "provider_clearance_set" })).toBe("Providers");
-    expect(logType({ event: "connection_tool_withdrawn" })).toBe("Connections");
-    expect(logType({ event: "something_new" })).toBe("Other");
-    expect(logActor({ by: "Priya", via: undefined })).toEqual({ key: "by:Priya", name: "Priya", person: true });
-    expect(logActor({ by: null, via: "operator" }).name).toBe("Operator key");
-    expect(logActor({ by: null }).name).toBe("The deployment");
+  it("names the log's kinds as the API gives them, and says who acted, by the key the API filters by", () => {
+    expect(logType({ type: "access" })).toBe("Access");
+    expect(logType({ type: "file_sets" })).toBe("File sets");
+    expect(logType({ type: "something_new" })).toBe("Other");
+    // Every kind the API gives an entry has a word here.
+    for (const kind of API_LOG_TYPES) expect(LOG_TYPE_WORDS[kind], kind).toBeDefined();
+    expect([...LOG_TYPES].sort()).toEqual([...API_LOG_TYPES].sort());
+    const id = "11111111-1111-4111-8111-111111111111";
+    expect(logActor({ by: "Priya", by_id: id, via: undefined })).toEqual({ key: id, name: "Priya", person: true });
+    expect(logActor({ by: null, via: "operator" })).toMatchObject({ key: "operator", name: "Operator key" });
+    expect(logActor({ by: null, via: "first_administrator" }).key).toBe("first_administrator");
+    expect(logActor({ by: null })).toMatchObject({ key: "deployment", name: "The deployment" });
   });
 });
 
