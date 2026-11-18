@@ -200,7 +200,7 @@ export async function askAfterSentReports(): Promise<number> {
   if (!membersOnly() || oneLabelOnly()) return 0;
   let graph;
   try {
-    graph = publicGraph();
+    graph = await publicGraph();
   } catch {
     return 0;
   }

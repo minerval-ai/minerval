@@ -84,7 +84,9 @@ export type OutwardActKind =
   | "publish_mandate"
   | "send_report"
   | "send_failure_facts"
-  | "register_publisher";
+  | "register_publisher"
+  | "connect_deployment"
+  | "disconnect_deployment";
 
 /** What each kind of act is, as the log says it to a member. */
 export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
@@ -101,6 +103,8 @@ export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
   send_report: "sent an agent's report, as the gate let it through, to Minerval's maintainers",
   send_failure_facts: "sent the facts of a tool failure to Minerval's maintainers",
   register_publisher: "registered this deployment's signing key to the organization's account on the public graph",
+  connect_deployment: "asked minerval.ai to connect this deployment to an organization, with a new connection key",
+  disconnect_deployment: "disconnected this deployment from minerval.ai, retiring its connection key there",
 };
 
 /** Who made a call: a person, or the gate to outside sending what its setting let through with nobody sending it. */
@@ -156,7 +160,7 @@ async function act(input: {
 }): Promise<Record<string, any>> {
   let graph;
   try {
-    graph = publicGraph();
+    graph = await publicGraph();
   } catch (err) {
     if (err instanceof OutboundError) throw new OutwardError("NO_ROUTE_OUT", NO_ACCOUNT_WORDS);
     throw err;
@@ -180,8 +184,8 @@ async function act(input: {
 }
 
 export const NO_ACCOUNT_WORDS =
-  "This deployment has no address or key for the public graph (PUBLIC_GRAPH_API_URL, PUBLIC_GRAPH_API_KEY), so it cannot act there. " +
-  "The organization opens an account on the public graph, makes an API key for it, and an operator sets both.";
+  "This deployment is not connected to minerval.ai, so it cannot act there. An administrator connects it on the public graph's " +
+  "Overview: it shows a code that an admin of the organization approves on minerval.ai.";
 
 /** The log of acts on the public graph, newest first, as a member reads it. */
 export async function outwardLog(opts: { limit?: number } = {}): Promise<Array<Record<string, unknown>>> {
@@ -424,7 +428,7 @@ export async function publicAccount(): Promise<Record<string, unknown>> {
   const key = signingKeyId();
   let graph;
   try {
-    graph = publicGraph();
+    graph = await publicGraph();
   } catch {
     return { connected: false, in_words: NO_ACCOUNT_WORDS, who_may_act: who, signing_key_fingerprint: key, ...(await registrationOf(null, null, key)) };
   }
@@ -433,7 +437,7 @@ export async function publicAccount(): Promise<Record<string, unknown>> {
     if (me.status !== 200) {
       return {
         connected: false,
-        in_words: `The public graph did not accept this deployment's key (${me.status}). An operator checks PUBLIC_GRAPH_API_KEY.`,
+        in_words: `The public graph did not accept this deployment (${me.status}). Where it is connected, an admin of the organization on minerval.ai can see whether its grants were withdrawn; where it uses an account key, an operator checks PUBLIC_GRAPH_API_KEY.`,
         who_may_act: who,
         signing_key_fingerprint: key,
         ...(await registrationOf(null, null, key)),
@@ -599,7 +603,7 @@ export async function publicConversations(): Promise<Record<string, unknown>> {
   let live: Map<string, Record<string, any>> | null = null;
   let unread: string | null = null;
   try {
-    const res = await call(publicGraph(), "GET", "/grant-conversations?limit=100");
+    const res = await call(await publicGraph(), "GET", "/grant-conversations?limit=100");
     if (res.status === 200 && Array.isArray(res.json.conversations)) {
       live = new Map((res.json.conversations as Array<Record<string, any>>).filter((c) => typeof c.id === "string").map((c) => [c.id as string, c]));
     } else {
@@ -679,7 +683,7 @@ export async function sayToPublicGrantmaker(input: { conversationId: string; mes
 export async function readPublicConversation(conversationId: string): Promise<Record<string, unknown>> {
   let graph;
   try {
-    graph = publicGraph();
+    graph = await publicGraph();
   } catch {
     throw new OutwardError("NO_ROUTE_OUT", NO_ACCOUNT_WORDS);
   }
@@ -758,7 +762,7 @@ export async function raisePublicNode(input: { nodeId: string; mandateId: string
 export async function registerPublisherOutside(input: { declaredInterest?: string | null; actor: GateActor }): Promise<Record<string, unknown>> {
   let graph;
   try {
-    graph = publicGraph();
+    graph = await publicGraph();
   } catch (err) {
     if (err instanceof OutboundError) throw new OutwardError("NO_ROUTE_OUT", NO_ACCOUNT_WORDS);
     throw err;
@@ -771,7 +775,7 @@ export async function registerPublisherOutside(input: { declaredInterest?: strin
   }
   const account = me.status === 200 ? String(me.json.user?.external_id ?? "") : "";
   if (!account) {
-    throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not accept this deployment's key (${me.status}). An operator checks PUBLIC_GRAPH_API_KEY.`, 409);
+    throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not accept this deployment (${me.status}). Where it is connected, an admin of the organization on minerval.ai can see whether its grants were withdrawn; where it uses an account key, an operator checks PUBLIC_GRAPH_API_KEY.`, 409);
   }
   let statement;
   try {

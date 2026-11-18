@@ -12,4 +12,10 @@ export interface WorkCounts {
   /** null where the person cannot see it. */
   health: "ok" | "warn" | "bad" | null;
   connections: "ok" | "warn" | "bad" | null;
+  /**
+   * This deployment's connection to minerval.ai: bad where it is no longer
+   * taken there, warn where it waits, was never made, or lacks a grant its
+   * settings need. null where the person cannot see it. Absent from an older build.
+   */
+  public_graph?: "ok" | "warn" | "bad" | null;
 }

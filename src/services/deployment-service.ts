@@ -345,6 +345,29 @@ export async function logDeploymentRequest(entry: { deploymentId: string; method
   );
 }
 
+/**
+ * A deployment retires itself when its administrators disconnect it: its
+ * key stops working at once, its grants are withdrawn, and the
+ * organization's log says so. It can connect again with a new key.
+ */
+export async function retireSelf(deploymentId: string): Promise<void> {
+  await asOwner(() =>
+    withTransaction(async (tx) => {
+      const [dep] = await tx.query<{ organization_id: string; name: string }>(
+        `UPDATE deployments SET retired_at = now() WHERE id = $1 AND retired_at IS NULL RETURNING organization_id, name`,
+        [deploymentId]
+      );
+      if (!dep) return;
+      await tx.query(`UPDATE deployment_grants SET withdrawn_at = now() WHERE deployment_id = $1 AND withdrawn_at IS NULL`, [deploymentId]);
+      await tx.query(
+        `INSERT INTO organization_log (organization_id, actor_id, credential, kind, detail)
+         VALUES ($1, NULL, 'session', 'deployment_disconnected', $2::jsonb)`,
+        [dep.organization_id, JSON.stringify({ deployment_id: deploymentId, name: dep.name })]
+      );
+    })
+  );
+}
+
 /** What a deployment reads of itself and its organization (GET /organizations/me). */
 export async function organizationForDeployment(deploymentId: string): Promise<Record<string, unknown>> {
   const live = await liveDeployment(deploymentId);

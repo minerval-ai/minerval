@@ -130,6 +130,8 @@ export interface SetupChecklist {
     destination: "online" | "file" | "none";
     /** For an online destination: whether the key it needs is set. */
     destination_ready: boolean;
+    /** True where reports go to minerval.ai over this deployment's connection and wait on report_usage, which an admin of the organization grants. */
+    waits_on_organization?: boolean;
     prepared: number;
     unsent: number;
     /** Why the latest attempt to send failed, when the oldest unsent report has one. */
@@ -143,8 +145,22 @@ export interface SetupChecklist {
    * here so that an administrator sees it.
    */
   public_graph: {
-    /** Whether the deployment has an address and a key for the public graph. */
+    /** Whether the deployment reaches the public graph: connected with its own key, or with an address and a key in its settings. */
     account_set: boolean;
+    /**
+     * This deployment's connection to minerval.ai (docs/organizations.md,
+     * "Connecting"): its state, the organization and the grants it holds,
+     * what minerval.ai last said against it, and the grants the deployment's
+     * own settings need that it does not hold, each with why. Null where it
+     * has never been connected.
+     */
+    connection: {
+      state: "waiting" | "connected" | "denied" | "expired";
+      organization_name: string | null;
+      grants: string[];
+      problem: string | null;
+      missing_grants: Array<{ grant: string; why: string }>;
+    } | null;
     keep_public_current: { setting: "on" | "off"; sends: boolean; in_words: string };
     last_not_taken: string | null;
     /**
@@ -361,6 +377,10 @@ export async function setupChecklist(): Promise<SetupChecklist> {
       price: usage.price,
       reporting: usage.reporting,
       destination: usage.destination.kind,
+      // Where the destination waits on a grant from the organization rather than on a setting.
+      ...(usage.destination.kind === "online" && !usage.destination.ready && (await (await import("./public-graph-client.js")).liveConnection())
+        ? { waits_on_organization: true }
+        : {}),
       destination_ready: usage.destination.kind === "online" ? usage.destination.ready : usage.destination.kind === "file",
       prepared: usage.reports.length,
       unsent: unsent.length,
@@ -389,8 +409,34 @@ export async function setupChecklist(): Promise<SetupChecklist> {
 const RELEASED_OUTSIDE_COUNT_REASON =
   "The setup checklist tells an administrator whether pages are released outside under a signing key that is not registered, and the key signs pages at every label.";
 
+/** The grants this deployment's own settings need from its connection, each with why. */
+function neededGrants(config: {
+  mirrorFeedUrl?: string;
+  publicGraphPrice?: string;
+  reads?: string;
+  usageReportDir?: string;
+  publishSigningKey?: string;
+}): Array<{ grant: string; why: string }> {
+  const out: Array<{ grant: string; why: string }> = [];
+  if (config.mirrorFeedUrl) out.push({ grant: "read_feed", why: "A mirror of the public graph is followed (MIRROR_FEED_URL)." });
+  if (config.reads === "members" && config.publicGraphPrice !== "flat" && !config.usageReportDir) {
+    out.push({ grant: "report_usage", why: "On the metered price, each day's usage report is sent privately to Minerval." });
+  }
+  if (config.publishSigningKey) out.push({ grant: "publish", why: "Pages released outside are signed to be sent (PUBLISH_SIGNING_KEY)." });
+  return out;
+}
+
 /** Where keeping public versions current stands, and whether the signing key is registered from here, for the checklist. */
-async function publicGraphState(config: { publicGraphApiUrl?: string; publicGraphApiKey?: string }): Promise<SetupChecklist["public_graph"]> {
+async function publicGraphState(config: {
+  publicGraphApiUrl?: string;
+  publicGraphApiKey?: string;
+  mirrorFeedUrl?: string;
+  publicGraphPrice?: string;
+  reads?: string;
+  usageReportDir?: string;
+  publishSigningKey?: string;
+}): Promise<SetupChecklist["public_graph"]> {
+  const connection = await (await import("./public-graph-client.js")).readConnection();
   const { keepsPublicCurrent } = await import("./keep-current.js");
   const kept = await keepsPublicCurrent();
   const state = { setting: kept.asks ? ("on" as const) : ("off" as const), sends: kept.asks, in_words: kept.in_words };
@@ -411,7 +457,17 @@ async function publicGraphState(config: { publicGraphApiUrl?: string; publicGrap
   );
   const ofThisKey = fingerprint ? registrations.find((r) => r.public_key && keyIdOf(r.public_key) === fingerprint) : undefined;
   return {
-    account_set: Boolean(config.publicGraphApiUrl && config.publicGraphApiKey),
+    // Connected to minerval.ai with its own key, or reaching it with the account key in the settings.
+    account_set: Boolean(connection?.state === "connected" || (config.publicGraphApiUrl && config.publicGraphApiKey)),
+    connection: connection
+      ? {
+          state: connection.state,
+          organization_name: connection.organizationName,
+          grants: connection.grants,
+          problem: connection.lastError,
+          missing_grants: connection.state === "connected" ? neededGrants(config).filter((n) => !connection.grants.includes(n.grant as never)) : [],
+        }
+      : null,
     keep_public_current: { setting: state.setting, sends: state.sends, in_words: state.in_words },
     last_not_taken: last ? (last.said ?? "The public graph could not be reached.") : null,
     signing_key: { released_outside: outside?.n ?? 0, fingerprint, registered_from_here_at: ofThisKey?.at.toISOString() ?? null },

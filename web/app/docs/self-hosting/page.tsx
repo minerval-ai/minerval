@@ -182,7 +182,7 @@ docker compose logs -f api`}</Code>
             </tr>
             <tr>
               <td><code>MIRROR_FEED_API_KEY</code></td>
-              <td>The key presented to fetch a batch: an API key of your organisation's account on the public graph, made on its <a href="https://minerval.ai/account">account page</a></td>
+              <td>Only for a deployment not connected to minerval.ai: an API key of your organisation&apos;s account there. A connected deployment signs each fetch with its own key and needs the <code>read_feed</code> grant</td>
             </tr>
             <tr>
               <td><code>MIRROR_FEED_PUBLIC_KEYS</code></td>
@@ -195,7 +195,7 @@ docker compose logs -f api`}</Code>
           </tbody>
         </table>
       </div>
-      <p>Make that account for the organisation, not for a person: everything the deployment does on the public graph is shown under its name. With <code>MIRROR_FEED_URL</code> unset the deployment holds no copy of the public graph. <code>get_mirror_status</code> says how current the mirror is. The feed carries embeddings, so a mirror must embed with the same model as the publisher. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/mirror.md">docs/mirror.md</a> has what travels, the checks, and how mirrored and local rows live together.</p>
+      <p>Connect the deployment first (<b>Connect to minerval.ai</b> on the public graph&rsquo;s Overview, <code>/admin/outside</code>): it shows a code that an admin of your organisation on minerval.ai approves, with the grants they choose, and from then on every request is signed with a key the deployment keeps itself. With <code>MIRROR_FEED_URL</code> unset the deployment holds no copy of the public graph. <code>get_mirror_status</code> says how current the mirror is. The feed carries embeddings, so a mirror must embed with the same model as the publisher. <a href="https://github.com/minerval-ai/minerval/blob/main/docs/mirror.md">docs/mirror.md</a> has what travels, the checks, and how mirrored and local rows live together.</p>
       <h2 id="publish">Publishing back</h2>
       <p>A deployment can put what an agent concluded from private evidence on the public graph without the evidence. A page is redacted under a policy, released part by part at the deployment's gate, and built into a package signed with the deployment's Ed25519 key. Anyone can check a package with no database and no network.</p>
       <ol className="dc-steps">
@@ -204,8 +204,8 @@ docker compose logs -f api`}</Code>
           <p><code>PUBLISH_SIGNING_KEY</code> (make one with <code>npx tsx scripts/published-page.ts keygen</code>, and keep a copy: a lost key breaks the record of what you published) and <code>DEPLOYMENT_HOSTING</code> (<code>own_machines</code>, <code>minerval</code> or <code>third_party</code>). No package is built until both are set.</p>
         </li>
         <li>
-          <strong>Connect the organisation's account</strong>
-          <p>Set <code>PUBLIC_GRAPH_API_URL</code> (<code>https://api.claimgraph.io</code>) and <code>PUBLIC_GRAPH_API_KEY</code>, the organisation account's API key, which may be the same as <code>MIRROR_FEED_API_KEY</code>. Released packages are then sent as the gate's settings say. Without them, a package can be carried to the public graph as a file.</p>
+          <strong>Connect to minerval.ai</strong>
+          <p>An administrator presses <b>Connect to minerval.ai</b> on the public graph&rsquo;s Overview and asks for the <code>publish</code> grant; an admin of your organisation on minerval.ai approves the code it shows. Released packages are then sent as the gate&apos;s settings say, signed with the deployment&apos;s own key. A deployment that is not connected can still use <code>PUBLIC_GRAPH_API_URL</code> and <code>PUBLIC_GRAPH_API_KEY</code>, or carry a package to the public graph as a file.</p>
         </li>
         <li>
           <strong>Register the key on the public graph</strong>
