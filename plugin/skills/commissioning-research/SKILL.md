@@ -139,13 +139,18 @@ evidence.
 
 ## Public and private
 
-Your conversation with your user is theirs. Anything you fund on the graph
-is not: every mandate is public (its dashboard, plan, sources, and spend),
-and contributions and their reviews are public record. A person's granting
-conversations with the Grantmaker stay private, but the mandate it drafts
-does not. Before your user tells the Grantmaker anything they would want
-kept private, or puts it in a mandate, a source, or a contribution, tell
-them it will be public.
+Your conversation with your user is theirs, and is the place for them to
+weigh what they would not publish. Anything that directs the graph is not:
+every mandate is public (its dashboard, plan, sources, and spend), and so
+is the conversation with the Grantmaker that drafts it, from the first
+message, funded or not, with your user shown as "a reader" unless they
+choose to be named. So are what they tell its Grantmaker afterwards and
+the runs that direct its money. Contributions and their reviews are public
+record. Before your user tells the Grantmaker anything, or puts it in a
+mandate, a source, or a contribution, make sure they know it will be
+public; what they would keep private stays with you, or goes to a private
+graph their organization runs. Conversations begun before this rule stay
+private to their funder.
 
 ## Spend
 

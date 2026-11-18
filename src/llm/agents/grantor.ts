@@ -26,6 +26,7 @@
  * consequential, unassessed or stale claims and sources that would seed
  * live cruxes; skip settled scaffolding a formula might naively fund.
  */
+import { keepGrantmakingPromise } from "../private-grantmaking.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
@@ -114,6 +115,9 @@ async function runGrantorImpl(input: {
   model?: string;
 }): Promise<GrantorPlan> {
   const config = loadConfig();
+  // A mandate made before grantmaking was public keeps its promise
+  // (private-grantmaking.ts); any other planning pass is public.
+  await keepGrantmakingPromise({ grantId: input.grantId });
   const [grant] = await rawQuery<{
     id: string;
     name: string;

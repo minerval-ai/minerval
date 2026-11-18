@@ -127,6 +127,26 @@ tool's output). A run that is not public answers with its id, its agent
 and the reasons, which name what made it private without repeating it, and
 a direct service caller that asks for it reads it whole.
 
+What directs the public graph is not private: a granting conversation, a
+mandate's planning and review passes, its program officers, Correspondents
+and Lookouts, and the Researchers it launches are public runs, with the
+funder's words, pokes, working notes and briefs they read
+([allocation.md](allocation.md), "Directing the public graph is public").
+A run that works for a mandate or conversation made before that rule,
+under a promise of privacy, carries `input:private-grantmaking` and keeps
+the promise.
+
+The account a run worked for reads it, whatever its reasons, when the run
+worked only for that account: its Assistant's runs (and the copies they
+delegate to) and its extension's are read whole by it, and another agent's
+run when every reason is text the account handed in
+(`input:readers-own-content`; `ownerCoversRun`). The privacy policy says
+these transcripts are the account's to read. A run with any other reason
+stays withheld from its account too: a run that read the operator's data,
+say. Where labels are kept, the account must still read the run's label.
+On the site, a run page that gets a withheld run asks again as the
+signed-in reader.
+
 Inside a members-only deployment some of those reasons are what the run's
 label already holds: the run read an organization's data through a
 connection or ran a command over its files, redacted a page written at the
@@ -136,10 +156,10 @@ every member cleared to read them (constitution §26). So a member who reads
 the run's label reads a run whose every reason is one of those
 (`REASONS_A_LABEL_COVERS`): the Steward's or Researcher's run that examined
 the evidence, a Redactor's run, and Audit's check of a redaction. A run with
-any other reason stays withheld from members as from anyone: a person's
-conversation with the Assistant, a Grantmaker's or an officer's run, which
-holds a funder's words, a run that read or filed a problem report, any
-other Audit run, a solver's attempt.
+any other reason stays withheld from members as from anyone, save the
+account it worked for: a person's conversation with the Assistant, a run
+for a mandate made before grantmaking was public, a run that read or filed
+a problem report, any other Audit run, a solver's attempt.
 
 In any log a member reads, the parts that hold a source's stored text are
 shown to those who also hold the permission to open raw sources at the

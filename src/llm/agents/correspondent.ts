@@ -26,6 +26,7 @@
  * It runs under the constitution, like every role the graph runs. It writes
  * no assessment, changes no page, and moves no money.
  */
+import { keepGrantmakingPromise } from "../private-grantmaking.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
@@ -174,6 +175,9 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   const events = await pendingCorrespondentEvents(c.id, 50);
   const window = await correspondentWindow(c);
   const windowIds = new Set(window.changes.map((x) => x.change_id));
+  // A mandate made before grantmaking was public keeps its promise
+  // (private-grantmaking.ts); any other Correspondent run is public.
+  await keepGrantmakingPromise({ grantId: c.grant_id });
   const room = await mandateRoom(c.grant_id).catch(() => null);
   const scopeClaims =
     (c.scope_claim_ids?.length ?? 0) > 0

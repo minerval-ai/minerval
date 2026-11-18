@@ -33,8 +33,10 @@ export default function Privacy() {
       <h2 id="accounts">Accounts</h2>
       <p>
         Signing in uses OAuth through GitHub or Google. We store the provider
-        and account identifier (e.g. <code>github:12345</code>), your display
-        name, and nothing else from your provider profile. We never see or
+        and account identifier (e.g. <code>github:12345</code>), and the
+        display name, email address and avatar your provider sends. Your
+        display name is public; your email address and avatar are shown only
+        to you. We never see or
         store a password. API keys you create are stored only as salted
         hashes; the full key is shown once, to you.
       </p>
@@ -72,8 +74,10 @@ export default function Privacy() {
         The graph&rsquo;s own work is kept on the record. When you submit a
         URL for ingestion, the agents that read it and reason about it leave
         a transcript: the fetched document, their searches, and their
-        reasoning, attributed to the submitting account and kept for thirty
-        days so the process can be inspected and evaluated. Sources are
+        reasoning. A transcript of a run that changed the graph is kept as
+        the record of how the graph was made, and is public unless what the
+        run read was private; other transcripts are kept for thirty days.
+        Which account asked is never shown with a transcript. Sources are
         public pages by construction (our servers fetch them without
         credentials), and the claims they yield become part of the public
         graph with their provenance.
@@ -82,8 +86,10 @@ export default function Privacy() {
         Content you hand over to be analyzed rather than ingested is
         different, and is never part of a transcript: the page open in your
         browser when you use the extension and passages sent to the MCP
-        server&rsquo;s analysis tools are processed and then discarded. Only
-        the metering record described above remains.
+        server&rsquo;s analysis tools are processed and then discarded. The
+        result of an analysis, which quotes the passages it found claims in,
+        is kept for you alone to read for one day after it finishes, and
+        then deleted. Only the metering record described above remains.
       </p>
 
       <h2 id="assistant">The Assistant</h2>
@@ -101,14 +107,30 @@ export default function Privacy() {
       <p>
         The Assistant&rsquo;s runs leave a transcript like other agents&rsquo;,
         visible only to you and kept for thirty days. Deleting a conversation
-        on the Ask page deletes its text, its prepared actions and those
-        transcripts; deleting a page deletes the page. A page is private
+        on the Ask page deletes its text, its prepared actions and all of
+        those transcripts; deleting a page deletes the page. A page is private
         unless you share it by link: then anyone who holds the link can read
         it, without seeing whose it is, until you stop sharing or delete it. What a conversation
         cost stays in your owl history. Anything the Assistant sends to the
         graph for you (a proposed claim, a contribution, a funded mandate)
         is public like any other, and happens only when you run it or have
-        allowed that kind of action.
+        allowed that kind of action. The Assistant is the place to weigh
+        anything you would not publish before you bring it to the graph.
+      </p>
+
+      <h2 id="mandates">Mandates and the Grantmaker</h2>
+      <p>
+        Talking to a Grantmaker directs the public graph&rsquo;s work, and
+        what directs it is public, so that anyone can see why work was paid
+        for. A conversation with a Grantmaker is public from your first
+        message, whether or not you fund it, and so is everything after it:
+        the mandate&rsquo;s plan while it is drafted, what you say to its
+        Grantmaker, the notes it keeps, and the transcripts of the agents
+        that direct its money. You are shown as &ldquo;a reader&rdquo;
+        unless you choose to be named; your account and email are never
+        shown. The page says this before your first message. Conversations
+        and mandates begun before this was the rule stay private to their
+        funder, as they were promised.
       </p>
 
       <h2 id="extension">The browser extension</h2>

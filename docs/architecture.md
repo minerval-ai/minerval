@@ -1661,10 +1661,14 @@ ends on its own without calling report is `no_report`), the report, and the
 notebook. A launcher rereads its own runs with `get_research_run`: a
 Steward those on its claim, a Grantmaker those its mandate launched. On the
 claim page the runs are disclosed like solver attempts, with the model and
-the cost, and with the brief when the Steward launched the run (a
-Grantmaker's brief comes out of a private funder conversation and is
-withheld); the report and notebook are not served, and are not presented to
-readers as the graph's voice. The researcher's prompt is published on the
+the cost, and with the brief when the Steward launched the run; a
+Grantmaker's brief is on its mandate's work (`GET /mandates/:id/work`). The
+report and notebook are not presented to readers as the graph's voice, and
+are not on the claim page, but they are in the Researcher's own run, which
+is public when nothing it read was private (docs/run-log.md): the work that
+rests on a report can be checked against it. A run Audit launched is
+private, and so is one a mandate made before grantmaking was public
+launched (docs/allocation.md, "Directing the public graph is public"). The researcher's prompt is published on the
 agents pages with the constitution in its default position.
 
 ### The prize-check worker and the money triggers

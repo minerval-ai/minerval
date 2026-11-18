@@ -9,7 +9,11 @@
  * attributed to the account that asked. Its result is that account's alone:
  * the text was theirs, so these jobs are readable only through
  * getTextAnalysis, never through the public GET /jobs/:id. The text itself
- * is not stored, only the parameters.
+ * is not stored, only the parameters; but the result quotes it (each claim
+ * found carries the passage it was found in), so a finished analysis is
+ * kept only long enough for its caller to read it, TEXT_ANALYSIS_KEEP_HOURS,
+ * and then deleted (expireTextAnalyses, run by the trace-retention sweep).
+ * The terms promise that text handed over for analysis is not kept.
  *
  * A running analysis refreshes a heartbeat in its result, and saves its
  * progress as it goes (assess_text, one judgment at a time), so a caller
@@ -17,7 +21,7 @@
  * its process (a deploy, a crash) and reads as failed.
  */
 import { and, eq, sql } from "drizzle-orm";
-import { getDb } from "../db/client.js";
+import { getDb, rawQuery } from "../db/client.js";
 import { jobs, type Job } from "../db/schema.js";
 import { currentLabel } from "../llm/usage-context.js";
 import { PLATFORM_FAULT_LABELS, deploymentFaultOf } from "./deployment-fault.js";
@@ -37,6 +41,30 @@ const HEARTBEAT_MS = 30_000;
  * refreshes its heartbeat however long it takes.
  */
 const LOST_AFTER_MS = 120_000;
+
+/**
+ * How long a finished analysis stays readable. Its caller reads it within
+ * minutes; a day leaves room for a client that comes back later. Not a
+ * limit on any work: it bounds how long a reader's own text, quoted in the
+ * result, is held (terms of service 12.8, privacy page).
+ */
+export const TEXT_ANALYSIS_KEEP_HOURS = 24;
+
+/**
+ * Delete finished analyses older than TEXT_ANALYSIS_KEEP_HOURS, and lost
+ * ones (no heartbeat for that long). Returns how many went.
+ */
+export async function expireTextAnalyses(now: Date = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - TEXT_ANALYSIS_KEEP_HOURS * 3_600_000);
+  const rows = await rawQuery<{ id: string }>(
+    `DELETE FROM jobs
+      WHERE type = ANY($1::text[])
+        AND COALESCE(completed_at, created_at) < $2
+      RETURNING id`,
+    [[...TEXT_ANALYSIS_TYPES], cutoff]
+  );
+  return rows.length;
+}
 
 // In-flight analyses, so tests (and a graceful shutdown) can wait for them.
 const pending = new Set<Promise<void>>();

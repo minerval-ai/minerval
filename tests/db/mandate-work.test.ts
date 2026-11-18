@@ -201,8 +201,11 @@ describe("a Grantmaker's sittings", () => {
 });
 
 describe("who may read a mandate", () => {
-  it("shows one that has not started to its funder and to nobody else", async () => {
+  // A mandate made before directing the public graph was public was promised
+  // privacy until it started (tests/db/directed-in-public.test.ts has the rest).
+  it("shows one made before the rule that has not started to its funder and to nobody else", async () => {
     const { funder, grantId, jobId } = await mandate("pending_approval");
+    await rawQuery(`UPDATE grants SET directed_in_public = false WHERE id = $1`, [grantId]);
     const stranger = await seedUser("work-stranger");
     expect(await readableMandateRef(grantId, null)).toBeNull();
     expect(await readableMandateRef(grantId, stranger)).toBeNull();
@@ -212,8 +215,15 @@ describe("who may read a mandate", () => {
     expect(own?.id).toBe(grantId);
   });
 
-  it("shows a live one to anyone, with its counts, and funder notes only to its funder", async () => {
+  it("shows one directed in public that has not started to anyone", async () => {
+    const { grantId, jobId } = await mandate("pending_approval");
+    expect(await readableMandateRef(grantId, null)).toEqual({ id: grantId, budgetJobId: jobId });
+    expect(await getPublicMandate(grantId, null)).toMatchObject({ id: grantId, directed_in_public: true });
+  });
+
+  it("shows a live one to anyone, with its counts, and, made before the rule, funder notes only to its funder", async () => {
     const { funder, grantId, jobId } = await mandate();
+    await rawQuery(`UPDATE grants SET directed_in_public = false WHERE id = $1`, [grantId]);
     expect(await readableMandateRef(grantId, null)).toEqual({ id: grantId, budgetJobId: jobId });
     await rawQuery(
       `UPDATE grants SET mandate = jsonb_build_object('funder_notes', jsonb_build_array(jsonb_build_object('at', now(), 'note', 'Look at the registry.'))) WHERE id = $1`,

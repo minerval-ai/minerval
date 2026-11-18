@@ -60,7 +60,7 @@ import {
 import { rawQuery } from "../db/client.js";
 import { judgmentsInForce, severalInForceNote } from "./judgment-version-service.js";
 import { readerKey } from "../db/clearance.js";
-import { untraced } from "../llm/usage-context.js";
+import { getUsageContext, untraced } from "../llm/usage-context.js";
 
 /** Verdict the client can filter on; "unknown" = claim not in the graph. */
 export type AnnotationVerdict =
@@ -181,12 +181,33 @@ const slotOf = (contentHash: string): string => `${readerKey()}:${contentHash}`;
 // each paying for extraction + matching.
 const inFlight = new Map<string, Promise<PageAnalysis>>();
 const failedRuns = new AnalysisCache<string>(FAILURE_TTL_MS, 100);
+/**
+ * Who asked for each slot's analysis: the accounts that may poll it. Readers
+ * at one clearance share a run, so a second reader of the same page pays
+ * nothing, but the poll by hash (GET /extension/analysis/:hash) answers only
+ * an account that sent the page itself. The page is the reader's own; that
+ * someone analyzed it is theirs too.
+ */
+const askers = new AnalysisCache<Set<string>>(CACHE_TTL_MS, CACHE_MAX_ENTRIES);
+/** The account asking now: its user, else its key, else nobody. */
+function askerKey(): string | null {
+  const { userId, apiKeyId } = getUsageContext();
+  return userId ? `u:${userId}` : apiKeyId ? `k:${apiKeyId}` : null;
+}
+function recordAsker(slot: string): void {
+  const who = askerKey();
+  if (!who) return;
+  const set = askers.get(slot) ?? new Set<string>();
+  set.add(who);
+  askers.set(slot, set);
+}
 
 /** Test hook. */
 export function resetAnalysisCache(): void {
   cache.clear();
   inFlight.clear();
   failedRuns.clear();
+  askers.clear();
 }
 
 /** Link to the claim's page on the public site (same knob as the MCP server, #73). */
@@ -495,6 +516,7 @@ export async function startAnalysis(
   opts: { graceMs?: number } = {}
 ): Promise<Exclude<AnalysisState, { state: "unknown" }>> {
   const key = pageCacheKey(input.url, input.content);
+  recordAsker(slotOf(key));
 
   const hit = cache.get(slotOf(key));
   if (hit) return { state: "ready", analysis: hit, cached: true };
@@ -513,6 +535,8 @@ export async function startAnalysis(
 /** Poll a previously started run by its content hash. */
 export function getAnalysisByHash(contentHash: string): AnalysisState {
   const slot = slotOf(contentHash);
+  const who = askerKey();
+  if (!who || !askers.get(slot)?.has(who)) return { state: "unknown" };
   const hit = cache.get(slot);
   if (hit) return { state: "ready", analysis: hit, cached: true };
   if (inFlight.has(slot)) {

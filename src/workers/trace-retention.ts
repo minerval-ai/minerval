@@ -18,10 +18,17 @@
 import { rawQuery } from "../db/client.js";
 import { loadConfig } from "../config.js";
 import { withSystemClearance } from "../db/clearance.js";
+import { expireTextAnalyses } from "../services/text-analysis-service.js";
 
 export interface TraceRetentionResult {
   /** Runs deleted this tick (steps cascade and are not counted). */
   deleted: number;
+  /**
+   * Finished text analyses deleted this tick (text-analysis-service.ts):
+   * they quote a reader's own text, and expire in every mode, since they
+   * are a copy of a result handed back, not a log.
+   */
+  analysesExpired: number;
   /** False when retention is disabled (TRACE_RETENTION_DAYS=0, or RUN_LOG_MODE=record). */
   swept: boolean;
 }
@@ -33,10 +40,11 @@ export async function traceRetentionTick(
   now: Date = new Date()
 ): Promise<TraceRetentionResult> {
   const config = loadConfig();
+  const analysesExpired = await expireTextAnalyses(now);
   // In record mode a run's log is a record, not a window: nothing expires.
-  if (config.runLogMode === "record") return { deleted: 0, swept: false };
+  if (config.runLogMode === "record") return { deleted: 0, analysesExpired, swept: false };
   const days = config.traceRetentionDays;
-  if (!(days > 0)) return { deleted: 0, swept: false };
+  if (!(days > 0)) return { deleted: 0, analysesExpired, swept: false };
   const cutoff = new Date(now.getTime() - days * 86_400_000);
 
   let deleted = 0;
@@ -54,7 +62,7 @@ export async function traceRetentionTick(
     deleted += rows.length;
     if (rows.length < BATCH) break;
   }
-  return { deleted, swept: true };
+  return { deleted, analysesExpired, swept: true };
 }
 
 /** Run the sweep on an interval; see the queue-depth sampler for the pattern. */
@@ -75,6 +83,9 @@ export function startTraceRetention(options: {
       );
       if (result.deleted > 0) {
         options.logger.info(`Trace retention: deleted ${result.deleted} expired agent runs`);
+      }
+      if (result.analysesExpired > 0) {
+        options.logger.info(`Trace retention: deleted ${result.analysesExpired} expired text analyses`);
       }
     } catch (err) {
       options.logger.error("Trace retention tick failed:", err);

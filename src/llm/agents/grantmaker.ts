@@ -16,6 +16,8 @@
  * prompt: the integrity of the claim graph and the truth outrank the
  * funder, and ideology-warping mandates are declined outright.
  */
+import { PUBLIC_LABEL } from "../../labels.js";
+import { grantmakingPromisedPrivate, PRIVATE_GRANTMAKING_REASON } from "../private-grantmaking.js";
 import {
   draftWarnings,
   parseGrantmakerWarnings,
@@ -29,7 +31,7 @@ type Tool = Anthropic.Tool;
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
-import { withAgent, withSkills } from "../usage-context.js";
+import { currentLabel, markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
@@ -40,6 +42,7 @@ import { executeKindTool, getRequestToolDefinitions } from "../tools/kind-tools.
 const LIST_REQUESTS_TOOL = getRequestToolDefinitions("grantmaker").find((t) => t.name === "list_requests")!;
 import {
   CHAT_SECTION,
+  PUBLIC_CONVERSATION_SECTION,
   GRANTING_CONVERSATION_SECTION,
   getGrantmakerSystemPromptBlocks,
 } from "../prompts/grantmaker.js";
@@ -457,12 +460,24 @@ async function runGrantmakerTurnImpl(input: {
    * platform's confirmations are the operator key's.
    */
   funder?: "platform";
+  /**
+   * The conversation this turn answers. A conversation held before
+   * grantmaking was public keeps its promise of privacy
+   * (private-grantmaking.ts): its turn is a private run, and the Grantmaker
+   * is not told it is public. Every other conversation is public.
+   */
+  conversationId?: string;
   /** The reply's text as it is written, with the model turn it belongs to. */
   onText?: (delta: string, turn: number) => void;
   /** Each tool the turn calls, as it calls it: what a reader waiting on the reply sees. */
   onTool?: (name: string, input: Record<string, unknown>) => void;
 }): Promise<GrantmakerTurnResult> {
   const config = loadConfig();
+  const promisedPrivate = await grantmakingPromisedPrivate({
+    conversationId: input.conversationId ?? null,
+    grantId: input.grantId ?? null,
+  });
+  if (promisedPrivate) markCurrentRunPrivate(PRIVATE_GRANTMAKING_REASON);
 
   // search_claims / get_claim / get_decomposition / get_dependents come from
   // the shared graph reads (llm/tools/graph-read-tools.ts). search_claims used
@@ -726,6 +741,11 @@ async function runGrantmakerTurnImpl(input: {
   }
   if (input.funder === "platform") {
     blocks[0] = blocks[0] + PLATFORM_FUNDER_SECTION;
+  } else if (!promisedPrivate && currentLabel() === PUBLIC_LABEL) {
+    // At another label, inside a private graph, the conversation is open to
+    // the members who read that label, which the Grantmaker is told there
+    // (constitution §30); "anyone may read this" would be false.
+    blocks[0] = blocks[0] + PUBLIC_CONVERSATION_SECTION;
   }
   // The chat's own rules (#692): the planning and review passes share the
   // role prompt but have nobody to talk to and no propose/decline tools.

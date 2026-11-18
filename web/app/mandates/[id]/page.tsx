@@ -526,6 +526,32 @@ function MandateSection({ mandate, sections }: { mandate: MandateDetailView; sec
           </div>
         </details>
       )}
+      {/* Directing the public graph is public: on a mandate made since that
+          rule, how it was drafted and what its Grantmaker keeps in mind are
+          on the record too. */}
+      {mandate.directed_in_public && mandate.workspace?.trim() && (
+        <details className="mnd-fold">
+          <summary>
+            <span>
+              <strong>Working notes</strong>{" "}
+              <span className="mnd-fold-what">what its Grantmaker keeps between passes</span>
+            </span>
+          </summary>
+          <div className="mnd-fold-body">
+            <Prose text={mandate.workspace} />
+          </div>
+        </details>
+      )}
+      {mandate.directed_in_public && mandate.conversation_id && (
+        <p className="acct-note">
+          <Link href={`/mandates/conversations/${mandate.conversation_id}`}>
+            Read the conversation it was drafted in
+          </Link>
+          {mandate.funder_notes && mandate.funder_notes.length > 0
+            ? ", and the notes its Grantmaker left for the funder below it."
+            : "."}
+        </p>
+      )}
     </section>
   );
 }

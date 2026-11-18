@@ -21,8 +21,11 @@
  *
  * Private means: anything about an account that is not public (contact
  * details, balances, keys), money and payee details, restricted attachments,
- * unpublished solver work, a funder's conversation while it is open, a
- * reader's own content, operator data, anything served only behind auth.
+ * unpublished solver work, a reader's own content, operator data, anything
+ * served only behind auth. What directs the public graph is not private: a
+ * granting conversation, a funder's notes and pokes, a mandate's workspace,
+ * petitions and research briefs are public (private-grantmaking.ts), except
+ * where a mandate was made before that rule, under a promise of privacy.
  * Public means: what Minerval already serves without auth, the public web,
  * and confirmations of the run's own writes to public records.
  *
@@ -96,20 +99,20 @@ export const AGENT_INPUTS: Readonly<Record<string, Classification>> = {
   audit: { reads: "private", why: "audit contexts can carry operator data, such as a prize claim's checker errors" },
   consistency_checker: { reads: "public", why: "a region of the public graph" },
   contribution_reviewer: { reads: "public", why: "a contribution's id; contributions are public" },
-  correspondent: { reads: "private", why: "the manager's poke notes and the private workspace" },
+  correspondent: { reads: "public", why: "a mandate's brief, its workspace and its manager's pokes, which direct the public graph and are public; a mandate made before that rule marks its runs private (private-grantmaking.ts)" },
   curator: { reads: "public", why: "curation requests over public claims" },
   dispute_arbitrator: { reads: "public", why: "a contribution, its appeal and the trigger; all public" },
   extension: { reads: "private", why: "the page a reader has open; logged only in record mode" },
   extractor: { reads: "public", why: "a submitted source, public once submitted; on-demand analysis runs untraced, or private in record mode" },
-  grantmaker: { reads: "private", why: "the funder's conversation and notes" },
-  grantor: { reads: "private", why: "a mandate before approval, and its workspace" },
-  lookout: { reads: "public", why: "a public brief and workspace; runs handed a poke note are marked private" },
-  mandate_review: { reads: "private", why: "funder notes, bounty requests and the workspace" },
+  grantmaker: { reads: "public", why: "a granting conversation and its funder's notes, public from the first message since talking to the Grantmaker directs the public graph; a conversation or mandate from before that rule marks its runs private (private-grantmaking.ts)" },
+  grantor: { reads: "public", why: "a mandate before approval and its workspace, public since the Grantmaker drafted them; a mandate from before that rule marks its runs private (private-grantmaking.ts)" },
+  lookout: { reads: "public", why: "a public brief and workspace, and pokes, which direct the public graph; a mandate from before that rule marks its runs private (private-grantmaking.ts)" },
+  mandate_review: { reads: "public", why: "funder notes, bounty requests and the workspace, which direct the public graph and are public; a mandate from before that rule marks its runs private (private-grantmaking.ts)" },
   matcher: { reads: "public", why: "a source's assertion, public once submitted; on-demand matching runs untraced, or private in record mode" },
   math_solver: { reads: "private", why: "an attempt and earlier attempts, unpublished until the platform publishes them" },
-  program_officer: { reads: "private", why: "petitions and inbox items with fields the public views leave out" },
+  program_officer: { reads: "public", why: "petitions and inbox items, which direct the public graph's money and are public; a mandate from before that rule marks its runs private (private-grantmaking.ts)" },
   redactor: { reads: "private", why: "a page written at a label only some readers may read, before anything is removed from it" },
-  researcher: { reads: "public", why: "a research task; runs a Grantmaker launched from a funder's brief are marked private" },
+  researcher: { reads: "public", why: "a research task; runs Audit launched, and runs a mandate from before grantmaking was public launched, are marked private" },
   steward: { reads: "public", why: "a claim's id and context; the graph it reads is public" },
   tagger: { reads: "public", why: "public claims" },
 };
@@ -159,8 +162,8 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   complete_quantity_definition: { reads: "public", why: "confirms the run's own write to public graph records" },
   confirm_bounty: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   fresh_start: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
-  correspondent_report: { reads: "private", why: "the correspondent's workspace, which the public view leaves out" },
-  cost_sheet: { reads: "private", why: "operator cost data and vendor prices no route serves" },
+  correspondent_report: { reads: "public", why: "a Correspondent's workspace and updates, which direct a mandate's work and are public" },
+  cost_sheet: { reads: "public", why: "metered spend the platform recorded and the paid tools' charges: every estimate and spend is inspectable (terms of service 7.1)" },
   create_claim: { reads: "public", why: "confirms the run's own write to public graph records" },
   decide_petitions: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   decide_prize_claim: { reads: "public", why: "the run's own decision, which goes on the public prize record" },
@@ -180,7 +183,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   examination_record_finding: { reads: "public", why: "confirms the run's own write to public provenance records" },
   extend_plan: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   feed_inbox: { reads: "public", why: "public web pages, search hits, feeds and registries" },
-  feed_report: { reads: "private", why: "per-feed counts and errors no route serves" },
+  feed_report: { reads: "public", why: "per-feed counts and fetch errors for a lookout's public feeds" },
   file_request: { reads: "public", why: "confirms the run's own write to public graph records" },
   final_tool_nudge: { reads: "public", why: "fixed harness text" },
   finish_extraction: { reads: "public", why: "confirmations; rejections echo the source text the run was given, public once submitted" },
@@ -212,12 +215,12 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   get_recent_arbitrations: { reads: "private", why: "the funder's account id on a mandate's contributions, which the public routes hide" },
   get_recent_decisions: { reads: "private", why: "internal review fields and the funder's account id on a mandate's contributions" },
   get_request: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
-  get_research_run: { reads: "private", why: "research reports, notebooks and Grantmaker briefs, which the claim page leaves out" },
+  get_research_run: { reads: "public", why: "a research run the reader launched: its brief, report and notebook, public in the Researcher's own run; a run from before grantmaking was public is read only by its launcher, whose run is private too" },
   get_review_history: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
   get_source: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
   get_source_context: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
   get_source_examinations: { reads: "public", why: "graph reads that unauthenticated routes also serve" },
-  grant_overview: { reads: "private", why: "the grant workspace and funder notes, which no route serves" },
+  grant_overview: { reads: "public", why: "the mandate's workspace and funder notes, which direct the public graph and are public on its page; a mandate from before that rule marks its runs private (private-grantmaking.ts)" },
   importance_distribution: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
   ingestion_report: { reads: "public", why: "mandate pipeline and allocation, public on the mandate routes" },
   keep_analysis: { reads: "private", why: "an analysis of an organization's own files, kept from the sandbox" },
@@ -251,8 +254,8 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   note_finding: { reads: "public", why: "published findings, public on GET /findings" },
   note_progress: { reads: "public", why: "confirms the run's own progress line; the output carries nothing beyond the run's input" },
   note_to_funder: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
-  notebook_read: { reads: "private", why: "a run's notebook, unpublished (solver) or not served (researcher)" },
-  notebook_write: { reads: "private", why: "a run's notebook, unpublished (solver) or not served (researcher)" },
+  notebook_read: { reads: "public", why: "a Researcher's own working notes, public with its run; the solver's runs, whose notebooks are unpublished until the platform publishes them, are private by agent" },
+  notebook_write: { reads: "public", why: "a Researcher's own working notes, public with its run; the solver's runs, whose notebooks are unpublished until the platform publishes them, are private by agent" },
   notify_claim_steward: { reads: "public", why: "confirms the run's own write to public graph records" },
   notify_steward: { reads: "public", why: "confirms the message; the budget left it reports is run spend, public on GET /changes" },
   open_output: { reads: "private", why: "the output of a command run over an organization's own files" },
@@ -281,7 +284,7 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   query_sql: { reads: "public", why: "one SELECT over the public_read views; auth on POST /sql is for metering only" },
   raise_issue: { reads: "private", why: "other reports' bodies and maintainers' notes, served only with the service key" },
   read_earlier_attempt: { reads: "private", why: "solver attempts, notebooks and transcripts before publication" },
-  read_event: { reads: "private", why: "queued events, including poke notes that can relay a funder's words" },
+  read_event: { reads: "public", why: "queued events, among them pokes, which direct the public graph and are public; a mandate from before that rule marks its runs private (private-grantmaking.ts)" },
   read_item: { reads: "public", why: "public web pages, search hits, feeds and registries" },
   read_listing: { reads: "public", why: "public web pages, search hits, feeds and registries" },
   read_message: { reads: "public", why: "node messages, public as summaries on GET /claims/:id and in full in public_read.messages" },
@@ -433,9 +436,36 @@ export const REASONS_A_LABEL_COVERS: Readonly<Record<string, string>> = {
   "tool:open_output": "the output of such a command; held to read_sources",
   "tool:keep_analysis": "a source kept at the run's label",
   "tool:keep_file": "a source kept at the run's label",
-  "tool:notebook_read": "the run's own working notes, written at its label",
-  "tool:notebook_write": "the run's own working notes, written at its label",
 };
+
+/**
+ * Agents whose every run works for one account and on that account's
+ * credentials: the Assistant (and the copies it delegates to, which run as
+ * the same agent) and the extension's page analysis. Whatever such a run
+ * read, its user could have read; so the account a run is attributed to
+ * reads it whole, whatever its reasons (services/run-view-service.ts). The
+ * privacy page says these transcripts are visible to their user.
+ */
+export const AGENTS_AN_OWNER_READS: Readonly<Record<string, string>> = {
+  assistant: "a user's own agent, working with that user's own tools",
+  extension: "the page a reader had open, which they sent",
+};
+
+/**
+ * Private reasons that the account a run is attributed to covers in a run
+ * of any other agent: what each protects is that account's own words or
+ * text. A run with any other reason stays withheld from its account too: a
+ * granting conversation's run that read the operator's vendor prices, say.
+ */
+export const REASONS_AN_OWNER_COVERS: Readonly<Record<string, string>> = {
+  "input:readers-own-content": "a passage or page the account handed over for analysis",
+};
+
+/** Whether the account this run is attributed to may read it. */
+export function ownerCoversRun(agent: string, reasons: readonly string[]): boolean {
+  if (agent in AGENTS_AN_OWNER_READS) return true;
+  return reasons.every((r) => r in REASONS_AN_OWNER_COVERS);
+}
 
 /**
  * Whether a label covers this private reason, among all of a run's

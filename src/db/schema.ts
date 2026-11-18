@@ -4063,6 +4063,15 @@ export const grants = pgTable(
     // Grantmaker's draft, who merged it, and the draft's hash. Null for
     // every mandate a person funds and for the seeded standing mandates.
     platformApproval: jsonb("platform_approval"),
+    // Whether the mandate is directed in public (docs/allocation.md,
+    // "Directing the public graph is public"): its Grantmaker's and officers'
+    // runs, its planning, what its funder says to it and its working notes
+    // are public, from the first message. Anything used to direct the public
+    // graph is public; private reasons belong with the Assistant or in a
+    // private graph. False on the mandates made before that rule, which were
+    // made under a promise that their funder's words were private, and keep
+    // it (migration 0183). The platform's own mandates were always public.
+    directedInPublic: boolean("directed_in_public").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -4987,6 +4996,12 @@ export const grantConversations = pgTable(
     // minutes in tools before it writes a word, so this is what a reader
     // sees of it meanwhile. Cleared when the turn ends.
     turnActivity: jsonb("turn_activity"),
+    // Whether the conversation is public (grants.directed_in_public): talking
+    // to the Grantmaker is directing the public graph, so a conversation is
+    // public from its first message, funded or not. False on the
+    // conversations held before that rule, under a promise that they were
+    // private (migration 0183).
+    inPublic: boolean("in_public").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

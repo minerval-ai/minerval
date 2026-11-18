@@ -617,17 +617,45 @@ export async function takeReadySession(nodeId: string, role: string): Promise<{ 
 /**
  * The reasons a run resuming `s` with `replies` is private
  * (llm/run-visibility.ts): those of the run that paused, whose transcript it
- * continues, and a research report among the replies, which the claim page
- * leaves out and so is not public. The resuming run marks itself with them.
+ * continues, and a research report among the replies that came from a
+ * private run. The resuming run marks itself with them.
  */
-export function sessionPrivateReasons(s: Pick<SessionRow, "private_reasons">, replies: SessionReply[]): string[] {
+export async function sessionPrivateReasons(
+  s: Pick<SessionRow, "private_reasons">,
+  replies: SessionReply[]
+): Promise<string[]> {
   const reasons = new Set(s.private_reasons ?? []);
-  if (replies.some((r) => r.kind === "research")) reasons.add(RESEARCH_REPORT_REASON);
+  if (await privateResearchAmong(replies)) reasons.add(RESEARCH_REPORT_REASON);
   return [...reasons];
 }
 
-/** A research report arrived in the run: reports are not served publicly. */
+/**
+ * A research report from a private run arrived in the run. A report is not
+ * the graph's voice and the claim page leaves it out, but it is what the work
+ * that read it rests on, and the Researcher's run that wrote it is public
+ * when nothing it read was private: then the report is public too, in that
+ * run. A report from a private run (one a legacy mandate launched, say)
+ * carries the reason to the run that reads it.
+ */
 export const RESEARCH_REPORT_REASON = "input:research-report";
+
+/**
+ * Whether any research report among `replies` came from a run that is not
+ * public. A report whose run cannot be found (expired, or never stamped)
+ * counts as private: nothing shows it was public.
+ */
+export async function privateResearchAmong(replies: Pick<SessionReply, "kind" | "ref">[]): Promise<boolean> {
+  const refs = [...new Set(replies.filter((r) => r.kind === "research").map((r) => r.ref))];
+  if (refs.length === 0) return false;
+  const [row] = await rawQuery<{ public_count: string }>(
+    `SELECT count(*)::text AS public_count
+       FROM research_runs rr
+       JOIN agent_runs ar ON ar.id = rr.run_id
+      WHERE rr.id::text = ANY($1::text[]) AND cardinality(ar.private_reasons) = 0`,
+    [refs]
+  );
+  return Number(row?.public_count ?? 0) < refs.length;
+}
 
 export async function resumeMessages(
   s: SessionRow,

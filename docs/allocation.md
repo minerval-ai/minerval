@@ -2176,7 +2176,9 @@ Only the money differs, and the two halves carry separate credentials:
   session) without that environment being able to move money. The
   platform's conversations are public (`GET
   /grant-conversations/platform/:id`): the reasoning behind every platform
-  mandate is on the record. A person's conversations stay private.
+  mandate is on the record. A person's conversations are public too, since
+  directing the public graph is public ("Directing the public graph is
+  public", below), at `GET /grant-conversations/public/:id`.
 - **The money.** A request file in `mandates/platform/` (see its README)
   pins the Grantmaker's draft by the SHA-256 of its canonical JSON, with
   the budget and the platform's rationale for paying. CI checks the file
@@ -2229,6 +2231,54 @@ of published verdicts. It does not pay to extend coverage; first
 assessments are for the mandates and readers whose scope they are. Its
 operating policy gives that upkeep first claim on its money.
 
+## Directing the public graph is public
+
+Anything used to direct the public graph is public, and it is public from
+the moment the Grantmaker enters into it. A person may weigh private
+information in deciding what to fund, but they do that with their own
+Assistant, whose conversations are theirs alone (docs/accounts.md), or
+inside a private graph, where it is weighed behind a gate before anything
+from it reaches the public graph (constitution §31, §32). Once they talk to
+a Grantmaker, or make a contribution, it is on the record. The reason is
+§19's: "why was this paid for and not that" must always be answerable, and
+an answer whose reasons are hidden is not one.
+
+So a granting conversation is public from its first message, whether or
+not it is funded and whether or not the Grantmaker declines it
+(`GET /grant-conversations/public/:id`, MCP
+`get_public_grant_conversation`, `/mandates/conversations/:id`). The funder
+is shown as "a reader" unless they chose to be named on the mandate
+(`funder_named`); their account is never served. The conversation page
+says so before the first message, and the Grantmaker is told it, and asked
+to stop a funder who starts to share something they would not publish
+(`PUBLIC_CONVERSATION_SECTION`, src/llm/prompts/grantmaker.ts). A mandate
+it makes is public in every state, its planning and its wait for approval
+included, with its working notes (`workspace`), the notes its review passes
+left for its funder (`funder_notes`) and its conversation. Every run that
+directs its money is a public run (docs/run-log.md, "Who reads a log"): the
+granting conversation's turns, the planning pass (`grantor`), the review
+passes (`mandate_review`), its program officers, its Correspondents and
+Lookouts, pokes included, and the Researchers it launches, with their
+briefs, reports and notebooks. What a run reads that is private for
+another reason (a reader's own text, operator data, a report's body) still
+makes that run private, as anywhere.
+
+The conversations and mandates made before this rule were made under a
+promise that a funder's words were private, and they keep it. Migration
+0183 marks them (`grant_conversations.in_public`,
+`grants.directed_in_public`, false on every row then present but the
+platform's, whose were always public). A mandate takes the flag from the
+conversation it was funded from, and one a mandate spawns takes its
+source's. A run that works for such a mandate or conversation marks itself
+private with `input:private-grantmaking` as it opens
+(src/llm/private-grantmaking.ts), its prompt does not say it is public,
+and the mandate's page shows what it showed before: nothing until it is
+live, and its funder's notes and conversation to its funder alone.
+
+Inside a private graph the same rule applies at each label: a
+conversation and a mandate at a label are open to every member who reads
+it (constitution §30), and are not served on the public route.
+
 ## Mandates are public
 
 A mandate is managed by one person but is a public thing (`/mandates`,
@@ -2247,7 +2297,8 @@ count in each state and scope; with no parameters it lists the mandates
 open to backing, as it always has. Each row is short by default (the
 objective's first words, budget, spent and held, the page's link);
 `detail=full` gives every field, as the site asks for. A public scope
-holds only mandates that have started. `GET /mandates/:id` answers a
+holds only mandates that have started; one directed in public that has
+not is public by its link (below), but is not listed for backing yet. `GET /mandates/:id` answers a
 summary by default in the same way: the plan's items a page at a time
 (`items_offset`, `items_limit`, `items_state`, each item with who added
 it and when), every other list cut to `list_limit`, and `collections`
@@ -2258,9 +2309,13 @@ objective, strategy) as a document, and reports on it under it: what is
 happening now, its actions (the items of its plan), its agents, its
 spending, its completed work and its history. Text an agent wrote is on a sheet with a byline; everything else
 is the page's own. A mandate that has not started (still being drafted,
-or its plan awaiting approval) is readable by its funder alone, who sees
-on the same page what waits on them and the controls to approve the
-plan, top up and withdraw.
+or its plan awaiting approval) is readable by anyone when it is directed
+in public, as every mandate made since that rule is, and otherwise by its
+funder alone. Its funder sees on the same page what waits on them and the
+controls to approve the plan, top up and withdraw. On a mandate directed in
+public anyone also reads its working notes, the notes its Grantmaker left
+for its funder, and the conversation it was drafted in
+(`/mandates/conversations/:id`).
 
 Completed work is counted whole and listed a page at a time, by kind
 (`GET /mandates/:id/work`, MCP `get_mandate_work`;

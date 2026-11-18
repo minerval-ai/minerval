@@ -27,6 +27,12 @@ import {
   resetAnalysisCache,
   pageCacheKey,
 } from "../../../src/services/extension-service.js";
+import { runWithUsageContext } from "../../../src/llm/usage-context.js";
+
+/** Run as one reader's account: the analyses below are theirs to poll. */
+const as = <T>(userId: string, fn: () => T): T => runWithUsageContext({ userId }, fn);
+/** A test whose body runs as reader A. */
+const itAsA = (name: string, fn: () => unknown) => it(name, () => as("reader-a", fn) as Promise<void>);
 
 const INPUT = {
   url: "https://example.com/article",
@@ -82,7 +88,7 @@ beforeEach(() => {
 });
 
 describe("startAnalysis", () => {
-  it("returns ready within the grace window and caches the result", async () => {
+  itAsA("returns ready within the grace window and caches the result", async () => {
     mocks.extractClaims.mockResolvedValue(EXTRACTED);
 
     const first = await startAnalysis(INPUT, { graceMs: 2000 });
@@ -97,7 +103,7 @@ describe("startAnalysis", () => {
     expect(mocks.extractClaims).toHaveBeenCalledTimes(1);
   });
 
-  it("hands off to polling when the run outlasts the grace window", async () => {
+  itAsA("hands off to polling when the run outlasts the grace window", async () => {
     const gate = deferred<typeof EXTRACTED>();
     mocks.extractClaims.mockReturnValue(gate.promise);
 
@@ -115,7 +121,7 @@ describe("startAnalysis", () => {
     }
   });
 
-  it("reports failure, exposes it to pollers, and lets a new POST retry", async () => {
+  itAsA("reports failure, exposes it to pollers, and lets a new POST retry", async () => {
     mocks.extractClaims.mockRejectedValueOnce(new Error("LLM exploded"));
 
     const failed = await startAnalysis(INPUT, { graceMs: 2000 });
@@ -129,7 +135,22 @@ describe("startAnalysis", () => {
     expect(retried.state).toBe("ready");
   });
 
-  it("returns unknown for a hash nobody started", () => {
+  itAsA("returns unknown for a hash nobody started", () => {
     expect(getAnalysisByHash("0".repeat(64))).toEqual({ state: "unknown" });
+  });
+
+  // Readers at one clearance share a run, but only an account that sent the
+  // page may poll it: that someone analyzed it is the reader's own business.
+  it("answers a poll only for an account that sent the page", async () => {
+    mocks.extractClaims.mockResolvedValue(EXTRACTED);
+    await as("reader-a", () => startAnalysis(INPUT, { graceMs: 2000 }));
+    expect(as("reader-a", () => getAnalysisByHash(HASH)).state).toBe("ready");
+    expect(as("reader-b", () => getAnalysisByHash(HASH))).toEqual({ state: "unknown" });
+    expect(getAnalysisByHash(HASH)).toEqual({ state: "unknown" });
+
+    // Reader B sending the same page shares the cached run, and may then poll it.
+    expect(await as("reader-b", () => startAnalysis(INPUT, { graceMs: 2000 }))).toMatchObject({ cached: true });
+    expect(as("reader-b", () => getAnalysisByHash(HASH)).state).toBe("ready");
+    expect(mocks.extractClaims).toHaveBeenCalledTimes(1);
   });
 });

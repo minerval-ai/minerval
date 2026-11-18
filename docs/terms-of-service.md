@@ -72,6 +72,18 @@ before launch:
   and avatar URL the provider sends (web/auth.ts, provisionUser in
   src/services/contributor-service.ts) and the account page displays the
   email. Section 4.1 describes the code.
+- Directing the Graph is public (7.5(b)). This draft makes a granting
+  conversation public from its first message, funded or not, with the funder
+  shown as "a reader" unless named, and the agents' runs that direct a
+  Mandate public with what they read (docs/allocation.md, "Directing the
+  public graph is public"). Conversations and Mandates begun before the
+  change keep the privacy they were promised (migration 0183). Confirm that
+  the notice on the conversation page before the first message is enough
+  notice, and settle the GDPR basis for publishing what a funder writes
+  there, given that it is published by design and the person was told so.
+  12.8 and 14.3 were corrected to the code: a text analysis's result is kept
+  for a day, extension chat is an Assistant conversation, and a transcript
+  of a run that changed the Graph is kept, not expired at thirty days.
 - Section 230 (12.5): the terms take the hosting position for contributor
   text in the Contribution Record. Graph Voice is written by Minerval's own
   agents, which rewrite accepted contributions and assess claims on the
@@ -477,7 +489,8 @@ and completion, cancellation, or failure refunds its unspent remainder.
 agent, which surveys the scope, quotes expected costs from live estimates,
 pushes back where its judgment differs, and drafts a plan. Talking is free
 and rate-limited; nothing runs or is charged until you fund the draft, which
-escrows the budget and starts the Mandate. Thereafter:
+escrows the budget and starts the Mandate. The conversation is public from
+your first message, under 7.5(b), whether or not you fund it. Thereafter:
 
 - (a) **The Grantmaker may refuse money.** It works for the integrity of the
   Graph. It declines, at any budget, a Mandate that seeks to steer
@@ -485,11 +498,20 @@ escrows the budget and starts the Mandate. Thereafter:
   the Graph, and it may refuse or close a Mandate for the same reasons after
   funding. Refusal is not a breach of these terms, and unspent budget
   returns to you.
-- (b) **Mandates are public.** Every Mandate has a public dashboard showing
-  its budget, spend, contributors, plan, progress, and the assessments it
-  funded, and, where it ingests, each source it brought in. Anyone may put
-  their own Owls behind any active Mandate. You have no right to keep a
-  Mandate private.
+- (b) **Mandates are public, and so is directing one.** Every Mandate has a
+  public dashboard showing its budget, spend, contributors, plan, progress,
+  and the assessments it funded, and, where it ingests, each source it
+  brought in. Anything used to direct the Graph's work is public too: your
+  conversation with the Grantmaker from its first message, funded or not;
+  the plan while it is drafted and while it waits for your approval; what
+  you say to the Grantmaker afterwards; the notes it keeps and leaves for
+  you; and the records of the agents' runs that direct the Mandate's money,
+  including the briefs they write. You are shown as "a reader" unless you
+  choose to be named under 7.5(c). Anyone may put their own Owls behind any
+  active Mandate. You have no right to keep a Mandate, or anything you tell
+  its Grantmaker, private. Weigh anything you would not publish with your
+  own Assistant, whose conversations are private to you (Section 14), or in
+  a private deployment of the Graph, before you bring it to a Grantmaker.
 - (c) **No naming rights; disclosure.** The Grantmaker titles and
   describes the Mandate in neutral words that say what the work is; your
   wording never reaches a claim page. A funded assessment discloses on the
@@ -755,13 +777,17 @@ defamation, or other unlawful content go to privacy@minerval.ai. Minerval
 reviews them and may remove or edit material. A disagreement about whether a
 claim is true is not a complaint; it is a Contribution.
 
-12.8 **Your other content.** Page text, titles, and URLs sent by the
-extension, questions typed into its chat, and text sent to the MCP text
-tools are processed to answer you and then discarded, never written to the
-Graph, the database, or transcripts. You grant Minerval and its processors
-the right to process them for that purpose and promise you have the right
-to send them. Feedback about the Services may be used without obligation to
-you.
+12.8 **Your other content.** Page text sent by the extension and text sent
+to the MCP text tools are processed to answer you and are not written to the
+Graph or to transcripts. The page text is not stored. The result of a text
+analysis, which quotes the passages in which it found claims, is kept for
+you to read for one day after it finishes and then deleted. Questions typed
+into the extension's chat are a conversation with the Assistant, kept in
+your Account with the address and title of the page and the passages marked
+on it, as the Privacy Policy describes, until you delete it. You grant
+Minerval and its processors the right to process all of this for these
+purposes and promise you have the right to send it. Feedback about the
+Services may be used without obligation to you.
 
 ## 13. The browser extension, the MCP server, and the plugin
 
@@ -818,9 +844,15 @@ accounting, fraud-prevention, and legal obligations require, including
 purchase records, metering history, and records under the Contributor
 Rewards Policy, for as long as those obligations last.
 
-14.3 **What is not kept.** Page text and chat from the extension and text
-sent to the MCP text tools are never stored, so there is nothing of them to
-delete. Agent transcripts from source ingestion expire within thirty days.
+14.3 **What is not kept, and what is.** Page text from the extension and
+text sent to the MCP text tools are never stored, so there is nothing of
+them to delete; a text analysis's result is deleted a day after it finishes
+(12.8). Your conversations with the Assistant, and the transcripts of its
+runs, are yours to read and are deleted when you delete the conversation.
+The transcript of an agent's run that changed the Graph, a source's
+ingestion among them, is kept as the record of how the Graph was made, and
+is public unless what the run read was private; other transcripts expire
+within thirty days.
 
 ## 15. Third-party services
 
