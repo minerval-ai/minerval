@@ -204,6 +204,14 @@ export async function checkConnect(): Promise<void> {
         [res.json.deployment?.id ?? null, res.json.deployment?.name ?? null, res.json.organization?.id ?? null, res.json.organization?.name ?? null, grants]
       )
     );
+    forgetConnection();
+    // The feed's key is read now, for an administrator to accept on the
+    // Mirror page (docs/organizations.md, "The feed's key"). A failure is
+    // said there and stops nothing here.
+    if (grants.includes("read_feed")) {
+      const { followsInApp, readFeedKeys } = await import("./mirror-following.js");
+      if (followsInApp()) await readFeedKeys().catch(() => undefined);
+    }
   } else if (res.status === 200 && (state === "denied" || state === "expired")) {
     await asOwner(() => rawQuery(`UPDATE public_graph_connection SET state = $1, last_checked_at = now() WHERE id = 'this'`, [state]));
   } else if (res.status === 200) {

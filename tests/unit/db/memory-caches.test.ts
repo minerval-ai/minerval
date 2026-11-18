@@ -32,6 +32,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/allocation-policy-service.ts:mandateCache": KEYED,
   "src/services/attempt-stats-service.ts:cache": KEYED,
   "src/services/cost-estimate-service.ts:cache": KEYED,
+  "src/services/extension-service.ts:askers": "Which accounts sent each analysis slot's page, keyed as the slots are, by clearance: who may poll it, and nothing read from a table.",
   "src/services/extension-service.ts:cache": KEYED,
   "src/services/extension-service.ts:failedRuns": KEYED,
   "src/services/extension-service.ts:inFlight": KEYED,

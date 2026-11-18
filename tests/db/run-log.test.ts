@@ -202,7 +202,7 @@ describe("record mode", () => {
     await settled(id);
     await rawQuery(`UPDATE agent_runs SET started_at = now() - interval '400 days' WHERE id = $1`, [id]);
     config.runLogMode = "record";
-    expect(await traceRetentionTick()).toEqual({ deleted: 0, swept: false });
+    expect(await traceRetentionTick()).toMatchObject({ deleted: 0, swept: false });
     expect(await sealedAt(id)).not.toBeNull();
   });
 });

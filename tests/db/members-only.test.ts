@@ -460,6 +460,11 @@ describe("what a permission guards", () => {
       "POST /outbound/registration/send": ["administer"],
       "POST /outside/connection": ["administer"],
       "DELETE /outside/connection": ["administer"],
+      "POST /mirror/follow": ["administer"],
+      "POST /mirror/pause": ["administer"],
+      "POST /mirror/check": ["administer"],
+      "POST /mirror/feed-keys/read": ["administer"],
+      "POST /mirror/feed-keys/:key_id/accept": ["administer"],
       // Acts on the public graph in the organization's name take the permission the deployment names for them (PUBLIC_ACTS_BY, `direct` unless set).
       "GET /outside/mandates/conversations": ["direct"],
       "GET /outside/mandates/conversations/:conversation_id": ["direct"],

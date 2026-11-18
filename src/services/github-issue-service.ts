@@ -49,7 +49,7 @@
 import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
-import { currentLabel } from "../llm/usage-context.js";
+import { currentLabel, getUsageContext } from "../llm/usage-context.js";
 import {
   getGithubBearer,
   githubAuthConfigured,
@@ -60,16 +60,27 @@ import type { AgentReportRow } from "./report-service.js";
 /**
  * Whether what is about to be sent must stay inside the deployment: the
  * work in progress is at a label other than `public`, or the report is, or
- * the report is not there for this work to read. The report's label is read
- * from its row, since the row the callers hold does not carry it.
+ * the report is not there for this work to read, or it was raised from a
+ * run that is not public (run-visibility.ts). A label is not the only thing
+ * that keeps a run from the public: on the public graph an Assistant's run
+ * is at `public` and private all the same, and an issue may be read by
+ * anyone. The work in progress is checked too, since a run marked private
+ * while it works may not have written its reasons yet. The report's label
+ * and run are read from its row, since the row the callers hold does not
+ * carry the label.
  */
 async function staysInside(reportId: string): Promise<boolean> {
   if (currentLabel() !== PUBLIC_LABEL) return true;
-  const [row] = await rawQuery<{ sensitivity_label: string }>(
-    `SELECT sensitivity_label FROM agent_reports WHERE id = $1`,
+  if ((getUsageContext().trace?.privateReasons?.size ?? 0) > 0) return true;
+  const [row] = await rawQuery<{ sensitivity_label: string; run_private: boolean }>(
+    `SELECT r.sensitivity_label,
+            COALESCE(cardinality(ar.private_reasons) > 0, false) AS run_private
+       FROM agent_reports r
+       LEFT JOIN agent_runs ar ON ar.id = r.run_id
+      WHERE r.id = $1`,
     [reportId]
   );
-  return row?.sensitivity_label !== PUBLIC_LABEL;
+  return !row || row.sensitivity_label !== PUBLIC_LABEL || row.run_private;
 }
 
 const GITHUB_API_VERSION = "2022-11-28";

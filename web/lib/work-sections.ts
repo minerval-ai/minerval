@@ -18,11 +18,11 @@ export type Mine = Pick<MyPermissions, "permissions" | "clearance">;
 export type WorkIcon =
   | "inbox" | "review" | "ask" | "claims" | "mandates" | "findings" | "requests" | "docs"
   | "releases" | "boundaries" | "sources" | "file-sets" | "connections"
-  | "globe" | "public-requests" | "replies" | "outbox"
+  | "globe" | "mirror" | "public-requests" | "replies" | "outbox"
   | "health" | "people" | "labels" | "parties" | "budget" | "log";
 
 /** What the sidebar shows beside an entry once the counts are read (app/api/work/counts). */
-export type WorkSignal = "inbox" | "review" | "public_requests" | "replies" | "health" | "connections" | "public_graph";
+export type WorkSignal = "inbox" | "review" | "public_requests" | "replies" | "health" | "connections" | "public_graph" | "mirror";
 
 export interface WorkPage {
   href: string;
@@ -97,6 +97,8 @@ export const WORK_SECTIONS: WorkSection[] = [
     name: "Public graph",
     pages: [
       { href: "/admin/outside", name: "Overview", icon: "globe", signal: "public_graph", shown: (m) => has(m, "direct", "consent") },
+      // The mirror of the public graph: every member reads it (docs/organizations.md, "The mirror").
+      { href: "/admin/outside/mirror", name: "Mirror", icon: "mirror", signal: "mirror" },
       {
         href: "/admin/outside/requests",
         name: "Requests",

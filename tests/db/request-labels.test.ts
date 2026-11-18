@@ -1059,7 +1059,7 @@ describe("opening raw sources", () => {
   const CAME_BACK = "widgets-sold";
 
   it("serves the log of a run that read an organization's data to a member who reads the run's label, with what came back held to read_sources", async () => {
-    const run = await privateRun("steward", ["tool:warehouse__run_query", "tool:run_command", "tool:keep_reading", "tool:notebook_write"], [
+    const run = await privateRun("steward", ["tool:warehouse__run_query", "tool:run_command", "tool:keep_reading"], [
       { name: "warehouse__run_query", output: ROWS },
       { name: "run_command", output: PRINTED },
       { name: "keep_reading", output: JSON.stringify({ address: "reading:1" }) },
@@ -1117,11 +1117,11 @@ describe("opening raw sources", () => {
     // A report's record is served to nobody but the service, a funder's words and a person's own conversation are theirs.
     for (const [agent, reasons] of [
       ["steward", ["tool:warehouse__run_query", "tool:raise_issue"]],
-      ["steward", ["tool:run_command", "tool:get_research_run"]],
+      ["steward", ["tool:run_command", "tool:get_contributor_profile"]],
       ["researcher", ["tool:run_command", "input:grantmaker-brief"]],
-      ["lookout", ["tool:warehouse__run_query", "input:lookout-poke-note"]],
+      ["lookout", ["tool:warehouse__run_query", "input:private-grantmaking"]],
       ["assistant", ["tool:warehouse__run_query"]],
-      ["grantmaker", []],
+      ["grantmaker", ["input:private-grantmaking"]],
     ] as Array<[string, string[]]>) {
       const run = await privateRun(agent, reasons, [{ name: "warehouse__run_query", output: ROWS }]);
       for (const who of [reader, opener]) {

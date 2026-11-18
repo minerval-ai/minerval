@@ -1,6 +1,6 @@
 {
-  "id": "6548b983-8e16-4cfd-aeab-5c5de041ef11",
-  "prevId": "a0949bcb-f56d-483d-8a64-8e5ed3644fbb",
+  "id": "3985ebed-27ef-490a-ab03-234cdf591be8",
+  "prevId": "9fc1f808-819b-4887-82ad-d97d576d1d23",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14752,6 +14752,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "in_public": {
+          "name": "in_public",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -15106,6 +15113,13 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
+        },
+        "directed_in_public": {
+          "name": "directed_in_public",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "created_at": {
           "name": "created_at",
@@ -22595,166 +22609,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.public_graph_connection": {
-      "name": "public_graph_connection",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "'this'"
-        },
-        "api_url": {
-          "name": "api_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "private_key_pem": {
-          "name": "private_key_pem",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "public_key": {
-          "name": "public_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_id": {
-          "name": "key_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "code": {
-          "name": "code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verification_uri": {
-          "name": "verification_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "code_expires_at": {
-          "name": "code_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "asked_grants": {
-          "name": "asked_grants",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "deployment_id": {
-          "name": "deployment_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "deployment_name": {
-          "name": "deployment_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "organization_name": {
-          "name": "organization_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "grants": {
-          "name": "grants",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "started_by": {
-          "name": "started_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "connected_at": {
-          "name": "connected_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_checked_at": {
-          "name": "last_checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error": {
-          "name": "last_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "public_graph_connection_started_by_contributors_id_fk": {
-          "name": "public_graph_connection_started_by_contributors_id_fk",
-          "tableFrom": "public_graph_connection",
-          "tableTo": "contributors",
-          "columnsFrom": [
-            "started_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "ck_public_graph_connection_one": {
-          "name": "ck_public_graph_connection_one",
-          "value": "\"public_graph_connection\".\"id\" = 'this'"
-        },
-        "ck_public_graph_connection_state": {
-          "name": "ck_public_graph_connection_state",
-          "value": "\"public_graph_connection\".\"state\" IN ('waiting', 'connected', 'denied', 'expired')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.published_mandates": {
       "name": "published_mandates",
       "schema": "",
@@ -25150,13 +25004,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "refer_when": {
-          "name": "refer_when",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
         },
         "body": {
           "name": "body",
@@ -30475,6 +30322,340 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.public_graph_connection": {
+      "name": "public_graph_connection",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'this'"
+        },
+        "api_url": {
+          "name": "api_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "private_key_pem": {
+          "name": "private_key_pem",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verification_uri": {
+          "name": "verification_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "code_expires_at": {
+          "name": "code_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asked_grants": {
+          "name": "asked_grants",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deployment_name": {
+          "name": "deployment_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organization_name": {
+          "name": "organization_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "grants": {
+          "name": "grants",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "started_by": {
+          "name": "started_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "connected_at": {
+          "name": "connected_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error": {
+          "name": "last_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "public_graph_connection_started_by_contributors_id_fk": {
+          "name": "public_graph_connection_started_by_contributors_id_fk",
+          "tableFrom": "public_graph_connection",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "started_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_public_graph_connection_one": {
+          "name": "ck_public_graph_connection_one",
+          "value": "\"public_graph_connection\".\"id\" = 'this'"
+        },
+        "ck_public_graph_connection_state": {
+          "name": "ck_public_graph_connection_state",
+          "value": "\"public_graph_connection\".\"state\" IN ('waiting', 'connected', 'denied', 'expired')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.mirror_feed_keys": {
+      "name": "mirror_feed_keys",
+      "schema": "",
+      "columns": {
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "feed_id": {
+          "name": "feed_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "read_from": {
+          "name": "read_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "accepted_by": {
+          "name": "accepted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "mirror_feed_keys_accepted_by_contributors_id_fk": {
+          "name": "mirror_feed_keys_accepted_by_contributors_id_fk",
+          "tableFrom": "mirror_feed_keys",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "accepted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mirror_following": {
+      "name": "mirror_following",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'this'"
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "started_by": {
+          "name": "started_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paused_by": {
+          "name": "paused_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paused_at": {
+          "name": "paused_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "check_requested_at": {
+          "name": "check_requested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_check_error": {
+          "name": "last_check_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "mirror_following_started_by_contributors_id_fk": {
+          "name": "mirror_following_started_by_contributors_id_fk",
+          "tableFrom": "mirror_following",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "started_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "mirror_following_paused_by_contributors_id_fk": {
+          "name": "mirror_following_paused_by_contributors_id_fk",
+          "tableFrom": "mirror_following",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "paused_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_mirror_following_one": {
+          "name": "ck_mirror_following_one",
+          "value": "\"mirror_following\".\"id\" = 'this'"
+        },
+        "ck_mirror_following_state": {
+          "name": "ck_mirror_following_state",
+          "value": "\"mirror_following\".\"state\" IN ('following', 'paused')"
+        }
+      },
       "isRLSEnabled": false
     }
   },

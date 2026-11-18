@@ -21,6 +21,8 @@ const PATHS: Record<WorkIcon | "plus" | "lock" | "warn" | "search" | "close" | "
   connections: (<><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0z" /><path d="M12 16v5" /></>),
   globe: (<><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" /></>),
   "public-requests": (<><path d="M4 4h16v12H8l-4 4z" /><path d="M12 8v3M12 13.5h.01" /></>),
+  // Two arrows round a circle: a copy kept current.
+  mirror: (<><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8" /><path d="M4 3v5h5" /><path d="M4 13a8 8 0 0 0 14.3 4.9L20 16" /><path d="M20 21v-5h-5" /></>),
   replies: (<><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 5 5v6" /></>),
   outbox: (<><path d="M22 2 11 13" /><path d="M22 2 15 22l-4-9-9-4z" /></>),
   health: <path d="M3 12h4l3-7 4 14 3-7h4" />,

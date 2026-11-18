@@ -14,6 +14,16 @@
  *   GET /mirror/status          how current its mirror is: "the public graph
  *                               as of ..."
  *
+ * A private deployment that may follow the public graph from the app
+ * (services/mirror-following.ts; docs/organizations.md, "The mirror"):
+ *   GET  /mirror/setup                       what the Mirror page shows
+ *   POST /mirror/follow, /mirror/pause,
+ *        /mirror/check                       start, pause, check now
+ *   POST /mirror/feed-keys/read              read the feed's keys again
+ *   POST /mirror/feed-keys/:key_id/accept    accept one, having compared it
+ * Each POST is an administrator's, from a signed-in session, and on the
+ * activity log.
+ *
  * Fetching a batch is the one read here that asks who is calling. The feed
  * is meant to have a price (design plan, "Every private graph pays towards
  * the public graph it reads") and nothing charges for it yet; when
@@ -30,6 +40,19 @@ import {
   listBatches,
 } from "../services/mirror-feed-service.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
+import {
+  MirrorFollowingError,
+  acceptFeedKey,
+  checkNow,
+  follow,
+  followsInApp,
+  mirrorSetup,
+  pause,
+  readFeedKeys,
+} from "../services/mirror-following.js";
+import { requirePermission } from "../server/require-permission.js";
+import { holdsPermission, standingOf } from "../permissions.js";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 const HASH = { type: "string", pattern: "^[0-9a-f]{64}$" } as const;
 
@@ -66,7 +89,8 @@ export async function mirrorRoutes(app: FastifyInstance): Promise<void> {
         tags: ["mirror"],
         summary:
           "The public key this deployment signs its mirror feed with: an Ed25519 key as the base64 of " +
-          "its 32 bytes, the key's id as batches name it, and the feed's id. A deployment that mirrors " +
+          "its 32 bytes, the key's id as batches name it, and the feed's id; and `keys`, every key the feed signs with, " +
+          "the current one first, so that a new key can be listed before batches are signed with it. A deployment that mirrors " +
           "this graph is configured with this key and applies a batch only when its signature verifies " +
           "under it",
         response: {
@@ -77,6 +101,10 @@ export async function mirrorRoutes(app: FastifyInstance): Promise<void> {
               public_key: { type: "string" },
               key_id: { type: "string" },
               feed_id: { type: "string", nullable: true },
+              keys: {
+                type: "array",
+                items: { type: "object", properties: { public_key: { type: "string" }, key_id: { type: "string" } } },
+              },
             },
           },
         },
@@ -92,7 +120,8 @@ export async function mirrorRoutes(app: FastifyInstance): Promise<void> {
           "their rows: each batch's sequence, its kind (a snapshot of every public row, or changes), " +
           "when it was cut, the schema migration it was cut from, its hash and the hash of the batch " +
           "before it, and its size. Also the newest batch's sequence and where the latest snapshot " +
-          "begins, which is where a new mirror starts",
+          "begins, which is where a new mirror starts; and what the next batch is cut in (the mirrored tables' shape and the " +
+          "embedding model), which a mirror checks before it starts following",
         querystring: {
           type: "object",
           properties: {
@@ -115,6 +144,13 @@ export async function mirrorRoutes(app: FastifyInstance): Promise<void> {
               latest_snapshot: { type: "integer", nullable: true },
               batches: { type: "array", items: BATCH_LISTING },
               has_more: { type: "boolean" },
+              cuts_in: {
+                type: "object",
+                properties: {
+                  shape: HASH,
+                  embedding: { type: "object", properties: { model: { type: "string" }, dimensions: { type: "integer" } } },
+                },
+              },
             },
           },
         },
@@ -157,7 +193,7 @@ export async function mirrorRoutes(app: FastifyInstance): Promise<void> {
     });
   }
 
-  if (roles.applier) {
+  if (roles.applier || followsInApp()) {
     app.get("/status", {
       schema: {
         tags: ["mirror"],
@@ -198,6 +234,108 @@ export async function mirrorRoutes(app: FastifyInstance): Promise<void> {
         },
       },
       handler: async (_request, reply) => reply.send(await mirrorStatus()),
+    });
+  }
+
+  if (followsInApp()) {
+    const signedIn = [app.authenticate, app.requireUser];
+    const inSession = [app.authenticate, app.requireSession, app.requireUser, requirePermission("administer")];
+    const refused = (reply: FastifyReply, request: FastifyRequest, err: unknown) => {
+      if (!(err instanceof MirrorFollowingError)) throw err;
+      return reply.code(err.status).send({ error: { code: err.code, message: err.message, request_id: request.id } });
+    };
+    const act = (fn: (by: string) => Promise<unknown>) => async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        await fn(request.auth!.userId!);
+        return reply.send({ mirror: await mirrorSetup({ notes: true }) });
+      } catch (err) {
+        return refused(reply, request, err);
+      }
+    };
+
+    app.get("/setup", {
+      schema: {
+        tags: ["mirror"],
+        summary:
+          "How this deployment follows the public graph: from the app over its connection to minerval.ai, or as the operator's settings say; " +
+          "whether it is following, paused or not started; the checks before following (connected with read_feed, the feed's key accepted, " +
+          "the feed's embedding model and table shape the same as this release's); the feed's keys read here and which are accepted; how " +
+          "current the mirror is; and the last refusal with who fixes it",
+        description:
+          "Every member may read it; the notes of each batch applied (public claims merged or withdrawn that something of this deployment's " +
+          "own points to) are given to administrators. Reading it asks the feed for its newest batch and what it cuts in, which tells the public graph only that " +
+          "this deployment looked, as a pull does.",
+      },
+      preHandler: signedIn,
+      // A batch's notes go to an administrator (mirror-following.ts, AppliedBatchView).
+      handler: async (request, reply) =>
+        reply.send({ mirror: await mirrorSetup({ notes: holdsPermission(standingOf(request.auth), "administer") }) }),
+    });
+
+    app.post("/follow", {
+      schema: {
+        tags: ["mirror"],
+        summary:
+          "Start following the public graph (administrators, from a signed-in session). Refused until the deployment is connected with read_feed " +
+          "and the feed's key is accepted. The first batches are the latest snapshot, every public row",
+      },
+      preHandler: inSession,
+      handler: act(follow),
+    });
+
+    app.post("/pause", {
+      schema: {
+        tags: ["mirror"],
+        summary: "Pause following (administrators, from a signed-in session). The mirror stays at the batch it last applied",
+      },
+      preHandler: inSession,
+      handler: act(pause),
+    });
+
+    app.post("/check", {
+      schema: {
+        tags: ["mirror"],
+        summary: "Ask the mirror to look at the feed now rather than at its next turn (administrators, from a signed-in session)",
+      },
+      preHandler: inSession,
+      handler: act(checkNow),
+    });
+
+    app.post("/feed-keys/read", {
+      schema: {
+        tags: ["mirror"],
+        summary:
+          "Read the keys the public graph's feed signs with again (administrators, from a signed-in session). A key not seen before is kept, " +
+          "not accepted",
+      },
+      preHandler: inSession,
+      handler: async (_request, reply) => {
+        const read = await readFeedKeys();
+        return reply.send({ read: read.read, error: read.error, mirror: await mirrorSetup({ notes: true }) });
+      },
+    });
+
+    app.post<{ Params: { key_id: string } }>("/feed-keys/:key_id/accept", {
+      schema: {
+        tags: ["mirror"],
+        summary:
+          "Accept one of the feed's keys (administrators, from a signed-in session), having compared it with the key Minerval publishes outside " +
+          "this deployment. Batches are applied only under an accepted key",
+        params: {
+          type: "object",
+          required: ["key_id"],
+          properties: { key_id: { type: "string", pattern: "^[0-9a-f]{64}$" } },
+        },
+      },
+      preHandler: inSession,
+      handler: async (request, reply) => {
+        try {
+          await acceptFeedKey(request.params.key_id, request.auth!.userId!);
+          return reply.send({ mirror: await mirrorSetup({ notes: true }) });
+        } catch (err) {
+          return refused(reply, request, err);
+        }
+      },
     });
   }
 }

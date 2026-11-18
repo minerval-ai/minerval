@@ -98,15 +98,20 @@ function requests(): Array<[string, string, unknown]> {
 
 /** The label the report's row carries, as the service reads it before anything is sent. */
 let reportLabel = "public";
-const LABEL_READ = "SELECT sensitivity_label FROM agent_reports";
+/** Whether the run the report was raised from is private (agent_runs.private_reasons). */
+let runPrivate = false;
+const LABEL_READ = "FROM agent_reports r";
 /** Every statement but that read: what the service wrote. */
 const writes = () => mocks.rawQuery.mock.calls.filter(([sql]) => !String(sql).includes(LABEL_READ));
 
 beforeEach(() => {
   reportLabel = "public";
+  runPrivate = false;
   mocks.rawQuery
     .mockReset()
-    .mockImplementation(async (sql: string) => (sql.includes(LABEL_READ) ? [{ sensitivity_label: reportLabel }] : []));
+    .mockImplementation(async (sql: string) =>
+      sql.includes(LABEL_READ) ? [{ sensitivity_label: reportLabel, run_private: runPrivate }] : []
+    );
   mocks.fetch.mockReset().mockImplementation(async (url: string, init: RequestInit) => {
     const path = String(url);
     if (init.method === "POST" && path.endsWith("/labels")) {
@@ -350,6 +355,22 @@ describe("what stays inside the deployment", () => {
     expect(await fileIssueForReport(ROW)).toBeNull();
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(writes()).toHaveLength(0);
+  });
+
+  // On the public graph a run can be at `public` and private all the same:
+  // an Assistant's, for one. What it raises stays with the maintainers.
+  it("does not file a report raised from a run that is not public", async () => {
+    runPrivate = true;
+    expect(await fileIssueForReport(ROW)).toBeNull();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(writes()).toHaveLength(0);
+  });
+
+  it("does not file a report while the work in progress is private", async () => {
+    const { runWithUsageContext } = await import("../../../src/llm/usage-context.js");
+    const trace = { privateReasons: new Set(["agent:assistant"]) } as never;
+    expect(await runWithUsageContext({ trace }, () => fileIssueForReport(ROW))).toBeNull();
+    expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
   it("does not file a report this work cannot read", async () => {

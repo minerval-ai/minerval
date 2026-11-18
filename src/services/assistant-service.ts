@@ -973,10 +973,13 @@ export async function setAssistantModel(
 
 /**
  * Delete a conversation: its text, its held actions and, where run logs are
- * a window and not a record, the transcripts of its runs. A run that wrote
- * to the graph keeps its transcript like any other (none of the Assistant's
- * does: it writes nothing itself). What the conversation cost stays in the
- * owl ledger.
+ * a window and not a record, the transcripts of its runs, all of them. A run
+ * elsewhere that wrote to the graph keeps its transcript as the record of how
+ * the graph was made, but an Assistant run is private to its user, so kept it
+ * would be a record nobody may read. What the Assistant sent to the graph for
+ * its user (a contribution, a proposal, a funded mandate) is public on its
+ * own and stays; the conversation behind it is the user's, and goes when they
+ * say. What the conversation cost stays in the owl ledger.
  */
 export async function deleteAssistantConversation(
   conversationId: string,
@@ -990,7 +993,7 @@ export async function deleteAssistantConversation(
   await getDb().delete(assistantConversations).where(eq(assistantConversations.id, convo.id));
   if (runIds.length > 0 && loadConfig().runLogMode !== "record") {
     await rawQuery(
-      `DELETE FROM agent_runs WHERE id = ANY($1::uuid[]) AND wrote_to_graph = false`,
+      `DELETE FROM agent_runs WHERE id = ANY($1::uuid[])`,
       [runIds]
     ).catch((err) => console.error(`[assistant] deleting the runs of ${convo.id} failed:`, err));
   }

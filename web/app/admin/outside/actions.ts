@@ -11,7 +11,12 @@ import {
   askPublicMandate,
   backPublicMandate,
   british,
+  acceptMirrorKey,
   checkConnection,
+  checkMirror,
+  followMirror,
+  pauseMirror,
+  readMirrorKeys,
   declinePublicRequest,
   disconnectConnection,
   startConnection,
@@ -236,4 +241,56 @@ export async function disconnectAction(_prev: FormState, _form: FormData): Promi
     return refused(err);
   }
   redirect("/admin/outside");
+}
+
+// ---- following the public graph ----
+
+async function mirrorAct(run: (who: string) => Promise<FormState>): Promise<FormState> {
+  const who = await actingUser();
+  if (!who) return NOT_SIGNED_IN;
+  try {
+    const said = await run(who);
+    revalidatePath("/admin/outside/mirror");
+    return said;
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+export async function followMirrorAction(_prev: FormState, _form: FormData): Promise<FormState> {
+  return mirrorAct(async (who) => {
+    await followMirror(who);
+    return { notice: "Following. The first batches are the latest snapshot, every public row; the page shows how far it has come." };
+  });
+}
+
+export async function pauseMirrorAction(_prev: FormState, _form: FormData): Promise<FormState> {
+  return mirrorAct(async (who) => {
+    await pauseMirror(who);
+    return { notice: "Paused. The mirror stays at the batch it last applied." };
+  });
+}
+
+export async function checkMirrorAction(_prev: FormState, _form: FormData): Promise<FormState> {
+  return mirrorAct(async (who) => {
+    await checkMirror(who);
+    return { notice: "The mirror will look at the feed within a few seconds." };
+  });
+}
+
+export async function readMirrorKeysAction(_prev: FormState, _form: FormData): Promise<FormState> {
+  return mirrorAct(async (who) => {
+    const out = await readMirrorKeys(who);
+    return out.error ? { error: british(out.error) } : { notice: `Read ${out.read === 1 ? "the feed's key" : `${out.read} keys`} from the feed.` };
+  });
+}
+
+export async function acceptMirrorKeyAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const keyId = String(form.get("key_id") ?? "");
+  if (!/^[0-9a-f]{64}$/.test(keyId)) return { error: "That is not a key's id." };
+  if (form.get("compared") !== "1") return { error: "Say that you compared the key with the one Minerval publishes." };
+  return mirrorAct(async (who) => {
+    await acceptMirrorKey(who, keyId);
+    return { notice: "Accepted. Batches signed with this key can now be applied." };
+  });
 }

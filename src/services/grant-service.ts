@@ -884,7 +884,8 @@ export async function getFundingLabelForJob(
 } | null> {
   const [grant] = await rawQuery<{ id: string; title: string; public: boolean }>(
     `SELECT id, COALESCE(mandate->>'title', name) AS title,
-            (status IN ('active', 'completed', 'cancelled')
+            (directed_in_public
+             OR status IN ('active', 'completed', 'cancelled')
              OR mandate->>'origin' = 'deep_decomposition') AS public
        FROM grants WHERE budget_job_id = $1`,
     [jobId]

@@ -39,9 +39,9 @@ describe("run visibility", () => {
   });
 
   it("starts a run of a private agent private, and an unclassified agent too", async () => {
-    const grantmaker = await withAgent("grantmaker", async () => getUsageContext().runId!);
+    const assistant = await withAgent("assistant", async () => getUsageContext().runId!);
     const unknown = await withAgent("not_an_agent", async () => getUsageContext().runId!);
-    expect(await reasons(grantmaker, ["agent:grantmaker"])).toEqual(["agent:grantmaker"]);
+    expect(await reasons(assistant, ["agent:assistant"])).toEqual(["agent:assistant"]);
     expect(await reasons(unknown, ["agent:not_an_agent:unclassified"])).toEqual(["agent:not_an_agent:unclassified"]);
   });
 

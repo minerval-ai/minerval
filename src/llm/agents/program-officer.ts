@@ -15,6 +15,7 @@
  * it and how similar petitions went. Tool descriptions and system prompts are
  * fixed per role; everything that varies is in the task message.
  */
+import { keepGrantmakingPromise } from "../private-grantmaking.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { toolUseLoop } from "../client.js";
 import { rawQuery } from "../../db/client.js";
@@ -716,6 +717,9 @@ async function runRole(grant: GrantRow, role: Role): Promise<{ ran: boolean }> {
     const metered = await runWithUsageContext({ userId: grant.funder_user_id, jobId: grant.budget_job_id, claimId: null }, () =>
       withPassBudget({ microUsd: budget, source: "your mandate's money", funding: { actionId, grantId: grant.id } }, () =>
         withAgent("program_officer", async () => {
+          // A mandate made before grantmaking was public keeps its promise
+          // (private-grantmaking.ts); any other sitting is public.
+          await keepGrantmakingPromise({ grantId: grant.id });
           const brief = await buildBrief(grant, role, petitions, items, labels);
           // Every agent carries the report channel (#366): a sitting that meets a
           // broken tool or an impossible result says so, as every other agent can.

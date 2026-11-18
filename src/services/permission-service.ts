@@ -611,7 +611,13 @@ export type AdministrativeAction =
   | "owls_created"
   // An administrator set up the General mandate
   // (standing-mandates.ts).
-  | "standing_mandate_created";
+  | "standing_mandate_created"
+  // Following the public graph from the app (services/mirror-following.ts):
+  // started, paused, checked now, and a feed key accepted.
+  | "mirror_followed"
+  | "mirror_paused"
+  | "mirror_check_requested"
+  | "mirror_feed_key_accepted";
 
 /**
  * The kinds of act the log is filtered by (`type` on GET /permissions/log),
@@ -619,7 +625,7 @@ export type AdministrativeAction =
  * Activity log page shows the API's word, and a new event is given a kind
  * here or the compiler says so.
  */
-export const LOG_TYPES = ["access", "labels", "parties", "connections", "owls", "providers", "mandates", "file_sets", "other"] as const;
+export const LOG_TYPES = ["access", "labels", "parties", "connections", "owls", "providers", "mandates", "file_sets", "mirror", "other"] as const;
 export type LogType = (typeof LOG_TYPES)[number];
 
 export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, LogType> = {
@@ -645,6 +651,10 @@ export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, L
   file_set_changed: "file_sets",
   owls_created: "owls",
   standing_mandate_created: "mandates",
+  mirror_followed: "mirror",
+  mirror_paused: "mirror",
+  mirror_check_requested: "mirror",
+  mirror_feed_key_accepted: "mirror",
 };
 
 /** The kind of act an event is; "other" for one this build does not know. */
@@ -711,6 +721,10 @@ export interface LogEntry {
   mandate?: { id: string; title: string; withheld?: true };
   /** What the administrator wrote when creating owls. */
   note?: string;
+  /** The feed key an administrator accepted (mirror_feed_key_accepted), by its id. */
+  key_id?: string;
+  /** The feed the mirror started following (mirror_followed). */
+  feed?: string;
 }
 
 const WITHHELD = { withheld: true } as const;
@@ -998,6 +1012,8 @@ export async function permissionLog(
         }
         if (typeof d.note === "string" && d.note) entry.note = d.note;
       }
+      if (typeof d.key_id === "string") entry.key_id = d.key_id;
+      if (r.event === "mirror_followed" && typeof d.feed === "string") entry.feed = d.feed;
       if (typeof d.connection_id === "string") {
         entry.connection = connectionName(d.connection_id);
         if (typeof d.previous_label === "string") entry.previous_label = labelName(d.previous_label);

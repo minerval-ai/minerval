@@ -174,6 +174,12 @@ export interface SetupChecklist {
      */
     signing_key: { released_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
   };
+  /**
+   * Following the public graph (docs/organizations.md, "The mirror";
+   * services/mirror-following.ts), as far as it can be said without asking
+   * the feed: null where this deployment follows nothing and could not.
+   */
+  mirror: MirrorAttention | null;
   connections: {
     total: number;
     /** Switched on. */
@@ -370,6 +376,8 @@ async function materialCounts(
 
 // ---- the whole ------------------------------------------------------------------
 
+import { mirrorAttention, type MirrorAttention } from "./mirror-following.js";
+
 export async function setupChecklist(): Promise<SetupChecklist> {
   const config = loadConfig();
   const [preflight, grants, labels, parties, standingMandates, usage, connections] = await Promise.all([
@@ -417,6 +425,7 @@ export async function setupChecklist(): Promise<SetupChecklist> {
       last_error: unsent.length > 0 ? unsent[unsent.length - 1]!.last_error : null,
     },
     public_graph: await publicGraphState(config),
+    mirror: await mirrorAttention(),
     connections: {
       total: connections.length,
       on: on.length,

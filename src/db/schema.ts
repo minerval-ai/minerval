@@ -4063,6 +4063,15 @@ export const grants = pgTable(
     // Grantmaker's draft, who merged it, and the draft's hash. Null for
     // every mandate a person funds and for the seeded standing mandates.
     platformApproval: jsonb("platform_approval"),
+    // Whether the mandate is directed in public (docs/allocation.md,
+    // "Directing the public graph is public"): its Grantmaker's and officers'
+    // runs, its planning, what its funder says to it and its working notes
+    // are public, from the first message. Anything used to direct the public
+    // graph is public; private reasons belong with the Assistant or in a
+    // private graph. False on the mandates made before that rule, which were
+    // made under a promise that their funder's words were private, and keep
+    // it (migration 0183). The platform's own mandates were always public.
+    directedInPublic: boolean("directed_in_public").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -4987,6 +4996,12 @@ export const grantConversations = pgTable(
     // minutes in tools before it writes a word, so this is what a reader
     // sees of it meanwhile. Cleared when the turn ends.
     turnActivity: jsonb("turn_activity"),
+    // Whether the conversation is public (grants.directed_in_public): talking
+    // to the Grantmaker is directing the public graph, so a conversation is
+    // public from its first message, funded or not. False on the
+    // conversations held before that rule, under a promise that they were
+    // private (migration 0183).
+    inPublic: boolean("in_public").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -8067,6 +8082,51 @@ export const mirrorRefusals = pgTable(
   },
   (table) => [index("idx_mirror_refusals_at").on(table.refusedAt)]
 );
+
+// Following the public graph, set up and kept in the app
+// (docs/organizations.md, "The mirror"; services/mirror-following.ts).
+//
+// One row, written when an administrator starts or pauses following. The
+// settings (MIRROR_FEED_URL, MIRROR_FEED_DIR) stay the operator's
+// overrides: where one is set, the mirror follows it whatever this row says.
+export const mirrorFollowing = pgTable(
+  "mirror_following",
+  {
+    id: text("id").primaryKey().default("this"),
+    // 'following' or 'paused'.
+    state: text("state").notNull(),
+    startedBy: uuid("started_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    pausedBy: uuid("paused_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
+    // Set by Check now; the applier checks at its next look and clears it.
+    checkRequestedAt: timestamp("check_requested_at", { withTimezone: true }),
+    // When the applier last asked the feed, and what stopped it short of the
+    // feed itself (the feed could not be read), where something did.
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastCheckError: text("last_check_error"),
+  },
+  (table) => [
+    check("ck_mirror_following_one", sql`${table.id} = 'this'`),
+    check("ck_mirror_following_state", sql`${table.state} IN ('following', 'paused')`),
+  ]
+);
+
+// The keys the public graph's feed says it signs with, as this deployment
+// read them (GET /mirror/feed/key), and which an administrator accepted
+// after comparing it with the key Minerval publishes. A batch is applied
+// only under an accepted key (or one MIRROR_FEED_PUBLIC_KEYS names); the key
+// a batch carries is never trusted.
+export const mirrorFeedKeys = pgTable("mirror_feed_keys", {
+  keyId: text("key_id").primaryKey(),
+  publicKey: text("public_key").notNull(),
+  feedId: uuid("feed_id"),
+  // Where it was read from.
+  readFrom: text("read_from").notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  acceptedBy: uuid("accepted_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+});
 
 // ---------------------------------------------------------------------------
 // node_changes: what the layer below changed on a node, kept for the work
