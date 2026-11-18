@@ -101,6 +101,22 @@ export const HELD_TOOLS: Readonly<Record<string, HeldKind>> = {
 };
 
 /**
+ * Held tools that were renamed, by their old name. An action held before the
+ * rename is stored under the old name and waits for its user's press; it
+ * runs, and its card reads, under the new one. A showing became a release
+ * (docs/releasing-a-page.md, "Old names in the code"); the other tools
+ * renamed with it are reads, which are never held.
+ */
+export const RENAMED_HELD_TOOLS: Readonly<Record<string, string>> = {
+  fund_showing_work: "fund_release_work",
+};
+
+/** The name a held action's tool goes by now. */
+export function currentToolName(name: string): string {
+  return RENAMED_HELD_TOOLS[name] ?? name;
+}
+
+/**
  * Held calls that wait for the user's press even when they allow the tool's
  * kind without asking, each with the reason. Acknowledging a drafted
  * mandate's warnings (fund_grant's acknowledge_warnings) is the funder's
