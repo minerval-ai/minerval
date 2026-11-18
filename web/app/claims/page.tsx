@@ -17,6 +17,7 @@ import type { AssessedFilter, ClaimType, NodeKind, SearchResultItem } from "@/li
 import { PageHead } from "@/components/PageHead";
 import { fetchMyLabels, type MyLabels } from "@/lib/admin-api";
 import { loadStanding } from "@/lib/standing";
+import { membersOnly } from "@/lib/members";
 import { FidelityBadge } from "@/components/list/ListView";
 
 // How many newest claims the demoted "recently added" strip shows in the
@@ -122,27 +123,41 @@ export default async function ClaimsIndex({
       prizesOn ? loadOpenPrizes(PRIZE_STRIP) : null,
       loadTags(TOPIC_STRIP),
     ]);
+    // The territories are public Minerval's curated investigations; a
+    // members-only deployment has none (loadTerritories), so its overview
+    // names none, counts none and credits none of their origins. What it
+    // holds is shown by its own topics and newest claims below.
+    const curated = territories.length > 0;
 
     return (
       <div className="col-wide">
         <PageHead
           title="Claims"
           lede={
-            <>
-              Claimspace is every claim the graph holds, each decomposed to its bedrock and weighed
-              against the evidence. Right now it gathers around a few investigations. Search it by
-              meaning, or start from one below.
-            </>
+            curated ? (
+              <>
+                Claimspace is every claim the graph holds, each decomposed to its bedrock and weighed
+                against the evidence. Right now it gathers around a few investigations. Search it by
+                meaning, or start from one below.
+              </>
+            ) : (
+              <>
+                Claimspace is every claim the graph holds, each decomposed to its bedrock and weighed
+                against the evidence. Search it by meaning, or browse by topic below.
+              </>
+            )
           }
         />
 
-        <p className="sc" style={{ marginTop: "-0.4rem", marginBottom: "1.4rem" }}>
-          {territories.length} investigations · growing as claims are ingested
-        </p>
+        {curated && (
+          <p className="sc" style={{ marginTop: "-0.4rem", marginBottom: "1.4rem" }}>
+            {territories.length} investigations · growing as claims are ingested
+          </p>
+        )}
 
-        <ClaimsControls q="" assessed={assessed} imp={impFloor} prizeFilter={prizesOn} />
+        <ClaimsControls q="" assessed={assessed} imp={impFloor} prizeFilter={prizesOn} suggest={!membersOnly()} />
 
-        <Territories territories={territories} />
+        {curated && <Territories territories={territories} />}
 
         <Topics items={topics.tags} />
 
@@ -151,18 +166,20 @@ export default async function ClaimsIndex({
         <RecentClaims items={recent.results.slice(0, RECENT_STRIP)} />
 
         {/* provenance: these clusters are the FLF Epistack case studies (#78) */}
-        <p
-          style={{
-            marginTop: "2.4rem",
-            fontFamily: "var(--sans)",
-            fontSize: ".82rem",
-            color: "var(--muted)",
-          }}
-        >
-          The first investigations began as the case studies in the{" "}
-          <a href="https://flf.org/epistack-competition/">FLF Epistack competition</a>: the origin of SARS-CoV-2, the safety
-          of micro black holes, and eggs and cardiovascular risk.
-        </p>
+        {curated && (
+          <p
+            style={{
+              marginTop: "2.4rem",
+              fontFamily: "var(--sans)",
+              fontSize: ".82rem",
+              color: "var(--muted)",
+            }}
+          >
+            The first investigations began as the case studies in the{" "}
+            <a href="https://flf.org/epistack-competition/">FLF Epistack competition</a>: the origin of SARS-CoV-2, the safety
+            of micro black holes, and eggs and cardiovascular risk.
+          </p>
+        )}
 
         <ProposeClaim labels={labels} />
       </div>
@@ -198,6 +215,7 @@ export default async function ClaimsIndex({
         type={claimType}
         tag={tagLever}
         kind={kind}
+        suggest={!membersOnly()}
         resultCount={claims.length}
       />
 

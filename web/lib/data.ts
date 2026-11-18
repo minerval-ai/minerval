@@ -218,7 +218,12 @@ export async function loadClaimEvents(
 // card (name + question + core claim + map link) rather than dropping the
 // territory or failing the page. Offline (no API) the whole set degrades to
 // curated config.
+// The curated territories are public Minerval's (lib/territories.ts): their
+// anchors are nodes of the public graph. A members-only deployment has none
+// of them, whether or not it is connected to the public graph, so it has no
+// territories and reads none (#1092 did the same for the home page).
 export async function loadTerritories(): Promise<Territory[]> {
+  if (membersOnly()) return [];
   if (!apiConfigured()) {
     return TERRITORIES.map((t) => ({ ...t, stats: null }));
   }

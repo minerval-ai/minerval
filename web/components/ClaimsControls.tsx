@@ -72,7 +72,7 @@ function Segmented<T extends string>({
 }
 
 export function ClaimsControls({
-  q, assessed, imp, prizes = false, prizeFilter = true, type, tag, kind, resultCount,
+  q, assessed, imp, prizes = false, prizeFilter = true, type, tag, kind, resultCount, suggest = true,
 }: {
   q: string;
   assessed: AssessedFilter;
@@ -94,6 +94,9 @@ export function ClaimsControls({
   // Omitted on the pre-search overview (#206), where there is no result list to
   // count and a number would misrepresent the territory cards as a feed.
   resultCount?: number;
+  // Whether the placeholder suggests one of public Minerval's claims. False in
+  // a members-only deployment, which holds none of them (#1092).
+  suggest?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = useState(q);
@@ -137,7 +140,9 @@ export function ClaimsControls({
           className="claims-search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Search claims and questions: try “${suggestedClaim}”`}
+          placeholder={
+            suggest ? `Search claims and questions: try “${suggestedClaim}”` : "Search claims and questions"
+          }
           aria-label="Search claims, questions and quantities"
         />
       </form>
