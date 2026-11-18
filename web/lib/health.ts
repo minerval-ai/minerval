@@ -143,8 +143,22 @@ export function labelsWithoutMandate(message: string): string[] {
  * into the particular things each names, and from the deployment's own
  * checks that fail or are to do and that no such row already covers.
  */
-export function attentionItems(c: SetupChecklist): AttentionItem[] {
+export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = []): AttentionItem[] {
   const out: AttentionItem[] = [];
+  // Parties a person must release for somewhere, with nobody who may.
+  for (const { party, boundaries } of partiesReleasedByNobody(c, gates)) {
+    out.push({
+      key: `release-nobody-${party.id}`,
+      title: `Nobody releases for ${party.name}`,
+      consequence: `A person decides at ${boundaries.length === 1 ? "1 boundary" : `${boundaries.length} boundaries`}; what rests on its material waits there`,
+      owner: "admin",
+      href: "/admin/people?drawer=grant",
+      action: "Grant",
+      tone: "warn",
+      blocks: false,
+      detail: `Where a boundary's rule says a person decides, each part that rests on ${party.name}'s material waits for a holder of release for ${party.name}, and nobody holds it: ${boundaries.join(", ")}.`,
+    });
+  }
   // The checks a row from the checklist already speaks for.
   const covered = new Set<string>();
   const checks = c.preflight?.checks ?? [];
@@ -662,4 +676,42 @@ export function checkCounts(checks: readonly PreflightCheck[]): Record<Preflight
 export function roleOfSetting(setting: string): string {
   const role = setting.replace(/^MODELS?_/, "").replace(/_MODELS?$/, "").toLowerCase().replace(/_/g, " ").trim();
   return role ? `The ${role} role` : "The role set to it";
+}
+
+/** What of a gate this needs: its boundary, its starting positions and its rules. */
+export interface GateLike {
+  from: string;
+  to: string;
+  to_outside: boolean;
+  starting_positions: Record<string, string>;
+  settings: Array<{ mode: string; party: { id: string } | null }>;
+}
+
+/**
+ * The parties nobody holds release for, at the boundaries where a person
+ * decides for them: a rule there that a person decides, for that party or
+ * for every party, or, for the organisation's own material, a kind that
+ * starts with a person deciding (an agent's report). There what rests on
+ * the party's material waits for a holder of release, and with none it
+ * waits for good.
+ */
+export function partiesReleasedByNobody(
+  c: SetupChecklist,
+  gates: readonly GateLike[],
+): Array<{ party: { id: string; name: string }; boundaries: string[] }> {
+  const release = c.permissions.find((p) => p.permission === "release");
+  const own = new Set(c.material.sources_by_party.filter((p) => p.party.is_own_organization).map((p) => p.party.id));
+  const out: Array<{ party: { id: string; name: string }; boundaries: string[] }> = [];
+  for (const entry of release?.by_party ?? []) {
+    if (entry.accounts + entry.groups > 0) continue;
+    const boundaries = gates
+      .filter(
+        (g) =>
+          g.settings.some((s) => s.mode === "person" && (s.party === null || s.party.id === entry.party.id)) ||
+          (own.has(entry.party.id) && Object.values(g.starting_positions).includes("person")),
+      )
+      .map((g) => `${g.from} → ${g.to_outside ? "outside" : g.to}`);
+    if (boundaries.length > 0) out.push({ party: entry.party, boundaries });
+  }
+  return out;
 }

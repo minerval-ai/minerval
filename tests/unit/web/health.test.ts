@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { SetupChecklist } from "../../../web/lib/admin-api";
 import { logActor, logType } from "../../../web/lib/admin-words";
-import { areaTiles, attentionItems, checkCounts, firstLine, labelsWithoutMandate, roleOfSetting } from "../../../web/lib/health";
+import { areaTiles, attentionItems, checkCounts, firstLine, labelsWithoutMandate, partiesReleasedByNobody, roleOfSetting } from "../../../web/lib/health";
 
 // The Health page's short rows (web/lib/health.ts): what needs someone, each
 // with a title short enough to scan, who puts it right, and where; and each
@@ -174,5 +174,42 @@ describe("a model setting's role", () => {
     expect(roleOfSetting("MODELS_RESEARCHER")).toBe("The researcher role");
     expect(roleOfSetting("STEWARD_MODEL")).toBe("The steward role");
     expect(roleOfSetting("MODELS_PROGRAM_OFFICER")).toBe("The program officer role");
+  });
+});
+
+describe("parties nobody releases for", () => {
+  const gate = (settings: Array<{ mode: string; party: { id: string } | null }>, starting: Record<string, string> = { page: "redactor" }) => ({
+    from: "board",
+    to: "public",
+    to_outside: false,
+    starting_positions: starting,
+    settings,
+  });
+  /** Release is held for the own organisation; nobody holds it for Halvorsen. */
+  function withParties(): SetupChecklist {
+    const c = healthy();
+    c.permissions.push({
+      permission: "release",
+      scope: "party",
+      accounts: 1,
+      groups: 0,
+      by_party: [
+        { party: { id: "p1", name: "Northwind" }, accounts: 1, groups: 0 },
+        { party: { id: "p2", name: "Halvorsen" }, accounts: 0, groups: 0 },
+      ],
+    });
+    return c;
+  }
+
+  it("names a party nobody releases for where a person decides for it", () => {
+    const found = partiesReleasedByNobody(withParties(), [gate([{ mode: "person", party: { id: "p2" } }])]);
+    expect(found).toEqual([{ party: { id: "p2", name: "Halvorsen" }, boundaries: ["board → public"] }]);
+    const rows = attentionItems(withParties(), [gate([{ mode: "person", party: null }])]);
+    expect(rows.find((r) => r.key === "release-nobody-p2")).toMatchObject({ title: "Nobody releases for Halvorsen", owner: "admin", action: "Grant" });
+  });
+
+  it("says nothing where the Redactor decides, or where somebody releases", () => {
+    expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "redactor", party: { id: "p2" } }])])).toEqual([]);
+    expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "person", party: { id: "p1" } }])])).toEqual([]);
   });
 });

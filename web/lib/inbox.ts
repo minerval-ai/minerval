@@ -2,7 +2,7 @@ import "server-only";
 import type { MyPermissions } from "./account-api";
 import { fetchConnections, fetchParties, fetchSetupChecklist, type SetupChecklist } from "./admin-api";
 import { attentionItems } from "./health";
-import { fetchGateQueue, fetchOutbound, fetchShowings, type QueueItem } from "./inside-api";
+import { fetchGateQueue, fetchGates, fetchOutbound, fetchShowings, type QueueItem } from "./inside-api";
 import { fetchPublicRequests, fetchSaidBack } from "./outside-api";
 import type { WorkCounts } from "./work-counts";
 
@@ -98,7 +98,8 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
 
   // What the deployment needs from an administrator, each in a short line (lib/health.ts).
   if (checklist) {
-    for (const a of attentionItems(checklist)) {
+    const gates = await fetchGates(who).then((g) => g.gates).catch(() => []);
+    for (const a of attentionItems(checklist, gates)) {
       items.push({
         key: `setup-${a.key}`,
         group: "setup",
