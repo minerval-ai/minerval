@@ -19,7 +19,6 @@ import { assembleClaimNanopub } from "../../src/services/nanopub-service.js";
 import { assembleClaimScasp, claimAtom } from "../../src/services/scasp-service.js";
 import { addArgument } from "../../src/services/argument-service.js";
 import { attachEdgeToArgument, insertRelationshipEdge } from "../../src/services/relationship-service.js";
-import { overlaid } from "../../src/services/overlay-service.js";
 import { validateMira } from "../mira-shacl.js";
 
 vi.mock("../../src/services/embedding-service.js", () => ({
@@ -85,8 +84,10 @@ describe("assembleClaimMira", () => {
     });
   });
 
-  it("on the public graph, with one label, nothing is set aside: every edge and argument is live in every export", async () => {
-    expect(overlaid()).toBe(false);
+  // On the public graph nothing is set aside. Other files in this suite may
+  // leave labels behind in the worker's database, so the test does not
+  // assume one label; it needs only that nothing here is set aside.
+  it("where nothing is set aside, as on the public graph: every edge and argument is live in every export", async () => {
     const parent = await seedClaim("parent");
     const child = await seedClaim("premise");
     const made = await insertRelationshipEdge({ parentId: parent, childId: child, relationType: "requires", reasoning: "r", createdBy: "dbtest" });
