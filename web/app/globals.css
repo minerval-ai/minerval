@@ -120,6 +120,19 @@ body {
   font-variant-emoji: text;
 }
 
+/* ----- selects -----
+   A floor for any <select> no class styles (the label pickers on /ask and
+   elsewhere), so none falls back to the browser's system look. :where keeps
+   it at zero specificity: .w-select, .admin-form select and the rest win. */
+:where(select) {
+  font-family: var(--sans); font-size: 0.8rem; line-height: 1.3; color: var(--ink);
+  background-color: var(--paper-card); border: 1px solid var(--rule); border-radius: 5px;
+  padding: 0.2rem 0.4rem; max-width: 100%; cursor: pointer;
+}
+:where(select:hover:not(:disabled)) { border-color: var(--muted); }
+:where(select:focus-visible) { outline: 2px solid var(--link); outline-offset: 1px; }
+:where(select:disabled) { color: var(--faint); cursor: default; }
+
 /* ----- links ----- */
 a { color: var(--link); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 2px; }
