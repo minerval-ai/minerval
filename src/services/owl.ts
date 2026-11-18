@@ -51,7 +51,9 @@ export type PricedOp =
   | "correspondent_run"
   | "consistency_sweep"
   // Read-only SQL past a caller's daily allowance, priced by database time (sql-service.ts).
-  | "sql_query";
+  | "sql_query"
+  // A trial of the Redactor on a sample, under a boundary's policy or a draft of it (redactor-trial-service.ts).
+  | "redactor_trial";
 
 /** The part of the config that says where owls come from. */
 export interface OwlsConfig {
@@ -135,6 +137,10 @@ export function capListOwls(): Record<PricedOp, number> {
     // One read-only SQL query past the day's free allowance: its time limit
     // at the per-second price.
     sql_query: Math.round(c.sqlCallerTimeoutSeconds * c.sqlOwlsPerSecond * 1000) / 1000,
+    // A trial of the Redactor on a sample: one Redactor run on a page, so at
+    // most what an assessment may cost. The person names the trial's own
+    // budget under it, and the Redactor is shown that budget.
+    redactor_trial: c.capAssessmentOwls,
   };
 }
 

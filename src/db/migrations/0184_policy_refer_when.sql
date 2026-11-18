@@ -1,0 +1,1 @@
+ALTER TABLE "redaction_policies" ADD COLUMN "refer_when" jsonb DEFAULT '[]'::jsonb NOT NULL;

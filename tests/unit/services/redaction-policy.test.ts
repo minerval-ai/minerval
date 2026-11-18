@@ -3,7 +3,15 @@
  * text every boundary starts from, and what a saved version may not do.
  */
 import { describe, expect, it } from "vitest";
-import { ALWAYS_RELEASED, DEFAULT_CATEGORIES, hashPolicy, policyProblems, renderPolicy } from "../../../src/services/redaction-policy.js";
+import {
+  ALWAYS_RELEASED,
+  DEFAULT_CATEGORIES,
+  REFER_WHEN_PROBLEM,
+  hashPolicy,
+  policyProblems,
+  referWhenProblems,
+  renderPolicy,
+} from "../../../src/services/redaction-policy.js";
 
 describe("the text every boundary starts from", () => {
   const body = renderPolicy(DEFAULT_CATEGORIES, 1);
@@ -109,5 +117,30 @@ describe("what a version may not do", () => {
       ])
     ).toEqual([]);
     expect(policyProblems([])).toEqual([]);
+  });
+});
+
+describe("guidelines for when the Redactor asks a person", () => {
+  it("are part of the text everyone the policy applies to reads, and leave a policy without them as it was", () => {
+    const without = renderPolicy(DEFAULT_CATEGORIES, 2);
+    expect(renderPolicy(DEFAULT_CATEGORIES, 2, [])).toBe(without);
+    expect(without).not.toContain("When the Redactor asks a person");
+    const withThem = renderPolicy(DEFAULT_CATEGORIES, 2, ["A passage naming a customer, where it is unclear whether the customer is public"]);
+    expect(withThem).toContain("## When the Redactor asks a person");
+    expect(withThem).toContain("- A passage naming a customer, where it is unclear whether the customer is public");
+    expect(withThem).toContain("even where the gate is set to its decision");
+    // Before the closing section, so the categories and the guidelines read together.
+    expect(withThem.indexOf("When the Redactor asks a person")).toBeLessThan(withThem.indexOf("## Changing this policy"));
+    expect(hashPolicy(withThem)).not.toBe(hashPolicy(without));
+  });
+
+  it("name a kind of content or doubt, never how a passage reflects on someone", () => {
+    expect(referWhenProblems(["Anything about an incident still under investigation", "A figure that may already be public"])).toEqual([]);
+    const byFavor = referWhenProblems(["Anything embarrassing to the board"]);
+    expect(byFavor).toHaveLength(1);
+    expect(byFavor[0]).toMatchObject({ category: REFER_WHEN_PROBLEM });
+    expect(byFavor[0]!.problem).toContain("embarrass");
+    expect(referWhenProblems(["x".repeat(401)])[0]!.problem).toContain("one line");
+    expect(referWhenProblems(["two\nlines"])[0]!.problem).toContain("one line");
   });
 });

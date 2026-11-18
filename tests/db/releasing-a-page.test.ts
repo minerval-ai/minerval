@@ -17,7 +17,7 @@ import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { madeBesideOf } from "../../src/services/judgment-version-service.js";
 import { verifyReleasedPage, type ReleasedPageForCheck } from "../../src/services/page-fingerprint.js";
-import { ensureBoundaryPolicy, hashPolicy, readablePolicies, savePolicyVersion } from "../../src/services/redaction-policy.js";
+import { ensureBoundaryPolicy, hashPolicy, keptReferWhen, readablePolicies, savePolicyVersion } from "../../src/services/redaction-policy.js";
 import {
   arrivalsOf,
   askedReleases,
@@ -906,6 +906,30 @@ describe("the policy of a boundary", () => {
     expect((await system(() => ensureBoundaryPolicy(boundary))).version).toBe(now.version);
   });
 });
+  it("keeps its guidelines for when the Redactor asks a person with the version, on both sides, and through a version the system saves", async () => {
+    const boundary = { from: C, to: A };
+    const current = (await system(() => ensureBoundaryPolicy(boundary)))!;
+    const refused = await savePolicyVersion({ boundary, categories: current.categories, referWhen: ["Anything unflattering to the board"], savedBy: id.director! });
+    expect(refused.ok).toBe(false);
+    expect((refused as any).problems[0].category).toBe("when to ask a person");
+    const guideline = "A passage naming a customer, where it is unclear whether the customer is public";
+    const saved = await savePolicyVersion({ boundary, categories: current.categories, referWhen: [`  ${guideline}  `, ""], savedBy: id.director! });
+    expect(saved.ok).toBe(true);
+    expect((saved as any).policy.refer_when).toEqual([guideline]);
+    expect((saved as any).policy.body).toContain(`- ${guideline}`);
+    const destination = await system(() =>
+      rawQuery<{ refer_when: string[] }>(`SELECT refer_when FROM redaction_policies WHERE boundary_id = $1 AND version = $2 AND side = 'destination'`, [current.boundary_id, (saved as any).policy.version])
+    );
+    expect(destination[0]!.refer_when).toEqual([guideline]);
+    expect(await keptReferWhen(boundary)).toEqual([guideline]);
+    // A version the system saves again, for reworded shared sections, keeps them.
+    const older = (saved as any).policy.body.replace(/\n\nA supplier's name, the words of a recorded interest[^\n]*/, "");
+    await system(() => rawQuery(`UPDATE redaction_policies SET body = $2 WHERE boundary_id = $1 AND version = $3`, [current.boundary_id, older, (saved as any).policy.version]));
+    const resaved = await system(() => ensureBoundaryPolicy(boundary));
+    expect(resaved.version).toBe((saved as any).policy.version + 1);
+    expect(resaved.refer_when).toEqual([guideline]);
+  });
+
 
 describe("two labels that do not read each other", () => {
   it("a page at a is shown to b across a boundary of its own", async () => {

@@ -29,7 +29,7 @@ import { fetchClaimTexts } from "@/lib/api";
 import { fetchPolicy, fetchPolicyVersions, type Gate, type Gates, type GateSetting, type PolicyFull, type PolicySummary } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
 import { british } from "@/lib/outside-api";
-import { addRuleAction, endRuleAction, gateSettingsAction, savePolicyVersionAction } from "../actions";
+import { addRuleAction, endRuleAction, gateSettingsAction, savePolicyVersionAction, tryRedactorAction } from "../actions";
 import {
   KIND_SHORT,
   MODES,
@@ -44,6 +44,7 @@ import {
   type BoundaryRow,
 } from "../boundaries";
 import { PolicyEditor } from "./PolicyEditor";
+import { TrialBench } from "./TrialBench";
 import "../gates.css";
 
 export const metadata: Metadata = { title: "Boundary · Minerval" };
@@ -57,7 +58,7 @@ export const dynamic = "force-dynamic";
 // sees the tabs of what they may see: the backlog only, the policy only, or
 // all of it.
 
-type Tab = "waiting" | "rules" | "policy" | "settings";
+type Tab = "waiting" | "rules" | "policy" | "try" | "settings";
 
 export default async function BoundaryPage({
   params,
@@ -85,6 +86,8 @@ export default async function BoundaryPage({
     ...(row.backlog || gate ? (["waiting"] as const) : []),
     ...(gate ? (["rules"] as const) : []),
     ...(row.policy ? (["policy"] as const) : []),
+    // Trying the Redactor runs it at the label the pages are written at, so it is for a gate's authority who reads that label.
+    ...(gate && row.policy?.from_label ? (["try"] as const) : []),
     ...(gate ? (["settings"] as const) : []),
   ];
   const fallback: Tab = gate ? "rules" : row.backlog ? "waiting" : "policy";
@@ -138,7 +141,8 @@ export default async function BoundaryPage({
           tabs={available.map((t) => ({
             key: t,
             href: `${base}?tab=${t}`,
-            label: t === "waiting" ? "Waiting" : t === "rules" ? "Rules" : t === "policy" ? `Policy v${row.policy!.version}` : "Settings",
+            label:
+              t === "waiting" ? "Waiting" : t === "rules" ? "Rules" : t === "policy" ? `Policy v${row.policy!.version}` : t === "try" ? "Try the Redactor" : "Settings",
             count: t === "waiting" ? (row.backlog?.items_waiting ?? 0) : t === "rules" ? gate!.settings.length : undefined,
           }))}
         />
@@ -149,6 +153,7 @@ export default async function BoundaryPage({
       {tab === "policy" && (
         <PolicyTab row={row} administers={can(who, "administer")} externalId={who.externalId} asked={sp.policy} version={sp.version} saved={sp.saved === "1"} />
       )}
+      {tab === "try" && gate && <TryTab row={row} administers={can(who, "administer")} externalId={who.externalId} />}
       {tab === "settings" && gate && gates && <Settings gate={gate} gates={gates} mandates={mandates} />}
 
       {drawer && gate && gates && (
@@ -265,6 +270,7 @@ function Rules({ gate, gates, mandates, nodes }: { gate: Gate; gates: Gates; man
 
   return (
     <>
+      <TowardTheRedactor gate={gate} gates={gates} />
       <section className="w-card">
         <div className="w-card-h">
           <span className="w-row" style={{ gap: 6 }}>
@@ -332,8 +338,8 @@ function Rules({ gate, gates, mandates, nodes }: { gate: Gate; gates: Gates; man
                     {s.set_by ? (
                       <span title={s.set_holding.length > 0 ? `holding ${s.set_holding.join(", ")}` : undefined}>{s.set_by}</span>
                     ) : s.made_from_consent_rule ? (
-                      <span className="w-chip" title={s.made_from_consent_rule}>
-                        Consent rule
+                      <span className="w-chip" title={capital(s.made_from_consent_rule)}>
+                        Carried over
                       </span>
                     ) : (
                       <span className="w-muted">The deployment</span>
@@ -354,6 +360,105 @@ function Rules({ gate, gates, mandates, nodes }: { gate: Gate; gates: Gates; man
         )}
       </Section>
     </>
+  );
+}
+
+/**
+ * How the gate as a whole treats a kind for every party that has not said:
+ * the newest setting for the whole boundary, for that kind or for every
+ * kind, else the starting position (gate-trust-service.ts, modesAtGate).
+ */
+function modeOfKind(gate: Gate, kind: string): string {
+  const whole = gate.settings.filter((s) => s.scope === "boundary" && !s.party);
+  const own = [...whole].reverse().find((s) => s.kind === kind) ?? [...whole].reverse().find((s) => s.kind === "*");
+  return own?.mode ?? gate.starting_positions[kind];
+}
+
+/**
+ * Where the gate is on its way to the Redactor deciding alone. Every gate
+ * starts with a person approving what the Redactor proposes; this shows,
+ * for each kind still with a person, how often its people let the
+ * proposals through as they stood, and offers the three ways forward:
+ * refine the policy, try the Redactor on it, and hand the kind on.
+ */
+function TowardTheRedactor({ gate, gates }: { gate: Gate; gates: Gates }) {
+  const kinds = Object.keys(gate.starting_positions);
+  const withPerson = kinds.filter((k) => modeOfKind(gate, k) === "person");
+  const agreement = gate.agreement;
+  const record = (k: string) => agreement?.by_kind.find((b) => b.kind === k);
+  const decided = kinds.filter((k) => (record(k)?.decided ?? 0) > 0);
+  const shown = [...new Set([...withPerson, ...decided])];
+  const mayHand = gate.you_may_set.the_gate_as_a_whole;
+  const base = `/gates/${gate.gate_id}`;
+  if (shown.length === 0) return null;
+  return (
+    <section className="w-card">
+      <div className="w-card-h">
+        <span className="w-row" style={{ gap: 6 }}>
+          Toward the Redactor deciding
+          <Tip>
+            Every gate starts with a person approving what the Redactor proposes, so that you can see its work before you rely on it. The aim
+            is the Redactor deciding alone: refine the policy until its proposals are ones you would approve as they stand, then hand the
+            kind on. What the policy&apos;s guidelines name, and anything it finds a close call, the Redactor still refers to a person.
+          </Tip>
+        </span>
+        <span className="w-spacer w-row" style={{ gap: 8 }}>
+          <ButtonLink href={`${base}?tab=policy`}>Refine policy</ButtonLink>
+          <ButtonLink href={`${base}?tab=try`}>Try the Redactor</ButtonLink>
+        </span>
+      </div>
+      <div className="w-help" style={{ padding: "0 14px 8px" }}>
+        {withPerson.length === 0
+          ? "The Redactor decides every kind that carries text here. It still refers what the policy's guidelines name, and close calls, to a person."
+          : (agreement?.in_words ?? "")}
+      </div>
+      <table className="w-t">
+        <thead>
+          <tr>
+            <th>Kind</th>
+            <th>Now</th>
+            <th className="w-num">Decided by a person</th>
+            <th className="w-num">Let through as proposed</th>
+            <th className="w-act" />
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((k) => {
+            const r = record(k);
+            const mode = modeOfKind(gate, k);
+            return (
+              <tr key={k}>
+                <td title={capital(gates.kinds[k] ?? k)}>{kindName(k, gates.kinds)}</td>
+                <td>
+                  <ModePill mode={mode} modes={gates.modes} />
+                </td>
+                <td className="w-num">{r?.decided ?? 0}</td>
+                <td className="w-num">
+                  {r && r.decided > 0 ? (
+                    <span>
+                      {r.as_proposed} <span className="w-faint">({Math.round((100 * r.as_proposed) / r.decided)}%)</span>{" "}
+                      {r.suggests_the_redactor && mode === "person" && <Pill tone="ok">Ready to hand on</Pill>}
+                    </span>
+                  ) : (
+                    <span className="w-faint">—</span>
+                  )}
+                </td>
+                <td className="w-act">
+                  {mayHand && mode === "person" && (
+                    <WorkForm action={addRuleAction} submit="Hand to the Redactor" inline>
+                      <input type="hidden" name="gate_id" value={gate.gate_id} />
+                      <input type="hidden" name="kind" value={k} />
+                      <input type="hidden" name="mode" value="redactor" />
+                      <input type="hidden" name="scope" value="boundary" />
+                    </WorkForm>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
@@ -574,6 +679,7 @@ async function PolicyTab({
             to={row.outside ? "outside" : row.to}
             version={inForce.version}
             categories={inForce.categories}
+            referWhen={inForce.refer_when ?? []}
           />
         ) : (
           <>
@@ -611,6 +717,17 @@ async function PolicyTab({
                 </tbody>
               </Table>
             )}
+            <Card title="When the Redactor asks a person">
+              {(viewing.refer_when ?? []).length === 0 ? (
+                <Empty>No guidelines: the Redactor refers what it finds a close call.</Empty>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {(viewing.refer_when ?? []).map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              )}
+            </Card>
           </>
         )}
         <div className="w-gates-fixed">
@@ -706,6 +823,27 @@ async function PolicyTab({
         </div>
       </aside>
     </div>
+  );
+}
+
+// ---- trying the Redactor ---------------------------------------------------
+
+async function TryTab({ row, administers, externalId }: { row: BoundaryRow; administers: boolean; externalId: string }) {
+  const summary = row.policy!;
+  const inForce = await fetchPolicy(externalId, summary.policy_id).catch(() => null);
+  if (!inForce) return <Banner tone="warn">The policy could not be read just now.</Banner>;
+  return (
+    <TrialBench
+      tryAction={tryRedactorAction}
+      saveAction={savePolicyVersionAction}
+      gateId={row.id}
+      fromLabel={summary.from_label!}
+      to={row.outside ? "outside" : row.to}
+      version={inForce.version}
+      categories={inForce.categories}
+      referWhen={inForce.refer_when ?? []}
+      maySave={administers}
+    />
   );
 }
 

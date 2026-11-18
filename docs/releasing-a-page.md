@@ -196,6 +196,18 @@ Redactor, Audit and the assessing Steward read the first; everyone a page
 is released to reads the second. Every removal records the version it was made
 under.
 
+A version also carries the administrators' guidelines for when the
+Redactor asks a person rather than deciding alone (`refer_when`, a list of
+one-line sentences, `PUT /redaction-policies` with `refer_when`; left out,
+the version in force keeps its own). Where there are any, the policy's text
+has a section "When the Redactor asks a person" before its last, so readers
+on the other side read them too; a policy without them reads as it did.
+Where one holds, the Redactor refers the item or the part to a person with
+what it would do, whatever the gate is set to ([the-gate.md](the-gate.md),
+"Asking a person"). A guideline worded by how a passage reflects on someone
+is refused as a category is: sending passages to a person for being
+unfavorable asks the person to weigh them by that.
+
 `GET /redaction-policies` (`list_redaction_policies` on MCP) lists the
 version in force at each boundary the caller reads either side of, once a
 boundary, from the page's side where the caller reads the label the pages
@@ -251,6 +263,11 @@ tools:
   the policy's categories, with a note. The passage is replaced by
   `[redacted: <category>]`. Nothing else in the part changes.
 - `restore`: take a removal back.
+- `refer_to_person`: ask the people who consent to decide one part, or the
+  whole page when no part is given, with what the Redactor would do
+  (`let_through` or `hold`) and a note of why. It holds even where the gate
+  is set to the Redactor's decision ([the-gate.md](the-gate.md), "Asking a
+  person").
 - `hold_part`: hold one part, or the whole page when no part is given, with
   a reason from the fixed list and a note. It is for what a removal cannot
   protect, such as something that is always shown. The destination sees
@@ -553,7 +570,11 @@ its user, under the kind "Act at a gate".
 - A node at the destination label for a page whose node the destination
   cannot read.
 - Additions a deployment makes to a role's prompt. The record names none
-  because none can be made yet.
+  because none can be made yet. A deployment shapes what the Redactor does
+  through the boundary's policy instead, its categories and its guidelines
+  for asking a person, which every reader of a page can read, and tries a
+  draft of it on a sample before saving it ([the-gate.md](the-gate.md),
+  "Trying the Redactor").
 
 ## Old names in the code
 

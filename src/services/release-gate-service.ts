@@ -31,7 +31,19 @@ import { runAtLabel } from "../llm/usage-context.js";
 import { verifyReleasedPage, type Mark, type Verification } from "./page-fingerprint.js";
 import { releaseCovers } from "../published-page/shape.js";
 import { RemovalError, applyRemovals, countByCategory, heldWords, kindWords, locate, overlaps } from "./page-parts.js";
-import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES, HOLDERS, HOLD_REASONS, type GateKind, type HoldReason, type Holder } from "./gate-kinds.js";
+import {
+  GATE_ACTS,
+  GATE_KINDS,
+  GATE_MODES,
+  GATE_SCOPES,
+  HOLDERS,
+  HOLD_REASONS,
+  REFER_RECOMMENDATIONS,
+  type GateKind,
+  type HoldReason,
+  type Holder,
+  type ReferRecommendation,
+} from "./gate-kinds.js";
 import { dueUnder, faceOfGate, gateOf, modesFor, type ModeFound } from "./gate-settings-service.js";
 import { FINGERPRINT_FORMAT, VERDICT_DESCRIPTOR, pageRoot, partCommitment, type LeafRecord } from "./page-fingerprint.js";
 
@@ -129,6 +141,19 @@ function standingOf(acts: readonly ActRow[], partId: string | null, partyId: str
   return standing;
 }
 
+/**
+ * The Redactor's referral of an item, or of one part, to a person: the act
+ * that stands, or null. A referral of the item itself covers every part of
+ * it. It is not lifted: a person's act on what was referred answers it.
+ */
+function referral(acts: readonly ActRow[], partId: string | null): ActRow | null {
+  let found: ActRow | null = null;
+  for (const a of acts) {
+    if (a.act === "referred" && (a.part_id === null || a.part_id === partId)) found = a;
+  }
+  return found;
+}
+
 /** Whether a holder of `direct` holds the page now. */
 function pageHeldByDirect(acts: readonly ActRow[]): ActRow | null {
   let held: ActRow | null = null;
@@ -187,7 +212,7 @@ interface GatePage {
   header_salt: string;
   rests_on: string[];
   audit_answer: FidelityAnswer | null;
-  least_sure: Array<{ removal_id?: string; part?: number; why: string }> | null;
+  least_sure: Array<{ removal_id?: string; part?: number; why: string; held?: boolean; referred?: boolean }> | null;
   checked_at: Date | null;
   judged_at: Date;
   page_label: string;
@@ -276,7 +301,8 @@ async function settleLocked(pageId: string): Promise<{ released: boolean; newlyR
     }
     const through: Array<{ partId: string | null; party: string; setting: string | null }> = [];
     for (const item of [{ id: null as string | null, rests_on: page.rests_on }, ...parts]) {
-      if (gateHold(acts, item.id) || delayOn(acts, item.id)) continue;
+      // What the Redactor referred to a person waits for one, whatever the gate is set to.
+      if (gateHold(acts, item.id) || delayOn(acts, item.id) || referral(acts, item.id)) continue;
       for (const party of item.rests_on) {
         const mode = modes.get(party)!;
         if (mode.mode !== "person" && standingOf(acts, item.id, party) === "waiting") through.push({ partId: item.id, party, setting: mode.settingId });
@@ -1240,7 +1266,9 @@ async function removeAtGate(input: {
  */
 export async function redactorActs(input: {
   pageId: string;
-  act: "hold" | "delay" | "lift";
+  act: "hold" | "delay" | "lift" | "refer";
+  /** For a referral: what the Redactor would do (REFER_RECOMMENDATIONS). */
+  recommends?: string;
   part?: number | null;
   reason?: string;
   until?: string;
@@ -1263,6 +1291,15 @@ export async function redactorActs(input: {
   if (input.act === "hold" && !input.note?.trim()) {
     throw new ReleaseError("NOTE_NEEDED", "Say in the note why you are holding it. Audit and the people at the gate who read this label read it; it stays at this label.");
   }
+  if (input.act === "refer" && !(input.recommends && input.recommends in REFER_RECOMMENDATIONS)) {
+    throw new ReleaseError("BAD_RECOMMENDATION", `A referral says what you would do: one of ${Object.keys(REFER_RECOMMENDATIONS).join(", ")}.`);
+  }
+  if (input.act === "refer" && !input.note?.trim()) {
+    throw new ReleaseError(
+      "NOTE_NEEDED",
+      "Say in the note why a person should decide this and what turns on it: the guideline that applies, or what makes it a close call. The people at the gate who read this label read it; it stays at this label."
+    );
+  }
   const until = input.until ? new Date(input.until) : null;
   if (input.act === "delay" && (!until || Number.isNaN(until.getTime()) || until <= new Date())) {
     throw new ReleaseError("BAD_TIME", "A delay gives the time it runs until, as a date and time that has not passed.");
@@ -1273,6 +1310,9 @@ export async function redactorActs(input: {
     const rows: Array<{ act: string; reason?: string; until?: Date | null }> = [];
     if (input.act === "hold" && !gateHold(acts, partId)) rows.push({ act: "held", reason: input.reason });
     if (input.act === "delay") rows.push({ act: "delayed", until });
+    if (input.act === "refer" && !acts.some((a) => a.act === "referred" && a.part_id === partId && a.reason === input.recommends)) {
+      rows.push({ act: "referred", reason: input.recommends });
+    }
     if (input.act === "lift") {
       if (gateHold(acts, partId)) rows.push({ act: "hold_lifted" });
       if (delayOn(acts, partId)) rows.push({ act: "delay_lifted" });
@@ -1284,12 +1324,14 @@ export async function redactorActs(input: {
     });
     return rows.length > 0;
   });
-  if (recorded && input.act === "hold") {
+  if (recorded && (input.act === "hold" || input.act === "refer")) {
     const kept = Array.isArray(page.least_sure) ? (page.least_sure as unknown[]) : [];
-    await rawQuery(`UPDATE release_pages SET least_sure = $2::jsonb WHERE id = $1`, [
-      page.id,
-      JSON.stringify([...kept, { ...(input.part ? { part: input.part } : {}), held: true, why: `Held (${HOLD_REASONS[input.reason as HoldReason]}): ${input.note!.trim()}` }]),
-    ]);
+    const at = input.part !== null && input.part !== undefined ? { part: input.part } : {};
+    const entry =
+      input.act === "hold"
+        ? { ...at, held: true, why: `Held (${HOLD_REASONS[input.reason as HoldReason]}): ${input.note!.trim()}` }
+        : { ...at, referred: true, why: `Referred to a person; the Redactor would ${REFER_RECOMMENDATIONS[input.recommends as ReferRecommendation]}: ${input.note!.trim()}` };
+    await rawQuery(`UPDATE release_pages SET least_sure = $2::jsonb WHERE id = $1`, [page.id, JSON.stringify([...kept, entry])]);
   }
   return { recorded };
 }
@@ -1446,10 +1488,16 @@ export async function gateQueue(
       const standing = (partId: string | null) => {
         const hold = gateHold(acts, partId);
         const delay = delayOn(acts, partId);
+        const referred = referral(acts, partId);
+        const recommends = referred ? ((referred.reason ?? "let_through") as ReferRecommendation) : null;
         return {
           ...(hold ? { held_by_the_redactor: { reason: HOLD_REASONS[(hold.reason ?? "no_reason_given") as HoldReason] ?? hold.reason, since: hold.at.toISOString() } } : {}),
           ...(delay ? { delayed_until: delay.until!.toISOString() } : {}),
-          the_redactor_proposes: hold ? "hold" : delay ? "delay" : "let through",
+          // A referral says the Redactor would not decide this alone. Why is in why_least_sure, for a reader of the page's label.
+          ...(referred
+            ? { referred_by_the_redactor: { recommends: recommends, in_words: REFER_RECOMMENDATIONS[recommends!] ?? recommends, since: referred.at.toISOString() } }
+            : {}),
+          the_redactor_proposes: hold ? "hold" : delay ? "delay" : recommends === "hold" ? "hold" : "let through",
         };
       };
       // A hold this person's parties have already placed on an item: its reason and since when.
@@ -1502,7 +1550,10 @@ export async function gateQueue(
           rests_on: wait(null, page.rests_on),
           ...standing(null),
           ...(heldBy(null).length > 0 ? { held: heldBy(null) } : {}),
-          order: -1,
+          ...(reads && referral(acts, null)
+            ? { why_referred: leastSure.filter((l) => l.referred && (l.part === undefined || l.part === null)).map((l) => l.why) }
+            : {}),
+          order: referral(acts, null) ? -3 : -1,
         });
       }
       for (const part of parts) {
@@ -1525,12 +1576,13 @@ export async function gateQueue(
             ? {
                 as_written: part.original,
                 removals: own.map((r) => ({ passage: part.original.slice(r.start_offset, r.end_offset), category: r.category, redactor_note: r.note })),
-                ...(unsure(part).length > 0 ? { why_least_sure: unsure(part).map((l) => l.why) } : {}),
+                ...(unsure(part).some((l) => !l.referred) ? { why_least_sure: unsure(part).filter((l) => !l.referred).map((l) => l.why) } : {}),
+                ...(unsure(part).some((l) => l.referred) ? { why_referred: unsure(part).filter((l) => l.referred).map((l) => l.why) } : {}),
               }
             : theirsAlone(part.rests_on) && own.length > 0
               ? { removals: own.map((r) => ({ passage: part.original.slice(r.start_offset, r.end_offset), category: r.category })) }
               : {}),
-          order: unsure(part).length > 0 ? 0 : part.position,
+          order: referral(acts, part.id) ? -2 : unsure(part).length > 0 ? 0 : part.position,
         });
       }
       pageItems.sort((a, b) => a.order - b.order);
@@ -2165,7 +2217,9 @@ export async function gateBacklog(
           for (const party of t.needs) {
             const standing = standingOf(acts, t.id, party);
             if (standing === "held") count(page, "person", names.get(party) ?? "a party", n);
-            if (standing === "waiting" && !gateHold(acts, t.id) && !delayOn(acts, t.id)) count(page, "waiting_on_person", names.get(party) ?? "a party", n);
+            if (standing === "waiting" && !gateHold(acts, t.id) && !delayOn(acts, t.id)) {
+              count(page, referral(acts, t.id) ? "referred" : "waiting_on_person", names.get(party) ?? "a party", n);
+            }
           }
         }
       }
@@ -2196,6 +2250,9 @@ export async function gateBacklog(
           ...(from.has(id) ? { from: from.get(id) } : {}),
           to: g.to_outside ? "outside this deployment" : g.to,
           items_waiting: new Set(own.flatMap((l) => [...l.items])).size,
+          // What waits for a person's decision, and of that what the Redactor referred to one: what a gate set to a person costs in people's time.
+          items_waiting_on_a_person: new Set(own.filter((l) => l.holder === "waiting_on_person" || l.holder === "referred").flatMap((l) => [...l.items])).size,
+          items_referred: new Set(own.filter((l) => l.holder === "referred").flatMap((l) => [...l.items])).size,
           waiting: own
             .sort((a, b) => a.oldest.getTime() - b.oldest.getTime())
             .map((l) => ({

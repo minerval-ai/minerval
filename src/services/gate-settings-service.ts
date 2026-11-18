@@ -5,7 +5,10 @@
  * Redactor decides, or a person decides as well. Its authorities set that
  * for a kind of thing or for every kind, for the whole boundary or for a
  * narrower scope, and for one party's material or for every party that has
- * not said. Two sets of people are a gate's authorities: the deployment's
+ * not said. With no setting, a kind is at its starting position: a person
+ * decides after the Redactor for everything that carries text, which a
+ * gate's authorities hand to the Redactor as they come to trust it
+ * (gate-kinds.ts, STARTING_MODE). Two sets of people are a gate's authorities: the deployment's
  * administrators, for the gate as a whole, and the holders of `consent` for
  * a party, for that party's material.
  *
@@ -25,12 +28,13 @@ import {
   GATE_MODES,
   GATE_SCOPES,
   SCOPE_ORDER,
-  STARTING_MODE,
   isGateKind,
   isGateMode,
   type GateKind,
   type GateMode,
   type GateScope,
+  startingMode,
+  startingPositions,
 } from "./gate-kinds.js";
 
 const REASON = "A gate's settings are read and written for both sides of a boundary, which may share no label.";
@@ -228,6 +232,7 @@ export async function modesFor(item: ItemScope, partyIds: readonly string[]): Pr
       return null;
     };
     const whole = best(covering.filter((c) => c.party_id === null));
+    const toOutside = (await gateOf(item.boundaryId))?.to_outside ?? false;
     const out = new Map<string, ModeFound>();
     for (const party of new Set(partyIds)) {
       const own = best(covering.filter((c) => c.party_id === party));
@@ -236,7 +241,7 @@ export async function modesFor(item: ItemScope, partyIds: readonly string[]): Pr
         party,
         pick
           ? { mode: pick.mode, settingId: pick.id, scope: pick.scope, setAt: pick.set_at, delayHours: pick.delay_hours, batchHours: pick.batch_hours }
-          : { mode: STARTING_MODE[item.kind], settingId: null, scope: null, setAt: null, delayHours: 0, batchHours: 0 }
+          : { mode: startingMode(item.kind, toOutside), settingId: null, scope: null, setAt: null, delayHours: 0, batchHours: 0 }
       );
     }
     return out;
@@ -449,7 +454,9 @@ export async function gatesFor(actor: GateAuthority & { clearance: readonly stri
         keeps_the_other_side_current: keepCurrentWords(gate),
         keep_current_mandate: gate.keep_current_mandate,
         ...(gate.to_outside ? {} : { keep_current_owls: gate.keep_current_micro_usd / 1_000_000 }),
-        starting_positions: STARTING_MODE,
+        starting_positions: startingPositions(gate.to_outside),
+        // How often its people let the Redactor's proposals through as they stood: what tells them a kind can be handed to it.
+        agreement: await (await import("./gate-trust-service.js")).gateAgreement(gate.boundary_id),
         settings: settings.map((s) => settingView(s, names, setters)),
         you_may_set: {
           the_gate_as_a_whole: actor.administer,

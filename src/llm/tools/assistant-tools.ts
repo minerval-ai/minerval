@@ -227,6 +227,8 @@ export const RUNS_WITHOUT_ASKING: Readonly<Record<string, string>> = {
   match_claim: "A private analysis, metered and charged as its description states; it writes nothing to the graph.",
   extract_claims: "As match_claim: private, metered, and it writes nothing to the graph.",
   assess_text: "As match_claim: private, metered, and it writes nothing to the graph.",
+  try_the_redactor:
+    "As match_claim: a private trial, charged within the budget the call names, and nothing is released, recorded at the gate or saved.",
 };
 
 /** The Assistant's own tools, beside the account's. */

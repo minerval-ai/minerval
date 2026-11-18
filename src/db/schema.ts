@@ -9004,6 +9004,10 @@ export const redactionPolicies = pgTable(
     version: integer("version").notNull(),
     // The categories as saved: [{ name, covers, examples }].
     categories: jsonb("categories").notNull(),
+    // When the Redactor asks a person rather than deciding alone, even
+    // where the gate is set to its decision: the administrators' own
+    // guidelines, as a list of sentences. Part of the policy's text.
+    referWhen: jsonb("refer_when").notNull().default([]),
     // The whole policy as a reader is given it.
     body: text("body").notNull(),
     // sha256 of `body`.

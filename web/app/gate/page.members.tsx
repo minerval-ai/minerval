@@ -284,6 +284,7 @@ function QueueList({
           const t = titleOf(e.first);
           const unsure = e.rows.filter((r) => r.redactor_least_sure).length;
           const holds = e.rows.filter((r) => r.held_by_the_redactor);
+          const referred = e.rows.filter((r) => r.referred_by_the_redactor).length;
           const delayed = e.rows.find((r) => r.delayed_until);
           const b = crossingOf(e.first);
           const waitingParts = e.rows.filter((r) => r.part !== null).length;
@@ -306,6 +307,7 @@ function QueueList({
               </span>
               <span className="w-review-row-m">
                 <span title={waitingParts < e.rows.length ? "Counting the item itself, with what is always shown of it" : undefined}>{plural(e.rows.length, "part")}</span>
+                {referred > 0 && <span className="w-review-flag w-warn">Redactor asks you</span>}
                 {unsure > 0 && <span className="w-review-flag w-warn">{unsure} least sure</span>}
                 {holds.length > 0 && (
                   <span className="w-review-flag w-bad" title={holds.map((h) => h.held_by_the_redactor!.reason).join("; ")}>
@@ -417,7 +419,12 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
                 </Tip>
               )}
               <span className="w-spacer w-row" style={{ gap: 6 }}>
-                {row.redactor_least_sure && <Pill tone="warn">Least sure</Pill>}
+                {row.referred_by_the_redactor && (
+                  <Pill tone="warn" title={`Referred ${shortWhen(row.referred_by_the_redactor.since)}`}>
+                    Redactor asks you · would {row.referred_by_the_redactor.recommends === "hold" ? "hold" : "let through"}
+                  </Pill>
+                )}
+                {row.redactor_least_sure && !row.referred_by_the_redactor && <Pill tone="warn">Least sure</Pill>}
                 {mine && (
                   <Pill tone="bad" title={mine.since ? `Since ${shortWhen(mine.since)}` : undefined}>
                     Held for {mine.party.name}
@@ -452,13 +459,26 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
                   Redactor&apos;s note on &ldquo;{r.passage}&rdquo; ({r.category}): {r.redactor_note}
                 </div>
               ))}
+            {(row.why_referred ?? []).map((why, i) => (
+              <div className="w-review-part-n w-warn" key={`r${i}`}>
+                <Icon name="warn" size={13} />
+                {why}
+              </div>
+            ))}
+            {row.referred_by_the_redactor && (row.why_referred ?? []).length === 0 && (
+              <div className="w-review-part-n w-warn">
+                <Icon name="warn" size={13} />
+                The Redactor asks a person to decide this, and would {row.referred_by_the_redactor.in_words}. Why is written at the label the{" "}
+                {isPage ? "page" : "item"} was written at.
+              </div>
+            )}
             {(row.why_least_sure ?? []).map((why, i) => (
               <div className="w-review-part-n w-warn" key={`w${i}`}>
                 <Icon name="warn" size={13} />
                 Least sure: {why}
               </div>
             ))}
-            {row.redactor_least_sure && (row.why_least_sure ?? []).length === 0 && (
+            {row.redactor_least_sure && !row.referred_by_the_redactor && (row.why_least_sure ?? []).length === 0 && (
               <div className="w-review-part-n w-warn">
                 <Icon name="warn" size={13} />
                 Least sure. Why is written at the label the page was written at.

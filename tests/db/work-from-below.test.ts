@@ -47,6 +47,7 @@ import { runWithUsageContext, withAgent } from "../../src/llm/usage-context.js";
 import { featureOn } from "../../src/features.js";
 import { postureAt, postureNote } from "../../src/label-posture.js";
 import { labelNote } from "../../src/llm/label-note.js";
+import { startGatesWithTheRedactor } from "./gate-starting.js";
 
 const PUBLIC = "public";
 /** The organization's own party, where the end-to-end case had to make one. */
@@ -110,7 +111,10 @@ describe("one label: nothing can be asked and nothing is said", () => {
 });
 
 describe("work asked for from below", () => {
+  // The end-to-end test here follows the Redactor's own decision, as at a gate whose authorities handed it every kind.
+  let restoreStartingPositions: () => void = () => undefined;
   beforeAll(async () => {
+    restoreStartingPositions = startGatesWithTheRedactor();
     await wall();
     await system(async () => {
       await rawQuery(`INSERT INTO labels (name, description) VALUES ($1, 'An evidence room: holds only work asked for from below.') ON CONFLICT (name) DO NOTHING`, [ROOM]);
@@ -128,6 +132,7 @@ describe("work asked for from below", () => {
   });
 
   afterAll(async () => {
+    restoreStartingPositions();
     setGateOffer(null);
     await system(async () => {
       const tables = (

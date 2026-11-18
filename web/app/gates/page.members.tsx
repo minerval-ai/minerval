@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { viewer } from "@/components/admin/access";
 import {
+  Banner,
   Boundary,
   ButtonLink,
   Empty,
@@ -64,6 +65,15 @@ export default async function BoundariesPage({ searchParams }: { searchParams: P
         }
         actions={forPeople > 0 && <ButtonLink href="/gate" primary>{`Review ${forPeople}`}</ButtonLink>}
       />
+
+      {rows.some((r) => r.gate) && (
+        <Banner>
+          Every gate starts with a person approving what the Redactor proposes, so that the people who consent can see its work before
+          relying on it. The aim is the Redactor deciding alone: refine each boundary&apos;s policy, try the Redactor on samples, and hand
+          each kind to it once its proposals are ones you approve as they stand. What the policy&apos;s guidelines name, and any close call,
+          it still refers to a person.
+        </Banner>
+      )}
 
       {rows.length === 0 ? (
         <Empty>No boundary leads to a label you read, and you have a say over none.</Empty>

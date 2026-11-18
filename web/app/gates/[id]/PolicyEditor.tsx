@@ -4,10 +4,15 @@ import { useActionState, useState, useTransition, type FormEvent } from "react";
 import type { PolicyCategory } from "@/lib/inside-api";
 import type { PolicyFormState } from "../actions";
 
+/** What a problem with the guidelines for asking a person is filed under (src/services/redaction-policy.ts, REFER_WHEN_PROBLEM). */
+const REFER_WHEN_PROBLEM = "when to ask a person";
+
 // A boundary's categories, edited as rows, saved as the policy's next
 // version. What was typed stays when the save is refused (as KeepForm does),
 // and each category's problem is shown beside it. The name is the whole of
-// what a mark says, so each row previews its mark.
+// what a mark says, so each row previews its mark. Below them, the guidelines
+// for when the Redactor asks a person rather than deciding alone, one a line,
+// saved with the categories as part of the same version.
 
 interface Row {
   key: number;
@@ -27,6 +32,7 @@ export function PolicyEditor({
   to,
   version,
   categories,
+  referWhen,
 }: {
   action: (previous: PolicyFormState, form: FormData) => Promise<PolicyFormState>;
   gateId: string;
@@ -34,7 +40,11 @@ export function PolicyEditor({
   to: string;
   version: number;
   categories: PolicyCategory[];
+  /** The version in force's guidelines for asking a person. */
+  referWhen: string[];
 }) {
+  const referStart = referWhen.join("\n");
+  const [refer, setRefer] = useState(referStart);
   const [rows, setRows] = useState<Row[]>(() => rowsOf(categories));
   const [next, setNext] = useState(categories.length);
   const [state, formAction] = useActionState(action, {});
@@ -48,6 +58,7 @@ export function PolicyEditor({
   };
   const remove = (key: number) => setRows((rs) => rs.filter((r) => r.key !== key));
   const discard = () => {
+    setRefer(referStart);
     setRows(rowsOf(categories));
     setNext(categories.length);
   };
@@ -59,8 +70,16 @@ export function PolicyEditor({
 
   const removed = categories.filter((c) => !rows.some((r) => r.was === c)).length;
   const changed = rows.filter((r) => !r.was || r.was.name !== r.name || r.was.covers !== r.covers || r.was.examples !== r.examples).length;
-  const changes = changed + removed;
-  const problems = state.problems ?? [];
+  const lines = (text: string) =>
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+  const referChanged = lines(refer).join("\n") !== lines(referStart).join("\n");
+  const changes = changed + removed + (referChanged ? 1 : 0);
+  const allProblems = state.problems ?? [];
+  const referProblems = allProblems.filter((p) => p.category === REFER_WHEN_PROBLEM);
+  const problems = allProblems.filter((p) => p.category !== REFER_WHEN_PROBLEM);
   const problemsOf = (r: Row) => problems.filter((p) => p.category.trim().toLowerCase() === (r.name.trim() || "(unnamed)").toLowerCase());
   const unplaced = problems.filter((p) => !rows.some((r) => problemsOf(r).includes(p)));
 
@@ -154,6 +173,33 @@ export function PolicyEditor({
         <button type="button" className="w-btn w-sm" onClick={add}>
           Add category
         </button>
+      </div>
+      <div className={referProblems.length > 0 ? "w-card w-card-b w-gates-bad" : "w-card w-card-b"}>
+        <div className="w-field">
+          <label htmlFor="refer-when" className="w-row" style={{ gap: 6 }}>
+            When the Redactor asks a person {referChanged && <span className="w-pill w-info">Edited</span>}
+          </label>
+          <span className="w-help">
+            One a line. Where one holds, the Redactor refers the item to the people who consent for it, with what it would do, even where
+            the gate is set to its decision. It also refers anything else it finds a close call. Write these as you notice what you want
+            to see; they are how a gate can be left to the Redactor and still bring you the cases that need you.
+          </span>
+          <textarea
+            id="refer-when"
+            className={referChanged ? "w-input w-gates-edited" : "w-input"}
+            name="refer_when"
+            rows={4}
+            value={refer}
+            placeholder={"A passage naming a customer, where it is unclear whether the customer is public\nAnything about an incident still under investigation"}
+            onChange={(e) => setRefer(e.target.value)}
+            aria-invalid={referProblems.length > 0 || undefined}
+          />
+          {referProblems.map((p, n) => (
+            <span className="w-gates-err" role="alert" key={n}>
+              {p.problem}
+            </span>
+          ))}
+        </div>
       </div>
       {(changes > 0 || state.error || state.notice) && (
         <div className="w-savebar">

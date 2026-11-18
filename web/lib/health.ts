@@ -63,6 +63,7 @@ export const AREA_HREF: Record<string, string> = {
   usage_report: "/admin/budget",
   public_graph: "/admin/outside",
   connections: "/admin/connections",
+  gates: "/gates",
   material: "/sources",
 };
 
@@ -76,6 +77,7 @@ const AREA_NAMES: Record<string, string> = {
   usage_report: "Usage report",
   public_graph: "Public graph",
   connections: "Connections",
+  gates: "Gates",
   material: "Material",
 };
 
@@ -585,6 +587,45 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
     });
   }
 
+  // Gates: work held up waiting on a person, and kinds whose record says they could be left to the Redactor.
+  for (const g of c.gates?.each ?? []) {
+    const name = `${g.from} → ${g.to}`;
+    const hours = g.oldest_waiting_hours ?? 0;
+    if (g.waiting_on_a_person >= GATE_WAIT_ITEMS || hours >= GATE_WAIT_HOURS) {
+      out.push({
+        key: `gate-${g.gate_id}-waiting`,
+        title: `${count(g.waiting_on_a_person, "item")} waiting on a person at ${name}`,
+        consequence: `Oldest ${waitWords(hours)}; refining the policy lets the Redactor decide more of it`,
+        owner: "admin",
+        href: `/gates/${encodeURIComponent(g.gate_id)}?tab=policy`,
+        action: "Refine policy",
+        tone: hours >= GATE_WAIT_HOURS_BAD ? "bad" : "warn",
+        blocks: false,
+        detail:
+          `Each item at ${name} waits for the people who consent for its parties` +
+          (g.referred_by_the_redactor > 0 ? `, ${g.referred_by_the_redactor} of them because the Redactor asked a person to decide` : "") +
+          ". They can work through the queue on the Gate page. To keep it from building up, tighten the boundary's policy where the Redactor's " +
+          "proposals were changed, add what you still want to see to its guidelines for asking a person, and hand the kinds you approve as " +
+          "proposed to the Redactor on the Rules tab.",
+      });
+    }
+    if (g.agreement.kinds_ready.length > 0) {
+      out.push({
+        key: `gate-${g.gate_id}-ready`,
+        title: `${capitalFirst(listed(g.agreement.kinds_ready.map((k) => k.replace(/_/g, " "))))} at ${name} could go to the Redactor`,
+        consequence: `People let ${g.agreement.as_proposed} of ${g.agreement.decided} through as proposed`,
+        owner: "admin",
+        href: `/gates/${encodeURIComponent(g.gate_id)}?tab=rules`,
+        action: "Review",
+        tone: "warn",
+        blocks: false,
+        detail:
+          `Over the last ${g.agreement.window_days} days the people at this gate let nearly everything the Redactor proposed for these kinds through as it stood. ` +
+          "Handing them to the Redactor frees their time; anything the policy's guidelines name, and anything the Redactor finds a close call, still comes to them.",
+      });
+    }
+  }
+
   // Material.
   if (c.material.sources === 0 && c.material.nodes === 0) {
     out.push({
@@ -620,6 +661,18 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
   const rank = (i: AttentionItem) => (i.blocks ? 0 : i.tone === "bad" ? 1 : 2);
   return out.map((item, i) => ({ item, i })).sort((a, b) => rank(a.item) - rank(b.item) || a.i - b.i).map(({ item }) => item);
 }
+
+/**
+ * When work waiting on a person at a gate is raised: this many items, or the
+ * oldest this many hours old, and "needs someone now" past a week. Attention
+ * thresholds for people; they limit nothing.
+ */
+export const GATE_WAIT_ITEMS = 10;
+export const GATE_WAIT_HOURS = 48;
+export const GATE_WAIT_HOURS_BAD = 24 * 7;
+
+const waitWords = (hours: number) => (hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)} days`);
+const capitalFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 // --- the areas -------------------------------------------------------------------
 
@@ -718,6 +771,16 @@ function areaFact(item: ChecklistItem, c: SetupChecklist): string {
       ];
       return [`${k.on} on`, `${k.offering_tools} offering tools`, ...trouble.slice(0, 1)].join(" · ");
     }
+    case "gates": {
+      const each = c.gates?.each ?? [];
+      if (each.length === 0) return "Nothing has crossed yet";
+      const person = each.filter((g) => g.a_person_decides.length > 0).length;
+      const waiting = each.reduce((n, g) => n + g.waiting_on_a_person, 0);
+      return [
+        person === 0 ? "The Redactor decides at every gate" : `A person decides at ${person} of ${count(each.length, "gate")}`,
+        ...(waiting > 0 ? [`${waiting} waiting on a person`] : []),
+      ].join(" · ");
+    }
     case "material": {
       const m = c.material;
       if (m.sources === 0 && m.nodes === 0) return "Nothing read yet";
@@ -765,15 +828,29 @@ export interface GateLike {
   to: string;
   to_outside: boolean;
   starting_positions: Record<string, string>;
-  settings: Array<{ mode: string; party: { id: string } | null }>;
+  settings: Array<{ mode: string; party: { id: string } | null; kind?: string; scope?: string }>;
+}
+
+/**
+ * Whether a kind is still at a starting position where a person decides,
+ * for a party: no setting for the whole boundary, for that party or for
+ * every party, says otherwise for that kind or for every kind.
+ */
+function startsWithAPersonFor(g: GateLike, party: string): boolean {
+  return Object.entries(g.starting_positions).some(
+    ([kind, mode]) =>
+      mode === "person" &&
+      !g.settings.some((s) => (s.scope ?? "boundary") === "boundary" && (s.party === null || s.party.id === party) && (s.kind === kind || s.kind === "*"))
+  );
 }
 
 /**
  * The parties nobody can consent for (the permission `consent`),
  * at the boundaries where a person
  * decides for them: a rule there that a person decides, for that party or
- * for every party, or, for the organisation's own material, a kind that
- * starts with a person deciding (an agent's report). There what rests on
+ * for every party, or a kind that starts with a person deciding, as every
+ * kind that carries text does until a gate's authorities hand it to the
+ * Redactor. There what rests on
  * the party's material waits for someone who consents for it, and with none it
  * waits for good.
  */
@@ -782,7 +859,6 @@ export function partiesReleasedByNobody(
   gates: readonly GateLike[],
 ): Array<{ party: { id: string; name: string }; boundaries: string[] }> {
   const release = c.permissions.find((p) => p.permission === "consent");
-  const own = new Set(c.material.sources_by_party.filter((p) => p.party.is_own_organization).map((p) => p.party.id));
   const out: Array<{ party: { id: string; name: string }; boundaries: string[] }> = [];
   for (const entry of release?.by_party ?? []) {
     if (entry.accounts + entry.groups > 0) continue;
@@ -790,7 +866,7 @@ export function partiesReleasedByNobody(
       .filter(
         (g) =>
           g.settings.some((s) => s.mode === "person" && (s.party === null || s.party.id === entry.party.id)) ||
-          (own.has(entry.party.id) && Object.values(g.starting_positions).includes("person")),
+          startsWithAPersonFor(g, entry.party.id),
       )
       .map((g) => `${g.from} → ${g.to_outside ? "outside" : g.to}`);
     if (boundaries.length > 0) out.push({ party: entry.party, boundaries });

@@ -7,7 +7,7 @@
  */
 import type { ToolUnion } from "@anthropic-ai/sdk/resources/messages.js";
 import { refusalForCaller } from "../../db/clearance.js";
-import { HOLD_REASONS } from "../../services/gate-kinds.js";
+import { HOLD_REASONS, REFER_RECOMMENDATIONS } from "../../services/gate-kinds.js";
 import { redactorActs } from "../../services/release-gate-service.js";
 import { policyById } from "../../services/redaction-policy.js";
 import { describeIdShape, isMalformedIdError } from "../seen-ids.js";
@@ -31,6 +31,7 @@ export const REDACTOR_TOOL_NAMES = [
   "hold_part",
   "delay_part",
   "lift_hold",
+  "refer_to_person",
   "finish_redaction",
 ] as const;
 
@@ -134,6 +135,34 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
       },
     },
     {
+      name: "refer_to_person",
+      description:
+        "Ask a person to decide one part, or the whole item when you give no part, and say what you would do. Use it where the policy's " +
+        "guidelines for asking a person cover what is in front of you, and wherever else a decision is a close call that a person who " +
+        "knows the organization should make. It holds even where the gate is set to your decision: what you refer waits for the people " +
+        "who consent for the parties it rests on, with your recommendation and note beside it, and nothing of it goes on until one of " +
+        "them has acted. Do your own work on it first, as you would if you decided: make the removals you would make, so that a " +
+        "person who agrees with you only has to approve. A referral removes nothing and keeps nothing back of itself, and the readers " +
+        "on the other side are not told of it; they see a part waiting, as any part a person has not decided waits.",
+      input_schema: {
+        type: "object",
+        properties: {
+          part: { type: "integer", description: "The part's number. Leave out to refer the whole item." },
+          recommends: {
+            type: "string",
+            enum: Object.keys(REFER_RECOMMENDATIONS),
+            description: "What you would do: " + Object.entries(REFER_RECOMMENDATIONS).map(([k, v]) => `${k} (${v})`).join("; ") + ".",
+          },
+          note: {
+            type: "string",
+            description:
+              "Why a person should decide this: the guideline it falls under, or what makes it a close call, and what turns on it. The people at the gate who read this label read it. It stays at this label.",
+          },
+        },
+        required: ["recommends", "note"],
+      },
+    },
+    {
       name: "finish_redaction",
       description:
         "End the redaction. Each part as you left it is hashed, the hashes are recorded where the readers on the other side can read them, and Audit's check is asked for. After this the parts do not change. What you did not hold or delay then goes on under the gate's setting.",
@@ -179,7 +208,14 @@ export async function executeRedactorTool(
         const page = await releasePage(ctx.pageId);
         const policy = page ? await policyById(page.policy_id) : null;
         if (!policy) return answer({ success: false, message: "This page's policy could not be read." });
-        return answer({ success: true, version: policy.version, policy: policy.body, category_names: policy.categories.map((c) => c.name) });
+        return answer({
+          success: true,
+          version: policy.version,
+          policy: policy.body,
+          category_names: policy.categories.map((c) => c.name),
+          // When to ask a person rather than decide alone (refer_to_person). Empty: the policy names no such case, and you refer what is a close call.
+          refer_when: policy.refer_when,
+        });
       }
       case "get_page_to_redact": {
         if (typeof input.source_id === "string" && input.source_id) {
@@ -204,8 +240,9 @@ export async function executeRedactorTool(
         return answer({ success: true, ...(await restorePassage({ pageId: ctx.pageId, removalId: String(input.removal_id ?? "") })) });
       case "hold_part":
       case "delay_part":
-      case "lift_hold": {
-        const act = name === "hold_part" ? "hold" : name === "delay_part" ? "delay" : "lift";
+      case "lift_hold":
+      case "refer_to_person": {
+        const act = name === "hold_part" ? "hold" : name === "delay_part" ? "delay" : name === "refer_to_person" ? "refer" : "lift";
         const { getUsageContext } = await import("../usage-context.js");
         const part = input.part === undefined || input.part === null ? null : Number(input.part);
         const result = await redactorActs({
@@ -214,6 +251,7 @@ export async function executeRedactorTool(
           part,
           reason: typeof input.reason === "string" ? input.reason : undefined,
           until: typeof input.until === "string" ? input.until : undefined,
+          recommends: typeof input.recommends === "string" ? input.recommends : undefined,
           note: typeof input.note === "string" ? input.note : undefined,
           runId: (getUsageContext() as { runId?: string }).runId ?? null,
         });
@@ -223,7 +261,9 @@ export async function executeRedactorTool(
           ...result,
           message: !result.recorded
             ? "Nothing changed: that already stands."
-            : act === "hold"
+            : act === "refer"
+              ? `${what} is referred to a person, with your recommendation. It waits for the people who consent for the parties it rests on, whatever the gate is set to. Go on with the rest and end with finish_redaction.`
+              : act === "hold"
               ? `${what} is held. The readers on the other side will see that it is held by the Redactor, with the reason. Go on with the rest and end with finish_redaction.`
               : act === "delay"
                 ? `${what} is kept back until then.`

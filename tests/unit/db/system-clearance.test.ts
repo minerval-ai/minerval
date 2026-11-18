@@ -267,10 +267,20 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing while it sees every label: when a merge is undone it reads the ids and labels of the records of what the merge carried to other labels. Each is then undone inside runAtLabel at its label, from that label's own record, and the restored node's Steward at that label is told in fixed words that name the other node.",
     ],
   ],
+  "src/services/redactor-trial-service.ts": [
+    [
+      "A trial reads the policy in force at its boundary to start a draft from.",
+      "The route has checked that the person is an authority of the gate and reads the label its pages are written at. It reads the boundary's newest policy version, whose text everyone on both sides reads, to try it or a draft of the next.",
+    ],
+  ],
   "src/services/redaction-policy.ts": [
     [
       "A boundary's policy is kept as one row on each side of the boundary, and the two sides may share no label.",
       "One version of a boundary's policy, as two rows with the same text: one at the label pages are written at and one at the label they are shown to. The text is categories an administrator saved, or the starting text in the repository, and the destination's row names no label of origin.",
+    ],
+    [
+      "A boundary's policy is kept as one row on each side of the boundary, and the two sides may share no label.",
+      "keptReferWhen: the guidelines for asking a person in a boundary's version in force, kept by a save that leaves them out. The route has checked that the caller administers; the guidelines are part of the policy's text, which everyone on both sides of the boundary reads.",
     ],
     [
       "A boundary's policy is kept as one row on each side of the boundary, and the two sides may share no label.",
@@ -333,7 +343,13 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Nothing directly: it reads, for each gate that names a mandate, the versions made at the gate's label since then of nodes the other side holds, and offers each to the gate, which composes the item in fixed words (a node id the other side holds and an amount) at that label. It also counts the gates to outside that name a public mandate, for the setup checklist.",
     ],
   ],
-  "src/services/gate-settings-service.ts": [
+  "src/services/gate-trust-service.ts": [
+    [
+      "How often a gate's people approved the Redactor's proposals as they stood is counted from acts on the destination side and removals at the page's label, which may share no label. Counts only.",
+      "It returns counts by kind of how many items a person decided at a gate and how many of those were let through as the Redactor proposed. It reads acts and removals to count them and returns no text, no id and no label of any row.",
+    ],
+  ],
+    "src/services/gate-settings-service.ts": [
     [
       "A gate's settings are read and written for both sides of a boundary, which may share no label.",
       "A gate's authorities are administrators and holders of release for a party, who may read neither side's label; the route checks the permission and this reads and writes the gate's own rows: the setting rows at the label things come from, which can name a mandate, a node or a request there and are returned only to a person with a say over the gate, and the one row for the gate as a whole on the destination side, which names nothing. It writes no text of any item, and what it returns to a person is the settings and the two labels' names.",
