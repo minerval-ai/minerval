@@ -9,7 +9,7 @@ const marks = (p: ReturnType<typeof pipelineOf>) => p.steps.map((s) => s.mark).j
 
 describe("pipelineOf", () => {
   it("draws four steps, empty and plain before anything is assessed", () => {
-    expect(NOT_YET_ASSESSED.steps.map((s) => s.label)).toEqual(["Redact", "Audit", "Release", "Shown"]);
+    expect(NOT_YET_ASSESSED.steps.map((s) => s.label)).toEqual(["Redact", "Audit", "Consent", "Released"]);
     expect(marks(NOT_YET_ASSESSED)).toBe("todo todo todo todo");
     expect(NOT_YET_ASSESSED.pill).toEqual({ text: "Not yet assessed", tone: "neu" });
     expect(NOT_YET_ASSESSED.needs).toBeNull();
@@ -63,7 +63,7 @@ describe("pipelineOf", () => {
     expect(cannot.needs).toBe("policy");
   });
 
-  it("puts a hold on Release, with its reason", () => {
+  it("puts a hold on Consent, with its reason", () => {
     const held = pipelineOf({ stage: "at_gate", state: "held", heldBecause: "held by a person who directs the graph (still being reviewed)" });
     expect(marks(held)).toBe("done done warn todo");
     expect(held.pill).toEqual({ text: "Held: still being reviewed", tone: "warn" });
@@ -75,17 +75,17 @@ describe("pipelineOf", () => {
     expect(marks(pipelineOf({ state: "held" }))).toBe("todo todo warn todo");
   });
 
-  it("ends at Shown, whole or in part, whatever stage the other side last recorded", () => {
+  it("ends at Released, whole or in part, whatever stage the other side last recorded", () => {
     const whole = pipelineOf({ stage: "at_gate", state: "released_whole", ofParts: 9 });
     expect(marks(whole)).toBe("done done done done");
-    expect(whole.pill).toEqual({ text: "Shown whole", tone: "ok" });
+    expect(whole.pill).toEqual({ text: "Released whole", tone: "ok" });
     expect(whole.needs).toBeNull();
     const part = pipelineOf({ state: "released_in_part", partsHeld: 2, ofParts: 9 });
     expect(marks(part)).toBe("done done done part");
-    expect(part.pill.text).toBe("Shown in part (2 of 9 held)");
+    expect(part.pill.text).toBe("Released in part (2 of 9 held)");
   });
 
   it("says each step in its title", () => {
-    expect(pipelineOf({ stage: "to_check" }).title).toBe("Redact done · Audit now · Release to come · Shown to come");
+    expect(pipelineOf({ stage: "to_check" }).title).toBe("Redact done · Audit now · Consent to come · Released to come");
   });
 });

@@ -17,7 +17,7 @@ export type Mine = Pick<MyPermissions, "permissions" | "clearance">;
 /** The icon a sidebar entry carries (components/work/icons.tsx). */
 export type WorkIcon =
   | "inbox" | "review" | "ask" | "claims" | "mandates" | "findings" | "requests" | "docs"
-  | "showings" | "boundaries" | "sources" | "file-sets" | "connections"
+  | "releases" | "boundaries" | "sources" | "file-sets" | "connections"
   | "globe" | "public-requests" | "replies" | "outbox"
   | "health" | "people" | "labels" | "parties" | "budget" | "log";
 
@@ -41,9 +41,10 @@ export interface WorkSection {
 }
 
 const has = (m: Mine, ...ps: string[]) => ps.some((p) => m.permissions.includes(p));
-// Where the deployment holds material at more than one label, pages are shown
-// from one label to another, and every member may read the showings their labels reach.
-const readsShowings = (m: Mine) => m.clearance.some((label) => label !== "public") || has(m, "release", "direct");
+// Where the deployment holds material at more than one label, pages are released
+// from one label to another, and every member may read the releases their labels reach.
+// The permission to consent for a party is stored as `release` (docs/releasing-a-page.md).
+const readsReleases = (m: Mine) => m.clearance.some((label) => label !== "public") || has(m, "release", "direct");
 const administers = (m: Mine) => has(m, "administer");
 
 export const WORK_SECTIONS: WorkSection[] = [
@@ -52,7 +53,7 @@ export const WORK_SECTIONS: WorkSection[] = [
     pages: [
       // What waits on the person, from every part of the deployment.
       { href: "/inbox", name: "Inbox", icon: "inbox", signal: "inbox" },
-      // The queue of what waits at a gate on a release holder's decision.
+      // The queue of what waits at a gate on the decision of someone who consents for a party.
       { href: "/gate", name: "Review", icon: "review", signal: "review", shown: (m) => has(m, "release") },
     ],
   },
@@ -68,17 +69,17 @@ export const WORK_SECTIONS: WorkSection[] = [
     ],
   },
   {
-    // Pages shown from one label to another, or outside, and the boundaries they cross.
+    // Pages released from one label to another, or outside, and the boundaries they cross.
     name: "Sharing",
     pages: [
-      { href: "/showings", name: "Showings", icon: "showings", shown: readsShowings },
+      { href: "/releases", name: "Releases", icon: "releases", also: ["/showings"], shown: readsReleases },
       {
         // A boundary is one gate and one redaction policy.
         href: "/gates",
         name: "Boundaries",
         icon: "boundaries",
         also: ["/redaction-policies"],
-        shown: (m) => readsShowings(m) || administers(m),
+        shown: (m) => readsReleases(m) || administers(m),
       },
     ],
   },

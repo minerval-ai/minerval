@@ -233,11 +233,11 @@ const quotedList = (labels: readonly string[]): string => {
  * not name is cleared for `public` (src/provider-labels.ts), so text at
  * `public` goes to every model provider and outside service unless whoever
  * runs the deployment says otherwise, and a member may publish it or show
- * it outside (docs/the-gate.md, docs/showing-a-page.md).
+ * it outside (docs/the-gate.md, docs/releasing-a-page.md).
  */
 export const MEMBERS_PUBLIC_DESCRIPTION =
   "Every member of this deployment reads it, and nobody outside reads what is filed at it unless it " +
-  "is published or shown outside. Text at it is still sent to the deployment's model providers and " +
+  "is published or released outside. Text at it is still sent to the deployment's model providers and " +
   "outside services, which are all cleared for it unless whoever runs the deployment says otherwise.";
 
 /** A label's description as it is shown: the stored one, but for `public` on a members-only deployment. */

@@ -1,4 +1,4 @@
-/* A page as shown (app/showings/[id]/pages/[pageId]): the page as a
+/* A page as shown (app/releases/[id]/pages/[pageId]): the page as a
    document, part by part, and the rail of what is always shown. Tokens only. */
 
 .w-shown-doc { border: 1px solid var(--w-rule); border-radius: 8px; background: var(--w-panel); min-width: 0; }

@@ -5,7 +5,7 @@ import { accountFetch, pathSegment } from "./account-api";
 // through once it holds material at more than one label: showing a node's
 // page to readers who do not read its label, the gates, a
 // boundary's redaction policy, sending outside, and sets of files
-// (docs/showing-a-page.md, docs/published-pages.md, docs/file-sets.md).
+// (docs/releasing-a-page.md, docs/published-pages.md, docs/file-sets.md).
 // Every call names the signed-in person, and the API decides what they may
 // read and do: these routes exist only where READS=members.
 //
@@ -49,7 +49,7 @@ export interface AskedPage {
   redact_action_id: string | null;
   cannot_cross?: { category: string; note: string | null };
   audit_reasons?: string;
-  /** For a page at the release gate: which kinds of part wait on which party. Kind and party, never text. */
+  /** For a page at the gate: which kinds of part wait on which party. Kind and party, never text. */
   waiting_on?: Array<{ part: number | null; kind: string; party: string; standing: "held" | "waiting" }>;
 }
 
@@ -270,7 +270,7 @@ export interface QueueItem {
   /**
    * The passages removed from the part. With the Redactor's note where the
    * person reads at the item's label; without it, and only for a part that
-   * rests on the material of outside parties they release for and no one
+   * rests on the material of outside parties they consent for and no one
    * else's, where they do not.
    */
   removals?: Array<{ passage: string; category: string; redactor_note?: string }>;

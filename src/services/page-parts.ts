@@ -1,6 +1,6 @@
 /**
  * The parts of a page, and what a removal does to one
- * (docs/showing-a-page.md, "The parts of a page").
+ * (docs/releasing-a-page.md, "The parts of a page").
  *
  * A page shown below its label is divided into parts, and a part is what
  * the holders of `release` release or hold. The division is mechanical and

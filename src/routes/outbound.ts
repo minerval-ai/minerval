@@ -118,10 +118,10 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Querystring: { showing_id?: string } }>("/outbound", {
     schema: {
       tags: ["showings"],
-      summary: "Where each node shown outside this deployment stands on its way out: the node on the public graph, each package built, and each time one was sent",
+      summary: "Where each node released outside this deployment stands on its way out: the node on the public graph, each package built, and each time one was sent",
       description:
-        "A page shown outside leaves as signed packages, sent to the public graph under the organization's own account there. For each node under a " +
-        "showing outside this gives its node on the public graph, or, for a node that exists only here, where its proposal to the public graph stands; " +
+        "A page released outside leaves as signed packages, sent to the public graph under the organization's own account there. For each node under a " +
+        "release outside this gives its node on the public graph, or, for a node that exists only here, where its proposal to the public graph stands; " +
         "each package built with the state it carries; and each send or handing over, with who did it and what the public graph answered.",
       querystring: { type: "object", properties: { showing_id: UUID } },
     },
@@ -132,9 +132,9 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
   app.post<{ Body: { showing_id: string } }>("/outbound/send", {
     schema: {
       tags: ["showings"],
-      summary: "Send what waits under one showing outside to the public graph: proposals of nodes that exist only here, then each node's packages in order",
+      summary: "Send what waits under one release outside to the public graph: proposals of nodes that exist only here, then each node's packages in order",
       description:
-        "What is sent has passed the release gate: released parts as written, held parts by kind and hash, and the record of how the page was made. " +
+        "What is sent has passed the gate: released parts as written, held parts by kind and hash, and the record of how the page was made. " +
         "It is submitted under the organization's account on the public graph, where it is reviewed and weighed as any contribution is. Sending shows " +
         "outside that this graph assessed the node and when. It is recorded here with who sent it.",
       body: { type: "object", required: ["showing_id"], properties: { showing_id: UUID } },

@@ -66,7 +66,7 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
   const items: InboxItem[] = [];
   let openPublicRequests = 0;
 
-  // What waits at a gate on the person's decision, one line for each party they release for.
+  // What waits at a gate on the person's decision, one line for each party they consent for.
   if (queue) {
     const byParty = new Map<string, { name: string; items: QueueItem[] }>();
     for (const item of queue.items) {
@@ -84,7 +84,7 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
         group: "decisions",
         icon: "review",
         tone: "info",
-        title: `${plural(pages.size, "item")} wait for your release`,
+        title: `${plural(pages.size, "item")} wait for your consent`,
         party: name,
         facts: [
           plural(waiting.length, "part"),
@@ -130,7 +130,7 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
         node: row.node,
         boundary: { from: row.page_label, to: row.shown_to },
         facts: [],
-        action: { href: `/showings/${row.showing_id}`, label: "Pay" },
+        action: { href: `/releases/${row.showing_id}`, label: "Pay" },
       });
     }
   }

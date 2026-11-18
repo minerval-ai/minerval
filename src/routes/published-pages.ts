@@ -143,7 +143,7 @@ export async function publishedPageRoutes(app: FastifyInstance): Promise<void> {
         "A published page is another graph's page of a node, made there on evidence that is not public, as its Steward wrote it less what a policy " +
         "removed and what is held. The package is checked before anything is kept: its signature against your registered key, its released text " +
         "against the fingerprint recorded before anyone decided what to release, and its record's form. One that does not check out is refused with " +
-        "what failed. The first package for a node under a showing files a contribution on that node, which is reviewed as any contribution is, and " +
+        "what failed. The first package for a node under a release files a contribution on that node, which is reviewed as any contribution is, and " +
         "is charged as a source submission, refunded if the review does not admit it. Admitted, the page is attached to the node as a source and its " +
         "Steward is told; the reassessment that takes it into the node's own assessment runs when someone funds it. Later packages of the same " +
         "publication are kept in order and cost nothing. The same package may be sent again and changes nothing.",

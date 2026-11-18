@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { actWords, storedList, storedWords } from "@/lib/stored-words";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { NeedsPermission, can, viewer } from "@/components/admin/access";
@@ -33,7 +34,7 @@ import {
 } from "@/lib/gate-review";
 import { fetchGateQueue, fetchShowing, type QueueItem, type ShownShowing } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
-import { decideAction } from "../showings/actions";
+import { decideAction } from "../releases/actions";
 import { QueueForm } from "./QueueForm";
 import "./review.css";
 
@@ -41,20 +42,20 @@ export const metadata: Metadata = { title: "Review · Minerval" };
 export const dynamic = "force-dynamic";
 
 // What waits on a person at a gate (GET /gate/queue; docs/the-gate.md): for
-// a person who holds release for a party, the parts of items that rest on
+// a person who consents for a party, the parts of items that rest on
 // that party's material and have not gone through. These are the items
 // whose gate is set to a person's decision, and those the Redactor or a
 // person holds or has delayed; everything else went as the Redactor left it.
 //
 // One party at a time (`?party=`), narrowed by kind (`?kind=`). On the left
 // the queue, one row per item, oldest first; in the centre the item chosen
-// (`?item=`) as a document, each part as it would be shown with a box to
+// (`?item=`) as a document, each part as it would be released with a box to
 // tick and the acts beneath; on the right what it belongs to and rests on.
 // Where the person reads at the label the page was written at, the
 // Redactor's removals are a difference against what the Steward wrote, with
 // its notes. Where they do not, they see the marks and not what was removed,
 // except in a part that rests only on the material of an outside party they
-// release for, and the API's sentence says so once.
+// consent for, and the API's sentence says so once.
 
 type Search = { party?: string; kind?: string; item?: string };
 
@@ -88,7 +89,7 @@ function crossingOf(item: QueueItem): { from: string | null; to: string } {
   return { from: item.from ?? null, to: item.to_outside ? "outside" : item.to };
 }
 
-/** A part as it would be shown: each removed passage struck through in front of the mark that replaces it, where the person may see it. */
+/** A part as it would be released: each removed passage struck through in front of the mark that replaces it, where the person may see it. */
 function Shown({ item }: { item: QueueItem }) {
   const shown = item.as_it_would_be_shown ?? "";
   const removals = item.removals ?? [];
@@ -129,7 +130,8 @@ function Shown({ item }: { item: QueueItem }) {
   return <>{out}</>;
 }
 
-const STANDING: Record<"released" | "held" | "waiting", string> = { released: "released", held: "holding", waiting: "not decided" };
+// A party's standing on a part. The API calls a party's consent `released`.
+const STANDING: Record<"released" | "held" | "waiting", string> = { released: "consented", held: "holding", waiting: "not decided" };
 
 export default async function ReviewPage({ searchParams }: { searchParams: Promise<Search> }) {
   const who = await viewer();
@@ -138,7 +140,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const params = await searchParams;
   const queue = await fetchGateQueue(who.externalId);
 
-  // The parties the person releases for: from their grants, and any the queue names besides.
+  // The parties the person consents for: from their grants, and any the queue names besides.
   const partyMap = new Map<string, { id: string; name: string }>();
   for (const g of who.mine.grants) if (g.permission === "release" && g.party) partyMap.set(g.party.id, { id: g.party.id, name: g.party.name });
   for (const i of queue.items) for (const p of i.decide_for) if (!partyMap.has(p.id)) partyMap.set(p.id, { id: p.id, name: p.name });
@@ -189,7 +191,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const entries = kind ? ofParty.filter((e) => e.first.kind_of_thing === kind) : ofParty;
   const selected = entries.find((e) => e.id === params.item || e.first.page_id === params.item) ?? entries[0];
 
-  // For the item chosen: its showing (who asked, and its acts). The categories a passage can be removed
+  // For the item chosen: its release (who asked, and its acts). The categories a passage can be removed
   // under are those of the policy the item was redacted under, which the queue gives with each item.
   const showing: ShownShowing | null = selected ? await fetchShowing(who.externalId, selected.first.showing_id).catch(() => null) : null;
   const categories = selected?.first.policy?.categories ?? [];
@@ -239,7 +241,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
             action={decideAction}
             partyId={party.id}
             itemKey={selected.id}
-            reasons={queue.hold_reasons}
+            reasons={storedList(queue.hold_reasons)}
             anyHeld={selected.rows.some(
               (r) => r.held_by_the_redactor || r.delayed_until || r.rests_on.some((s) => s.party.id === party.id && s.standing === "held")
             )}
@@ -307,7 +309,7 @@ function QueueList({
                 <span title={waitingParts < e.rows.length ? "Counting the item itself, with what is always shown of it" : undefined}>{plural(e.rows.length, "part")}</span>
                 {unsure > 0 && <span className="w-review-flag w-warn">{unsure} least sure</span>}
                 {holds.length > 0 && (
-                  <span className="w-review-flag w-bad" title={holds.map((h) => h.held_by_the_redactor!.reason).join("; ")}>
+                  <span className="w-review-flag w-bad" title={holds.map((h) => storedWords(h.held_by_the_redactor!.reason)).join("; ")}>
                     Redactor holds {holds.length}
                   </span>
                 )}
@@ -412,7 +414,7 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
               </label>
               {row.part === null && (
                 <Tip>
-                  {`Releasing this releases what is shown whenever the ${isPage ? "page" : "item"} is shown${isPage ? ": its verdict" : ""}. Holding it holds the whole item, whatever is decided about its parts.`}
+                  {`Consenting to this releases what is shown whenever the ${isPage ? "page" : "item"} is released${isPage ? ": its verdict" : ""}. Holding it holds the whole item, whatever is decided about its parts.`}
                 </Tip>
               )}
               <span className="w-spacer w-row" style={{ gap: 6 }}>
@@ -420,12 +422,12 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
                 {mine && (
                   <Pill tone="bad" title={mine.since ? `Since ${shortWhen(mine.since)}` : undefined}>
                     Held for {mine.party.name}
-                    {mine.reason ? `: ${mine.reason}` : ""}
+                    {mine.reason ? `: ${storedWords(mine.reason)}` : ""}
                   </Pill>
                 )}
                 {row.held_by_the_redactor ? (
                   <Pill tone="bad" title={`Since ${shortWhen(row.held_by_the_redactor.since)}`}>
-                    Redactor: hold · {row.held_by_the_redactor.reason}
+                    Redactor: hold · {storedWords(row.held_by_the_redactor.reason)}
                   </Pill>
                 ) : row.delayed_until ? (
                   <Pill tone="info">Redactor: delay to {shortWhen(row.delayed_until)}</Pill>
@@ -473,7 +475,7 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
                     {i < others.length - 1 && <span className="w-faint">·</span>}
                   </span>
                 ))}
-                <span className="w-faint">· shown once every party releases</span>
+                <span className="w-faint">· released once every party consents</span>
               </div>
             )}
           </div>
@@ -517,9 +519,9 @@ function Context({
   return (
     <aside className="w-review-ctx" aria-label="Context">
       <div className="w-review-ctx-s">
-        <h3>Showing</h3>
-        <Link href={`/showings/${first.showing_id}`} style={{ fontWeight: 500 }}>
-          {showing ? `Shown to ${showing.shown_to}` : "The showing it belongs to"}
+        <h3>Release</h3>
+        <Link href={`/releases/${first.showing_id}`} style={{ fontWeight: 500 }}>
+          {showing ? `Released to ${showing.shown_to}` : "The release it belongs to"}
         </Link>
         {showing && (
           <div className="w-small w-muted" style={{ marginTop: 3 }}>
@@ -568,7 +570,7 @@ function Context({
               ) : s.waiting > 0 ? (
                 <Pill tone="neu">not decided</Pill>
               ) : (
-                <Pill tone="ok">released</Pill>
+                <Pill tone="ok">consented</Pill>
               )}
             </span>
           </div>
@@ -595,14 +597,14 @@ function Context({
               <b style={{ fontWeight: 500 }}>{place(r)}</b>
               {r.held_by_the_redactor && (
                 <div className="w-muted">
-                  Held by the Redactor · {r.held_by_the_redactor.reason} · {shortDay(r.held_by_the_redactor.since)}
+                  Held by the Redactor · {storedWords(r.held_by_the_redactor.reason)} · {shortDay(r.held_by_the_redactor.since)}
                 </div>
               )}
               {r.delayed_until && <div className="w-muted">Delayed to {shortWhen(r.delayed_until)}</div>}
               {(r.held ?? []).map((h) => (
                 <div className="w-muted" key={h.party.id}>
                   Held for {h.party.name}
-                  {h.reason ? ` · ${h.reason}` : ""}
+                  {h.reason ? ` · ${storedWords(h.reason)}` : ""}
                   {h.since ? ` · ${shortDay(h.since)}` : ""}
                 </div>
               ))}
@@ -617,10 +619,10 @@ function Context({
             <div className="w-line" key={i}>
               <time dateTime={a.at}>{shortDay(a.at)}</time>
               <span>
-                {capital(a.by)} {a.what}
+                {capital(a.by)} {actWords(a.what)}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
-                {a.reason ? `: ${a.reason}` : ""}
+                {a.reason ? `: ${storedWords(a.reason)}` : ""}
               </span>
             </div>
           ))}
@@ -637,15 +639,15 @@ function Rules({ queue }: { queue: { acts: Record<string, string>; note: string;
       <ul>
         {Object.entries(queue.acts).map(([act, words]) => (
           <li key={act}>
-            <b>{capital(act)}.</b> {words}
+            <b>{act === "release" ? "Consent" : capital(act)}.</b> {words}
           </li>
         ))}
         <li>
-          <b>No text is edited.</b> Each part is hashed as it stands, and the people it is shown to check what they read against that hash.
+          <b>No text is edited.</b> Each part is hashed as it stands, and the people it is released to check what they read against that hash.
           A passage can be removed and marked, and a part can be held; no word can be changed.
         </li>
         <li>
-          <b>A release is not taken back.</b> Once a part is shown, people have read it. A hold or a delay can be lifted later; a release
+          <b>Consent is not taken back.</b> Once a part is released, people have read it. A hold or a delay can be lifted later; a consent
           cannot be undone.
         </li>
         <li>

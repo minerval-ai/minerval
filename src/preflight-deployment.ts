@@ -129,7 +129,7 @@ function httpsUrl(text: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Showing pages outside, and the public graph
+// Releasing pages outside, and the public graph
 // ---------------------------------------------------------------------------
 
 const HOSTINGS = "own_machines, minerval or third_party";
@@ -145,14 +145,14 @@ function checkPublishing(facts: DeploymentCheckFacts): DeploymentOutcome {
   }
   if (!key && !hosting && shown === 0) {
     if (!tables) return fail(tablesUnread(facts));
-    return notApplicable("No page is shown outside this deployment and no signing key or hosting is set, so nothing is signed.");
+    return notApplicable("No page is released outside this deployment and no signing key or hosting is set, so nothing is signed.");
   }
   if (!key) {
     return fail(
       (shown > 0
-        ? `${plural(shown, "showing")} to readers outside ${shown === 1 ? "is" : "are"} open`
+        ? `${plural(shown, "release")} to readers outside ${shown === 1 ? "is" : "are"} open`
         : `deployment_hosting is "${hosting}"`) +
-        " and PUBLISH_SIGNING_KEY is not set, so no package of a shown page can be built. Set it in the environment: " +
+        " and PUBLISH_SIGNING_KEY is not set, so no package of a released page can be built. Set it in the environment: " +
         "an Ed25519 private key in PEM form. It is a secret and is not kept in the config file."
     );
   }
@@ -165,8 +165,8 @@ function checkPublishing(facts: DeploymentCheckFacts): DeploymentOutcome {
     );
   }
   return pass(
-    `Packages of shown pages are signed with the deployment's Ed25519 key and state that it runs on ${hosting.replace(/_/g, " ")}.` +
-      (shown > 0 ? ` ${plural(shown, "showing")} to readers outside ${shown === 1 ? "is" : "are"} open.` : "")
+    `Packages of released pages are signed with the deployment's Ed25519 key and state that it runs on ${hosting.replace(/_/g, " ")}.` +
+      (shown > 0 ? ` ${plural(shown, "release")} to readers outside ${shown === 1 ? "is" : "are"} open.` : "")
   );
 }
 
@@ -177,7 +177,7 @@ function checkPublicGraph({ config }: DeploymentCheckFacts): DeploymentOutcome {
   if (!url) {
     if (key) return fail("PUBLIC_GRAPH_API_KEY is set but public_graph.api_url (PUBLIC_GRAPH_API_URL) is not, so the key is used for nothing.");
     return signs
-      ? pass("No address of the public graph is set, so packages of shown pages are carried as files and nothing is sent or done there from here.")
+      ? pass("No address of the public graph is set, so packages of released pages are carried as files and nothing is sent or done there from here.")
       : notApplicable("No address of the public graph is set, so this deployment sends nothing to it and does nothing there.");
   }
   if (!httpsUrl(url)) {
@@ -197,7 +197,7 @@ function checkOwnOrganization(facts: DeploymentCheckFacts): DeploymentOutcome {
   if (!tables) return fail(tablesUnread(facts));
   if (tables.ownOrganization) return pass("A party is marked as the organization itself.");
   return fail(
-    "No party is marked as the organization itself, so a request to show a page is refused: a page's parts are released party by party, and the organization's own material has nobody to release it. " +
+    "No party is marked as the organization itself, so a request to release a page is refused: a page's parts are released once each party consents, and the organization's own material has nobody to consent for it. " +
       "It is made at the first administrator's sign-in; where that came before this version, an administrator adds the organization as a party and marks it (the labels and parties page)."
   );
 }
@@ -533,7 +533,7 @@ function pathFacts(path: string): PathFacts {
 
 /** Why the deployment's tables are read past the labels (tests/unit/db/system-clearance.test.ts). */
 export const DEPLOYMENT_TABLES_REASON =
-  "The preflight asks about the whole deployment, whoever reads it: counts over every label of showings, mandates, connections and file sets.";
+  "The preflight asks about the whole deployment, whoever reads it: counts over every label of releases, mandates, connections and file sets.";
 
 const GENERAL_SEED_KEY = "general-assessment";
 

@@ -465,8 +465,8 @@ export async function examinePackage(input: { accountId: string; pkg: unknown })
       throw new PublishedPageError(
         "OUT_OF_ORDER",
         have === 0
-          ? `This is package ${pkg.sequence} for this node under this showing, and this graph has none yet. Send package 1 first: each names the one before it.`
-          : `This graph has packages 1 to ${have} for this node under this showing, and this is package ${pkg.sequence}. Send package ${have + 1} next: each names the one before it.`
+          ? `This is package ${pkg.sequence} for this node under this release, and this graph has none yet. Send package 1 first: each names the one before it.`
+          : `This graph has packages 1 to ${have} for this node under this release, and this is package ${pkg.sequence}. Send package ${have + 1} next: each names the one before it.`
       );
     }
     if (publication) {

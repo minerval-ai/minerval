@@ -51,7 +51,7 @@ type Params = { tab?: string; drawer?: string; account?: string; q?: string; per
 /** The deployment's own account, which nobody signs in to, is not a person to grant to. */
 const isPerson = (account: AccountView) => !account.external_id?.startsWith("platform:");
 
-/** A grant in a word or two, its scope beside it: "Read · finance", "Release · Acme". */
+/** A grant in a word or two, its scope beside it: "Read · finance", "Consent · Acme". */
 function GrantChip({
   grant,
   group,
@@ -124,8 +124,8 @@ function Person({ account, you }: { account: AccountView; you: boolean }) {
 
 /** A short line for each permission, for the grant form; the API's own sentence is on the Permissions tab. */
 const BLURBS: Record<string, string> = {
-  direct: "Open mandates, add sources, show pages outside",
-  release: "Act at a gate on what rests on one party's material",
+  direct: "Open mandates, add sources, release pages outside",
+  release: "Consent at a gate to what rests on one party's material going out",
   fund: "Put owls behind mandates, jobs and requests",
   read: "Read what agents wrote at one label, and the labels it reads",
   read_sources: "Open the sources themselves, at one label only",

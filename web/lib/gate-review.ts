@@ -1,6 +1,6 @@
-// What the two screens of the release gate share: Review (app/gate), where
-// a person decides on what waits on them, and a page as shown
-// (app/showings/[id]/pages/[pageId]), where the people it was shown to read
+// What the two screens of the gate share: Review (app/gate), where
+// a person decides on what waits on them, and a page as released
+// (app/releases/[id]/pages/[pageId]), where the people it was released to read
 // it. Both read the same header, the facts always shown with a page
 // (docs/the-gate.md), and say them the same way.
 
@@ -52,17 +52,17 @@ export function totalRemovals(removals: Record<string, number> | undefined): num
 }
 
 /** What the page was made on, short, with the API's longer sentence for a tip. */
-export function coverageWords(c: AlwaysShown["coverage"], shownTo = "the people it is shown to"): { short: string; long: string } {
+export function coverageWords(c: AlwaysShown["coverage"], shownTo = "the people it is released to"): { short: string; long: string } {
   const on = c?.on ?? [];
   const can = on.includes("evidence_this_reader_can_read");
   const cannot = on.includes("evidence_this_reader_cannot_read");
   const [short, base] =
     can && cannot
-      ? [`Partly readable by ${shownTo}`, "Made partly on evidence the people it is shown to can read and partly on evidence they cannot."]
+      ? [`Partly readable by ${shownTo}`, "Made partly on evidence the people it is released to can read and partly on evidence they cannot."]
       : cannot
-        ? [`Not readable by ${shownTo}`, "Made on evidence the people it is shown to cannot read."]
+        ? [`Not readable by ${shownTo}`, "Made on evidence the people it is released to cannot read."]
         : can
-          ? [`Readable by ${shownTo}`, "Made on evidence the people it is shown to can read."]
+          ? [`Readable by ${shownTo}`, "Made on evidence the people it is released to can read."]
           : ["Not recorded", "What it was made on is not recorded."];
   return on.includes("evidence_not_shown")
     ? { short: `${short}; some unpublished`, long: `${base} At least one of its sources reports a result from data it has not published.` }
@@ -84,8 +84,8 @@ export function auditPill(audit: string | null | undefined): { text: string; ton
 }
 
 /**
- * A label as a boundary names it, from where a showing goes: the bare label
- * (as GET /showings lists it), `readers at "<label>"` (as one showing says
+ * A label as a boundary names it, from where a release goes: the bare label
+ * (as GET /showings lists it), `readers at "<label>"` (as one release says
  * it), or the outside, which is "outside".
  */
 export function labelOf(shownTo: string | null | undefined): string {

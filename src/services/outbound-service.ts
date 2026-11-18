@@ -59,7 +59,7 @@ export class OutboundError extends Error {
 }
 
 const REASON_OUTBOUND =
-  "A person's act on what leaves the deployment is recorded at `public`, where the released record of a showing outside is kept, once the route has checked the person.";
+  "A person's act on what leaves the deployment is recorded at `public`, where the record of a release outside is kept, once the route has checked the person.";
 const asOwner = <T>(fn: () => Promise<T>) => withSystemClearance(REASON_OUTBOUND, fn);
 
 /** Work at `public`: it reads `public` rows alone, and what it writes is `public`. */
@@ -75,7 +75,7 @@ const atPublic = <T>(what: string, fn: () => Promise<T>) => runAtLabel(PUBLIC_LA
  */
 export const SEND_CHOICES = {
   by_a_person_each_time:
-    "Each time a page under this showing is released, or more of one is, or a later version is held, a signed " +
+    "Each time a page under this release is released, or more of one is, or a later version is held, a signed " +
     "package waits here until a person who directs the graph sends it. Until then the public graph has the last " +
     "one that was sent.",
   as_released:
@@ -103,7 +103,7 @@ function signer(): Signer {
   if (!pem) {
     throw new OutboundError(
       "NO_SIGNING_KEY",
-      "This deployment has no signing key for pages shown outside (PUBLISH_SIGNING_KEY), so no package can be built. " +
+      "This deployment has no signing key for pages released outside (PUBLISH_SIGNING_KEY), so no package can be built. " +
         "`npx tsx scripts/published-page.ts keygen` makes one."
     );
   }
@@ -266,7 +266,7 @@ export async function writeProposal(input: { showingId: string; nodeId: string; 
         WHERE n.showing_id = $1 AND n.node_id = $2 AND s.to_outside AND n.left_at IS NULL`,
       [input.showingId, input.nodeId]
     );
-    if (!covered) throw new OutboundError("NOT_SHOWN_OUTSIDE", "No showing outside with that id covers this node.");
+    if (!covered) throw new OutboundError("NOT_SHOWN_OUTSIDE", "No release outside with that id covers this node.");
     const existing = await latestProposal(input.showingId, input.nodeId);
     if (existing && (existing.state === "sent" || existing.state === "on_the_public_graph")) {
       throw new OutboundError(
@@ -349,7 +349,7 @@ export async function buildOutboundPackages(opts: { showingId?: string } = {}): 
   // assessment when a version here changes (keep-current.ts).
   const { keepCurrentStamp } = await import("./keep-current.js");
   const { saidBackFor } = await import("./inbound-service.js");
-  return atPublic("building the packages of pages shown outside", async () => {
+  return atPublic("building the packages of pages released outside", async () => {
     const nodes = await rawQuery<{ showing_id: string; node_id: string; boundary_id: string }>(
       `SELECT DISTINCT n.showing_id, n.node_id, s.boundary_id FROM shown_nodes n JOIN shown_showings s ON s.id = n.showing_id
         WHERE s.to_outside AND ($1::uuid IS NULL OR s.id = $1) ORDER BY n.showing_id, n.node_id`,
@@ -507,7 +507,7 @@ export async function sendOutbound(input: { showingId: string; sender: Sender })
   const graph = publicGraph();
   return asOwner(async () => {
     const [showing] = await rawQuery<{ id: string; send_as_released: boolean; kind: string }>(`SELECT id, send_as_released, kind FROM shown_showings WHERE id = $1 AND to_outside`, [input.showingId]);
-    if (!showing) throw new OutboundError("SHOWING_NOT_FOUND", "No showing outside has that id.");
+    if (!showing) throw new OutboundError("SHOWING_NOT_FOUND", "No release outside has that id.");
     // Anything but a node's page leaves by its own kind's way out (gate-outside.ts): a person sends what the gate let through.
     if (showing.kind !== "page") {
       const { sendThroughOutside } = await import("./gate-outside.js");

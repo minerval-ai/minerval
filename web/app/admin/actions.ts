@@ -65,7 +65,7 @@ export async function grantAction(_previous: FormState, form: FormData): Promise
     return { error: "This permission is granted at one label. Choose the label." };
   }
   if (permission === "release" && !partyId) {
-    return { error: "Release is granted for one party. Choose the party." };
+    return { error: "Consent is granted for one party. Choose the party." };
   }
   try {
     await grantPermission(user, {

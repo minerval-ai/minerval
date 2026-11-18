@@ -1,4 +1,5 @@
 import "server-only";
+import { storedWords } from "./stored-words";
 import { fetchShowing, fetchShowings, fetchShownPage, type ShownPage, type ShownShowing } from "./inside-api";
 import { membersOnly } from "./members";
 import type { PublishedPageView } from "./published";
@@ -11,22 +12,22 @@ import type { ClaimDetail, LeftStanding, NodeVersion } from "./types";
 export { assessmentOf, byLabelName, detailAt, detailWithoutJudgment } from "./inside-versions";
 
 // A node's page inside a private deployment (docs/architecture.md, "A
-// judgment at each label"; docs/showing-a-page.md, "What the destination
+// judgment at each label"; docs/releasing-a-page.md, "What the destination
 // sees"). The page is the ordinary one. What a deployment with more than one
 // label adds is that a node can carry a judgment at each label, and that a
-// page written at a label the reader does not read can have been shown to
+// page written at a label the reader does not read can have been released to
 // them with what was removed or held marked. This file works out, for one
 // reader, which of those there are and which the page should open on.
 //
 // On the public graph none of this exists: the API serves no `versions`,
 // and nothing here is asked.
 
-/** A page of this node that was shown to a label the reader reads, or outside, and has been released at least in part. */
+/** A page of this node that was released to a label the reader reads, or outside, and has been released at least in part. */
 export interface ShownTab {
   showing_id: string;
   page_id: string;
   outside: boolean;
-  /** The label it was shown to, as the API words it: readers at "public". */
+  /** The label it was released to, as the API words it: readers at "public". */
   shown_to: string;
   version_of: string;
   /** The label the page was written at, where this reader reads it; absent where they do not, and the API then does not name it. */
@@ -50,11 +51,11 @@ export interface InsideNode {
     | { kind: "several"; versions: NodeVersion[] }
     | { kind: "shown"; tab: ShownTab; view: PublishedPageView }
     | { kind: "none" };
-  /** Whether the reader may ask for this node's page to be shown (holds the permission to direct). */
+  /** Whether the reader may release this node's page (holds the permission to direct). */
   mayAsk: boolean;
 }
 
-/** A shown page in the shape the claim page's second tab takes, built from what the API serves of it. */
+/** A released page in the shape the claim page's second tab takes, built from what the API serves of it. */
 function viewOfShownPage(tab: ShownTab, showing: ShownShowing, page: ShownPage): PublishedPageView {
   const pseudo = {
     page: {
@@ -110,11 +111,11 @@ function viewOfShownPage(tab: ShownTab, showing: ShownShowing, page: ShownPage):
   };
 }
 
-/** The reason given for the hold on a part and since when, from the showing's acts: the latest hold that stands. */
+/** The reason given for the hold on a part and since when, from the release's acts: the latest hold that stands. */
 function holdOf(showing: ShownShowing, pageId: string, part: number): { reasons: string[]; since: string | null } {
   const acts = showing.acts.filter((a) => a.page_id === pageId && a.on === `part ${part}`);
   const held = [...acts].reverse().find((a) => a.what === "held");
-  return { reasons: held?.reason ? [held.reason] : [], since: held?.at ?? null };
+  return { reasons: held?.reason ? [storedWords(held.reason)] : [], since: held?.at ?? null };
 }
 
 function heldBy(words: string | undefined): string[] {
@@ -138,7 +139,7 @@ export async function loadInsideNode(
   const versions = detail.versions ?? [];
   const who = standing.externalId;
 
-  // Pages of this node shown to a label this reader reads, or outside. A
+  // Pages of this node released to a label this reader reads, or outside. A
   // failure loses the tabs, never the page.
   const shown: ShownTab[] = [];
   const showings = new Map<string, ShownShowing>();

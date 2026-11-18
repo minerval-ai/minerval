@@ -338,7 +338,7 @@ describe("the log, as sentences", () => {
     );
     expect(
       logSentence({ event: "removed", at, by: "Alice", permission: "release", group: "reviewers", party: "Orrin Labs" })
-    ).toBe("Alice removed from the group reviewers the permission to release the material of Orrin Labs.");
+    ).toBe("Alice removed from the group reviewers the permission to consent for Orrin Labs.");
     expect(
       logSentence({ event: "granted", at, by: null, via: "first_administrator", permission: "administer", account: "Alice" })
     ).toBe("The deployment's first-administrator setting granted Alice the permission to administer the deployment.");
@@ -397,7 +397,7 @@ describe("small words", () => {
       "This page needs the permission to direct the graph, which you do not hold. An administrator of this deployment grants it."
     );
     expect(grantText({ permission: "read_sources", label: "internal" })).toBe("open raw sources at internal");
-    expect(grantText({ permission: "release", party: { name: "Orrin Labs" } })).toBe("release for Orrin Labs");
+    expect(grantText({ permission: "release", party: { name: "Orrin Labs" } })).toBe("consent for Orrin Labs");
   });
 
   it("gives a server's marking of a tool as the hint it is", () => {

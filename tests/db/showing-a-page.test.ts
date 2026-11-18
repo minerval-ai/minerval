@@ -1,5 +1,5 @@
 /**
- * Showing a node's page below its label (docs/showing-a-page.md), against a
+ * Showing a node's page below its label (docs/releasing-a-page.md), against a
  * real database held to clearances: labels `r3-a`, `r3-b`, `r3-c` as the
  * label tests use them (`r3-c` reads `r3-a`; `r3-a` and `r3-b` read
  * `public` and not each other).
@@ -155,7 +155,7 @@ describe("asking", () => {
       caught(() => askShowing({ nodeId: id.node!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director!, ...over }));
     const already = (await ask({ pageLabel: A, toLabel: C })) as ShowingError;
     expect(already.code).toBe("ALREADY_READ");
-    expect(already.message).toBe(`Readers at "${C}" already read what is written at "${A}", so the page is in front of them whole and there is nothing to show.`);
+    expect(already.message).toBe(`Readers at "${C}" already read what is written at "${A}", so the page is in front of them whole and there is nothing to release.`);
     expect(((await ask({ nodeId: id.child!, pageLabel: A, toLabel: B })) as ShowingError).code).toBe("NODE_NOT_FOUND");
     expect(((await ask({ nodeId: id.child!, pageLabel: C, toLabel: A })) as ShowingError).code).toBe("NOTHING_TO_SHOW");
     expect(((await ask({ toLabel: "no-such-label" })) as ShowingError).code).toBe("UNKNOWN_LABEL");
@@ -384,7 +384,7 @@ describe("the gate", () => {
       // What is always shown of the page is with every item, as recorded: no part is shown without it.
       expect(item.always_shown).toEqual(JSON.parse(header!.header));
       expect(item.shown_as_released).toBe(
-        "You hold the permission to release this party's material and do not read the label this page was written at. You are shown what your decision would release, as it would be shown: the part with each removal marked, what is always shown of the page, and the node's wording. You are not shown the passages the Redactor removed, its notes, or why it flagged a part. The one exception is a passage removed from a part that rests only on the material of an outside party you release for, which is that party's own. An administrator of this deployment grants reading at a label."
+        "You hold the permission to consent for this party and do not read the label this page was written at. You are shown what your consent would release, as it would be released: the part with each removal marked, what is always shown of the page, and the node's wording. You are not shown the passages the Redactor removed, its notes, or why it flagged a part. The one exception is a passage removed from a part that rests only on the material of an outside party you consent for, which is that party's own. An administrator of this deployment grants reading at a label."
       );
       if (item.part === null) continue;
       const part = recorded.find((p) => p.position === item.part)!;
@@ -398,7 +398,7 @@ describe("the gate", () => {
     expect(forBorealis.items[1].redactor_least_sure).toBe(true);
     expect(forBorealis.items[1].removals_by_category).toEqual({});
     expect((forBorealis as any).not_reading_the_label).toBe(
-      "8 of these 8 items are of a page written at a label you do not read. For each you are shown the text your decision would release, as it would be shown, and not what was removed from it or what the Redactor wrote about it."
+      "8 of these 8 items are of a page written at a label you do not read. For each you are shown the text your consent would release, as it would be released, and not what was removed from it or what the Redactor wrote about it."
     );
   });
 
@@ -459,8 +459,8 @@ describe("the gate", () => {
   it("releases a part that rests on two parties only when both have released it, and shows nothing until the page itself is released", async () => {
     const all = (parts: Array<number | null>) => parts.map((part) => ({ page_id: id.page!, part }));
     const notTheirs = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([9]), decision: "release" });
-    expect(notTheirs.refused[0]!.why).toBe("This item does not rest on that party's material, so it is not that party's to release or hold.");
-    await expect(decideAtGate({ actor: actor.acme!, partyId: id.borealis!, items: all([9]), decision: "release" })).rejects.toThrow(/do not hold the permission to release/);
+    expect(notTheirs.refused[0]!.why).toBe("This item does not rest on that party's material, so it is not that party's to consent to or hold.");
+    await expect(decideAtGate({ actor: actor.acme!, partyId: id.borealis!, items: all([9]), decision: "release" })).rejects.toThrow(/do not hold the permission to consent for/);
 
     const acme = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: all([null, 1, 2, 3, 4, 5, 8, 10]), decision: "release" });
     expect(acme.decided).toBe(8);
@@ -479,8 +479,8 @@ describe("the gate", () => {
 
   it("refuses to take a release back, and offers no way to change a part", async () => {
     const back = await decideAtGate({ actor: actor.acme!, partyId: id.acme!, items: [{ page_id: id.page!, part: 3 }], decision: "hold", reason: "timing" });
-    expect(back.refused[0]!.why).toBe("This party has released it, and a release is not taken back.");
-    await expect(holdPage({ actor: actor.director!, pageId: id.page!, reason: "timing" })).rejects.toThrow(/has been shown, and a release is not taken back/);
+    expect(back.refused[0]!.why).toBe("This party has consented to it, and consent is not taken back.");
+    await expect(holdPage({ actor: actor.director!, pageId: id.page!, reason: "timing" })).rejects.toThrow(/has been released, and that is not taken back/);
   });
 });
 
@@ -561,7 +561,7 @@ describe("what the destination sees", () => {
     expect(await atB(() => rawQuery(`SELECT 1 FROM shown_parts`))).toEqual([]);
     // The Redactor's and Audit's tools at the destination label find no page.
     const fromA = JSON.parse(await redactorAt(A, () => executeRedactorTool("get_page_to_redact", {}, { pageId: id.page! })));
-    expect(fromA).toEqual({ success: false, code: "PAGE_NOT_FOUND", message: "No page under a showing has that id at a label this work reads." });
+    expect(fromA).toEqual({ success: false, code: "PAGE_NOT_FOUND", message: "No page under a release has that id at a label this work reads." });
     const everythingAtA = await atA(async () =>
       JSON.stringify([
         await rawQuery(`SELECT * FROM shown_pages`), await rawQuery(`SELECT * FROM shown_parts`), await rawQuery(`SELECT * FROM showing_acts`),
@@ -735,7 +735,7 @@ describe("a standing showing of a node with what sits under it", () => {
     expect(await followShowings()).toBe(0);
     expect(((await atA(() => shownShowing(id.standing!)))!.nodes as any[])[0].state).toBe("not_yet_assessed");
     await expect(askShowing({ nodeId: id.root!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: actor.director! })).rejects.toThrow(
-      `A pass on this node at "${C}" is running now, and a page shown once is the page as it stands when it is asked for. Ask again when the pass has finished, so that the page is the finished one.`
+      `A pass on this node at "${C}" is running now, and a page released once is the page as it stands when it is asked for. Ask again when the pass has finished, so that the page is the finished one.`
     );
     // The pass adds an argument after its assessment and ends; the page recorded then has it.
     await system(async () => {
@@ -856,7 +856,7 @@ describe("a standing showing of a node with what sits under it", () => {
     await expect(endShowing({ showingId: id.standing!, reason: "no_longer_needed", actor: actor.director! })).rejects.toThrow(/already ended/);
     // Nothing more is released from a showing that has ended. What was shown stays shown.
     const late = await decideAtGate({ actor: actor.org!, partyId: id.org!, items: [{ page_id: id.rootPage!, part: 1 }], decision: "release" });
-    expect(late.refused[0]!.why).toBe("This page's showing has ended, so nothing more is released from it. What was shown stays shown.");
+    expect(late.refused[0]!.why).toBe("This page's release has ended, so nothing more is released from it. What was released stays released.");
     expect((await atA(() => shownPage(id.rootPage!)))!.state).toBe("released_whole");
   });
 });

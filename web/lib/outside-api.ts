@@ -2,7 +2,7 @@ import "server-only";
 import { accountFetch, pathSegment } from "./account-api";
 
 // Server-only client for what a members-only deployment does on the public
-// graph besides showing pages, and what comes back (docs/outward-acts.md):
+// graph besides releasing pages, and what comes back (docs/outward-acts.md):
 // the organisation's public owls and public mandates, public requests
 // adopted and taken up, keeping public versions current, what readers said
 // back about published pages, and agents' reports sent to Minerval's

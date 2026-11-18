@@ -387,7 +387,7 @@ export async function setupChecklist(): Promise<SetupChecklist> {
 }
 
 const SHOWN_OUTSIDE_COUNT_REASON =
-  "The setup checklist tells an administrator whether pages are shown outside under a signing key that is not registered, and the key signs pages at every label.";
+  "The setup checklist tells an administrator whether pages are released outside under a signing key that is not registered, and the key signs pages at every label.";
 
 /** Where keeping public versions current stands, and whether the signing key is registered from here, for the checklist. */
 async function publicGraphState(config: { publicGraphApiUrl?: string; publicGraphApiKey?: string }): Promise<SetupChecklist["public_graph"]> {

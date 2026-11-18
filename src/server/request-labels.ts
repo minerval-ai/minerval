@@ -72,7 +72,7 @@ export const CARRIERS = {
   finding: { table: "agent_findings", noun: "finding" },
   request: { table: "requests", noun: "request" },
   prize_claim: { table: "prize_claims", noun: "prize claim" },
-  showing_page: { table: "showing_pages", noun: "page under a showing" },
+  showing_page: { table: "showing_pages", noun: "page under a release" },
   proof_attempt: { table: "proof_attempts", noun: "proof attempt" },
   connection: { table: "connections", noun: "connection" },
   file_set: { table: "file_sets", noun: "file set" },
@@ -119,11 +119,11 @@ const from = (
   where: "params" | "body" = "params"
 ): Extract<RequestLabelRule, { rule: "from" }> => ({ rule: "from", carrier, in: where, field, why });
 
-const SHOWING =
-  "Writes on both sides of a boundary, the label a page was written at and the label it is shown to. The two may share no label, so the request cannot work at one. The route checks the person's permission, and the showing service writes each row on the database owner's connection, naming its label (services/showing-service.ts).";
+const RELEASE =
+  "Writes on both sides of a boundary, the label a page was written at and the label it is released to. The two may share no label, so the request cannot work at one. The route checks the person's permission, and the service writes each row on the database owner's connection, naming its label (services/showing-service.ts).";
 
 const OUTBOUND =
-  "What a showing outside has released is kept at `public`, and so is the record of its leaving: packages, " +
+  "What a release outside has released is kept at `public`, and so is the record of its leaving: packages, " +
   "proposals and sends. The route checks the person's permission and the service writes those rows at `public` " +
   "as the tables' owner (services/outbound-service.ts). It reads nothing at the person's other labels.";
 const OUTWARD =
@@ -332,20 +332,20 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   },
 
   // ---- the gate: members-only deployments only ----
-  "POST /showings": { rule: "none", why: SHOWING },
-  "POST /showings/:showing_id/end": { rule: "none", why: SHOWING },
-  "POST /showings/:showing_id/pages/:page_id/hold": { rule: "none", why: SHOWING },
+  "POST /showings": { rule: "none", why: RELEASE },
+  "POST /showings/:showing_id/end": { rule: "none", why: RELEASE },
+  "POST /showings/:showing_id/pages/:page_id/hold": { rule: "none", why: RELEASE },
   "POST /showings/:showing_id/pages/:page_id/commission": from(
     "showing_page",
     "page_id",
     "The money is for the redaction of this page or the check of it, which run at the page's label."
   ),
-  "POST /gate/decisions": { rule: "none", why: SHOWING },
-  "POST /gate/offers": { rule: "none", why: SHOWING },
-  "PUT /gates/:gate_id": { rule: "none", why: SHOWING },
-  "PUT /gates/:gate_id/settings": { rule: "none", why: SHOWING },
-  "DELETE /gates/settings/:setting_id": { rule: "none", why: SHOWING },
-  "PUT /redaction-policies": { rule: "none", why: SHOWING },
+  "POST /gate/decisions": { rule: "none", why: RELEASE },
+  "POST /gate/offers": { rule: "none", why: RELEASE },
+  "PUT /gates/:gate_id": { rule: "none", why: RELEASE },
+  "PUT /gates/:gate_id/settings": { rule: "none", why: RELEASE },
+  "DELETE /gates/settings/:setting_id": { rule: "none", why: RELEASE },
+  "PUT /redaction-policies": { rule: "none", why: RELEASE },
 
   // ---- connections to an organization's systems: members-only deployments only ----
   "POST /connections": {
@@ -411,7 +411,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     why: "Records a report another deployment sent, in a table that carries no label.",
   },
 
-  // ---- a shown page leaves the deployment: members-only deployments only ----
+  // ---- a released page leaves the deployment: members-only deployments only ----
   "POST /outbound/send": { rule: "none", why: OUTBOUND },
   "POST /outbound/packages/:package_id/file": { rule: "none", why: OUTBOUND },
   "POST /outbound/proposals": { rule: "none", why: OUTBOUND },

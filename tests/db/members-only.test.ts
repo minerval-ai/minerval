@@ -796,7 +796,7 @@ describe("an MCP caller and the Assistant", () => {
     expect(note).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
     expect(note).toMatch(/Without the permission to fund work: .*fund_mandate/);
     expect(note).toMatch(/Without the permission to administer the deployment: .*list_permission_grants/);
-    expect(note).toMatch(/Without the permission to release one party's material: get_gate_queue, decide_at_gate/);
+    expect(note).toMatch(/Without the permission to consent for one party: get_gate_queue, decide_at_gate/);
     expect(note).not.toMatch(/read at a label/);
     await limited.close();
 

@@ -53,6 +53,7 @@ import { getChatContextPrompt } from "../llm/prompts/extension-agent.js";
 import {
   alwaysAsks,
   assistantAuth,
+  currentToolName,
   HELD_KINDS,
   HELD_TOOL_LABELS,
   HELD_TOOLS,
@@ -244,7 +245,7 @@ async function allowedKinds(convo: { id: string; userId: string }): Promise<Set<
 
 function heldSummary(row: Pick<AssistantHeldAction, "tool" | "input">): string {
   const input = JSON.stringify(row.input);
-  return `${row.tool} ${input.length > 300 ? `${input.slice(0, 300)}…` : input}`;
+  return `${currentToolName(row.tool)} ${input.length > 300 ? `${input.slice(0, 300)}…` : input}`;
 }
 
 async function recordHeld(input: {
@@ -346,7 +347,7 @@ export async function decideHeldAction(input: {
     // creates is the turn's work and not the public work of a bare request.
     result = await runAtLabel(claimed.sensitivityLabel, `held action ${claimed.id}`, () =>
       runWithUsageContext({ userId: input.user.id }, () =>
-        account.call(claimed.tool, claimed.input as Record<string, unknown>)
+        account.call(currentToolName(claimed.tool), claimed.input as Record<string, unknown>)
       )
     );
   } catch (err) {
@@ -1039,8 +1040,8 @@ function serializeHeld(row: AssistantHeldAction, showLabels = false) {
   const kind = isHeldKind(row.kind) ? row.kind : null;
   return {
     id: row.id,
-    tool: row.tool,
-    label: HELD_TOOL_LABELS[row.tool] ?? row.tool,
+    tool: currentToolName(row.tool),
+    label: HELD_TOOL_LABELS[currentToolName(row.tool)] ?? row.tool,
     kind: row.kind,
     kind_label: kind ? HELD_KINDS[kind] : row.kind,
     // The label the action writes at if it runs: the label of the
