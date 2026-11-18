@@ -201,6 +201,8 @@ describe("runCorrespondent", () => {
         "petition_mandate",
         "query_sql",
         "wait_for_answers",
+        // commission's description sends it here before it sets a budget.
+        "cost_sheet",
       ].sort()
     );
   });

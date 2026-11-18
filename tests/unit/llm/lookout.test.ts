@@ -300,6 +300,8 @@ describe("runLookout", () => {
       "read_page", "scope_sources", "check_doi", "recent_retractions",
       "read_listing",
       "flag_reassessment", "propose_ingest", "leave_note", "update_workspace",
+      // The costing skill's tool, which the two candidate tools budget from.
+      "cost_sheet",
     ]);
     expect(state.loop!.model).toBe("claude-sonnet-5-5");
     expect(state.loop!.briefing).toContain("Each tool result shows what you have spent");

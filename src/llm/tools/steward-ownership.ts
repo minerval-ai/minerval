@@ -35,7 +35,6 @@ const TARGET: Record<string, { field: string; via?: "argument" | "instance" | "p
   set_claim_domains: { field: "claim_id" },
   log_stewardship_decision: { field: "claim_id" },
   leave_judgment_standing: { field: "claim_id" },
-  notify_dependent_stewards: { field: "claim_id" },
   // Kind tools (kind-tools.ts). record_estimate and record_quantity_reading
   // are absent on purpose: a figure or a reading met in a source belongs on
   // the quantity it bears on, whoever meets it.

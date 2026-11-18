@@ -44,6 +44,8 @@ import { getUsageContext, withAgent } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
+import { executeSkillTool, getActiveSkillToolDefinitions, isSkillTool } from "../tools/skill-tools.js";
+import { listSkills } from "../prompts/skills.js";
 import { unresolvedNodeIds } from "../tools/id-repair.js";
 import {
   requestCuration,
@@ -174,6 +176,9 @@ async function runConsistencyCheckerImpl(input: {
   // coherent assessment looks like in their domain. A partition has no
   // single claim's domains, so nothing is pointed to.
   const skillLoader = createSkillLoadTools("consistency-checker");
+  // The tools a skill declares for this role: cost_sheet, which commission's
+  // description sends it to before it sets a budget.
+  const skillTools = getActiveSkillToolDefinitions(listSkills(), "consistency-checker");
   const runId = getUsageContext().runId ?? null;
   const since = input.lastSweep?.started_at ?? null;
   const openFlags: OpenFlag[] = input.dryRun ? [] : await openFlagsInScope(input.scope);
@@ -184,6 +189,7 @@ async function runConsistencyCheckerImpl(input: {
     ...reportTools.definitions,
     ...findingTools.definitions,
     ...skillLoader.definitions,
+    ...skillTools,
     ...getGraphReadToolDefinitions(),
     ...getSpendToolDefinitions(),
     ...getSessionToolDefinitions(),
@@ -409,6 +415,7 @@ async function runConsistencyCheckerImpl(input: {
       if (spend !== null) return spend;
       const sql = await executeSqlTool(name, toolInput);
       if (sql !== null) return sql;
+      if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "consistency-checker" });
 
       if (name === "list_partition_claims") {
         const offset = Math.max(0, Math.floor(Number(toolInput.offset ?? 0)) || 0);

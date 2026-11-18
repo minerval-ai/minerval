@@ -23,6 +23,7 @@ import { currentLabel, runBudget, runWithUsageContext, withAgent, withPassBudget
 import { getProgramOfficerSystemPromptBlocks } from "../prompts/program-officer.js";
 import { getGraphReadToolDefinitions, executeGraphReadTool } from "../tools/graph-read-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
+import { createReportTools } from "../tools/report-tools.js";
 import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
@@ -716,15 +717,21 @@ async function runRole(grant: GrantRow, role: Role): Promise<{ ran: boolean }> {
       withPassBudget({ microUsd: budget, source: "your mandate's money", funding: { actionId, grantId: grant.id } }, () =>
         withAgent("program_officer", async () => {
           const brief = await buildBrief(grant, role, petitions, items, labels);
+          // Every agent carries the report channel (#366): a sitting that meets a
+          // broken tool or an impossible result says so, as every other agent can.
+          const reportTools = createReportTools({ model });
           await withSkills([], () =>
             toolUseLoop({
               initialMessages: [{ role: "user", content: brief }],
-              tools: getOfficerToolDefinitions(role),
+              tools: [...getOfficerToolDefinitions(role), ...reportTools.definitions],
               system,
               model,
               maxIterations: RUN_TURN_GUARD,
-              executeTool: (name, input) =>
-                executeOfficerTool(name, input, { grant, role, labels, limitMicroUsd: limit.microUsd, decidedBy }),
+              executeTool: async (name, input) => {
+                const report = await reportTools.execute(name, input);
+                if (report !== null) return report;
+                return executeOfficerTool(name, input, { grant, role, labels, limitMicroUsd: limit.microUsd, decidedBy });
+              },
             })
           );
         })
