@@ -136,6 +136,13 @@ function asAdmin(request: { method?: string; url: string; payload?: unknown }) {
 }
 
 beforeAll(async () => {
+  // Start from a deployment that has never had an administrator and is not connected. Files in one
+  // worker share its database, and the FIRST_ADMINISTRATOR setting grants nothing once any account has
+  // ever administered (permission-service.ts, establishFirstAdministrator), so what an earlier file left
+  // would otherwise decide whether this one passes.
+  await rawQuery(`DELETE FROM permission_grants`);
+  await rawQuery(`DELETE FROM public_graph_connection`);
+  forgetConnection();
   setConnectionFetch(fakeFetch);
   setPublicGraphFetch(fakeFetch);
   const { buildApp } = await import("../../src/server/app.js");
