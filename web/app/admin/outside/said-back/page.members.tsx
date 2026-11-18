@@ -17,7 +17,9 @@ export const dynamic = "force-dynamic";
 // reassessment it opened stands. A repeat (the same text as an earlier one on
 // the node) is counted with its original and opened nothing, so it is shown
 // folded under it. A reassessment that is not paid for can be paid for here:
-// an assessment of the node ordered at a label (POST /claims/:id/order).
+// an assessment of the node ordered at the label the page came from, which the
+// API names with each reply (page_label) or withholds from a reader who does
+// not read it (POST /claims/:claim_id/order).
 
 type Stand = "not_paid" | "paid" | "made" | "none";
 
@@ -152,6 +154,8 @@ function Reply({
   labels: MyLabels | null;
 }) {
   const stand = c.repeats ? null : standOf(c);
+  const at = pageLabelOf(c);
+  const fund = mayFund && stand === "not_paid" ? fundingAt(at, labels) : null;
   const cites = c.addresses_it_cites ?? [];
   const text = c.text_written_outside_this_deployment;
   return (
@@ -175,15 +179,20 @@ function Reply({
         <td>{stand ? <Pill tone={STAND[stand].tone}>{STAND[stand].text}</Pill> : <Pill tone="neu">Repeat · opened nothing</Pill>}</td>
         <td className="w-act">
           <div className="w-row" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-            {mayFund && stand === "not_paid" && fundable(labels) && (
+            {fund && fund.kind !== "none" && (
               <details className="w-pub-tgf">
                 <summary className="w-btn w-sm w-pri">Fund reassessment</summary>
               </details>
             )}
-            {mayFund && stand === "not_paid" && !fundable(labels) && (
+            {fund?.kind === "none" && !at.withheld && (
               <Link className="w-btn w-sm w-pri" href={`/claims/${c.node_id}`}>
                 Assess
               </Link>
+            )}
+            {fund?.kind === "none" && at.withheld && (
+              <span className="w-faint w-small" title="The page was written at a label you do not read, so its reassessment is paid for by someone who reads it.">
+                At a label you don&apos;t read
+              </span>
             )}
             {stand !== "not_paid" && (
               <Link className="w-btn w-sm" href={`/claims/${c.node_id}`}>
@@ -198,11 +207,11 @@ function Reply({
           </div>
         </td>
       </tr>
-      {mayFund && stand === "not_paid" && fundable(labels) && (
+      {fund && fund.kind !== "none" && (
         <tr className="w-detail w-pub-frow">
           <td />
           <td colSpan={6}>
-            <FundReassessment nodeId={c.node_id} labels={labels!} />
+            <FundReassessment nodeId={c.node_id} fund={fund} />
           </td>
         </tr>
       )}
@@ -229,6 +238,8 @@ function Reply({
                 ["Received", shortWhen(c.received_at)],
                 !!c.given_to_the_steward_at && ["To the Steward", shortWhen(c.given_to_the_steward_at)],
                 ["Public id", <span className="w-mono" key="id">{c.on_the_public_graph}</span>],
+                at.label !== null && ["Page written at", <span className="w-chip" key="label">{at.label}</span>],
+                at.withheld && ["Page written at", <span className="w-faint" key="label">a label you don&apos;t read</span>],
                 !!c.reassessment && [
                   "Outside sees",
                   `Reassessment ${c.reassessment}${c.reassessment_as_of ? `, as of ${shortWhen(c.reassessment_as_of)}` : ""}`,
@@ -251,25 +262,41 @@ function Reply({
   );
 }
 
-/** Whether a label to order the assessment at is known: chosen from the labels you read, or the only one. */
-function fundable(labels: MyLabels | null): boolean {
-  return !!labels && (labels.must_choose ? labels.labels.length > 0 : !!(labels.works_at ?? labels.labels[0]?.name));
+/** The label the page a reply was made through was written at: named, withheld from this reader, or not said (an older API). */
+function pageLabelOf(c: ReceivedContribution): { label: string | null; withheld: boolean } {
+  if (typeof c.page_label === "string") return { label: c.page_label, withheld: false };
+  return { label: null, withheld: !!c.page_label?.withheld };
 }
 
-/** Pay for the node's reassessment: an assessment ordered at a label, from your own owls. Nothing is sent outside. */
-function FundReassessment({ nodeId, labels }: { nodeId: string; labels: MyLabels }) {
-  const only = labels.must_choose ? null : (labels.works_at ?? labels.labels[0]?.name ?? null);
+type Funding = { kind: "at"; label: string } | { kind: "choose"; labels: MyLabels["labels"] } | { kind: "none" };
+
+/**
+ * Where the reassessment can be paid for. It is opened at the label the page
+ * came from, so that is the label it is ordered at, without asking. Only
+ * where the API does not say which label that is does the person choose.
+ */
+function fundingAt(at: { label: string | null; withheld: boolean }, labels: MyLabels | null): Funding {
+  if (at.withheld) return { kind: "none" };
+  if (at.label !== null) return labels && labels.labels.some((l) => l.name === at.label) ? { kind: "at", label: at.label } : { kind: "none" };
+  if (!labels) return { kind: "none" };
+  if (labels.must_choose) return labels.labels.length > 0 ? { kind: "choose", labels: labels.labels } : { kind: "none" };
+  const only = labels.works_at ?? labels.labels[0]?.name;
+  return only ? { kind: "at", label: only } : { kind: "none" };
+}
+
+/** Pay for the node's reassessment: an assessment ordered at the label the page came from, from your own owls. Nothing is sent outside. */
+function FundReassessment({ nodeId, fund }: { nodeId: string; fund: Exclude<Funding, { kind: "none" }> }) {
   return (
     <WorkForm action={assessHereAction} submit="Order the assessment" primary inline>
       <input type="hidden" name="node_id" value={nodeId} />
-      {only ? (
-        <input type="hidden" name="label" value={only} />
+      {fund.kind === "at" ? (
+        <input type="hidden" name="label" value={fund.label} />
       ) : (
         <select className="w-select" name="label" required defaultValue="" aria-label="Label" style={{ width: 200 }}>
           <option value="" disabled>
             Choose a label
           </option>
-          {labels.labels.map((l) => (
+          {fund.labels.map((l) => (
             <option key={l.name} value={l.name} title={l.who_reads}>
               {l.name}
             </option>
@@ -277,7 +304,13 @@ function FundReassessment({ nodeId, labels }: { nodeId: string; labels: MyLabels
         </select>
       )}
       <span className="w-help">
-        At the label the page came from{" "}
+        {fund.kind === "at" ? (
+          <>
+            At <span className="w-chip">{fund.label}</span>, the label the page came from{" "}
+          </>
+        ) : (
+          <>At the label the page came from </>
+        )}
         <Tip>
           The node is assessed again at that label, on what it reads, and the reply counts as paid for. It is paid from your owls; what the run
           does not spend comes back. Nothing is sent outside.

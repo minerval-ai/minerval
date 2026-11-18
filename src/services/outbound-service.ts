@@ -149,6 +149,16 @@ export function publisherIdentity(): { public_key: string; key_id: string; hosti
   return { public_key: s.publicKey, key_id: s.keyId, hosting: hosting() };
 }
 
+/** The short name of the deployment's signing key (its fingerprint), or null where it has none that parses. */
+export function signingKeyId(): string | null {
+  try {
+    return signer().keyId;
+  } catch (err) {
+    if (err instanceof OutboundError) return null;
+    throw err;
+  }
+}
+
 /** The registration the organization's account presents on the public graph, signed with the deployment's key. */
 export function signedRegistration(account: string): { public_key: string; hosting: string; account: string; signature: string } {
   const s = signer();

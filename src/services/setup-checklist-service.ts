@@ -147,6 +147,16 @@ export interface SetupChecklist {
     account_set: boolean;
     keep_public_current: { setting: "on" | "off"; sends: boolean; in_words: string };
     last_not_taken: string | null;
+    /**
+     * Whether the deployment's signing key is registered on the public
+     * graph, as this deployment's log of acts records it: pages shown
+     * outside that are open (those the reader reads), the key's fingerprint
+     * (null where it has none), and when that key was last registered from
+     * here (null where the log has no registration of it). A key registered
+     * by a statement carried elsewhere is not in the log; GET
+     * /outside/account reads the public graph's own record.
+     */
+    signing_key: { shown_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
   };
   connections: {
     total: number;
@@ -376,7 +386,10 @@ export async function setupChecklist(): Promise<SetupChecklist> {
   };
 }
 
-/** Where keeping public versions current stands, for the checklist. */
+const SHOWN_OUTSIDE_COUNT_REASON =
+  "The setup checklist tells an administrator whether pages are shown outside under a signing key that is not registered, and the key signs pages at every label.";
+
+/** Where keeping public versions current stands, and whether the signing key is registered from here, for the checklist. */
 async function publicGraphState(config: { publicGraphApiUrl?: string; publicGraphApiKey?: string }): Promise<SetupChecklist["public_graph"]> {
   const { keepsPublicCurrent } = await import("./keep-current.js");
   const kept = await keepsPublicCurrent();
@@ -386,9 +399,21 @@ async function publicGraphState(config: { publicGraphApiUrl?: string; publicGrap
       WHERE a.kind = 'keep_current'
         AND a.at = (SELECT max(at) FROM outward_acts WHERE kind = 'keep_current') AND a.result <> 'done'`
   );
+  const { signingKeyId } = await import("./outbound-service.js");
+  const { keyIdOf } = await import("./mirror-batch.js");
+  const fingerprint = signingKeyId();
+  // Counted at every label, as the preflight counts them: the key signs every page shown outside, whoever reads its label.
+  const [shown] = await withSystemClearance(SHOWN_OUTSIDE_COUNT_REASON, () =>
+    rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM showings WHERE to_outside AND ended_at IS NULL`)
+  );
+  const registrations = await rawQuery<{ at: Date; public_key: string | null }>(
+    `SELECT at, sent->>'public_key' AS public_key FROM outward_acts WHERE kind = 'register_publisher' AND result = 'done' ORDER BY at DESC`
+  );
+  const ofThisKey = fingerprint ? registrations.find((r) => r.public_key && keyIdOf(r.public_key) === fingerprint) : undefined;
   return {
     account_set: Boolean(config.publicGraphApiUrl && config.publicGraphApiKey),
     keep_public_current: { setting: state.setting, sends: state.sends, in_words: state.in_words },
     last_not_taken: last ? (last.said ?? "The public graph could not be reached.") : null,
+    signing_key: { shown_outside: shown?.n ?? 0, fingerprint, registered_from_here_at: ofThisKey?.at.toISOString() ?? null },
   };
 }

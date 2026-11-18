@@ -40,8 +40,8 @@ Four things hold for every part.
   comes with the mirror, which it pulls whole ([mirror.md](mirror.md)). The
   feed gained the public contribution record and requests for everyone who
   mirrors. The only reads of the public graph are of the organization's own
-  account: its balance, its mandates, its conversation with the public
-  Grantmaker, and the reports it filed.
+  account: its balance, its mandates, its conversations with the public
+  Grantmaker, its record as a publisher, and the reports it filed.
 
 Everything inside is mounted only where `READS=members`
 (`src/routes/outward.ts`). The public graph's additions are mounted
@@ -100,7 +100,12 @@ version takes.
 
 Members read the same on `GET /outside/said-back` and on the page made
 from it, Replies (`/admin/outside/said-back`): each contribution as it was
-written, with where its reassessment stands.
+written, with where its reassessment stands, and `page_label`, the label the
+page it was made through was written at, read from its showing. That is the
+label its reassessment is opened and paid for at, so Replies orders it
+there without asking. A reader who does not read that label is told it is
+withheld (`{withheld: true}`), as the permissions log withholds a label's
+name, and is not offered to pay for it.
 
 **What the outside is told.** No new kind of object. The page's next
 package carries `record.said_back`: each contribution received by its
@@ -161,8 +166,28 @@ A private mandate cannot pay for public work and private owls do not
 convert, so paying for public work is made easy from inside.
 
 - `GET /outside/account`: the organization's balance of public owls and
-  its public mandates. The mandates page lists them after the deployment's
-  own, marked as public.
+  its public mandates, each with the conversation it was funded from where
+  the account's list on the public graph says. The mandates page lists them
+  after the deployment's own, marked as public. It also carries
+  `registration`: whether the deployment's signing key is registered as the
+  organization's publisher key there, and under what (when, the key's
+  fingerprint, the account, the declared interest, whether that key is the
+  one the deployment signs with now, and who registered it from here), or
+  null. It is read from the public graph's record of the account
+  (`GET /publishers/:account_id`), or, where that cannot be read, from the
+  log of acts, which knows only registrations made from here. The setup
+  checklist's `public_graph.signing_key` says, from the log, whether the
+  current key was registered from here, and Health asks an administrator to
+  register it where pages are shown outside and it was not.
+- `GET /outside/mandates/conversations`: the organization's conversations
+  with the public Grantmaker. Who opened each and when, and what was
+  written and funded from here, is the log of acts (an opened conversation's
+  id is the act's `on_the_public_graph`); each one's draft title, its state
+  and the public mandate it was funded as are read from the account's own
+  list on the public graph, like the account read. One the account holds
+  there that was not opened from here is listed too, and says so. The
+  Overview lists the drafts beside the funded mandates, each linked to its
+  conversation.
 - **New public mandate** (`POST /outside/mandates`, then
   `POST /outside/mandates/conversations/:id/messages`): a conversation with
   the public Grantmaker in the person's own words, sent as written. Nothing
@@ -270,3 +295,7 @@ outside (`gate_settings`, `gates`), set on Gates.
 - A publisher's record compares credences only; a quantity's estimate or a
   question's standing is not compared.
 - The public Grantmaker's conversation is read by reloading the page.
+- Registering is known from the public graph's record where the account
+  can be read there; Health reads only the log, so a key registered by a
+  statement carried by hand is not known to it until it is registered from
+  here.

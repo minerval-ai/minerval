@@ -53,7 +53,7 @@ import { waitsForPassAt } from "../../src/services/inbox-service.js";
 import { mandatePackageHash } from "../../src/services/published-mandate-service.js";
 import { createResearchTools } from "../../src/llm/tools/research-tools.js";
 import { seedGrantWithJob } from "./helpers.js";
-import { generateSigningKey } from "../../src/services/mirror-batch.js";
+import { generateSigningKey, keyIdOf } from "../../src/services/mirror-batch.js";
 import { syncMirror, type BatchSource } from "../../src/services/mirror-apply-service.js";
 import { poolDb, type MirrorDb } from "../../src/services/mirror-db.js";
 import { cutBatches, getBatchText, listBatches } from "../../src/services/mirror-feed-service.js";
@@ -459,6 +459,23 @@ describe("registering the deployment's key from inside", () => {
     // A person who directs the graph does not decide who speaks for it outside.
     expect((await as("director", { method: "POST", url: "/outbound/registration/send", payload: {} })).status).toBe(403);
 
+    // The key was registered by a statement sent to the public graph by hand: the account read finds it on the public graph's record.
+    const fingerprint = keyIdOf(signedRegistration(orgAccount).public_key);
+    const before = await as("reader", { url: "/outside/account" });
+    expect(before.json.signing_key_fingerprint).toBe(fingerprint);
+    expect(before.json.registration).toMatchObject({
+      key_fingerprint: fingerprint,
+      account: { id: id.orgAccount, name: `Halden Works ${tag}` },
+      declared_interest: null,
+      is_the_current_key: true,
+      read_from: "the public graph",
+      registered_from_here: null,
+    });
+    // Health asks for it to be registered from here, since the log knows nothing of that registration.
+    const unregistered = await as("admin", { url: "/setup/checklist" });
+    expect(unregistered.json.public_graph.signing_key).toMatchObject({ fingerprint, registered_from_here_at: null });
+    expect(unregistered.json.public_graph.signing_key.shown_outside).toBeGreaterThan(0);
+
     const said = await as("admin", {
       method: "POST",
       url: "/outbound/registration/send",
@@ -483,6 +500,50 @@ describe("registering the deployment's key from inside", () => {
     expect(logged).toMatchObject({ acted_by: people.admin!.id, holding: ["administer"], result: "done" });
     // What was sent is the statement and nothing else of the deployment's.
     expect(Object.keys(logged!.sent).sort()).toEqual(["declared_interest", "hosting", "public_key", "signature"]);
+    // The account it acted on, by its id there.
+    expect((await acts("register_publisher")).at(-1)!.public_ref).toBe(id.orgAccount);
+
+    // Read back: when, which key, to which account, with what declared interest, and who registered it from here.
+    const after = await as("reader", { url: "/outside/account" });
+    expect(after.json.registration).toMatchObject({
+      key_fingerprint: fingerprint,
+      account: { id: id.orgAccount },
+      declared_interest: `We run the plant (${tag}).`,
+      is_the_current_key: true,
+      read_from: "the public graph",
+      registered_from_here: { by: `admin ${tag}` },
+    });
+    expect(after.json.registration_in_words).toMatch(/^The deployment's signing key is registered/);
+    expect((await as("admin", { url: "/setup/checklist" })).json.public_graph.signing_key.registered_from_here_at).toBeTruthy();
+
+    // A deployment that has changed its key is told that the registered key is not the one it signs with.
+    const config = loadConfig();
+    const pem = config.publishSigningKey;
+    try {
+      Object.assign(config, { publishSigningKey: generateSigningKey().privateKeyPem });
+      const changed = await as("reader", { url: "/outside/account" });
+      expect(changed.json.registration).toMatchObject({ key_fingerprint: fingerprint, is_the_current_key: false });
+      expect(changed.json.registration_in_words).toMatch(/not the one this deployment signs with now/);
+      expect((await as("admin", { url: "/setup/checklist" })).json.public_graph.signing_key.registered_from_here_at).toBeNull();
+    } finally {
+      Object.assign(config, { publishSigningKey: pem });
+    }
+    // Where the public graph cannot be read, the log answers, and says so.
+    const url = config.publicGraphApiUrl;
+    try {
+      Object.assign(config, { publicGraphApiUrl: "" });
+      const offline = await as("reader", { url: "/outside/account" });
+      expect(offline.json.connected).toBe(false);
+      expect(offline.json.registration).toMatchObject({
+        key_fingerprint: fingerprint,
+        account: { id: id.orgAccount, name: null },
+        declared_interest: `We run the plant (${tag}).`,
+        is_the_current_key: true,
+        read_from: "this deployment's log",
+      });
+    } finally {
+      Object.assign(config, { publicGraphApiUrl: url });
+    }
   });
 });
 
@@ -712,6 +773,13 @@ describe("what the public says back about a published page", () => {
       reassessment: "not paid for",
     });
     expect(overview.json.contributions[0].given_to_the_steward_at).toBeTruthy();
+    // It carries the label the page was written at, which is where its reassessment is paid for, read from its showing.
+    expect(overview.json.contributions[0]).toMatchObject({ page_label: A, showing_id: id.showing });
+    // A member who does not read that label is told it is withheld, and nothing of the showing.
+    const notA = await as("admin", { url: `/outside/said-back?node_id=${id.p}` });
+    expect(notA.json.contributions[0]).toMatchObject({ on_the_public_graph: challenge, page_label: { withheld: true } });
+    expect(notA.json.contributions[0].showing_id).toBeUndefined();
+    expect(JSON.stringify(notA.json)).not.toContain(`"${A}"`);
   });
 
   it("counts a contribution with the same text once, and gives the Steward every other one, whatever it says", async () => {
@@ -816,8 +884,51 @@ describe("public owls, public mandates, and funding a public node from inside", 
     expect(conversations).toHaveLength(1);
     expect(JSON.stringify(conversations[0]!.messages)).toContain(words);
     expect(opened.json.conversation_id).toBe(conversations[0]!.id);
-    // What was sent is the person's words and nothing else.
-    expect((await acts("open_public_mandate"))[0]).toMatchObject({ acted_by: people.director!.id, sent: { message: words }, result: "done" });
+    // What was sent is the person's words and nothing else. The log keeps the conversation's id the public graph gave it.
+    expect((await acts("open_public_mandate"))[0]).toMatchObject({ acted_by: people.director!.id, sent: { message: words }, result: "done", public_ref: conversations[0]!.id });
+    id.conversation = conversations[0]!.id;
+  });
+
+  it("lists the organization's conversations with the public Grantmaker: who opened each and when from the log, and what the public graph says of each now", async () => {
+    // Read by those who may act on the public graph, like a conversation itself.
+    expect((await as("reader", { url: "/outside/mandates/conversations" })).status).toBe(403);
+    expect(ROUTE_TOOLS["GET /outside/mandates/conversations"]?.name).toBe("list_public_mandate_conversations");
+    // A conversation the account holds there that was not opened from here, drafted and funded as a mandate.
+    const [elsewhere] = await pubRows<{ id: string }>(
+      `INSERT INTO grant_conversations (user_id, status, messages, mandate, grant_id) VALUES ($1, 'funded', '[]'::jsonb, $2::jsonb, $3) RETURNING id`,
+      [id.orgAccount, JSON.stringify({ title: `Fresh public assessments ${tag}` }), id.mandate]
+    );
+    const listed = await as("director", { url: "/outside/mandates/conversations" });
+    expect(listed.status, JSON.stringify(listed.json)).toBe(200);
+    expect(listed.json.read_from_the_public_graph).toBe(true);
+    const mine = listed.json.conversations.find((c: any) => c.id === id.conversation);
+    expect(mine).toMatchObject({ opened_by: `director ${tag}`, opened_from_here: true, funded: false, public_mandate_id: null, messages_from_here: 0 });
+    expect(mine.opened_at).toBeTruthy();
+    expect(mine.status_on_the_public_graph).toBeTruthy();
+    expect(listed.json.conversations.find((c: any) => c.id === elsewhere!.id)).toMatchObject({
+      opened_by: null,
+      opened_from_here: false,
+      title: `Fresh public assessments ${tag}`,
+      status_on_the_public_graph: "funded",
+      funded: true,
+      public_mandate_id: id.mandate,
+    });
+    // The funded mandate on the account read names the conversation it was funded from.
+    const account = await as("reader", { url: "/outside/account" });
+    expect(account.json.public_mandates.find((m: any) => m.id === id.mandate)).toMatchObject({ conversation_id: elsewhere!.id });
+
+    // Where the public graph cannot be read, the log alone answers.
+    const config = loadConfig();
+    const url = config.publicGraphApiUrl;
+    try {
+      Object.assign(config, { publicGraphApiUrl: "" });
+      const offline = await as("director", { url: "/outside/mandates/conversations" });
+      expect(offline.json.read_from_the_public_graph).toBe(false);
+      expect(offline.json.conversations.map((c: any) => c.id)).toEqual([id.conversation]);
+      expect(offline.json.conversations[0]).toMatchObject({ opened_by: `director ${tag}`, title: null, funded: false });
+    } finally {
+      Object.assign(config, { publicGraphApiUrl: url });
+    }
   });
 
   it("adds public owls to a public mandate, and asks one for a fresh assessment of a node", async () => {

@@ -22,7 +22,7 @@ import {
   shortWhen,
   type Tone,
 } from "@/components/work/ui";
-import { british, fetchOutwardLog, type OutwardAct, type PublicAccount } from "@/lib/outside-api";
+import { british, fetchOutwardLog, fetchPublicConversations, type OutwardAct, type PublicAccount, type PublicConversation } from "@/lib/outside-api";
 import { registerPublisherAction } from "../../showings/actions";
 import { backPublicMandateAction, openPublicMandateAction } from "./actions";
 import { HeadSub, Note, loadAccount, tryRead } from "./parts";
@@ -94,19 +94,25 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
   const { kind, drawer } = await searchParams;
   const filter = GROUPS.some((g) => g.key === kind) ? (kind as Group | "all") : "all";
 
-  const [{ data: account, problem: accountProblem }, { data: log, problem: logProblem }] = await Promise.all([
+  const mayAct = can(who, "direct");
+  const [{ data: account, problem: accountProblem }, { data: log, problem: logProblem }, { data: talks, problem: talksProblem }] = await Promise.all([
     loadAccount(who.externalId),
     tryRead(() => fetchOutwardLog(who.externalId), "The log of acts on the public graph could not be read"),
+    // The conversations with the public Grantmaker are read by those who may act there, who are the ones who open and fund them.
+    mayAct
+      ? tryRead(() => fetchPublicConversations(who.externalId), "The conversations with the public Grantmaker could not be read")
+      : Promise.resolve({ data: null, problem: null }),
   ]);
   const acts = log ?? [];
-  const mayAct = can(who, "direct");
   const mayAdminister = can(who, "administer");
   const connected = !!account?.connected;
   const shown = filter === "all" ? acts : acts.filter((a) => KINDS[a.kind]?.group === filter);
-  const registered = acts.find((a) => a.kind === "register_publisher" && a.result === "done");
+  const registration = account?.registration ?? null;
   const close = filter === "all" ? "/admin/outside" : `/admin/outside?kind=${filter}`;
   const drawerHref = (d: string) => (filter === "all" ? `/admin/outside?drawer=${d}` : `/admin/outside?kind=${filter}&drawer=${d}`);
   const mandates = account?.public_mandates ?? [];
+  // Drafts: conversations not funded, beside the mandates already funded. One that was funded is its mandate's row.
+  const drafts = (talks?.conversations ?? []).filter((t) => !t.funded && !["declined", "abandoned"].includes(t.status_on_the_public_graph ?? ""));
 
   return (
     <WorkPage>
@@ -134,11 +140,16 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
       {accountProblem && <Note tone="bad">{accountProblem}</Note>}
       {account && !connected && <Note tone="warn">{british(account.in_words ?? "This deployment is not connected to the public graph.")}</Note>}
 
-      {account && <AccountStats account={account} registeredAt={registered?.at ?? null} mayAdminister={mayAdminister} keyHref={drawerHref("key")} />}
+      {account && <AccountStats account={account} mayAdminister={mayAdminister} keyHref={drawerHref("key")} />}
 
       {connected && (
-        <Section title="Public mandates" aside={`${plural(mandates.length, "mandate")} · public on the public graph`} id="mandates">
-          {mandates.length === 0 ? (
+        <Section
+          title="Public mandates"
+          aside={`${plural(mandates.length, "mandate")} · public on the public graph${drafts.length > 0 ? ` · ${plural(drafts.length, "draft")}` : ""}`}
+          id="mandates"
+        >
+          {talksProblem && <Note tone="bad">{talksProblem}</Note>}
+          {mandates.length === 0 && drafts.length === 0 ? (
             <div className="w-tbox">
               <Empty>The organisation funds no mandate on the public graph.</Empty>
             </div>
@@ -153,12 +164,21 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
                 </tr>
               </thead>
               <tbody>
+                {drafts.map((d) => (
+                  <DraftRow key={d.id} d={d} mayAct={mayAct} />
+                ))}
                 {mandates.map((m) => {
                   const share = m.spent_owls !== null && m.budget_owls ? Math.min(100, Math.round((m.spent_owls / m.budget_owls) * 100)) : null;
                   return (
                     <tr key={m.id}>
                       <td>
-                        <span style={{ fontWeight: 500 }}>{m.title ?? "A public mandate"}</span>
+                        {m.conversation_id && mayAct ? (
+                          <Link href={`/admin/outside/mandates/${m.conversation_id}`} style={{ fontWeight: 500 }} title="The conversation with the public Grantmaker it was funded from">
+                            {m.title ?? "A public mandate"}
+                          </Link>
+                        ) : (
+                          <span style={{ fontWeight: 500 }}>{m.title ?? "A public mandate"}</span>
+                        )}
                         <div className="w-faint w-mono">{m.id}</div>
                       </td>
                       <td>{m.status ? <Pill tone={mandateTone(m.status)}>{cap(m.status.replace(/_/g, " "))}</Pill> : <span className="w-faint">—</span>}</td>
@@ -262,13 +282,19 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
       )}
 
       {drawer === "key" && mayAdminister && (
-        <Drawer title={registered ? "Re-register the signing key" : "Register the signing key"} close={close}>
+        <Drawer title={registration ? "Re-register the signing key" : "Register the signing key"} close={close}>
           <p className="w-small" style={{ margin: 0 }}>
             The public graph takes a package only from the account this deployment&apos;s signing key is registered to. Registering names the
             organisation&apos;s account there as the publisher of what this deployment signs, and says where the deployment runs. Registering
             again retires the earlier registration, which stays on the public record.
           </p>
-          <WorkForm action={registerPublisherAction} submit={registered ? "Re-register" : "Register key"} primary lock="Public on the publisher's record">
+          {registration?.is_the_current_key === false && (
+            <p className="w-small" style={{ margin: 0 }}>
+              The key registered now, {registration.key_fingerprint.slice(0, 16)}, is not the one this deployment signs with
+              {account?.signing_key_fingerprint ? ` (${account.signing_key_fingerprint.slice(0, 16)})` : ""}. Registering puts the current key on record.
+            </p>
+          )}
+          <WorkForm action={registerPublisherAction} submit={registration ? "Re-register" : "Register key"} primary lock="Public on the publisher's record">
             <div className="w-field">
               <label htmlFor="pm-interest">
                 Declared interest <span className="w-faint">optional</span>
@@ -284,18 +310,25 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
   );
 }
 
-function AccountStats({
-  account,
-  registeredAt,
-  mayAdminister,
-  keyHref,
-}: {
-  account: PublicAccount;
-  registeredAt: string | null;
-  mayAdminister: boolean;
-  keyHref: string;
-}) {
+function AccountStats({ account, mayAdminister, keyHref }: { account: PublicAccount; mayAdminister: boolean; keyHref: string }) {
   const holders = /^Holders of ([\w, ]+?) may act/i.exec(account.who_may_act)?.[1];
+  const r = account.registration ?? null;
+  const pill = !r ? (
+    <Pill tone={account.signing_key_fingerprint === null ? "neu" : "warn"}>Not registered</Pill>
+  ) : r.is_the_current_key === false ? (
+    <Pill tone="warn">Another key registered</Pill>
+  ) : (
+    <Pill tone="ok">Registered {shortDay(r.registered_at)}</Pill>
+  );
+  const about = [
+    account.registration_in_words ? british(account.registration_in_words) : null,
+    r ? `Key ${r.key_fingerprint.slice(0, 16)}, to ${r.account.name ?? r.account.id ?? "the organisation's account"}, ${shortWhen(r.registered_at)}.` : null,
+    r?.registered_from_here ? `Registered from here${r.registered_from_here.by ? ` by ${r.registered_from_here.by}` : ""}.` : null,
+    r?.declared_interest ? `Declared interest: “${r.declared_interest}”` : null,
+    r ? `Read from ${r.read_from}.` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <Stats>
       <Stat
@@ -323,23 +356,51 @@ function AccountStats({
         s="Signing key: administer"
       />
       <Stat
-        k={
-          <>
-            Signing key <Tip>Whether the key is registered on the public graph is not readable here; this shows the last registration in the log.</Tip>
-          </>
-        }
+        k={<>Signing key {about && <Tip>{about}</Tip>}</>}
         v={
           <span className="w-row" style={{ gap: 8, marginTop: 4 }}>
-            {registeredAt ? <Pill tone="ok">Registered {shortDay(registeredAt)}</Pill> : <Pill tone="neu">None in the log</Pill>}
+            {pill}
             {mayAdminister && (
               <ButtonLink href={keyHref} small>
-                {registeredAt ? "Re-register" : "Register key"}
+                {r ? "Re-register" : "Register key"}
               </ButtonLink>
             )}
           </span>
         }
+        s={r ? <span className="w-mono">{r.key_fingerprint.slice(0, 16)}</span> : undefined}
       />
     </Stats>
+  );
+}
+
+/** A conversation with the public Grantmaker whose mandate is not funded yet: its draft, linked to the conversation. */
+function DraftRow({ d, mayAct }: { d: PublicConversation; mayAct: boolean }) {
+  const drafted = d.status_on_the_public_graph === "proposed";
+  return (
+    <tr>
+      <td>
+        <Link href={`/admin/outside/mandates/${d.id}`} style={{ fontWeight: 500 }}>
+          {d.title ?? "A new public mandate"}
+        </Link>
+        <div className="w-faint w-small">
+          {d.opened_at ? `Opened ${shortDay(d.opened_at)}` : "Opened"}
+          {d.opened_by ? ` by ${d.opened_by}` : d.opened_from_here ? "" : " · not from here"}
+        </div>
+      </td>
+      <td>
+        <Pill tone="info">{drafted ? "Draft · not funded" : "Draft"}</Pill>
+      </td>
+      <td>
+        <span className="w-faint w-small">Not funded</span>
+      </td>
+      {mayAct && (
+        <td className="w-act">
+          <Link className="w-btn w-sm" href={`/admin/outside/mandates/${d.id}`}>
+            Open
+          </Link>
+        </td>
+      )}
+    </tr>
   );
 }
 

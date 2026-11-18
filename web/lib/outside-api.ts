@@ -22,9 +22,52 @@ export interface PublicAccount {
   account?: { id: string | null; name: string | null };
   public_owls?: number;
   public_owls_statement?: string;
-  public_mandates?: Array<{ id: string; title: string | null; status: string | null; budget_owls: number | null; spent_owls: number | null; public: true }>;
+  public_mandates?: Array<{
+    id: string;
+    title: string | null;
+    status: string | null;
+    budget_owls: number | null;
+    spent_owls: number | null;
+    /** The conversation with the public Grantmaker it was funded from, where known. */
+    conversation_id?: string | null;
+    public: true;
+  }>;
   who_may_act: string;
   what_a_public_mandate_shows?: string;
+  /** The fingerprint of the key this deployment signs with now; null where it has none. */
+  signing_key_fingerprint?: string | null;
+  /** Whether and under what the signing key is registered on the public graph; null where no key is registered. Absent from an older API. */
+  registration?: PublisherRegistration | null;
+  registration_in_words?: string;
+}
+
+export interface PublisherRegistration {
+  registered_at: string;
+  key_fingerprint: string;
+  account: { id: string | null; name: string | null };
+  declared_interest: string | null;
+  is_the_current_key: boolean | null;
+  read_from: "the public graph" | "this deployment's log";
+  registered_from_here: { at: string; by: string | null } | null;
+}
+
+export interface PublicConversation {
+  id: string;
+  opened_at: string | null;
+  opened_by: string | null;
+  opened_from_here: boolean;
+  title: string | null;
+  status_on_the_public_graph: string | null;
+  funded: boolean;
+  public_mandate_id: string | null;
+  funded_from_here?: { at: string; by: string | null };
+  messages_from_here: number;
+}
+
+export interface PublicConversations {
+  conversations: PublicConversation[];
+  read_from_the_public_graph: boolean;
+  in_words: string;
 }
 
 export interface OutwardAct {
@@ -81,6 +124,9 @@ export interface ReceivedContribution {
   type: string;
   submitted_at: string;
   received_at: string;
+  /** The label the page it was made through was written at, where its reassessment is paid for; withheld where the reader does not read it. Absent from an older API. */
+  page_label?: string | { withheld: true };
+  showing_id?: string;
   /** The contribution as it was made on the public graph: public text, written outside this deployment. */
   text_written_outside_this_deployment?: string;
   addresses_it_cites?: string[];
@@ -117,6 +163,7 @@ export const fetchOutwardLog = async (who: string) => (await get<{ acts: Outward
 export const fetchPublicRequests = (who: string, nodeId?: string) => get<PublicRequests>(`/outside/requests${nodeId ? `?node_id=${seg(nodeId)}` : ""}`, who);
 export const fetchSaidBack = (who: string) => get<{ contributions: ReceivedContribution[]; how_it_works: string }>("/outside/said-back", who);
 export const fetchReportsForSending = (who: string) => get<ReportsForSending>("/outside/reports", who);
+export const fetchPublicConversations = (who: string) => get<PublicConversations>("/outside/mandates/conversations", who);
 export const fetchPublicConversation = (who: string, id: string) => get<Record<string, any>>(`/outside/mandates/conversations/${seg(id)}`, who);
 
 export const adoptPublicRequest = (who: string, id: string, label?: string) => post<{ adoption_id: string; request_id: string; already: boolean }>(`/outside/requests/${seg(id)}/adopt`, who, label ? { label } : {});
