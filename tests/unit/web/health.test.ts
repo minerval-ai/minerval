@@ -79,7 +79,7 @@ describe("what needs attention", () => {
 
     const items = attentionItems(c);
     expect(items.map((i) => [i.title, i.owner, i.tone, i.blocks])).toEqual([
-      ["No price for claude-x (MODELS_RESEARCHER)", "operator", "bad", true],
+      ["No price for claude-x (MODELS_RESEARCHER)", "operator", "bad", false],
       ["Acme CRM not answering", "admin", "bad", false],
       ["Open-web search fails", "operator", "bad", false],
       ["Embeddings not cleared for board", "admin", "warn", false],
