@@ -169,7 +169,7 @@ duplicate.
 An outcome of "unavailable" is different: a fault on the platform's side kept
 the Matcher from running, so nothing was searched or compared, and it has
 nothing to do with your budget. Do not create a node from it, and do not mint
-one on search_similar_claims alone, since a search retrieves candidates and
+one on search_claims alone, since a search retrieves candidates and
 does not decide identity. If a search hit, read with get_claim, is exactly the
 node you need, link it; otherwise keep the premise in prose in your reasoning,
 say it is not yet matched because of the fault, and finish the pass. The

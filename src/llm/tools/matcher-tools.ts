@@ -159,7 +159,7 @@ export function matcherUnavailable(fault: PlatformFaultReason): Record<string, u
       faultToolNote(fault, "The Matcher") +
       " Identity was NOT checked: this is not a finding that the proposition is new, and it is not " +
       "your run's budget (your budget line is unchanged). Do not create a node from this result, and " +
-      "do not mint one on search_similar_claims alone: a search retrieves candidates, it does not " +
+      "do not mint one on search_claims alone: a search retrieves candidates, it does not " +
       "decide identity, and a node minted unmatched may duplicate one the graph holds. If a search " +
       "hit, read with get_claim, is exactly the node you need, you may link that existing node: " +
       "linking mints nothing. Otherwise leave the premise in prose in your reasoning, named as not " +

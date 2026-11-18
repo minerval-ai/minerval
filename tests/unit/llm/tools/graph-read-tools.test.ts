@@ -27,6 +27,7 @@ vi.mock("../../../../src/services/argument-service.js", () => ({
 }));
 vi.mock("../../../../src/services/tree-service.js", () => ({
   getTransitiveDependents: vi.fn(),
+  getQuantityCuts: vi.fn(async () => []),
   getClaimTree: vi.fn(),
   getSubclaimCount: vi.fn(),
   listClaimDependents: vi.fn(),
@@ -75,6 +76,7 @@ import { getClaimById } from "../../../../src/services/claim-service.js";
 import { getCurrentAssessment } from "../../../../src/services/assessment-service.js";
 import {
   getTransitiveDependents,
+  getQuantityCuts,
   getClaimTree,
   getSubclaimCount,
 } from "../../../../src/services/tree-service.js";
@@ -314,6 +316,23 @@ describe("graph-read-tools", () => {
       });
 
       expect(mockTransitiveDeps).toHaveBeenCalledWith("c1", 3);
+    });
+
+    // A claim that cuts a quantity rests on it by a cut, not an edge, so the
+    // walk does not reach it, yet its credence must agree with the estimate
+    // (#767). get_dependents lists it, as get_claim_dependents did.
+    it("lists the claims that cut a quantity beside the walk", async () => {
+      vi.mocked(getQuantityCuts).mockResolvedValueOnce([
+        { id: "q-cut", text: "It exceeds 50M", claim_type: "empirical_derived", direction: "above", value: 50_000_000, status: "doubtful", confidence: 0.6, credence: 0.3 },
+      ]);
+      const out = JSON.parse((await executeGraphReadTool("get_dependents", { claim_id: "c1" }))!);
+      expect(out.cuts).toHaveLength(1);
+      expect(out.cuts[0]).toMatchObject({ id: "q-cut", relation: "cuts", cut: { direction: "above", value: 50_000_000 }, credence: 0.3 });
+    });
+
+    it("leaves cuts out where nothing cuts the node", async () => {
+      const out = JSON.parse((await executeGraphReadTool("get_dependents", { claim_id: "c1" }))!);
+      expect(out.cuts).toBeUndefined();
     });
   });
 

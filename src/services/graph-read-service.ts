@@ -21,7 +21,7 @@ import { loadConfig } from "../config.js";
 import { rawQuery } from "../db/client.js";
 import { hybridSearch } from "./search-service.js";
 import { resolveClaimId } from "./claim-alias-service.js";
-import { getClaimTree, getTransitiveDependents } from "./tree-service.js";
+import { getClaimTree, getQuantityCuts, getTransitiveDependents } from "./tree-service.js";
 import { STEWARD_PARKED_DESCRIPTION } from "./steward-park-reason.js";
 import { attachClaimTags, resolveTagBySlug } from "./tag-service.js";
 import { claimTypeEnum } from "../schemas/common.js";
@@ -192,7 +192,9 @@ export function graphReadDefinitions(audience: GraphReadAudience): GraphReadDefi
         "answers 'what would move if this verdict changed'. Being load-bearing " +
         "is not the same as being important: a settled claim can carry much " +
         "and still need little attention (constitution §19). The mirror of " +
-        "get_decomposition." +
+        "get_decomposition. On a quantity, `cuts` lists the claims that say " +
+        "which side of a figure it lies, whose credence must agree with its " +
+        "estimate." +
         MERGED_ID_NOTE +
         (caller ? FREE : ""),
       input_schema: {
@@ -357,7 +359,23 @@ async function walk(
     payload:
       direction === "down"
         ? { ...base, tree: await getClaimTree(claimId, depth) }
-        : { ...base, ...(await getTransitiveDependents(claimId, depth)) },
+        : await dependentsPayload(base, claimId, depth),
+  };
+}
+
+/**
+ * The upward walk, and on a quantity the claims that cut it: they rest on the
+ * quantity by a cut rather than an edge, so the walk does not reach them, but
+ * a change to the estimate moves them as surely as it moves a parent (#767).
+ */
+async function dependentsPayload(base: Record<string, unknown>, claimId: string, depth: number) {
+  const [walked, cuts] = await Promise.all([getTransitiveDependents(claimId, depth), getQuantityCuts(claimId)]);
+  return {
+    ...base,
+    ...walked,
+    ...(cuts.length > 0
+      ? { cuts: cuts.map((c) => ({ ...c, relation: "cuts", cut: { direction: c.direction, value: c.value } })) }
+      : {}),
   };
 }
 

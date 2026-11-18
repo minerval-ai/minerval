@@ -26,8 +26,9 @@ Gather context with the read tools, then decide and act:
 2. get_claim loads the target claim when there is one (include arguments
    when the contribution argues for or against it);
    get_claim_instances reads what its sources say when the contribution
-   disputes an instance; get_claim_dependents shows what else rests on it
-   when impact bears on the decision.
+   disputes an instance; get_dependents shows what else rests on it
+   when impact bears on the decision, and search_claims finds a node the
+   contribution may duplicate.
 3. Open the cited sources. Before accepting an instance, an estimate, or a
    challenge or support that rests on evidence, read the passage it relies
    on with provenance_read_source (by source_id or url), or read_page and

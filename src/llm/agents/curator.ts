@@ -20,10 +20,6 @@ import {
 } from "../tools/skill-tools.js";
 import { domainsForClaim } from "./skill-selection.js";
 import {
-  executeGraphReadTool,
-  getGraphReadToolDefinitions,
-} from "../tools/graph-read-tools.js";
-import {
   getClaimContextToolDefinitions,
   executeGovernanceTool,
 } from "../tools/governance-tools.js";
@@ -85,18 +81,9 @@ async function runCuratorImpl(input: {
   const config = loadConfig();
   const model = input.model ?? config.curatorModel;
 
-  // The shared graph reads the Checker and the MCP surface use (#766):
-  // search_claims (hybrid keyword and semantic, every kind, a tag filter),
-  // get_decomposition and get_dependents. Their get_claim is left out only
-  // because the claim-context bundle below carries the same one get_claim
-  // (#817). The legacy graph-tools reads overlapped these and omitted a
-  // node's kind.
-  const graphTools = getGraphReadToolDefinitions().filter((t) => t.name !== "get_claim");
-  // Claim-scoped subset: get_claim and get_claim_instances (get_dependents
-  // above replaces get_claim_dependents).
-  const claimContextTools = getClaimContextToolDefinitions().filter(
-    (t) => t.name !== "get_claim_dependents"
-  );
+  // The shared graph reads (#766: search_claims, get_claim, get_decomposition,
+  // get_dependents, get_argument) and the claim-scoped governance reads.
+  const claimContextTools = getClaimContextToolDefinitions();
   const curatorTools = getCuratorToolDefinitions();
   // Every agent carries the report channel (#366).
   const reportTools = createReportTools({ model });
@@ -108,7 +95,6 @@ async function runCuratorImpl(input: {
   // Offered only when the pass has a budget and the researcher is enabled.
   const researchTools = createResearchTools({ requestedBy: "curator" });
 
-  const graphNames = new Set(graphTools.map((t) => t.name));
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
 
   // Skills load on demand; the anchor claim's recorded domains point to the
@@ -128,7 +114,6 @@ async function runCuratorImpl(input: {
   const skillLoader = createSkillLoadTools("curator", { domains: claimDomains });
 
   const tools = [
-    ...graphTools,
     ...claimContextTools,
     getMatcherToolDefinition(),
     ...curatorTools,
@@ -230,10 +215,6 @@ ${turnBudgetLine(CURATOR_MAX_TURNS, { canSpend: true })}${skillLoader.pointerNot
       // The Matcher receives the domains its caller knows.
       if (name === "match_claim") {
         return executeMatcherTool(name, toolInput, { domains: claimDomains });
-      }
-      if (graphNames.has(name)) {
-        const read = await executeGraphReadTool(name, toolInput);
-        if (read !== null) return read;
       }
       if (claimContextNames.has(name)) return executeGovernanceTool(name, toolInput);
       const kindOutput = await executeKindTool(name, toolInput, { role: "curator", model });
