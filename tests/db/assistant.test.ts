@@ -295,6 +295,30 @@ describe("assistant conversations", () => {
     expect(await deleteAssistantConversation(convo.id, u.id)).toBe(true);
     expect(await getAssistantConversation(convo.id, u.id)).toBeNull();
   });
+
+  // An Assistant run is private to its user, so a transcript kept after the
+  // conversation would be a record nobody may read. It goes, even if the run
+  // wrote to the graph: what it sent there is public on its own.
+  it("takes every run of the conversation with it, one that wrote to the graph too", async () => {
+    const u = await user("delete-runs");
+    const convo = await start(u);
+    await settleAssistantTurns();
+    // A reply's run, as the log keeps it, marked as having written to the graph.
+    const runIds = (
+      await rawQuery<{ id: string }>(
+        `INSERT INTO agent_runs (agent, started_at, wrote_to_graph, private_reasons)
+         VALUES ('assistant', now(), true, ARRAY['agent:assistant']) RETURNING id`
+      )
+    ).map((r) => r.id);
+    await rawQuery(
+      `UPDATE assistant_conversations
+          SET messages = messages || jsonb_build_array(jsonb_build_object('role', 'assistant', 'content', 'x', 'run_id', $2::text))
+        WHERE id = $1`,
+      [convo.id, runIds[0]]
+    );
+    expect(await deleteAssistantConversation(convo.id, u.id)).toBe(true);
+    expect(await rawQuery(`SELECT id FROM agent_runs WHERE id = ANY($1::uuid[])`, [runIds])).toHaveLength(0);
+  });
 });
 
 describe("a running turn's event stream", () => {

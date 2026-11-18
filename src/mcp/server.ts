@@ -883,7 +883,8 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
         "\"processing\" while it runs (result holds what is ready so far: " +
         "for assess_text, the judgments made so far), \"complete\" with the " +
         "full result, or \"failed\" with an error. Only the account that " +
-        "started an analysis can read it. Free.",
+        "started an analysis can read it, and only for a day after it " +
+        "finishes: the result quotes the text, which is not kept. Free.",
       inputSchema: {
         job_id: z.string().uuid().describe("The job_id the analysis tool returned"),
       },
