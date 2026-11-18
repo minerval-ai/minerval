@@ -698,6 +698,10 @@ const partyWords = (v: string | Withheld | null | undefined) =>
   v === undefined || v === null ? "no party" : isWithheld(v) ? "a party whose name is withheld from you" : v;
 const connectionWords = (v: string | Withheld | undefined) =>
   v === undefined || isWithheld(v) ? "a connection whose name is withheld from you" : `the connection "${v}"`;
+const fileSetWords = (v: string | Withheld | undefined) =>
+  v === undefined || isWithheld(v) ? "a file set whose name is withheld from you" : `the file set "${v}"`;
+const sourceWords = (v: string | Withheld | undefined) =>
+  v === undefined ? "a source" : isWithheld(v) ? "a source whose title is withheld from you" : `the source "${v}"`;
 
 const VIA_WORDS: Record<string, string> = {
   first_administrator: "The deployment's first-administrator setting",
@@ -710,33 +714,43 @@ const WITHDRAWN_WORDS: Record<string, string> = {
   address_changed: "the connection's address changed",
 };
 
-/** The kinds of act the log holds, as the Activity log filters them. */
-export const LOG_TYPES = ["Access", "Labels", "Parties", "Connections", "Owls", "Providers", "Mandates"] as const;
-export type LogType = (typeof LOG_TYPES)[number] | "Other";
+/**
+ * The kinds of act the log holds, as GET /permissions/log names them in each
+ * entry's `type` and filters by (LOG_TYPES in src/services/permission-service.ts,
+ * where each event is given its kind), with the word the Activity log shows.
+ */
+export const LOG_TYPE_WORDS: Record<string, string> = {
+  access: "Access",
+  labels: "Labels",
+  parties: "Parties",
+  connections: "Connections",
+  owls: "Owls",
+  providers: "Providers",
+  mandates: "Mandates",
+  file_sets: "File sets",
+  other: "Other",
+};
 
-/** Which kind of act an entry is. */
-export function logType(entry: Pick<LogEntry, "event">): LogType {
-  const e = entry.event;
-  if (e === "granted" || e === "removed") return "Access";
-  if (e.startsWith("label_")) return "Labels";
-  if (e === "provider_clearance_set") return "Providers";
-  if (e === "party_added" || e === "source_party_set" || e.startsWith("own_organization")) return "Parties";
-  if (e.startsWith("connection_")) return "Connections";
-  if (e === "owls_created") return "Owls";
-  if (e === "standing_mandate_created") return "Mandates";
-  return "Other";
+/** The kinds the Activity log offers as filters, in its order. */
+export const LOG_TYPES = ["access", "labels", "parties", "connections", "file_sets", "owls", "providers", "mandates", "other"] as const;
+export type LogType = (typeof LOG_TYPES)[number];
+
+/** The word for an entry's kind, as the API gave it. */
+export function logType(entry: Pick<LogEntry, "type">): string {
+  return LOG_TYPE_WORDS[entry.type] ?? "Other";
 }
 
 /**
  * Who did it: a person by name, or what acted where no person did ("Operator
- * key", "First-administrator setting", "The deployment"), with a key that
- * the Activity log filters by.
+ * key", "First-administrator setting", "The deployment"), with the key the
+ * Activity log filters by, which is what `by` on GET /permissions/log takes:
+ * the account's id, or operator, first_administrator or deployment.
  */
-export function logActor(entry: Pick<LogEntry, "by" | "via">): { key: string; name: string; person: boolean } {
-  if (entry.by) return { key: `by:${entry.by}`, name: entry.by, person: true };
-  if (entry.via === "operator") return { key: "via:operator", name: "Operator key", person: false };
+export function logActor(entry: Pick<LogEntry, "by" | "by_id" | "via">): { key: string; name: string; person: boolean } {
+  if (entry.by) return { key: entry.by_id ?? `name:${entry.by}`, name: entry.by, person: true };
+  if (entry.via === "operator") return { key: "operator", name: "Operator key", person: false };
   if (entry.via === "first_administrator") {
-    return { key: "via:first_administrator", name: "First-administrator setting", person: false };
+    return { key: "first_administrator", name: "First-administrator setting", person: false };
   }
   return { key: "deployment", name: "The deployment", person: false };
 }
@@ -786,7 +800,15 @@ export function logSentence(entry: LogEntry): string {
         ? `${who} added ${partyWords(entry.party)}.`
         : `${who} added the party ${partyWords(entry.party)}.`;
     case "source_party_set":
-      return `${who} recorded a source as the material of ${partyWords(entry.party)}; before, it was that of ${partyWords(entry.previous_party)}.`;
+      return `${who} recorded ${sourceWords(entry.source_title)} as the material of ${partyWords(entry.party)}; before, it was that of ${partyWords(entry.previous_party)}.`;
+    case "file_set_added":
+      return `${who} added ${fileSetWords(entry.file_set)}` + (entry.party !== undefined ? `, the material of ${partyWords(entry.party)}` : "") + (entry.label !== undefined ? `, at ${labelWords(entry.label)}.` : ".");
+    case "file_set_closed":
+      return `${who} closed ${fileSetWords(entry.file_set)}` + (entry.files !== undefined ? ` with ${entry.files} ${entry.files === 1 ? "file" : "files"} fixed by its hash.` : ".");
+    case "file_set_changed":
+      return entry.enabled === undefined
+        ? `${who} changed ${fileSetWords(entry.file_set)}.`
+        : `${who} switched ${fileSetWords(entry.file_set)} ${entry.enabled ? "on" : "off"}.`;
     case "connection_added":
       return `${who} added ${connectionWords(entry.connection)}.`;
     case "connection_changed":

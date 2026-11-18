@@ -164,7 +164,8 @@ be told, as `notice`:
 Each act writes a row to `administrative_events` in the same transaction
 and appears in `GET /permissions/log`: `file_set_added` (the party and the
 label), `file_set_closed` (the file count and the manifest hash) and
-`file_set_changed` (switched off or on). A set's name is shown only to a
+`file_set_changed` (switched off or on), each of the kind `file_sets`
+(`type=file_sets` keeps the log to them). A set's name is shown only to a
 reader cleared for its label; others see that the act happened, who did it
 and when.
 
