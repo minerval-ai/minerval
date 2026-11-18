@@ -28,6 +28,9 @@ import { getClaimTree } from "./tree-service.js";
 //              negated fact, and inconclusive, unknown, or unassessed as open
 //              (an even loop, so s(CASP) explores both). assessed/2 and
 //              edge/3 record the raw graph, so a reader can swap the policy.
+//   Set aside  in a deployment with more than one label, an edge or an
+//              argument the reader's label set aside is not live, so it is
+//              left out: not a rule, not a fact, not in edge/3 (docs/scasp.md).
 
 /** Statuses read as settled for, and against, a basis claim. */
 const HOLDS_STATUSES = new Set(["verified", "supported"]);
@@ -54,6 +57,8 @@ interface FlatArgument {
   stance: string | null;
   verdict: string | null;
   premises: string[];
+  /** The label that set aside the edge to one of its premises, where one did. */
+  premiseSetAsideAt: string | null;
 }
 
 interface FlatGraph {
@@ -61,6 +66,8 @@ interface FlatGraph {
   edges: { parent: string; child: string; relation: string }[];
   arguments: Map<string, FlatArgument>;
   truncated: Set<string>;
+  /** Edges and arguments set aside at the reader's label, left out of the program. */
+  leftOut: { edges: Set<string>; arguments: Set<string> };
 }
 
 /** The program atom for a claim: a lowercase Prolog constant from its id. */
@@ -88,6 +95,12 @@ function commentText(text: string): string {
  * Flatten the nested tree into nodes, edges, and arguments. A shared subclaim
  * appears once per parent but is expanded only at its first occurrence, so
  * every edge is still seen exactly once per (parent, child, relation).
+ *
+ * At a label (a deployment with more than one), structure the reader's label
+ * set aside is not live, so it is not encoded: an edge set aside is not
+ * followed, and what lies only beyond it is not in the program; an argument
+ * set aside is not collected, though its edges, which are the edges' own,
+ * still are. On the public graph nothing is set aside and nothing changes.
  */
 function flatten(root: TreeNode): FlatGraph {
   const graph: FlatGraph = {
@@ -95,9 +108,36 @@ function flatten(root: TreeNode): FlatGraph {
     edges: [],
     arguments: new Map(),
     truncated: new Set(),
+    leftOut: { edges: new Set(), arguments: new Set() },
   };
   const seenEdges = new Set<string>();
 
+  // The occurrence of each node that carries its children: the first, in
+  // the order the tree was rendered. A node first met beyond an edge that is
+  // left out is still expanded where a live edge reaches it.
+  const expandedAt = new Map<string, TreeNode>();
+  const index = (node: TreeNode) => {
+    if (expandedAt.has(node.id)) return;
+    expandedAt.set(node.id, node);
+    for (const child of node.children) index(child);
+  };
+  index(root);
+
+  const argumentOf = (node: TreeNode, parent: string): FlatArgument => {
+    const arg = graph.arguments.get(node.argument_id!) ?? {
+      id: node.argument_id!,
+      parent,
+      name: node.argument_name,
+      stance: node.argument_stance,
+      verdict: node.argument_verdict,
+      premises: [],
+      premiseSetAsideAt: null,
+    };
+    graph.arguments.set(node.argument_id!, arg);
+    return arg;
+  };
+
+  const expanded = new Set<string>();
   const visit = (node: TreeNode, parent: string | null) => {
     if (!graph.nodes.has(node.id)) {
       graph.nodes.set(node.id, {
@@ -115,20 +155,27 @@ function flatten(root: TreeNode): FlatGraph {
         seenEdges.add(key);
         graph.edges.push({ parent, child: node.id, relation: node.relation_type });
       }
-      if (node.argument_id) {
-        const arg = graph.arguments.get(node.argument_id) ?? {
-          id: node.argument_id,
-          parent,
-          name: node.argument_name,
-          stance: node.argument_stance,
-          verdict: node.argument_verdict,
-          premises: [],
-        };
+      if (node.argument_id && node.argument_set_aside) {
+        graph.leftOut.arguments.add(node.argument_id);
+      } else if (node.argument_id) {
+        const arg = argumentOf(node, parent);
         if (!arg.premises.includes(node.id)) arg.premises.push(node.id);
-        graph.arguments.set(node.argument_id, arg);
       }
     }
-    for (const child of node.children) visit(child, node.id);
+    if (expanded.has(node.id)) return;
+    expanded.add(node.id);
+    for (const child of (expandedAt.get(node.id) ?? node).children) {
+      if (child.set_aside) {
+        graph.leftOut.edges.add(`${node.id}|${child.id}|${child.relation_type}`);
+        // A live argument missing a premise would be a rule stronger than
+        // the graph's: it stays a comment.
+        if (child.argument_id && !child.argument_set_aside) {
+          argumentOf(child, node.id).premiseSetAsideAt ??= child.set_aside.at;
+        }
+        continue;
+      }
+      visit(child, node.id);
+    }
   };
   visit(root, null);
   return graph;
@@ -138,6 +185,9 @@ function flatten(root: TreeNode): FlatGraph {
 function argumentOmission(arg: FlatArgument, graph: FlatGraph): string | null {
   if (graph.truncated.has(arg.parent)) {
     return "its claim's premises were cut off by the node cap, so the rule would be incomplete";
+  }
+  if (arg.premiseSetAsideAt) {
+    return `the edge to one of its premises is set aside at ${arg.premiseSetAsideAt}, so the rule would be incomplete`;
   }
   if (arg.stance !== "for" && arg.stance !== "against") {
     return "it takes no side on the claim";
@@ -175,9 +225,18 @@ export function treeToScasp(root: TreeNode, opts: ScaspOptions): string {
     "% and edge/3 record the graph as it stands. Encoding: docs/scasp.md.",
     "%",
     "% Run: scasp --tree <file>",
-    "",
-    "% ---- Readable justifications ----",
   ];
+  // At a label: say that what it set aside is not here, never what it was.
+  const leftOutEdges = graph.leftOut.edges.size;
+  const leftOutArguments = graph.leftOut.arguments.size;
+  if (leftOutEdges + leftOutArguments > 0) {
+    const parts = [
+      ...(leftOutEdges ? [`${leftOutEdges} edge${leftOutEdges === 1 ? "" : "s"}`] : []),
+      ...(leftOutArguments ? [`${leftOutArguments} argument${leftOutArguments === 1 ? "" : "s"}`] : []),
+    ];
+    lines.push("%", `% Left out: ${parts.join(" and ")} set aside for whoever asked for this export.`);
+  }
+  lines.push("", "% ---- Readable justifications ----");
   for (const c of claims) {
     lines.push(`#pred holds(${claimAtom(c.id)}) :: ${predText(c.text)}.`);
   }

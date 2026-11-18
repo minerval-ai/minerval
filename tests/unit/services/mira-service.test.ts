@@ -368,3 +368,50 @@ describe("buildMiraDocument: a question", () => {
     expect(instances[1]).not.toHaveProperty("mv:evidence");
   });
 });
+
+describe("buildMiraDocument: structure set aside at a label (overlay-service.ts)", () => {
+  const MARK = { at: "fin", reason: "Finance's ledger says otherwise.", since: "2026-09-01T00:00:00.000Z" };
+
+  it("keeps a set-aside argument and edge on their mv: nodes, marked, and lends them no MIRA relation", async () => {
+    const base = record();
+    const [first, second] = base.arguments;
+    const doc = buildMiraDocument(
+      input({
+        record: record({
+          arguments: [
+            { ...first!, subclaims: [{ ...first!.subclaims[0]!, set_aside: MARK }] },
+            { ...second!, set_aside: MARK },
+          ],
+        }),
+      }),
+      opts
+    );
+    await expectValid(doc);
+    // Neither premise supports or opposes the claim in MIRA's own terms.
+    expect(byId(doc, uri(SUB_ID))).not.toHaveProperty("supports");
+    expect(byId(doc, uri(SUB2_ID))).not.toHaveProperty("opposes");
+    // The edge, and the argument, say they are set aside and by whom.
+    expect(byId(doc, `${uri(CLAIM_ID)}#edge-requires-${SUB_ID}`)).toMatchObject({
+      "mv:setAsideAt": "fin",
+      "mv:setAsideReason": "Finance's ledger says otherwise.",
+      "mv:setAsideSince": { "@value": "2026-09-01T00:00:00.000Z", "@type": "xsd:dateTime" },
+    });
+    expect(byId(doc, `${uri(CLAIM_ID)}#argument-2`)).toMatchObject({ "mv:setAsideAt": "fin", "mv:hasPremise": { "@id": uri(SUB2_ID) } });
+    expect(byId(doc, `${uri(CLAIM_ID)}#argument-1`)).not.toHaveProperty("mv:setAsideAt");
+  });
+
+  it("a premise also reached through a live argument still lends that one's relation", () => {
+    const base = record();
+    const live = base.arguments[0]!;
+    const doc = buildMiraDocument(
+      input({ record: record({ arguments: [live, { ...live, id: "dddddddd-3333-2222-3333-444444444444", stance: "against", set_aside: MARK }] }) }),
+      opts
+    );
+    expect(byId(doc, uri(SUB_ID))).toMatchObject({ supports: uri(CLAIM_ID) });
+    expect(byId(doc, uri(SUB_ID))).not.toHaveProperty("opposes");
+  });
+
+  it("says nothing of setting aside where nothing is set aside", () => {
+    expect(JSON.stringify(buildMiraDocument(input(), opts))).not.toContain("setAside");
+  });
+});

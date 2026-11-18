@@ -5,6 +5,7 @@ import {
   assembleEvidenceRecord,
   citationUrl,
   type EvidenceRecord,
+  type SetAsideMark,
 } from "./citation-service.js";
 
 // Nanopublication export (#292): the evidence record serialized as RDF in the
@@ -170,9 +171,14 @@ function buildGraphs(
       o: lit(prose(record.assessment.summary)),
     });
   }
-  // Decomposition edges, one predicate per relation type.
+  // Decomposition edges, one predicate per relation type. The assertion is
+  // what the graph holds, so an edge set aside at the reader's label (a
+  // deployment with more than one) is not in it: the provenance graph below
+  // records it, marked. An edge is the edge's, not its argument's, so an
+  // edge grouped only under a set-aside argument stays.
   for (const a of record.arguments) {
     for (const s of a.subclaims) {
+      if (s.set_aside) continue;
       const subUri = citationUrl(s.id);
       assertion.push({
         s: claimUri,
@@ -230,12 +236,23 @@ function buildGraphs(
       provenance.push({ s: instUri, p: "dct:title", o: lit(inst.source.title) });
     }
   });
+  // Set aside at the reader's label: the label, its reason, since when.
+  const setAsideTriples = (subject: string, mark: SetAsideMark | undefined): Triple[] =>
+    mark
+      ? [
+          { s: subject, p: "mv:setAsideAt", o: lit(mark.at) },
+          ...(mark.reason ? [{ s: subject, p: "mv:setAsideReason", o: lit(prose(mark.reason)) }] : []),
+          { s: subject, p: "mv:setAsideSince", o: typed(mark.since, "xsd:dateTime") },
+        ]
+      : [];
+  const setAsideEdges = new Set<string>();
   record.arguments.forEach((arg, i) => {
     const argUri = `${claimUri}#argument-${i + 1}`;
     provenance.push(
       { s: argUri, p: "a", o: { iri: "mv:Argument" } },
       { s: argUri, p: "mv:stance", o: lit(arg.stance) },
-      { s: argUri, p: "rdfs:comment", o: lit(prose(arg.content)) }
+      { s: argUri, p: "rdfs:comment", o: lit(prose(arg.content)) },
+      ...setAsideTriples(argUri, arg.set_aside)
     );
     if (arg.name) provenance.push({ s: argUri, p: "rdfs:label", o: lit(arg.name) });
     if (arg.verdict) provenance.push({ s: argUri, p: "mv:verdict", o: lit(arg.verdict) });
@@ -249,6 +266,19 @@ function buildGraphs(
     }
     for (const s of arg.subclaims) {
       provenance.push({ s: argUri, p: "mv:hasPremise", o: iri(citationUrl(s.id)) });
+      // The edge left out of the assertion, said here once with its mark.
+      const edgeUri = `${claimUri}#edge-${s.relation}-${s.id}`;
+      if (s.set_aside && !setAsideEdges.has(edgeUri)) {
+        setAsideEdges.add(edgeUri);
+        provenance.push(
+          { s: edgeUri, p: "a", o: { iri: "mv:Edge" } },
+          { s: edgeUri, p: "mv:from", o: iri(claimUri) },
+          { s: edgeUri, p: "mv:to", o: iri(citationUrl(s.id)) },
+          { s: edgeUri, p: "mv:relation", o: lit(s.relation) },
+          { s: citationUrl(s.id), p: "rdfs:label", o: lit(s.text) },
+          ...setAsideTriples(edgeUri, s.set_aside)
+        );
+      }
     }
     provenance.push({ s: assertionUri, p: "mv:hasArgument", o: iri(argUri) });
   });

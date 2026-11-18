@@ -292,3 +292,39 @@ describe("evidenceRecordToJsonLd", () => {
     expect(head["np:hasProvenance"]).toEqual({ "@id": `${CLAIM_URI}#provenance` });
   });
 });
+
+describe("structure set aside at a label (overlay-service.ts)", () => {
+  const MARK = { at: "fin", reason: `Unrelated to [[claim:${SUB_ID}]].`, since: "2026-09-01T00:00:00.000Z" };
+  const graphOf = (trig: string, name: string) => {
+    const start = trig.indexOf(`<${CLAIM_URI}#${name}> {`);
+    return trig.slice(start, trig.indexOf("\n}", start));
+  };
+
+  it("leaves a set-aside edge out of the assertion and records it in the provenance, marked", () => {
+    const base = record();
+    const [kept, aside] = base.arguments[0]!.subclaims;
+    const trig = evidenceRecordToTrig(
+      record({ arguments: [{ ...base.arguments[0]!, subclaims: [kept!, { ...aside!, set_aside: MARK }] }] }),
+      opts
+    );
+    const assertion = graphOf(trig, "assertion");
+    expect(assertion).toContain(SUB_ID);
+    expect(assertion).not.toContain(SUB2_ID);
+    const provenance = graphOf(trig, "provenance");
+    expect(provenance).toContain(`<${CLAIM_URI}#edge-entangles-${SUB2_ID}> a mv:Edge`);
+    expect(provenance).toContain('mv:setAsideAt "fin"');
+    expect(provenance).toContain('mv:setAsideReason "Unrelated to Supply chains drove the 2022 price rise.."');
+    expect(provenance).toContain('mv:setAsideSince "2026-09-01T00:00:00.000Z"^^xsd:dateTime');
+  });
+
+  it("marks a set-aside argument in the provenance; its edges, which are their own, stay asserted", () => {
+    const base = record();
+    const trig = evidenceRecordToTrig(record({ arguments: [{ ...base.arguments[0]!, set_aside: MARK }] }), opts);
+    expect(graphOf(trig, "provenance")).toMatch(/#argument-1> mv:setAsideAt "fin"/);
+    expect(graphOf(trig, "assertion")).toContain(SUB_ID);
+  });
+
+  it("says nothing of setting aside where nothing is set aside", () => {
+    expect(evidenceRecordToTrig(record(), opts)).not.toContain("setAside");
+  });
+});
