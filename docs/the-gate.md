@@ -156,7 +156,7 @@ person too (`STARTING_MODE_OUTSIDE`).
 A gate that existed before gates started with a person keeps working as it
 did: for each kind whose starting position changed, the old one was
 written down as a setting for the whole boundary (migration
-`0183_gates_start_with_a_person`), shown on its Rules tab as carried over,
+`0185_gates_start_with_a_person`), shown on its Rules tab as carried over,
 which its authorities can end.
 
 **Refunds are not the gate's.** Money that was not spent returns to its
