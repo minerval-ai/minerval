@@ -6831,9 +6831,9 @@ export const questionAssessments = pgTable(
 // ordinary edges in claim_relationships with relation_type 'draws_on', the
 // artifact the parent and each entry the child, so propagation reaches the
 // artifact when an entry changes and judgment_inputs records the entries a
-// judgment was made against. A 'draws_on' edge confers no support: nothing
-// reads it as evidence for or against either end. The judgment is fidelity
-// (artifact_assessments), never truth.
+// judgment was made against. A 'draws_on' edge is not decomposition (§6):
+// nothing reads it as evidence for or against either end. The judgment
+// (artifact_assessments) says how far the artifact can be relied on (§7b).
 // ---------------------------------------------------------------------------
 
 // What an artifact is: for a list, what it is for, what qualifies an entry,

@@ -28,19 +28,22 @@ export type TextNodeKind = (typeof TEXT_NODE_KINDS)[number];
 // Artifacts (constitution §7b)
 // ---------------------------------------------------------------------------
 
-/** The kinds of artifact. Lists first; tables, figures, analyses and safety cases may follow. */
+/**
+ * The kinds of artifact with a suggested structure the code knows (§7b). Lists first;
+ * safety cases and models are planned. Most artifacts need no named kind.
+ */
 export const ARTIFACT_SUBTYPES = ["list"] as const;
 export type ArtifactSubtype = (typeof ARTIFACT_SUBTYPES)[number];
 
 /**
- * An artifact's judgment (§7b): whether it faithfully represents what it
- * draws on under its specification. Never "verified". Staleness is not one
- * of these: it is read from what changed since the judgment.
+ * An artifact's judgment (§7b): how far it can be relied on under its
+ * specification, whether accurate, complete, current and fair. Staleness is
+ * not one of these: it is read from what changed since the judgment.
  */
 export const ARTIFACT_FIDELITIES = ["faithful", "incomplete", "misleading", "ill_specified"] as const;
 export type ArtifactFidelity = (typeof ARTIFACT_FIDELITIES)[number];
 
-/** The edge from an artifact to a node it draws on. Propagation follows it; it confers no support. */
+/** The edge from an artifact to a node it draws on. Propagation follows it; it is not decomposition (§6), and nothing reads it as support. */
 export const DRAWS_ON = "draws_on" as const;
 
 export const listSpecSchema = z

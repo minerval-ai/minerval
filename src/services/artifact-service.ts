@@ -13,7 +13,9 @@
  *     every edge upward, so a list hears when an entry changes, and
  *     judgment_inputs already records every edge under a node, so a list's
  *     judgment knows what it was made against. Nothing reads a 'draws_on'
- *     edge as support: a list carries no evidential weight (§7b).
+ *     edge as support for or against either end: the list presents what it
+ *     draws on (§7b), and a finding it makes visible is recorded on the node
+ *     it bears on.
  *   - its judgment in artifact_assessments: the fidelity, the order its
  *     entries are shown in, and the nodes considered and left out with why.
  *
