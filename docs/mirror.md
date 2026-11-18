@@ -98,8 +98,8 @@ The first cut of a feed is a snapshot. So is the first cut after the mirrored ta
 
 Mounted only on a deployment that publishes.
 
-- `GET /mirror/feed/key`: the public key.
-- `GET /mirror/feed?after=N`: batches without their rows, and where the latest snapshot begins.
+- `GET /mirror/feed/key`: the public key, and `keys`, every key the feed signs with, the current one first.
+- `GET /mirror/feed?after=N`: batches without their rows, where the latest snapshot begins, and `cuts_in`: the table shape and embedding model the next batch is cut in, which a mirror checks before it starts.
 - `GET /mirror/feed/:sequence`: one batch as signed. Needs an account's key.
 
 The feed is meant to have a price. Nothing charges yet; when something does, the check goes in the batch route's `preHandler`, where the account is known.
@@ -108,7 +108,7 @@ The feed is meant to have a price. Nothing charges yet; when something does, the
 
 A batch is applied only when all of this holds. Otherwise nothing of it is written and the refusal is recorded in `mirror_refusals`.
 
-1. Its hash is the hash of its contents, and its signature verifies under a key in `MIRROR_FEED_PUBLIC_KEYS`. The key a batch carries is never trusted.
+1. Its hash is the hash of its contents, and its signature verifies under a key this deployment trusts: one in `MIRROR_FEED_PUBLIC_KEYS`, or, where that is empty, one an administrator accepted on the Mirror page. The key a batch carries is never trusted.
 2. It is the next batch of the feed this mirror follows, naming the last applied batch's hash. A batch already applied is recognized by its hash and changes nothing. The one way past a batch is the first batch of a later snapshot.
 3. The mirrored tables had, where it was cut, exactly the shape this deployment's code writes, and its vectors come from this deployment's embedding model.
 
@@ -224,6 +224,17 @@ A read of a node says that it is mirrored and as of when (`mirrored.public_graph
 - `node_changes` is not pruned.
 - A deployment that stops mirroring by unsetting its feed keeps its mirrored rows and the database's guard on them, but the application then asks nothing about them: it no longer says what is mirrored.
 - A request the deployment's own agents record about a mirrored node goes no further than the deployment until someone raises it on the public graph. The public graph's own requests do come in with the feed, and can be adopted ([outward-acts.md](outward-acts.md)).
+
+## Following from the app
+
+A private deployment connected to minerval.ai with `read_feed` follows the public graph from the Mirror page (`/admin/outside/mirror`; [organizations.md](organizations.md), "The mirror"), with no setting:
+
+- When it connects, it reads the feed's key (`GET /mirror/feed/key`) into `mirror_feed_keys`. An administrator compares it with the key Minerval publishes, outside the deployment, and accepts it.
+- The page checks, before following, that the deployment is connected with `read_feed`, the key is accepted, and the feed's embedding model and table shape are this release's.
+- An administrator presses Start following (`POST /mirror/follow`). The applier, which starts on every members-only deployment, follows the public graph at the connection's address, signing each fetch. Pause (`POST /mirror/pause`) and Check now (`POST /mirror/check`) are on the page too. Each is on the activity log.
+- `GET /mirror/setup` (the tool `get_mirror_setup`) is what the page reads: the checks, the keys, how current the mirror is, the batches applied (their notes for administrators), and the last refusal with who fixes it. Health, the Inbox and the sidebar carry a key waiting to be accepted and a refusal.
+
+The settings below stay the operator's overrides: where `MIRROR_FEED_URL` or `MIRROR_FEED_DIR` is set, the mirror follows that, under `MIRROR_FEED_PUBLIC_KEYS`, whatever was chosen on the page, and the page says so.
 
 ## Configuration
 

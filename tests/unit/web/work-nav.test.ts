@@ -42,10 +42,11 @@ describe("the members' work pages", () => {
   });
 
   it("shows a person the pages they can use", () => {
-    // Every member has the inbox, the graph, and who holds what with the log of every administrative act.
+    // Every member has the inbox, the graph, the mirror of the public graph, and who holds what with the log of every administrative act.
     expect(names({ permissions: ["read"], clearance: ["public"] })).toEqual([
       "-: Inbox",
       "Graph: Ask, Claims, Mandates, Findings, Requests, Docs",
+      "Public graph: Mirror",
       "Admin: People, Activity log",
     ]);
     // A reader at a label besides public sees the releases that reach it.
@@ -55,7 +56,7 @@ describe("the members' work pages", () => {
       "-: Inbox, Review",
       "Graph: Ask, Claims, Mandates, Findings, Requests, Docs",
       "Sharing: Releases, Boundaries",
-      "Public graph: Overview, Requests, Replies, Outbox",
+      "Public graph: Overview, Mirror, Requests, Replies, Outbox",
       "Admin: People, Activity log",
     ]);
     // An administrator has the admin section and the organisation's connections.

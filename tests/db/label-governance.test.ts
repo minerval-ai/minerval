@@ -600,6 +600,8 @@ describe("the columns", () => {
       "mirror_feed_batches",
       "mirror_feed_rows",
       "mirror_refusals",
+      "mirror_following",
+      "mirror_feed_keys",
       "mirror_snapshot_rows",
       "oauth_authorization_requests",
       "oauth_clients",

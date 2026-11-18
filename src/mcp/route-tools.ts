@@ -286,6 +286,8 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
       "Free. What you read of the public graph in this deployment is as of public_graph_as_of, " +
       "not as of now.",
   },
+  // A private deployment that follows the public graph from the app (services/mirror-following.ts).
+  "GET /mirror/setup": { name: "get_mirror_setup", note: "Free. Asks the feed for its newest batch, which shows only that this deployment looked." },
   "GET /runs/:run_id": {
     name: "get_run",
     note: "A run that read private data answers public: false with its reasons and nothing else.",
@@ -545,6 +547,9 @@ const CONNECT_CODE =
 const PUBLIC_GRAPH_CONNECTION_SESSION =
   "Connecting this deployment to minerval.ai, or disconnecting it, decides who speaks for it outside, so it is an " +
   "administrator's act from a signed-in session, as registering the signing key is (docs/organizations.md).";
+const MIRROR_FOLLOWING_SESSION =
+  "What this deployment pulls from the public graph, and which key it trusts the feed under, is an administrator's " +
+  "choice made from a signed-in session, as connecting is (docs/organizations.md, \"The mirror\"). get_mirror_setup reads it.";
 const ORGANIZATION_OPERATOR =
   "The way back for an organization whose admins are all gone: requires the operator key, held " +
   "outside every deployment surface (docs/organizations.md).";
@@ -726,6 +731,11 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /connect-requests/:code/deny": ORGANIZATION_SESSION,
   "POST /outside/connection": PUBLIC_GRAPH_CONNECTION_SESSION,
   "DELETE /outside/connection": PUBLIC_GRAPH_CONNECTION_SESSION,
+  "POST /mirror/follow": MIRROR_FOLLOWING_SESSION,
+  "POST /mirror/pause": MIRROR_FOLLOWING_SESSION,
+  "POST /mirror/check": MIRROR_FOLLOWING_SESSION,
+  "POST /mirror/feed-keys/read": MIRROR_FOLLOWING_SESSION,
+  "POST /mirror/feed-keys/:key_id/accept": MIRROR_FOLLOWING_SESSION,
   "POST /outside/connection/check": "get_public_graph_connection checks a waiting connection, and reads a connected one's grants again, when it is called; this is the same, pressed from the page.",
   "POST /billing/webhook": "Stripe's signature-verified callback, not a caller surface.",
 

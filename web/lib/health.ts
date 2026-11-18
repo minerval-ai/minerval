@@ -499,6 +499,49 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
     }
   }
 
+  // The mirror of the public graph: a key waiting to be accepted, a batch refused, or the feed not read (docs/organizations.md, "The mirror").
+  const mirror = c.mirror;
+  if (mirror) {
+    if (mirror.key_waiting) {
+      out.push({
+        key: "mirror-key-waiting",
+        title: "The feed's key waits to be accepted",
+        consequence: "No batch of the public graph is applied until an administrator accepts it",
+        owner: "admin",
+        href: "/admin/outside/mirror#key",
+        action: "Compare",
+        tone: "warn",
+        blocks: false,
+        detail: "Compare it with the key Minerval publishes, outside this deployment, then accept it on the Mirror page.",
+      });
+    }
+    if (mirror.refusal) {
+      out.push({
+        key: `mirror-refused-${mirror.refusal.code}`,
+        title: "The mirror stopped at a batch it refused",
+        consequence: "The mirror stays at the batch before it until this is put right",
+        owner: mirror.refusal.owner,
+        href: "/admin/outside/mirror",
+        action: "View",
+        tone: "bad",
+        blocks: false,
+        detail: mirror.refusal.message,
+      });
+    } else if (mirror.check_error) {
+      out.push({
+        key: "mirror-feed-unread",
+        title: "The mirror could not read the feed",
+        consequence: "The mirror stays where it is and tries again at its next turn",
+        owner: "admin",
+        href: "/admin/outside/mirror",
+        action: "View",
+        tone: "warn",
+        blocks: false,
+        detail: mirror.check_error,
+      });
+    }
+  }
+
   // Keeping public versions current.
   if (c.public_graph?.last_not_taken) {
     out.push({

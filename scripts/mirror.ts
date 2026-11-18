@@ -132,11 +132,16 @@ async function main(): Promise<void> {
       return;
     }
     case "sync": {
-      const source = configuredSource();
+      // What the applier follows: the settings' feed, or the public graph as
+      // an administrator started following it on the Mirror page.
+      const { followedSource, trustedKeys } = await import("../src/services/mirror-following.js");
+      const source = (await followedSource()) ?? configuredSource();
       if (!source) {
-        throw new MirrorConfigError("This deployment has no mirror feed configured. Set MIRROR_FEED_URL or MIRROR_FEED_DIR.");
+        throw new MirrorConfigError(
+          "This deployment follows no feed. Start following on the Mirror page, or set MIRROR_FEED_URL or MIRROR_FEED_DIR."
+        );
       }
-      await reportSync(await syncMirror(source));
+      await reportSync(await syncMirror(source, { trustedKeys: await trustedKeys() }));
       return;
     }
     case "apply": {

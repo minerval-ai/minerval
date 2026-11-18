@@ -204,3 +204,84 @@ export const fundPublicMandate = (who: string, id: string, budgetOwls: number) =
 export const backPublicMandate = (who: string, id: string, owls: number) => post<Record<string, unknown>>(`/outside/mandates/${seg(id)}/back`, who, { owls });
 export const fundPublicNode = (who: string, nodeId: string, owls: number) => post<Record<string, unknown>>(`/outside/nodes/${seg(nodeId)}/fund`, who, { owls });
 export const askPublicMandate = (who: string, nodeId: string, mandateId: string) => post<Record<string, unknown>>(`/outside/nodes/${seg(nodeId)}/raise`, who, { mandate_id: mandateId });
+
+// ---- following the public graph (docs/organizations.md, "The mirror") ----
+
+export type MirrorOwner = "operator" | "admin" | "organization";
+
+export interface MirrorFeedKey {
+  key_id: string;
+  public_key: string;
+  feed_id: string | null;
+  read_from: string;
+  first_seen_at: string;
+  accepted: boolean;
+  accepted_at: string | null;
+  accepted_by: string | null;
+  current: boolean;
+}
+
+export interface MirrorSetupCheck {
+  key: "connected" | "feed_key" | "embedding" | "shape";
+  status: "pass" | "fail" | "unknown";
+  message: string;
+  owner: MirrorOwner;
+}
+
+export interface MirrorStatusView {
+  applied: boolean;
+  public_graph_as_of: string | null;
+  complete: boolean;
+  sequence: number | null;
+  batch_hash: string | null;
+  applied_at: string | null;
+  feed_id: string | null;
+  key_id: string | null;
+  searchable_claims: number;
+  last_refusal: { sequence: number | null; code: string; message: string; refused_at: string } | null;
+}
+
+export interface MirrorSetup {
+  in_app: boolean;
+  source: { kind: "network" | "files"; set_by: "app" | "settings"; address: string | null };
+  state: "following" | "paused" | "not_started";
+  started_at: string | null;
+  started_by: string | null;
+  paused_at: string | null;
+  paused_by: string | null;
+  last_checked_at: string | null;
+  last_check_error: string | null;
+  check_requested: boolean;
+  interval_seconds: number;
+  checks: MirrorSetupCheck[];
+  keys_set_by_settings: boolean;
+  keys: MirrorFeedKey[];
+  feed: { head: number | null; latest_snapshot: number | null; error: string | null } | null;
+  status: MirrorStatusView;
+  refusal_owner: "operator" | "admin" | null;
+  files: Array<{ name: string; sequence: number; applied: boolean }> | null;
+  /** The newest batches applied here; notes are given to administrators only. Absent from an older API. */
+  batches?: Array<{
+    sequence: number;
+    kind: string;
+    cut_at: string;
+    applied_at: string;
+    received_from: string | null;
+    written: number;
+    removed: number;
+    notes: {
+      merged_with_local_rows: number;
+      kept_claims: number;
+      kept_rows: number;
+      local_rows_followed: number;
+      local_judgments_retired: number;
+    } | null;
+  }>;
+}
+
+export const fetchMirrorSetup = async (who: string) => (await get<{ mirror: MirrorSetup }>("/mirror/setup", who)).mirror;
+export const followMirror = (who: string) => post<{ mirror: MirrorSetup }>("/mirror/follow", who);
+export const pauseMirror = (who: string) => post<{ mirror: MirrorSetup }>("/mirror/pause", who);
+export const checkMirror = (who: string) => post<{ mirror: MirrorSetup }>("/mirror/check", who);
+export const readMirrorKeys = (who: string) => post<{ read: number; error: string | null; mirror: MirrorSetup }>("/mirror/feed-keys/read", who);
+export const acceptMirrorKey = (who: string, keyId: string) => post<{ mirror: MirrorSetup }>(`/mirror/feed-keys/${seg(keyId)}/accept`, who);

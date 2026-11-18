@@ -65,6 +65,7 @@ import { askRoutes } from "../routes/asks.js";
 import { publishedPageRoutes } from "../routes/published-pages.js";
 import { mirrorRoutes } from "../routes/mirror.js";
 import { mirrorRoles } from "../services/mirror-roles.js";
+import { followsInApp } from "../services/mirror-following.js";
 import { connectionRoutes } from "../routes/connections.js";
 import { fileSetRoutes } from "../routes/file-sets.js";
 import { setupChecklistRoutes } from "../routes/setup-checklist.js";
@@ -179,7 +180,7 @@ export async function buildApp() {
   // configured to publish one or to apply one, and then only that side.
   // Registered before /mcp like every route that may be a tool.
   const mirror = mirrorRoles(config);
-  if (mirror.publisher || mirror.applier) {
+  if (mirror.publisher || mirror.applier || followsInApp(config)) {
     await app.register(mirrorRoutes, { prefix: "/mirror" });
   }
   // Spans /claims and /stated-views, so no prefix.

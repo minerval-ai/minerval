@@ -3,8 +3,12 @@
  * up to its feed on a cadence (services/mirror-apply-service.ts,
  * docs/mirror.md).
  *
- * Started only on a deployment configured with a feed (MIRROR_FEED_URL or
- * MIRROR_FEED_DIR). It fetches batches by their sequence and nothing else,
+ * Started on a deployment configured with a feed (MIRROR_FEED_URL or
+ * MIRROR_FEED_DIR), and on a private one that may follow the public graph
+ * from the app (services/mirror-following.ts), where it looks each turn at
+ * whether an administrator started following and does nothing until one
+ * has. Check now, pressed on the Mirror page, is picked up within seconds.
+ * It fetches batches by their sequence and nothing else,
  * so the publisher learns that this deployment exists and when it pulls,
  * and nothing about what it reads. Applying a batch holds a lock, and a
  * batch already applied changes nothing, so every task may run this.
@@ -17,12 +21,8 @@
  */
 import { loadConfig } from "../config.js";
 import { afterMirrorApplied, type MirrorUpkeepResult } from "../services/mirror-upkeep.js";
-import {
-  MirrorConfigError,
-  configuredSource,
-  syncMirror,
-  type SyncResult,
-} from "../services/mirror-apply-service.js";
+import { MirrorConfigError, syncMirror, type SyncResult } from "../services/mirror-apply-service.js";
+import { checkRequested, followedSource, noteChecked, trustedKeys } from "../services/mirror-following.js";
 
 /** One sync, described for the log; null when there was nothing new. */
 export function describeSync(result: SyncResult): { info: string | null; error: string | null } {
@@ -54,8 +54,12 @@ export function describeUpkeep(upkeep: MirrorUpkeepResult): string | null {
   return parts.length > 0 ? `Mirror: ${parts.join("; ")}. Nothing was run: each waits to be funded.` : null;
 }
 
+/** How often the applier looks whether Check now was pressed: one small read. */
+const CHECK_POLL_MS = 5_000;
+
 export function startMirrorApplier(options: {
   intervalMs?: number;
+  checkPollMs?: number;
   logger: { info: (...a: unknown[]) => void; error: (...a: unknown[]) => void };
 }): { stop: () => void } {
   const interval = options.intervalMs ?? Math.max(1, loadConfig().mirrorApplyIntervalSeconds) * 1000;
@@ -68,9 +72,16 @@ export function startMirrorApplier(options: {
     if (busy) return;
     busy = true;
     try {
-      const source = configuredSource();
+      const source = await followedSource();
       if (!source) return;
-      const result = await syncMirror(source);
+      const keys = await trustedKeys();
+      if (keys.length === 0) {
+        throw new MirrorConfigError(
+          "No key for the feed has been accepted, so no batch can be checked. An administrator accepts the feed's key on the Mirror page."
+        );
+      }
+      const result = await syncMirror(source, { trustedKeys: keys });
+      await noteChecked(null);
       const { info, error } = describeSync(result);
       if (info) options.logger.info(info);
       // What the batches mean for this deployment's own work: reassessments
@@ -86,13 +97,25 @@ export function startMirrorApplier(options: {
           : `Mirror: the feed could not be read (${err instanceof Error ? err.message : String(err)}); the mirror stays where it is`;
       if (message !== lastError) options.logger.error(message);
       lastError = message;
+      await noteChecked(message).catch(() => undefined);
     } finally {
       busy = false;
     }
   };
 
   const timer = setInterval(() => void tick(), interval);
+  const checks = setInterval(() => {
+    if (busy) return;
+    void checkRequested()
+      .then((asked) => (asked ? tick() : undefined))
+      .catch(() => undefined);
+  }, options.checkPollMs ?? CHECK_POLL_MS);
   void tick();
   options.logger.info(`Mirror applier started (checking its feed every ${Math.round(interval / 1000)} seconds)`);
-  return { stop: () => clearInterval(timer) };
+  return {
+    stop: () => {
+      clearInterval(timer);
+      clearInterval(checks);
+    },
+  };
 }

@@ -551,6 +551,8 @@ export interface FeedKey {
   key_id: string;
   /** The feed this deployment publishes; null until its first batch is cut. */
   feed_id: string | null;
+  /** Every key the feed signs with, the current one first. */
+  keys: Array<{ public_key: string; key_id: string }>;
 }
 
 export async function feedKey(db: MirrorDb = appDb, signingKey: KeyObject = configuredSigningKey()): Promise<FeedKey> {
@@ -558,7 +560,15 @@ export async function feedKey(db: MirrorDb = appDb, signingKey: KeyObject = conf
   const [head] = await db.query<{ feed_id: string }>(
     `SELECT feed_id FROM mirror_feed_batches ORDER BY sequence DESC LIMIT 1`
   );
-  return { algorithm: "ed25519", public_key: publicKey, key_id: keyId, feed_id: head?.feed_id ?? null };
+  return {
+    algorithm: "ed25519",
+    public_key: publicKey,
+    key_id: keyId,
+    feed_id: head?.feed_id ?? null,
+    // Every key the feed signs with, the current one first. One today; a
+    // publisher changing its key lists the new one before it signs with it.
+    keys: [{ public_key: publicKey, key_id: keyId }],
+  };
 }
 
 export interface FeedBatchListing {
@@ -587,6 +597,12 @@ export interface FeedListing {
   latest_snapshot: number | null;
   batches: FeedBatchListing[];
   has_more: boolean;
+  /**
+   * What this publisher cuts its next batch in: the shape of the mirrored
+   * tables and the embedding model of the vectors. A mirror checks both
+   * before it starts, since a mismatch would refuse every batch.
+   */
+  cuts_in: { shape: string; embedding: { model: string; dimensions: number } };
 }
 
 export const FEED_LIST_DEFAULT = 100;
@@ -646,6 +662,7 @@ export async function listBatches(
       bytes: Number(r.bytes),
     })),
     has_more: rows.length > limit,
+    cuts_in: { shape: replicatedShape(), embedding: { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMENSIONS } },
   };
 }
 

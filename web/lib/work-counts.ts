@@ -18,4 +18,6 @@ export interface WorkCounts {
    * settings need. null where the person cannot see it. Absent from an older build.
    */
   public_graph?: "ok" | "warn" | "bad" | null;
+  /** The mirror of the public graph: bad where it stopped at a refusal, warn where the feed's key waits or the feed was not read. */
+  mirror?: "ok" | "warn" | "bad" | null;
 }
