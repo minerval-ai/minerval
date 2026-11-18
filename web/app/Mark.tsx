@@ -1,11 +1,12 @@
 /**
  * The Minerval mark — the owl of Athena, traced from the adopted logo artwork
- * (issue #207). Single source of truth for the inline wordmark; kept in visual
+ * (issue #207). Single source of truth for the inline wordmark (the public
+ * masthead, and the sidebar and sign-in card of a members-only deployment); kept in visual
  * sync with app/icon.svg (the favicon, which swaps to paper in dark mode) and
  * app/apple-icon.tsx (the touch icon, which carries the full composition with
  * the olive sprig on an opaque paper tile).
  */
-import { OWL_INK, OWL_PATH } from "@/lib/owl-mark";
+import { OWL_INK, OWL_PATH } from "../lib/owl-mark";
 
 // Re-exported for the components that already read them from here.
 export { OWL_INK, OWL_PATH };

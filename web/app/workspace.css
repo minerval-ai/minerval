@@ -81,6 +81,7 @@ body.w-body { background: var(--w-bg); }
   overflow-y: auto;
 }
 .w-brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 12px; color: var(--w-ink); }
+.w-brand > svg { flex: none; }
 .w-shell a.w-brand:hover { text-decoration: none; }
 .w-brand-name { font: 600 17px/1 var(--serif); color: var(--w-ink); }
 .w-brand-dep {
