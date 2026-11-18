@@ -177,9 +177,10 @@ pages (`/account/organizations/:id`), in tabs:
 | --- | --- | --- |
 | Overview | Name, domain, members' count, owls, the deployments with their state | members |
 | Members | Members and roles, invitations in a drawer | members read; admins change |
-| Deployments | Each deployment's grants, allowance and what it has spent, with a drawer to change them; the old keys still live after a conversion | members read; admins change |
+| Deployments | Each deployment's grants, allowance and what it has spent, with a drawer to change them; feed files for a deployment the network does not join ("The mirror", below); the old keys still live after a conversion | members read; admins change |
 | Public acts | Mandates and funding, the forms for "Acting from minerval.ai" | admins |
-| Billing | Owls bought, usage reports received per deployment | admins |
+| Billing | Owls bought, usage reports received per deployment, and uploading a report carried out by hand | admins |
+| Domain | Domains, their TXT records and when each was last confirmed | members read; admins change |
 | Log | `organization_log` | members |
 
 The connect link (`/connect?code=...`) is a page of its own. It needs
@@ -391,10 +392,23 @@ asks first, since it retires the old connection.
 `USAGE_REPORT_DIR`) connects by hand. It shows a connection request: the
 same body, signed, as text. An admin pastes it into the organization's
 page on minerval.ai and approves it there. The deployment needs nothing
-back, since it sends nothing over the network. Files it hands over
-(usage reports, page packages) are carried by a member, who uploads them
-on the organization's page while signed in as themselves. They are
-recorded against the organization and the deployment, as if sent.
+back, since it sends nothing over the network. What it would have sent
+leaves as files, and two kinds go two ways, because one is public and
+the other is not:
+
+- **Page packages**, from the Outbox, are for the public graph. A member
+  of the organization submits one on minerval.ai, signed in as
+  themselves, and it is checked and admitted as if the deployment had
+  sent it, under the organization and the deployment.
+- **Usage reports**, from Budget (`USAGE_REPORT_DIR`), are billing, sent
+  privately to Minerval. An admin uploads them on the organization's
+  Billing tab, the only place on minerval.ai that reads reports received.
+  They are recorded against the organization and the deployment, as if
+  sent, and published nowhere.
+
+Acts that need the public graph's answer, such as taking up a request or
+funding, cannot travel as files. An admin makes them from minerval.ai
+instead ("Acting from minerval.ai").
 
 **Disconnecting** from the deployment (`/admin/outside`,
 administrators) retires the deployment on the public graph with one last
@@ -568,8 +582,8 @@ machines: the hosting is the deployment's statement.
 
 ## What changes inside a deployment
 
-The connection fits the workspace #1133 drew, and adds no page of its
-own.
+The connection fits the workspace #1133 drew and adds no page of its
+own. The mirror gets one ("The mirror", below).
 
 - **Public graph → Overview** (`/admin/outside`). Its account card shows
   the connection: connected or not, the organization (with its domain
@@ -622,6 +636,78 @@ Under the pages:
   instead says what the public graph answered and who can fix it: an
   admin of the organization, on minerval.ai.
 
+## The mirror
+
+Following the public graph ([mirror.md](mirror.md)) is set up today with
+three settings and run with `scripts/mirror.ts`. With a connection it is
+set up and kept in the app. The settings stay as the operator's
+overrides, and the page says when one is in force.
+
+**A page: Public graph → Mirror** (`/admin/outside/mirror`), in the
+sidebar's Public graph section with a signal of its own: a dot when the
+mirror has stopped at a refusal, or a new feed key waits to be accepted.
+Every member reads it (it is `GET /mirror/status` and the applied
+batches). Administrators act on it, from a session.
+
+**Setting up.** Before following starts, the page checks and shows:
+
+1. The deployment is connected and holds `read_feed`.
+2. The feed's key is confirmed (below).
+3. The feed's vectors come from this deployment's embedding model, and
+   the mirrored tables have the shape this release writes. Either
+   mismatch would refuse every batch, so it is said before anything is
+   pulled.
+
+Then an administrator chooses how batches arrive (over the network, or
+as files) and presses Start following. The page states what the first
+snapshot costs, as [mirror.md](mirror.md) measures it, and what pulling
+the whole feed shows minerval.ai: that the deployment exists and when it
+pulls. While the snapshot applies, the page shows batches applied out of
+the snapshot's, and that the mirror is partial (`complete: false`).
+
+**The feed's key.** The deployment reads the key from
+`GET /mirror/feed/key` when it connects. That is no weaker than today,
+where an operator copies the same answer into `MIRROR_FEED_PUBLIC_KEYS`.
+An administrator then confirms it once, against the key Minerval
+publishes in its docs, outside the deployment. No batch applies until
+the key is confirmed. The key a batch carries is still never trusted.
+
+**When the feed's key changes.** `GET /mirror/feed/key` answers one key
+today; it gains the list of keys the feed signs with, the current one
+first, so that a publisher can add a key before it signs with it. When
+a new one appears, the page offers it beside the one
+accepted, and an administrator accepts it after the same comparison.
+The old key stays accepted until it is removed, so nothing stops during
+the change. Until the new key is accepted, a batch signed only with it
+is refused (`unknown_key`), and the refusal points to the offer.
+
+**Keeping it.** The page shows how far behind the public graph the
+mirror is, the newest batch, the next check, and the batches with their
+notes. The notes that touch the deployment's own work come first, in
+words: a public claim retracted and kept here as deprecated because
+local judgments hang off it, or a merge that left a local edge on the
+absorbed claim. A refusal is shown with who fixes it, using Health's
+owners: the operator for `schema_newer` (upgrade) and `row_refused`
+(which row, read with `scripts/mirror.ts status`), an administrator for
+`unknown_key`. A refusal that names a row of the deployment's own keeps
+the guarded wording [mirror.md](mirror.md) gives it. Health and the
+Inbox carry the same rows.
+
+**Start, pause, check now.** `POST /mirror/follow`, `POST /mirror/pause`
+and `POST /mirror/check`, for holders of `administer` from a session,
+each on the activity log. They are not MCP tools: each is an
+administrator's choice about what the deployment pulls, made as Connect
+is. `get_mirror_status` stays a tool.
+
+**From files.** A deployment the network does not join follows from
+`MIRROR_FEED_DIR`. The page lists the files there and what became of
+each, and the next batch it needs. A member of the organization
+downloads batches on minerval.ai, from the deployment's row on the
+Deployments tab: every batch after one the member names, never a
+choice among nodes, so the download shows no more than a pull over the
+network does. It is on the organization's log as a pull of that range.
+The files are checked exactly as fetched ones are.
+
 ## Phases
 
 Each phase is one pull request or a few, and leaves things working.
@@ -637,13 +723,17 @@ Each phase is one pull request or a few, and leaves things working.
    `deployment_requests`, `deployment_request_nonces`, the signed-request
    method in the auth plugin, `deployment-grants.ts` and its test, the
    connect flow on both sides, the connection on Overview with its Health
-   rows, sidebar signal and Inbox items, the signing client, and the mirror applier, usage reports, outbound and outward acts moved
-   onto it. Bearer keys still work beside it: a deployment that has a
+   rows, sidebar signal and Inbox items, the signing client, and the
+   mirror applier, usage reports, outbound and outward acts moved onto
+   it. The Mirror page, with the feed key confirmed in the app, and
+   start, pause and check now. Bearer keys still work beside it: a deployment that has a
    connection uses it, and one that does not falls back to the keys in
    `.env`.
 3. **Control.** Withdrawing grants and retiring deployments from
    minerval.ai, replacing the connection key, the owl allowance, connecting
-   by hand, uploading handed-over files, publishing through the connection
+   by hand, submitting carried-out page packages and uploading usage
+   reports, feed files to download, accepting a new feed key, publishing
+   through the connection
    (`publishers.deployment_id`), and the check on hosting words.
 4. **Domains.** Verification, the daily check, and showing the domain.
 5. **Billing on the organization.** The report identifier tied to the
