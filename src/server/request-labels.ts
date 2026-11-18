@@ -137,6 +137,8 @@ const ADMINISTRATION =
   "Changes who may read or do what. The route checks the administrator and the change is written on the database owner's connection, to tables that carry no label.";
 const ACCOUNT = "Writes only to the account's own tables, which carry no label.";
 const OAUTH = "The OAuth server's own tables, which carry no label.";
+const ORGANIZATION =
+  "Writes only to accounts, an organization's members, invitations and log, and a converted account's keys and tokens, which carry no label.";
 
 /** Every route that is not a read, with how its request gets a label. */
 export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
@@ -297,6 +299,19 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "DELETE /api-keys/:key_id": { rule: "none", why: ACCOUNT },
   "POST /billing/checkout": { rule: "none", why: "Starts a payment with the payment provider. Nothing is written to the graph." },
   "POST /billing/webhook": { rule: "none", why: "Credits a purchase to the owl ledger, which carries no label." },
+  // Organizations (docs/organizations.md): accounts, their members, invitations and log.
+  "POST /organizations": { rule: "none", why: ORGANIZATION },
+  "PATCH /organizations/:id": { rule: "none", why: ORGANIZATION },
+  "PUT /organizations/:id/members/:account_id": { rule: "none", why: ORGANIZATION },
+  "DELETE /organizations/:id/members/:account_id": { rule: "none", why: ORGANIZATION },
+  "POST /organizations/:id/invitations": { rule: "none", why: ORGANIZATION },
+  "DELETE /organizations/:id/invitations/:invitation_id": { rule: "none", why: ORGANIZATION },
+  "POST /organization-invitations/:token/accept": { rule: "none", why: ORGANIZATION },
+  "DELETE /organizations/:id/old-keys/:key_id": { rule: "none", why: ORGANIZATION },
+  "POST /account-conversion": { rule: "none", why: ORGANIZATION },
+  "DELETE /account-conversion": { rule: "none", why: ORGANIZATION },
+  "POST /account-conversions/:id/accept": { rule: "none", why: ORGANIZATION },
+  "POST /operator/organizations/:id/admins": { rule: "none", why: "The operator key, which acts for no person, on an organization's members, which carry no label." },
   "POST /oauth/register": { rule: "none", why: OAUTH },
   "POST /oauth/token": { rule: "none", why: OAUTH },
   "POST /oauth/requests/:request_id/approve": {

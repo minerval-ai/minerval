@@ -6,6 +6,7 @@ import { featureOn } from "../features.js";
 import { registerSwagger } from "./plugins/swagger.js";
 import { registerCors } from "./plugins/cors.js";
 import { registerAuth } from "./plugins/auth.js";
+import { organizationRoutes } from "../routes/organizations.js";
 import { registerQuota } from "./plugins/quota.js";
 import { registerErrorHandler } from "./plugins/error-handler.js";
 import { registerRouteCatalog } from "./plugins/route-catalog.js";
@@ -132,6 +133,9 @@ export async function buildApp() {
   await app.register(appealRoutes, { prefix: "/appeals" });
   await app.register(userRoutes, { prefix: "/users" });
   await app.register(contributorRoutes, { prefix: "/contributors" });
+  // Organizations on minerval.ai (#1118, docs/organizations.md): their
+  // members, invitations and log, and a shared login becoming one.
+  await app.register(organizationRoutes);
   await app.register(apiKeyRoutes, { prefix: "/api-keys" });
   await app.register(usageRoutes, { prefix: "/usage" });
   await app.register(billingRoutes, { prefix: "/billing" });

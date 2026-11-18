@@ -45,6 +45,51 @@ production builds); with no keys configured the API likewise runs a dev bypass
 acting as the `dev:local` account, so the whole dashboard works with zero
 setup.
 
+## Organizations
+
+An account is a person, an organization, or the platform account
+(`contributors.kind`). An organization is an account nobody signs in as:
+its external id is `org:<id>`, which no sign-in provider makes, and
+`POST /users/provision` refuses it, as it refuses `platform:`. People act
+for it as themselves, as its admins or members (`organization_members`),
+and every change is a row in `organization_log`, which its members read
+and nobody else does. The design, and the phases still to come (connected
+deployments, domains, billing), are in [organizations.md](organizations.md).
+
+- **Making one** (`POST /organizations`) costs nothing and gives nothing.
+  Its maker is its first admin.
+- **People join by invitation**: a single-use link an admin makes
+  (`POST /organizations/:id/invitations`), kept only as a hash, open for
+  seven days, accepted by the person from their own session.
+- **An organization always has an admin.** Demoting, removing or letting
+  leave the last one is refused (`LAST_ADMIN`). Changes to one
+  organization's members take a lock on its row, so two admins removing
+  each other at once cannot both succeed. If every admin's account is
+  gone, the operator key makes a person an admin
+  (`POST /operator/organizations/:id/admins`), logged as made with it.
+- **Acting for it.** A signed-in admin acts as the organization from
+  minerval.ai with `x-acting-organization: <id>` beside `x-acting-user`.
+  The API checks that the person is a live admin of it now and that the
+  route is one of `ORGANIZATION_ACTING_ROUTES` (src/server/plugins/auth.ts):
+  buying owls, its mandates and their conversations with the Grantmaker,
+  funding a node, a request or a mandate, asking a mandate for a fresh
+  assessment, and the reads behind them. The request is then the
+  organization's, and the act is on its log under the admin. A key, a
+  token or the Assistant never acts as an organization, and the web tier
+  cannot name one in `x-acting-user` (`ORGANIZATION_NOT_ACTABLE`).
+- **A shared login becomes one in place** (`POST /account-conversion`,
+  accepted at `POST /account-conversions/:id/accept` by the person it
+  names as first admin). The row keeps its id, so its record, pages, owls
+  and API keys stay; its kind and external id change, so the login no
+  longer reaches it; its email and avatar are cleared and its OAuth tokens
+  revoked. Its old keys are listed for the admins
+  (`GET /organizations/:id/old-keys`) until they revoke them.
+
+Changes are made from a signed-in session only (`requireSession`), and
+none is an MCP tool: each decides who speaks for an organization. The
+reads are tools (`list_organizations`, `get_organization`, ...). The pages
+are under `/account/organizations`, `/account/convert` and `/join/:token`.
+
 ## How a request authenticates (API)
 
 Order of resolution in `src/server/plugins/auth.ts`:

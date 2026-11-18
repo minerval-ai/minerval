@@ -5,6 +5,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Contributor } from "../db/schema.js";
 import { provisionUser, getContributorById } from "../services/contributor-service.js";
+import { isOrganizationExternalId } from "../services/organization-service.js";
 import {
   getEntitlement,
   serializeEntitlement,
@@ -23,6 +24,7 @@ export function serializeUser(user: Contributor) {
   return {
     id: user.id,
     external_id: user.externalId,
+    kind: user.kind,
     display_name: user.displayName,
     email: user.email,
     avatar_url: user.avatarUrl,
@@ -78,6 +80,14 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
         avatar_url?: string;
         groups?: string[];
       };
+      // No sign-in makes an organization's or the platform's identity:
+      // nobody signs in as either (docs/organizations.md).
+      if (isOrganizationExternalId(body.external_id) || body.external_id.startsWith("platform:")) {
+        return reply.code(422).send({
+          error: "That identity is an organization's or the platform's, and no sign-in makes one.",
+          code: "NOT_A_SIGN_IN_IDENTITY",
+        });
+      }
       const user = await provisionUser({
         externalId: body.external_id,
         displayName: body.display_name,

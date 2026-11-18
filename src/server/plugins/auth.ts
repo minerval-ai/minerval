@@ -63,6 +63,11 @@ import {
   resolveDispatchedAuth,
 } from "../../mcp/dispatch.js";
 import { membersOnly, type Standing } from "../../permissions.js";
+import {
+  isLiveAdmin,
+  isOrganizationExternalId,
+  logActedAs,
+} from "../../services/organization-service.js";
 
 export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass";
 
@@ -110,6 +115,14 @@ export interface RequestAuth {
    * absent on the public graph.
    */
   fixedLabel?: FixedLabel;
+  /**
+   * Set when a signed-in admin acts for an organization from minerval.ai
+   * (x-acting-organization; docs/organizations.md, "Acting from
+   * minerval.ai"). The request is the organization's (userId is the
+   * organization's account); this is the person, whom the organization's
+   * log names.
+   */
+  actingAdmin?: { accountId: string; externalId: string | null };
 }
 
 /**
@@ -126,6 +139,39 @@ export function markAuthenticated(request: FastifyRequest): void {
 
 export const DEV_EXTERNAL_ID = "dev:local";
 
+/** The header with which the web tier says a signed-in admin acts for an organization. */
+export const ACTING_ORGANIZATION_HEADER = "x-acting-organization";
+
+/**
+ * The routes an admin may call as an organization from minerval.ai: the acts
+ * that spend its owls (buying them, mandates and their conversations with
+ * the Grantmaker, funding a node, a request or a mandate, asking a mandate
+ * for a fresh assessment) and the reads behind them. Contributing,
+ * proposing and publishing are a deployment's work, under its grants, and
+ * are not here (docs/organizations.md, "Acting from minerval.ai").
+ */
+export const ORGANIZATION_ACTING_ROUTES: ReadonlySet<string> = new Set([
+  "GET /users/me",
+  "GET /billing/packs",
+  "GET /billing/ledger",
+  "POST /billing/checkout",
+  "GET /grants",
+  "GET /grants/:id",
+  "POST /grants/:id/approve",
+  "POST /grants/:id/topup",
+  "POST /grants/:id/cancel",
+  "GET /grant-conversations",
+  "GET /grant-conversations/:id",
+  "POST /grant-conversations",
+  "POST /grant-conversations/:id/messages",
+  "POST /grant-conversations/:id/fund",
+  "POST /mandates/:id/contribute",
+  "POST /mandates/:id/raise",
+  "POST /mandates/:id/withdraw",
+  "POST /claims/:claim_id/contribute",
+  "POST /requests/:request_id/contribute",
+]);
+
 /**
  * The routes a platform-grantmaking key may call (#529): open, continue,
  * list, and read the platform's granting conversations. Never `/fund`:
@@ -141,6 +187,11 @@ export function platformGrantmakingRouteAllowed(
   }
   if (method === "POST" && /\/fund\/?$/.test(path)) return false;
   return true;
+}
+
+function routeKeyOf(request: FastifyRequest): string {
+  const url = request.routeOptions.url ?? request.url.split("?")[0]!;
+  return `${request.method} ${url}`;
 }
 
 /**
@@ -366,6 +417,14 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             code: "PLATFORM_NOT_ACTABLE",
           });
         }
+        // Nor as an organization: nobody signs in as one. An admin acts for
+        // it as themselves, with x-acting-organization below.
+        if (isOrganizationExternalId(actingExternalId)) {
+          return reply.code(403).send({
+            error: "An organization is not signed in as. Its admins act for it as themselves.",
+            code: "ORGANIZATION_NOT_ACTABLE",
+          });
+        }
         const actingUser = await getContributorByExternalId(actingExternalId);
         if (!actingUser) {
           return reply.code(401).send({
@@ -389,10 +448,65 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         };
       }
 
+      // An admin acting for an organization from minerval.ai: a signed-in
+      // person, on a route that spends or reads the organization's money,
+      // who is a live admin of it right now. The request then is the
+      // organization's.
+      const actingOrganization = request.headers[ACTING_ORGANIZATION_HEADER];
+      if (actingOrganization !== undefined) {
+        const devSession = auth.method === "dev_bypass" && auth.userId !== null;
+        if (!auth.isSession && !devSession) {
+          return reply.code(403).send({
+            error: "Only a person in a signed-in session acts for an organization",
+            code: "ORGANIZATION_SESSION_REQUIRED",
+          });
+        }
+        const route = routeKeyOf(request);
+        if (!ORGANIZATION_ACTING_ROUTES.has(route)) {
+          return reply.code(403).send({
+            error:
+              "This is not an act an admin makes for an organization from minerval.ai. Contributing, proposing and publishing are a connected deployment's work.",
+            code: "NOT_AN_ORGANIZATION_ACT",
+          });
+        }
+        const organizationId = typeof actingOrganization === "string" ? actingOrganization : "";
+        if (!auth.userId || !(await isLiveAdmin(organizationId, auth.userId))) {
+          return reply.code(403).send({
+            error: "You are not an admin of that organization",
+            code: "ADMIN_REQUIRED",
+          });
+        }
+        const person = { accountId: auth.userId, externalId: auth.contributorExternalId };
+        auth = {
+          ...auth,
+          userId: organizationId,
+          contributorExternalId: `org:${organizationId}`,
+          actingAdmin: person,
+        };
+      }
+
       request.auth = auth;
       request.contributorExternalId = auth.contributorExternalId;
     }
   );
+
+  // Every act an admin made for an organization is on the organization's
+  // log, with the route and what the API answered. Reads are not logged.
+  app.addHook("onResponse", async (request, reply) => {
+    const acting = request.auth?.actingAdmin;
+    if (!acting || request.method === "GET" || !request.auth?.userId) return;
+    try {
+      await logActedAs({
+        organizationId: request.auth.userId,
+        actorId: acting.accountId,
+        method: request.method,
+        route: request.routeOptions.url ?? request.url,
+        status: reply.statusCode,
+      });
+    } catch (err) {
+      request.log.error({ err }, "organization log: could not record an act made for an organization");
+    }
+  });
 
   // Route guard: trusted first-party callers only (env keys, service-scope
   // DB keys, dev bypass). Run AFTER app.authenticate.

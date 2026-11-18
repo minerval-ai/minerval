@@ -70,7 +70,7 @@ export default async function ContributorPage({
     <div className="col">
       <PageHead
         back={{ href: "/contributors", label: "contributors" }}
-        kicker="Contributor"
+        kicker={c.kind === "organization" ? "Organization" : "Contributor"}
         title={c.display_name}
         meta={
           <>

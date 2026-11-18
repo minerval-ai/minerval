@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "../../auth";
@@ -38,6 +39,7 @@ import { PageHead } from "@/components/PageHead";
 import { grantText, listed } from "../../lib/admin-words";
 import { loadStanding } from "../../lib/standing";
 import { fetchMyLabels } from "../../lib/admin-api";
+import { membersOnly } from "../../lib/members";
 
 export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
@@ -243,11 +245,15 @@ export default async function AccountPage({
         kicker="Account"
         title={user.display_name}
         actions={
-          <form action={signOutAction}>
-            <button className="linklike" type="submit">
-              sign out
-            </button>
-          </form>
+          <>
+            {/* Organizations are minerval.ai's (docs/organizations.md); a members-only deployment is an organization's own. */}
+            {!membersOnly() && <Link href="/account/organizations">organizations</Link>}
+            <form action={signOutAction}>
+              <button className="linklike" type="submit">
+                sign out
+              </button>
+            </form>
+          </>
         }
         meta={
           <>

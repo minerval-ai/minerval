@@ -236,6 +236,17 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /appeals/:id": { name: "get_appeal" },
   "GET /contributors": { name: "list_contributors" },
   "GET /contributors/:id": { name: "get_contributor" },
+  // ---- organizations (docs/organizations.md) ----
+  // Reads of the organizations the caller belongs to. Every change to one
+  // is excluded below: it decides who speaks for an organization.
+  "GET /organizations": { name: "list_organizations" },
+  "GET /organizations/:id": { name: "get_organization" },
+  "GET /organizations/:id/members": { name: "list_organization_members" },
+  "GET /organizations/:id/invitations": { name: "list_organization_invitations" },
+  "GET /organizations/:id/log": { name: "get_organization_log" },
+  "GET /organizations/:id/old-keys": { name: "list_organization_old_keys" },
+  "GET /account-conversion": { name: "get_account_conversion" },
+  "GET /account-conversions/for-me": { name: "list_account_conversions_for_me" },
 
   // ---- your account ----
   "GET /users/me": { name: "get_account" },
@@ -511,6 +522,16 @@ const OPERATOR_ONLY =
 const SESSION_ONLY =
   "Requires a signed-in dashboard session, so that a leaked key (an MCP " +
   "credential included) can never mint keys or start a purchase.";
+const ORGANIZATION_SESSION =
+  "Decides who speaks for an organization (its name, its members and admins, who is invited, " +
+  "an account becoming one, its old keys), so it is a person's act in their own signed-in session, " +
+  "as registering a publisher is (docs/organizations.md).";
+const ORGANIZATION_INVITATION_LINK =
+  "An invitation link is a secret given to one person, opened in their browser while they are signed in. " +
+  "An agent has no link of its own to read.";
+const ORGANIZATION_OPERATOR =
+  "The way back for an organization whose admins are all gone: requires the operator key, held " +
+  "outside every deployment surface (docs/organizations.md).";
 const PRIZE_FILING =
   "Filing and pursuing a prize claim carries declarations, a residency " +
   "statement, and a rules version a person must read and make, plus " +
@@ -667,6 +688,19 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /api-keys": SESSION_ONLY,
   "DELETE /api-keys/:key_id": SESSION_ONLY,
   "POST /billing/checkout": SESSION_ONLY,
+  "POST /organizations": ORGANIZATION_SESSION,
+  "PATCH /organizations/:id": ORGANIZATION_SESSION,
+  "PUT /organizations/:id/members/:account_id": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/members/:account_id": ORGANIZATION_SESSION,
+  "POST /organizations/:id/invitations": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/invitations/:invitation_id": ORGANIZATION_SESSION,
+  "GET /organization-invitations/:token": ORGANIZATION_INVITATION_LINK,
+  "POST /organization-invitations/:token/accept": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/old-keys/:key_id": ORGANIZATION_SESSION,
+  "POST /account-conversion": ORGANIZATION_SESSION,
+  "DELETE /account-conversion": ORGANIZATION_SESSION,
+  "POST /account-conversions/:id/accept": ORGANIZATION_SESSION,
+  "POST /operator/organizations/:id/admins": ORGANIZATION_OPERATOR,
   "POST /billing/webhook": "Stripe's signature-verified callback, not a caller surface.",
 
   "GET /setup/preflight":

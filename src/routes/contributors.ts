@@ -91,6 +91,10 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
               type: "object",
               properties: {
                 id: { type: "string", format: "uuid" },
+                // "person" or "organization" (docs/organizations.md). An
+                // organization's page names no members: who acted for it
+                // is the organization's own record.
+                kind: { type: "string" },
                 display_name: { type: "string" },
                 avatar_url: { type: "string", nullable: true },
                 member_since: { type: "string", format: "date-time" },
@@ -178,6 +182,7 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({
         contributor: {
           id: contributor.id,
+          kind: contributor.kind,
           display_name: contributor.displayName,
           avatar_url: contributor.avatarUrl,
           member_since: contributor.createdAt.toISOString(),
