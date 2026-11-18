@@ -1,5 +1,5 @@
 {
-  "id": "3b419b62-799c-451a-a76d-8fbebc2eaf89",
+  "id": "34d7904e-a005-4907-8f5a-943c70cd3410",
   "prevId": "3db73030-69ca-4187-bbe1-ed8ae3228d01",
   "version": "7",
   "dialect": "postgresql",
@@ -11810,6 +11810,166 @@
       },
       "isRLSEnabled": false
     },
+    "public.deployment_connect_requests": {
+      "name": "deployment_connect_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "suggested_name": {
+          "name": "suggested_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hosting": {
+          "name": "hosting",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asked_grants": {
+          "name": "asked_grants",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "report_identifier": {
+          "name": "report_identifier",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'waiting'"
+        },
+        "decided_by": {
+          "name": "decided_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_deployment_connect_requests_key": {
+          "name": "idx_deployment_connect_requests_key",
+          "columns": [
+            {
+              "expression": "key_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "deployment_connect_requests_decided_by_contributors_id_fk": {
+          "name": "deployment_connect_requests_decided_by_contributors_id_fk",
+          "tableFrom": "deployment_connect_requests",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "decided_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "deployment_connect_requests_deployment_id_deployments_id_fk": {
+          "name": "deployment_connect_requests_deployment_id_deployments_id_fk",
+          "tableFrom": "deployment_connect_requests",
+          "tableTo": "deployments",
+          "columnsFrom": [
+            "deployment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "deployment_connect_requests_code_unique": {
+          "name": "deployment_connect_requests_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ck_deployment_connect_requests_state": {
+          "name": "ck_deployment_connect_requests_state",
+          "value": "\"deployment_connect_requests\".\"state\" IN ('waiting', 'approved', 'denied')"
+        },
+        "ck_deployment_connect_requests_hosting": {
+          "name": "ck_deployment_connect_requests_hosting",
+          "value": "\"deployment_connect_requests\".\"hosting\" IN ('own_machines', 'minerval', 'third_party')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.deployment_faults": {
       "name": "deployment_faults",
       "schema": "",
@@ -11917,6 +12077,432 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.deployment_grants": {
+      "name": "deployment_grants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "grant": {
+          "name": "grant",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "withdrawn_by": {
+          "name": "withdrawn_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "withdrawn_at": {
+          "name": "withdrawn_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_deployment_grants_live": {
+          "name": "uq_deployment_grants_live",
+          "columns": [
+            {
+              "expression": "deployment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "grant",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"deployment_grants\".\"withdrawn_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "deployment_grants_deployment_id_deployments_id_fk": {
+          "name": "deployment_grants_deployment_id_deployments_id_fk",
+          "tableFrom": "deployment_grants",
+          "tableTo": "deployments",
+          "columnsFrom": [
+            "deployment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "deployment_grants_granted_by_contributors_id_fk": {
+          "name": "deployment_grants_granted_by_contributors_id_fk",
+          "tableFrom": "deployment_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "granted_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "deployment_grants_withdrawn_by_contributors_id_fk": {
+          "name": "deployment_grants_withdrawn_by_contributors_id_fk",
+          "tableFrom": "deployment_grants",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "withdrawn_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_deployment_grants_grant": {
+          "name": "ck_deployment_grants_grant",
+          "value": "\"deployment_grants\".\"grant\" IN ('read_feed', 'report_usage', 'publish', 'act')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.deployment_request_nonces": {
+      "name": "deployment_request_nonces",
+      "schema": "",
+      "columns": {
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nonce": {
+          "name": "nonce",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seen_at": {
+          "name": "seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_deployment_request_nonces_seen": {
+          "name": "idx_deployment_request_nonces_seen",
+          "columns": [
+            {
+              "expression": "seen_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "deployment_request_nonces_key_id_nonce_pk": {
+          "name": "deployment_request_nonces_key_id_nonce_pk",
+          "columns": [
+            "key_id",
+            "nonce"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.deployment_requests": {
+      "name": "deployment_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "deployment_id": {
+          "name": "deployment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route": {
+          "name": "route",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "at": {
+          "name": "at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_deployment_requests_deployment": {
+          "name": "idx_deployment_requests_deployment",
+          "columns": [
+            {
+              "expression": "deployment_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "deployment_requests_deployment_id_deployments_id_fk": {
+          "name": "deployment_requests_deployment_id_deployments_id_fk",
+          "tableFrom": "deployment_requests",
+          "tableTo": "deployments",
+          "columnsFrom": [
+            "deployment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.deployments": {
+      "name": "deployments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hosting": {
+          "name": "hosting",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "public_key": {
+          "name": "public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_id": {
+          "name": "key_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "report_identifier": {
+          "name": "report_identifier",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "retired_by": {
+          "name": "retired_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "retired_at": {
+          "name": "retired_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "uq_deployments_live_key": {
+          "name": "uq_deployments_live_key",
+          "columns": [
+            {
+              "expression": "key_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"deployments\".\"retired_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_deployments_org": {
+          "name": "idx_deployments_org",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "deployments_organization_id_contributors_id_fk": {
+          "name": "deployments_organization_id_contributors_id_fk",
+          "tableFrom": "deployments",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "deployments_approved_by_contributors_id_fk": {
+          "name": "deployments_approved_by_contributors_id_fk",
+          "tableFrom": "deployments",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "approved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "deployments_retired_by_contributors_id_fk": {
+          "name": "deployments_retired_by_contributors_id_fk",
+          "tableFrom": "deployments",
+          "tableTo": "contributors",
+          "columnsFrom": [
+            "retired_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "ck_deployments_hosting": {
+          "name": "ck_deployments_hosting",
+          "value": "\"deployments\".\"hosting\" IN ('own_machines', 'minerval', 'third_party')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.enqueue_events": {
@@ -16819,13 +17405,7 @@
           "name": "grant_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "node_id": {
-          "name": "node_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "title": {
           "name": "title",
@@ -16845,13 +17425,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
-        },
-        "paused_for_fund": {
-          "name": "paused_for_fund",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "heartbeat_hours": {
           "name": "heartbeat_hours",
@@ -17003,22 +17576,6 @@
           "method": "btree",
           "with": {}
         },
-        "idx_lookouts_node": {
-          "name": "idx_lookouts_node",
-          "columns": [
-            {
-              "expression": "node_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "node_id IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_lookouts_due": {
           "name": "idx_lookouts_due",
           "columns": [
@@ -17050,19 +17607,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "lookouts_node_id_claims_id_fk": {
-          "name": "lookouts_node_id_claims_id_fk",
-          "tableFrom": "lookouts",
-          "tableTo": "claims",
-          "columnsFrom": [
-            "node_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "lookouts_sensitivity_label_labels_name_fk": {
           "name": "lookouts_sensitivity_label_labels_name_fk",
           "tableFrom": "lookouts",
@@ -17081,10 +17625,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "ck_lookouts_one_owner": {
-          "name": "ck_lookouts_one_owner",
-          "value": "(\"lookouts\".\"grant_id\" IS NULL) <> (\"lookouts\".\"node_id\" IS NULL)"
-        },
         "ck_lookouts_status": {
           "name": "ck_lookouts_status",
           "value": "\"lookouts\".\"status\" IN ('active', 'paused', 'retired')"

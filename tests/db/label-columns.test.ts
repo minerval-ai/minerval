@@ -192,8 +192,14 @@ describe("the label column, in the catalog", () => {
       // A per-account allowance: a number.
       "assistant_allowances",
       "contributors",
+      // Connected deployments: who a signed request is, what it may do, and the writes it signed (docs/organizations.md).
+      "deployment_connect_requests",
       // The operator's record of a provider fault: a class, a provider and counts.
       "deployment_faults",
+      "deployment_grants",
+      "deployment_request_nonces",
+      "deployment_requests",
+      "deployments",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
       // Where the subscription router has read the event log to: a number.

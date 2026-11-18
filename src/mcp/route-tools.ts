@@ -245,6 +245,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /organizations/:id/invitations": { name: "list_organization_invitations" },
   "GET /organizations/:id/log": { name: "get_organization_log" },
   "GET /organizations/:id/old-keys": { name: "list_organization_old_keys" },
+  "GET /organizations/:id/deployments": { name: "list_organization_deployments" },
   "GET /account-conversion": { name: "get_account_conversion" },
   "GET /account-conversions/for-me": { name: "list_account_conversions_for_me" },
 
@@ -529,6 +530,12 @@ const ORGANIZATION_SESSION =
 const ORGANIZATION_INVITATION_LINK =
   "An invitation link is a secret given to one person, opened in their browser while they are signed in. " +
   "An agent has no link of its own to read.";
+const DEPLOYMENT_SIGNED =
+  "Made by a private deployment, signed with its own connection key (docs/organizations.md, " +
+  "\"Signed requests\"). An agent holds no deployment key.";
+const CONNECT_CODE =
+  "A deployment's connect code is shown on that deployment and approved by a person in their browser, " +
+  "signed in as themselves; reading it is the first step of that act.";
 const ORGANIZATION_OPERATOR =
   "The way back for an organization whose admins are all gone: requires the operator key, held " +
   "outside every deployment surface (docs/organizations.md).";
@@ -701,6 +708,12 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /account-conversion": ORGANIZATION_SESSION,
   "POST /account-conversions/:id/accept": ORGANIZATION_SESSION,
   "POST /operator/organizations/:id/admins": ORGANIZATION_OPERATOR,
+  "POST /deployments/connect": DEPLOYMENT_SIGNED,
+  "GET /deployments/connect/:code": DEPLOYMENT_SIGNED,
+  "GET /organizations/me": DEPLOYMENT_SIGNED,
+  "GET /connect-requests/:code": CONNECT_CODE,
+  "POST /connect-requests/:code/approve": ORGANIZATION_SESSION,
+  "POST /connect-requests/:code/deny": ORGANIZATION_SESSION,
   "POST /billing/webhook": "Stripe's signature-verified callback, not a caller surface.",
 
   "GET /setup/preflight":

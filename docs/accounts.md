@@ -85,6 +85,19 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   revoked. Its old keys are listed for the admins
   (`GET /organizations/:id/old-keys`) until they revoke them.
 
+- **A connected deployment** signs each request with its own key
+  (`Authorization: Minerval-Deployment ...`; [organizations.md](organizations.md),
+  "Signed requests"). The auth plugin checks the signature over the host,
+  method, path, body hash, time, nonce and key id, against the live
+  deployment the key id names, and then that the route is one its grants
+  open (`src/server/deployment-grants.ts`; any other route answers
+  `NOT_A_DEPLOYMENT_ROUTE`). A write's nonce is refused if seen with the key
+  in the last ten minutes. The request is the organization's, with
+  `method: "deployment"`; it is not a session and acts for no person. Each
+  write it signed is recorded for the organization's members
+  (`deployment_requests`); reads are not. A deployment connects with a code
+  an admin approves at `/connect`.
+
 Changes are made from a signed-in session only (`requireSession`), and
 none is an MCP tool: each decides who speaks for an organization. The
 reads are tools (`list_organizations`, `get_organization`, ...). The pages
