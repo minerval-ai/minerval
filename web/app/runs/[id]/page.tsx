@@ -26,7 +26,9 @@ const REASON_TEXT: Record<string, string> = {
   "input:lookout-poke-note": "its briefing included a note that can relay a funder's words",
   "input:grantmaker-brief": "its task came from a funder's private conversation",
   "input:audit-brief": "its task came from an audit context that can carry operator data",
-  "input:research-report": "a research report reached it, and research reports are not published",
+  "input:research-report": "a research report from a run that is not public reached it",
+  "input:private-grantmaking":
+    "it works for a mandate made before grantmaking was public, whose funder was promised that their words were private",
 };
 
 function reasonText(r: string): string {

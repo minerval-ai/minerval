@@ -303,6 +303,7 @@ async function runTurn(convo: GrantConversation, startedAt: Date): Promise<void>
           transcript: transcriptOf(convo),
           ...(funded && convo.grantId ? { grantId: convo.grantId } : {}),
           ...(platform ? { funder: "platform" as const } : {}),
+          conversationId: convo.id,
           onText,
           onTool,
         })
@@ -630,6 +631,9 @@ export async function fundConversationMandate(input: {
       // The domain skills the mandate's Grantmaker carries on its review
       // passes (docs/mathematics.md §3.4); proposed by the Grantmaker itself.
       skills: mandate.skills ?? [],
+      // Directed in public as its conversation was held: a conversation
+      // held under the old promise of privacy makes a mandate that keeps it.
+      directedInPublic: convo.inPublic,
     })
     .returning();
 

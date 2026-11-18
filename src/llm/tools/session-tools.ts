@@ -21,6 +21,7 @@ import {
   sessionLimitsSentence,
   RESEARCH_REPORT_REASON,
   outstanding,
+  privateResearchAmong,
   renderResearchSessionArrivals,
   suspendSession,
   takeLiveReplies,
@@ -58,10 +59,11 @@ export function getSessionToolDefinitions(): Tool[] {
  */
 export async function takeArrivals(sessionId: string): Promise<string | null> {
   const replies = await takeLiveReplies(sessionId);
-  // A research report is not public (the claim page leaves it out), so a
-  // run it reaches is private (llm/run-visibility.ts). This is the one place
-  // arrivals enter a run, by wait_for_answers or in the next tool result.
-  if (replies.some((r) => r.kind === "research")) markCurrentRunPrivate(RESEARCH_REPORT_REASON);
+  // A research report from a private run makes a run it reaches private
+  // (session-service.ts, RESEARCH_REPORT_REASON); one from a public run is
+  // public already. This is the one place arrivals enter a run, by
+  // wait_for_answers or in the next tool result.
+  if (await privateResearchAmong(replies)) markCurrentRunPrivate(RESEARCH_REPORT_REASON);
   const credit = replies.reduce((sum, r) => sum + Number(r.credit_micro_usd ?? 0), 0);
   if (credit > 0) creditRunBudget(credit);
   return renderResearchSessionArrivals(replies);

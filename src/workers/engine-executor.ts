@@ -645,7 +645,7 @@ async function runResumeAction(action: RunnableAction): Promise<EngineProcessRes
       ? { newMessages: await grantmakerWakeDigest(session), budgetLine }
       : { budgetLine };
   const messages = await resumeMessages(session, replies, extra);
-  const resume = { sessionId: session.id, messages, privateReasons: sessionPrivateReasons(session, replies) };
+  const resume = { sessionId: session.id, messages, privateReasons: await sessionPrivateReasons(session, replies) };
   const input = (session.context?.input ?? {}) as never;
   let billedMicroUsd = 0;
   let failure: unknown = null;

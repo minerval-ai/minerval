@@ -824,6 +824,31 @@ export async function fetchSetupPart(
   }
 }
 
+// A granting conversation anyone may read (GET /grant-conversations/public/:id):
+// every one begun since directing the public graph was made public. A 404 (no
+// such conversation, or one held before the rule) reads as null.
+export interface PublicGrantConversation {
+  id: string;
+  funder: string;
+  status: string;
+  messages: Array<{ role: "user" | "assistant"; content: string; at: string; via?: "assistant" }>;
+  draft: { title?: string } | null;
+  grant_id: string | null;
+  created_at: string;
+}
+
+export async function fetchPublicGrantConversation(id: string): Promise<PublicGrantConversation | null> {
+  try {
+    const r = await apiGet<{ conversation: PublicGrantConversation }>(
+      `/grant-conversations/public/${pathSegment(id)}`,
+    );
+    return r.conversation;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
 // Agent runs (#553). A 404 (no such run, or an API that predates the
 // route) reads as null.
 export async function fetchRun(id: string): Promise<RunSummary | WithheldRun | null> {

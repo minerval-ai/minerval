@@ -29,6 +29,7 @@
  * cheap tier runs the ordinary loop without it, since the sandbox is an
  * Anthropic server tool. The task message tells the researcher which it has.
  */
+import { keepGrantmakingPromise } from "../private-grantmaking.js";
 import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import { loadConfig } from "../../config.js";
@@ -671,13 +672,12 @@ async function runResearcherImpl(input: ResearcherInput): Promise<ResearcherResu
   const offered = new Set(toolNames);
   await stampResearchRun(run.id, { runId: getUsageContext().runId ?? null, tools: toolNames });
 
-  // A Grantmaker's task comes out of a funder's private conversation
-  // (claim-extras-service.ts), and an Audit Agent's from contexts that can
-  // carry operator data, so runs they launch are private
-  // (llm/run-visibility.ts). Other launchers' tasks are public.
-  if (run.requested_by === "grantmaker" || run.requested_by === "audit") {
-    markCurrentRunPrivate(`input:${run.requested_by}-brief`);
-  }
+  // An Audit Agent's task comes from contexts that can carry operator data,
+  // so a run it launches is private (llm/run-visibility.ts). A Grantmaker's
+  // task directs the public graph and is public, except on a mandate made
+  // before that rule, which keeps its promise (private-grantmaking.ts).
+  if (run.requested_by === "audit") markCurrentRunPrivate("input:audit-brief");
+  if (run.requested_by === "grantmaker") await keepGrantmakingPromise({ grantId: run.grant_id });
 
   const notebook: Record<string, string> = { ...(run.notebook ?? {}) };
   const system = getResearcherSystemPromptBlocks({

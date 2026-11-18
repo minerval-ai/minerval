@@ -379,8 +379,9 @@ export async function spawnFundedMandate(input: {
     id: string;
     funder_user_id: string;
     mandate: { funder_named?: boolean; funder_stake?: string | null } | null;
+    directed_in_public: boolean;
   }>(
-    `SELECT id, funder_user_id, mandate FROM grants WHERE id = $1 AND status = 'active'`,
+    `SELECT id, funder_user_id, mandate, directed_in_public FROM grants WHERE id = $1 AND status = 'active'`,
     [input.fromGrantId]
   );
   if (!source) {
@@ -413,11 +414,14 @@ export async function spawnFundedMandate(input: {
       : {}),
   };
   const [grant] = await rawQuery<{ id: string }>(
+    // A spawned mandate is directed in public as its source is: one made
+    // under the promise that its funder's words were private hands on what
+    // its Grantmaker drew from them, and keeps the promise.
     `INSERT INTO grants
-       (funder_user_id, budget_job_id, name, policy, status, mandate, sensitivity_label)
-     VALUES ($1, $2, $3, 'agent', 'planning', $4::jsonb, $5)
+       (funder_user_id, budget_job_id, name, policy, status, mandate, sensitivity_label, directed_in_public)
+     VALUES ($1, $2, $3, 'agent', 'planning', $4::jsonb, $5, $6)
      RETURNING id`,
-    [source.funder_user_id, job!.id, input.title, JSON.stringify(mandate), currentLabel()]
+    [source.funder_user_id, job!.id, input.title, JSON.stringify(mandate), currentLabel(), source.directed_in_public]
   );
   const regranted = await createRegrant({
     fromGrantId: source.id,

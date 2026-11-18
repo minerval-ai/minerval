@@ -149,8 +149,6 @@ describe("run visibility", () => {
         "tool:keep_reading",
         "tool:lift_hold",
         "tool:look_at_destination",
-        "tool:notebook_read",
-        "tool:notebook_write",
         "tool:open_output",
         "tool:open_reading",
         "tool:record_fidelity_outcome",
@@ -165,6 +163,7 @@ describe("run visibility", () => {
         "tool:raise_issue", "tool:get_issue", "tool:get_research_run", "tool:get_report_to_redact", "tool:cost_sheet",
         "tool:get_contributor_profile", "tool:get_prize_claim", "tool:delegate", "tool:grant_overview",
         "input:grantmaker-brief", "input:audit-brief", "input:lookout-poke-note", "input:readers-own-content",
+        "input:private-grantmaking",
         "tool:no_such_tool:unclassified", "agent:no_such_agent:unclassified",
       ]) {
         expect(labelCoversReason(reason, [reason]), reason).toBe(false);

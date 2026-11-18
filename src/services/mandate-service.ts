@@ -73,6 +73,8 @@ interface GrantRow {
   id: string;
   name: string;
   status: string;
+  directed_in_public: boolean;
+  workspace: string | null;
   is_platform: boolean;
   scope_claim_id: string | null;
   scope_query: string | null;
@@ -90,10 +92,36 @@ interface GrantRow {
   created_at: Date | null;
 }
 
+/**
+ * Whether anyone may read a mandate. One directed in public
+ * (grants.directed_in_public, private-grantmaking.ts) is public in every
+ * state, its planning and its wait for approval included: the Grantmaker
+ * drafted it, and directing the public graph is public. One made before
+ * that rule is public once live, as it was promised, and a decomposition
+ * from the moment it is bought.
+ */
+export function mandateIsPublic(row: {
+  status: string;
+  directed_in_public: boolean;
+  origin?: string | null;
+}): boolean {
+  return (
+    row.directed_in_public ||
+    ["active", "completed", "cancelled"].includes(row.status) ||
+    (row.status === "planning" && row.origin === "deep_decomposition")
+  );
+}
+
+/** mandateIsPublic, in SQL, over grants aliased `g`. */
+export const MANDATE_PUBLIC_SQL = `(g.directed_in_public
+  OR g.status IN ('active', 'completed', 'cancelled')
+  OR (g.status = 'planning' AND g.mandate->>'origin' = 'deep_decomposition'))`;
+
 const GRANT_SELECT = `
   SELECT g.id, g.name, g.status, g.is_platform, g.scope_claim_id,
          g.scope_query, g.plan, g.plan_cursor, g.mandate, g.budget_job_id,
          g.funder_user_id, g.skills, g.platform_approval, g.sensitivity_label AS label, g.created_at,
+         g.directed_in_public, g.workspace,
          j.budget_micro_usd, j.status AS job_status,
          COALESCE(c.display_name, 'a Minerval user') AS manager_name
     FROM grants g
@@ -350,8 +378,8 @@ export async function listMandatesPage(query: MandateListQuery): Promise<Mandate
     which === "mine"
       ? "g.funder_user_id = $1::uuid"
       : which === "platform"
-        ? "g.is_platform AND g.status IN ('active', 'completed', 'cancelled')"
-        : "g.status IN ('active', 'completed', 'cancelled')";
+        ? `g.is_platform AND ${MANDATE_PUBLIC_SQL}`
+        : MANDATE_PUBLIC_SQL;
   // $1 is typed here because a public scope does not otherwise mention it.
   const wordsSql = `$1::uuid IS NOT DISTINCT FROM $1::uuid AND ($2::text IS NULL
         OR COALESCE(g.mandate->>'title', g.name) ILIKE '%' || $2 || '%'
@@ -663,10 +691,25 @@ export interface MandateDetail extends MandateSummary {
    * reader seeing open work that does not move is owed the reason.
    */
   platform_faults: Array<{ reason: string; since: string; waiting_rows: number }>;
-  /** Set only for the manager: what its Grantmaker has asked of them, newest first. */
+  /**
+   * What its Grantmaker has asked of the funder, newest first: for the
+   * manager, and for anyone on a mandate directed in public.
+   */
   funder_notes?: Array<{ at: string; note: string }>;
-  /** Set only for the manager: the conversation to keep talking in. */
+  /**
+   * The conversation the mandate came from: for the manager, to keep
+   * talking in, and for anyone on a mandate directed in public, to read
+   * (GET /grant-conversations/public/:id).
+   */
   conversation_id?: string;
+  /**
+   * Set on a mandate directed in public (grants.directed_in_public): its
+   * conversation, planning, funder notes, working notes and the runs that
+   * direct it are public. Absent on a mandate made before that rule.
+   */
+  directed_in_public?: true;
+  /** The Grantmaker's working notes, on a mandate directed in public. */
+  workspace?: string | null;
   is_manager?: boolean;
   /** Set only for the manager: their page for it, the conversation with its Grantmaker beside it. */
   funder_url?: string;
@@ -690,15 +733,14 @@ export async function readableMandateRef(
     status: string;
     funder_user_id: string;
     origin: string | null;
+    directed_in_public: boolean;
   }>(
-    `SELECT id, budget_job_id, status, funder_user_id, mandate->>'origin' AS origin
+    `SELECT id, budget_job_id, status, funder_user_id, mandate->>'origin' AS origin, directed_in_public
        FROM grants WHERE id = $1`,
     [grantId]
   );
   if (!row) return null;
-  const live =
-    ["active", "completed", "cancelled"].includes(row.status) ||
-    (row.status === "planning" && row.origin === "deep_decomposition");
+  const live = mandateIsPublic(row);
   const isManager = !!viewerUserId && viewerUserId === row.funder_user_id;
   return live || isManager ? { id: row.id, budgetJobId: row.budget_job_id } : null;
 }
@@ -712,11 +754,10 @@ export async function getPublicMandate(
     [grantId]
   );
   if (!row) return null;
-  // Pre-funding conversations are private; a mandate is public once live.
-  // A decomposition is funded the moment it is bought, so it is public
-  // while its plan is drafted too.
-  const live = ["active", "completed", "cancelled"].includes(row.status) ||
-    (row.status === "planning" && row.mandate?.origin === "deep_decomposition");
+  // Directed in public, a mandate is public in every state; one made before
+  // that rule is public once live, and a decomposition from the moment it is
+  // bought (mandateIsPublic).
+  const live = mandateIsPublic({ ...row, origin: row.mandate?.origin ?? null });
   // Its funder reads it in every state: a mandate being planned, or one whose
   // plan waits for their approval, is theirs to see, and its page is where
   // they approve it. To everyone else it does not exist yet.
@@ -734,7 +775,10 @@ export async function getPublicMandate(
   const direction = policy?.current?.trim()
     ? { text: policy.current.trim(), at: policy.current_at ?? null }
     : null;
-  const funderNotes = isManager
+  // What the funder said to the mandate directs it, so on a mandate directed
+  // in public it is public; on one made before that rule, only its funder's.
+  const showsDirection = isManager || row.directed_in_public;
+  const funderNotes = showsDirection
     ? ((row.mandate as { funder_notes?: Array<{ at: string; note: string }> } | null)?.funder_notes ?? [])
     : [];
   const lastReview = (
@@ -794,7 +838,7 @@ export async function getPublicMandate(
     listCorrespondents(row.id)
       .then((list) => list.map(correspondentPublic))
       .catch(() => []),
-    isManager
+    isManager || row.directed_in_public
       ? rawQuery<{ id: string }>(
           `SELECT id FROM grant_conversations WHERE grant_id = $1
             ORDER BY created_at DESC LIMIT 1`,
@@ -856,7 +900,16 @@ export async function getPublicMandate(
       since: f.since,
       waiting_rows: f.waitingRows,
     })),
-    ...(isManager ? { funder_notes: funderNotes.slice(-5).reverse() } : {}),
+    ...(showsDirection ? { funder_notes: funderNotes.slice(-5).reverse() } : {}),
+    // The Grantmaker's working notes and the conversation the mandate came
+    // from direct it too: public on a mandate directed in public.
+    ...(row.directed_in_public
+      ? {
+          directed_in_public: true,
+          workspace: row.workspace,
+          ...(conversationId ? { conversation_id: conversationId } : {}),
+        }
+      : {}),
     ...(isManager
       ? { is_manager: true, funder_url: mandateFunderUrl(row.id), ...(conversationId ? { conversation_id: conversationId } : {}) }
       : {}),
