@@ -29,6 +29,7 @@ import { createHash } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { verifyShownPage, type Mark, type Verification } from "./page-fingerprint.js";
+import { showingCovers } from "../published-page/shape.js";
 import { RemovalError, applyRemovals, countByCategory, heldWords, kindWords, locate, overlaps } from "./page-parts.js";
 import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES, HOLDERS, HOLD_REASONS, type GateKind, type HoldReason, type Holder } from "./gate-kinds.js";
 import { dueUnder, faceOfGate, gateOf, modesFor, type ModeFound } from "./gate-settings-service.js";
@@ -1142,12 +1143,20 @@ async function removeAtGate(input: {
     );
   }
   const [full] = await rawQuery<PageRow>(`SELECT ${PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [page.id]);
-  const [policy] = await rawQuery<{ id: string; categories: Array<{ name: string }> }>(`SELECT id, categories FROM redaction_policies WHERE id = $1`, [full!.policy_id]);
+  const [policy] = await rawQuery<{ id: string; version: number; categories: Array<{ name: string }> }>(
+    `SELECT id, version, categories FROM redaction_policies WHERE id = $1`,
+    [full!.policy_id]
+  );
   const category = policy?.categories.find((c) => c.name === input.category.trim());
   if (!category) {
+    // The item's own policy, the one it was redacted under, is the list (GET /gate/queue gives it on each item as `policy.categories`).
+    const names = (policy?.categories ?? []).map((c) => `"${c.name}"`);
+    const asked = input.category.trim() ? `"${input.category.trim()}" is not a category of the policy` : "No category was given, and a removal is made under a category of the policy";
     throw new ShowingError(
       "NO_SUCH_CATEGORY",
-      `A removal is made under a category of this boundary's policy: ${(policy?.categories ?? []).map((c) => `"${c.name}"`).join(", ")}. A passage no category covers stays, or the part is held.`
+      `${asked} this item was redacted under${policy ? ` (version ${policy.version})` : ""}. ` +
+        (names.length > 0 ? `Its categories are ${names.join(", ")}. ` : "That policy has no categories, so nothing can be removed under it. ") +
+        "A passage no category covers stays, or the part is held."
     );
   }
   const existing = await rawQuery<{ start_offset: number; end_offset: number; category: string }>(
@@ -1336,8 +1345,42 @@ const SHOWN_AS_RELEASED =
  * label is given the part as written, each removed passage with the
  * Redactor's note, and why a part was flagged.
  */
-export async function gateQueue(actor: GateActor, opts: { limit?: number; kind?: string } = {}): Promise<Record<string, unknown>> {
+export async function gateQueue(
+  actor: GateActor & { administer?: boolean },
+  opts: { limit?: number; kind?: string } = {}
+): Promise<Record<string, unknown>> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  // Where an item crosses, once for each gate: the label it was written at, named as the gate's settings
+  // name it (gateSettings): its own name to a person who reads it or administers, else the face it shows
+  // where things arrive, else nothing. A label's name is not shown to people who may not read it.
+  const crossings = new Map<string, Record<string, unknown>>();
+  const crossingOf = async (showing: ShowingRow): Promise<Record<string, unknown>> => {
+    const known = crossings.get(showing.boundary_id);
+    if (known) return known;
+    const named = actor.administer || actor.clearance.includes(showing.page_label);
+    const face = named ? null : await faceOfGate(showing.boundary_id);
+    const crossing = {
+      gate_id: showing.boundary_id,
+      ...(named ? { from: showing.page_label, from_named_by: "its label" } : face ? { from: face, from_named_by: "the face it shows where things arrive" } : {}),
+      to: showing.to_outside ? "outside this deployment" : showing.to_label,
+      to_outside: showing.to_outside,
+    };
+    crossings.set(showing.boundary_id, crossing);
+    return crossing;
+  };
+  // The policy an item was redacted under, with the categories a passage can be removed under (removeAtGate).
+  const policies = new Map<string, Record<string, unknown> | null>();
+  const policyOf = async (pageId: string): Promise<Record<string, unknown> | null> => {
+    const [row] = await rawQuery<{ id: string; version: number; hash: string; categories: Array<{ name: string }> }>(
+      `SELECT r.id, r.version, r.hash, r.categories FROM redaction_policies r JOIN showing_pages p ON p.policy_id = r.id WHERE p.id = $1`,
+      [pageId]
+    );
+    if (!row) return null;
+    if (!policies.has(row.id)) {
+      policies.set(row.id, { policy_id: row.id, version: row.version, hash: row.hash, categories: (row.categories ?? []).map((c) => c.name) });
+    }
+    return policies.get(row.id)!;
+  };
   return bothSides(async () => {
     const pages = await rawQuery<GatePage>(
       `SELECT ${GATE_PAGE_COLUMNS} FROM showing_pages
@@ -1375,6 +1418,8 @@ export async function gateQueue(actor: GateActor, opts: { limit?: number; kind?:
         : [];
       const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
       const modes = await modesOfPage(showing!, page, parts);
+      const crossing = await crossingOf(showing!);
+      const policy = await policyOf(page.id);
       // What stands on an item beside each party's own decision: the Redactor's hold, and a delay.
       const standing = (partId: string | null) => {
         const hold = gateHold(acts, partId);
@@ -1409,6 +1454,9 @@ export async function gateQueue(actor: GateActor, opts: { limit?: number; kind?:
         kind_of_thing: showing!.kind,
         kind_of_thing_in_words: GATE_KINDS[showing!.kind],
         showing_id: page.showing_id,
+        ...crossing,
+        // The policy it was redacted under: a passage is removed under one of these categories and no other.
+        policy,
         ...(page.node_id ? { node_id: page.node_id } : {}),
         ...(node && actor.clearance.includes(node.label) ? { node: node.text } : {}),
         // What is shown whenever anything of the page is shown, and so with any part this person releases.
@@ -1613,10 +1661,10 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
  */
 export async function shownShowing(showingId: string): Promise<Record<string, unknown> | null> {
   const [showing] = await rawQuery<{
-    id: string; node_id: string; to_outside: boolean; boundary_id: string; form: string; scope: string;
+    id: string; kind: GateKind; node_id: string; to_outside: boolean; boundary_id: string; form: string; scope: string;
     asked_at: Date; ended_at: Date | null; end_reason: string | null; label: string; asker: string | null; asked_holding: string[];
   }>(
-    `SELECT s.id, s.node_id, s.to_outside, s.boundary_id, s.form, s.scope, s.asked_at, s.ended_at, s.end_reason,
+    `SELECT s.id, s.kind, s.node_id, s.to_outside, s.boundary_id, s.form, s.scope, s.asked_at, s.ended_at, s.end_reason,
             s.sensitivity_label AS label, c.display_name AS asker, s.asked_holding
        FROM shown_showings s LEFT JOIN contributors c ON c.id = s.asked_by WHERE s.id = $1`,
     [showingId]
@@ -1643,11 +1691,14 @@ export async function shownShowing(showingId: string): Promise<Record<string, un
   );
   const described = new Map<string, Record<string, unknown>>();
   for (const page of pages) described.set(page.id, await describeShownPage(page));
+  const covers = await coversOfShowing(showing);
   return {
     showing_id: showing.id,
     shown_to: showing.to_outside ? "outside this deployment" : `readers at "${showing.label}"`,
     form: showing.form,
-    scope: showing.scope === "under" ? "the node with what sits under it" : "the node alone",
+    // What the showing covers, in words (showingCovers); `scope_code` is the scope as GET /showings lists it.
+    scope: covers,
+    scope_code: showing.scope,
     asked_at: showing.asked_at.toISOString(),
     asked_by: showing.asker,
     asked_holding: showing.asked_holding,
@@ -1685,6 +1736,23 @@ export async function shownShowing(showingId: string): Promise<Record<string, un
       ...(a.reason && a.act === "ended" ? { reason: END_REASONS[a.reason as keyof typeof END_REASONS] ?? a.reason } : {}),
     })),
   };
+}
+
+/**
+ * What a showing covers, in words, naming what this reader may be told: the
+ * mandate, and the label its pages are written at, where they read that
+ * label (the page side's row of the showing is read with their own
+ * clearance, so it is found only then); else the face that label shows
+ * where things arrive (faceOfGate), else nothing.
+ */
+async function coversOfShowing(showing: { id: string; kind: GateKind; scope: string; boundary_id: string }): Promise<string> {
+  if (showing.scope !== "mandate" && showing.scope !== "boundary" && showing.scope !== "item") return showingCovers(showing.scope);
+  const [side] = await rawQuery<{ from: string; mandate: string | null }>(
+    `SELECT s.sensitivity_label AS from, g.name AS mandate FROM showings s LEFT JOIN grants g ON g.id = s.subject_ref AND s.scope = 'mandate' WHERE s.id = $1`,
+    [showing.id]
+  );
+  const from = side?.from ?? (showing.scope === "boundary" ? await faceOfGate(showing.boundary_id) : null);
+  return showingCovers(showing.scope, { mandate: side?.mandate ?? null, from, item: GATE_KINDS[showing.kind] ?? null });
 }
 
 /** The showings whose destination side the caller reads, newest first. */

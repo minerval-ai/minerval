@@ -16,7 +16,6 @@ export function QueueForm({
   reasons,
   anyHeld,
   categories,
-  fromPolicy,
   acts,
   children,
 }: {
@@ -27,10 +26,8 @@ export function QueueForm({
   reasons: Record<string, string>;
   /** Whether anything of the item is held or delayed, so that lifting is offered. */
   anyHeld: boolean;
-  /** The categories a passage can be removed under: the policy's, or those seen in this item's removals. */
+  /** The categories a passage can be removed under: those of the policy the item was redacted under (GET /gate/queue). */
   categories: string[];
-  /** Whether `categories` are the boundary policy's own, so that a choice from them is all that is offered. */
-  fromPolicy: boolean;
   /** The acts at a gate, in the API's words. */
   acts: Record<string, string>;
   children: ReactNode;
@@ -158,31 +155,21 @@ export function QueueForm({
               </div>
               <div className="w-field">
                 <label htmlFor="gate-category">Category</label>
-                {fromPolicy ? (
-                  <select id="gate-category" className="w-select" name="category" defaultValue="">
-                    <option value="">Choose a category</option>
-                    {categories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <>
-                    <input id="gate-category" className="w-input" type="text" name="category" list="gate-categories" autoComplete="off" />
-                    <datalist id="gate-categories">
-                      {categories.map((c) => (
-                        <option key={c} value={c} />
-                      ))}
-                    </datalist>
-                  </>
-                )}
+                <select id="gate-category" className="w-select" name="category" defaultValue="" disabled={categories.length === 0}>
+                  <option value="">{categories.length === 0 ? "The policy has no categories" : "Choose a category"}</option>
+                  {categories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
                 <span className="w-help">
-                  {fromPolicy ? "From this boundary's policy. " : "A category of this boundary's policy. "}The category&rsquo;s mark takes the
-                  passage&rsquo;s place; no word is changed.
+                  {categories.length === 0
+                    ? "A passage is removed under a category of the policy this item was redacted under, and it has none. A part can be held."
+                    : "From the policy this item was redacted under. The category\u2019s mark takes the passage\u2019s place; no word is changed."}
                 </span>
               </div>
-              <button className="w-btn w-sm w-pri" type="submit" name="decision" value="remove" disabled={pending}>
+              <button className="w-btn w-sm w-pri" type="submit" name="decision" value="remove" disabled={pending || categories.length === 0}>
                 Remove from the ticked part
               </button>
             </div>

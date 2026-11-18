@@ -27,19 +27,11 @@ import {
   auditPill,
   figure,
   headerOf,
-  labelOf,
   splitMarks,
   totalRemovals,
   verdictPill,
 } from "@/lib/gate-review";
-import {
-  fetchGateQueue,
-  fetchPolicy,
-  fetchShowing,
-  fetchShowings,
-  type QueueItem,
-  type ShownShowing,
-} from "@/lib/inside-api";
+import { fetchGateQueue, fetchShowing, type QueueItem, type ShownShowing } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
 import { decideAction } from "../showings/actions";
 import { QueueForm } from "./QueueForm";
@@ -85,6 +77,15 @@ function titleOf(item: QueueItem): { text: string; serif: boolean; faint?: boole
   if (item.wording_as_it_would_be_shown) return { text: item.wording_as_it_would_be_shown, serif: true };
   if (item.kind_of_thing !== "page") return { text: capital(item.kind_of_thing_in_words), serif: false };
   return { text: "A page of a node you do not read", serif: false, faint: true };
+}
+
+/**
+ * Where an item crosses, as the queue says it: the label it was written at
+ * (by its name, or the face it shows here, or not at all where the person
+ * may not be told it) and the label it goes to, or outside.
+ */
+function crossingOf(item: QueueItem): { from: string | null; to: string } {
+  return { from: item.from ?? null, to: item.to_outside ? "outside" : item.to };
 }
 
 /** A part as it would be shown: each removed passage struck through in front of the mark that replaces it, where the person may see it. */
@@ -135,7 +136,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   if (!who) return null;
   if (!can(who, "release")) return <NeedsPermission title="Review" permission="release" />;
   const params = await searchParams;
-  const [queue, showings] = await Promise.all([fetchGateQueue(who.externalId), fetchShowings(who.externalId).catch(() => null)]);
+  const queue = await fetchGateQueue(who.externalId);
 
   // The parties the person releases for: from their grants, and any the queue names besides.
   const partyMap = new Map<string, { id: string; name: string }>();
@@ -188,31 +189,10 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
   const entries = kind ? ofParty.filter((e) => e.first.kind_of_thing === kind) : ofParty;
   const selected = entries.find((e) => e.id === params.item || e.first.page_id === params.item) ?? entries[0];
 
-  // Where each item crosses: the label the page was written at, where the person reads the showing's side, and where it goes.
-  const boundaryOf = new Map<string, { from: string | null; to: string }>();
-  for (const s of showings?.asked ?? []) boundaryOf.set(s.showing_id, { from: s.page_label, to: labelOf(s.shown_to) });
-
-  // For the item chosen: its showing (who asked, its acts, its policy) and the categories of that policy.
-  let showing: ShownShowing | null = null;
-  let categories: string[] = [];
-  let fromPolicy = false;
-  if (selected) {
-    showing = await fetchShowing(who.externalId, selected.first.showing_id).catch(() => null);
-    if (showing && !boundaryOf.has(showing.showing_id)) boundaryOf.set(showing.showing_id, { from: null, to: labelOf(showing.shown_to) });
-    const policy = showing?.policy ? await fetchPolicy(who.externalId, showing.policy.policy_id).catch(() => null) : null;
-    if (policy && policy.categories.length > 0) {
-      categories = policy.categories.map((c) => c.name);
-      fromPolicy = true;
-    } else {
-      const header = headerOf(selected.first.always_shown);
-      categories = [
-        ...new Set([
-          ...Object.keys(header.removals ?? {}),
-          ...selected.rows.flatMap((r) => [...Object.keys(r.removals_by_category ?? {}), ...(r.removals ?? []).map((x) => x.category)]),
-        ]),
-      ];
-    }
-  }
+  // For the item chosen: its showing (who asked, and its acts). The categories a passage can be removed
+  // under are those of the policy the item was redacted under, which the queue gives with each item.
+  const showing: ShownShowing | null = selected ? await fetchShowing(who.externalId, selected.first.showing_id).catch(() => null) : null;
+  const categories = selected?.first.policy?.categories ?? [];
 
   const tabs = parties.map((p) => ({
     key: p.id,
@@ -253,7 +233,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
         </div>
       ) : (
         <div className="w-review">
-          <QueueList entries={entries} selected={selected.id} party={party.id} kind={kind} boundaryOf={boundaryOf} />
+          <QueueList entries={entries} selected={selected.id} party={party.id} kind={kind} />
           <QueueForm
             key={party.id}
             action={decideAction}
@@ -264,12 +244,11 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
               (r) => r.held_by_the_redactor || r.delayed_until || r.rests_on.some((s) => s.party.id === party.id && s.standing === "held")
             )}
             categories={categories}
-            fromPolicy={fromPolicy}
             acts={queue.acts}
           >
             <Document entry={selected} party={party} />
           </QueueForm>
-          <Context entry={selected} party={party} showing={showing} boundary={boundaryOf.get(selected.first.showing_id)} />
+          <Context entry={selected} party={party} showing={showing} />
         </div>
       )}
 
@@ -284,13 +263,11 @@ function QueueList({
   selected,
   party,
   kind,
-  boundaryOf,
 }: {
   entries: Entry[];
   selected: string;
   party: string;
   kind: string | undefined;
-  boundaryOf: Map<string, { from: string | null; to: string }>;
 }) {
   const parts = entries.reduce((n, e) => n + e.rows.length, 0);
   return (
@@ -307,7 +284,7 @@ function QueueList({
           const unsure = e.rows.filter((r) => r.redactor_least_sure).length;
           const holds = e.rows.filter((r) => r.held_by_the_redactor);
           const delayed = e.rows.find((r) => r.delayed_until);
-          const b = boundaryOf.get(e.first.showing_id);
+          const b = crossingOf(e.first);
           const waitingParts = e.rows.filter((r) => r.part !== null).length;
           const tone = holds.length > 0 ? "bad" : unsure > 0 ? "warn" : delayed ? "info" : null;
           return (
@@ -323,7 +300,7 @@ function QueueList({
                 {tone && (tone === "info" ? <span className="w-dot w-review-info" title="Delayed" /> : <Dot tone={tone} title={tone === "bad" ? "The Redactor holds a part" : "The Redactor was least sure of a part"} />)}
               </span>
               <span className="w-review-row-m">
-                {b && <Boundary from={b.from} to={b.to} />}
+                <Boundary from={b.from} to={b.to} />
                 <span>{KIND_ONE[e.first.kind_of_thing] ?? capital(e.first.kind_of_thing.replace(/_/g, " "))}</span>
               </span>
               <span className="w-review-row-m">
@@ -510,14 +487,13 @@ function Context({
   entry,
   party,
   showing,
-  boundary,
 }: {
   entry: Entry;
   party: { id: string; name: string };
   showing: ShownShowing | null;
-  boundary: { from: string | null; to: string } | undefined;
 }) {
   const first = entry.first;
+  const boundary = crossingOf(first);
   const header = headerOf(first.always_shown);
   const setting = first.decide_for.find((p) => p.id === party.id)?.setting;
 
@@ -551,38 +527,34 @@ function Context({
           </div>
         )}
       </div>
-      {(boundary || setting || showing?.policy) && (
-        <div className="w-review-ctx-s">
-          <h3>Boundary</h3>
-          {boundary && (
-            <div className="w-review-ctx-r">
-              <Link href="/gates">
-                <Boundary from={boundary.from} to={boundary.to} />
-              </Link>
-            </div>
-          )}
-          {setting && (
-            <div className="w-review-ctx-r">
-              <span className="w-muted">Gate</span>
-              <span className="w-spacer">{SETTING_WORDS[setting] ?? setting}</span>
-            </div>
-          )}
-          {showing?.policy && (
-            <div className="w-review-ctx-r">
-              <span className="w-muted">Policy</span>
-              <span className="w-spacer">
-                v{showing.policy.version} · <span className="w-mono w-faint" title={showing.policy.hash}>{showing.policy.hash.slice(0, 6)}</span>
-              </span>
-            </div>
-          )}
-          {first.waiting_since && (
-            <div className="w-review-ctx-r">
-              <span className="w-muted">Checked</span>
-              <span className="w-spacer">{shortWhen(first.waiting_since)}</span>
-            </div>
-          )}
+      <div className="w-review-ctx-s">
+        <h3>Boundary</h3>
+        <div className="w-review-ctx-r">
+          <Link href={`/gates/${first.gate_id}`}>
+            <Boundary from={boundary.from} to={boundary.to} />
+          </Link>
         </div>
-      )}
+        {setting && (
+          <div className="w-review-ctx-r">
+            <span className="w-muted">Gate</span>
+            <span className="w-spacer">{SETTING_WORDS[setting] ?? setting}</span>
+          </div>
+        )}
+        {first.policy && (
+          <div className="w-review-ctx-r">
+            <span className="w-muted">Policy</span>
+            <span className="w-spacer">
+              v{first.policy.version} · <span className="w-mono w-faint" title={first.policy.hash}>{first.policy.hash.slice(0, 6)}</span>
+            </span>
+          </div>
+        )}
+        {first.waiting_since && (
+          <div className="w-review-ctx-r">
+            <span className="w-muted">Checked</span>
+            <span className="w-spacer">{shortWhen(first.waiting_since)}</span>
+          </div>
+        )}
+      </div>
       <div className="w-review-ctx-s">
         <h3>Rests on</h3>
         {[...standings.entries()].map(([id, s]) => (

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { can, type Viewer } from "@/components/admin/access";
 import { Pipeline } from "@/components/work/Pipeline";
 import { Boundary, ButtonLink, Empty, Table, Tabs, Tip, WorkHead, WorkPage, plural, shortDay } from "@/components/work/ui";
-import { fetchShowings, type AskedShowingRow, type ShownShowing, type ShownShowingRow } from "@/lib/inside-api";
+import { fetchShowings, type AskedShowingRow, type ShowingScope, type ShownShowing, type ShownShowingRow } from "@/lib/inside-api";
 import { NOT_YET_ASSESSED, type Pipeline as Status, type PipelineKey } from "@/lib/pipeline";
 import { ShowingsFilter } from "./ShowingsFilter";
 import { destinationOf, fetchDetails, gateFor, kindOf, latestPage, loadGates, statusOf, versionsById, wholeOf } from "./showings";
@@ -30,7 +30,7 @@ interface Row {
   from: string | null;
   to: string;
   form: string;
-  scope: string;
+  scope: ShowingScope;
   latest: string | null;
   status: Status;
   ended: string | null;
@@ -57,7 +57,7 @@ function askedRow(a: AskedShowingRow, detail: ShownShowing | undefined): Row {
   return {
     id: a.showing_id,
     node: a.node,
-    whole: a.node_id ? null : wholeOf(a.scope, a.page_label),
+    whole: wholeOf(a.scope, a.page_label, detail?.scope),
     more: a.node_id ? Math.max(0, nodes - 1) : nodes,
     from: a.page_label,
     to: destinationOf(a.shown_to),
@@ -70,16 +70,21 @@ function askedRow(a: AskedShowingRow, detail: ShownShowing | undefined): Row {
 }
 
 function shownRow(s: ShownShowingRow, detail: ShownShowing | undefined, asked: AskedShowingRow | undefined): Row {
-  const node = detail?.nodes.find((n) => n.node_id === s.node_id) ?? detail?.nodes[0];
+  // A showing of a node is about that node; one of a mandate's work or a whole boundary has none of its own,
+  // and its latest version is the newest of any node it covers, as on the page's side (latestPage).
+  const node = s.node_id ? detail?.nodes.find((n) => n.node_id === s.node_id) : undefined;
+  const versions = s.node_id
+    ? (node?.versions ?? [])
+    : (detail?.nodes ?? []).flatMap((n) => n.versions).sort((a, b) => b.version_of.localeCompare(a.version_of));
   const pages = new Map((asked?.pages ?? []).map((p) => [p.page_id, p]));
   // The newest version that was not overtaken, as the latest page is chosen on the other side.
-  const statuses = (node?.versions ?? []).map((v) => ({ v, status: statusOf(pages.get(v.page_id), v) }));
+  const statuses = versions.map((v) => ({ v, status: statusOf(pages.get(v.page_id), v) }));
   const latest = statuses.find((x) => x.status.key !== "overtaken") ?? statuses[0];
   const nodes = detail?.nodes.length ?? 0;
   return {
     id: s.showing_id,
     node: node?.text ?? asked?.node ?? null,
-    whole: s.node_id ? null : wholeOf(s.scope, asked?.page_label ?? null),
+    whole: wholeOf(s.scope, asked?.page_label ?? null, detail?.scope),
     more: s.node_id ? Math.max(0, nodes - 1) : nodes,
     from: asked?.page_label ?? null,
     to: destinationOf(s.shown_to),

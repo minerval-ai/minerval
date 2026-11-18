@@ -34,7 +34,7 @@ import { createHash, verify as cryptoVerify } from "node:crypto";
 import { loadConfig } from "../config.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { currentLabel } from "../llm/usage-context.js";
-import { publishedPageAsText, shapeOfPublishedPage, type PublishedPageShape } from "../published-page/shape.js";
+import { publishedPageAsText, shapeOfPublishedPage, showingCovers, type PublishedPageShape } from "../published-page/shape.js";
 import {
   ATTESTATION_WORDS,
   HOSTING_WORDS,
@@ -250,7 +250,7 @@ export function sourceTextOf(
       `${HOSTING_WORDS[pkg.deployment.hosting]}; ${ATTESTATION_WORDS[pkg.deployment.attested_by]}.`,
     publisher.declared_interest ? `The publisher says of its own interest: ${publisher.declared_interest}` : "The publisher has said nothing of its own interest.",
     `The showing: ${pkg.showing.form === "standing" ? "standing, so each later version follows" : "once, so nothing is undertaken about later versions"}; ` +
-      `${pkg.showing.scope === "under" ? "the node with what sits under it" : "the node alone"}; asked for on ${day(pkg.showing.asked_at)}; ` +
+      `covering ${showingCovers(pkg.showing.scope)}; asked for on ${day(pkg.showing.asked_at)}; ` +
       `it began ${pkg.node.showing_began}.` +
       (pkg.showing.ended ? ` It ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}.` : ""),
     `Version of ${day(pkg.page!.version_of)}. ${verdictWords(shape.verdict)}`,

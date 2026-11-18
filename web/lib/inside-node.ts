@@ -80,7 +80,7 @@ function viewOfShownPage(tab: ShownTab, showing: ShownShowing, page: ShownPage):
     published_page_id: tab.page_id,
     node_id: node?.node_id ?? "",
     form: showing.form,
-    scope: showing.scope === "the node alone" ? "node" : "under",
+    scope: showing.scope_code === "item" ? null : showing.scope_code,
     showing_began: node?.showing_began ?? null,
     asked_at: showing.asked_at,
     ended: showing.ended_at ? { at: showing.ended_at, because: showing.ended_because ?? "no reason given" } : null,

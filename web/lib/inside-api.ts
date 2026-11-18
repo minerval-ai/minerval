@@ -19,13 +19,21 @@ const seg = pathSegment;
 /** One of the four states a node under a showing is in, as the readers it is shown to are told. */
 export type NodeState = "not_yet_assessed" | "released_whole" | "released_in_part" | "held";
 
+/**
+ * What a showing covers: one node, the node with what sits under it, every
+ * node one mandate's work assessed, every node assessed at the label, or
+ * one item that is not a node's page. Only the first two name a node.
+ */
+export type ShowingScope = "node" | "under" | "mandate" | "boundary" | "item";
+
 /** A showing as the side it is shown to lists it. */
 export interface ShownShowingRow {
   showing_id: string;
-  node_id: string;
+  /** The node, for scope `node` or `under`; null for every other scope. */
+  node_id: string | null;
   shown_to: string;
   form: "once" | "standing";
-  scope: "node" | "under";
+  scope: ShowingScope;
   asked_at: string;
   ended_at: string | null;
 }
@@ -48,12 +56,13 @@ export interface AskedPage {
 /** A showing as the side it was asked for at lists it. */
 export interface AskedShowingRow {
   showing_id: string;
-  node_id: string;
+  /** The node, for scope `node` or `under`; null for every other scope. */
+  node_id: string | null;
   node: string | null;
   page_label: string;
   shown_to: string;
   form: "once" | "standing";
-  scope: "node" | "under";
+  scope: ShowingScope;
   asked_at: string;
   ended_at: string | null;
   pages: AskedPage[];
@@ -106,7 +115,9 @@ export interface ShownShowing {
   showing_id: string;
   shown_to: string;
   form: "once" | "standing";
+  /** What the showing covers, in the API's words, naming the mandate and the label where the reader reads that label. */
   scope: string;
+  scope_code: ShowingScope;
   asked_at: string;
   asked_by: string | null;
   asked_holding: string[];
@@ -219,6 +230,20 @@ export interface QueueItem {
   kind_of_thing: string;
   kind_of_thing_in_words: string;
   showing_id: string;
+  /** The gate it crosses. */
+  gate_id: string;
+  /**
+   * The label it was written at: its name where the person reads it or
+   * administers, else the face it shows where things arrive; absent where
+   * it shows none (`from_named_by` says which).
+   */
+  from?: string;
+  from_named_by?: "its label" | "the face it shows where things arrive";
+  /** Where it goes: a label, or "outside this deployment". */
+  to: string;
+  to_outside: boolean;
+  /** The policy it was redacted under; a passage is removed under one of its categories and no other. */
+  policy: { policy_id: string; version: number; hash: string; categories: string[] } | null;
   node_id?: string;
   /** The node's wording, where the person reads the node. */
   node?: string;
@@ -400,7 +425,11 @@ export interface PolicySummary {
   version: number;
   hash: string;
   saved_at: string;
-  /** True while the boundary is still on the text every boundary starts from. */
+  /** Who saved it, by display name; null where the system saved it. */
+  saved_by: string | null;
+  /** Whether it is the boundary's newest version, the one in force. */
+  in_force: boolean;
+  /** True for the text every boundary starts from, which nobody saved. */
   starting_text: boolean;
   /** Present only for a reader of the label the pages are written at. */
   from_label?: string;
@@ -420,12 +449,23 @@ export interface PolicyFull {
   version: number;
   hash: string;
   saved_at: string;
+  /** Who saved it, by display name; null where the system saved it. */
+  saved_by: string | null;
+  in_force: boolean;
+  starting_text: boolean;
   categories: PolicyCategory[];
   text: string;
 }
 
 export async function fetchPolicies(externalId: string): Promise<PolicySummary[]> {
   return (await accountFetch<{ policies: PolicySummary[] }>("/redaction-policies", { actingUser: externalId }))
+    .policies;
+}
+
+/** Every version of one boundary's policy the person reads, newest first. */
+export async function fetchPolicyVersions(externalId: string, boundaryId: string): Promise<PolicySummary[]> {
+  const query = new URLSearchParams({ boundary_id: boundaryId, all: "true" });
+  return (await accountFetch<{ policies: PolicySummary[] }>(`/redaction-policies?${query}`, { actingUser: externalId }))
     .policies;
 }
 

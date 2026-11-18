@@ -80,7 +80,7 @@ export async function loadBoundaries(externalId: string): Promise<{
   }
   for (const p of policies) {
     const r = row(p.boundary_id);
-    // Served once for each side the person reads; keep the one that names the label.
+    // One row a boundary, from the side that names the label where the person reads it.
     if (!r.policy || (!r.policy.from_label && p.from_label)) r.policy = p;
     if (!r.from && p.from_label) r.from = p.from_label;
     if (!r.to) {

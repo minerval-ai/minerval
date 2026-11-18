@@ -69,7 +69,9 @@ Two kinds of actor have them, and each has all of them:
   holds, as the Redactor left it), `remove`, `hold`, `delay` and `lift`.
   They may act from the web app, or through a key or token of their own
   account, so their own agent or a script can do it: the queue
-  (`GET /gate/queue`) carries what is needed to decide each item, a call
+  (`GET /gate/queue`) carries what is needed to decide each item (where
+  it crosses, and the policy it was redacted under with the categories a
+  passage can be removed under), a call
   takes up to 500 items, and sending the same decision again changes
   nothing.
 

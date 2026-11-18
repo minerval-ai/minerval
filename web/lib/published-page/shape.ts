@@ -118,6 +118,34 @@ const KIND_WORDS: Record<string, [string, string]> = {
   subclaim: ["a subclaim with how it bears", "subclaims with how they bear"],
 };
 
+/**
+ * What a showing covers, by its scope (services/showing-service.ts,
+ * SHOWING_SCOPES; docs/showing-a-page.md, "Asking"), in the words every
+ * place says it in: the deployment's own record of a showing, what this
+ * graph says of a page published from another, and the web app's page of
+ * it. `named` gives what the words may name where the reader may be told
+ * it: the mandate's name, the label the pages are written at (or the face
+ * it shows where they arrive), and what an item is, in words. Without it
+ * they name nothing. Every scope has its words: nobody is told "the node
+ * alone" of a showing that covers every node at a label.
+ */
+export function showingCovers(scope: string | null, named: { mandate?: string | null; from?: string | null; item?: string | null } = {}): string {
+  switch (scope) {
+    case "node":
+      return "the node alone";
+    case "under":
+      return "the node with what sits under it";
+    case "mandate":
+      return named.mandate ? `every node the work of the mandate "${named.mandate}" assessed` : "every node one mandate's work assessed";
+    case "boundary":
+      return named.from ? `every node assessed at "${named.from}"` : "every node assessed at the label its pages are written at";
+    case "item":
+      return named.item ? `one item: ${named.item}` : "one item that is not a node's page";
+    default:
+      return scope ? `a scope this check has no words for ("${scope}")` : "a scope not recorded";
+  }
+}
+
 /** A part's kind in words, as the deployment's own pages say it (services/page-parts.ts). */
 export function kindInWords(descriptor: string, count = 1): string {
   const words = KIND_WORDS[descriptor] ?? KIND_WORDS[descriptor.split(":")[0]!] ?? ["a part", "parts"];

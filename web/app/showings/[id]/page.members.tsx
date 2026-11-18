@@ -120,7 +120,8 @@ export default async function ShowingPage({
   const from = asked?.page_label ?? null;
   const to = destinationOf(showing?.shown_to ?? asked!.shown_to);
   const form = showing?.form ?? asked!.form;
-  const scope: string = asked?.scope ?? shownRow?.scope ?? "node";
+  // The detail says what it covers in words and by its code; the page's side lists the code.
+  const scope = showing?.scope_code ?? asked!.scope;
   const ended = showing?.ended_at ?? asked?.ended_at ?? null;
   const mainNodeId = shownRow?.node_id ?? asked?.node_id ?? null;
   const gate = gateFor(gates, from, to);
@@ -157,14 +158,15 @@ export default async function ShowingPage({
   for (const g of groups) g.versions.sort((a, b) => b.versionOf.localeCompare(a.versionOf));
   groups.sort((a, b) => Number(b.main) - Number(a.main));
 
-  const mainGroup = groups.find((g) => g.main) ?? groups[0];
+  // A showing of a mandate's work or a whole boundary has no node of its own: no one node stands for it.
+  const mainGroup = mainNodeId ? (groups.find((g) => g.main) ?? groups[0]) : undefined;
   const latest = mainGroup?.versions.find((v) => v.status.key !== "overtaken") ?? mainGroup?.versions[0];
   const status = latest?.status ?? NOT_YET_ASSESSED;
   const allVersions = groups.flatMap((g) => g.versions);
   const atGate = allVersions.filter((v) => v.status.key === "gate").length;
   const unpaid = allVersions.filter((v) => v.status.key === "funds").length;
   const notAssessed = groups.filter((g) => g.versions.length === 0).length;
-  const title = mainGroup?.text ?? asked?.node ?? wholeOf(scope, from) ?? "A node you do not read";
+  const title = mainGroup?.text ?? asked?.node ?? wholeOf(scope, from, showing?.scope) ?? "A node you do not read";
   const statement = !!(mainGroup?.text ?? asked?.node);
 
   // ---- what the viewer may do ----
@@ -207,7 +209,7 @@ export default async function ShowingPage({
             <span className="w-chip">
               {kind.form} · {kind.covers.toLowerCase()} <Tip>{kindTip(form, scope)}</Tip>
             </span>
-            {ended ? <Pill tone="neu">Ended {shortDay(ended)}</Pill> : <Pipeline status={status} />}
+            {ended ? <Pill tone="neu">Ended {shortDay(ended)}</Pill> : mainNodeId ? <Pipeline status={status} /> : null}
           </>
         }
         actions={

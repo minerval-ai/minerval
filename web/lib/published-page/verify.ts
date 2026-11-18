@@ -131,7 +131,13 @@ export interface PublishedPagePackage {
   showing: {
     id: string;
     form: "once" | "standing";
-    scope: "node" | "under";
+    /**
+     * What the showing covers: one node, the node with what sits under it,
+     * every node one mandate's work assessed, or every node assessed at the
+     * label (shape.ts, showingCovers). The scope is not part of what the
+     * check confirms beyond being one of these: it is the publisher's word.
+     */
+    scope: PageScope;
     asked_at: string;
     /** Whether each package is sent by a person, or follows from a choice made when the showing was asked for. */
     send: "by_a_person_each_time" | "as_released";
@@ -309,6 +315,10 @@ function plural(n: number, one: string, many: string): string {
   return n === 1 ? `1 ${one}` : `${n} ${many}`;
 }
 
+/** The scopes of a showing whose packages carry a node's page (services/showing-service.ts, SHOWING_SCOPES, less `item`). */
+export const PAGE_SCOPES: readonly string[] = ["node", "under", "mandate", "boundary"];
+export type PageScope = "node" | "under" | "mandate" | "boundary";
+
 /** Whether the package has the form this check reads. Returns what is wrong, in words, or null. */
 function malformed(p: PublishedPagePackage): string | null {
   if (!p || typeof p !== "object" || Array.isArray(p)) return "it is not a JSON object";
@@ -319,7 +329,7 @@ function malformed(p: PublishedPagePackage): string | null {
   if (!p.deployment || !(p.deployment.hosting in HOSTING_WORDS)) return "it does not say where the deployment runs in one of the fixed ways";
   if (!(p.deployment.attested_by in ATTESTATION_WORDS)) return "it does not say what attests to the run in one of the fixed ways";
   const s = p.showing;
-  if (!s || typeof s.id !== "string" || (s.form !== "once" && s.form !== "standing") || (s.scope !== "node" && s.scope !== "under") || !isDate(s.asked_at)) {
+  if (!s || typeof s.id !== "string" || (s.form !== "once" && s.form !== "standing") || !PAGE_SCOPES.includes(s.scope) || !isDate(s.asked_at)) {
     return "it does not describe the showing: its form, its scope and when it was asked for";
   }
   if (s.send !== "by_a_person_each_time" && s.send !== "as_released") return "it does not say how its packages are sent";

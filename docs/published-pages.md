@@ -27,7 +27,7 @@ outside is to read it, at the moment it was built
 | `format` | `minerval-published-page/1` |
 | `publisher` | The signing key: its id and its 32 bytes |
 | `deployment` | Where the deployment runs, as one of three fixed words (the organization's own machines; Minerval's; a third party's), and what outside the publisher's control attests to the run. Today nothing can, and the field says so |
-| `showing` | Its id, form (once or standing), scope, when it was asked for, how its packages are sent, and its ending with date and reason |
+| `showing` | Its id, form (once or standing), scope (the node alone, the node with what sits under it, one mandate's work, or every node assessed at the label), when it was asked for, how its packages are sent, and its ending with date and reason |
 | `node` | The node's id on the public graph, when the showing came to cover it, when it was first assessed at the page's label, which came first, and its leaving |
 | `sequence`, `previous_hash` | 1, 2, 3, ... for this node under this showing, each naming the one before |
 | `state` | The node's state now: not yet assessed, released whole, released in part, or held |
@@ -191,7 +191,9 @@ registers a key they do not hold; the deployment produces it
 to the public graph sends it itself, through the organization's account
 (`POST /outbound/registration/send`, the "Register key" button on the
 public graph's Overview, `/admin/outside`; logged as
-an act on the public graph). The registration, the
+an act on the public graph), and reads back whether, when, which key and
+to which account it is registered (`registration` on
+`GET /outside/account`). The registration, the
 key, the hosting words and anything the publisher says of its own interest
 are a public record (`GET /publishers/:account_id`, and the account's
 contributor page). Registering a key again retires the earlier

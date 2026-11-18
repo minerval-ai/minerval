@@ -31,7 +31,9 @@
  *     shown, or lift that hold (direct).
  *   POST   /showings/:showing_id/pages/:page_id/commission: pay by hand
  *     for an item's redaction or its check (fund).
- *   GET    /redaction-policies, GET /redaction-policies/:policy_id.
+ *   GET    /redaction-policies: the version in force at each boundary, or
+ *     every version of one (boundary_id, all), with who saved each.
+ *   GET    /redaction-policies/:policy_id: one version in full.
  *   PUT    /redaction-policies: save a new version of a boundary's policy
  *     (administer).
  *
@@ -57,7 +59,7 @@ import { listParties } from "../services/party-service.js";
 import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES } from "../services/gate-kinds.js";
 import { fundBelow, offerToGate } from "../services/gate-service.js";
 import { FLOW_WORDS, GateError, endGateSetting, gatesFor, keepCurrentWords, setGate, setGateMode } from "../services/gate-settings-service.js";
-import { policyById, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
+import { policyVersionRecord, readablePolicies, savePolicyVersion } from "../services/redaction-policy.js";
 import {
   HOLD_REASONS,
   askedShowings,
@@ -165,7 +167,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "removed marked in its place and what is held named. `shown` lists showings from the side they are shown " +
         "to; `asked` lists them from the side they were asked for at, with where each page's redaction stands and, " +
         "for a page at the release gate, which kinds of part wait on which party (`waiting_on`: kind and party, " +
-        "never text). `hold_reasons` and `end_reasons` are the fixed lists a hold and an ending give their reason from.",
+        "never text). `scope` is one of node, under, mandate, boundary or item; a showing for a mandate, a whole boundary " +
+        "or an item has `node_id` null. `hold_reasons` and `end_reasons` are the fixed lists a hold and an ending give their reason from.",
       querystring: { type: "object", properties: { node_id: UUID } },
     },
     preHandler: signedIn,
@@ -187,7 +190,10 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "Each node under the showing is in one of four states: not_yet_assessed, released_whole, " +
         "released_in_part (with how many parts are held and of which kinds), or held (with why, in fixed words, and " +
         "for how long). No state carries any of the page's text. Each act names who did it and the permissions they " +
-        "held, so you can see when a person who directed the work also released it.",
+        "held, so you can see when a person who directed the work also released it. `scope` says in words what the showing " +
+        "covers (the node alone, the node with what sits under it, every node one mandate's work assessed, every node assessed " +
+        "at a label, or one item), naming the mandate and the label only where you read the label the pages are written at; " +
+        "`scope_code` is the scope as GET /showings lists it (node, under, mandate, boundary, item).",
       params: { type: "object", required: ["showing_id"], properties: { showing_id: UUID } },
     },
     preHandler: signedIn,
@@ -217,23 +223,37 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.get("/redaction-policies", {
+  app.get<{ Querystring: { boundary_id?: string; all?: boolean } }>("/redaction-policies", {
     schema: {
       tags: ["showings"],
-      summary: "The redaction policies you can read: the newest version for each boundary a page is shown across",
+      summary:
+        "The redaction policies you can read: the version in force for each boundary a page is shown across, or with all=true every version, with who saved each",
       description:
         "A policy says what is removed from a page when it is shown across one boundary. You read the policy of " +
-        "every boundary whose pages are shown to a label you read, and of every boundary from a label you read.",
+        "every boundary whose pages are shown to a label you read, and of every boundary from a label you read. " +
+        "`boundary_id` keeps to one boundary (a gate's gate_id); `all=true` lists every version, newest first, with " +
+        "`in_force` on the newest. `saved_by` is the display name of the person who saved a version, or null where " +
+        "the system saved it: the text every boundary starts from, or a new version saved because the sections every " +
+        "version shares were reworded. A boundary's label of origin is named only to a reader of it.",
+      querystring: {
+        type: "object",
+        properties: {
+          boundary_id: { ...UUID, description: "Only this boundary's policy" },
+          all: { type: "boolean", description: "Every version, not only the one in force (default false)" },
+        },
+      },
     },
     preHandler: signedIn,
-    handler: async (_request, reply) =>
+    handler: async (request, reply) =>
       reply.send({
-        policies: (await readablePolicies()).map((p) => ({
+        policies: (await readablePolicies({ boundaryId: request.query.boundary_id ?? null, all: request.query.all === true })).map((p) => ({
           policy_id: p.id,
           boundary_id: p.boundary_id,
           version: p.version,
           hash: p.hash,
           saved_at: p.saved_at,
+          saved_by: p.saved_by,
+          in_force: p.in_force,
           starting_text: p.starting_text,
           ...(p.side === "page"
             ? { from_label: p.from, shown_to: p.to_outside ? "outside this deployment" : p.to }
@@ -246,14 +266,26 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
   app.get<{ Params: { policy_id: string } }>("/redaction-policies/:policy_id", {
     schema: {
       tags: ["showings"],
-      summary: "One version of a redaction policy in full",
+      summary: "One version of a redaction policy in full, with who saved it and whether it is the version in force",
+      description: "`saved_by` is the display name of the person who saved the version, or null where the system saved it.",
       params: { type: "object", required: ["policy_id"], properties: { policy_id: UUID } },
     },
     preHandler: signedIn,
     handler: async (request, reply) => {
-      const policy = await policyById(request.params.policy_id);
+      const policy = await policyVersionRecord(request.params.policy_id);
       if (!policy) return reply.code(404).send({ error: "No policy with that id is one you can read.", code: "POLICY_NOT_FOUND" });
-      return reply.send({ policy_id: policy.id, boundary_id: policy.boundary_id, version: policy.version, hash: policy.hash, saved_at: policy.saved_at, categories: policy.categories, text: policy.body });
+      return reply.send({
+        policy_id: policy.id,
+        boundary_id: policy.boundary_id,
+        version: policy.version,
+        hash: policy.hash,
+        saved_at: policy.saved_at,
+        saved_by: policy.saved_by,
+        in_force: policy.in_force,
+        starting_text: policy.starting_text,
+        categories: policy.categories,
+        text: policy.body,
+      });
     },
   });
 
@@ -586,7 +618,12 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "person's decision, and those the Redactor or a person holds or has delayed. Each item is a part, or the item itself, as it " +
         "would be shown: after removals, with the marks, with what is always shown of it. It carries what the Redactor proposes " +
         "(let through, hold or delay), its removals by category, whether it flagged the part, Audit's answer, the parties to decide " +
-        "for and the setting each is under. A person who also reads the label the item was written at is given the part as written, " +
+        "for and the setting each is under. It says where it crosses: `gate_id`, `to` (a label, or outside this deployment) with " +
+        "`to_outside`, and `from`, the label it was written at, named as the gate's settings name it: by its own name to a person who " +
+        "reads that label or administers, by the face that label shows where things arrive to anyone else, and left out where it shows " +
+        "none (`from_named_by` says which). `policy` is the redaction policy the item was redacted under: its id, version, hash and " +
+        "the names of its categories, which are the only categories a passage can be removed under (POST /gate/decisions, `remove`). " +
+        "A person who also reads the label the item was written at is given the part as written, " +
         "each removed passage with the Redactor's note, and why a part was flagged. `kind` narrows it to one kind of thing.",
       querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 200 }, kind: { type: "string", enum: Object.keys(GATE_KINDS) } } },
     },
@@ -610,7 +647,8 @@ export async function showingRoutes(app: FastifyInstance): Promise<void> {
         "Each item names an item (`item_id`, from the queue) and a part number, or the item alone for the item itself. `decision` is one of: " +
         Object.entries(GATE_ACTS).map(([k, v]) => `\`${k}\` (${v})`).join(" ") +
         " Give it once for the whole call or on each item. `hold` takes a `reason` from the fixed list; `delay` takes `until`, a date and time; " +
-        "`remove` takes `passage` exactly as it appears in the part and a `category` of the boundary's policy, and can be done until the item " +
+        "`remove` takes `passage` exactly as it appears in the part and a `category` of the policy the item was redacted under (its " +
+        "`policy.categories` in GET /gate/queue; any other category is refused, with the policy's own), and can be done until the item " +
         "itself has been shown. An act is made for every party of yours the item rests on, or for `party_id` alone. No act changes a word. " +
         "A release is not taken back. Sending the same decision again changes nothing and is counted under `unchanged`; an item that cannot " +
         "be acted on as asked is listed under `refused` with the reason, and the others are decided.",
