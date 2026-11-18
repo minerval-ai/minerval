@@ -121,6 +121,14 @@ export interface SetupChecklist {
     /** Pages shown outside that are open, the signing key's fingerprint, and when that key was last registered on the public graph from here. Absent from an older API. */
     signing_key?: { released_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
   };
+  /** Following the public graph, as far as it is said without asking the feed. Absent from an older API; null where nothing is or could be followed. */
+  mirror?: {
+    state: "following" | "paused" | "not_started";
+    set_by: "app" | "settings";
+    key_waiting: boolean;
+    refusal: { code: string; message: string; owner: "operator" | "admin" } | null;
+    check_error: string | null;
+  } | null;
   connections: {
     total: number;
     on: number;
@@ -213,6 +221,9 @@ export interface LogEntry {
   amount_owls?: number;
   mandate?: { id: string; title: string };
   note?: string;
+  /** A feed key accepted for the mirror, and the feed it started following. */
+  key_id?: string;
+  feed?: string;
   /** For the file_set_* events: the set, by name; on its closing, how many files it holds; on a set switched off or on. */
   file_set?: string | Withheld;
   files?: number;

@@ -103,7 +103,7 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
       items.push({
         key: `setup-${a.key}`,
         // What waits on the organization on minerval.ai is about the public graph (docs/organizations.md).
-        group: a.owner === "organization" ? "public" : "setup",
+        group: a.owner === "organization" || a.key.startsWith("mirror-") ? "public" : "setup",
         icon: "warn",
         tone: a.tone,
         title: a.title,
@@ -242,7 +242,17 @@ export async function loadWorkCounts(who: string, mine: MyPermissions): Promise<
     health,
     connections: connections ? (failing ? "bad" : withdrawn ? "warn" : "ok") : null,
     public_graph: publicGraphSignal(checklist),
+    mirror: mirrorSignal(checklist),
   };
+}
+
+/** The Mirror entry's dot: a batch refused, or the feed's key waiting to be accepted (docs/organizations.md, "The mirror"). */
+function mirrorSignal(checklist: Inbox["checklist"]): "ok" | "warn" | "bad" | null {
+  const m = checklist?.mirror;
+  if (!m) return null;
+  if (m.refusal) return "bad";
+  if (m.key_waiting || m.check_error) return "warn";
+  return "ok";
 }
 
 /** The Overview's dot: this deployment's connection to minerval.ai, from the checklist (docs/organizations.md). */

@@ -31,6 +31,7 @@ import { startSourceBackfill } from "./workers/source-backfill.js";
 import { startMirrorPublisher } from "./workers/mirror-publisher.js";
 import { startMirrorApplier } from "./workers/mirror-applier.js";
 import { cutsInApiProcess, mirrorConfigProblems, mirrorRoles } from "./services/mirror-roles.js";
+import { followsInApp } from "./services/mirror-following.js";
 import { handleClaimPipeline } from "./workers/claim-pipeline.js";
 import { handleUrlExtraction } from "./workers/url-extraction.js";
 import { handleContributionMessage } from "./workers/contribution-pipeline.js";
@@ -200,7 +201,10 @@ function startWork(
   // the feed here.
   const mirror = mirrorRoles(config);
   if (cutsInApiProcess(config)) pollers.push(startMirrorPublisher({ logger }));
-  if (mirror.applier) pollers.push(startMirrorApplier({ logger }));
+  // A private deployment may also follow the public graph from the app
+  // (services/mirror-following.ts); the applier then waits for an
+  // administrator to start following.
+  if (mirror.applier || followsInApp(config)) pollers.push(startMirrorApplier({ logger }));
   // The usage report (docs/usage-report.md): a members-only deployment on
   // the metered price reports the owls its runs spent each closed UTC day,
   // one total. Not started on the public graph, which reports to no one,

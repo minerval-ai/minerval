@@ -101,7 +101,7 @@ export function Sidebar({
 
 function Signal({ signal, counts }: { signal: WorkSignal; counts: WorkCounts | null }) {
   if (!counts) return null;
-  if (signal === "health" || signal === "connections" || signal === "public_graph") {
+  if (signal === "health" || signal === "connections" || signal === "public_graph" || signal === "mirror") {
     const state = counts[signal];
     if (!state || state === "ok") return null;
     const words = state === "bad" ? "Something has failed" : "Something needs attention";

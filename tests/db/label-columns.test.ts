@@ -210,7 +210,9 @@ describe("the label column, in the catalog", () => {
       // A deployment's bookkeeping about its feed of public rows, with no text of their own.
       "mirror_applied_batches",
       "mirror_feed_batches",
+      "mirror_feed_keys",
       "mirror_feed_rows",
+      "mirror_following",
       "mirror_refusals",
       "mirror_snapshot_rows",
       "oauth_authorization_requests",

@@ -728,11 +728,12 @@ export const LOG_TYPE_WORDS: Record<string, string> = {
   providers: "Providers",
   mandates: "Mandates",
   file_sets: "File sets",
+  mirror: "Mirror",
   other: "Other",
 };
 
 /** The kinds the Activity log offers as filters, in its order. */
-export const LOG_TYPES = ["access", "labels", "parties", "connections", "file_sets", "owls", "providers", "mandates", "other"] as const;
+export const LOG_TYPES = ["access", "labels", "parties", "connections", "file_sets", "owls", "providers", "mandates", "mirror", "other"] as const;
 export type LogType = (typeof LOG_TYPES)[number];
 
 /** The word for an entry's kind, as the API gave it. */
@@ -843,6 +844,14 @@ export function logSentence(entry: LogEntry): string {
         `${who} set up the mandate ${entry.mandate?.title || "(untitled)"}` +
         (entry.amount_owls ? `, creating ${owlsText(entry.amount_owls)} as its budget.` : ".")
       );
+    case "mirror_followed":
+      return `${who} started following the public graph${entry.feed ? ` at ${entry.feed}` : ""}.`;
+    case "mirror_paused":
+      return `${who} paused following the public graph.`;
+    case "mirror_check_requested":
+      return `${who} asked the mirror to check the feed now.`;
+    case "mirror_feed_key_accepted":
+      return `${who} accepted the feed key ${entry.key_id ? entry.key_id.slice(0, 16) : "named"}, having compared it with the key Minerval publishes.`;
     default:
       return `${who}: ${entry.event.replace(/_/g, " ")}.`;
   }

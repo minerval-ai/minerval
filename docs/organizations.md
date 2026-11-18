@@ -733,14 +733,18 @@ Each phase is one pull request or a few, and leaves things working.
    connection on Overview with Connect and Disconnect, Health's Organization
    owner, the sidebar's dot, the Inbox's rows, Budget's billed-to line, and
    `services/public-graph-client.ts` signing what the mirror, the usage report,
-   the Outbox and the outward acts send. The Mirror page is next. In full: `deployments`, `deployment_grants`,
+   the Outbox and the outward acts send. The Mirror page is built too
+   (`services/mirror-following.ts`, `/admin/outside/mirror`): the feed's key
+   read at connect and accepted by an administrator, the checks before
+   following, start, pause and check now, refusals with their owner, and
+   the batches applied with their notes for administrators. In full: `deployments`, `deployment_grants`,
    `deployment_requests`, `deployment_request_nonces`, the signed-request
    method in the auth plugin, `deployment-grants.ts` and its test, the
    connect flow on both sides, the connection on Overview with its Health
    rows, sidebar signal and Inbox items, the signing client, and the
    mirror applier, usage reports, outbound and outward acts moved onto
    it. The Mirror page, with the feed key confirmed in the app, and
-   start, pause and check now. Bearer keys still work beside it: a deployment that has a
+   start, pause and check now, as built. Bearer keys still work beside it: a deployment that has a
    connection uses it, and one that does not falls back to the keys in
    `.env`.
 3. **Control.** Withdrawing grants and retiring deployments from
