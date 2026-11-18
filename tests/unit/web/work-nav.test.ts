@@ -40,10 +40,11 @@ describe("the members' work pages", () => {
   });
 
   it("shows a person the pages they can use", () => {
-    // Every member has the inbox and the graph; nothing else for one who only reads public.
+    // Every member has the inbox, the graph, and who holds what with the log of every administrative act.
     expect(names({ permissions: ["read"], clearance: ["public"] })).toEqual([
       "-: Inbox",
       "Graph: Ask, Claims, Mandates, Findings, Requests, Docs",
+      "Admin: People, Activity log",
     ]);
     // A reader at a label besides public sees the showings that reach it.
     expect(names({ permissions: ["read"], clearance: ["public", "finance"] })[2]).toBe("Sharing: Showings, Boundaries");
@@ -53,6 +54,7 @@ describe("the members' work pages", () => {
       "Graph: Ask, Claims, Mandates, Findings, Requests, Docs",
       "Sharing: Showings, Boundaries",
       "Public graph: Overview, Requests, Replies, Outbox",
+      "Admin: People, Activity log",
     ]);
     // An administrator has the admin section and the organisation's connections.
     const admin = names({ permissions: ["administer"], clearance: ["public"] });

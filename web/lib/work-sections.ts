@@ -121,15 +121,18 @@ export const WORK_SECTIONS: WorkSection[] = [
     ],
   },
   {
+    // Every member reads who holds what and the log of every administrative
+    // act (the deployment keeps both open to its members); the rest is an
+    // administrator's.
     name: "Admin",
     pages: [
-      { href: "/admin", name: "Health", icon: "health", signal: "health" },
+      { href: "/admin", name: "Health", icon: "health", signal: "health", shown: administers },
       { href: "/admin/people", name: "People", icon: "people" },
-      { href: "/admin/labels", name: "Labels", icon: "labels" },
-      { href: "/admin/parties", name: "Parties", icon: "parties" },
-      { href: "/admin/budget", name: "Budget", icon: "budget", also: ["/admin/owls", "/admin/usage-report"] },
+      { href: "/admin/labels", name: "Labels", icon: "labels", shown: administers },
+      { href: "/admin/parties", name: "Parties", icon: "parties", shown: administers },
+      { href: "/admin/budget", name: "Budget", icon: "budget", also: ["/admin/owls", "/admin/usage-report"], shown: administers },
       { href: "/admin/activity", name: "Activity log", icon: "log" },
-    ].map((p) => ({ ...p, icon: p.icon as WorkIcon, signal: p.signal as WorkSignal | undefined, shown: administers })),
+    ],
   },
 ];
 
