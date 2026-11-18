@@ -1,6 +1,7 @@
 # Organizations on minerval.ai, and how a private deployment connects
 
-This is a design for review (#1118). Nothing in it is built yet. It
+The design agreed in #1118, with the questions its review raised
+answered ("Decisions", at the end). Nothing in it is built yet. It
 replaces the shared login and the bearer keys a private deployment uses
 to reach minerval.ai. It covers both kinds of private deployment: one an
 organization runs itself (`own_machines`, or `third_party` for a host it
@@ -92,8 +93,9 @@ two kinds of owner.
   that prefix, and `POST /users/provision` refuses it, so nobody can sign
   in as an organization.
 - An organization holds no API keys and no OAuth tokens. Minting one for
-  it is refused. It acts through its connected deployments, and its
-  admins manage it through their own signed-in sessions.
+  it is refused. It acts through its connected deployments, or through an
+  admin acting for it from their own signed-in session on minerval.ai
+  ("Acting from minerval.ai", below).
 
 ### Members and admins
 
@@ -108,6 +110,7 @@ was an admin when stays.
 | Approve a deployment, change or withdraw its grants | yes | no |
 | Add and remove members, make admins | yes | no |
 | Buy owls for the organization, see its billing | yes | no |
+| Spend its public owls from minerval.ai | yes | no |
 | Verify a domain, change the name | yes | no |
 
 Every change is a row in `organization_log`, readable by the
@@ -133,6 +136,54 @@ with a name). They are its first admin. Making one costs nothing and
 gives nothing: no owls, no standing, no badge. A name is not unique and
 proves nothing. A verified domain is what tells two organizations of the
 same name apart.
+
+### Acting from minerval.ai
+
+An organization that runs no deployment, a funder for instance, still
+needs to spend the owls it buys. So an admin can act for the
+organization from their own session on minerval.ai, on the
+organization's pages:
+
+- open a public mandate with the public Grantmaker, fund it, and add owls
+  to one;
+- pay for a node's assessment, and ask one of the organization's
+  mandates for a fresh assessment of a node.
+
+These are the acts that spend money and nothing else. Contributing,
+proposing nodes and publishing pages are not offered here: they are a
+deployment's work, made under its grants. Each act appears on the public
+graph as the organization's. The organization's log records which admin
+made it. Only a person present in a session can do this: no key, token,
+deployment signature or Assistant card acts as the organization on
+minerval.ai, because a key alone would bring back the problem this
+design removes.
+
+The request carries `x-acting-organization: <id>` from the web tier,
+beside the person's own `x-acting-user`. The API checks that the person
+is an admin of that organization right now, then resolves the request
+to the organization's account with `method: "organization_admin"`. A
+route that is not one of those acts refuses the header.
+
+### The organization's pages
+
+The organization's pages on minerval.ai are drawn as tools, with the
+same kit as a private deployment's workspace (#1133): the pieces in
+`web/components/work/ui.tsx`, `WorkForm`, drawers, and the `w-` classes
+in `web/app/workspace.css`. The root layout already loads that
+stylesheet, so the public build has it. They sit under the account
+pages (`/account/organizations/:id`), in tabs:
+
+| Tab | What | Who |
+| --- | --- | --- |
+| Overview | Name, domain, members' count, owls, the deployments with their state | members |
+| Members | Members and roles, invitations in a drawer | members read; admins change |
+| Deployments | Each deployment's grants, allowance and what it has spent, with a drawer to change them; the old keys still live after a conversion | members read; admins change |
+| Public acts | Mandates and funding, the forms for "Acting from minerval.ai" | admins |
+| Billing | Owls bought, usage reports received per deployment | admins |
+| Log | `organization_log` | members |
+
+The connect link (`/connect?code=...`) is a page of its own. It needs
+only a signed-in person, and it lists the organizations they admin.
 
 ### Converting an existing shared account
 
@@ -258,11 +309,15 @@ A route in the map that the deployment lacks the grant for answers
 organization gives it on minerval.ai.
 
 **Money, not counts.** `act` spends the organization's public owls.
-An admin can give a deployment an owl allowance: the most of the
-organization's owls it may spend in a calendar month. There is no count of
+An admin can give a deployment an owl allowance: a sum of the
+organization's owls that the deployment may spend. The allowance has no
+period and does not renew. It goes down as the deployment spends, and up
+only when an admin adds to it. A deployment with no allowance set
+spends from the organization's balance as a whole. There is no count of
 acts. The allowance and what is left of it are in
-`GET /organizations/me`, which the deployment shows on `/admin/outside` and
-gives to its own agents whenever they may act outside (CLAUDE.md,
+`GET /organizations/me`. The deployment shows them on its public-graph
+Overview (`/admin/outside`) and on Budget (`/admin/budget`), and gives
+them to its own agents whenever they may act outside (CLAUDE.md,
 "Constraints on agents"). A spend beyond it is refused with the figures,
 before anything moves.
 
@@ -290,9 +345,10 @@ The device-authorization flow of RFC 8628, with the key standing in for
 the device code: the deployment proves it holds the key on every call, so
 there is no polling secret to keep.
 
-**On the deployment**, an administrator on `/admin/outside` ("The public
-graph") presses
-"Connect to minerval.ai". They choose which permissions to ask for (all
+**On the deployment**, an administrator opens the public graph's
+Overview (`/admin/outside`) and presses "Connect to minerval.ai". A
+drawer opens, like the one that registers the signing key today. They
+choose which permissions to ask for (all
 four ticked by default, with what each means) and the address of the
 public graph (Minerval's by default).
 
@@ -377,8 +433,9 @@ describes.
   written on their account in the deployment. With it off, the public
   record says "Acme Corp" and nothing else.
 - **On minerval.ai**, an admin's own acts for the organization (approving
-  a deployment, buying owls) are on the organization's log under their
-  own account.
+  a deployment, buying owls, the acts in "Acting from minerval.ai") are on
+  the organization's log under their own account. On the public record
+  they are the organization's, as an act through a deployment is.
 
 ## A verified domain
 
@@ -410,17 +467,23 @@ Everything an organization pays or is paid belongs to its account.
   never become public owls, as now.
 - **Usage reports** are sent with `report_usage`. The receiving route
   records them against the organization and the deployment that signed
-  them. A report whose `deployment` field differs from the identifier the
-  deployment gave when it connected is refused. The report's format is
-  unchanged: it still says one day's total and nothing else
-  ([usage-report.md](usage-report.md)).
+  them. The report's format is unchanged: it still says one day's total
+  and nothing else ([usage-report.md](usage-report.md)). Its `deployment`
+  field remains the identifier the deployment made for itself. The
+  deployment gives that identifier when it connects, and the public graph
+  ties it to the organization. A report whose `deployment` field differs
+  from the signer's is refused. So is a connection that gives an
+  identifier another organization holds. A deployment that reconnects
+  (after losing its key, say) gives the same identifier, so its reports
+  continue the same record. A file a member uploads is checked the same
+  way.
 - **Who may read the reports received.** Today no route reads a received
   report back. Admins of the organization should be able to see what
   Minerval has recorded against it, since that is what it will be billed
   on. That is a new route, `GET /organizations/:id/usage-reports`, for
-  admins only. It shows exactly what the deployment's own
-  `/admin/usage-report` page already shows the deployment's
-  administrators, so nothing new leaves anyone.
+  admins only, shown on the organization's Billing tab. It shows exactly
+  what the deployment's own Budget page (`/admin/budget`) already shows
+  the deployment's administrators, so nothing new leaves anyone.
 - **Invoices** wait on a price per owl, which is not decided. When one
   is, it bills the organization from the latest revision of each day, as
   [usage-report.md](usage-report.md) says.
@@ -454,13 +517,16 @@ does not get a shortcut because Minerval is on both sides. Reasons:
   the deployment. The design does not hide that. The hosting words
   `minerval` ("Minerval's machines") are in every package and on the
   deployment's record, and the approving admin sees them.
-- **Hosting is stated by Minerval, not just by the deployment.** For a
-  deployment Minerval provisioned, the public graph knows the hosting is
-  `minerval`. Its record can say "hosted by Minerval (confirmed by
-  Minerval)" rather than "stated by the deployment". That is a statement
-  of where it runs, not an attestation of what ran. The attestation field
-  in a package keeps saying that nothing outside the publisher's control
-  attests to the run.
+- **Hosting is checked, not badged.** The public graph knows which
+  deployments Minerval provisioned. It refuses the hosting word
+  `minerval` from a deployment Minerval did not provision, and refuses
+  any other word from one it did. That holds at connection and at
+  publisher registration. The words shown stay the same three, with
+  nothing like "confirmed by Minerval" added. A badge would make a
+  hosted deployment look more trustworthy than one on the organization's
+  own machines, and being hosted by Minerval earns no standing ("What is
+  wrong today", last paragraph). The attestation field in a package keeps
+  saying that nothing outside the publisher's control attests to the run.
 - **Signing in.** A self-hosted deployment brings its own OpenID Connect
   provider ([accounts.md](accounts.md), "Single sign-on and groups"). Many
   organizations that want Minerval to host for them will not have one.
@@ -502,25 +568,56 @@ machines: the hosting is the deployment's statement.
 
 ## What changes inside a deployment
 
-- `/admin/outside` ("The public graph") gains the connection: its state,
-  the organization, the grants and allowance as minerval.ai reports them,
-  and Connect, Replace the connection key and Disconnect, which are for
-  administrators from a session. Its section on "the organisation's
-  account there" reads from the connection instead of `GET /users/me`
-  under a key. The setup checklist's public-graph item points to it.
+The connection fits the workspace #1133 drew, and adds no page of its
+own.
+
+- **Public graph → Overview** (`/admin/outside`). Its account card shows
+  the connection: connected or not, the organization (with its domain
+  once verified), the grants held, the allowance and what is left of it.
+  Administrators get Connect, Replace the connection key and Disconnect
+  there, each in a drawer, from a session. The card reads all of this
+  from `GET /organizations/me` over the connection, in place of
+  `GET /users/me` under a key.
+- **The signing key's registration becomes readable.** #1133 left a gap:
+  Overview cannot read whether the publishing key is registered, so it
+  infers that from the act log. `GET /organizations/me` lists the
+  deployment's live publisher registrations, and Overview shows those
+  instead.
+- **Health** (`/admin`). Today each row that needs attention names who
+  fixes it: the operator (`OWNER_WORDS` in `web/lib/health.ts`) or an
+  administrator. A third owner joins them: "Organization", meaning an
+  admin of the organization on minerval.ai. A missing grant or a
+  withdrawn deployment belongs to that owner, and the row says what to
+  ask them for. The public-graph area's rows link to Overview.
+- **Sidebar.** Overview's entry gets a signal (`public_graph` in
+  `WorkSignal`). A dot shows when the deployment is not connected, has
+  been withdrawn, or lacks a grant its settings need. Like the other
+  counts, it is read after the page draws (`/api/work/counts`).
+- **Inbox.** The Public graph group gains items for administrators: a
+  connection waiting for approval, with its code and link; a grant
+  withdrawn or the deployment retired; an allowance spent.
+- **Budget** (`/admin/budget`). The usage-report section names the
+  organization it is billed to, and shows the deployment's allowance
+  beside the public owls.
+- **Outbox** and the act list on Overview are unchanged. Connecting,
+  replacing the key and disconnecting are outward acts, listed there with
+  who did them.
+
+Under the pages:
+
 - One client, `src/services/public-graph-client.ts`, signs every request
   to the public graph. The mirror applier, the usage-report sender, the
   outbound sender and the outward acts all call it, in place of the
   `x-api-key` header each builds today.
 - `MIRROR_FEED_URL`, `PUBLIC_GRAPH_API_URL` and `USAGE_REPORT_URL` all
-  name the same server today. The connection keeps one address, set on
-  the Connect page. The three settings stay as overrides for a deployment
-  whose operator wants them fixed, and the preflight says when one
-  differs from the connection's.
+  name the same server today. The connection keeps one address, set in
+  the Connect drawer. The three settings stay as overrides for a
+  deployment whose operator wants them fixed, and the preflight says when
+  one differs from the connection's.
 - The preflight's checks on the three keys become checks on the
   connection: connected or not, and whether each grant the deployment's
   settings need is held (for instance, `read_feed` where a feed is
-  followed). It says what to ask an organization admin for.
+  followed).
 - Every place that tells an operator to "check PUBLIC_GRAPH_API_KEY"
   instead says what the public graph answered and who can fix it: an
   admin of the organization, on minerval.ai.
@@ -532,23 +629,25 @@ Each phase is one pull request or a few, and leaves things working.
 1. **Organizations.** `contributors.kind`, `organization_members`,
    `organization_log`, making an organization, invitations, admins, the
    last-admin rule and its operator route, the organization's page and its
-   public contributor page, buying owls as the organization, and
-   converting a shared account. No deployment changes yet.
+   public contributor page, the organization's pages drawn with the
+   workspace kit, buying owls as the organization, acting from
+   minerval.ai, and converting a shared account. No deployment changes
+   yet.
 2. **Connected deployments.** `deployments`, `deployment_grants`,
    `deployment_requests`, `deployment_request_nonces`, the signed-request
    method in the auth plugin, `deployment-grants.ts` and its test, the
-   connect flow on both sides, the connection on `/admin/outside`, the
-   signing client, and the mirror applier, usage reports, outbound and outward acts moved
+   connect flow on both sides, the connection on Overview with its Health
+   rows, sidebar signal and Inbox items, the signing client, and the mirror applier, usage reports, outbound and outward acts moved
    onto it. Bearer keys still work beside it: a deployment that has a
    connection uses it, and one that does not falls back to the keys in
    `.env`.
 3. **Control.** Withdrawing grants and retiring deployments from
    minerval.ai, replacing the connection key, the owl allowance, connecting
-   by hand, uploading handed-over files, and publishing through the
-   connection (`publishers.deployment_id`).
+   by hand, uploading handed-over files, publishing through the connection
+   (`publishers.deployment_id`), and the check on hosting words.
 4. **Domains.** Verification, the daily check, and showing the domain.
-5. **Billing on the organization.** Reports refused when the deployment
-   identifier does not match, the admins' read of reports received, and
+5. **Billing on the organization.** The report identifier tied to the
+   organization, reports refused when it does not match, the admins' read of reports received, and
    the organization's billing page.
 6. **minerval.ai as an OpenID Connect provider** for organizations, which
    a hosted deployment needs and a self-hosted one may use. Naming the
@@ -566,28 +665,41 @@ writes, the page table in `plugin/skills/using-minerval/SKILL.md` for new
 pages, and the caller skills where a tool's behaviour changes.
 
 MCP: reading one's organizations, their deployments and grants are tools.
-Approving a deployment, granting, withdrawing, adding members and making
-admins are excluded, with this reason: each decides who speaks for an
+Approving a deployment, granting, withdrawing, adding members, making
+admins and acting from minerval.ai are excluded, with this reason: each decides who speaks for an
 organization, so it is a person's act in their own session, as
 registering a publisher is today. The connect, rotate and disconnect
 routes inside a deployment are excluded for the same reason. The routes
 a deployment signs are not tools: an agent has no deployment key of its
 own.
 
-## Open questions
+## Decisions
 
-- **Acting as the organization without a deployment.** An organization
-  that runs no deployment (a funder, say) can buy owls but cannot spend
-  them, since only a deployment acts for it. Should admins be able to act
-  in the organization's name from minerval.ai directly, recorded on the
-  organization's log? This design leaves it out to keep one way of acting.
-- **The allowance's period.** A calendar month is proposed. A rolling
-  thirty days, or no period at all (a sum the admin tops up), would also
-  do.
-- **Confirmed hosting.** Is "confirmed by Minerval" for hosted
-  deployments worth the extra words on every page, or should hosting stay
-  the deployment's own statement everywhere?
-- **The usage-report identifier.** This design keeps the deployment's own
-  random identifier in the report and checks it against the connection.
-  The alternative is a format 2 that carries the public graph's
-  deployment id.
+The review raised four questions, answered here.
+
+- **Acting as the organization without a deployment: yes, for spending,
+  by admins in a session.** An organization that funds public work and
+  runs no deployment is a real case, and making it run one to spend its
+  own owls would be absurd. What is allowed is narrow: the acts that
+  spend money, from an admin's session, logged under the admin's name.
+  Contributing and publishing stay with deployments, so there is still
+  one way to do each kind of work ("Acting from minerval.ai").
+- **The allowance has no period.** It is a sum the admin sets and adds
+  to. A sum that only goes down when spent is one figure an agent can be
+  told and can act on. A monthly reset is a second fact to state, and it
+  lets a deployment nobody is watching spend again every month with
+  nobody deciding to let it. It is also how budgets already work here:
+  a mandate's escrow and a budget job are sums that someone funds
+  ([allocation.md](allocation.md)).
+- **No "confirmed by Minerval" on hosted deployments. The hosting words
+  are checked instead.** The public graph refuses a false `minerval`, and
+  a Minerval-provisioned deployment cannot claim another word. So every
+  record says where a deployment runs, and none says it to Minerval's
+  credit ("Hosted by Minerval").
+- **The usage-report identifier stays the deployment's own, in format
+  1.** A report's text is fixed when it is prepared, and a deployment
+  prepares reports before it connects and sends them later, oldest first.
+  A format that carried the public graph's id could not be prepared before
+  connecting, and would change when a deployment reconnects. The
+  deployment's own identifier is tied to the organization when it
+  connects, and checked on every report ("Billing").
