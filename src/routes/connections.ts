@@ -15,15 +15,23 @@
  *     as they are now.
  *   PUT   /connections/:connection_id/tools: say which tools agents are
  *     offered.
+ *   PUT   /connections/:connection_id/credential: give the connection its
+ *     credential, or replace it; kept sealed.
+ *   DELETE /connections/:connection_id/credential: remove the credential
+ *     given that way.
  *
  * Who may call what. All of them need the permission to administer. The
- * four that change anything also need a signed-in session, as every other
+ * six that change anything also need a signed-in session, as every other
  * administrative write does (routes/permissions.ts says why), so they are
  * not MCP tools; the three reads are (mcp/route-tools.ts).
  *
- * No route takes, stores or returns a credential. A connection names the
- * environment variable that holds its credential, and a read says whether
- * that variable is set.
+ * A credential is taken in, never returned. A connection either names the
+ * environment variable that holds its credential, or is given the
+ * credential itself (POST /connections, PUT .../credential), which is
+ * sealed as it arrives and stored sealed (services/connection-credential.ts).
+ * A read says where the credential comes from and whether a call would
+ * carry it, and nothing of its value. Request bodies are not logged
+ * (server/app.ts).
  */
 import type { FastifyInstance } from "fastify";
 import {
@@ -36,6 +44,10 @@ import {
   CREDENTIAL_HEADER_PATTERN,
   TOOL_PREFIX_PATTERN,
 } from "../connections.js";
+import { CREDENTIAL_MAX_CHARS, credentialKeys } from "../services/connection-credential.js";
+
+/** Whether this deployment can keep a credential given to a connection itself: its key is set, and is a key. */
+const canKeepCredentials = (): boolean => credentialKeys().current !== null;
 import { currentLabel } from "../llm/usage-context.js";
 import { requirePermission } from "../server/require-permission.js";
 import {
@@ -49,6 +61,8 @@ import {
   lookAtConnection,
   notShownNote,
   offerTools,
+  removeStoredCredential,
+  setStoredCredential,
   type ConnectionFailureCode,
   type ConnectionSettings,
 } from "../services/connection-service.js";
@@ -85,8 +99,9 @@ const SETTINGS = {
   credential_env: {
     anyOf: [{ type: "string", pattern: CREDENTIAL_ENV_PATTERN }, { type: "null" }],
     description:
-      "The NAME of the environment variable that holds the credential, never the credential. The name " +
-      "starts CONNECTION_. Null when the server asks for none.",
+      "The NAME of an environment variable that holds the credential, never the credential. The name " +
+      "starts CONNECTION_. Null when the credential is given to the connection itself (credential), or " +
+      "the server asks for none. Naming one removes a credential given to the connection itself.",
   },
   credential_header: {
     type: "string",
@@ -148,9 +163,24 @@ function settingsOf(body: SettingsBody): ConnectionSettings {
   };
 }
 
+/** A credential, as a request gives it: taken in, sealed, and never returned. */
+const CREDENTIAL = {
+  type: "string",
+  minLength: 1,
+  maxLength: CREDENTIAL_MAX_CHARS,
+  writeOnly: true,
+  description:
+    "The credential itself, such as a read-only API token, to be kept sealed: encrypted under a key that " +
+    "is only in the deployment's environment, and bound to this connection's address, so that a change of " +
+    "address removes it. Sent in credential_header (in Authorization as a bearer token: give the token " +
+    "without \"Bearer \"). Never returned or logged. Refused where the deployment has no key to keep it with.",
+} as const;
+
 function settingsStatus(code: ConnectionFailureCode): number {
   if (code === "NOT_FOUND" || code === "UNKNOWN_PARTY" || code === "UNKNOWN_LABEL") return 404;
-  if (code === "NAME_TAKEN" || code === "TOOL_PREFIX_TAKEN" || code === "LABEL_IS_KEPT") return 409;
+  if (code === "NAME_TAKEN" || code === "TOOL_PREFIX_TAKEN" || code === "LABEL_IS_KEPT" || code === "NO_CREDENTIAL_KEY") {
+    return 409;
+  }
   return 400;
 }
 
@@ -178,7 +208,9 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
         "was withdrawn because it changed. The list holds the connections at labels the caller reads: " +
         "administering does not by that alone let a person read at a label. `not_shown` counts the " +
         "rest, and `not_shown_note` says so in a sentence when there are any. A tool's `calls` and " +
-        "`readings_kept` count the calls the caller reads. `notice` is what to tell whoever adds or " +
+        "`readings_kept` count the calls the caller reads. `can_keep_credentials` says whether a " +
+        "credential can be given to a connection itself, to be kept sealed: the deployment has the key " +
+        "for it. `notice` is what to tell whoever adds or " +
         `changes one. ${CONNECTION_NOTICE}`,
     },
     preHandler: administrator,
@@ -188,6 +220,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
       const note = notShownNote(notShown, "connections");
       return reply.send({
         notice: CONNECTION_NOTICE,
+        can_keep_credentials: canKeepCredentials(),
         connections,
         not_shown: notShown,
         ...(note ? { not_shown_note: note } : {}),
@@ -205,7 +238,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const connection = await getConnection(request.params.connection_id);
       if (!connection) return reply.code(404).send({ error: "Connection not found", code: "NOT_FOUND" });
-      return reply.send({ notice: CONNECTION_NOTICE, connection });
+      return reply.send({ notice: CONNECTION_NOTICE, can_keep_credentials: canKeepCredentials(), connection });
     },
   });
 
@@ -246,7 +279,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post<{ Body: SettingsBody & { name: string; url: string; party_id: string; stake: string } }>(
+  app.post<{ Body: SettingsBody & { name: string; url: string; party_id: string; stake: string; credential?: string } }>(
     "/connections",
     {
       schema: {
@@ -259,14 +292,16 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
           "A server that does not answer yet is still added, and `looked` says why it did not. The " +
           "change is logged. The connection's `label` is the one this request names, among the labels " +
           "the administrator reads: a run is offered the connection when the label it works at reads " +
-          "that one, and the connection keeps it from then on.",
+          "that one, and the connection keeps it from then on. The credential is given either as " +
+          "`credential`, kept sealed, or by naming the environment variable that holds it in " +
+          "`credential_env`; not both.",
         // `label` is added to the body by the request-label plugin, as on
         // every route that starts something new (server/request-labels.ts).
         body: {
           type: "object",
           required: ["name", "url", "party_id", "stake"],
           additionalProperties: false,
-          properties: SETTINGS,
+          properties: { ...SETTINGS, credential: CREDENTIAL },
         },
       },
       preHandler: administratorSession,
@@ -282,7 +317,8 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
             label: string;
             stake: string;
           },
-          actorId
+          actorId,
+          request.body.credential
         );
         if (!added.ok) return reply.code(settingsStatus(added.code)).send({ error: added.message, code: added.code });
         const looked = await lookAtConnection(added.id, actorId);
@@ -302,7 +338,8 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
       description:
         "Only the settings named are changed, and the log entry says which. A new address or " +
         "transport withdraws every tool that was offered until an administrator looks at what the " +
-        "new address lists and picks again. A new party applies to readings from now on: those " +
+        "new address lists and picks again, and removes a credential given to the connection itself, " +
+        "which was given for the old address (`stored_credential_removed`). A new party applies to readings from now on: those " +
         `already kept carry the party the connection had when they were read. ${CONNECTION_LABEL_IS_KEPT} ` +
         "A connection is never deleted; enabled false switches it off.",
       params: CONNECTION_PARAMS,
@@ -325,6 +362,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
         notice: CONNECTION_NOTICE,
         connection: await getConnection(changed.id),
         withdrawn: changed.withdrawn,
+        stored_credential_removed: changed.storedCredentialRemoved,
       });
     },
   });
@@ -410,6 +448,54 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
         offered: result.offered,
         no_longer_offered: result.noLongerOffered,
       });
+    },
+  });
+
+  app.put<{ Params: { connection_id: string }; Body: { credential: string } }>("/connections/:connection_id/credential", {
+    schema: {
+      tags: ["connections"],
+      summary:
+        "Give a connection its credential, or replace it, to be kept sealed (administrators, from a signed-in session)",
+      description:
+        `${CONNECTION_NOTICE} The credential is sealed as it arrives: encrypted under a key that is only in ` +
+        "the deployment's environment, bound to this connection, its address and its transport, and stored " +
+        "sealed. It is never returned or logged; a read of the connection says that it was given, when, and " +
+        "whether the key that sealed it is set. A connection that named an environment variable for its " +
+        "credential no longer does. Changing the connection's address or transport removes it. Refused " +
+        "where the deployment has no key to keep it with (CREDENTIAL_ENCRYPTION_KEY). Look at the " +
+        "connection afterwards (POST .../look) to test that the server takes it. The change is logged, " +
+        "without the credential.",
+      params: CONNECTION_PARAMS,
+      body: {
+        type: "object",
+        required: ["credential"],
+        additionalProperties: false,
+        properties: { credential: CREDENTIAL },
+      },
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const set = await setStoredCredential(request.params.connection_id, request.body.credential, request.auth!.userId!);
+      if (!set.ok) return reply.code(settingsStatus(set.code)).send({ error: set.message, code: set.code });
+      return reply.send({ notice: CONNECTION_NOTICE, connection: await getConnection(set.id), replaced: set.replaced });
+    },
+  });
+
+  app.delete<{ Params: { connection_id: string } }>("/connections/:connection_id/credential", {
+    schema: {
+      tags: ["connections"],
+      summary:
+        "Remove the credential given to a connection itself (administrators, from a signed-in session)",
+      description:
+        "The connection's calls then go without a credential, until one is given again or an environment " +
+        "variable is named for it. The change is logged.",
+      params: CONNECTION_PARAMS,
+    },
+    preHandler: administratorSession,
+    handler: async (request, reply) => {
+      const removed = await removeStoredCredential(request.params.connection_id, request.auth!.userId!);
+      if (!removed.ok) return reply.code(settingsStatus(removed.code)).send({ error: removed.message, code: removed.code });
+      return reply.send({ notice: CONNECTION_NOTICE, connection: await getConnection(removed.id) });
     },
   });
 }

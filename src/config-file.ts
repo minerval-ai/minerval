@@ -358,6 +358,12 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
     field: "sandboxHourCostMicroUsd",
   },
   secret("sandbox.token", "SANDBOX_TOKEN"),
+
+  // The key a credential given on a connection's page is sealed with, and
+  // the keys that sealed credentials before it (services/connection-credential.ts).
+  // Not CONNECTION_..., which a connection may name as its credential.
+  secret("connections.credential_key", "CREDENTIAL_ENCRYPTION_KEY"),
+  secret("connections.previous_credential_keys", "CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS"),
 ];
 
 /**

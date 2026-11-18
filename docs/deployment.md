@@ -73,6 +73,8 @@ of the variable to use. The secrets are:
 | `USAGE_REPORT_API_KEY` | The key usage reports are sent to the public graph with ([usage-report.md](usage-report.md)). |
 | `SANDBOX_TOKEN` | The secret the API and the sandbox service share ([file-sets.md](file-sets.md)). |
 | `CONNECTION_...` | Each connection's credential, in a variable the connection names ([connections.md](connections.md)). There may be any number, so a file is refused for any name that begins this way. |
+| `CREDENTIAL_ENCRYPTION_KEY` | The key a credential given on a connection's page is kept sealed with: 32 random bytes in base64 (`openssl rand -base64 32`). Without it a credential can only be given in a `CONNECTION_...` variable. Losing it loses only those credentials, which are given again ([connections.md](connections.md), "A credential given here"). |
+| `CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` | Keys that sealed credentials before the current one, separated by commas: they open, never seal. Kept while a key is replaced, until `scripts/reseal-connection-credentials.ts` has moved every credential to the new key. |
 
 **A file that cannot be used stops the server**, and says everything that is
 wrong with it at once: a group or setting it does not have (with the nearest

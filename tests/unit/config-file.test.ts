@@ -115,6 +115,8 @@ describe("the table of settings", () => {
       [
         "ANTHROPIC_API_KEY",
         "API_KEYS",
+        "CREDENTIAL_ENCRYPTION_KEY",
+        "CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS",
         "DATABASE_URL",
         "DB_PASSWORD",
         "ELICIT_API_KEY",

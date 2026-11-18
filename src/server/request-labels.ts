@@ -367,6 +367,16 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
     "connection_id",
     "Changes which of the connection's tools are offered: rows at the connection's label."
   ),
+  "PUT /connections/:connection_id/credential": from(
+    "connection",
+    "connection_id",
+    "Keeps the credential, sealed, on the connection's own row, which is changed by work at its own label."
+  ),
+  "DELETE /connections/:connection_id/credential": from(
+    "connection",
+    "connection_id",
+    "Removes the sealed credential from the connection's own row, which is changed by work at its own label."
+  ),
 
   // ---- file sets: members-only deployments only ----
   "POST /file-sets": {

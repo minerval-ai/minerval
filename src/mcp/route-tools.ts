@@ -558,6 +558,11 @@ const CONNECTION_SESSION =
   "deployment at a server or widen what agents are offered. The matching reads " +
   "(list_connections, get_connection, list_connection_calls) are tools.";
 
+const CONNECTION_CREDENTIAL =
+  `${CONNECTION_SESSION} And it carries a credential to another system: a tool would put that ` +
+  "credential in an agent's or an outside client's hands and in their transcripts. It is given on the " +
+  "connection's page, kept sealed, and never returned; get_connection says whether one was given.";
+
 const FILE_SET_SESSION =
   "Changes which files the graph's agents may read, so it takes a signed-in dashboard session as " +
   "well as the permission to direct: a leaked key, an access token, or an agent following text it " +
@@ -608,6 +613,8 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "PATCH /connections/:connection_id": CONNECTION_SESSION,
   "POST /connections/:connection_id/look": CONNECTION_SESSION,
   "PUT /connections/:connection_id/tools": CONNECTION_SESSION,
+  "PUT /connections/:connection_id/credential": CONNECTION_CREDENTIAL,
+  "DELETE /connections/:connection_id/credential": CONNECTION_CREDENTIAL,
   "POST /permissions/grants": ADMINISTRATION_SESSION,
   "DELETE /permissions/grants/:grant_id": ADMINISTRATION_SESSION,
   "POST /parties": ADMINISTRATION_SESSION,

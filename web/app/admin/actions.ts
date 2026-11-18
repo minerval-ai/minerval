@@ -16,9 +16,11 @@ import {
   grantPermission,
   lookAtConnection,
   offerConnectionTools,
+  removeConnectionCredential,
   removeGrant,
   removeLabelRead,
   sendUsageReports,
+  setConnectionCredential,
   setProviderClearance,
   setSourceParty,
   setUpStandingMandate,
@@ -272,15 +274,26 @@ function settingsProblem(settings: ConnectionSettings): string | null {
   return null;
 }
 
+// A credential typed into a form is read here, sent to the API once and
+// never put back into what the form shows: the API seals it as it arrives,
+// and nothing here logs it or keeps it. Not trimmed here; the API says what
+// it takes.
+const credentialOf = (form: FormData): string => String(form.get("credential") ?? "");
+
+const ONE_CREDENTIAL_PLACE =
+  "Give the credential itself or the name of the variable that holds it, not both: a connection takes its credential from one place.";
+
 export async function addConnectionAction(_previous: FormState, form: FormData): Promise<FormState> {
   const user = await actingUser();
   if (!user) return NOT_SIGNED_IN;
   const settings = connectionSettings(form);
   const problem = settingsProblem(settings);
   if (problem) return { error: problem };
+  const credential = credentialOf(form);
+  if (credential.trim() && settings.credential_env) return { error: ONE_CREDENTIAL_PLACE };
   let id: string;
   try {
-    id = (await addConnection(user, settings)).connection.id;
+    id = (await addConnection(user, { ...settings, ...(credential.trim() ? { credential } : {}) })).connection.id;
   } catch (err) {
     return refused(err);
   }
@@ -316,15 +329,62 @@ export async function changeConnectionAction(_previous: FormState, form: FormDat
     if (Object.keys(changed).length === 0) return { notice: "Nothing was different, so nothing was changed." };
     const result = await changeConnection(user, id, changed);
     revalidatePath("/admin", "layout");
-    return {
-      notice:
-        result.withdrawn.length > 0
-          ? `Changed. ${count(result.withdrawn.length, "tool")} ${result.withdrawn.length === 1 ? "is" : "are"} no longer offered until you look at what the new address lists and pick again: ${listed(result.withdrawn)}.`
-          : "Changed.",
-    };
+    const parts = [
+      "Changed.",
+      ...(result.withdrawn.length > 0
+        ? [
+            `${count(result.withdrawn.length, "tool")} ${result.withdrawn.length === 1 ? "is" : "are"} no longer offered until you look at what the new address lists and pick again: ${listed(result.withdrawn)}.`,
+          ]
+        : []),
+      ...(result.stored_credential_removed
+        ? [
+            changed.credential_env
+              ? "The credential given on this page was removed: the connection now takes its credential from the variable."
+              : "The credential given on this page was removed, since it was given for the old address. Give it again below.",
+          ]
+        : []),
+    ];
+    return { notice: parts.join(" ") };
   } catch (err) {
     return refused(err);
   }
+}
+
+export async function setConnectionCredentialAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  const id = text(form, "connection_id");
+  const credential = credentialOf(form);
+  if (!credential.trim()) return { error: "Paste the credential first." };
+  let replaced: boolean;
+  try {
+    ({ replaced } = await setConnectionCredential(user, id, credential));
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/admin", "layout");
+  const kept = replaced ? "Replaced, and kept encrypted." : "Kept, encrypted.";
+  // Asked straight away, so the person learns now whether the system takes it.
+  try {
+    const { looked, connection } = await lookAtConnection(user, id);
+    revalidatePath("/admin", "layout");
+    if (!looked.answered) return { error: `${kept} But the server did not take it: ${looked.problem ?? "no reason was given"}` };
+    return { notice: `${kept} The server answered with it and lists ${count(connection.tools.filter((t) => t.listed).length, "tool")}.` };
+  } catch {
+    return { notice: `${kept} Look at the tools to check that the server takes it.` };
+  }
+}
+
+export async function removeConnectionCredentialAction(_previous: FormState, form: FormData): Promise<FormState> {
+  const user = await actingUser();
+  if (!user) return NOT_SIGNED_IN;
+  try {
+    await removeConnectionCredential(user, text(form, "connection_id"));
+  } catch (err) {
+    return refused(err);
+  }
+  revalidatePath("/admin", "layout");
+  return { notice: "Removed. The connection's calls now go without a credential." };
 }
 
 export async function switchConnectionAction(_previous: FormState, form: FormData): Promise<FormState> {

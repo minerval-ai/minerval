@@ -15,10 +15,15 @@
  * looks again: the pick was a person's judgment of one definition, and
  * nothing here may extend it to another.
  *
- * Nothing in this file reads a credential. It stores the name of the
- * environment variable that holds one and reports whether that variable is
- * set (connection-client.ts).
+ * Nothing in this file reads a credential in the clear once it is kept. A
+ * connection either names the environment variable that holds its
+ * credential, and this file reports whether that variable is set
+ * (connection-client.ts), or was given its credential in the app, which
+ * this file seals as it arrives and stores sealed (connection-credential.ts).
+ * A sealed credential is opened only by the client, at the moment of a
+ * call, and by resealStoredCredentials, which seals it again under a new key.
  */
+import { randomUUID } from "node:crypto";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
@@ -47,6 +52,15 @@ import {
   type ConnectionFailure,
   type ConnectionTarget,
 } from "./connection-client.js";
+import {
+  CREDENTIAL_KEY_ENV,
+  cleanCredential,
+  credentialKeys,
+  keyIsHere,
+  openCredential,
+  sealCredential,
+  type SealedCredential,
+} from "./connection-credential.js";
 import { labelsReadableFrom, logAdministrativeEvent } from "./permission-service.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -73,6 +87,9 @@ interface ConnectionRow {
   transport: string;
   url: string;
   credential_env: string | null;
+  credential_sealed: string | null;
+  credential_key_id: string | null;
+  credential_set_at: Date | null;
   credential_header: string;
   party_id: string;
   party_name: string;
@@ -108,7 +125,8 @@ interface ToolRow {
 }
 
 const CONNECTION_SELECT = `
-  SELECT c.id, c.name, c.tool_prefix, c.transport, c.url, c.credential_env, c.credential_header,
+  SELECT c.id, c.name, c.tool_prefix, c.transport, c.url, c.credential_env,
+         c.credential_sealed, c.credential_key_id, c.credential_set_at, c.credential_header,
          c.party_id, p.name AS party_name, p.is_own_organization AS party_is_own, c.stake,
          c.sensitivity_label, c.calls_per_minute, c.timeout_seconds, c.enabled,
          c.last_checked_at, c.last_answered_at, c.last_error, c.last_error_at, c.created_at, c.updated_at
@@ -157,11 +175,23 @@ export interface ConnectionView {
   transport: string;
   url: string;
   credential: {
-    /** The name of the environment variable that holds the credential; null when the server asks for none. */
+    /**
+     * Where the credential comes from: `stored`, given on the connection's
+     * page and kept sealed; `environment`, the variable `env` names; or
+     * null when the server asks for none.
+     */
+    source: "stored" | "environment" | null;
+    /** The name of the environment variable that holds the credential; null when it is not taken from one. */
     env: string | null;
     header: string;
-    /** Whether that variable is set where the deployment runs. Never its value. */
+    /**
+     * Whether a call would carry the credential: the variable is set where
+     * the deployment runs, or the key that sealed the stored one is. True
+     * when the server asks for none. Never the value.
+     */
     set: boolean;
+    /** The credential given on the page: when, and whether the key that sealed it is the current one. Null when none was. */
+    stored: { given_at: string; key: "current" | "previous" | "missing" } | null;
   };
   party: { id: string; name: string; is_own_organization: boolean };
   stake: string;
@@ -212,11 +242,7 @@ function connectionView(c: ConnectionRow, tools: ToolRow[]): ConnectionView {
     tool_prefix: c.tool_prefix,
     transport: c.transport,
     url: c.url,
-    credential: {
-      env: c.credential_env,
-      header: c.credential_header,
-      set: credentialPresent(c.credential_env),
-    },
+    credential: credentialView(c),
     party: { id: c.party_id, name: c.party_name, is_own_organization: c.party_is_own },
     stake: c.stake,
     label: c.sensitivity_label,
@@ -232,6 +258,30 @@ function connectionView(c: ConnectionRow, tools: ToolRow[]): ConnectionView {
     tools: tools.filter((t) => t.connection_id === c.id).map((t) => toolView(c.tool_prefix, t)),
     created_at: iso(c.created_at)!,
     updated_at: iso(c.updated_at)!,
+  };
+}
+
+/** What a connection's view says of its credential, read from the row and the keys set now. Nothing is opened. */
+function credentialView(
+  c: Pick<ConnectionRow, "credential_env" | "credential_sealed" | "credential_key_id" | "credential_set_at" | "credential_header">
+): ConnectionView["credential"] {
+  if (c.credential_sealed !== null && c.credential_key_id !== null) {
+    const keys = credentialKeys();
+    const key = keys.current?.id === c.credential_key_id ? "current" : keyIsHere(c.credential_key_id, keys) ? "previous" : "missing";
+    return {
+      source: "stored",
+      env: null,
+      header: c.credential_header,
+      set: key !== "missing",
+      stored: { given_at: iso(c.credential_set_at)!, key },
+    };
+  }
+  return {
+    source: c.credential_env !== null ? "environment" : null,
+    env: c.credential_env,
+    header: c.credential_header,
+    set: credentialPresent(c.credential_env),
+    stored: null,
   };
 }
 
@@ -285,11 +335,24 @@ export async function getConnection(id: string): Promise<ConnectionView | null> 
   return connectionView(row, tools);
 }
 
-function targetOf(c: Pick<ConnectionRow, "transport" | "url" | "credential_env" | "credential_header" | "timeout_seconds">): ConnectionTarget {
+function sealedOf(c: Pick<ConnectionRow, "credential_sealed" | "credential_key_id">): SealedCredential | null {
+  return c.credential_sealed !== null && c.credential_key_id !== null
+    ? { sealed: c.credential_sealed, keyId: c.credential_key_id }
+    : null;
+}
+
+function targetOf(
+  c: Pick<
+    ConnectionRow,
+    "id" | "transport" | "url" | "credential_env" | "credential_sealed" | "credential_key_id" | "credential_header" | "timeout_seconds"
+  >
+): ConnectionTarget {
   return {
+    connectionId: c.id,
     transport: c.transport,
     url: c.url,
     credentialEnv: c.credential_env,
+    credentialSealed: sealedOf(c),
     credentialHeader: c.credential_header,
     timeoutSeconds: c.timeout_seconds,
   };
@@ -303,6 +366,8 @@ export type ConnectionFailureCode =
   | "INVALID_TRANSPORT"
   | "INVALID_URL"
   | "INVALID_CREDENTIAL_ENV"
+  | "INVALID_CREDENTIAL"
+  | "NO_CREDENTIAL_KEY"
   | "INVALID_CREDENTIAL_HEADER"
   | "INVALID_STAKE"
   | "INVALID_RATE"
@@ -345,15 +410,17 @@ function urlProblem(value: string): string | null {
   }
   if (url.username || url.password) {
     return (
-      "A connection's address must not carry a user name or password. The credential stays in the " +
-      "environment: name the variable that holds it in credential_env."
+      "A connection's address must not carry a user name or password: an address is stored and shown. " +
+      "Give the credential as the connection's credential, which is kept sealed, or name the environment " +
+      "variable that holds it in credential_env."
     );
   }
   for (const key of url.searchParams.keys()) {
     if (/key|token|secret|password|auth|credential/i.test(key)) {
       return (
-        `A connection's address must not carry a credential, and its query has "${key}". The ` +
-        `credential stays in the environment: name the variable that holds it in credential_env.`
+        `A connection's address must not carry a credential, and its query has "${key}": an address is ` +
+        `stored and shown. Give the credential as the connection's credential, which is kept sealed, or ` +
+        `name the environment variable that holds it in credential_env.`
       );
     }
   }
@@ -494,7 +561,9 @@ function takenRefusal(err: unknown, s: ConnectionSettings): Refusal | null {
  */
 export async function addConnection(
   input: ConnectionSettings & { name: string; url: string; partyId: string; label: string; stake: string },
-  actorId: string
+  actorId: string,
+  /** The credential itself, given on the page, to be kept sealed; absent when it is named in credentialEnv or none is needed. */
+  credential?: string
 ): Promise<{ ok: true; id: string } | Refusal> {
   const cleaned = cleanSettings(input);
   if (!cleaned.ok) return cleaned;
@@ -503,23 +572,39 @@ export async function addConnection(
   if (!isToolPrefix(s.toolPrefix)) {
     return refuse("INVALID_TOOL_PREFIX", "No tool prefix could be made from the name; give one in tool_prefix.");
   }
+  // The id is made here, not by the database, because a credential is
+  // sealed to the connection it is for before the row exists.
+  const id = randomUUID();
+  const transport = s.transport ?? "streamable_http";
+  const header = s.credentialHeader ?? "Authorization";
+  let sealed: SealedCredential | null = null;
+  if (credential !== undefined) {
+    if (s.credentialEnv) return refuse("INVALID_CREDENTIAL", ONE_CREDENTIAL);
+    const made = sealGiven(credential, header, { connectionId: id, url: s.url!, transport });
+    if (!made.ok) return made;
+    sealed = made.value;
+  }
   try {
     return await withTransaction(async (tx) => {
       const problem = await partyAndLabelProblem(tx, s);
       if (problem) return problem;
       const [row] = await tx.query<{ id: string }>(
         `INSERT INTO connections
-           (name, tool_prefix, transport, url, credential_env, credential_header, party_id, stake,
-            sensitivity_label, calls_per_minute, timeout_seconds, enabled, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+           (id, name, tool_prefix, transport, url, credential_env, credential_header, party_id, stake,
+            sensitivity_label, calls_per_minute, timeout_seconds, enabled, created_by,
+            credential_sealed, credential_key_id, credential_set_at, credential_set_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                 CASE WHEN $15::text IS NULL THEN NULL ELSE now() END,
+                 CASE WHEN $15::text IS NULL THEN NULL ELSE $14::uuid END)
          RETURNING id`,
         [
+          id,
           s.name,
           s.toolPrefix,
-          s.transport ?? "streamable_http",
+          transport,
           s.url,
           s.credentialEnv ?? null,
-          s.credentialHeader ?? "Authorization",
+          header,
           s.partyId,
           s.stake,
           s.label,
@@ -527,6 +612,8 @@ export async function addConnection(
           s.timeoutSeconds ?? CONNECTION_TIMEOUT_SECONDS.default,
           s.enabled ?? true,
           actorId,
+          sealed?.sealed ?? null,
+          sealed?.keyId ?? null,
         ]
       );
       await logAdministrativeEvent(tx, "connection_added", actorId, {
@@ -541,6 +628,162 @@ export async function addConnection(
     if (taken) return taken;
     throw err;
   }
+}
+
+// ---- a credential given on the page -----------------------------------------
+
+/** A connection takes its credential from one place. */
+const ONE_CREDENTIAL =
+  "A connection takes its credential from one place: give the credential itself, which is kept sealed, " +
+  "or name the environment variable that holds it in credential_env. Not both.";
+
+/** Clean a credential as given and seal it for the connection it is for, or say why it cannot be. */
+function sealGiven(
+  credential: string,
+  header: string,
+  binding: { connectionId: string; url: string; transport: string }
+): { ok: true; value: SealedCredential } | Refusal {
+  const clean = cleanCredential(credential, header);
+  if (!clean.ok) return refuse("INVALID_CREDENTIAL", clean.message);
+  const sealed = sealCredential(clean.value, binding);
+  if (!sealed.ok) return refuse("NO_CREDENTIAL_KEY", sealed.message);
+  return { ok: true, value: sealed.value };
+}
+
+/**
+ * Give a connection its credential, or replace the one it has: sealed to
+ * the connection, its address and its transport, and stored sealed. A
+ * connection that named an environment variable no longer does, since a
+ * connection takes its credential from one place. Logged as a change of
+ * the connection, which names no value.
+ */
+export async function setStoredCredential(
+  id: string,
+  credential: string,
+  actorId: string
+): Promise<{ ok: true; id: string; replaced: boolean } | Refusal> {
+  if (!UUID_RE.test(id)) return refuse("NOT_FOUND", "Connection not found");
+  return withTransaction(async (tx) => {
+    const [before] = await tx.query<{
+      url: string;
+      transport: string;
+      credential_header: string;
+      credential_env: string | null;
+      credential_sealed: string | null;
+    }>(
+      `SELECT url, transport, credential_header, credential_env, credential_sealed FROM connections WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    if (!before) return refuse("NOT_FOUND", "Connection not found");
+    const made = sealGiven(credential, before.credential_header, {
+      connectionId: id,
+      url: before.url,
+      transport: before.transport,
+    });
+    if (!made.ok) return made;
+    await tx.query(
+      `UPDATE connections
+          SET credential_sealed = $2, credential_key_id = $3, credential_set_at = now(), credential_set_by = $4,
+              credential_env = NULL, updated_at = now()
+        WHERE id = $1`,
+      [id, made.value.sealed, made.value.keyId, actorId]
+    );
+    const changed = ["stored_credential", ...(before.credential_env !== null ? ["credential_env"] : [])];
+    await logAdministrativeEvent(tx, "connection_changed", actorId, { connection_id: id, changed: changed.join("\n") });
+    return { ok: true as const, id, replaced: before.credential_sealed !== null };
+  });
+}
+
+/** Remove the credential given on a connection's page. The connection's calls then go without one. */
+export async function removeStoredCredential(id: string, actorId: string): Promise<{ ok: true; id: string } | Refusal> {
+  if (!UUID_RE.test(id)) return refuse("NOT_FOUND", "Connection not found");
+  return withTransaction(async (tx) => {
+    const [before] = await tx.query<{ credential_sealed: string | null }>(
+      `SELECT credential_sealed FROM connections WHERE id = $1 FOR UPDATE`,
+      [id]
+    );
+    if (!before) return refuse("NOT_FOUND", "Connection not found");
+    if (before.credential_sealed === null) {
+      return refuse("NOTHING_TO_CHANGE", "The connection has no credential given on its page to remove.");
+    }
+    await tx.query(
+      `UPDATE connections
+          SET credential_sealed = NULL, credential_key_id = NULL, credential_set_at = NULL, credential_set_by = NULL,
+              updated_at = now()
+        WHERE id = $1`,
+      [id]
+    );
+    await logAdministrativeEvent(tx, "connection_changed", actorId, {
+      connection_id: id,
+      changed: "stored_credential_removed",
+    });
+    return { ok: true as const, id };
+  });
+}
+
+const RESEAL_REASON =
+  "Moving every credential kept sealed to the current key reads the connections at every label; each is sealed again and written at its own label.";
+
+/**
+ * Seal every stored credential that a previous key sealed again under the
+ * current key, so that the previous key can then be taken out of the
+ * environment (scripts/reseal-connection-credentials.ts). Each is opened
+ * and sealed again in this process, bound to the same connection, address
+ * and transport, and written at its connection's label. One that does not
+ * open is left as it is and named, to be given again on its page.
+ */
+export async function resealStoredCredentials(): Promise<
+  | { ok: true; resealed: number; already_current: number; not_opened: Array<{ id: string; name: string }> }
+  | { ok: false; message: string }
+> {
+  const keys = credentialKeys();
+  if (!keys.current) {
+    return { ok: false, message: keys.problem ?? `There is no current key to seal with: ${CREDENTIAL_KEY_ENV} is not set.` };
+  }
+  const currentId = keys.current.id;
+  const rows = await withSystemClearance(RESEAL_REASON, () =>
+    rawQuery<{
+      id: string;
+      name: string;
+      url: string;
+      transport: string;
+      credential_sealed: string;
+      credential_key_id: string;
+      sensitivity_label: string;
+    }>(
+      `SELECT id, name, url, transport, credential_sealed, credential_key_id, sensitivity_label
+         FROM connections WHERE credential_sealed IS NOT NULL ORDER BY lower(name)`
+    )
+  );
+  let resealed = 0;
+  let alreadyCurrent = 0;
+  const notOpened: Array<{ id: string; name: string }> = [];
+  for (const r of rows) {
+    if (r.credential_key_id === currentId) {
+      alreadyCurrent += 1;
+      continue;
+    }
+    const binding = { connectionId: r.id, url: r.url, transport: r.transport };
+    const opened = openCredential({ sealed: r.credential_sealed, keyId: r.credential_key_id }, binding, keys);
+    if (!opened.ok) {
+      notOpened.push({ id: r.id, name: r.name });
+      continue;
+    }
+    const sealed = sealCredential(opened.credential, binding, keys);
+    if (!sealed.ok) return { ok: false, message: sealed.message };
+    // Written only where the row is still as it was read: a credential
+    // given again, or an address changed, in the meantime stands.
+    const written = await runAtLabel(r.sensitivity_label, `connection ${r.id}`, () =>
+      rawQuery(
+        `UPDATE connections SET credential_sealed = $2, credential_key_id = $3
+          WHERE id = $1 AND credential_sealed = $4 AND url = $5 AND transport = $6
+          RETURNING id`,
+        [r.id, sealed.value.sealed, sealed.value.keyId, r.credential_sealed, r.url, r.transport]
+      )
+    );
+    if (written.length > 0) resealed += 1;
+  }
+  return { ok: true, resealed, already_current: alreadyCurrent, not_opened: notOpened };
 }
 
 /** The settings a change may touch, as the route names them, with the column each is. */
@@ -567,6 +810,12 @@ const SETTING_COLUMNS: Array<[keyof ConnectionSettings, string, string]> = [
  * Readings already kept are not touched: they carry the party the
  * connection had when they were read.
  *
+ * A credential given on the page was given for one address, so a new
+ * address or transport also removes it, and it is given again for the new
+ * one (connection-credential.ts binds it there too). Naming an environment
+ * variable for the credential removes one given on the page, since a
+ * connection takes its credential from one place.
+ *
  * The label is not a setting that changes. A row keeps the label it was
  * given (src/labels.ts), and the connection's tools, its calls and the
  * readings kept from it were recorded by work that read that label. The
@@ -580,7 +829,7 @@ export async function changeConnection(
   id: string,
   input: ConnectionSettings,
   actorId: string
-): Promise<{ ok: true; id: string; withdrawn: string[] } | Refusal> {
+): Promise<{ ok: true; id: string; withdrawn: string[]; storedCredentialRemoved: boolean } | Refusal> {
   if (!UUID_RE.test(id)) return refuse("NOT_FOUND", "Connection not found");
   const cleaned = cleanSettings(input);
   if (!cleaned.ok) return cleaned;
@@ -607,9 +856,20 @@ export async function changeConnection(
         changed.push(routeName);
       }
       if (changed.length === 0) return refuse("NOTHING_TO_CHANGE", "Nothing in the request differs from the connection as it is.");
+      const moved = changed.includes("url") || changed.includes("transport");
+      const storedCredentialRemoved =
+        before.credential_sealed !== null && (moved || (changed.includes("credential_env") && s.credentialEnv !== null));
+      if (storedCredentialRemoved) {
+        sets.push(
+          "credential_sealed = NULL",
+          "credential_key_id = NULL",
+          "credential_set_at = NULL",
+          "credential_set_by = NULL"
+        );
+        changed.push("stored_credential_removed");
+      }
       await tx.query(`UPDATE connections SET ${sets.join(", ")}, updated_at = now() WHERE id = $1`, params);
 
-      const moved = changed.includes("url") || changed.includes("transport");
       const withdrawn = moved
         ? (
             await tx.query<{ name: string }>(
@@ -636,7 +896,7 @@ export async function changeConnection(
           reason: "address_changed",
         });
       }
-      return { ok: true as const, id, withdrawn };
+      return { ok: true as const, id, withdrawn, storedCredentialRemoved };
     });
   } catch (err) {
     const taken = takenRefusal(err, s);
@@ -1172,8 +1432,12 @@ export async function listConnectionCalls(
 export interface ConnectionCheck {
   id: string;
   name: string;
-  /** The variable its credential is in, and whether it is set; env null when it needs none. */
-  credential: { env: string | null; set: boolean };
+  /**
+   * Where its credential comes from, the variable when it is one, and
+   * whether a call would carry it (the variable is set, or the key that
+   * sealed the stored one is); source null when it needs none.
+   */
+  credential: { source: "stored" | "environment" | null; env: string | null; set: boolean };
   /** Whether its server answered a request for its tools just now, and why not when it did not. */
   answers: boolean;
   failure: ConnectionFailure | null;
@@ -1208,7 +1472,7 @@ export async function checkConnections(): Promise<ConnectionCheck[]> {
     checks.push({
       id: c.id,
       name: c.name,
-      credential: { env: c.credential_env, set: credentialPresent(c.credential_env) },
+      credential: (({ source, env, set }) => ({ source, env, set }))(credentialView(c)),
       answers: run.unavailable === null,
       failure: run.unavailable,
       offered: annotations.map((t) => t.name),

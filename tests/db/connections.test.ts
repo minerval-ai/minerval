@@ -103,7 +103,7 @@ interface ConnectionView {
   tool_prefix: string;
   url: string;
   label: string;
-  credential: { env: string | null; header: string; set: boolean };
+  credential: { source: "stored" | "environment" | null; env: string | null; header: string; set: boolean; stored: unknown };
   party: { id: string; name: string; is_own_organization: boolean };
   state: { status: string; last_error: { at: string; message: string } | null };
   tools: ToolView[];
@@ -273,7 +273,7 @@ describe("an administrator's routes", () => {
       tool_prefix: "finance_warehouse",
       transport: "streamable_http",
       url: server.url,
-      credential: { env: null, header: "Authorization", set: true },
+      credential: { source: null, env: null, header: "Authorization", set: true, stored: null },
       party: { id: ownParty, name: "Halden Evaluations", is_own_organization: true },
       label: INTERNAL,
       calls_per_minute: 30,
@@ -338,12 +338,14 @@ describe("an administrator's routes", () => {
   it("are decided for MCP: the reads are tools, the writes are excluded with the reason", () => {
     const mine = app.routeCatalog.map((r) => routeKey(r.method, r.url)).filter((key) => /^\S+ \/connections(\/|$)/.test(key));
     expect(mine.sort()).toEqual([
+      "DELETE /connections/:connection_id/credential",
       "GET /connections",
       "GET /connections/:connection_id",
       "GET /connections/:connection_id/calls",
       "PATCH /connections/:connection_id",
       "POST /connections",
       "POST /connections/:connection_id/look",
+      "PUT /connections/:connection_id/credential",
       "PUT /connections/:connection_id/tools",
     ]);
     for (const key of mine) {
@@ -513,7 +515,7 @@ describe("an administrator's routes", () => {
 
     // A credential named and not set: the read says so, and never a value.
     const needs = await connect({ credential_env: TOKEN_ENV });
-    expect(needs.credential).toEqual({ env: TOKEN_ENV, header: "Authorization", set: false });
+    expect(needs.credential).toEqual({ source: "environment", env: TOKEN_ENV, header: "Authorization", set: false, stored: null });
     expect(needs.state.last_error!.message).toBe(
       `the environment variable ${TOKEN_ENV}, which holds its credential, is not set where the deployment runs`
     );
@@ -1380,7 +1382,7 @@ describe("what the preflight is given", () => {
     expect(checks[0]).toEqual({
       id: c.id,
       name: "Checked",
-      credential: { env: null, set: true },
+      credential: { source: null, env: null, set: true },
       answers: true,
       failure: null,
       offered: ["read_rows", "search_notes"],
@@ -1390,7 +1392,7 @@ describe("what the preflight is given", () => {
     });
     expect(checks[1]).toMatchObject({
       id: unpicked.id,
-      credential: { env: TOKEN_ENV, set: false },
+      credential: { source: "environment", env: TOKEN_ENV, set: false },
       answers: false,
       failure: { kind: "credential_missing" },
       offered: [],

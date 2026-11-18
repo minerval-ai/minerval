@@ -2122,10 +2122,15 @@ export const sourceInterests = pgTable(
 //   - where the server is and how to speak to it (url, transport). The
 //     transport is a name the code knows ('streamable_http', 'sse') and is
 //     not held to a list here, so that a later one is not a migration.
-//   - how to authenticate: credential_env is the NAME of the environment
-//     variable that holds the credential, never the credential, and
-//     credential_header the header it is sent in. NULL credential_env means
-//     the server asks for none.
+//   - how to authenticate, one of two ways or neither. credential_env is the
+//     NAME of an environment variable that holds the credential, never the
+//     credential. Or the credential was given in the app and is kept here
+//     sealed (services/connection-credential.ts): credential_sealed is
+//     AES-256-GCM ciphertext under a key that is only in the environment,
+//     bound to this connection's id, address and transport, and
+//     credential_key_id says which key sealed it. Changing the address or
+//     the transport clears it. credential_header is the header either is
+//     sent in. Both empty means the server asks for none.
 //   - whose system it is (party_id) and what that party stands to gain or
 //     lose from what the system shows (stake). Both are carried by every
 //     reading kept from it: the source belongs to the party, and the stake
@@ -2155,6 +2160,10 @@ export const connections = pgTable(
     transport: text("transport").notNull().default("streamable_http"),
     url: text("url").notNull(),
     credentialEnv: text("credential_env"),
+    credentialSealed: text("credential_sealed"),
+    credentialKeyId: text("credential_key_id"),
+    credentialSetAt: timestamp("credential_set_at", { withTimezone: true }),
+    credentialSetBy: uuid("credential_set_by").references((): AnyPgColumn => contributors.id),
     credentialHeader: text("credential_header").notNull().default("Authorization"),
     partyId: uuid("party_id")
       .notNull()
@@ -2183,6 +2192,14 @@ export const connections = pgTable(
     uniqueIndex("uq_connections_tool_prefix").on(table.toolPrefix),
     check("ck_connections_rate", sql`${table.callsPerMinute} IS NULL OR ${table.callsPerMinute} > 0`),
     check("ck_connections_timeout", sql`${table.timeoutSeconds} > 0`),
+    // A sealed credential is whole: the ciphertext, the key that sealed it
+    // and when it was given, or none of them.
+    check(
+      "ck_connections_credential_whole",
+      sql`(${table.credentialSealed} IS NULL) = (${table.credentialKeyId} IS NULL) AND (${table.credentialSealed} IS NULL) = (${table.credentialSetAt} IS NULL)`
+    ),
+    // One credential, from one place.
+    check("ck_connections_one_credential", sql`${table.credentialEnv} IS NULL OR ${table.credentialSealed} IS NULL`),
   ]
 );
 
