@@ -91,10 +91,12 @@ describe("Audit toolset without a domain", () => {
     expect(names).toContain("record_prize_audit_outcome");
     expect(names).toContain("withdraw_bounty_after_audit");
     // Every skill's audit-agent tools are offered, loaded or not: the
-    // Mathematics reads and the Provenance reads, with the attributed note
+    // costing skill's price list, the Mathematics reads and the Provenance reads, with the attributed note
     // on an examination's finding (#507).
-    expect(names.slice(-12)).toEqual([
+    expect(names.slice(-13)).toEqual([
       "load_skill",
+      // The costing skill's price list, which commission budgets from.
+      "cost_sheet",
       "get_proof_attempt",
       "get_prize_claim",
       "provenance_get_map",

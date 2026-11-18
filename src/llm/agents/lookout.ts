@@ -56,7 +56,9 @@ import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.j
 import { createReportTools } from "../tools/report-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import { getLookoutSystemPromptBlocks } from "../prompts/lookout.js";
+import { listSkills } from "../prompts/skills.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
+import { executeSkillTool, getActiveSkillToolDefinitions, isSkillTool } from "../tools/skill-tools.js";
 import {
   executeGraphReadTool,
   getGraphReadToolDefinitions,
@@ -201,6 +203,9 @@ async function runLookoutImpl(input: {
   // Skills load on demand; the mandate's skills point the lookout to the
   // ones its watch may need, as they do the review pass.
   const skillLoader = createSkillLoadTools("lookout", { names: lookout.grant_skills ?? [] });
+  // The tools a skill declares for this role: cost_sheet, which flag_reassessment
+  // and propose_ingest send it to before it sets a budget.
+  const skillTools = getActiveSkillToolDefinitions(listSkills(), "lookout");
   const system = getLookoutSystemPromptBlocks();
 
   // Model: the lookout's own pin, else the cheap default. Web search comes
@@ -590,7 +595,7 @@ async function runLookoutImpl(input: {
     () =>
       toolUseLoop({
         initialMessages: [{ role: "user", content: briefing + skillLoader.pointerNote }],
-        tools: [webSearch.tool, ...tools, ...skillLoader.definitions],
+        tools: [webSearch.tool, ...tools, ...skillLoader.definitions, ...skillTools],
         system,
         model,
         // Room to rewrite a full workspace (up to 50,000 characters) in one
@@ -608,6 +613,7 @@ async function runLookoutImpl(input: {
           if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
           const loaded = await skillLoader.execute(name, toolInput);
           if (loaded !== null) return loaded;
+          if (isSkillTool(name)) return executeSkillTool(name, toolInput, { role: "lookout" });
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
           const contributed = await contributionTools.execute(name, toolInput);

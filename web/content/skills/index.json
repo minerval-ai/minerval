@@ -153,7 +153,11 @@
             "contribution-reviewer",
             "grantmaker",
             "dispute-arbitrator",
-            "program-officer"
+            "program-officer",
+            "audit-agent",
+            "consistency-checker",
+            "correspondent",
+            "lookout"
           ],
           "input_schema": {
             "type": "object",
