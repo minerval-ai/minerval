@@ -24,6 +24,7 @@ import {
   shortDay,
   shortWhen,
 } from "@/components/work/ui";
+import { fetchGrants } from "@/lib/admin-api";
 import { fetchOutbound, fetchShowing, fetchShowings, type AskedPage, type ShowingAct, type ShownVersion } from "@/lib/inside-api";
 import { NOT_YET_ASSESSED, type Pipeline as Status } from "@/lib/pipeline";
 import { endShowingAction, holdPageAction, payForWorkAction } from "../actions";
@@ -167,6 +168,13 @@ export default async function ShowingPage({
   const statement = !!(mainGroup?.text ?? asked?.node);
 
   // ---- what the viewer may do ----
+  // Who holds release for each party, where the viewer may see grants (an
+  // administrator): a part waiting on a party nobody releases for says so.
+  const releasers = can(who, "administer")
+    ? await fetchGrants(who.externalId)
+        .then((gs) => new Set(gs.filter((g) => g.permission === "release" && !g.removed_at && g.party).map((g) => g.party!.name)))
+        .catch(() => null)
+    : null;
   const holdable = (v: Version) => !!v.page && v.version?.state === "held" && can(who, "direct") && !ended && v.page.stage !== "overtaken";
   const heldByDirector = (v: Version) => (v.version?.held_because ?? "").startsWith("held by a person who directs");
   const mayEnd = !!asked && form === "standing" && !ended && can(who, "direct");
@@ -311,6 +319,7 @@ export default async function ShowingPage({
                     holdable={holdable}
                     heldByDirector={heldByDirector}
                     holdHref={(pageId) => withDrawer("hold", pageId)}
+                    releasers={releasers}
                   />
                 ))}
               </tbody>
@@ -540,6 +549,7 @@ function GroupRows({
   holdable,
   heldByDirector,
   holdHref,
+  releasers,
 }: {
   g: Group;
   id: string;
@@ -549,6 +559,8 @@ function GroupRows({
   holdable: (v: Version) => boolean;
   heldByDirector: (v: Version) => boolean;
   holdHref: (pageId: string) => string;
+  /** The parties somebody holds release for, by name; null where the viewer cannot see grants. */
+  releasers: Set<string> | null;
 }) {
   return (
     <>
@@ -583,7 +595,7 @@ function GroupRows({
       )}
       {g.versions.map((v) => {
         const work = v.page ? WORK_WAITING[v.page.stage] : undefined;
-        const detail = detailOf(v);
+        const detail = detailOf(v, releasers);
         return (
           <VersionRows key={v.pageId} v={v} detail={detail}>
             <td>
@@ -678,7 +690,7 @@ function Sees({ v, showingVisible }: { v: Version; showingVisible: boolean }) {
 }
 
 /** The lines under a version that say why it waits, where there is something to say. */
-function detailOf(v: Version): ReactNode {
+function detailOf(v: Version, releasers: Set<string> | null): ReactNode {
   const p = v.page;
   const lines: ReactNode[] = [];
   if (p?.waiting_on && p.waiting_on.length > 0) {
@@ -690,7 +702,16 @@ function detailOf(v: Version): ReactNode {
             {i > 0 && <span className="w-faint">·</span>}
             <span>{w.part === null ? "The page itself" : `Part ${w.part} · ${w.kind}`}</span>
             <span>{w.party}</span>
-            <Pill tone={w.standing === "held" ? "warn" : "neu"}>{w.standing === "held" ? "holding" : "waiting"}</Pill>
+            {releasers && !releasers.has(w.party) ? (
+              <>
+                <Pill tone="bad" title={`Nobody holds release for ${w.party}, so this waits until someone is granted it.`}>
+                  nobody releases for it
+                </Pill>
+                <Link href="/admin/people?drawer=grant">Grant</Link>
+              </>
+            ) : (
+              <Pill tone={w.standing === "held" ? "warn" : "neu"}>{w.standing === "held" ? "holding" : "waiting"}</Pill>
+            )}
           </span>
         ))}
       </div>

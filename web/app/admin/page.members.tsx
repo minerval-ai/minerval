@@ -20,6 +20,7 @@ import {
 } from "@/components/work/ui";
 import { AccountApiError } from "@/lib/account-api";
 import { fetchSetupChecklist, type PreflightCheck, type SetupChecklist } from "@/lib/admin-api";
+import { fetchGates } from "@/lib/inside-api";
 import { ITEM_STATE_WORDS, preflightTitle, preflightTodo } from "@/lib/admin-words";
 import {
   OWNER_WORDS,
@@ -79,7 +80,8 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
     );
   }
 
-  const attention = attentionItems(checklist);
+  const gates = await fetchGates(who.externalId).then((g) => g.gates).catch(() => []);
+  const attention = attentionItems(checklist, gates);
   const areas = areaTiles(checklist);
   const preflight = checklist.preflight;
   const checks = preflight?.checks ?? [];

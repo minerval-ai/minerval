@@ -868,7 +868,6 @@ describe("the report as a whole", () => {
       "run_log",
       "provider_labels",
       "reports_stay_inside",
-      "model_prices",
       "sandbox_confinement",
     ]);
     expect(report.agent_work).toBe("refused");

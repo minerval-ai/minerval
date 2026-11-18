@@ -25,15 +25,18 @@ import {
   fetchProviderClearance,
   fetchSetupChecklist,
   type GrantView,
+  type LabelView,
   type ProviderClearance,
   type ProviderView,
   type SetupChecklist,
   type StandingMandateState,
 } from "@/lib/admin-api";
-import { capitalised, holdersText, labelClearanceFacts, listed, providerName } from "@/lib/admin-words";
+import { capitalised, holdersText, labelClearanceFacts, providerName } from "@/lib/admin-words";
 import { addLabelReadAction, defineLabelAction } from "../actions";
 import { ClearanceMatrix, type MatrixProvider } from "./ClearanceMatrix";
+import { AddRead } from "./AddRead";
 import { ReadChip } from "./ReadChip";
+import { holdersCount, holdersInWords, readersOf, readsIndirectly, wideningOf } from "@/lib/label-chain";
 import "./labels.css";
 
 export const metadata: Metadata = { title: "Labels · Minerval" };
@@ -123,7 +126,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
         <tbody>
           {labels.map((l) => {
             const candidates = ownLabels.filter((o) => o.name !== l.name && !l.reads.includes(o.name));
-            const readBy = labels.filter((o) => o.reads.includes(l.name)).map((o) => o.name);
+            const indirect = readsIndirectly(l.name, labels);
             return (
               <tr key={l.name}>
                 <td>
@@ -139,7 +142,17 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                       {l.reads.map((r) => (
                         <ReadChip key={r} label={l.name} reads={r} chip={<Lbl name={r} />} />
                       ))}
-                      {candidates.length > 0 && <AddRead label={l.name} candidates={candidates.map((c) => c.name)} />}
+                      {indirect.map((i) => (
+                        <span key={i.label} className="w-row w-faint w-small" style={{ gap: 4 }} title={`Read through ${i.via}`}>
+                          via {i.via}: <Lbl name={i.label} />
+                        </span>
+                      ))}
+                      {candidates.length > 0 && (
+                        <AddRead
+                          label={l.name}
+                          candidates={candidates.map((c) => ({ name: c.name, widens: wideningWords(l.name, c.name, labels, readGrants) }))}
+                        />
+                      )}
                     </div>
                   )}
                 </td>
@@ -147,7 +160,7 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
                   {l.name === "public" ? (
                     <span className="w-muted" style={{ whiteSpace: "nowrap" }}>Every member</span>
                   ) : (
-                    <Readers label={l.name} grants={readGrants.filter((g) => g.label === l.name)} readBy={readBy} />
+                    <Readers label={l.name} labels={labels} grants={readGrants} />
                   )}
                 </td>
                 <td>
@@ -308,48 +321,36 @@ export default async function LabelsPage({ searchParams }: { searchParams: Promi
   );
 }
 
-/** The direct read grants at a label, counted; the labels that read it, said on hover. */
-function Readers({ label, grants, readBy }: { label: string; grants: GrantView[]; readBy: string[] }) {
-  const accounts = new Set(grants.filter((g) => g.account).map((g) => g.account!.id)).size;
-  const groups = new Set(grants.filter((g) => g.group !== null).map((g) => g.group)).size;
+/** Who reads at a label, through every label that reads it; how, on hover (lib/label-chain.ts). */
+function Readers({ label, labels, grants }: { label: string; labels: LabelView[]; grants: GrantView[] }) {
+  const { direct, through, all } = readersOf(label, labels, grants);
+  const via = through.filter((t) => holdersCount(t.holders) > 0);
   const tip =
-    `${capitalised(holdersText({ accounts, groups }))} granted read at ${label} directly.` +
-    (readBy.length > 0 ? ` Holders of ${listed(readBy)} also read it, through what ${readBy.length === 1 ? "that label reads" : "those labels read"}.` : "");
+    `${capitalised(holdersText({ accounts: direct.accounts.size, groups: direct.groups.size }))} granted read at ${label}.` +
+    (via.length > 0
+      ? ` Also reading it, through the labels that read ${label}: ${via.map((t) => `${holdersInWords(t.holders)} (at ${t.label})`).join("; ")}.`
+      : "");
   return (
     <span className="w-row" style={{ gap: 6, justifyContent: "flex-end", flexWrap: "nowrap" }}>
       <Link href="/admin/people" style={{ color: "var(--w-ink)" }}>
-        {(accounts + groups).toLocaleString("en-GB")}
+        {holdersCount(all).toLocaleString("en-GB")}
       </Link>
       <Tip>{tip}</Tip>
     </span>
   );
 }
 
-/** "+ Add": a small form, opened in the row, to say this label also reads another. */
-function AddRead({ label, candidates }: { label: string; candidates: string[] }) {
-  return (
-    <details className="w-labels-add">
-      <summary className="w-btn w-ghost w-sm" style={{ height: 22, padding: "0 6px" }}>
-        + Add
-      </summary>
-      <div className="w-labels-add-b">
-        <span className="w-help">Widens at once what holders of {label}, and runs at it, read. Logged.</span>
-        <WorkForm action={addLabelReadAction} submit="Add" inline small primary>
-          <input type="hidden" name="label" value={label} />
-          <select className="w-select" name="reads" required defaultValue="" aria-label={`${label} may also read`} style={{ height: 26, width: "auto" }}>
-            <option value="" disabled>
-              Choose a label
-            </option>
-            {candidates.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </WorkForm>
-      </div>
-    </details>
-  );
+/** What adding "label reads candidate" would widen, in one line for the add form. */
+function wideningWords(label: string, candidate: string, labels: LabelView[], grants: GrantView[]): string {
+  const widened = wideningOf(label, candidate, labels, grants);
+  if (widened.length === 0) return `${label} already reads ${candidate} through another label: this adds nobody.`;
+  return widened
+    .map((w) =>
+      holdersCount(w.holders) === 0
+        ? `${capitalised(w.label)} becomes readable at ${label}, by nobody granted yet.`
+        : `Gives ${holdersInWords(w.holders)} read at ${w.label}.`,
+    )
+    .join(" ");
 }
 
 /**

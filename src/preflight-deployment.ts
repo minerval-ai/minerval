@@ -245,7 +245,7 @@ function checkModelPrices({ config }: DeploymentCheckFacts): DeploymentOutcome {
   const unpriced = unpricedConfiguredModels(config);
   if (unpriced.length === 0) return pass(`${said} Every model a role is set to has a price.`);
   return fail(
-    `This deployment creates its own owls, where a run on a model with no price is refused, and ${plural(unpriced.length, "configured model has", "configured models have")} none: ` +
+    `This deployment creates its own owls, where a run on a model with no price is refused, and ${plural(unpriced.length, "configured model has", "configured models have")} none, so the roles set to it do no work until it has one: ` +
       `${unpriced.map((u) => `${u.setting} (${u.model})`).join(", ")}. State a price for each in pricing.model_prices (MODEL_PRICES), 0 for a model you count as free.`
   );
 }
@@ -489,7 +489,10 @@ export const DEPLOYMENT_CHECKS: ReadonlyArray<{
   // A run on a model with no price is refused where owls are created, and
   // what a run spent is what the usage report totals: held until every
   // configured model has a price.
-  { name: "model_prices", blocking: true, run: checkModelPrices },
+  // Not blocking: a call on a model with no price is refused where it is
+  // made (llm/providers getAdapter, pricing.assertModelPriced), so the roles
+  // set to one fail and say why, and every other role still works.
+  { name: "model_prices", blocking: false, run: checkModelPrices },
   { name: "usage_report", blocking: false, run: checkUsageReport },
   { name: "standing_mandates", blocking: false, run: checkStandingMandates },
   { name: "own_organization", blocking: false, run: checkOwnOrganization },
