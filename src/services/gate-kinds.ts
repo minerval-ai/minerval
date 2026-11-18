@@ -34,15 +34,15 @@ export const isGateKind = (k: unknown): k is GateKind => typeof k === "string" &
  * runs. `redactor`: the Redactor works under the boundary's policy, Audit
  * checks its work, and what the Redactor let through goes with nobody
  * waiting on a person. `person`: the Redactor does the same work as a
- * proposal, and each part waits for the people who hold release for the
- * parties it rests on.
+ * proposal, and each part waits for the people who consent for the
+ * parties it rests on (the permission stored as `release`).
  */
 export const GATE_MODES = {
   open: "Open: it goes as written. No Redactor runs and nothing is removed.",
   redactor:
     "The Redactor decides: it removes what the policy protects, may hold or delay a part, and Audit checks its work. What it let through goes, with nobody waiting on a person.",
   person:
-    "A person decides as well: the Redactor does the same work as a proposal, and each part then waits for the people who hold release for the parties it rests on. They approve it as proposed or change it with the same acts.",
+    "A person decides as well: the Redactor does the same work as a proposal, and each part then waits for the people who consent for the parties it rests on. They approve it as proposed or change it with the same acts.",
 } as const;
 export type GateMode = keyof typeof GATE_MODES;
 export const isGateMode = (m: unknown): m is GateMode => typeof m === "string" && m in GATE_MODES;
@@ -96,7 +96,7 @@ export const HOLD_REASONS = {
   confidentiality: "confidential to the party",
   legal: "a legal or contractual reason",
   security: "a safety or security reason",
-  timing: "not to be shown yet",
+  timing: "not to be released yet",
   disputed: "the party disputes what it says",
   policy: "what the policy protects could not be removed from it",
   no_reason_given: "no reason given",
@@ -108,7 +108,7 @@ export type HoldReason = keyof typeof HOLD_REASONS;
  * there have the same ones, and neither has one that writes a word.
  */
 export const GATE_ACTS = {
-  release: "Let a part, or the item itself, through.",
+  release: "Consent: let a part, or the item itself, through for your party.",
   approve: "Let through everything of the item that nobody holds, as the Redactor left it.",
   remove: "Remove one passage from a part under a category of the policy, and leave the category's mark where it was.",
   hold: "Hold a part, or the whole item, with a reason from the fixed list.",

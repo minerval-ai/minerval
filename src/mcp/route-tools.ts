@@ -303,18 +303,18 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
 
   // ---- the gate: members-only deployments only (docs/the-gate.md) ----
   // Every route is a tool. An act at a gate takes the account's permission
-  // (release for a party, direct, administer), from a session or through a
+  // (consent for a party, direct, administer), from a session or through a
   // key or token of the account: the person a gate's authorities put there
   // may act through their own agent or a script. The Assistant holds each
   // act for its user (llm/tools/assistant-tools.ts).
-  "GET /showings": { name: "list_showings" },
+  "GET /showings": { name: "list_releases" },
   "GET /showings/:showing_id": {
-    name: "get_showing",
+    name: "get_release",
     note:
       "Free. Report a node's state as given: a page that is held, or released in part, is a fact about the " +
-      "showing and says nothing about what the held text contains.",
+      "release and says nothing about what the held text contains.",
   },
-  "GET /showings/:showing_id/pages/:page_id": { name: "get_shown_page" },
+  "GET /showings/:showing_id/pages/:page_id": { name: "get_release_page" },
   "GET /redaction-policies": { name: "list_redaction_policies" },
   "GET /redaction-policies/:policy_id": { name: "get_redaction_policy" },
   "GET /gates": { name: "list_gates" },
@@ -327,14 +327,20 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "PUT /gates/:gate_id": { name: "set_gate", note: GATE_ACT },
   "PUT /gates/:gate_id/settings": { name: "set_gate_mode", note: GATE_ACT },
   "DELETE /gates/settings/:setting_id": { name: "end_gate_setting", note: GATE_ACT },
-  "POST /gate/decisions": { name: "decide_at_gate", note: GATE_ACT },
+  "POST /gate/decisions": {
+    name: "decide_at_gate",
+    note:
+      "To consent for a party, send the decision `release`: the act's name in the API until the routes are " +
+      "renamed (docs/releasing-a-page.md, \"Old names in the code\"). " +
+      GATE_ACT,
+  },
   "POST /gate/offers": { name: "offer_to_gate", note: GATE_ACT },
   "POST /showings": { name: "set_page_flow", note: GATE_ACT },
   "POST /showings/:showing_id/end": { name: "end_page_flow", note: GATE_ACT },
   "POST /showings/:showing_id/pages/:page_id/hold": { name: "hold_gate_item", note: GATE_ACT },
   "PUT /redaction-policies": { name: "save_redaction_policy", note: GATE_ACT },
-  "POST /showings/:showing_id/pages/:page_id/commission": { name: "fund_showing_work", note: ESCROWS_OWLS },
-  // A shown page leaves the deployment (docs/published-pages.md). Reading
+  "POST /showings/:showing_id/pages/:page_id/commission": { name: "fund_release_work", note: ESCROWS_OWLS },
+  // A released page leaves the deployment (docs/published-pages.md). Reading
   // where it stands, and sending, which takes a person: the Assistant
   // holds it for its user, and a key or a token alone is refused.
   "GET /outbound": { name: "list_pages_going_outside" },
@@ -528,7 +534,7 @@ const PAGE_SHARING =
   "publish what the user keeps.";
 
 const ADMINISTRATION_SESSION =
-  "Changes who may read, release or do what in a members-only deployment, so it takes a " +
+  "Changes who may read, consent or do what in a members-only deployment, so it takes a " +
   "signed-in dashboard session as well as the permission to administer: a leaked key, an " +
   "access token, or an agent following text it read can then never widen anyone's access. " +
   "The matching reads (list_permission_grants, list_parties, list_labels) are tools.";
@@ -542,9 +548,9 @@ const PROVIDER_CLEARANCE_SESSION =
 
 const OUTBOUND_SESSION =
   "Decides what leaves the deployment or who speaks for it outside: the words a node is proposed to the public " +
-  "graph in, a party's release of those words, a package handed to a person as a file, and the signed statement " +
+  "graph in, a party's consent to those words, a package handed to a person as a file, and the signed statement " +
   "that registers the deployment's key to an account. Each is recorded with the person who did it and takes a " +
-  "signed-in dashboard session, as asking for a showing does. Reading where things stand " +
+  "signed-in dashboard session. Reading where things stand " +
   "(list_pages_going_outside) and sending what has been released (send_pages_outside) are tools.";
 
 const CONNECTION_SESSION =
@@ -577,7 +583,7 @@ const BUDGET_SESSION =
 const OUTWARD_WORDS =
   "Words a person writes for the outside: the scope of a public mandate, or a message to the public Grantmaker. It takes a signed-in " +
   "session and is not a tool, because words an agent drafted would be an agent's words leaving the deployment without redaction or " +
-  "release. Paying for the mandate once it is drafted (fund_public_mandate) is a tool, and waits for the user.";
+  "consent. Paying for the mandate once it is drafted (fund_public_mandate) is a tool, and waits for the user.";
 const OUTWARD_SESSION =
   "Decides what leaves the deployment from then on with nobody acting, or which label work is recorded at. It takes a signed-in session " +
   "as well as the permission, so that a leaked key, an access token, or an agent following text it read can do neither. The matching " +

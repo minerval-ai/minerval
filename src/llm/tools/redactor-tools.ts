@@ -39,7 +39,7 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
     {
       name: "get_redaction_policy",
       description:
-        "The policy for the boundary this page is to be shown across, in full, with its version: how removal works, what is shown whenever a page is shown, and the categories. A passage is removed only under one of these categories.",
+        "The policy for the boundary this page is to be released across, in full, with its version: how removal works, what is shown whenever a page is released, and the categories. A passage is removed only under one of these categories.",
       input_schema: { type: "object", properties: {}, required: [] },
     },
     {

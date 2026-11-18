@@ -239,7 +239,7 @@ export const REPORT_AT_GATE_TOLD =
   "A report that Audit's triage finds to be about Minerval's machinery is offered to the gate to outside, like anything else written at a label " +
   "that goes to readers who do not read it. What is always shown of it is the facts in fixed words. Its parts are the agent's words, which the " +
   "Redactor works on under the policy for what leaves the report's label. This kind of thing starts with a person deciding as well: someone who " +
-  "holds release for the organization's own material approves it at the gate, and may let the facts go and hold the words. An administrator can " +
+  "consents for the organization's own material approves it at the gate, and may let the facts go and hold the words. An administrator can " +
   "leave it to the Redactor on Gates. What goes is filed with Minerval's maintainers under your organization's account on the public graph, " +
   "marked private. Nothing else of the report goes: not the run, the node it was working on, or its label.";
 

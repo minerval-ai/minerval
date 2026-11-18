@@ -249,7 +249,7 @@ export function sourceTextOf(
     `Published by ${publisher.name} (key ${pkg.publisher.key_id.slice(0, 16)}), whose deployment is recorded as running on ` +
       `${HOSTING_WORDS[pkg.deployment.hosting]}; ${ATTESTATION_WORDS[pkg.deployment.attested_by]}.`,
     publisher.declared_interest ? `The publisher says of its own interest: ${publisher.declared_interest}` : "The publisher has said nothing of its own interest.",
-    `The showing: ${pkg.showing.form === "standing" ? "standing, so each later version follows" : "once, so nothing is undertaken about later versions"}; ` +
+    `The release: ${pkg.showing.form === "standing" ? "standing, so each later version follows" : "once, so nothing is undertaken about later versions"}; ` +
       `${pkg.showing.scope === "under" ? "the node with what sits under it" : "the node alone"}; asked for on ${day(pkg.showing.asked_at)}; ` +
       `it began ${pkg.node.showing_began}.` +
       (pkg.showing.ended ? ` It ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}.` : ""),
@@ -273,10 +273,10 @@ export function sourceTextOf(
     `Removals under the policy: ${removals.length === 0 ? "none" : removals.map(([c, n]) => `${c}: ${n}`).join(", ")}.`,
     `Audit's check of the redaction there: ${pkg.page!.audit ?? "not recorded"}`,
     shape.held_parts === 0 ? `Parts: ${shape.parts}, all released.` : `Parts: ${shape.parts}, of which ${shape.held_parts} ${shape.held_parts === 1 ? "is" : "are"} held (${shape.held_kinds}).`,
-    `Who acted on the showing: ${pkg.record.acts
+    `Who acted on the release: ${pkg.record.acts
       .map((a) => `${day(a.at)} ${a.by}${a.holding.length > 0 ? ` (holding ${a.holding.join(", ")})` : ""} ${a.what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${a.reason}` : ""}`)
       .join("; ")}.`,
-    `Versions made while the showing stood: ${pkg.record.versions.map(versionLine).join("; ")}.`,
+    `Versions made while the release stood: ${pkg.record.versions.map(versionLine).join("; ")}.`,
     ...(pkg.deployment.keeps_public_versions_current
       ? [
           `The deployment's setting for asking this graph for a fresh public assessment when its own version of a public node changes: ${pkg.deployment.keeps_public_versions_current.setting}` +
@@ -336,7 +336,7 @@ export function submissionWords(pkg: PublishedPagePackage, publisher: { name: st
   return [
     `A published page, submitted by its publisher. ${publisher.name} asks for the page its deployment shows of this node to be admitted as one of the node's sources.`,
     `It is another graph's Steward's assessment of this node, made on evidence that is not public, and sent as that Steward wrote it, less what a policy removed and what is held.`,
-    `The showing is ${pkg.showing.form === "standing" ? "standing: each later version follows, and a version that is held is sent as held" : "once: the page as it stood, and nothing later"}. ` +
+    `The release is ${pkg.showing.form === "standing" ? "standing: each later version follows, and a version that is held is sent as held" : "once: the page as it stood, and nothing later"}. ` +
       `It was asked for on ${day(pkg.showing.asked_at)} and began ${pkg.node.showing_began}.`,
     stateSentence(pkg),
     `The package is signed with key ${pkg.publisher.key_id.slice(0, 16)}, which this account registered. Checked when it arrived: ${check.confirmed.join(" ")}`,
@@ -354,7 +354,7 @@ export function arrivalMessage(input: { pkg: PublishedPagePackage; publisher: st
   if (!shape) {
     return (
       `${lead} ${stateSentence(pkg)}` +
-      (pkg.showing.ended ? ` The showing ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}.` : "") +
+      (pkg.showing.ended ? ` The release ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}.` : "") +
       ` That a version exists and is not shown is part of this node's record, for you to read as you read any omission.`
     );
   }
@@ -364,11 +364,11 @@ export function arrivalMessage(input: { pkg: PublishedPagePackage; publisher: st
       ? `It is attached to this node as a source of the kind published_page (${input.address}). `
       : `It is a source of the kind published_page (${input.address}), and is not attached to this node, because this node's Steward detached an earlier package of it. `) +
     `The source's text is the page with its record: the prompt set and model it was made under, what the assessing run's log shows, where the deployment runs, ` +
-    `how the assessment was paid for, who acted on the showing and with which permissions, whether the showing began before the node was first assessed, and every ` +
+    `how the assessment was paid for, who acted on the release and with which permissions, whether the release began before the node was first assessed, and every ` +
     `version made since. This graph checked the package's signature and that the text sent is what was fingerprinted before anyone decided what to release; the ` +
     `source says what that check cannot show. ` +
     (shape.wording ? `The page gives the node's wording as it was assessed there. Where that differs from this node's wording, the verdict is of that wording. ` : "") +
-    (pkg.showing.ended ? `The showing ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}. ` : "") +
+    (pkg.showing.ended ? `The release ended on ${day(pkg.showing.ended.at)}: ${pkg.showing.ended.because}. ` : "") +
     `It is evidence for you to weigh as you weigh any source, and whether it belongs on this node's page is your judgment (detach_claim_instance takes it off). ` +
     `It does not replace this node's assessment, which is yours to reach.`
   );
@@ -465,8 +465,8 @@ export async function examinePackage(input: { accountId: string; pkg: unknown })
       throw new PublishedPageError(
         "OUT_OF_ORDER",
         have === 0
-          ? `This is package ${pkg.sequence} for this node under this showing, and this graph has none yet. Send package 1 first: each names the one before it.`
-          : `This graph has packages 1 to ${have} for this node under this showing, and this is package ${pkg.sequence}. Send package ${have + 1} next: each names the one before it.`
+          ? `This is package ${pkg.sequence} for this node under this release, and this graph has none yet. Send package 1 first: each names the one before it.`
+          : `This graph has packages 1 to ${have} for this node under this release, and this is package ${pkg.sequence}. Send package ${have + 1} next: each names the one before it.`
       );
     }
     if (publication) {

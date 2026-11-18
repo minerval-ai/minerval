@@ -383,7 +383,7 @@ parts held by the parties whose material they rest on, each named in its
 place. Its record says how it came to be said: the model, what the run's
 log shows, where the deployment runs and whether anything outside its
 publisher's control attests to the run, how the work was paid for, who
-asked for the showing and who released what, whether the showing began
+asked for the release and who consented to what, whether the release began
 before the node was first assessed, and every version since, the held
 ones among them. With it is what this graph's own record holds of the
 publisher's other pages: how many it has published and in which form,

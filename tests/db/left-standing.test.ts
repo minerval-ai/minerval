@@ -321,8 +321,8 @@ describe("what the tool refuses, with the reason", () => {
     const out = await runAt(A, () => leave(node));
     expect(out.success).toBe(false);
     expect(out.message).toBe(
-      `Not recorded. This node's page at \`${A}\` is under a standing showing to readers who do not read \`${A}\`. Retiring the judgment at \`${A}\` ` +
-        `would leave them shown a page whose judgment had been withdrawn, with nothing to tell them so. Ending a showing is for the people who direct this ` +
+      `Not recorded. This node's page at \`${A}\` is under a standing release to readers who do not read \`${A}\`. Retiring the judgment at \`${A}\` ` +
+        `would leave them a released page whose judgment had been withdrawn, with nothing to tell them so. Ending a release is for the people who direct this ` +
         `graph. Until then, record your judgment as it now stands with update_claim_assessment.`
     );
     expect((await current(node)).map((r) => r.label).sort()).toEqual([A, PUBLIC_LABEL].sort());

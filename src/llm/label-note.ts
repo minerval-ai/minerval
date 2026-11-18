@@ -148,7 +148,7 @@ export function labelNote(
       ? ""
       : ` What carries another label is not this run's to change, and no tool changes or removes it. ` +
         `The reason is that this run has read material at ${own}, and what a run at ${own} ` +
-        `writes reaches readers who are not cleared for ${own} only as a page shown to them, with what was ` +
+        `writes reaches readers who are not cleared for ${own} only as a page released to them, with what was ` +
         `removed marked. What ${own} has to say about such a thing is recorded as something new, at ${own}.`;
   // A report is filed for Minerval's maintainers on the public graph, and
   // the tool's description says so. Here it is not (github-issue-service.ts,
@@ -159,7 +159,7 @@ export function labelNote(
       ? ""
       : ` A problem report this run files (raise_issue) is kept in this deployment and not filed as an ` +
         `issue for Minerval's maintainers, because a report quotes what its run was working on; it reaches ` +
-        `them when the people who may release for the organization send it on, which takes Audit finding ` +
+        `them when the people who consent for the organization send it on, which takes Audit finding ` +
         `it to be about Minerval's machinery and a Redactor's pass over it.`;
   const judgments = opts.writesJudgments ? judgmentsForAWriter(label, others, mirror) : judgmentsForAReader(others, mirror);
   const paragraphs = [
@@ -181,7 +181,7 @@ export function labelNote(
 }
 
 /**
- * What a run that records judgments is told about its page being shown to
+ * What a run that records judgments is told about its page being released to
  * readers who do not read its label (services/showing-service.ts). One
  * passage, separate from the rest of the note: what the machinery does,
  * why, that the run writes what it concludes either way, and the one thing
@@ -190,14 +190,14 @@ export function labelNote(
 export function shownBelowNote(label: string): string {
   const own = tick(label);
   return (
-    `## Showing a page to readers who do not read its label\n\n` +
-    `A person who directs this graph may ask for a node's page at ${own} to be shown to readers who do ` +
+    `## Releasing a page to readers who do not read its label\n\n` +
+    `A person who directs this graph may ask for a node's page at ${own} to be released to readers who do ` +
     `not read ${own}, at another label here or outside this deployment, so that what was concluded can ` +
-    `be read where the evidence for it cannot. What is shown is the page as you wrote it, less the ` +
+    `be read where the evidence for it cannot. What is released is the page as you wrote it, less the ` +
     `passages a Redactor removes under that boundary's policy and marks in place, and less the parts ` +
-    `that the people who hold the permission to release decide to hold. Nobody rewords it. ` +
+    `that the people who consent for the parties it rests on decide to hold. Nobody rewords it. ` +
     `get_redaction_policies returns the policies for pages written at ${own}. Write what you conclude, ` +
-    `whether or not the page is shown. You may arrange the reasoning so that a reader can follow it ` +
+    `whether or not the page is released. You may arrange the reasoning so that a reader can follow it ` +
     `after removals, for example by saying what a sensitive figure shows in a sentence apart from the ` +
     `figure.`
   );

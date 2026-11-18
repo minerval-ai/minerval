@@ -121,7 +121,7 @@ export function getDeclineAskedRequestToolDefinition(): Tool {
       "Decline a request that was put in front of your mandate from a label below yours, or from the public graph, " +
       "and that you will not pay for. It is recorded at your label as declined, with your note, which stays at your " +
       "label. Whoever asked is told, through the gate between your label and theirs, that the work will not be done " +
-      "and the reason, in the reason's fixed words: cannot_be_shown (what it asks for could not be shown to those " +
+      "and the reason, in the reason's fixed words: cannot_be_shown (what it asks for could not be released to those " +
       "who asked), not_held (this graph does not hold the evidence it asks about), asks_for_a_result (it asks for a " +
       "particular result), moot (it no longer bears on anything), intrusion (it could be met only by intrusion), " +
       "no_reason. A request you mean to pay for is taken up with fund_request instead.",

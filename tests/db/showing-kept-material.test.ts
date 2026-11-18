@@ -1,6 +1,6 @@
 /**
  * What a run read through a connection, or computed over a set of files, and
- * kept is a source its node's page drew on (docs/showing-a-page.md, "The gate"), whether or not an instance
+ * kept is a source its node's page drew on (docs/releasing-a-page.md, "The gate"), whether or not an instance
  * was recorded from it: an agent keeps a reading when a judgment rests on
  * it. So when the page is shown to readers who do not read its label, the
  * party whose system the reading came from is among those asked, and the

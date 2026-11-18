@@ -726,7 +726,7 @@ describe("an MCP caller and the Assistant", () => {
     expect(note).toMatch(/Without the permission to direct the graph: .*start_grant_conversation/);
     expect(note).toMatch(/Without the permission to fund work: .*fund_mandate/);
     expect(note).toMatch(/Without the permission to administer the deployment: .*list_permission_grants/);
-    expect(note).toMatch(/Without the permission to release one party's material: get_gate_queue, decide_at_gate/);
+    expect(note).toMatch(/Without the permission to consent for one party: get_gate_queue, decide_at_gate/);
     expect(note).not.toMatch(/read at a label/);
     await limited.close();
 
@@ -901,7 +901,7 @@ describe("showing a page to readers who do not read its label, over HTTP", () =>
       expect(words.filter((w) => w.includes("9931"))).toEqual([]);
       expect(JSON.stringify(shown)).not.toContain("vault code");
       const after = (await as(reader, { url: `/showings/${showingId}` })).json();
-      expect(after.acts.filter((a: { what: string }) => a.what === "released").every((a: { by: string; holding: string[] }) => a.by === "releases-for-the-organization" && a.holding.length === 1)).toBe(true);
+      expect(after.acts.filter((a: { what: string }) => a.what === "consented").every((a: { by: string; holding: string[] }) => a.by === "releases-for-the-organization" && a.holding.length === 1)).toBe(true);
 
       // A hold after the release is refused, and so is a hold of the page by the person who directs.
       const hold = await as(director, { method: "POST", url: `/showings/${showingId}/pages/${pageId}/hold`, payload: { reason: "timing" } });

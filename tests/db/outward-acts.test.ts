@@ -587,7 +587,7 @@ describe("taking up a request in public", () => {
     expect(declined.status, JSON.stringify(declined.json)).toBe(200);
     const read = await pubApi("GET", `/requests/${id.r2}`, undefined, null);
     expect(read.json.taken_up[0].followed).toBe("declined");
-    expect(read.json.taken_up[0].in_words).toContain("it said it will not do the work: what the request asks for could not be shown outside the graph that holds it.");
+    expect(read.json.taken_up[0].in_words).toContain("it said it will not do the work: what the request asks for could not be released outside the graph that holds it.");
     expect((await acts("decline_request"))[0]).toMatchObject({ acted_by: null, under_standing_choice: "the gate", public_ref: id.r2, sent: { request: id.r2, reason: "cannot_be_shown" }, result: "done" });
     // Here the request is closed as declined: this deployment's own record of what became of it.
     const [here] = await system(() => rawQuery<{ state: string }>(`SELECT r.state FROM requests r JOIN adopted_requests a ON a.request_id = r.id WHERE a.id = $1`, [id.adoption2]));
@@ -1070,7 +1070,7 @@ describe("a publisher's record on the public graph", () => {
     expect(facts.later_assessments).toMatchObject({ toward: 1, away: 0 });
     expect(facts.holds.versions_ever_held).toBeGreaterThanOrEqual(0);
     const words = (record.json.record.in_words as string[]).join(" ");
-    expect(words).toContain("Pages it has published here: 2 (1 kept published so that each later version follows, 1 shown once).");
+    expect(words).toContain("Pages it has published here: 2 (1 kept published so that each later version follows, 1 released once).");
     expect(words).toContain("Contributions made through them and admitted here: 3. Its graph has said it received 3. A version made since is published for 2 and held for 0; 0 stand unanswered.");
     expect(words).toContain("Requests it said it was taking up: 2. A page followed for 1; it said it would not do the work for 1; nothing yet for 0.");
     expect(words).toContain("the node's credence here moved toward the page's for 1, away from it for 0, and neither way for 0.");
@@ -1083,7 +1083,7 @@ describe("a publisher's record on the public graph", () => {
       `SELECT s.raw_content FROM sources s JOIN published_page_packages k ON k.source_id = s.id JOIN published_pages p ON p.id = k.published_page_id WHERE p.node_id = $1 ORDER BY k.sequence DESC LIMIT 1`,
       [id.q]
     );
-    expect(source!.raw_content).toContain("From this graph's own record of the publisher: Other pages it has published here: 1 (1 kept published so that each later version follows, 0 shown once).");
+    expect(source!.raw_content).toContain("From this graph's own record of the publisher: Other pages it has published here: 1 (1 kept published so that each later version follows, 0 released once).");
     expect(source!.raw_content).toContain("Requests it said it was taking up: 2.");
   });
 });
@@ -1288,7 +1288,7 @@ describe("asking an organization's graph from the public graph", () => {
     await sendPages(item.showing_id);
     const record = await publicRecord(id.r4!);
     expect(record.addressed_to_mandate.stands).toBe("a_page_held");
-    expect(record.addressed_to_mandate.in_words).toMatch(/is published as held, with nothing of it shown: held since \d{4}-\d\d-\d\d, the same day\./);
+    expect(record.addressed_to_mandate.in_words).toMatch(/is published as held, with nothing of it released: held since \d{4}-\d\d-\d\d, the same day\./);
   });
 
   it("is declined by the Grantmaker with a reason from the fixed list, which is all the public record is told", async () => {

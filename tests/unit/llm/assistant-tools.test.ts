@@ -62,7 +62,7 @@ describe("the Assistant's tools", () => {
     // A tool whose route only a members-only deployment mounts is not among
     // this app's tools, and is classified all the same.
     const membersOnly = new Set([
-      "fund_showing_work",
+      "fund_release_work",
       "set_gate",
       "set_gate_mode",
       "end_gate_setting",

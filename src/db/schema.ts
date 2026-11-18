@@ -8115,7 +8115,7 @@ export const artifactAssessmentVersions = pgView("artifact_assessments_versions"
 
 // ---------------------------------------------------------------------------
 // Showing a node's page below its label (services/showing-service.ts,
-// docs/showing-a-page.md)
+// docs/releasing-a-page.md)
 //
 // A page written at one label can be shown to readers who may not read that
 // label: at another label inside the deployment, or outside it. It is one
