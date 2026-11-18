@@ -29,7 +29,14 @@ import {
   type ConnectionView,
 } from "@/lib/admin-api";
 import { callOutcome, withdrawnWords } from "@/lib/admin-words";
-import { changeConnectionAction, lookAction, offerToolsAction, switchConnectionAction } from "../../actions";
+import {
+  changeConnectionAction,
+  lookAction,
+  offerToolsAction,
+  removeConnectionCredentialAction,
+  setConnectionCredentialAction,
+  switchConnectionAction,
+} from "../../actions";
 import { ConnectionFields } from "../ConnectionFields";
 import { ConnectionHealth } from "../health";
 import { ToolPicks } from "./ToolPicks";
@@ -62,8 +69,9 @@ export default async function ConnectionPage({
 
   let notice: string;
   let connection: ConnectionView;
+  let canKeepCredentials: boolean;
   try {
-    ({ notice, connection } = await fetchConnection(who.externalId, id));
+    ({ notice, connection, can_keep_credentials: canKeepCredentials } = await fetchConnection(who.externalId, id));
   } catch (err) {
     if (err instanceof AccountApiError && (err.status === 404 || err.status === 400)) notFound();
     throw err;
@@ -148,29 +156,14 @@ export default async function ConnectionPage({
           ],
           [
             <span key="k" className="w-row" style={{ gap: 6 }}>
-              Credential <Tip>Read from this variable at the moment of each call. The credential itself is never stored, shown or logged.</Tip>
+              Credential{" "}
+              <Tip>
+                {credential.source === "stored"
+                  ? "Given on this page and kept encrypted, under a key only the deployment's environment holds. Opened at the moment of each call, for this address only. Never shown again; replace or remove it under Settings."
+                  : "Read from this variable at the moment of each call. The credential itself is never stored, shown or logged."}
+              </Tip>
             </span>,
-            credential.env === null ? (
-              <span key="c" className="w-muted">
-                None asked for
-              </span>
-            ) : (
-              <span key="c">
-                <span className="w-mono">{credential.env}</span>
-                <div className="w-faint w-small w-row" style={{ gap: 6 }}>
-                  {credential.header === "Authorization" ? "Authorization, as a bearer token" : `${credential.header} header`}
-                  {credential.set ? (
-                    <Pill tone="ok" title="The variable is set where the deployment runs">
-                      Set
-                    </Pill>
-                  ) : (
-                    <Pill tone="bad" title="The variable is not set where the deployment runs">
-                      Not set
-                    </Pill>
-                  )}
-                </div>
-              </span>
-            ),
+            <CredentialSummary key="c" credential={credential} />,
           ],
           [
             <span key="k" className="w-row" style={{ gap: 6 }}>
@@ -332,8 +325,106 @@ export default async function ConnectionPage({
             </div>
           </div>
         )}
+        {tab === "settings" && <CredentialCard connection={connection} canKeepCredentials={canKeepCredentials} />}
       </section>
     </WorkPage>
+  );
+}
+
+function CredentialSummary({ credential }: { credential: ConnectionView["credential"] }) {
+  if (credential.source === null) return <span className="w-muted">None asked for</span>;
+  const header = credential.header === "Authorization" ? "Authorization, as a bearer token" : `${credential.header} header`;
+  if (credential.source === "stored") {
+    const key = credential.stored?.key ?? "missing";
+    return (
+      <span>
+        Given here, kept encrypted
+        <div className="w-faint w-small w-row" style={{ gap: 6 }}>
+          {header}
+          {credential.stored && ` · ${shortDay(credential.stored.given_at)}`}
+          {key === "missing" ? (
+            <Pill tone="bad" title="The key it was encrypted with is not set where the deployment runs, so calls go without it">
+              Key missing
+            </Pill>
+          ) : (
+            <Pill tone="ok" title={key === "previous" ? "Encrypted under a previous key, which is still set" : "Encrypted under the current key"}>
+              Set
+            </Pill>
+          )}
+        </div>
+      </span>
+    );
+  }
+  return (
+    <span>
+      <span className="w-mono">{credential.env}</span>
+      <div className="w-faint w-small w-row" style={{ gap: 6 }}>
+        {header}
+        {credential.set ? (
+          <Pill tone="ok" title="The variable is set where the deployment runs">
+            Set
+          </Pill>
+        ) : (
+          <Pill tone="bad" title="The variable is not set where the deployment runs">
+            Not set
+          </Pill>
+        )}
+      </div>
+    </span>
+  );
+}
+
+// The credential given on this page, in its own forms: pasting one sends it
+// once and nothing shows it again, and saving the other settings never sends
+// one.
+function CredentialCard({ connection, canKeepCredentials }: { connection: ConnectionView; canKeepCredentials: boolean }) {
+  const stored = connection.credential.source === "stored";
+  return (
+    <section className="w-card" aria-label="Credential" style={{ marginTop: 14 }}>
+      <div className="w-card-h">Credential</div>
+      <div className="w-card-b" style={{ maxWidth: 720 }}>
+        <p className="w-muted w-small" style={{ marginTop: 0 }}>
+          {stored
+            ? "A credential was given here and is kept encrypted. It is never shown again. Pasting another replaces it."
+            : connection.credential.source === "environment"
+              ? `The credential is read from ${connection.credential.env}. Pasting one here keeps it encrypted instead, and the variable is no longer read.`
+              : "Paste a read-only credential for the system. It is encrypted as it arrives and never shown again."}{" "}
+          It is tied to this address: changing the address or the transport removes it.
+        </p>
+        {canKeepCredentials ? (
+          <WorkForm action={setConnectionCredentialAction} submit={stored ? "Replace and test" : "Keep and test"} primary>
+            <input type="hidden" name="connection_id" value={connection.id} />
+            <div className="w-field">
+              <label htmlFor="c-credential">{stored ? "New credential" : "Credential"}</label>
+              <input
+                id="c-credential"
+                className="w-input w-mono"
+                name="credential"
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                maxLength={8192}
+                placeholder={connection.credential.header === "Authorization" ? "Paste the token, without “Bearer ”" : "Paste the credential"}
+              />
+            </div>
+          </WorkForm>
+        ) : (
+          <Banner>
+            <span>
+              This deployment has no key to keep a credential with: CREDENTIAL_ENCRYPTION_KEY is not set where it runs. Whoever runs the deployment can set one; until then, name an environment variable above.
+            </span>
+          </Banner>
+        )}
+        {stored && (
+          <div style={{ marginTop: 12 }}>
+            <WorkForm action={removeConnectionCredentialAction} submit="Remove credential" danger small>
+              <input type="hidden" name="connection_id" value={connection.id} />
+            </WorkForm>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

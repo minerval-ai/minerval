@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 const SERVICE_KEY = "request-labels-web-tier-key";
 const FIRST_ADMINISTRATOR = "oidc:dbtest-request-labels-administrator";
@@ -1495,6 +1495,18 @@ describe("every route that writes, driven against a private target", () => {
       const id = await connectionAt(A);
       return () => as(admin, { method: "PUT", url: `/connections/${id}/tools`, payload: { offered: [] } });
     },
+    "PUT /connections/:connection_id/credential": async () => {
+      process.env.CREDENTIAL_ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
+      const id = await connectionAt(A);
+      return () => as(admin, { method: "PUT", url: `/connections/${id}/credential`, payload: { credential: "sweep-token" } });
+    },
+    "DELETE /connections/:connection_id/credential": async () => {
+      process.env.CREDENTIAL_ENCRYPTION_KEY ??= randomBytes(32).toString("base64");
+      const id = await connectionAt(A);
+      const given = await as(admin, { method: "PUT", url: `/connections/${id}/credential`, payload: { credential: "sweep-token" } });
+      expect(given.statusCode, given.body).toBe(200);
+      return () => as(admin, { method: "DELETE", url: `/connections/${id}/credential` });
+    },
     "POST /claims/:claim_id/order": async () => {
       const id = await seedClaimAt(A);
       return () => post(both, `/claims/${id}/order`);
@@ -1860,6 +1872,8 @@ describe("every route that writes, driven against a private target", () => {
     "PATCH /connections/:connection_id",
     "POST /connections/:connection_id/look",
     "PUT /connections/:connection_id/tools",
+    "PUT /connections/:connection_id/credential",
+    "DELETE /connections/:connection_id/credential",
     "POST /file-sets/:file_set_id/close",
     "PATCH /file-sets/:file_set_id",
   ];

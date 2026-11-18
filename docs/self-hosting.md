@@ -300,6 +300,11 @@ sandbox, and an administrator registers directories under it as file sets.
   - **Issued again by whoever issued them:** the model providers' keys,
     `AUTH_OIDC_SECRET`, the public graph's API keys, and in `api.env`
     Stripe's keys and each connection's credential.
+  - **`CREDENTIAL_ENCRYPTION_KEY`** opens the credentials given on
+    connections' pages, which the database holds sealed under it. Made
+    again with a restart, every such credential is then given again on its
+    connection's page: the database's backup alone never opens them
+    ([connections.md](connections.md), "A credential given here").
   - **`DB_OWNER_PASSWORD`** must be the password `minerval_owner` has in
     the restored database. Without it, give the role a new one inside the
     database: `docker compose exec postgres psql -U postgres`, then

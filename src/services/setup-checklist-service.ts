@@ -168,7 +168,7 @@ export interface SetupChecklist {
     failing: Array<{ id: string; name: string }>;
     /** Tools that stopped being offered because they changed, and wait for an administrator to look. */
     tools_withdrawn: Array<{ connection: { id: string; name: string }; tool: string }>;
-    /** On, and the environment variable its credential is read from is not set. */
+    /** On, and its credential cannot be sent: the variable it names is not set, or no key set opens the one given on its page. */
     credential_missing: Array<{ id: string; name: string }>;
     /**
      * Connections at labels the administrator does not read: counted, and
@@ -378,7 +378,7 @@ export async function setupChecklist(): Promise<SetupChecklist> {
         c.tools.filter((t) => t.withdrawn !== null).map((t) => ({ connection: { id: c.id, name: c.name }, tool: t.name }))
       ),
       credential_missing: on
-        .filter((c) => c.credential.env !== null && !c.credential.set)
+        .filter((c) => c.credential.source !== null && !c.credential.set)
         .map((c) => ({ id: c.id, name: c.name })),
       not_shown: await connectionsNotShown(connections.length),
     },

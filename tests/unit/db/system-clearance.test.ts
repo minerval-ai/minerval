@@ -145,6 +145,10 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "An administrator is told how many connections, and how many of a connection's calls, their clearance leaves out of a list; the count is of rows at every label.",
       "Nothing. It returns a count, which the route gives the administrator as how many rows the list leaves out. No row's content is read.",
     ],
+    [
+      "Moving every credential kept sealed to the current key reads the connections at every label; each is sealed again and written at its own label.",
+      "Nothing to a person. It is run by whoever runs the deployment (scripts/reseal-connection-credentials.ts), which prints how many credentials were sealed again and the names and ids of any that did not open. Each credential is opened and sealed again in the process and written back at its connection's own label; none is printed or returned.",
+    ],
   ],
   "src/services/file-set-service.ts": [
     [

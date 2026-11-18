@@ -69,7 +69,7 @@ call and keeps none open between them.
 | `name` | What administrators and agents know it by. |
 | `tool_prefix` | A short lower-case word that starts each of its tool names as agents see them. Made from the name when left out. |
 | `url`, `transport` | The MCP server's address (http or https) and how it is spoken to: `streamable_http`, or `sse` for a server that only speaks that. The deployment does not start a server as a local process. |
-| `credential_env`, `credential_header` | The **name** of the environment variable that holds the credential, and the header it is sent in. In `Authorization` it is sent as a bearer token; in any other header, as it is. |
+| `credential_env`, `credential_header` | The **name** of the environment variable that holds the credential, and the header it is sent in. In `Authorization` it is sent as a bearer token; in any other header, as it is. Or, in place of the variable, the credential itself given on the connection's page and kept sealed (below). |
 | `party_id` | The party whose system it is: the organization itself, or an outside party that granted access. |
 | `stake` | What that party stands to gain or lose from what the system shows, in a sentence or two. |
 | `label` | The connection's one label: a run is offered the connection when the label it works at reads this one. It is named when the connection is added, among the labels the administrator reads, and the connection keeps it. The same system read at another label is a second connection. |
@@ -77,15 +77,79 @@ call and keeps none open between them.
 | `timeout_seconds` | How long a call may go unanswered (120 unless set; 5 to 900). |
 | `enabled` | False switches it off. A connection is never deleted, since calls and kept readings refer to it. |
 
-**The credential is never stored, shown or logged.** A connection names an
-environment variable, the deployment reads it at the moment of a call, and
-a read of the connection says only whether the variable is set. The
-variable's name must start `CONNECTION_`. An administrator chooses the name
-and the address the value is sent to, so without that rule an administrator
-could name the variable of the database password or a model key, point a
-connection at a server of their own, and be handed a secret they were never
-given. An address that carries a user name, a password or a key in its
-query is refused for the same reason: an address is stored and shown.
+**The credential is never shown or logged, and never stored in the
+clear.** It comes from one of two places, and a connection takes it from
+one of them or neither.
+
+- **An environment variable the connection names.** The deployment reads it
+  at the moment of a call, and a read of the connection says only whether
+  the variable is set. The variable's name must start `CONNECTION_`. An
+  administrator chooses the name and the address the value is sent to, so
+  without that rule an administrator could name the variable of the
+  database password or a model key, point a connection at a server of
+  their own, and be handed a secret they were never given.
+- **The credential itself, given on the connection's page** and kept
+  sealed. See "A credential given here", below.
+
+An address that carries a user name, a password or a key in its query is
+refused for the same reason: an address is stored and shown.
+
+### A credential given here
+
+An administrator can paste a credential into the connection's page, when
+adding it (`credential` on `POST /connections`) or later
+(`PUT /connections/:connection_id/credential`). It is sealed as it arrives
+and only the sealed form is stored (`src/services/connection-credential.ts`):
+
+- **Encrypted under a key that is only in the environment.** AES-256-GCM
+  with a fresh nonce each time, under `CREDENTIAL_ENCRYPTION_KEY`. The row,
+  the database's backups, and anyone who can read the table hold ciphertext
+  that opens with nothing they have. Where the key is not set, a credential
+  given here is refused, with what to do instead; `can_keep_credentials` on
+  the connection reads says so before anyone pastes one. The key's variable
+  does not start `CONNECTION_`, so no connection can name it as its
+  credential and have it sent somewhere.
+- **Bound to the connection, its address and its transport.** These are
+  the ciphertext's associated data, so a sealed credential copied into
+  another connection's row, or left in one whose address changed, does not
+  open, and nothing is sent. Changing a connection's address or transport
+  also removes the credential given here (`stored_credential_removed` on
+  the response to `PATCH`), and it is given again for the new address.
+  Without that, whoever may change a connection could point it at a server
+  of their own and be sent a credential somebody else gave for another
+  system. A credential in an environment variable is the operator's grant
+  and still follows the address: an administrator who may change a
+  connection may already name any `CONNECTION_...` variable.
+- **Opened only at the moment of a call**, into the request's header and
+  nowhere else, as the variable is read (`connection-client.ts`). It is
+  never returned: a read of the connection says `source: "stored"`, when
+  it was given, and whether the key that sealed it is set (`key`: current,
+  previous or missing). The request that carries it is not logged with its
+  body, and the log records that it was given, replaced or removed
+  (`connection_changed` with `stored_credential` or
+  `stored_credential_removed`), never what it was.
+- **At the connection's label.** It is a column of the connection's own
+  row, so an administrator who does not read the label is told the
+  connection does not exist, and a run at a label that does not read it
+  does not see the row. The roles read-only SQL runs as read only the
+  `public_read` views, none of which carries it.
+- **One place.** Giving one here stops the connection reading the variable
+  it named; naming a variable removes the one given here.
+
+`DELETE /connections/:connection_id/credential` removes it. Both routes
+take a signed-in session, and neither is an MCP tool: a tool would put a
+credential for another system in an agent's or an outside client's hands
+and transcripts.
+
+**Losing the key** loses only the credentials given here. The connection
+shows the key as missing, its calls go without a credential and say why,
+and each is given again. **Replacing the key**: move the old one to
+`CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS` (they open, never seal), set a new
+one, restart, run `npm run reseal:connection-credentials`
+(`scripts/reseal-connection-credentials.ts`), and remove the old key once
+it says none is left on it. Each credential is sealed with the id of its
+key, derived from the key and saying nothing about it, so the deployment
+knows which key opens which without trying them.
 
 The address is the administrator's choice and is expected to be inside the
 organization's network, so it is not held to the public-address rule that
@@ -93,7 +157,7 @@ guards the page reader.
 
 ## The administrator's routes
 
-All need the permission to administer. The four that change anything also
+All need the permission to administer. The six that change anything also
 need a signed-in session, like every administrative write, so a leaked key,
 an access token, or an agent following text it read can never point the
 deployment at a server or widen what agents are offered. The reads are MCP
@@ -121,6 +185,8 @@ label, to themselves as to anyone, and the grant is logged.
 | `POST /connections` | Add one. It is saved with no tool offered and its server is then asked for its tools. A server that does not answer yet is still added, and shows as failing with why. |
 | `PATCH /connections/:connection_id` | Change settings, or switch it off. The label is not among them: a request that names another label is refused and told to add a second connection. |
 | `POST /connections/:connection_id/look` | Ask the server for its tools as they are now. This is how an administrator looks again, and how to test that the server answers and takes the credential. |
+| `PUT /connections/:connection_id/credential` | Give the connection its credential, or replace it, to be kept sealed ("A credential given here", above). |
+| `DELETE /connections/:connection_id/credential` | Remove the credential given that way. |
 | `PUT /connections/:connection_id/tools` | Say which tools agents are offered: the whole set, each named with the `definition_hash` shown for it. |
 
 ### Picking, and a tool that changes

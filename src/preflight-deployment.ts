@@ -33,7 +33,8 @@
  *    changed, and that belongs to the administrators' own check
  *    (checkConnections, services/connection-service.ts). Here only what the
  *    environment holds is looked at: whether the variable a connection
- *    names is set.
+ *    names is set, and whether the key that sealed a credential given on a
+ *    connection's page is (by the key's id; nothing is opened).
  */
 import { createPrivateKey, X509Certificate } from "node:crypto";
 import { accessSync, constants, readFileSync, statSync } from "node:fs";
@@ -42,6 +43,7 @@ import { rawQuery } from "./db/client.js";
 import { withSystemClearance } from "./db/clearance.js";
 import { PUBLIC_LABEL } from "./labels.js";
 import { unpricedConfiguredModels } from "./llm/pricing.js";
+import { CREDENTIAL_KEY_ENV, credentialKeys, keyIsHere } from "./services/connection-credential.js";
 import { checkSandbox, type SandboxCheck } from "./services/sandbox-client.js";
 
 export type DeploymentOutcome = { status: "pass" | "fail" | "to_do" | "not_applicable"; message: string };
@@ -71,8 +73,12 @@ export interface DeploymentTables {
    * is set up there.
    */
   labels: Array<{ label: string; material: boolean; held: boolean; general: boolean }>;
-  /** For each label with a connection that is on: how many, and how many name a credential variable that is not set. */
-  connections: Array<{ label: string; on: number; credentialUnset: number }>;
+  /**
+   * For each label with a connection that is on: how many, how many name a
+   * credential variable that is not set, and how many keep a credential
+   * given on their page that no key set now opens.
+   */
+  connections: Array<{ label: string; on: number; credentialUnset: number; storedWithoutKey?: number }>;
   /** File sets that are on. */
   fileSets: number;
 }
@@ -89,6 +95,8 @@ export interface DeploymentFacts {
   caFileIsCertificate: boolean | null;
   /** The free grants the deployment's own settings ask for, in owls. */
   grantsSet: { signup: number; monthly: number };
+  /** What is wrong with the key credentials given on a connection's page are sealed with, as set; null when nothing is. */
+  credentialKeyProblem?: string | null;
 }
 
 export interface DeploymentCheckFacts {
@@ -319,15 +327,32 @@ function checkConnections(facts: DeploymentCheckFacts): DeploymentOutcome {
   if (!members(facts.config)) return notApplicable(NOT_MEMBERS.replace("this setting is", "connections are"));
   const tables = facts.deployment.tables;
   if (!tables) return fail(tablesUnread(facts));
+  // A key that is set and is not one is wrong whether or not anything uses
+  // it yet: a credential given on a page would be refused.
+  const keyProblem = facts.deployment.credentialKeyProblem ?? null;
+  if (keyProblem) return fail(keyProblem);
   const on = tables.connections.reduce((n, c) => n + c.on, 0);
   if (on === 0) return notApplicable("No connection is on.");
   const unset = tables.connections.filter((c) => c.credentialUnset > 0);
+  const withoutKey = tables.connections.filter((c) => (c.storedWithoutKey ?? 0) > 0);
   const note = " Whether each server answers, and which of its tools are offered, is on the connections page; this check calls no server.";
-  if (unset.length === 0) return pass(`${plural(on, "connection is", "connections are")} on, and every credential variable they name is set.${note}`);
+  if (unset.length === 0 && withoutKey.length === 0) {
+    return pass(`${plural(on, "connection is", "connections are")} on, and every credential they take can be sent.${note}`);
+  }
+  const problems = [
+    ...(unset.length > 0
+      ? [
+          `${unset.map((c) => `${c.credentialUnset} at "${c.label}"`).join(", ")} name a credential variable (CONNECTION_...) that is not set in the environment`,
+        ]
+      : []),
+    ...(withoutKey.length > 0
+      ? [
+          `${withoutKey.map((c) => `${c.storedWithoutKey} at "${c.label}"`).join(", ")} keep a credential given on their page that no key set here opens (${CREDENTIAL_KEY_ENV}, or the previous keys)`,
+        ]
+      : []),
+  ];
   return fail(
-    `${plural(on, "connection is", "connections are")} on, and ${unset
-      .map((c) => `${c.credentialUnset} at "${c.label}"`)
-      .join(", ")} name a credential variable (CONNECTION_...) that is not set in the environment, so their calls would go without a credential.${note}`
+    `${plural(on, "connection is", "connections are")} on, and ${problems.join("; and ")}, so their calls would go without a credential.${note}`
   );
 }
 
@@ -578,14 +603,18 @@ async function readDeploymentTables(config: Config): Promise<DeploymentTables> {
        FROM labels l`,
     [GENERAL_SEED_KEY]
   );
-  const connections = await rawQuery<{ label: string; credential_env: string | null }>(
-    `SELECT sensitivity_label AS label, credential_env FROM connections WHERE enabled`
+  // The key's id alone, never the sealed credential: whether it could be
+  // opened is a question of which keys are set.
+  const connections = await rawQuery<{ label: string; credential_env: string | null; credential_key_id: string | null }>(
+    `SELECT sensitivity_label AS label, credential_env, credential_key_id FROM connections WHERE enabled`
   );
-  const byLabel = new Map<string, { on: number; credentialUnset: number }>();
+  const keys = credentialKeys();
+  const byLabel = new Map<string, { on: number; credentialUnset: number; storedWithoutKey: number }>();
   for (const c of connections) {
-    const at = byLabel.get(c.label) ?? { on: 0, credentialUnset: 0 };
+    const at = byLabel.get(c.label) ?? { on: 0, credentialUnset: 0, storedWithoutKey: 0 };
     at.on += 1;
     if (c.credential_env && !process.env[c.credential_env]) at.credentialUnset += 1;
+    if (c.credential_key_id && !keyIsHere(c.credential_key_id, keys)) at.storedWithoutKey += 1;
     byLabel.set(c.label, at);
   }
   const order = (a: { label: string }, b: { label: string }) =>
@@ -637,6 +666,7 @@ export async function gatherDeploymentFacts(config: Config, reachable: boolean):
       signup: Number(process.env.SIGNUP_GRANT_OWLS) || 0,
       monthly: Number(process.env.MONTHLY_GRANT_OWLS) || 0,
     },
+    credentialKeyProblem: credentialKeys().problem,
   };
 }
 

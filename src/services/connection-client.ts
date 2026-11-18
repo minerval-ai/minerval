@@ -21,9 +21,11 @@
  * and no owls; what bounds them is the rate its administrator may set
  * (services/reading-service.ts).
  *
- * The credential is read from the environment variable the connection
- * names, at the moment of the call, and goes nowhere but the request's
- * header. It is never stored, logged or returned.
+ * The credential is read at the moment of the call, from the environment
+ * variable the connection names or by opening the one given in the app and
+ * kept sealed (connection-credential.ts), and goes nowhere but the
+ * request's header. It is never logged or returned, and never stored in the
+ * clear.
  */
 import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -36,14 +38,19 @@ import {
   isCredentialEnvName,
   type ServerToolDefinition,
 } from "../connections.js";
+import { CREDENTIAL_KEY_ENV, openCredential, type SealedCredential } from "./connection-credential.js";
 import { sanitizeStoredText } from "./document-text.js";
 
 /** What the client needs to know of a connection to reach its server. */
 export interface ConnectionTarget {
+  /** The connection's id: what a credential kept sealed is bound to. */
+  connectionId?: string;
   transport: string;
   url: string;
-  /** The name of the environment variable that holds the credential; null when the server asks for none. */
+  /** The name of the environment variable that holds the credential; null when it is not taken from one. */
   credentialEnv: string | null;
+  /** The credential given in the app, as its row keeps it, sealed; null or absent when there is none. */
+  credentialSealed?: SealedCredential | null;
   credentialHeader: string;
   timeoutSeconds: number;
 }
@@ -86,9 +93,42 @@ export function credentialPresent(credentialEnv: string | null, env: NodeJS.Proc
   return (env[credentialEnv] ?? "").length > 0;
 }
 
+/**
+ * Why a credential kept sealed did not open, as a clause that completes
+ * "the connection could not be read: ...". The key not being here is the
+ * operator's to put right; a ciphertext that does not open for this
+ * connection is given again on the connection's page.
+ */
+export const STORED_CREDENTIAL_NO_KEY =
+  `its credential was given on its page and is kept sealed, and the key that sealed it is not set where the ` +
+  `deployment runs (${CREDENTIAL_KEY_ENV}, or among the previous keys)`;
+export const STORED_CREDENTIAL_NOT_OPENED =
+  "its credential kept on its page does not open for this connection's address; give it again there";
+
 function transportFor(target: ConnectionTarget): { ok: true; transport: Transport } | { ok: false; failure: ConnectionFailure } {
   let headers: Record<string, string> = {};
-  if (target.credentialEnv !== null) {
+  if (target.credentialSealed) {
+    // Opened here, for this one request, and bound to the address it is
+    // about to be sent to: a sealed credential the address was not given
+    // for does not open (connection-credential.ts).
+    const opened = target.connectionId
+      ? openCredential(target.credentialSealed, {
+          connectionId: target.connectionId,
+          url: target.url,
+          transport: target.transport,
+        })
+      : ({ ok: false, reason: "not_opened" } as const);
+    if (!opened.ok) {
+      return {
+        ok: false,
+        failure: {
+          kind: "credential_missing",
+          message: opened.reason === "no_key" ? STORED_CREDENTIAL_NO_KEY : STORED_CREDENTIAL_NOT_OPENED,
+        },
+      };
+    }
+    headers = credentialHeaders(target.credentialHeader, opened.credential);
+  } else if (target.credentialEnv !== null) {
     // The name was checked when the connection was saved; checked again
     // here so that a row written any other way cannot name another secret.
     const credential = isCredentialEnvName(target.credentialEnv) ? (process.env[target.credentialEnv] ?? "") : "";

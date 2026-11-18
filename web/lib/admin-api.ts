@@ -358,7 +358,15 @@ export interface ConnectionView {
   tool_prefix: string;
   transport: string;
   url: string;
-  credential: { env: string | null; header: string; set: boolean };
+  credential: {
+    /** stored: given on the connection's page and kept sealed; environment: the variable `env` names; null: none asked for. */
+    source: "stored" | "environment" | null;
+    env: string | null;
+    header: string;
+    /** Whether a call would carry it: the variable is set, or the key that sealed the stored one is. */
+    set: boolean;
+    stored: { given_at: string; key: "current" | "previous" | "missing" } | null;
+  };
   party: { id: string; name: string; is_own_organization: boolean };
   stake: string;
   label: string;
@@ -444,14 +452,16 @@ export interface ConnectionSettings {
   enabled?: boolean;
 }
 
-export function fetchConnections(externalId: string): Promise<{ notice: string; connections: ConnectionView[] } & NotShown> {
+export function fetchConnections(
+  externalId: string
+): Promise<{ notice: string; can_keep_credentials: boolean; connections: ConnectionView[] } & NotShown> {
   return accountFetch("/connections", { actingUser: externalId });
 }
 
 export function fetchConnection(
   externalId: string,
   id: string
-): Promise<{ notice: string; connection: ConnectionView }> {
+): Promise<{ notice: string; can_keep_credentials: boolean; connection: ConnectionView }> {
   return accountFetch(`/connections/${seg(id)}`, { actingUser: externalId });
 }
 
@@ -467,9 +477,13 @@ export async function fetchConnectionCalls(
   });
 }
 
+/**
+ * Add a connection. `credential`, when given, is the credential itself, which
+ * the API seals as it arrives; it is never sent back.
+ */
 export function addConnection(
   externalId: string,
-  body: ConnectionSettings
+  body: ConnectionSettings & { credential?: string }
 ): Promise<{ notice: string; connection: ConnectionView; looked: Looked }> {
   return accountFetch("/connections", { method: "POST", actingUser: externalId, body });
 }
@@ -478,8 +492,24 @@ export function changeConnection(
   externalId: string,
   id: string,
   body: ConnectionSettings
-): Promise<{ notice: string; connection: ConnectionView; withdrawn: string[] }> {
+): Promise<{ notice: string; connection: ConnectionView; withdrawn: string[]; stored_credential_removed: boolean }> {
   return accountFetch(`/connections/${seg(id)}`, { method: "PATCH", actingUser: externalId, body });
+}
+
+/** Give a connection its credential, or replace it. The API keeps it sealed and never sends it back. */
+export function setConnectionCredential(
+  externalId: string,
+  id: string,
+  credential: string
+): Promise<{ notice: string; connection: ConnectionView; replaced: boolean }> {
+  return accountFetch(`/connections/${seg(id)}/credential`, { method: "PUT", actingUser: externalId, body: { credential } });
+}
+
+export function removeConnectionCredential(
+  externalId: string,
+  id: string
+): Promise<{ notice: string; connection: ConnectionView }> {
+  return accountFetch(`/connections/${seg(id)}/credential`, { method: "DELETE", actingUser: externalId });
 }
 
 export function lookAtConnection(

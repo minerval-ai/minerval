@@ -141,8 +141,11 @@ it, and the server's instructions name the tools left out and say why.
 The routes for connections to an organization's systems
 (docs/connections.md) are in the same case: `list_connections`,
 `get_connection` and `list_connection_calls` are tools for a caller who
-holds `administer`, and adding a connection, changing one, and picking
-which of its tools the graph's agents are offered take a session. So are
+holds `administer`, and adding a connection, changing one, picking
+which of its tools the graph's agents are offered, and giving or removing
+its credential take a session. A credential for another system is never a
+tool's input, so that it is in no agent's or outside client's transcript;
+`get_connection` says whether one was given, never what it is. So are
 the routes for file sets (docs/file-sets.md): `list_file_sets`,
 `get_file_set`, `list_file_set_files` and `list_file_set_commands` are
 tools for a caller who holds `direct`, and adding a set, uploading into

@@ -1,12 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { randomBytes } from "node:crypto";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { startFakeMcpServer, type FakeMcpServer } from "../../fake-mcp-server.js";
 import {
+  STORED_CREDENTIAL_NO_KEY,
+  STORED_CREDENTIAL_NOT_OPENED,
   callServerTool,
   credentialPresent,
   listServerTools,
   resultText,
   type ConnectionTarget,
 } from "../../../src/services/connection-client.js";
+import { CREDENTIAL_KEY_ENV, sealCredential } from "../../../src/services/connection-credential.js";
 
 /**
  * The deployment as a client of an organization's MCP server
@@ -114,6 +118,46 @@ describe("a call", () => {
     expect(server.calls).toEqual([]);
     expect(credentialPresent(ENV)).toBe(false);
     expect(credentialPresent(null)).toBe(true);
+  });
+
+  describe("a credential given on the page, kept sealed", () => {
+    const KEY = randomBytes(32).toString("base64");
+    const id = "33333333-3333-4333-8333-333333333333";
+    const sealedFor = (url: string, transport = "streamable_http") => {
+      process.env[CREDENTIAL_KEY_ENV] = KEY;
+      const out = sealCredential("sealed-token", { connectionId: id, url, transport });
+      if (!out.ok) throw new Error(out.message);
+      return out.value;
+    };
+    afterEach(() => {
+      delete process.env[CREDENTIAL_KEY_ENV];
+    });
+
+    it("is opened at the call and sent in the header", async () => {
+      server.requireBearer = "sealed-token";
+      const called = await callServerTool(
+        target({ connectionId: id, credentialSealed: sealedFor(server.url) }),
+        "read_rows",
+        { table: "t" }
+      );
+      expect(called.ok).toBe(true);
+      expect(server.calls[0]!.headers.authorization).toBe("Bearer sealed-token");
+    });
+
+    it("is not sent to an address it was not given for", async () => {
+      const elsewhere = sealedFor("https://mcp.example.com/mcp");
+      const called = await callServerTool(target({ connectionId: id, credentialSealed: elsewhere }), "read_rows", { table: "t" });
+      expect(called).toEqual({ ok: false, failure: { kind: "credential_missing", message: STORED_CREDENTIAL_NOT_OPENED } });
+      expect(server.calls).toEqual([]);
+    });
+
+    it("is not sent, and says why, when the key is not here", async () => {
+      const value = sealedFor(server.url);
+      delete process.env[CREDENTIAL_KEY_ENV];
+      const called = await callServerTool(target({ connectionId: id, credentialSealed: value }), "read_rows", { table: "t" });
+      expect(called).toEqual({ ok: false, failure: { kind: "credential_missing", message: STORED_CREDENTIAL_NO_KEY } });
+      expect(server.calls).toEqual([]);
+    });
   });
 
   it("never reads a variable that was not named for a connection", async () => {

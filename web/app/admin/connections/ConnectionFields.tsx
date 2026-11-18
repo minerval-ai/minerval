@@ -3,9 +3,14 @@ import type { ConnectionView, MyLabels, PartyView } from "@/lib/admin-api";
 import { LabelField } from "../../sources/LabelField";
 
 // The settings of a connection, as the fields of a form: the same fields
-// whether one is being added or changed. No field takes a credential. A
-// connection names the environment variable that holds its credential, and
-// the deployment reads it at the moment of a call.
+// whether one is being added or changed.
+//
+// The credential comes from one of two places. When a connection is added,
+// it can be pasted here: the API seals it as it arrives, under a key only
+// the deployment's environment holds, and never sends it back. Or the
+// connection names an environment variable that holds it. A connection being
+// changed is given a new credential in its own form (CredentialForm), not
+// here, so that saving other settings never sends one.
 //
 // The label is chosen when a connection is added, among the labels the
 // administrator reads, and the connection keeps it: a connection being
@@ -22,10 +27,13 @@ export function ConnectionFields({
   labels,
   parties,
   current,
+  canKeepCredentials = false,
 }: {
   labels: MyLabels;
   parties: PartyView[];
   current?: ConnectionView;
+  /** Whether the deployment has the key a pasted credential is kept with. */
+  canKeepCredentials?: boolean;
 }) {
   return (
     <>
@@ -83,12 +91,38 @@ export function ConnectionFields({
           />
         )}
       </div>
+      {!current && (
+        <div className="w-field">
+          <label htmlFor="c-credential" className="w-row" style={{ gap: 6 }}>
+            Credential {optional}
+            <Tip>
+              A read-only token for the system. It is encrypted as it arrives, under a key only the deployment&rsquo;s environment holds, and is never shown again. It is tied to this address: changing the address removes it. Or leave this empty and name an environment variable below.
+            </Tip>
+          </label>
+          <input
+            id="c-credential"
+            className="w-input w-mono"
+            name="credential"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={8192}
+            disabled={!canKeepCredentials}
+            placeholder={canKeepCredentials ? "Paste the token, without “Bearer ”" : ""}
+          />
+          <span className="w-help">
+            {canKeepCredentials
+              ? "Kept encrypted, never shown again"
+              : "This deployment has no key to keep a credential with (CREDENTIAL_ENCRYPTION_KEY). Whoever runs it can set one; until then, name a variable below."}
+          </span>
+        </div>
+      )}
       <div style={pair}>
         <div className="w-field">
           <label htmlFor="c-env" className="w-row" style={{ gap: 6 }}>
-            Credential variable {optional}
+            {current ? "Credential variable" : "Or a credential variable"} {optional}
             <Tip>
-              The name of an environment variable where the deployment runs, starting CONNECTION_. Never the credential itself. Leave empty for a server that asks for none.
+              The name of an environment variable where the deployment runs, starting CONNECTION_. Never the credential itself. Naming one replaces a credential given on this page. Leave empty for a server that asks for none.
             </Tip>
           </label>
           <input

@@ -148,6 +148,9 @@ services:
       - PUBLISH_SIGNING_KEY
       - PUBLIC_GRAPH_API_URL
       - PUBLIC_GRAPH_API_KEY
+      # The key a credential given on a connection's page is sealed with.
+      - CREDENTIAL_ENCRYPTION_KEY
+      - CREDENTIAL_ENCRYPTION_PREVIOUS_KEYS
       - PUBLIC_ACTS_BY
       - PRIVATE_RUN_FETCHES
       - LABEL_POSTURE
