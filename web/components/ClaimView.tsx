@@ -43,7 +43,7 @@ import {
 } from "./claim/PublishedPage";
 import { isReadingAddress } from "@/lib/source-address";
 import { flatStoryLine } from "@/lib/provenance-layout";
-import { ShownIntro, ShownRecord } from "./claim/InsideVersions";
+import { ReleasedIntro, ReceivedRecord } from "./claim/InsideVersions";
 import { importanceInEffect } from "@/lib/layers";
 import type { ValueByLabel } from "@/lib/types";
 
@@ -278,7 +278,7 @@ export function ClaimView({
         title={claim.text}
       />
 
-      {published && (published.inside ? <ShownIntro view={published} /> : <PublishedIntro view={published} />)}
+      {published && (published.inside ? <ReleasedIntro view={published} /> : <PublishedIntro view={published} />)}
       {published && <OtherVerdict view={published} />}
 
       {/* A quantity's definition and the graph's estimate lead its page, where
@@ -696,7 +696,7 @@ export function ClaimView({
       )}
       {/* How the published page was made, closed to one line like Full reasoning. */}
       {published && !published.inside && <PublishedSaidBack view={published} claimId={detail.claim.id} />}
-      {published && (published.inside ? <ShownRecord view={published} /> : <PublicationRecord view={published} />)}
+      {published && (published.inside ? <ReceivedRecord view={published} /> : <PublicationRecord view={published} />)}
 
       {/* contribution record (#171) — the public exchanges, rendered as
           history after the claim's own content, behind a closed disclosure so no

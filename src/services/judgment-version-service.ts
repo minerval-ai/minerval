@@ -132,7 +132,7 @@ export async function madeBesideOf(
     // was in front of this version when it was made (release-service.ts).
     `SELECT i.judgment_id, i.input_label AS label, i.input_judgment_id AS beside_id,
             NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)
-              AND NOT minerval_only_shown_pages_between(
+              AND NOT minerval_only_released_pages_between(
                     $1, i.input_judgment_id,
                     (SELECT o.id FROM ${table}_versions o
                        JOIN ${table}_versions mine ON mine.id = i.judgment_id

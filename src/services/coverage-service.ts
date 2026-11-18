@@ -210,7 +210,7 @@ export async function summarizeCoverage(
                        AND ((m.source_type = 'released_page'
                              -- unless this reader also reads the label the page was shown from
                              AND NOT EXISTS (SELECT 1 FROM release_pages pp
-                                              WHERE m.url LIKE 'minerval:shown-page/' || pp.id::text || '/%'
+                                              WHERE (m.url LIKE 'minerval:released-page/' || pp.id::text || '/%' OR m.url LIKE 'minerval:shown-page/' || pp.id::text || '/%')
                                                 AND pp.sensitivity_label = ANY($2::text[])))
                             OR NOT (m.label = ANY($2::text[]) OR ($3::boolean AND m.origin = 'mirror')))) AS unreadable
        FROM judged j`,

@@ -1,6 +1,5 @@
 import Link from "next/link";
-import type { InsideNode, ShownTab } from "@/lib/inside-node";
-import { holdingWords } from "@/lib/stored-words";
+import type { InsideNode, ReleasedTab } from "@/lib/inside-node";
 import { modelDisplayName } from "@/lib/model-names";
 import { isStatus } from "@/lib/ontology";
 import { leftStandingLines, notExaminedLine, versionRef } from "@/lib/inside-versions";
@@ -8,7 +7,7 @@ import { day, stateWords, type PublishedPageView } from "@/lib/published";
 import type { ClaimDetail, NodeVersion } from "@/lib/types";
 import { Credence, StatusBadge } from "../Assessment";
 import { AssessmentText } from "../AssessmentText";
-import { CheckShownPage } from "./CheckShownPage";
+import { CheckReleasedPage } from "./CheckReleasedPage";
 import { estimateAsRecorded } from "@/lib/quantity";
 
 // A node's page inside a private deployment (lib/inside-node.ts). The page
@@ -28,17 +27,17 @@ import { estimateAsRecorded } from "@/lib/quantity";
 const quiet = { color: "var(--muted)", fontFamily: "var(--sans)", fontSize: ".8rem", margin: ".35rem 0 0" } as const;
 
 /** What a tab is called. Outside, the second tab is "Redacted assessment on sealed evidence"; inside, the evidence is open to colleagues at another label, so it is named by what it is to this reader. */
-export const SHOWN_TAB_INSIDE = "Redacted assessment on evidence you cannot read";
-export const SHOWN_TAB_OUTSIDE = "Redacted assessment, as released outside";
+export const RELEASED_TAB_INSIDE = "Redacted assessment on evidence you cannot read";
+export const RELEASED_TAB_OUTSIDE = "Redacted assessment, as released outside";
 
 export function versionTabName(label: string): string {
   return label === "public" ? "Public assessment" : `Assessment at ${label}`;
 }
 
-function shownTabName(tab: ShownTab): string {
-  if (tab.outside) return SHOWN_TAB_OUTSIDE;
+function releasedTabName(tab: ReleasedTab): string {
+  if (tab.outside) return RELEASED_TAB_OUTSIDE;
   // A reader of the label the page was written at can read the evidence: to them it is the page as others are shown it.
-  return tab.from_label ? `Redacted assessment, as released to ${tab.shown_to}` : SHOWN_TAB_INSIDE;
+  return tab.from_label ? `Redacted assessment, as released to ${tab.released_to}` : RELEASED_TAB_INSIDE;
 }
 
 
@@ -51,8 +50,8 @@ function listOf(names: string[]): string {
 }
 
 export function VersionTabs({ claimId, inside }: { claimId: string; inside: InsideNode }) {
-  const { versions, shown, open } = inside;
-  if (versions.length + shown.length < 2 && open.kind !== "shown") return null;
+  const { versions, released, open } = inside;
+  if (versions.length + released.length < 2 && open.kind !== "released") return null;
   const here = (on: boolean) => ({ className: on ? "on" : undefined, "aria-current": on ? ("page" as const) : undefined });
   const several = open.kind === "several";
   return (
@@ -67,9 +66,9 @@ export function VersionTabs({ claimId, inside }: { claimId: string; inside: Insi
           {versionTabName(v.label)}
         </Link>
       ))}
-      {shown.map((t) => (
-        <Link key={t.page_id} href={`/claims/${claimId}?shown=${t.page_id}`} {...here(open.kind === "shown" && open.tab.page_id === t.page_id)}>
-          {shownTabName(t)}
+      {released.map((t) => (
+        <Link key={t.page_id} href={`/claims/${claimId}?released=${t.page_id}`} {...here(open.kind === "released" && open.tab.page_id === t.page_id)}>
+          {releasedTabName(t)}
         </Link>
       ))}
     </nav>
@@ -295,12 +294,12 @@ export function AskToShow({ claimId, version }: { claimId: string; version: Node
 }
 
 /** Under the title on the tab of a page released from a label the reader does not read. */
-export function ShownIntro({ view }: { view: PublishedPageView }) {
+export function ReleasedIntro({ view }: { view: PublishedPageView }) {
   const inside = view.inside!;
   const shape = view.page;
   return (
     <div className="published-intro">
-      <p className="sc" style={{ color: "var(--muted)", margin: "0 0 .3rem" }}>{shownTabName(inside.tab)}</p>
+      <p className="sc" style={{ color: "var(--muted)", margin: "0 0 .3rem" }}>{releasedTabName(inside.tab)}</p>
       <p style={{ ...quiet, margin: 0 }}>
         {inside.tab.outside ? (
           <>
@@ -310,14 +309,14 @@ export function ShownIntro({ view }: { view: PublishedPageView }) {
           </>
         ) : inside.tab.from_label ? (
           <>
-            This is the page written at {inside.tab.from_label} as it was released to {inside.tab.shown_to}: this node&rsquo;s Steward&rsquo;s page as
+            This is the page written at {inside.tab.from_label} as it was released to {inside.tab.released_to}: this node&rsquo;s Steward&rsquo;s page as
             written, after redaction under the policy for that boundary. Each passage removed is marked where it stood, and each part held
             back is named in its place. You read at {inside.tab.from_label}, so the page without marks is on its own tab.
           </>
         ) : (
           <>
             This page was written by this node&rsquo;s Steward working at a label you do not read, on evidence filed there. It is that
-            Steward&rsquo;s page as written, released to {inside.tab.shown_to} after redaction under the policy for that boundary: each passage removed is
+            Steward&rsquo;s page as written, released to {inside.tab.released_to} after redaction under the policy for that boundary: each passage removed is
             marked where it stood, and each part held back is named in its place. The assessment made at your own label weighs it as a source
             and is not bound by it.
           </>
@@ -344,7 +343,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 /** How the page was released, closed to one line at the foot like Full reasoning, opening to the record and the check. */
-export function ShownRecord({ view }: { view: PublishedPageView }) {
+export function ReceivedRecord({ view }: { view: PublishedPageView }) {
   const { release, page, tab } = view.inside!;
   const shape = view.page;
   const node = release.nodes.find((n) => n.versions.some((v) => v.page_id === tab.page_id));
@@ -358,10 +357,10 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
         fingerprint {page.verification?.ok ? "matched" : "did not match"} when the page was read for you
       </summary>
       <dl className="record-rows">
-        <Row label="Released to">{release.shown_to === "outside this deployment" ? "People outside this deployment." : `${release.shown_to.charAt(0).toUpperCase()}${release.shown_to.slice(1)}.`}</Row>
+        <Row label="Released to">{release.released_to === "outside this deployment" ? "People outside this deployment." : `${release.released_to.charAt(0).toUpperCase()}${release.released_to.slice(1)}.`}</Row>
         <Row label="Asked for">
           On {day(release.asked_at)}
-          {release.asked_by ? ` by ${release.asked_by}` : ""}, who then held: {holdingWords(release.asked_holding).join(", ") || "nothing recorded"}.{" "}
+          {release.asked_by ? ` by ${release.asked_by}` : ""}, who then held: {release.asked_holding.join(", ") || "nothing recorded"}.{" "}
           {release.form === "standing"
             ? "It is a standing release: each later assessment follows, and one that is not released shows as held."
             : "The page was released once, as it stood, and nothing is undertaken about later assessments."}{" "}
@@ -388,7 +387,7 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
                 {a.reason ? ` (${a.reason})` : ""}
-                {a.holding.length > 0 ? `, holding ${holdingWords(a.holding).join(", ")}` : ""}.
+                {a.holding.length > 0 ? `, holding ${a.holding.join(", ")}` : ""}.
               </li>
             ))}
           </ul>
@@ -407,7 +406,7 @@ export function ShownRecord({ view }: { view: PublishedPageView }) {
           </Row>
         )}
         <Row label="Check">
-          <CheckShownPage releaseId={release.release_id} pageId={tab.page_id} arrivedOk={page.verification?.ok ?? false} />
+          <CheckReleasedPage releaseId={release.release_id} pageId={tab.page_id} arrivedOk={page.verification?.ok ?? false} />
         </Row>
       </dl>
       <p style={quiet}>

@@ -262,11 +262,11 @@ export async function writeProposal(input: { releaseId: string; nodeId: string; 
   }
   return asOwner(async () => {
     const [covered] = await rawQuery<{ id: string }>(
-      `SELECT n.id FROM shown_nodes n JOIN shown_releases s ON s.id = n.release_id
+      `SELECT n.id FROM received_nodes n JOIN received_releases s ON s.id = n.release_id
         WHERE n.release_id = $1 AND n.node_id = $2 AND s.to_outside AND n.left_at IS NULL`,
       [input.releaseId, input.nodeId]
     );
-    if (!covered) throw new OutboundError("NOT_SHOWN_OUTSIDE", "No release outside with that id covers this node.");
+    if (!covered) throw new OutboundError("NOT_RELEASED_OUTSIDE", "No release outside with that id covers this node.");
     const existing = await latestProposal(input.releaseId, input.nodeId);
     if (existing && (existing.state === "sent" || existing.state === "on_the_public_graph")) {
       throw new OutboundError(
@@ -278,13 +278,13 @@ export async function writeProposal(input: { releaseId: string; nodeId: string; 
     }
     // Whose consent these words take: the parties the node's wording rests on in its latest page.
     const [wording] = await rawQuery<{ needs: string[]; text: string | null }>(
-      `SELECT sp.needs, sp.text FROM shown_parts sp JOIN shown_pages p ON p.id = sp.page_id
+      `SELECT sp.needs, sp.text FROM received_parts sp JOIN received_pages p ON p.id = sp.page_id
         WHERE p.release_id = $1 AND p.node_id = $2 AND sp.kind = 'wording' AND p.stage <> 'overtaken'
         ORDER BY p.judged_at DESC LIMIT 1`,
       [input.releaseId, input.nodeId]
     );
     const [page] = await rawQuery<{ needs: string[] }>(
-      `SELECT needs FROM shown_pages WHERE release_id = $1 AND node_id = $2 AND stage <> 'overtaken' ORDER BY judged_at DESC LIMIT 1`,
+      `SELECT needs FROM received_pages WHERE release_id = $1 AND node_id = $2 AND stage <> 'overtaken' ORDER BY judged_at DESC LIMIT 1`,
       [input.releaseId, input.nodeId]
     );
     const own = await ownOrganizationParty();
@@ -351,7 +351,7 @@ export async function buildOutboundPackages(opts: { releaseId?: string } = {}): 
   const { saidBackFor } = await import("./inbound-service.js");
   return atPublic("building the packages of pages released outside", async () => {
     const nodes = await rawQuery<{ release_id: string; node_id: string; boundary_id: string }>(
-      `SELECT DISTINCT n.release_id, n.node_id, s.boundary_id FROM shown_nodes n JOIN shown_releases s ON s.id = n.release_id
+      `SELECT DISTINCT n.release_id, n.node_id, s.boundary_id FROM received_nodes n JOIN received_releases s ON s.id = n.release_id
         WHERE s.to_outside AND ($1::uuid IS NULL OR s.id = $1) ORDER BY n.release_id, n.node_id`,
       [opts.releaseId ?? null]
     );
@@ -506,7 +506,7 @@ export async function sendOutbound(input: { releaseId: string; sender: Sender })
   if (oneLabelOnly()) throw new OutboundError("ONE_LABEL", "This graph holds everything at one label and shows no page outside itself.");
   const graph = publicGraph();
   return asOwner(async () => {
-    const [release] = await rawQuery<{ id: string; send_as_released: boolean; kind: string }>(`SELECT id, send_as_released, kind FROM shown_releases WHERE id = $1 AND to_outside`, [input.releaseId]);
+    const [release] = await rawQuery<{ id: string; send_as_released: boolean; kind: string }>(`SELECT id, send_as_released, kind FROM received_releases WHERE id = $1 AND to_outside`, [input.releaseId]);
     if (!release) throw new OutboundError("RELEASE_NOT_FOUND", "No release outside has that id.");
     // Anything but a node's page leaves by its own kind's way out (gate-outside.ts): a person sends what the gate let through.
     if (release.kind !== "page") {
@@ -571,7 +571,7 @@ export async function followOutbound(): Promise<{ built: number; sent: number }>
   const built = await buildOutboundPackages();
   if (!config.publicGraphApiUrl || !config.publicGraphApiKey) return { built, sent: 0 };
   const standing = await asOwner(() =>
-    rawQuery<{ id: string }>(`SELECT id FROM shown_releases WHERE to_outside AND send_as_released AND kind = 'page' ORDER BY asked_at`)
+    rawQuery<{ id: string }>(`SELECT id FROM received_releases WHERE to_outside AND send_as_released AND kind = 'page' ORDER BY asked_at`)
   );
   let sent = 0;
   for (const s of standing) {
@@ -603,7 +603,7 @@ export function followReleaseOutside(releaseId: string): Promise<void> {
     const config = loadConfig();
     if (!config.publishSigningKey || !config.deploymentHosting || !config.publicGraphApiUrl || !config.publicGraphApiKey) return;
     const [release] = await asOwner(() =>
-      rawQuery<{ send_as_released: boolean }>(`SELECT send_as_released FROM shown_releases WHERE id = $1 AND to_outside AND kind = 'page'`, [releaseId])
+      rawQuery<{ send_as_released: boolean }>(`SELECT send_as_released FROM received_releases WHERE id = $1 AND to_outside AND kind = 'page'`, [releaseId])
     );
     if (release?.send_as_released) await sendOutbound({ releaseId, sender: { standing: true } });
   };
@@ -640,7 +640,7 @@ export async function packageFile(input: { packageId: string; actor: GateActor }
 export async function outboundOverview(opts: { releaseId?: string } = {}): Promise<Record<string, unknown>> {
   const nodes = await rawQuery<{ release_id: string; node_id: string; send_as_released: boolean; text: string | null; origin: string | null }>(
     `SELECT DISTINCT n.release_id, n.node_id, s.send_as_released, c.text, c.origin, s.asked_at
-       FROM shown_nodes n JOIN shown_releases s ON s.id = n.release_id LEFT JOIN claims c ON c.id = n.node_id
+       FROM received_nodes n JOIN received_releases s ON s.id = n.release_id LEFT JOIN claims c ON c.id = n.node_id
       WHERE s.to_outside AND ($1::uuid IS NULL OR s.id = $1) ORDER BY s.asked_at DESC, n.node_id`,
     [opts.releaseId ?? null]
   );

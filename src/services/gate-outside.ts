@@ -43,7 +43,7 @@ import { oneLabelOnly } from "./judgment-version-service.js";
 import { OutboundError, answerOf, call, outsideSigner, publicGraph, type PublicGraph, type Sender } from "./outbound-service.js";
 import { logOutwardAct, type Actor, type OutwardActKind } from "./outward-acts-service.js";
 import { PUBLISHED_MANDATE_FORMAT, mandatePackageHash, type MandateFace, type PublishedMandatePackage } from "./published-mandate-service.js";
-import { itemAsShown } from "./release-gate-service.js";
+import { itemAsReceived } from "./release-gate-service.js";
 
 const REASON =
   "What the gate to outside has let through is read where it was released, at `public`, and the row that records its sending is at the label of the work it came from.";
@@ -108,7 +108,7 @@ async function lastMandatePackage(releaseId: string): Promise<{ sequence: number
 }
 
 /** The signed package of a mandate as the gate let it through, or as withdrawn. */
-async function mandatePackage(item: NonNullable<Awaited<ReturnType<typeof itemAsShown>>>, release: { id: string; asked_at: Date }, withdrawn: Date | null): Promise<PublishedMandatePackage> {
+async function mandatePackage(item: NonNullable<Awaited<ReturnType<typeof itemAsReceived>>>, release: { id: string; asked_at: Date }, withdrawn: Date | null): Promise<PublishedMandatePackage> {
   const signer = outsideSigner();
   const last = await lastMandatePackage(release.id);
   const name = item.parts.find((p) => p.kind === "name");
@@ -137,7 +137,7 @@ async function mandatePackage(item: NonNullable<Awaited<ReturnType<typeof itemAs
 }
 
 async function sendOne(graph: PublicGraph, w: WaitingItem): Promise<Outcome> {
-  const item = await itemAsShown(w.id);
+  const item = await itemAsReceived(w.id);
   if (!item) throw new NotTaken("The item is not through the gate.", {}, "failed");
   switch (w.kind) {
     case "taken_up": {
@@ -163,16 +163,16 @@ async function sendOne(graph: PublicGraph, w: WaitingItem): Promise<Outcome> {
       const answer = await post(graph, `/mandates/${gate.keep_current_mandate}/raise`, { node_id: w.subject_ref });
       // One request for a node, however many versions and labels were waiting on it.
       await rawQuery(
-        `UPDATE shown_pages p SET sent_outside_at = now(), outside_ref = $2
-           FROM shown_releases s, releases o
+        `UPDATE received_pages p SET sent_outside_at = now(), outside_ref = $2
+           FROM received_releases s, releases o
           WHERE s.id = p.release_id AND o.id = s.id AND s.to_outside AND p.kind = 'funding' AND o.subject_ref = $1
-            AND p.shown_at IS NOT NULL AND p.sent_outside_at IS NULL AND p.id <> $3`,
+            AND p.released_at IS NOT NULL AND p.sent_outside_at IS NULL AND p.id <> $3`,
         [w.subject_ref, w.subject_ref, w.id]
       );
       return { ref: w.subject_ref, said: String(answer.in_words ?? ""), sent: { node_id: w.subject_ref, mandate_id: gate.keep_current_mandate } };
     }
     case "mandate": {
-      const [release] = await rawQuery<{ id: string; asked_at: Date }>(`SELECT id, asked_at FROM shown_releases WHERE id = $1`, [w.release_id]);
+      const [release] = await rawQuery<{ id: string; asked_at: Date }>(`SELECT id, asked_at FROM received_releases WHERE id = $1`, [w.release_id]);
       const pkg = await mandatePackage(item, release!, null);
       try {
         const answer = await post(graph, "/published-mandates", { package: pkg });
@@ -236,10 +236,10 @@ export async function sendThroughOutside(opts: { itemId?: string; releaseId?: st
   return asOwner(async () => {
     const waiting = await rawQuery<WaitingItem>(
       `SELECT p.id, p.kind, p.release_id, o.subject_ref, s.reply_ref, s.boundary_id, o.sensitivity_label AS from_label, s.send_as_released
-         FROM shown_pages p JOIN shown_releases s ON s.id = p.release_id JOIN releases o ON o.id = s.id
-        WHERE s.to_outside AND p.kind <> 'page' AND p.shown_at IS NOT NULL AND p.sent_outside_at IS NULL AND p.stage <> 'overtaken'
+         FROM received_pages p JOIN received_releases s ON s.id = p.release_id JOIN releases o ON o.id = s.id
+        WHERE s.to_outside AND p.kind <> 'page' AND p.released_at IS NOT NULL AND p.sent_outside_at IS NULL AND p.stage <> 'overtaken'
           AND ($1::uuid IS NULL OR p.id = $1) AND ($2::uuid IS NULL OR s.id = $2)
-        ORDER BY p.shown_at, p.id`,
+        ORDER BY p.released_at, p.id`,
       [opts.itemId ?? null, opts.releaseId ?? null]
     );
     let graph: PublicGraph | null = null;
@@ -252,10 +252,10 @@ export async function sendThroughOutside(opts: { itemId?: string; releaseId?: st
       // A proposal's words, once through the gate, are ready to be sent as any account proposes a node; the
       // sending and the public graph's review of it are followed with the release's packages (outbound-service.ts).
       if (w.kind === "proposal") {
-        const item = await itemAsShown(w.id);
+        const item = await itemAsReceived(w.id);
         if (item?.parts.some((p) => p.kind === "proposed" && "text" in p)) {
           await rawQuery(`UPDATE outbound_proposals SET state = 'ready' WHERE id = $1 AND state = 'waiting_for_consent'`, [w.subject_ref]);
-          await rawQuery(`UPDATE shown_pages SET sent_outside_at = now() WHERE id = $1`, [w.id]);
+          await rawQuery(`UPDATE received_pages SET sent_outside_at = now() WHERE id = $1`, [w.id]);
           out.sent++;
           out.items.push({ item_id: w.id, kind: w.kind, result: "sent", detail: "The words are released and ready to be proposed." });
         }
@@ -264,11 +264,11 @@ export async function sendThroughOutside(opts: { itemId?: string; releaseId?: st
       // An earlier version of a mandate that a later one has since come through after is not sent: the later one says what stands.
       if (w.kind === "mandate") {
         const [later] = await rawQuery(
-          `SELECT 1 FROM shown_pages l WHERE l.release_id = $1 AND l.id <> $2 AND l.shown_at IS NOT NULL AND l.judged_at >= (SELECT judged_at FROM shown_pages WHERE id = $2) AND l.opened_at > (SELECT opened_at FROM shown_pages WHERE id = $2) LIMIT 1`,
+          `SELECT 1 FROM received_pages l WHERE l.release_id = $1 AND l.id <> $2 AND l.released_at IS NOT NULL AND l.judged_at >= (SELECT judged_at FROM received_pages WHERE id = $2) AND l.opened_at > (SELECT opened_at FROM received_pages WHERE id = $2) LIMIT 1`,
           [w.release_id, w.id]
         );
         if (later) {
-          await rawQuery(`UPDATE shown_pages SET sent_outside_at = now(), outside_ref = 'replaced by a later version before it was sent' WHERE id = $1`, [w.id]);
+          await rawQuery(`UPDATE received_pages SET sent_outside_at = now(), outside_ref = 'replaced by a later version before it was sent' WHERE id = $1`, [w.id]);
           continue;
         }
       }
@@ -286,7 +286,7 @@ export async function sendThroughOutside(opts: { itemId?: string; releaseId?: st
       const kind = ACT_KIND[w.kind]!;
       try {
         const done = await sendOne(graph, w);
-        await rawQuery(`UPDATE shown_pages SET sent_outside_at = now(), outside_ref = $2 WHERE id = $1`, [w.id, done.ref]);
+        await rawQuery(`UPDATE received_pages SET sent_outside_at = now(), outside_ref = $2 WHERE id = $1`, [w.id, done.ref]);
         await logOutwardAct({ kind, by, publicRef: w.kind === "mandate" ? w.release_id : done.ref, sent: done.sent, result: "done", said: done.said });
         out.sent++;
         out.items.push({ item_id: w.id, kind: w.kind, result: "sent", detail: done.said || null });
@@ -310,15 +310,15 @@ export async function mandateWithdrawnOutside(releaseId: string, by: Actor): Pro
   if (oneLabelOnly()) return false;
   return asOwner(async () => {
     const [release] = await rawQuery<{ id: string; asked_at: Date; ended_at: Date | null }>(
-      `SELECT id, asked_at, ended_at FROM shown_releases WHERE id = $1 AND to_outside AND kind = 'mandate'`,
+      `SELECT id, asked_at, ended_at FROM received_releases WHERE id = $1 AND to_outside AND kind = 'mandate'`,
       [releaseId]
     );
     if (!release?.ended_at || !(await lastMandatePackage(releaseId))) return false;
     const [latest] = await rawQuery<{ id: string }>(
-      `SELECT id FROM shown_pages WHERE release_id = $1 AND shown_at IS NOT NULL AND sent_outside_at IS NOT NULL AND outside_ref ~ '^[0-9a-f]{64}$' ORDER BY sent_outside_at DESC LIMIT 1`,
+      `SELECT id FROM received_pages WHERE release_id = $1 AND released_at IS NOT NULL AND sent_outside_at IS NOT NULL AND outside_ref ~ '^[0-9a-f]{64}$' ORDER BY sent_outside_at DESC LIMIT 1`,
       [releaseId]
     );
-    const item = latest ? await itemAsShown(latest.id) : null;
+    const item = latest ? await itemAsReceived(latest.id) : null;
     if (!item) return false;
     let graph: PublicGraph;
     try {

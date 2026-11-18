@@ -186,7 +186,7 @@ export function versionLine(v: PublishedPagePackage["record"]["versions"][number
   return (
     `version of ${day(v.version_of)}: ${state}` +
     (v.state === "released_in_part" ? `, ${v.parts_held} of ${v.of_parts} parts held (${v.held_kinds})` : `, ${v.of_parts} parts`) +
-    `, ${removed} removal${removed === 1 ? "" : "s"} under the policy, shown on ${day(v.shown_at)}` +
+    `, ${removed} removal${removed === 1 ? "" : "s"} under the policy, shown on ${day(v.released_at)}` +
     releasedUnderWords(v.released_under)
   );
 }
@@ -510,7 +510,7 @@ export async function admitPackage(examined: Awaited<ReturnType<typeof examinePa
       in_words: "This graph already has this package. Nothing changed.",
     };
   }
-  const shown = shapeOfPublishedPage(pkg) !== null;
+  const carriesPage = shapeOfPublishedPage(pkg) !== null;
   const stored = await withTransaction(async (tx) => {
     await tx.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`published-page:${pkg.publisher.key_id}:${pkg.release.id}:${pkg.node.public_id}`]);
     let publication = examined.publication;
@@ -532,7 +532,7 @@ export async function admitPackage(examined: Awaited<ReturnType<typeof examinePa
     }
     let sourceId: string | null = null;
     const address = SOURCE_ADDRESS(publication!.id, pkg.sequence);
-    if (shown) {
+    if (carriesPage) {
       const { publisherFacts, publisherFactsLines } = await import("./publisher-record-service.js");
       const text = sourceTextOf(pkg, publisher, check, publisherFactsLines(await publisherFacts(publication.account_id, { except: publication.id }), "its other pages"));
       const [source] = await tx.query<{ id: string }>(
@@ -568,7 +568,7 @@ export async function admitPackage(examined: Awaited<ReturnType<typeof examinePa
       [publication!.id, pkg.sequence, pkg.hash, pkg.state, JSON.stringify(examined.signed), JSON.stringify(check), sourceId, currentLabel()]
     );
     await tx.query(`UPDATE published_pages SET latest_sequence = $2 WHERE id = $1`, [publication!.id, pkg.sequence]);
-    return { publication: publication!, sourceId, address: shown ? address : null };
+    return { publication: publication!, sourceId, address: carriesPage ? address : null };
   });
 
   let contributionId = stored.publication.contribution_id;
@@ -679,7 +679,7 @@ export async function takeIn(publishedPageId: string, opts: { first: boolean }):
   }
   await enqueueSteward({
     claimId: publication.node_id,
-    trigger: opts.first ? "contribution_accepted" : "page_shown",
+    trigger: opts.first ? "contribution_accepted" : "page_released",
     context: arrivalMessage({
       pkg,
       publisher: publication.publisher,
@@ -760,8 +760,8 @@ function summaryOf(publication: PublicationRow, publisher: string, latest: Packa
     // The page that is shown: the latest version released, which a later held version does not take away.
     ...(pkg && pkg.page && !pkg.page.held
       ? {
-          shown_version_of: pkg.page.version_of,
-          shown_state: pkg.page.state,
+          released_version_of: pkg.page.version_of,
+          released_state: pkg.page.state,
           parts: pkg.page.parts.length,
           parts_held: pkg.page.parts.filter((p) => typeof p.text !== "string").length,
           held_kinds: shapeOfPublishedPage(pkg)?.held_kinds ?? "",
@@ -824,11 +824,11 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
   const chosen = opts.sequence ? packages.find((p) => p.sequence === opts.sequence) : packages[0];
   if (!chosen) return null;
   // A package carries the latest version that is shown, so the newest package has the page to show.
-  const shownRow = chosen;
+  const releasedRow = chosen;
   const pkg = currentPackage(chosen.package);
-  const shownPkg = currentPackage(shownRow.package);
+  const releasedPkg = currentPackage(releasedRow.package);
   const registration = await livePublisher(publication.key_id);
-  const made = shownPkg.record.made;
+  const made = releasedPkg.record.made;
   return {
     ...summaryOf(publication, publication.publisher, chosen),
     package: chosen.sequence,
@@ -845,13 +845,13 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
       registered_at: registration?.registered_at.toISOString() ?? null,
     },
     // The page shown: the one in this package, or the last one shown where this package carries none.
-    shown_package: shapeOfPublishedPage(shownPkg) ? shownRow.sequence : null,
-    shown_version_of: shapeOfPublishedPage(shownPkg) ? shownPkg.page!.version_of : null,
-    page: shapeOfPublishedPage(shownPkg),
-    source_id: shownRow.source_id,
-    audit: shownPkg.page?.audit ?? null,
-    fingerprint: shownPkg.page?.fingerprint ?? null,
-    policy: shownPkg.policy ? { version: shownPkg.policy.version, hash: shownPkg.policy.hash, text: shownPkg.policy.text } : null,
+    released_package: shapeOfPublishedPage(releasedPkg) ? releasedRow.sequence : null,
+    released_version_of: shapeOfPublishedPage(releasedPkg) ? releasedPkg.page!.version_of : null,
+    page: shapeOfPublishedPage(releasedPkg),
+    source_id: releasedRow.source_id,
+    audit: releasedPkg.page?.audit ?? null,
+    fingerprint: releasedPkg.page?.fingerprint ?? null,
+    policy: releasedPkg.policy ? { version: releasedPkg.policy.version, hash: releasedPkg.policy.hash, text: releasedPkg.policy.text } : null,
     record: {
       made,
       prompt_set_is_this_graphs: made?.prompt_set ? made.prompt_set === getPromptSet().hash : null,

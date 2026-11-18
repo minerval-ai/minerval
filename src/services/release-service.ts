@@ -37,10 +37,12 @@ import { PUBLIC_LABEL } from "../labels.js";
 import { currentLabel, runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import {
+  FINGERPRINT_FORMAT,
   VERDICT_DESCRIPTOR,
   newSalt,
   pageRoot,
   partCommitment,
+  type FingerprintFormat,
   type LeafRecord,
   type Mark,
 } from "./page-fingerprint.js";
@@ -276,7 +278,7 @@ export async function askRelease(input: {
           [nodeId, toLabel, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, pageLabel, subjectRef]
         );
         await tx.query(
-          `INSERT INTO shown_releases (id, node_id, to_outside, boundary_id, form, scope, asked_by, asked_holding, asked_at, send_as_released, sensitivity_label)
+          `INSERT INTO received_releases (id, node_id, to_outside, boundary_id, form, scope, asked_by, asked_holding, asked_at, send_as_released, sensitivity_label)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [row!.id, nodeId, toLabel === null, policy.boundary_id, input.form, input.scope, input.actor.id, input.actor.holding, row!.asked_at, toLabel === null && gate.send_as_released, destination]
         );
@@ -339,7 +341,7 @@ export async function flowForWhatWasAsked(input: { nodeId: string; pageLabel: st
         [node.id, input.askedBy, input.toLabel, input.toLabel === null, policy.boundary_id, input.pageLabel]
       );
       await tx.query(
-        `INSERT INTO shown_releases (id, node_id, reply_ref, to_outside, boundary_id, form, scope, asked_at, send_as_released, sensitivity_label)
+        `INSERT INTO received_releases (id, node_id, reply_ref, to_outside, boundary_id, form, scope, asked_at, send_as_released, sensitivity_label)
          VALUES ($1, $2, $3, $4, $5, 'standing', 'node', $6, $7, $8)`,
         [row!.id, node.id, input.askedBy, input.toLabel === null, policy.boundary_id, row!.asked_at, input.toLabel === null && gate.send_as_released, destination]
       );
@@ -378,11 +380,11 @@ export async function endRelease(input: { releaseId: string; reason: EndReason; 
         [release.id, input.actor.id, input.actor.holding, input.reason]
       );
       await tx.query(
-        `UPDATE shown_releases SET ended_at = $2, ended_by = $3, ended_holding = $4, end_reason = $5 WHERE id = $1`,
+        `UPDATE received_releases SET ended_at = $2, ended_by = $3, ended_holding = $4, end_reason = $5 WHERE id = $1`,
         [release.id, at!.now, input.actor.id, input.actor.holding, input.reason]
       );
       await tx.query(
-        `UPDATE shown_nodes SET left_at = $2, left_reason = 'release_ended' WHERE release_id = $1 AND left_at IS NULL`,
+        `UPDATE received_nodes SET left_at = $2, left_reason = 'release_ended' WHERE release_id = $1 AND left_at IS NULL`,
         [release.id, at!.now]
       );
       await tx.query(
@@ -466,14 +468,14 @@ async function followRelease(releaseId: string, opts: { first?: boolean } = {}):
   const destination = destinationOf(release);
   const placed = await nodesCovered(release);
   const known = await rawQuery<{ id: string; node_id: string }>(
-    `SELECT id, node_id FROM shown_nodes WHERE release_id = $1 AND left_at IS NULL`,
+    `SELECT id, node_id FROM received_nodes WHERE release_id = $1 AND left_at IS NULL`,
     [release.id]
   );
   const knownIds = new Set(known.map((k) => k.node_id));
   for (const [nodeId, parent] of placed) {
     if (knownIds.has(nodeId)) continue;
     await rawQuery(
-      `INSERT INTO shown_nodes (release_id, node_id, place_parent_id, sensitivity_label) VALUES ($1, $2, $3, $4)`,
+      `INSERT INTO received_nodes (release_id, node_id, place_parent_id, sensitivity_label) VALUES ($1, $2, $3, $4)`,
       [release.id, nodeId, parent, destination]
     );
   }
@@ -481,7 +483,7 @@ async function followRelease(releaseId: string, opts: { first?: boolean } = {}):
     if (placed.has(k.node_id)) continue;
     const [node] = await rawQuery<{ state: string }>(`SELECT state FROM claims WHERE id = $1`, [k.node_id]);
     const reason: LeftReason = node?.state === "active" ? "link_removed" : "node_not_active";
-    await rawQuery(`UPDATE shown_nodes SET left_at = now(), left_reason = $2 WHERE id = $1`, [k.id, reason]);
+    await rawQuery(`UPDATE received_nodes SET left_at = now(), left_reason = $2 WHERE id = $1`, [k.id, reason]);
   }
 
   let opened = 0;
@@ -497,7 +499,7 @@ async function followRelease(releaseId: string, opts: { first?: boolean } = {}):
     );
     if (first?.at) {
       await rawQuery(
-        `UPDATE shown_nodes SET first_assessed_at = $3 WHERE release_id = $1 AND node_id = $2 AND first_assessed_at IS NULL`,
+        `UPDATE received_nodes SET first_assessed_at = $3 WHERE release_id = $1 AND node_id = $2 AND first_assessed_at IS NULL`,
         [release.id, node.id, first.at]
       );
     }
@@ -867,7 +869,7 @@ async function readPage(
         ? { estimate: version.estimate }
         : { standing: version.standing, confidence: version.confidence ?? null, favored_answers: version.favored_claim_ids ?? [] };
   const header = {
-    format: "minerval-shown-page/1",
+    format: FINGERPRINT_FORMAT,
     node_kind: node.kind,
     verdict,
     judged_at: new Date(version.assessed_at as string | Date).toISOString(),
@@ -973,12 +975,13 @@ async function partiesFor(sourceIds: readonly string[], release: ReleaseRow, own
     }
     if (s.source_type === "released_page") {
       // A shown page's source is addressed by its page (release-gate-service.ts, arrive), whichever arrival it was.
-      const shownPageId = /^minerval:shown-page\/([0-9a-f-]{36})\//.exec(s.url ?? "")?.[1] ?? null;
+      // minerval:released-page/<id>/<n>, or minerval:shown-page/... for a source made before the name changed.
+      const receivedPageId = /^minerval:(?:released|shown)-page\/([0-9a-f-]{36})\//.exec(s.url ?? "")?.[1] ?? null;
       const needed = await rawQuery<{ party: string }>(
-        `SELECT DISTINCT unnest(needs) AS party FROM shown_pages WHERE id = $1
+        `SELECT DISTINCT unnest(needs) AS party FROM received_pages WHERE id = $1
          UNION
-         SELECT DISTINCT unnest(sp.needs) FROM shown_parts sp WHERE sp.page_id = $1 AND sp.released_at IS NOT NULL`,
-        [shownPageId]
+         SELECT DISTINCT unnest(sp.needs) FROM received_parts sp WHERE sp.page_id = $1 AND sp.released_at IS NOT NULL`,
+        [receivedPageId]
       );
       for (const n of needed) parties.add(n.party);
       if (needed.length === 0) parties.add(ownOrganization);
@@ -1058,7 +1061,7 @@ export async function recordVersion(release: ReleaseRow, destination: string, v:
     [release.id, v.nodeId]
   );
   for (const o of overtaken) {
-    await rawQuery(`UPDATE shown_pages SET stage = 'overtaken' WHERE id = $1`, [o.id]);
+    await rawQuery(`UPDATE received_pages SET stage = 'overtaken' WHERE id = $1`, [o.id]);
     await rawQuery(
       `UPDATE actions SET status = 'cancelled', updated_at = now() WHERE exclusion_group = $1 AND status = 'open'`,
       [REDACT_GROUP(o.id)]
@@ -1080,7 +1083,7 @@ export async function recordVersion(release: ReleaseRow, destination: string, v:
       );
     }
     await tx.query(
-      `INSERT INTO shown_pages (id, release_id, kind, node_id, judged_at, opened_at, stage, needs, sensitivity_label)
+      `INSERT INTO received_pages (id, release_id, kind, node_id, judged_at, opened_at, stage, needs, sensitivity_label)
        VALUES ($1, $2, $8, $3, $4, $5, 'to_redact', $6::uuid[], $7)`,
       [row!.id, release.id, v.nodeId, v.at, row!.opened_at, v.needs, destination, release.kind]
     );
@@ -1220,7 +1223,7 @@ export async function payForGateWork(pageId: string, actionId: string): Promise<
     }
   }
   await rawQuery(`UPDATE release_pages SET funds_wanted_at = CASE WHEN $2 THEN NULL ELSE COALESCE(funds_wanted_at, now()) END WHERE id = $1`, [pageId, paid]);
-  await bothSides(() => rawQuery(`UPDATE shown_pages SET waiting_for_funds = $2 WHERE id = $1`, [pageId, !paid]));
+  await bothSides(() => rawQuery(`UPDATE received_pages SET waiting_for_funds = $2 WHERE id = $1`, [pageId, !paid]));
   return paid;
 }
 
@@ -1258,6 +1261,7 @@ interface PageRow {
   header: string;
   header_salt: string;
   root: string | null;
+  fingerprint_format: FingerprintFormat;
   rests_on: string[];
   source_ids: string[] | null;
   least_sure: unknown;
@@ -1271,7 +1275,7 @@ interface PageRow {
 }
 
 const PAGE_COLUMNS = `id, release_id, node_id, judgment_kind, judgment_id, judged_at, stage, round, policy_id, header, header_salt, root,
-  rests_on, source_ids, least_sure, cannot_cross_category, cannot_cross_note, audit_answer, audit_reasons, redact_action_id, checked_at,
+  fingerprint_format, rests_on, source_ids, least_sure, cannot_cross_category, cannot_cross_note, audit_answer, audit_reasons, redact_action_id, checked_at,
   sensitivity_label AS page_label`;
 
 interface PartRow {
@@ -1364,7 +1368,7 @@ export async function pageToRedact(pageId: string): Promise<Record<string, unkno
       : "The Redactor decides: what you let through goes to its readers once Audit has checked your work, and nobody decides after you.",
     stage: page.stage,
     round: page.round,
-    always_shown: JSON.parse(page.header),
+    always_released: JSON.parse(page.header),
     parts: parts.map((p) => ({
       part: p.position,
       kind: p.kind,
@@ -1593,7 +1597,7 @@ async function setStageOnBothSides(page: PageRow, stage: PageStage, extra: { act
   await bothSides(async () => {
     const [release] = await rawQuery<ReleaseRow>(`SELECT ${RELEASE_COLUMNS} FROM releases WHERE id = $1`, [page.release_id]);
     const destination = destinationOf(release!);
-    await rawQuery(`UPDATE shown_pages SET stage = $2, audit_answer = COALESCE($3, audit_answer) WHERE id = $1`, [
+    await rawQuery(`UPDATE received_pages SET stage = $2, audit_answer = COALESCE($3, audit_answer) WHERE id = $1`, [
       page.id,
       stage,
       extra.auditAnswer ?? null,
@@ -1630,6 +1634,8 @@ export async function finishRedaction(input: {
   const counts = countByCategory(removals.map((r) => r.category));
   const header = JSON.stringify({
     ...JSON.parse(page.header),
+    // The construction the page's root is made under, as its record names it.
+    format: page.fingerprint_format,
     made: {
       ...(JSON.parse(page.header).made as Record<string, unknown>),
       prompt_set: getPromptSet().hash,
@@ -1653,7 +1659,7 @@ export async function finishRedaction(input: {
     finished.push({ ...part, text, marksNow: marks, commitmentNow: commitment });
     leaves.push({ position: part.position, descriptor: part.descriptor, commitment });
   }
-  const root = pageRoot(leaves);
+  const root = pageRoot(leaves, page.fingerprint_format);
   await withTransaction(async (tx) => {
     for (const part of finished) {
       await tx.query(`UPDATE release_parts SET redacted = $2, marks = $3::jsonb, commitment = $4 WHERE id = $1`, [
@@ -1686,17 +1692,17 @@ export async function finishRedaction(input: {
     const destination = destinationOf(release!);
     await withTransaction(async (tx) => {
       await tx.query(
-        `UPDATE shown_pages
-            SET stage = 'to_check', round = $2, root = $3, header_commitment = $4,
+        `UPDATE received_pages
+            SET stage = 'to_check', round = $2, root = $3, header_commitment = $4, fingerprint_format = $5,
                 roots = roots || jsonb_build_object('round', $2::int, 'root', $3::text, 'recorded_at', now())
           WHERE id = $1`,
-        [page.id, page.round, root, leaves[0]!.commitment]
+        [page.id, page.round, root, leaves[0]!.commitment, page.fingerprint_format]
       );
       // A redaction done again after the check returned it replaces the earlier round's shape. Nothing was released from it.
-      await tx.query(`DELETE FROM shown_parts WHERE page_id = $1`, [page.id]);
+      await tx.query(`DELETE FROM received_parts WHERE page_id = $1`, [page.id]);
       for (const part of finished) {
         await tx.query(
-          `INSERT INTO shown_parts (id, page_id, position, kind, descriptor, commitment, needs, sensitivity_label)
+          `INSERT INTO received_parts (id, page_id, position, kind, descriptor, commitment, needs, sensitivity_label)
            VALUES ($1, $2, $3, $4, $5, $6, $7::uuid[], $8)`,
           [part.id, page.id, part.position, part.kind, part.descriptor, part.commitmentNow, part.rests_on, destination]
         );
@@ -1749,7 +1755,7 @@ export async function redactionToCheck(pageId: string): Promise<Record<string, u
     page_id: page.id,
     stage: page.stage,
     round: page.round,
-    always_shown: JSON.parse(page.header),
+    always_released: JSON.parse(page.header),
     least_sure: page.least_sure ?? [],
     held_or_delayed_by_the_redactor: kept.map((k) => ({
       part: k.position ?? "the whole item",

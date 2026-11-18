@@ -92,8 +92,8 @@ export async function openReassessmentsForVersionsMadeBesideEarlier(
             WHERE NOT EXISTS (SELECT 1 FROM ${table}_versions o WHERE o.id = i.input_judgment_id)
               -- A version replaced only because its Steward took in a page this
               -- version's label had shown it gives this version nothing new to
-              -- weigh (minerval_only_shown_pages_between; release-service.ts).
-              AND NOT minerval_only_shown_pages_between(
+              -- weigh (minerval_only_released_pages_between; release-service.ts).
+              AND NOT minerval_only_released_pages_between(
                     $1, i.input_judgment_id,
                     (SELECT o.id FROM ${table}_versions o
                       WHERE o.claim_id = v.claim_id AND o.sensitivity_label = i.input_label),

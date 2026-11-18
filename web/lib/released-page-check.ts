@@ -10,11 +10,15 @@
 //                          leaves at the largest power of two smaller than n
 //   root                 = H("root\n" + FORMAT + "\n" + count + "\n" + top)
 //
+// FORMAT is the construction the page's record names (`fingerprint_format`):
+// "minerval-released-page/2", or "minerval-shown-page/1" for a page recorded
+// before the construction was renamed. The root is rebuilt under that one.
+//
 // A released part is checked against its own text; a held part is taken by
 // the hash recorded for it, so its place and kind are checked and its
 // content is not.
 
-const FORMAT = "minerval-shown-page/1";
+const FORMATS: readonly string[] = ["minerval-released-page/2", "minerval-shown-page/1"];
 
 export interface PartToCheck {
   part: number;
@@ -27,11 +31,13 @@ export interface PartToCheck {
 
 export interface PageToCheck {
   fingerprint: string | null;
-  always_shown_as_hashed?: { text: string; salt: string; hash: string };
+  /** The construction the fingerprint was recorded under. */
+  fingerprint_format?: string;
+  always_released_as_hashed?: { text: string; salt: string; hash: string };
   parts?: PartToCheck[];
 }
 
-export interface ShownPageCheck {
+export interface ReleasedPageCheck {
   ok: boolean;
   released: number;
   held: number;
@@ -51,13 +57,17 @@ async function top(leaves: string[]): Promise<string> {
   return sha256(`node\n${await top(leaves.slice(0, split))}\n${await top(leaves.slice(split))}`);
 }
 
-export async function checkShownPage(page: PageToCheck): Promise<ShownPageCheck> {
+export async function checkReleasedPage(page: PageToCheck): Promise<ReleasedPageCheck> {
   const problems: string[] = [];
   let released = 0;
   let held = 0;
-  const header = page.always_shown_as_hashed;
+  const header = page.always_released_as_hashed;
   if (!page.fingerprint || !header) {
-    return { ok: false, released, held, problems: ["This page has not been shown, so there is nothing to check yet."] };
+    return { ok: false, released, held, problems: ["This page has not been released, so there is nothing to check yet."] };
+  }
+  const format = page.fingerprint_format ?? "";
+  if (!FORMATS.includes(format)) {
+    return { ok: false, released, held, problems: [`The fingerprint is recorded under "${format}", a construction this check does not know.`] };
   }
   if ((await sha256(`part\n${header.salt}\n[]\n${header.text}`)) !== header.hash) {
     problems.push("What is always shown with the page (the verdict, coverage and the rest) does not match its hash.");
@@ -82,7 +92,7 @@ export async function checkShownPage(page: PageToCheck): Promise<ShownPageCheck>
     }
     leaves.push(await sha256(`leaf\n${p.part}\n${p.descriptor}\n${p.hash}`));
   }
-  const root = await sha256(`root\n${FORMAT}\n${leaves.length}\n${await top(leaves)}`);
+  const root = await sha256(`root\n${format}\n${leaves.length}\n${await top(leaves)}`);
   if (root !== page.fingerprint) {
     problems.push("The parts do not rebuild the recorded fingerprint: a part was changed, moved, added or left out, or its kind is not the one recorded.");
   }

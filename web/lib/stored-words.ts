@@ -1,14 +1,13 @@
-// Old words in a record kept as it was said (docs/releasing-a-page.md, "Old
-// names in the code").
+// Old words in a signed package (docs/releasing-a-page.md, "Old names in the
+// code").
 //
 // What was called a showing is a release, and a party's release of a part is
-// its consent. The API now says a release's record in those words, from the
-// codes it stores. What it cannot say anew is what was kept as said: a
-// package signed before the change (on a published page, every act, reason
-// and held-because it carries), the permissions a person held when they
-// acted ("release for <party>"), and the words of a gate's setting stamped on
-// what it let through. Those keep their old words, and the pages say them
-// here in the new ones. New words pass through unchanged.
+// its consent. The deployment's own records say so now: the codes, and the
+// words kept as plain text, were renamed with the tables. A package signed
+// before then cannot be: its signature is over its words, so every act,
+// reason, held-because and holding it carries keeps the old ones. The claim
+// page shows such packages, and says their words here in the new ones. New
+// words pass through unchanged.
 
 /** An act's `what` in a package signed before the change, said whole. */
 const ACTS: Record<string, string> = {
@@ -47,7 +46,7 @@ export function storedWords(text: string | null | undefined): string | null | un
   return out;
 }
 
-/** The permissions a person held when they acted, as the record keeps them: "release for <party>" is consent for it. */
+/** The permissions a person held when they acted, as a signed package keeps them: "release for <party>" is consent for it. */
 export function holdingWords(holding: readonly string[]): string[] {
   return holding.map((h) => (h.startsWith("release for ") ? `consent for ${h.slice("release for ".length)}` : h === "release" ? "consent" : h));
 }

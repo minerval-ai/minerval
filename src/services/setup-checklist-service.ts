@@ -156,7 +156,7 @@ export interface SetupChecklist {
      * by a statement carried elsewhere is not in the log; GET
      * /outside/account reads the public graph's own record.
      */
-    signing_key: { shown_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
+    signing_key: { released_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
   };
   connections: {
     total: number;
@@ -386,7 +386,7 @@ export async function setupChecklist(): Promise<SetupChecklist> {
   };
 }
 
-const SHOWN_OUTSIDE_COUNT_REASON =
+const RELEASED_OUTSIDE_COUNT_REASON =
   "The setup checklist tells an administrator whether pages are released outside under a signing key that is not registered, and the key signs pages at every label.";
 
 /** Where keeping public versions current stands, and whether the signing key is registered from here, for the checklist. */
@@ -403,7 +403,7 @@ async function publicGraphState(config: { publicGraphApiUrl?: string; publicGrap
   const { keyIdOf } = await import("./mirror-batch.js");
   const fingerprint = signingKeyId();
   // Counted at every label, as the preflight counts them: the key signs every page shown outside, whoever reads its label.
-  const [shown] = await withSystemClearance(SHOWN_OUTSIDE_COUNT_REASON, () =>
+  const [outside] = await withSystemClearance(RELEASED_OUTSIDE_COUNT_REASON, () =>
     rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM releases WHERE to_outside AND ended_at IS NULL`)
   );
   const registrations = await rawQuery<{ at: Date; public_key: string | null }>(
@@ -414,6 +414,6 @@ async function publicGraphState(config: { publicGraphApiUrl?: string; publicGrap
     account_set: Boolean(config.publicGraphApiUrl && config.publicGraphApiKey),
     keep_public_current: { setting: state.setting, sends: state.sends, in_words: state.in_words },
     last_not_taken: last ? (last.said ?? "The public graph could not be reached.") : null,
-    signing_key: { shown_outside: shown?.n ?? 0, fingerprint, registered_from_here_at: ofThisKey?.at.toISOString() ?? null },
+    signing_key: { released_outside: outside?.n ?? 0, fingerprint, registered_from_here_at: ofThisKey?.at.toISOString() ?? null },
   };
 }

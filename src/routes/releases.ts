@@ -68,10 +68,10 @@ import {
   gateQueue,
   holdPage,
   settleWaiting,
-  shownItems,
-  shownPage,
-  shownRelease,
-  shownReleases,
+  receivedItems,
+  receivedPage,
+  receivedRelease,
+  receivedReleases,
   type GateActor,
 } from "../services/release-gate-service.js";
 import {
@@ -101,7 +101,7 @@ const STATUS: Record<string, number> = {
   ALREADY_STANDING: 409,
   PASS_RUNNING: 409,
   ALREADY_ENDED: 409,
-  ALREADY_SHOWN: 409,
+  ALREADY_RELEASED: 409,
   ALREADY_HELD: 409,
   NOT_HELD: 409,
   NOT_YOUR_PARTY: 403,
@@ -166,7 +166,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
       summary: "The releases of pages to readers who do not read their label, as far as you can read them: those released to a label you read, and those asked for at a label you read",
       description:
         "A node's page written at one label can be released to readers who may not read that label, with what a policy " +
-        "removed marked in its place and what is held named. `shown` lists releases from the side they are released " +
+        "removed marked in its place and what is held named. `received` lists releases from the side they are released " +
         "to; `asked` lists them from the side they were asked for at, with where each page's redaction stands and, " +
         "for a page at the gate, which kinds of part wait on which party (`waiting_on`: kind and party, " +
         "never text). `scope` is one of node, under, mandate, boundary or item; a release for a mandate, a whole boundary " +
@@ -176,7 +176,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
     preHandler: signedIn,
     handler: async (request, reply) =>
       reply.send({
-        shown: await shownReleases({ nodeId: request.query.node_id }),
+        received: await receivedReleases({ nodeId: request.query.node_id }),
         asked: await askedReleases(),
         // The two fixed lists a hold and an ending take their reason from, each key with the words the other side is told.
         hold_reasons: HOLD_REASONS,
@@ -200,7 +200,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: signedIn,
     handler: async (request, reply) => {
-      const release = await shownRelease(request.params.release_id);
+      const release = await receivedRelease(request.params.release_id);
       if (!release) return reply.code(404).send({ error: "No release with that id is released to a label you read.", code: "RELEASE_NOT_FOUND" });
       return reply.send(release);
     },
@@ -219,7 +219,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: signedIn,
     handler: async (request, reply) => {
-      const page = await shownPage(request.params.page_id);
+      const page = await receivedPage(request.params.page_id);
       if (!page) return reply.code(404).send({ error: "No page with that id is released to a label you read.", code: "PAGE_NOT_FOUND" });
       return reply.send(page);
     },
@@ -258,8 +258,8 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
           in_force: p.in_force,
           starting_text: p.starting_text,
           ...(p.side === "page"
-            ? { from_label: p.from, shown_to: p.to_outside ? "outside this deployment" : p.to }
-            : { shown_to: p.to_outside ? "outside this deployment" : p.to }),
+            ? { from_label: p.from, released_to: p.to_outside ? "outside this deployment" : p.to }
+            : { released_to: p.to_outside ? "outside this deployment" : p.to }),
           categories: p.categories.map((c) => c.name),
         })),
       }),
@@ -358,7 +358,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
       if (!mine) return reply.code(404).send({ error: "No release with that id was asked for at a label you read.", code: "RELEASE_NOT_FOUND" });
       try {
         await endRelease({ releaseId: request.params.release_id, reason: request.body.reason, actor });
-        return reply.send(await shownRelease(request.params.release_id).then((s) => s ?? { ended: true }));
+        return reply.send(await receivedRelease(request.params.release_id).then((s) => s ?? { ended: true }));
       } catch (err) {
         return refuse(reply, err);
       }
@@ -456,14 +456,14 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
 
   app.put<{
     Params: { gate_id: string };
-    Body: { flow?: "asked" | "everything"; backlog_shown?: boolean; send_as_released?: boolean; keep_current_mandate?: string | null; keep_current_owls?: number };
+    Body: { flow?: "asked" | "everything"; backlog_visible?: boolean; send_as_released?: boolean; keep_current_mandate?: string | null; keep_current_owls?: number };
   }>("/gates/:gate_id", {
     schema: {
       tags: ["gate"],
       summary: "Set what holds for a gate as a whole: what flows to it, whether its backlog is shown, whether what is released outside is sent, and which mandate is asked to keep the other side current (administrators)",
       description:
         "`flow` is `asked` (" + FLOW_WORDS.asked + ") or `everything` (" + FLOW_WORDS.everything + ") " +
-        "`backlog_shown` says whether readers on the other side see how much waits and on whom; it starts true. " +
+        "`backlog_visible` says whether readers on the other side see how much waits and on whom; it starts true. " +
         "For the gate to outside, `send_as_released` says whether what is released is sent to the public graph as it is released, " +
         "with no person sending each package; it starts true. `keep_current_mandate` names the mandate that is asked to pay for a fresh " +
         "assessment on the other side each time a version here changes on a node the other side holds, or null to ask nothing, which is " +
@@ -477,7 +477,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
         type: "object",
         properties: {
           flow: { type: "string", enum: ["asked", "everything"] },
-          backlog_shown: { type: "boolean" },
+          backlog_visible: { type: "boolean" },
           send_as_released: { type: "boolean" },
           keep_current_mandate: { type: "string", format: "uuid", nullable: true },
           keep_current_owls: { type: "number", minimum: 0 },
@@ -491,7 +491,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
         const gate = await setGate({
           boundaryId: request.params.gate_id,
           flow: request.body.flow,
-          backlogShown: request.body.backlog_shown,
+          backlogVisible: request.body.backlog_visible,
           sendAsReleased: request.body.send_as_released,
           keepCurrentMandate: request.body.keep_current_mandate,
           keepCurrentOwls: request.body.keep_current_owls,
@@ -505,7 +505,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
         }
         if (request.body.flow === "asked") {
           const [flow] = await rawQuery<{ id: string }>(
-            `SELECT id FROM shown_releases WHERE boundary_id = $1 AND scope = 'boundary' AND ended_at IS NULL`,
+            `SELECT id FROM received_releases WHERE boundary_id = $1 AND scope = 'boundary' AND ended_at IS NULL`,
             [gate.boundary_id]
           );
           if (flow) await endRelease({ releaseId: flow.id, reason: "no_longer_needed", actor });
@@ -514,7 +514,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
           gate_id: gate.boundary_id,
           flow: gate.flow,
           flow_in_words: FLOW_WORDS[gate.flow],
-          backlog_shown_to_the_other_side: gate.backlog_shown,
+          backlog_visible_to_the_other_side: gate.backlog_visible,
           ...(gate.to_outside ? { send_as_released: gate.send_as_released } : {}),
           keeps_the_other_side_current: keepCurrentWords(gate),
           keep_current_mandate: gate.keep_current_mandate,
@@ -714,7 +714,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
       querystring: { type: "object", properties: { kind: { type: "string", enum: Object.keys(GATE_KINDS).filter((k) => k !== "page") }, answers: UUID } },
     },
     preHandler: signedIn,
-    handler: async (request, reply) => reply.send({ items: await shownItems({ kind: request.query.kind, replyRef: request.query.answers }) }),
+    handler: async (request, reply) => reply.send({ items: await receivedItems({ kind: request.query.kind, replyRef: request.query.answers }) }),
   });
 
   app.post<{ Body: { kind: "mandate" | "funding"; mandate_id: string; to_label?: string; outside?: boolean; node_id?: string; owls?: number } }>("/gate/offers", {
@@ -770,7 +770,7 @@ export async function releaseRoutes(app: FastifyInstance): Promise<void> {
           });
         }
         if (outside) {
-          const [offer] = await rawQuery<{ release_id: string }>(`SELECT release_id FROM shown_pages WHERE id = $1`, [offered.item_id]);
+          const [offer] = await rawQuery<{ release_id: string }>(`SELECT release_id FROM received_pages WHERE id = $1`, [offered.item_id]);
           return reply.code(201).send({ ...offered, offer_id: offer?.release_id ?? null, addressed_on_the_public_graph_as: offer?.release_id ?? null, what_it_shows_outside: OFFERING_OUTSIDE_SHOWS });
         }
         return reply.code(201).send(offered);

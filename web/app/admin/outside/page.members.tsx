@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { holdingWords } from "@/lib/stored-words";
 import { can, viewer } from "@/components/admin/access";
 import { WorkForm } from "@/components/work/WorkForm";
 import {
@@ -420,7 +419,7 @@ function ActRow({ a }: { a: OutwardAct }) {
           {a.holding.length > 0 && (
             <>
               {" "}
-              <Tip>{`Holding ${holdingWords(a.holding).join(", ")}`}</Tip>
+              <Tip>{`Holding ${a.holding.join(", ")}`}</Tip>
             </>
           )}
         </td>

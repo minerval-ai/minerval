@@ -111,7 +111,7 @@ export interface StewardMessage {
     // A page of this node written at a label this one does not read has
     // been shown at this label and is now among the node's sources
     // (release-gate-service.ts). The context is counts and fixed words.
-    | "page_shown"
+    | "page_released"
     // A mandate at a label this one does not read paid for, or asked for, a
     // pass on the node here, and its asking came through the gate
     // (release-gate-service.ts). The context is fixed words.

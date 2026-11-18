@@ -51,7 +51,7 @@ export interface GateRow {
   to_label: string | null;
   to_outside: boolean;
   flow: "asked" | "everything";
-  backlog_shown: boolean;
+  backlog_visible: boolean;
   send_as_released: boolean;
   /** The mandate asked to pay for a fresh assessment on the other side when a version here changes; null where nothing is asked. */
   keep_current_mandate: string | null;
@@ -80,10 +80,10 @@ export async function gateOf(boundaryId: string): Promise<GateRow | null> {
       [boundaryId, destination]
     );
     const [row] = await rawQuery<{
-      flow: "asked" | "everything"; backlog_shown: boolean; send_as_released: boolean;
+      flow: "asked" | "everything"; backlog_visible: boolean; send_as_released: boolean;
       keep_current_mandate: string | null; keep_current_micro_usd: string; keep_current_since: Date | null;
     }>(
-      `SELECT flow, backlog_shown, send_as_released, keep_current_mandate, keep_current_micro_usd, keep_current_since
+      `SELECT flow, backlog_visible, send_as_released, keep_current_mandate, keep_current_micro_usd, keep_current_since
          FROM gates WHERE boundary_id = $1 AND sensitivity_label = $2`,
       [boundaryId, destination]
     );
@@ -363,7 +363,7 @@ export async function endGateSetting(input: { settingId: string; actor: GateAuth
 export async function setGate(input: {
   boundaryId: string;
   flow?: string;
-  backlogShown?: boolean;
+  backlogVisible?: boolean;
   sendAsReleased?: boolean;
   /**
    * The mandate asked to pay for a fresh assessment on the other side when
@@ -388,10 +388,10 @@ export async function setGate(input: {
   }
   await asOwner(async () => {
     await rawQuery(
-      `UPDATE gates SET flow = COALESCE($2, flow), backlog_shown = COALESCE($3, backlog_shown),
+      `UPDATE gates SET flow = COALESCE($2, flow), backlog_visible = COALESCE($3, backlog_visible),
               send_as_released = COALESCE($4, send_as_released), set_by = $5, set_at = now()
         WHERE boundary_id = $1`,
-      [input.boundaryId, input.flow ?? null, input.backlogShown ?? null, input.sendAsReleased ?? null, input.actor.id]
+      [input.boundaryId, input.flow ?? null, input.backlogVisible ?? null, input.sendAsReleased ?? null, input.actor.id]
     );
     if (input.keepCurrentMandate !== undefined || input.keepCurrentOwls !== undefined) {
       const mandate = input.keepCurrentMandate === undefined ? gate.keep_current_mandate : input.keepCurrentMandate;
@@ -406,7 +406,7 @@ export async function setGate(input: {
     }
     // A release outside carries the gate's choice, which is what the sender reads (outbound-service.ts).
     if (input.sendAsReleased !== undefined && gate.to_outside) {
-      await rawQuery(`UPDATE shown_releases SET send_as_released = $2 WHERE boundary_id = $1`, [input.boundaryId, input.sendAsReleased]);
+      await rawQuery(`UPDATE received_releases SET send_as_released = $2 WHERE boundary_id = $1`, [input.boundaryId, input.sendAsReleased]);
     }
   });
   return (await gateOf(input.boundaryId))!;
@@ -444,7 +444,7 @@ export async function gatesFor(actor: GateAuthority & { clearance: readonly stri
         to_outside: gate.to_outside,
         flow: gate.flow,
         flow_in_words: FLOW_WORDS[gate.flow],
-        backlog_shown_to_the_other_side: gate.backlog_shown,
+        backlog_visible_to_the_other_side: gate.backlog_visible,
         ...(gate.to_outside ? { send_as_released: gate.send_as_released } : {}),
         keeps_the_other_side_current: keepCurrentWords(gate),
         keep_current_mandate: gate.keep_current_mandate,

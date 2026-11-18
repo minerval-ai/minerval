@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { can, type Viewer } from "@/components/admin/access";
 import { Pipeline } from "@/components/work/Pipeline";
 import { Boundary, ButtonLink, Empty, Table, Tabs, Tip, WorkHead, WorkPage, plural, shortDay } from "@/components/work/ui";
-import { fetchReleases, type AskedReleaseRow, type ReleaseScope, type ShownRelease, type ShownReleaseRow } from "@/lib/inside-api";
+import { fetchReleases, type AskedReleaseRow, type ReleaseScope, type ReceivedRelease, type ReceivedReleaseRow } from "@/lib/inside-api";
 import { NOT_YET_ASSESSED, type Pipeline as Status, type PipelineKey } from "@/lib/pipeline";
 import { ReleasesFilter } from "./ReleasesFilter";
 import { destinationOf, fetchDetails, gateFor, kindOf, latestPage, loadGates, statusOf, versionsById, wholeOf } from "./releases";
@@ -43,14 +43,14 @@ const STATUSES: Array<{ key: PipelineKey | "needs"; label: string }> = [
   { key: "audit", label: "Audit check" },
   { key: "gate", label: "At the gate" },
   { key: "held", label: "Held" },
-  { key: "shown_whole", label: "Released whole" },
-  { key: "shown_in_part", label: "Released in part" },
+  { key: "released_whole", label: "Released whole" },
+  { key: "released_in_part", label: "Released in part" },
   { key: "cannot_cross", label: "Can't cross" },
   { key: "overtaken", label: "Overtaken" },
   { key: "not_yet_assessed", label: "Not yet assessed" },
 ];
 
-function askedRow(a: AskedReleaseRow, detail: ShownRelease | undefined): Row {
+function askedRow(a: AskedReleaseRow, detail: ReceivedRelease | undefined): Row {
   const page = latestPage(a.pages);
   const version = page ? versionsById(detail).get(page.page_id) : undefined;
   const nodes = detail ? detail.nodes.length : new Set([a.node_id, ...a.pages.map((p) => p.node_id)].filter(Boolean)).size;
@@ -60,7 +60,7 @@ function askedRow(a: AskedReleaseRow, detail: ShownRelease | undefined): Row {
     whole: wholeOf(a.scope, a.page_label, detail?.scope),
     more: a.node_id ? Math.max(0, nodes - 1) : nodes,
     from: a.page_label,
-    to: destinationOf(a.shown_to),
+    to: destinationOf(a.released_to),
     form: a.form,
     scope: a.scope,
     latest: page?.version_of ?? null,
@@ -69,7 +69,7 @@ function askedRow(a: AskedReleaseRow, detail: ShownRelease | undefined): Row {
   };
 }
 
-function shownRow(s: ShownReleaseRow, detail: ShownRelease | undefined, asked: AskedReleaseRow | undefined): Row {
+function receivedRow(s: ReceivedReleaseRow, detail: ReceivedRelease | undefined, asked: AskedReleaseRow | undefined): Row {
   // A release of a node is about that node; one of a mandate's work or a whole boundary has none of its own,
   // and its latest version is the newest of any node it covers, as on the page's side (latestPage).
   const node = s.node_id ? detail?.nodes.find((n) => n.node_id === s.node_id) : undefined;
@@ -87,7 +87,7 @@ function shownRow(s: ShownReleaseRow, detail: ShownRelease | undefined, asked: A
     whole: wholeOf(s.scope, asked?.page_label ?? null, detail?.scope),
     more: s.node_id ? Math.max(0, nodes - 1) : nodes,
     from: asked?.page_label ?? null,
-    to: destinationOf(s.shown_to),
+    to: destinationOf(s.released_to),
     form: s.form,
     scope: s.scope,
     latest: latest?.v.version_of ?? null,
@@ -97,28 +97,28 @@ function shownRow(s: ShownReleaseRow, detail: ShownRelease | undefined, asked: A
 }
 
 export async function ReleasesView({ who, query, drawer }: { who: Viewer; query: ReleasesQuery; drawer?: ReactNode }) {
-  const [{ shown, asked }, gates] = await Promise.all([
-    fetchReleases(who.externalId).catch(() => ({ shown: [] as ShownReleaseRow[], asked: [] as AskedReleaseRow[] })),
+  const [{ received, asked }, gates] = await Promise.all([
+    fetchReleases(who.externalId).catch(() => ({ received: [] as ReceivedReleaseRow[], asked: [] as AskedReleaseRow[] })),
     loadGates(who.externalId),
   ]);
-  const tab = query.tab === "shown" || query.tab === "asked" ? query.tab : asked.length === 0 && shown.length > 0 ? "shown" : "asked";
-  const shownIds = new Set(shown.map((s) => s.release_id));
+  const tab = query.tab === "received" || query.tab === "asked" ? query.tab : asked.length === 0 && received.length > 0 ? "received" : "asked";
+  const receivedIds = new Set(received.map((s) => s.release_id));
   const askedById = new Map(asked.map((a) => [a.release_id, a]));
 
   // Only what this tab draws is fetched one by one: on the asked tab, the other side's state for a page
   // that may be waiting for funds or at the gate, where the viewer reads that side too.
   const wanted =
-    tab === "shown"
-      ? shown.map((s) => s.release_id)
+    tab === "received"
+      ? received.map((s) => s.release_id)
       : asked
-          .filter((a) => shownIds.has(a.release_id) && ["to_redact", "to_check", "at_gate"].includes(latestPage(a.pages)?.stage ?? ""))
+          .filter((a) => receivedIds.has(a.release_id) && ["to_redact", "to_check", "at_gate"].includes(latestPage(a.pages)?.stage ?? ""))
           .map((a) => a.release_id);
   const details = await fetchDetails(who.externalId, wanted);
 
   const askedRows = asked.map((a) => askedRow(a, details.get(a.release_id)));
-  const rows = tab === "asked" ? askedRows : shown.map((s) => shownRow(s, details.get(s.release_id), askedById.get(s.release_id)));
+  const rows = tab === "asked" ? askedRows : received.map((s) => receivedRow(s, details.get(s.release_id), askedById.get(s.release_id)));
 
-  const total = new Set([...asked.map((a) => a.release_id), ...shown.map((s) => s.release_id)]).size;
+  const total = new Set([...asked.map((a) => a.release_id), ...received.map((s) => s.release_id)]).size;
   const needing = askedRows.filter((r) => !r.ended && r.status.needs).length;
 
   const showEnded = query.ended === "1";
@@ -155,7 +155,7 @@ export async function ReleasesView({ who, query, drawer }: { who: Viewer; query:
               current={tab}
               tabs={[
                 { key: "asked", label: "From your labels", href: "/releases?tab=asked", count: asked.length },
-                { key: "shown", label: "Released to you", href: "/releases?tab=shown", count: shown.length },
+                { key: "received", label: "Released to you", href: "/releases?tab=received", count: received.length },
               ]}
             />
           </div>

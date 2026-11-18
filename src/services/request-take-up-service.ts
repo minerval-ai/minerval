@@ -64,7 +64,7 @@ export interface TakenUp {
   account_id: string;
   at: string;
   /** What followed, as the record shows it. */
-  followed: "a_page_shown" | "a_page_held" | "declined" | "withdrawn" | "nothing_yet";
+  followed: "a_page_released" | "a_page_held" | "declined" | "withdrawn" | "nothing_yet";
   in_words: string;
   published_page_id: string | null;
   node_id: string | null;
@@ -173,7 +173,7 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
         ORDER BY (k.state IN ('released_whole', 'released_in_part')) DESC, k.received_at DESC LIMIT 1`,
       [r.request_id, r.contributor_id, r.created_at]
     );
-    const shown = page && (page.state === "released_whole" || page.state === "released_in_part");
+    const released = page && (page.state === "released_whole" || page.state === "released_in_part");
     const untaken = r.summary === DECLINED_UNTAKEN_SUMMARY;
     const took = untaken ? "" : `${r.by_label} said on ${day(r.created_at)} that it is taking this request up.`;
     const pageOf = page ? (page.node ? `"${page.node}"` : "a node this request bears on") : "";
@@ -188,9 +188,9 @@ export async function takenUpOn(requestIds: string[]): Promise<Map<string, Taken
           : `${took} On ${day(r.outcome_at ?? r.created_at)} it said it will not do the work: `) +
         `${DECLINE_REASONS[(r.decline_reason ?? "no_reason") as DeclineReason] ?? DECLINE_REASONS.no_reason}. ` +
         `The reason is its own, chosen from a fixed list, and nobody checks it.` +
-        (shown && r.outcome_at && page.received_at.getTime() > r.outcome_at.getTime() ? ` It has since published its graph's page of ${pageOf} (${day(page.received_at)}).` : "");
-    } else if (shown) {
-      followed = "a_page_shown";
+        (released && r.outcome_at && page.received_at.getTime() > r.outcome_at.getTime() ? ` It has since published its graph's page of ${pageOf} (${day(page.received_at)}).` : "");
+    } else if (released) {
+      followed = "a_page_released";
       words = `${took} Since then it has published its graph's page of ${pageOf} (${day(page.received_at)}).`;
     } else if (page) {
       followed = "a_page_held";

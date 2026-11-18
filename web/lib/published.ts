@@ -28,8 +28,8 @@ export interface PublishedPageSummary {
   state: "not_yet_assessed" | "released_whole" | "released_in_part" | "held" | null;
   version_of: string | null;
   held?: { because: string | null; since: string | null };
-  shown_version_of?: string;
-  shown_state?: string;
+  released_version_of?: string;
+  released_state?: string;
   parts?: number;
   parts_held?: number;
   held_kinds?: string;
@@ -95,9 +95,9 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
    * record is read from (components/claim/InsideVersions.tsx).
    */
   inside?: {
-    tab: { release_id: string; page_id: string; outside: boolean; shown_to: string; version_of: string; from_label?: string };
-    release: import("./inside-api").ShownRelease;
-    page: import("./inside-api").ShownPage;
+    tab: { release_id: string; page_id: string; outside: boolean; released_to: string; version_of: string; from_label?: string };
+    release: import("./inside-api").ReceivedRelease;
+    page: import("./inside-api").ReceivedPage;
   };
 }
 

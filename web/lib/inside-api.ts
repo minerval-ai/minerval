@@ -27,11 +27,11 @@ export type NodeState = "not_yet_assessed" | "released_whole" | "released_in_par
 export type ReleaseScope = "node" | "under" | "mandate" | "boundary" | "item";
 
 /** A release as the side it is shown to lists it. */
-export interface ShownReleaseRow {
+export interface ReceivedReleaseRow {
   release_id: string;
   /** The node, for scope `node` or `under`; null for every other scope. */
   node_id: string | null;
-  shown_to: string;
+  released_to: string;
   form: "once" | "standing";
   scope: ReleaseScope;
   asked_at: string;
@@ -60,7 +60,7 @@ export interface AskedReleaseRow {
   node_id: string | null;
   node: string | null;
   page_label: string;
-  shown_to: string;
+  released_to: string;
   form: "once" | "standing";
   scope: ReleaseScope;
   asked_at: string;
@@ -69,13 +69,13 @@ export interface AskedReleaseRow {
 }
 
 /** One version of a node's page, described without any of its text. */
-export interface ShownVersion {
+export interface ReceivedVersion {
   page_id: string;
   version_of: string;
   state: NodeState;
   held_because?: string;
   held_for?: string;
-  shown_at?: string;
+  released_at?: string;
   source_id?: string | null;
   removals_under_the_policy?: Record<string, number>;
   parts_held?: number;
@@ -83,10 +83,12 @@ export interface ShownVersion {
   held_kinds?: string;
   redaction_round: number;
   fingerprint: string | null;
+  /** The construction the fingerprint is made under (web/lib/released-page-check.ts). */
+  fingerprint_format?: string;
   audit: string | null;
 }
 
-export interface ShownNode {
+export interface ReceivedNode {
   node_id: string;
   text: string | null;
   under: string | null;
@@ -96,7 +98,7 @@ export interface ShownNode {
   first_assessed_at: string | null;
   release_began: string;
   state: NodeState;
-  versions: ShownVersion[];
+  versions: ReceivedVersion[];
 }
 
 export interface ReleaseAct {
@@ -111,9 +113,9 @@ export interface ReleaseAct {
   reason?: string;
 }
 
-export interface ShownRelease {
+export interface ReceivedRelease {
   release_id: string;
-  shown_to: string;
+  released_to: string;
   form: "once" | "standing";
   /** What the release covers, in the API's words, naming the mandate and the label where the reader reads that label. */
   scope: string;
@@ -124,49 +126,49 @@ export interface ShownRelease {
   ended_at: string | null;
   ended_because: string | null;
   policy: { policy_id: string; version: number; hash: string } | null;
-  nodes: ShownNode[];
+  nodes: ReceivedNode[];
   acts: ReleaseAct[];
 }
 
-export interface ShownMark {
+export interface ReceivedMark {
   at: number;
   category: string;
 }
 
-export interface ShownPart {
+export interface ReceivedPart {
   part: number;
   kind: string;
   descriptor: string;
   hash: string;
   /** Released: the text as written, with each removal marked where it was made. */
   text?: string;
-  removals_marked?: ShownMark[];
+  removals_marked?: ReceivedMark[];
   salt?: string;
   /** Held: the words that stand in its place. */
   held?: string;
 }
 
-export interface ShownPage extends ShownVersion {
-  always_shown?: Record<string, unknown>;
-  always_shown_as_hashed?: { text: string; salt: string; hash: string };
+export interface ReceivedPage extends ReceivedVersion {
+  always_released?: Record<string, unknown>;
+  always_released_as_hashed?: { text: string; salt: string; hash: string };
   earlier_fingerprints?: string[];
-  parts?: ShownPart[];
+  parts?: ReceivedPart[];
   verification: { ok: boolean; problems: string[]; checked: number; held: number } | null;
 }
 
 export async function fetchReleases(
   externalId: string,
   nodeId?: string
-): Promise<{ shown: ShownReleaseRow[]; asked: AskedReleaseRow[]; hold_reasons: Record<string, string>; end_reasons: Record<string, string> }> {
+): Promise<{ received: ReceivedReleaseRow[]; asked: AskedReleaseRow[]; hold_reasons: Record<string, string>; end_reasons: Record<string, string> }> {
   const query = nodeId ? `?node_id=${encodeURIComponent(nodeId)}` : "";
   return accountFetch(`/releases${query}`, { actingUser: externalId });
 }
 
-export function fetchRelease(externalId: string, id: string): Promise<ShownRelease> {
+export function fetchRelease(externalId: string, id: string): Promise<ReceivedRelease> {
   return accountFetch(`/releases/${seg(id)}`, { actingUser: externalId });
 }
 
-export function fetchShownPage(externalId: string, releaseId: string, pageId: string): Promise<ShownPage> {
+export function fetchReleasedPage(externalId: string, releaseId: string, pageId: string): Promise<ReceivedPage> {
   return accountFetch(`/releases/${seg(releaseId)}/pages/${seg(pageId)}`, { actingUser: externalId });
 }
 
@@ -190,7 +192,7 @@ export function endRelease(externalId: string, id: string, reason: string): Prom
   return accountFetch(`/releases/${seg(id)}/end`, { method: "POST", actingUser: externalId, body: { reason } });
 }
 
-export function holdShownPage(
+export function holdReleasePage(
   externalId: string,
   releaseId: string,
   pageId: string,
@@ -266,7 +268,7 @@ export interface QueueItem {
   /** The part as it was written, where the person reads at the label it was written at. */
   as_written?: string;
   /** The part as it would be shown if released: after removals, with the marks. */
-  as_it_would_be_shown?: string;
+  as_it_would_be_released?: string;
   /**
    * The passages removed from the part. With the Redactor's note where the
    * person reads at the item's label; without it, and only for a part that
@@ -275,11 +277,11 @@ export interface QueueItem {
    */
   removals?: Array<{ passage: string; category: string; redactor_note?: string }>;
   /** What is shown whenever anything of the item is shown. */
-  always_shown?: Record<string, unknown>;
+  always_released?: Record<string, unknown>;
   /** The node's wording as the page would show it, where the node is at the page's label. */
-  wording_as_it_would_be_shown?: string;
+  wording_as_it_would_be_released?: string;
   /** The API's sentence, where the person does not read at the label the item was written at: what they are and are not shown. */
-  shown_as_released?: string;
+  seen_as_released?: string;
 }
 
 export interface GateQueue {
@@ -303,7 +305,7 @@ export interface Decided {
   decided: number;
   unchanged: number;
   refused: Array<{ item: { item_id?: string; part?: number | null }; why: string }>;
-  shown: string[];
+  released: string[];
 }
 
 export function decideAtGate(
@@ -343,7 +345,7 @@ export interface Gate {
   to_outside: boolean;
   flow: "asked" | "everything";
   flow_in_words: string;
-  backlog_shown_to_the_other_side: boolean;
+  backlog_visible_to_the_other_side: boolean;
   send_as_released?: boolean;
   keeps_the_other_side_current: string;
   keep_current_mandate: string | null;
@@ -369,7 +371,7 @@ export function fetchGates(externalId: string): Promise<Gates> {
 export function setGate(
   externalId: string,
   gateId: string,
-  body: { flow?: string; backlog_shown?: boolean; send_as_released?: boolean; keep_current_mandate?: string | null; keep_current_owls?: number }
+  body: { flow?: string; backlog_visible?: boolean; send_as_released?: boolean; keep_current_mandate?: string | null; keep_current_owls?: number }
 ): Promise<unknown> {
   return accountFetch(`/gates/${seg(gateId)}`, { method: "PUT", actingUser: externalId, body });
 }
@@ -433,7 +435,7 @@ export interface PolicySummary {
   starting_text: boolean;
   /** Present only for a reader of the label the pages are written at. */
   from_label?: string;
-  shown_to: string;
+  released_to: string;
   categories: string[];
 }
 

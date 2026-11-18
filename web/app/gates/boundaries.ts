@@ -84,8 +84,8 @@ export async function loadBoundaries(externalId: string): Promise<{
     if (!r.policy || (!r.policy.from_label && p.from_label)) r.policy = p;
     if (!r.from && p.from_label) r.from = p.from_label;
     if (!r.to) {
-      r.outside = p.shown_to === OUTSIDE;
-      r.to = r.outside ? "outside" : p.shown_to;
+      r.outside = p.released_to === OUTSIDE;
+      r.to = r.outside ? "outside" : p.released_to;
     }
   }
   const rows = [...byId.values()].sort(

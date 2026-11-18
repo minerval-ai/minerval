@@ -1,5 +1,5 @@
 import "server-only";
-import { fetchGates, fetchRelease, type AskedPage, type AskedReleaseRow, type Gate, type ReleaseScope, type ShownRelease, type ShownVersion } from "@/lib/inside-api";
+import { fetchGates, fetchRelease, type AskedPage, type AskedReleaseRow, type Gate, type ReleaseScope, type ReceivedRelease, type ReceivedVersion } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
 import { pipelineOf, type Pipeline } from "@/lib/pipeline";
 
@@ -38,10 +38,10 @@ export function kindTip(form: string, scope: ReleaseScope): string {
 }
 
 /** The label (or "outside") a release goes to, from either side's way of saying it. */
-export function destinationOf(shownTo: string): string {
-  if (shownTo === "outside this deployment") return "outside";
-  const m = shownTo.match(/^readers at "(.*)"$/);
-  return m ? m[1]! : shownTo;
+export function destinationOf(releasedTo: string): string {
+  if (releasedTo === "outside this deployment") return "outside";
+  const m = releasedTo.match(/^readers at "(.*)"$/);
+  return m ? m[1]! : releasedTo;
 }
 
 /** The gate between two labels, where the viewer may read the gates. */
@@ -62,7 +62,7 @@ export function latestPage(pages: AskedPage[]): AskedPage | undefined {
 }
 
 /** One version's status, from the page's side, the other side, or both. */
-export function statusOf(page: AskedPage | undefined, version: ShownVersion | undefined): Pipeline {
+export function statusOf(page: AskedPage | undefined, version: ReceivedVersion | undefined): Pipeline {
   return pipelineOf({
     stage: page?.stage ?? null,
     stageInWords: page?.stage_in_words ?? null,
@@ -76,8 +76,8 @@ export function statusOf(page: AskedPage | undefined, version: ShownVersion | un
 }
 
 /** Every version of a release, by page id, from the side it is shown to. */
-export function versionsById(release: ShownRelease | null | undefined): Map<string, ShownVersion> {
-  const out = new Map<string, ShownVersion>();
+export function versionsById(release: ReceivedRelease | null | undefined): Map<string, ReceivedVersion> {
+  const out = new Map<string, ReceivedVersion>();
   for (const n of release?.nodes ?? []) for (const v of n.versions) out.set(v.page_id, v);
   return out;
 }
@@ -88,8 +88,8 @@ export function versionsById(release: ShownRelease | null | undefined): Map<stri
  * of those asks for each; the bound keeps a long list from opening as many
  * requests at once.
  */
-export async function fetchDetails(externalId: string, ids: string[], concurrency = 4): Promise<Map<string, ShownRelease>> {
-  const out = new Map<string, ShownRelease>();
+export async function fetchDetails(externalId: string, ids: string[], concurrency = 4): Promise<Map<string, ReceivedRelease>> {
+  const out = new Map<string, ReceivedRelease>();
   const queue = [...new Set(ids)];
   async function worker() {
     for (let id = queue.shift(); id !== undefined; id = queue.shift()) {

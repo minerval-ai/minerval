@@ -83,7 +83,7 @@ export const DEFAULT_CATEGORIES: readonly PolicyCategory[] = [
 ];
 
 /** What is shown whenever a page is shown, as the policy states it. */
-export const ALWAYS_SHOWN: readonly string[] = [
+export const ALWAYS_RELEASED: readonly string[] = [
   "The verdict: the status, the estimate or the answer, with its confidence and any credence.",
   "Coverage: whether the node was examined, and on what kinds of evidence.",
   "That something was removed, in the place it was removed from.",
@@ -119,7 +119,7 @@ export function renderPolicy(categories: readonly PolicyCategory[], version: num
     "",
     "## What is shown whenever a page is released",
     "",
-    ...ALWAYS_SHOWN.map((line) => `- ${line}`),
+    ...ALWAYS_RELEASED.map((line) => `- ${line}`),
     "",
     "No category covers any of these. Where one of them could not be shown without giving away what a category " +
       "protects, the page is not released, and readers on the other side see that it is held.",
@@ -153,7 +153,7 @@ const BY_FAVOR =
   /\b(?:un)?favou?rabl\w*|\bembarrass\w*|\b(?:un)?flattering\b|\breputation\w*|\bcritical of\b|\bcriticis\w+ of\b|\bcriticiz\w+ of\b|\breflects? (?:badly|poorly|well) on\b|\blooks? (?:bad|good)\b|\bdamaging to (?:us|the (?:organi[sz]ation|company|firm))\b|\bnegative (?:about|toward|towards|for)\b|\bpositive (?:about|toward|towards|for)\b/i;
 
 /** Wording that names something shown whenever a page is shown. */
-const ALWAYS_SHOWN_WORDS =
+const ALWAYS_RELEASED_WORDS =
   /\bverdicts?\b|\bcredences?\b|\bconfidence (?:in|of) the (?:verdict|assessment|status|estimate|answer)\b|\bstatus of the (?:claim|assessment|node)\b|\b(?:count|number) of removals\b|\bprompt set\b|\bpolicy version\b|\bthat (?:something|a passage) was removed\b/i;
 
 export interface PolicyProblem {
@@ -198,12 +198,12 @@ export function policyProblems(categories: readonly PolicyCategory[]): PolicyPro
           `kind of content is meant instead.`,
       });
     }
-    const alwaysShown = `${name}. ${covers}`.match(ALWAYS_SHOWN_WORDS);
-    if (alwaysShown) {
+    const alwaysReleased = `${name}. ${covers}`.match(ALWAYS_RELEASED_WORDS);
+    if (alwaysReleased) {
       problems.push({
         category: name,
         problem:
-          `This category names something that is shown whenever a page is released ("${alwaysShown[0]}"). A reader ` +
+          `This category names something that is shown whenever a page is released ("${alwaysReleased[0]}"). A reader ` +
           `cannot weigh a page without its verdict, its confidence, its coverage, its sources' existence, its gaps, ` +
           `how it was made and the count of removals, so no category covers them. A page whose verdict cannot be ` +
           `released is held whole, which the people who direct the graph or consent for a party can do.`,

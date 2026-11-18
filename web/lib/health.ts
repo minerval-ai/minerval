@@ -453,11 +453,11 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
 
   // Pages are released outside and the public graph is reached from here, but the key they are signed with was never registered from here.
   const key = c.public_graph?.signing_key;
-  if (c.public_graph?.account_set && key && key.shown_outside > 0 && key.fingerprint && !key.registered_from_here_at) {
+  if (c.public_graph?.account_set && key && key.released_outside > 0 && key.fingerprint && !key.registered_from_here_at) {
     out.push({
       key: "signing-key-unregistered",
       title: "Signing key not registered",
-      consequence: `${key.shown_outside === 1 ? "1 page is" : `${key.shown_outside} pages are`} released outside; the public graph takes none signed with an unregistered key`,
+      consequence: `${key.released_outside === 1 ? "1 page is" : `${key.released_outside} pages are`} released outside; the public graph takes none signed with an unregistered key`,
       owner: "admin",
       href: "/admin/outside?drawer=key",
       action: "Register",

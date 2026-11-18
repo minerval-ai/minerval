@@ -174,7 +174,7 @@ export function TakenOut({ view }: { view: PublishedPageView }) {
         <p className="published-later" style={quiet}>
           <span className="held-mark" aria-hidden /> A later version, of {day(view.version_of)}, exists and is not released
           {view.held?.because ? `: ${storedWords(view.held.because)}` : ""}
-          {view.held?.since ? `, since ${day(view.held.since)}` : ""}. What follows is the version of {day(view.shown_version_of)}.
+          {view.held?.since ? `, since ${day(view.held.since)}` : ""}. What follows is the version of {day(view.released_version_of)}.
         </p>
       )}
       {view.ended && (
@@ -194,7 +194,7 @@ export function OtherVerdict({ view }: { view: PublishedPageView }) {
     <div className="claim-assess">
       <span>{"estimate" in v ? `Estimate: ${estimateAsRecorded(v.estimate)}` : `Standing: ${String(v.standing).replace(/_/g, " ")}`}</span>
       <span className="assess-when">
-        version of {day(view.shown_version_of)}
+        version of {day(view.released_version_of)}
         {view.page?.assessed_by_model ? ` · ${modelDisplayName(view.page.assessed_by_model)}` : ""}
       </span>
     </div>
@@ -505,7 +505,7 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
               <li key={v.page_id}>
                 <span className="held-mark" aria-hidden /> Version of {day(v.version_of)}:{" "}
                 {stateWords({ state: v.state, parts: v.of_parts, parts_held: v.parts_held, held_kinds: v.held_kinds, held: { because: v.held_because ?? null, since: v.held_since ?? null } })}
-                {v.shown_at ? `; released ${day(v.shown_at)}` : ""}
+                {v.released_at ? `; released ${day(v.released_at)}` : ""}
               </li>
             ))}
           </ul>

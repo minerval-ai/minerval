@@ -133,7 +133,7 @@ export async function answerToContribution(contributionId: string): Promise<{ pu
 // ---- the publisher's record ------------------------------------------------------------------
 
 export interface PublisherFacts {
-  pages: { published: number; standing: number; shown_once: number; with_what_sits_under: number };
+  pages: { published: number; standing: number; released_once: number; with_what_sits_under: number };
   now: { released_whole: number; released_in_part: number; held: number; not_yet_assessed: number };
   holds: { held_now_for_days: number[]; versions_ever_held: number };
   releases_ended: number;
@@ -157,7 +157,7 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
     [accountId, opts.except ?? null]
   );
   const facts: PublisherFacts = {
-    pages: { published: publications.length, standing: 0, shown_once: 0, with_what_sits_under: 0 },
+    pages: { published: publications.length, standing: 0, released_once: 0, with_what_sits_under: 0 },
     now: { released_whole: 0, released_in_part: 0, held: 0, not_yet_assessed: 0 },
     holds: { held_now_for_days: [], versions_ever_held: 0 },
     releases_ended: 0,
@@ -174,7 +174,7 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
     const latest = last ? currentPackage(last) : undefined;
     if (!latest) continue;
     if (latest.release.form === "standing") facts.pages.standing++;
-    else facts.pages.shown_once++;
+    else facts.pages.released_once++;
     if (latest.release.scope === "under") facts.pages.with_what_sits_under++;
     if (latest.release.ended) facts.releases_ended++;
     facts.now[latest.state]++;
@@ -194,15 +194,15 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
       else facts.said_back.other++;
     }
     // Where this graph assessed the node again after the page first arrived with a verdict: nearer to it, or further.
-    const firstShown = packages.find((k) => credenceOf(k.package) !== null);
-    if (firstShown) {
-      const page = credenceOf(firstShown.package)!;
+    const firstReleased = packages.find((k) => credenceOf(k.package) !== null);
+    if (firstReleased) {
+      const page = credenceOf(firstReleased.package)!;
       const history = await rawQuery<{ credence: number | null; at: Date }>(
         `SELECT claim_credence AS credence, assessed_at AS at FROM assessments WHERE claim_id = $1 AND claim_credence IS NOT NULL ORDER BY assessed_at`,
         [p.node_id]
       );
-      const before = [...history].filter((h) => h.at.getTime() < firstShown.received_at.getTime()).pop();
-      const after = [...history].filter((h) => h.at.getTime() >= firstShown.received_at.getTime()).pop();
+      const before = [...history].filter((h) => h.at.getTime() < firstReleased.received_at.getTime()).pop();
+      const after = [...history].filter((h) => h.at.getTime() >= firstReleased.received_at.getTime()).pop();
       if (!after || !before) facts.later_assessments.none_yet++;
       else {
         const moved = Math.abs(Number(before.credence) - page) - Math.abs(Number(after.credence) - page);
@@ -217,7 +217,7 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
   for (const list of taken.values()) {
     for (const t of list.filter((x) => x.account_id === accountId)) {
       facts.requests_taken_up.total++;
-      if (t.followed === "a_page_shown") facts.requests_taken_up.a_page_followed++;
+      if (t.followed === "a_page_released") facts.requests_taken_up.a_page_followed++;
       else if (t.followed === "declined") facts.requests_taken_up.declined++;
       else {
         facts.requests_taken_up.nothing_yet++;
@@ -241,7 +241,7 @@ export function publisherFactsLines(facts: PublisherFacts, of: "its pages" | "it
   const p = facts.pages;
   if (p.published > 0) {
     lines.push(
-      `${of === "its other pages" ? "Other pages it has published here" : "Pages it has published here"}: ${p.published} (${p.standing} kept published so that each later version follows, ${p.shown_once} released once` +
+      `${of === "its other pages" ? "Other pages it has published here" : "Pages it has published here"}: ${p.published} (${p.standing} kept published so that each later version follows, ${p.released_once} released once` +
         (p.with_what_sits_under > 0 ? `; ${p.with_what_sits_under} with what sits under the node` : "") +
         ")."
     );

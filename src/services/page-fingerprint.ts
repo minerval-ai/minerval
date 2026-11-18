@@ -31,7 +31,12 @@
  *     over the leaves in order of position, splitting n leaves at the
  *     largest power of two smaller than n, as RFC 6962 does.
  *   root                  = H("root\n" + FORMAT + "\n" + count + "\n" + top)
- *     count is the number of leaves in decimal.
+ *     count is the number of leaves in decimal, and FORMAT is the
+ *     construction's name, which the page's record keeps beside its root
+ *     (`fingerprint_format`): "minerval-released-page/2" for a page recorded
+ *     now, "minerval-shown-page/1" for one recorded before the name changed.
+ *     The two differ in that name alone. A root is rebuilt under the name
+ *     its record gives, never under each in turn.
  *
  * The salt keeps a short part (a verdict, a one-line paragraph) from being
  * guessed from its hash while it is held. The position and the descriptor
@@ -41,7 +46,13 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 
-export const FINGERPRINT_FORMAT = "minerval-shown-page/1";
+/** The construction a page recorded now is fingerprinted under. */
+export const FINGERPRINT_FORMAT = "minerval-released-page/2";
+/** The construction before it, for the pages recorded under it (docs/releasing-a-page.md, "Old names in the code"). */
+export const FINGERPRINT_FORMAT_1 = "minerval-shown-page/1";
+export const FINGERPRINT_FORMATS: readonly string[] = [FINGERPRINT_FORMAT, FINGERPRINT_FORMAT_1];
+export type FingerprintFormat = typeof FINGERPRINT_FORMAT | typeof FINGERPRINT_FORMAT_1;
+export const isFingerprintFormat = (f: unknown): f is FingerprintFormat => typeof f === "string" && FINGERPRINT_FORMATS.includes(f);
 
 /** The descriptor of the leaf that holds what is always shown. */
 export const VERDICT_DESCRIPTOR = "verdict";
@@ -91,27 +102,30 @@ export interface LeafRecord {
   commitment: string;
 }
 
-/** The root over the leaves, which must be given in order of position starting at 0. */
-export function pageRoot(leaves: readonly LeafRecord[]): string {
+/** The root over the leaves, which must be given in order of position starting at 0, under the construction the page's record names. */
+export function pageRoot(leaves: readonly LeafRecord[], format: FingerprintFormat): string {
+  if (!isFingerprintFormat(format)) throw new Error(`No fingerprint is made under "${String(format)}".`);
   const hashes = leaves.map((l) => leafHash(l.position, l.descriptor, l.commitment));
-  return sha256(`root\n${FINGERPRINT_FORMAT}\n${leaves.length}\n${top(hashes)}`);
+  return sha256(`root\n${format}\n${leaves.length}\n${top(hashes)}`);
 }
 
 /** A part as a reader on the destination side is given it. */
-export interface ShownPartForCheck extends LeafRecord {
+export interface ReleasedPartForCheck extends LeafRecord {
   /** The text, its marks and its salt when the part was released; absent or null while it is held. */
   text?: string | null;
   marks?: readonly Mark[] | null;
   salt?: string | null;
 }
 
-export interface ShownPageForCheck {
+export interface ReleasedPageForCheck {
   /** The root recorded when the Redactor finished. */
   root: string;
+  /** The construction the root was recorded under, as the page's record names it. */
+  format: string;
   /** The verdict leaf: position 0. Its text is the header exactly as shown. */
-  verdict: ShownPartForCheck;
+  verdict: ReleasedPartForCheck;
   /** The parts in the order they were given to the reader. */
-  parts: readonly ShownPartForCheck[];
+  parts: readonly ReleasedPartForCheck[];
 }
 
 export interface Verification {
@@ -129,12 +143,12 @@ export interface Verification {
  * where the record says, the parts must be in the order recorded with none
  * missing, and the leaves must rebuild the root.
  */
-export function verifyShownPage(page: ShownPageForCheck): Verification {
+export function verifyReleasedPage(page: ReleasedPageForCheck): Verification {
   const problems: string[] = [];
   let checked = 0;
   let held = 0;
 
-  const checkOne = (part: ShownPartForCheck, name: string) => {
+  const checkOne = (part: ReleasedPartForCheck, name: string) => {
     const released = typeof part.text === "string";
     if (!released) {
       held++;
@@ -169,7 +183,11 @@ export function verifyShownPage(page: ShownPageForCheck): Verification {
     checkOne(part, `Part ${part.position}`);
   });
 
-  const root = pageRoot([page.verdict, ...page.parts]);
+  if (!isFingerprintFormat(page.format)) {
+    problems.push(`The page's fingerprint is recorded under "${page.format}", a construction this check does not know.`);
+    return { ok: false, problems, checked, held };
+  }
+  const root = pageRoot([page.verdict, ...page.parts], page.format);
   if (root !== page.root) {
     problems.push(
       "The parts do not rebuild the recorded root: a part was changed, moved, added or left out, or its kind is not the one recorded."

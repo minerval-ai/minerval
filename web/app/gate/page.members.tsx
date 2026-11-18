@@ -31,7 +31,7 @@ import {
   totalRemovals,
   verdictPill,
 } from "@/lib/gate-review";
-import { fetchGateQueue, fetchRelease, type QueueItem, type ShownRelease } from "@/lib/inside-api";
+import { fetchGateQueue, fetchRelease, type QueueItem, type ReceivedRelease } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
 import { decideAction } from "../releases/actions";
 import { QueueForm } from "./QueueForm";
@@ -74,7 +74,7 @@ function href(party: string, kind: string | undefined, item?: string): string {
 /** What an item is called in the queue and at the head of the document: the node's words, or the kind's. */
 function titleOf(item: QueueItem): { text: string; serif: boolean; faint?: boolean } {
   if (item.node) return { text: item.node, serif: true };
-  if (item.wording_as_it_would_be_shown) return { text: item.wording_as_it_would_be_shown, serif: true };
+  if (item.wording_as_it_would_be_released) return { text: item.wording_as_it_would_be_released, serif: true };
   if (item.kind_of_thing !== "page") return { text: capital(item.kind_of_thing_in_words), serif: false };
   return { text: "A page of a node you do not read", serif: false, faint: true };
 }
@@ -90,7 +90,7 @@ function crossingOf(item: QueueItem): { from: string | null; to: string } {
 
 /** A part as it would be released: each removed passage struck through in front of the mark that replaces it, where the person may see it. */
 function Shown({ item }: { item: QueueItem }) {
-  const shown = item.as_it_would_be_shown ?? "";
+  const shown = item.as_it_would_be_released ?? "";
   const removals = item.removals ?? [];
   if (removals.length === 0) {
     return (
@@ -192,7 +192,7 @@ export default async function ReviewPage({ searchParams }: { searchParams: Promi
 
   // For the item chosen: its release (who asked, and its acts). The categories a passage can be removed
   // under are those of the policy the item was redacted under, which the queue gives with each item.
-  const release: ShownRelease | null = selected ? await fetchRelease(who.externalId, selected.first.release_id).catch(() => null) : null;
+  const release: ReceivedRelease | null = selected ? await fetchRelease(who.externalId, selected.first.release_id).catch(() => null) : null;
   const categories = selected?.first.policy?.categories ?? [];
 
   const tabs = parties.map((p) => ({
@@ -326,7 +326,7 @@ function QueueList({
 function Document({ entry, party }: { entry: Entry; party: { id: string; name: string } }) {
   const first = entry.first;
   const t = titleOf(first);
-  const header = headerOf(first.always_shown);
+  const header = headerOf(first.always_released);
   const verdict = verdictPill(header.verdict);
   const v = header.verdict ?? {};
   const confidence = figure(v.confidence);
@@ -334,7 +334,7 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
   const sources = (header.sources ?? []).length;
   const removals = totalRemovals(header.removals);
   const audit = auditPill(first.audit);
-  const unread = entry.rows.find((r) => r.shown_as_released)?.shown_as_released;
+  const unread = entry.rows.find((r) => r.seen_as_released)?.seen_as_released;
   const isPage = first.kind_of_thing === "page";
 
   return (
@@ -438,7 +438,7 @@ function Document({ entry, party }: { entry: Entry; party: { id: string; name: s
             {row.part === null ? (
               <details className="w-review-part-n">
                 <summary>Everything always shown, as recorded</summary>
-                <pre className="w-code">{JSON.stringify(row.always_shown ?? {}, null, 2)}</pre>
+                <pre className="w-code">{JSON.stringify(row.always_released ?? {}, null, 2)}</pre>
               </details>
             ) : (
               <div className="w-review-part-b">
@@ -491,11 +491,11 @@ function Context({
 }: {
   entry: Entry;
   party: { id: string; name: string };
-  release: ShownRelease | null;
+  release: ReceivedRelease | null;
 }) {
   const first = entry.first;
   const boundary = crossingOf(first);
-  const header = headerOf(first.always_shown);
+  const header = headerOf(first.always_released);
   const setting = first.decide_for.find((p) => p.id === party.id)?.setting;
 
   // Where each party the item rests on stands, over all of its parts here.
@@ -520,7 +520,7 @@ function Context({
       <div className="w-review-ctx-s">
         <h3>Release</h3>
         <Link href={`/releases/${first.release_id}`} style={{ fontWeight: 500 }}>
-          {release ? `Released to ${release.shown_to}` : "The release it belongs to"}
+          {release ? `Released to ${release.released_to}` : "The release it belongs to"}
         </Link>
         {release && (
           <div className="w-small w-muted" style={{ marginTop: 3 }}>

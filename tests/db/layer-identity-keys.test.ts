@@ -71,7 +71,7 @@ const KEPT: Record<string, string> = {
   uq_release_pages_version: OWN_PARENT,
   uq_release_parts_position: OWN_PARENT,
   uq_releases_live: PINNED,
-  uq_shown_parts_position: OWN_PARENT,
+  uq_received_parts_position: OWN_PARENT,
   idx_source_events_unique: "Derived mechanically from the document and written at the document's label whoever finds it (src/labels.ts): a document's row at each label has its own.",
   idx_source_segments_order: "As idx_source_events_unique: a document's segments carry the document's label, and each row of a document recorded at two labels has its own.",
   idx_stated_views_contribution: PINNED,

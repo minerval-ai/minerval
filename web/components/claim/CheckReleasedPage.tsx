@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { checkShownPage, type PageToCheck, type ShownPageCheck } from "@/lib/shown-page-check";
+import { checkReleasedPage, type PageToCheck, type ReleasedPageCheck } from "@/lib/released-page-check";
 
 // "Check this page", for a page shown inside the deployment
 // (docs/releasing-a-page.md, "The fingerprint"): fetches the page as the API
@@ -11,7 +11,7 @@ import { checkShownPage, type PageToCheck, type ShownPageCheck } from "@/lib/sho
 // `work` draws the same check in the members' workspace (app/workspace.css),
 // as the page of a shown version does; the claim's own page keeps the
 // reading column's.
-export function CheckShownPage({
+export function CheckReleasedPage({
   releaseId,
   pageId,
   arrivedOk,
@@ -23,14 +23,14 @@ export function CheckShownPage({
   work?: boolean;
 }) {
   const [state, setState] = useState<"idle" | "checking" | "done" | "unavailable">("idle");
-  const [check, setCheck] = useState<ShownPageCheck | null>(null);
+  const [check, setCheck] = useState<ReleasedPageCheck | null>(null);
 
   async function run() {
     setState("checking");
     try {
       const res = await fetch(`/api/releases/${releaseId}/pages/${pageId}`);
       if (!res.ok) throw new Error("unavailable");
-      setCheck(await checkShownPage((await res.json()) as PageToCheck));
+      setCheck(await checkReleasedPage((await res.json()) as PageToCheck));
       setState("done");
     } catch {
       setState("unavailable");

@@ -44,7 +44,7 @@ export default async function ClaimPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{
     merged_from?: string | string[]; published?: string | string[]; package?: string | string[];
-    at?: string | string[]; shown?: string | string[];
+    at?: string | string[]; released?: string | string[];
   }>;
 }) {
   const { id } = await params;
@@ -98,7 +98,7 @@ export default async function ClaimPage({
     source === "live"
       ? await loadInsideNode(detail, {
           at: typeof query.at === "string" ? query.at : null,
-          shown: typeof query.shown === "string" ? query.shown : null,
+          released: typeof query.released === "string" ? query.released : null,
         })
       : null;
   return (

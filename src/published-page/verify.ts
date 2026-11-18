@@ -34,17 +34,31 @@
 export const PUBLISHED_PAGE_FORMAT = "minerval-published-page/2";
 
 /**
- * The format before it. A package in it is the same package with the
- * release called `showing` and `node.release_began` called
- * `node.showing_began` (docs/releasing-a-page.md, "Old names in the code").
- * A package signed in it stays in it: it is checked as it was signed, and
- * read through currentPackage.
+ * The format before it (docs/releasing-a-page.md, "Old names in the code").
+ * A package in it is the same package under its earlier names: `showing`
+ * for `release`, `node.showing_began` for `node.release_began`,
+ * `always_shown` and `always_shown_hash` for `always_released` and
+ * `always_released_hash`, a page's and a version's `shown_at` for
+ * `released_at`, and no `fingerprint_format`, since every page in it is
+ * fingerprinted under the construction before the current one. A package
+ * signed in it stays in it: it is checked as it was signed, and read
+ * through currentPackage.
  */
 export const PUBLISHED_PAGE_FORMAT_1 = "minerval-published-page/1";
 
 /** The formats this check reads. */
 export const PUBLISHED_PAGE_FORMATS: readonly string[] = [PUBLISHED_PAGE_FORMAT, PUBLISHED_PAGE_FORMAT_1];
-const TREE_FORMAT = "minerval-shown-page/1";
+
+/**
+ * The constructions a page's fingerprint is made under
+ * (services/page-fingerprint.ts): the current one, and the one before it,
+ * which every page of a package in format /1 is under. A package in /2 names
+ * its page's in `page.fingerprint_format`, and the root is rebuilt under
+ * that one alone.
+ */
+export const TREE_FORMAT = "minerval-released-page/2";
+export const TREE_FORMAT_1 = "minerval-shown-page/1";
+const TREE_FORMATS: readonly string[] = [TREE_FORMAT, TREE_FORMAT_1];
 
 /** Where a deployment runs, in the only words a record may say it in. */
 export const HOSTING_WORDS = {
@@ -88,7 +102,7 @@ export interface PackageVersion {
   state: PageState | "not_redacted";
   held_because?: string;
   held_since?: string;
-  shown_at?: string;
+  released_at?: string;
   parts_held?: number;
   of_parts?: number;
   held_kinds?: string;
@@ -178,13 +192,15 @@ export interface PublishedPagePackage {
     version_of: string;
     state: Exclude<PageState, "not_yet_assessed">;
     held: null | { because: string; since: string };
-    shown_at: string | null;
+    released_at: string | null;
     redaction_round: number;
     fingerprint: string | null;
+    /** The construction the fingerprint is made under: TREE_FORMAT, or TREE_FORMAT_1 for a page recorded before it. */
+    fingerprint_format: string;
     earlier_fingerprints: unknown[];
     /** What is always shown, exactly as hashed. Null while the page is held. */
-    always_shown: null | { text: string; salt: string };
-    always_shown_hash: string | null;
+    always_released: null | { text: string; salt: string };
+    always_released_hash: string | null;
     parts: PackagePart[];
     audit: string | null;
   };
@@ -294,10 +310,25 @@ export function currentPackage<T>(pkg: T): T {
   const p = pkg as unknown as Record<string, unknown> | null;
   if (!p || typeof p !== "object" || p.format !== PUBLISHED_PAGE_FORMAT_1 || "release" in p) return pkg;
   const node = (p.node ?? null) as Record<string, unknown> | null;
+  const page = (p.page ?? null) as Record<string, unknown> | null;
+  const record = (p.record ?? null) as Record<string, unknown> | null;
+  const version = (v: unknown) =>
+    v && typeof v === "object" && "shown_at" in v ? { ...(v as Record<string, unknown>), released_at: (v as Record<string, unknown>).shown_at } : v;
   return {
     ...p,
     release: p.showing,
     node: node && typeof node === "object" ? { ...node, release_began: node.showing_began } : node,
+    page:
+      page && typeof page === "object"
+        ? {
+            ...page,
+            released_at: page.shown_at,
+            always_released: page.always_shown,
+            always_released_hash: page.always_shown_hash,
+            fingerprint_format: TREE_FORMAT_1,
+          }
+        : page,
+    record: record && typeof record === "object" && Array.isArray(record.versions) ? { ...record, versions: record.versions.map(version) } : record,
   } as unknown as T;
 }
 
@@ -323,10 +354,10 @@ async function treeTop(leaves: readonly string[]): Promise<string> {
   return sha256(`node\n${await treeTop(leaves.slice(0, split))}\n${await treeTop(leaves.slice(split))}`);
 }
 
-async function treeRoot(leaves: ReadonlyArray<{ position: number; descriptor: string; commitment: string }>): Promise<string> {
+async function treeRoot(leaves: ReadonlyArray<{ position: number; descriptor: string; commitment: string }>, format: string): Promise<string> {
   const hashes: string[] = [];
   for (const l of leaves) hashes.push(await sha256(`leaf\n${l.position}\n${l.descriptor}\n${l.commitment}`));
-  return sha256(`root\n${TREE_FORMAT}\n${leaves.length}\n${await treeTop(hashes)}`);
+  return sha256(`root\n${format}\n${leaves.length}\n${await treeTop(hashes)}`);
 }
 
 // ---- the check ----------------------------------------------------------------------
@@ -374,6 +405,7 @@ function malformed(p: PublishedPagePackage): string | null {
   if (!(PAGE_STATES as readonly string[]).includes(p.state)) return "its state is not one of the four";
   if (p.page !== null) {
     if (typeof p.page !== "object" || typeof p.page.id !== "string" || !isDate(p.page.version_of) || !Array.isArray(p.page.parts)) return "its page has no id, no date or no parts";
+    if (!TREE_FORMATS.includes(p.page.fingerprint_format)) return "its page does not name a construction of the fingerprint this check knows";
     for (const part of p.page.parts) {
       if (!part || !Number.isSafeInteger(part.part) || typeof part.descriptor !== "string" || typeof part.kind !== "string" || typeof part.hash !== "string" || !HEX64.test(part.hash)) {
         return "one of its parts has no place, no kind or no hash";
@@ -463,20 +495,20 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
     if (pkg.state !== "not_yet_assessed") failed.push(`The package carries no page, but says the node's state is "${pkg.state}".`);
     else confirmed.push("The package says the node is not yet assessed, and carries no page.");
   } else {
-    const shown = page.always_shown !== null;
-    if (!shown && page.parts.some((part) => typeof part.text === "string")) {
+    const pageReleased = page.always_released !== null;
+    if (!pageReleased && page.parts.some((part) => typeof part.text === "string")) {
       failed.push("The page is said to be held, but the package carries the text of one of its parts.");
     }
     const leaves: Array<{ position: number; descriptor: string; commitment: string }> = [];
     let treeProblems = 0;
-    if (page.always_shown_hash) {
-      if (shown) {
-        if ((await partCommitment(page.always_shown!.salt, page.always_shown!.text, [])) !== page.always_shown_hash) {
+    if (page.always_released_hash) {
+      if (pageReleased) {
+        if ((await partCommitment(page.always_released!.salt, page.always_released!.text, [])) !== page.always_released_hash) {
           treeProblems++;
           failed.push("The verdict and what is shown with it do not match their hash: they are not what was recorded.");
         }
       }
-      leaves.push({ position: 0, descriptor: "verdict", commitment: page.always_shown_hash });
+      leaves.push({ position: 0, descriptor: "verdict", commitment: page.always_released_hash });
     }
     for (const [i, part] of page.parts.entries()) {
       if (part.part !== i + 1) {
@@ -511,33 +543,33 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
       leaves.push({ position: part.part, descriptor: part.descriptor, commitment: part.hash });
     }
     if (page.fingerprint) {
-      const root = await treeRoot(leaves);
+      const root = await treeRoot(leaves, page.fingerprint_format);
       if (root !== page.fingerprint) {
         failed.push("The parts do not rebuild the page's fingerprint: a part was changed, moved, added or left out, or its kind is not the one recorded.");
       } else if (treeProblems === 0) {
         confirmed.push(
-          shown
+          pageReleased
             ? `The page rebuilds its fingerprint: ${plural(released, "released part is", "released parts are")} word for word what was recorded when the redaction finished, ` +
                 `with each removal marked where it was made, and ${plural(held, "held part is", "held parts are")} in the recorded place and of the recorded kind.`
             : `The page is held, and its ${plural(page.parts.length, "part", "parts")} by kind and hash rebuild the fingerprint recorded when the redaction finished.`
         );
       }
-    } else if (shown || page.parts.length > 0) {
+    } else if (pageReleased || page.parts.length > 0) {
       failed.push("The page has parts but no fingerprint to check them against.");
     } else {
       confirmed.push("The page is held and has not been redacted yet, so it has no parts and no fingerprint.");
     }
 
     // The state the page states is the one its parts show.
-    const expected: PageState = !shown ? "held" : held === 0 ? "released_whole" : "released_in_part";
+    const expected: PageState = !pageReleased ? "held" : held === 0 ? "released_whole" : "released_in_part";
     if (page.state !== expected) failed.push(`The package says the page is "${page.state}", and its parts show "${expected}".`);
-    if (!shown && !page.held) failed.push("The page is held, and the package does not say why or since when.");
+    if (!pageReleased && !page.held) failed.push("The page is held, and the package does not say why or since when.");
 
     // What is always shown agrees with the rest of the package.
-    if (shown) {
+    if (pageReleased) {
       let header: Record<string, unknown> | null = null;
       try {
-        header = JSON.parse(page.always_shown!.text) as Record<string, unknown>;
+        header = JSON.parse(page.always_released!.text) as Record<string, unknown>;
       } catch {
         failed.push("What is always shown with the page is not readable as recorded.");
       }
@@ -568,13 +600,13 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
   if (pkg.policy) {
     if ((await sha256(pkg.policy.text)) === pkg.policy.hash) confirmed.push(`The redaction policy in the package (version ${pkg.policy.version}) is the text its hash names.`);
     else failed.push("The redaction policy's text does not match its hash.");
-  } else if (page?.always_shown) {
+  } else if (page?.always_released) {
     failed.push("The page is released, and the package carries no redaction policy.");
   }
 
   // 5. The record's stamped fields are well formed.
   const made = pkg.record.made;
-  if (page?.always_shown && !made) failed.push("The page is released, and the record does not say how it was made.");
+  if (page?.always_released && !made) failed.push("The page is released, and the record does not say how it was made.");
   if (made) {
     if (made.prompt_set !== null && !HEX64.test(made.prompt_set ?? "")) failed.push("The prompt set in the record is not a hash.");
     if (made.run_log && made.run_log.sealed && !HEX64.test(made.run_log.seal ?? "")) failed.push("The run log is said to be sealed, and the record gives no seal.");
@@ -606,8 +638,8 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
       "That the run's log is whole. The package gives the log's seal and what the deployment found when it checked its own chain; the log itself stays in the deployment."
     );
   }
-  if (held > 0 || (page && !page.always_shown)) cannot.push("What the held parts say. The check confirms their kinds, their places and that they have not changed.");
-  if (page?.always_shown) cannot.push("What was removed inside the released parts, or whether the policy called for it. The marks show where and under which category.");
+  if (held > 0 || (page && !page.always_released)) cannot.push("What the held parts say. The check confirms their kinds, their places and that they have not changed.");
+  if (page?.always_released) cannot.push("What was removed inside the released parts, or whether the policy called for it. The marks show where and under which category.");
   cannot.push(
     "That the dates and permissions in the record are true. They are the deployment's own record, signed by its key: the signature shows who states them, not that they are so."
   );

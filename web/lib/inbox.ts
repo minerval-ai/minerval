@@ -128,7 +128,7 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
         tone: "plain",
         title: unpaid.some((p) => p.stage === "to_check") ? "Check of a redaction unpaid" : "Redaction unpaid",
         node: row.node,
-        boundary: { from: row.page_label, to: row.shown_to },
+        boundary: { from: row.page_label, to: row.released_to },
         facts: [],
         action: { href: `/releases/${row.release_id}`, label: "Pay" },
       });

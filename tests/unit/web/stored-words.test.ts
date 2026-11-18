@@ -3,12 +3,12 @@ import { actWords, holdingWords, storedWords } from "../../../web/lib/stored-wor
 import { END_REASONS, LEFT_REASONS } from "../../../src/services/release-service.js";
 import { GATE_MODES, HOLD_REASONS } from "../../../src/services/gate-kinds.js";
 
-// A record kept as it was said keeps the words it was said in: a package
-// signed before a showing became a release, the permissions a person held
-// when they acted, a gate's setting stamped on what it let through. The
-// pages say those in the new words (docs/releasing-a-page.md, "Old names in
+// A package signed before a showing became a release keeps the words it was
+// signed in: its acts, reasons and held-becauses, the permissions a person
+// held when they acted, and a gate's setting stamped on what it let
+// through. The claim page says those in the new words (docs/releasing-a-page.md, "Old names in
 // the code"), and leave the API's own words as they are.
-describe("old words in a kept record, as people now read them", () => {
+describe("old words in a signed package, as people now read them", () => {
   it("says an old act's words in the new ones", () => {
     expect(actWords("asked for the showing")).toBe("asked for the release");
     expect(actWords("ended the showing")).toBe("ended the release");
@@ -39,7 +39,7 @@ describe("old words in a kept record, as people now read them", () => {
     expect(storedWords(null)).toBeNull();
   });
 
-  it("says the permission to consent as it is now called, in a holding kept as the person held it", () => {
+  it("says the permission to consent as it is now called, in a holding a signed package keeps", () => {
     expect(holdingWords(["direct", "release for Acme", "read"])).toEqual(["direct", "consent for Acme", "read"]);
     expect(holdingWords(["consent for Acme"])).toEqual(["consent for Acme"]);
   });

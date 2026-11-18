@@ -10,7 +10,7 @@ import {
   decideAtGate,
   endGateSetting,
   endRelease,
-  holdShownPage,
+  holdReleasePage,
   payForReleaseWork,
   registerPublisherOutside,
   savePolicy,
@@ -102,7 +102,7 @@ export async function holdPageAction(_previous: FormState, form: FormData): Prom
   const reason = text(form, "reason");
   if (!lift && !reason) return { error: "Choose a reason for the hold. It is all the other side is told." };
   try {
-    await holdShownPage(user, text(form, "release_id"), text(form, "page_id"), lift ? { lift: true } : { reason });
+    await holdReleasePage(user, text(form, "release_id"), text(form, "page_id"), lift ? { lift: true } : { reason });
   } catch (err) {
     return refused(err);
   }
@@ -177,10 +177,10 @@ export async function decideAction(_previous: FormState, form: FormData): Promis
               : decision === "remove"
                 ? `Removed the passage from ${n} part${s}, with the category's mark in its place.`
                 : `Lifted the hold or delay on ${n} item${s}.`;
-    const shown = result.shown.length > 0 ? ` ${result.shown.length === 1 ? "An item is" : `${result.shown.length} items are`} now released.` : "";
+    const nowReleased = result.released.length > 0 ? ` ${result.released.length === 1 ? "An item is" : `${result.released.length} items are`} now released.` : "";
     const same = result.unchanged > 0 ? ` ${result.unchanged} already stood that way.` : "";
     const not = result.refused.length > 0 ? ` Not done for ${result.refused.length}: ${[...new Set(result.refused.map((r) => r.why))].join(" ")}` : "";
-    return n === 0 && result.refused.length > 0 ? { error: not.trim() } : { notice: `${done}${shown}${same}${not}` };
+    return n === 0 && result.refused.length > 0 ? { error: not.trim() } : { notice: `${done}${nowReleased}${same}${not}` };
   } catch (err) {
     return refused(err);
   }
@@ -247,7 +247,7 @@ export async function setGateAction(_previous: FormState, form: FormData): Promi
   try {
     await setGate(user, text(form, "gate_id"), {
       ...(flow ? { flow } : {}),
-      backlog_shown: form.get("backlog_shown") === "on",
+      backlog_visible: form.get("backlog_visible") === "on",
       ...(form.has("outside") ? { send_as_released: form.get("send_as_released") === "on" } : {}),
       ...(form.has("keep_current_mandate") ? { keep_current_mandate: mandate || null } : {}),
       ...(form.has("keep_current_owls") && Number.isFinite(owls) && owls >= 0 ? { keep_current_owls: owls } : {}),

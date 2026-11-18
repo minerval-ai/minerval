@@ -777,9 +777,9 @@ async function assemble(rows: RequestRowJoined[]): Promise<RequestView[]> {
   // up there, and an answer. The rows are this side's own and name nothing of the other (release-gate-service.ts).
   const fromAbove = (await import("./judgment-version-service.js")).oneLabelOnly()
     ? []
-    : await rawQuery<{ reply_ref: string; kind: string; shown_at: Date | null; source_id: string | null }>(
-        `SELECT s.reply_ref, p.kind, p.shown_at, p.source_id
-           FROM shown_pages p JOIN shown_releases s ON s.id = p.release_id
+    : await rawQuery<{ reply_ref: string; kind: string; released_at: Date | null; source_id: string | null }>(
+        `SELECT s.reply_ref, p.kind, p.released_at, p.source_id
+           FROM received_pages p JOIN received_releases s ON s.id = p.release_id
           WHERE s.reply_ref = ANY($1::uuid[]) AND p.kind IN ('taken_up', 'answer') AND p.stage <> 'overtaken'
           ORDER BY p.opened_at`,
         [ids]
@@ -1256,16 +1256,16 @@ async function noActiveNodeMessage(missing: string[]): Promise<string> {
 }
 
 /** What the gate has let through to a request from a label its reader may not read, in fixed words. */
-function takenUpAbove(rows: { kind: string; shown_at: Date | null; source_id: string | null }[]): {
+function takenUpAbove(rows: { kind: string; released_at: Date | null; source_id: string | null }[]): {
   taken_up_above?: { said_at: string; answer: "through the gate" | "at the gate" | "none yet"; answer_source_id?: string };
 } {
-  const told = rows.find((r) => r.kind === "taken_up" && r.shown_at);
+  const told = rows.find((r) => r.kind === "taken_up" && r.released_at);
   const answers = rows.filter((r) => r.kind === "answer");
-  const through = [...answers].reverse().find((r) => r.shown_at);
+  const through = [...answers].reverse().find((r) => r.released_at);
   if (!told && !through) return {};
   return {
     taken_up_above: {
-      said_at: (told?.shown_at ?? through!.shown_at!).toISOString(),
+      said_at: (told?.released_at ?? through!.released_at!).toISOString(),
       answer: through ? "through the gate" : answers.length > 0 ? "at the gate" : "none yet",
       ...(through?.source_id ? { answer_source_id: through.source_id } : {}),
     },

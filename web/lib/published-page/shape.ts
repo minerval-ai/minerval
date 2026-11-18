@@ -229,10 +229,10 @@ function shapeSubclaim(part: PackagePart): ShapedSubclaim {
 /** The page a package carries, in the shape of a node's page. Null when the package carries no shown page. */
 export function shapeOfPublishedPage(pkg: PublishedPagePackage): PublishedPageShape | null {
   const page = pkg.page;
-  if (!page || !page.always_shown) return null;
+  if (!page || !page.always_released) return null;
   let header: Record<string, unknown>;
   try {
-    header = JSON.parse(page.always_shown.text) as Record<string, unknown>;
+    header = JSON.parse(page.always_released.text) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -283,7 +283,7 @@ export function shapeOfPublishedPage(pkg: PublishedPagePackage): PublishedPageSh
 /** The page as one text, for a reader with no page to render it on: an agent, a search index, a diff. */
 export function publishedPageAsText(pkg: PublishedPagePackage): string {
   const page = pkg.page;
-  if (!page || !page.always_shown) return "";
+  if (!page || !page.always_released) return "";
   const lines: string[] = [];
   for (const part of page.parts) {
     if (isReleased(part)) lines.push(part.text, "");

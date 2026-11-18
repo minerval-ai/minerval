@@ -397,7 +397,7 @@ export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; 
           [offer.kind, subjectRef, replyRef, offer.payer?.grantId ?? null, offer.toLabel, offer.toLabel === null, policy.boundary_id, offer.fromLabel]
         );
         await tx.query(
-          `INSERT INTO shown_releases (id, kind, reply_ref, to_outside, boundary_id, form, scope, asked_at, send_as_released, sensitivity_label)
+          `INSERT INTO received_releases (id, kind, reply_ref, to_outside, boundary_id, form, scope, asked_at, send_as_released, sensitivity_label)
            VALUES ($1, $2, $3, $4, $5, 'standing', 'item', $6, $7, $8)`,
           [row!.id, offer.kind, replyRef, offer.toLabel === null, policy.boundary_id, row!.asked_at, offer.toLabel === null && gate.send_as_released, destination]
         );
@@ -433,15 +433,15 @@ export async function offerToGate(offer: GateOffer): Promise<{ item_id: string; 
 }
 
 async function stateOf(itemId: string): Promise<OfferState> {
-  const [row] = await rawQuery<{ shown_at: Date | null; stage: string; held: boolean }>(
-    `SELECT p.shown_at, p.stage,
+  const [row] = await rawQuery<{ released_at: Date | null; stage: string; held: boolean }>(
+    `SELECT p.released_at, p.stage,
             EXISTS (SELECT 1 FROM release_acts a WHERE a.page_id = p.id AND a.act = 'held'
                      AND NOT EXISTS (SELECT 1 FROM release_acts l WHERE l.page_id = p.id AND l.part_id IS NOT DISTINCT FROM a.part_id
                                       AND l.party_id IS NOT DISTINCT FROM a.party_id AND l.act = 'hold_lifted' AND l.at > a.at)) AS held
-       FROM shown_pages p WHERE p.id = $1`,
+       FROM received_pages p WHERE p.id = $1`,
     [itemId]
   );
-  if (row?.shown_at) return "released";
+  if (row?.released_at) return "released";
   return row?.held || row?.stage === "cannot_cross" ? "held" : "waiting";
 }
 

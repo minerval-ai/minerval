@@ -2,10 +2,10 @@
 // The two fixed lists of reasons (for a hold, for ending a release) are the
 // API's, served with GET /releases and GET /gate/queue.
 
-import type { ShownVersion } from "./inside-api";
+import type { ReceivedVersion } from "./inside-api";
 
 /** One of the four states a node under a release is in, as the people it is released to are told. */
-export function stateOfVersion(v: Pick<ShownVersion, "state" | "held_because" | "held_for" | "parts_held" | "of_parts" | "held_kinds">): string {
+export function stateOfVersion(v: Pick<ReceivedVersion, "state" | "held_because" | "held_for" | "parts_held" | "of_parts" | "held_kinds">): string {
   switch (v.state) {
     case "not_yet_assessed":
       return "Not yet assessed";

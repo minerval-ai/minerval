@@ -895,7 +895,7 @@ describe("release a page to readers who do not read its label, over HTTP", () =>
 
       // The other side reads the release at once, with the page held and none of its words.
       const listed = (await as(reader, { url: "/releases" })).json();
-      expect(listed.shown.map((s: { release_id: string }) => s.release_id)).toContain(releaseId);
+      expect(listed.received.map((s: { release_id: string }) => s.release_id)).toContain(releaseId);
       expect(listed.asked).toEqual([]);
       const record = (await as(reader, { url: `/releases/${releaseId}` })).json();
       expect(record.asked_by).toBe("shows-a-page");
@@ -918,13 +918,13 @@ describe("release a page to readers who do not read its label, over HTTP", () =>
       expect((await as(director, { url: "/gate/queue" })).statusCode).toBe(403);
       const queue = (await as(releaser, { url: "/gate/queue" })).json();
       expect(queue.items.map((i: { part: number | null }) => i.part)).toEqual([null, 1, 2, 3, 4]);
-      expect(queue.items[4].as_it_would_be_shown).toBe("The log also gives [redacted: security detail].");
-      expect(queue.items[1].as_it_would_be_shown).toMatch(/^The vault was resealed/);
-      expect(queue.items[4].wording_as_it_would_be_shown).toBe(queue.items[1].as_it_would_be_shown);
+      expect(queue.items[4].as_it_would_be_released).toBe("The log also gives [redacted: security detail].");
+      expect(queue.items[1].as_it_would_be_released).toMatch(/^The vault was resealed/);
+      expect(queue.items[4].wording_as_it_would_be_released).toBe(queue.items[1].as_it_would_be_released);
       expect(JSON.stringify(queue)).not.toContain(SECRET);
       expect(JSON.stringify(queue)).not.toContain("9931");
       expect(JSON.stringify(queue)).not.toContain("A code.");
-      expect(queue.items.every((i: Record<string, unknown>) => i.removals === undefined && i.as_written === undefined && typeof i.shown_as_released === "string")).toBe(true);
+      expect(queue.items.every((i: Record<string, unknown>) => i.removals === undefined && i.as_written === undefined && typeof i.seen_as_released === "string")).toBe(true);
       expect(queue.items[4].removals_by_category).toEqual({ "security detail": 1 });
       const refusedForDirector = await as(director, { method: "POST", url: "/gate/decisions", payload: { party_id: org!.id, decision: "consent", items: [{ page_id: pageId }] } });
       expect(refusedForDirector.statusCode).toBe(403);
@@ -934,7 +934,7 @@ describe("release a page to readers who do not read its label, over HTTP", () =>
         payload: { party_id: org!.id, decision: "consent", items: [{ page_id: pageId }, ...[1, 2, 3, 4].map((part) => ({ page_id: pageId, part }))] },
       });
       expect(decided.statusCode, decided.body).toBe(200);
-      expect(decided.json()).toMatchObject({ decided: 5, refused: [], shown: [pageId] });
+      expect(decided.json()).toMatchObject({ decided: 5, refused: [], released: [pageId] });
       // The same call sent again changes nothing: a script may retry.
       const again = await as(releaser, { method: "POST", url: "/gate/decisions", payload: { decision: "consent", items: [{ item_id: pageId }] } });
       expect(again.json()).toMatchObject({ decided: 0, unchanged: 1, refused: [] });
@@ -976,7 +976,7 @@ describe("release a page to readers who do not read its label, over HTTP", () =>
       // A hold after the release is refused, and so is a hold of the page by the person who directs.
       const hold = await as(director, { method: "POST", url: `/releases/${releaseId}/pages/${pageId}/hold`, payload: { reason: "timing" } });
       expect(hold.statusCode).toBe(409);
-      expect(hold.json().code).toBe("ALREADY_SHOWN");
+      expect(hold.json().code).toBe("ALREADY_RELEASED");
 
       // The policy: an administrator saves a version, and one worded by favor is refused with the reason.
       const policyBody = { from_label: "restricted", to_label: "internal" };
@@ -1021,7 +1021,7 @@ describe("release a page to readers who do not read its label, over HTTP", () =>
         for (let pass = 0; pass < 5; pass++) {
           for (const table of tables) await rawQuery(`DELETE FROM "${table}" WHERE sensitivity_label = 'restricted'`).catch(() => undefined);
         }
-        for (const table of ["release_acts", "shown_parts", "shown_pages", "shown_nodes", "shown_releases", "gates", "redaction_policies"]) {
+        for (const table of ["release_acts", "received_parts", "received_pages", "received_nodes", "received_releases", "gates", "redaction_policies"]) {
           await rawQuery(`DELETE FROM ${table} WHERE sensitivity_label = 'internal'`).catch(() => undefined);
         }
         await rawQuery(`DELETE FROM sources WHERE source_type = 'released_page'`).catch(() => undefined);

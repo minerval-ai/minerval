@@ -64,7 +64,7 @@ import { noticeChangedVersions } from "../../src/services/keep-current.js";
 import { sendThroughOutside } from "../../src/services/gate-outside.js";
 import { ensureBoundaryPolicy } from "../../src/services/redaction-policy.js";
 import { gateOf, setGate, setGateMode } from "../../src/services/gate-settings-service.js";
-import { decideAtGate, gateQueue, shownRelease, type GateActor } from "../../src/services/release-gate-service.js";
+import { decideAtGate, gateQueue, receivedRelease, type GateActor } from "../../src/services/release-gate-service.js";
 import { askAfterSentReports, minervalToolNames, offerReportsToGate } from "../../src/services/report-sending-service.js";
 import { raiseIssue } from "../../src/services/report-service.js";
 import { askRelease, followReleases } from "../../src/services/release-service.js";
@@ -222,7 +222,7 @@ const redactor = async (pageId: string, name: string, input: Record<string, unkn
   JSON.parse(await at(A, "redactor", () => executeRedactorTool(name, input, { pageId }))) as Record<string, any>;
 
 async function latestPageOf(releaseId: string, node: string): Promise<string> {
-  const record = (await everyone(() => shownRelease(releaseId)))!;
+  const record = (await everyone(() => receivedRelease(releaseId)))!;
   return (record.nodes as any[]).find((n) => n.node_id === node).versions[0].page_id as string;
 }
 
@@ -412,12 +412,12 @@ afterAll(async () => {
       await rawQuery(`DELETE FROM outbound_proposals WHERE release_id = $1`, [releaseId]);
       await rawQuery(`DELETE FROM release_removals WHERE part_id IN (SELECT p.id FROM release_parts p JOIN release_pages g ON g.id = p.page_id WHERE g.release_id = $1)`, [releaseId]);
       await rawQuery(`DELETE FROM release_parts WHERE page_id IN (SELECT id FROM release_pages WHERE release_id = $1)`, [releaseId]);
-      const [release] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_releases WHERE id = $1`, [releaseId]);
+      const [release] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM received_releases WHERE id = $1`, [releaseId]);
       await rawQuery(`DELETE FROM outbound_sends WHERE package_id IN (SELECT id FROM outbound_packages WHERE release_id = $1)`, [releaseId]);
       await rawQuery(`DELETE FROM outbound_packages WHERE release_id = $1`, [releaseId]);
-      await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE release_id = $1)`, [releaseId]);
-      for (const table of ["release_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = $1`, [releaseId]);
-      await rawQuery(`DELETE FROM shown_releases WHERE id = $1`, [releaseId]);
+      await rawQuery(`DELETE FROM received_parts WHERE page_id IN (SELECT id FROM received_pages WHERE release_id = $1)`, [releaseId]);
+      for (const table of ["release_acts", "received_pages", "received_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = $1`, [releaseId]);
+      await rawQuery(`DELETE FROM received_releases WHERE id = $1`, [releaseId]);
       await rawQuery(`DELETE FROM release_pages WHERE release_id = $1`, [releaseId]);
       await rawQuery(`DELETE FROM releases WHERE id = $1`, [releaseId]);
       await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [release?.boundary_id ?? null]);
@@ -474,7 +474,7 @@ describe("registering the deployment's key from inside", () => {
     // Health asks for it to be registered from here, since the log knows nothing of that registration.
     const unregistered = await as("admin", { url: "/setup/checklist" });
     expect(unregistered.json.public_graph.signing_key).toMatchObject({ fingerprint, registered_from_here_at: null });
-    expect(unregistered.json.public_graph.signing_key.shown_outside).toBeGreaterThan(0);
+    expect(unregistered.json.public_graph.signing_key.released_outside).toBeGreaterThan(0);
 
     const said = await as("admin", {
       method: "POST",
@@ -828,7 +828,7 @@ describe("what the public says back about a published page", () => {
     expect((await saidBack())[0]!.in_words).toMatch(/A version made since, of \d{4}-\d\d-\d\d, is published\.$/);
     // The request taken up earlier now has something after it on the public record: a page of the node it bears on.
     const request = await pubApi("GET", `/requests/${id.r1}`, undefined, null);
-    expect(request.json.taken_up[0]).toMatchObject({ followed: "a_page_shown", published_page_id: id.publishedP });
+    expect(request.json.taken_up[0]).toMatchObject({ followed: "a_page_released", published_page_id: id.publishedP });
   });
 
 });
@@ -1018,7 +1018,7 @@ describe("keeping the public version current", () => {
     expect(await noticeChangedVersions()).toBe(1);
     const [waiting] = await itemsOf("funding", id.p!);
     const [of] = await system(() => rawQuery<{ release_id: string }>(`SELECT release_id FROM release_pages WHERE id = $1`, [waiting!.id]));
-    const shown = await everyone(() => shownRelease(of!.release_id));
+    const shown = await everyone(() => receivedRelease(of!.release_id));
     expect((shown!.acts as any[]).some((a) => a.what === "delayed" && a.page_id === waiting!.id && a.by === "the gate's setting" && typeof a.until === "string")).toBe(true);
     expect(await inbox(id.p!)).toHaveLength(1);
 
@@ -1174,7 +1174,7 @@ describe("a publisher's record on the public graph", () => {
     const record = await pubApi("GET", `/publishers/${id.orgAccount}`, undefined, null);
     expect(record.status).toBe(200);
     const facts = record.json.record.facts;
-    expect(facts.pages).toEqual({ published: 2, standing: 1, shown_once: 1, with_what_sits_under: 0 });
+    expect(facts.pages).toEqual({ published: 2, standing: 1, released_once: 1, with_what_sits_under: 0 });
     expect(facts.now).toMatchObject({ released_whole: 2, held: 0 });
     expect(facts.said_back).toMatchObject({ admitted: 3, received: 3, published_since: 2, held_since: 0, unanswered: 0 });
     expect(facts.requests_taken_up).toMatchObject({ total: 2, a_page_followed: 1, declined: 1, nothing_yet: 0 });
@@ -1354,7 +1354,7 @@ describe("asking an organization's graph from the public graph", () => {
     ]);
     expect(JSON.stringify(pkg)).not.toContain(SECRET);
     const record = await publicRecord(id.r3!);
-    expect(record.addressed_to_mandate.stands).toBe("a_page_shown");
+    expect(record.addressed_to_mandate.stands).toBe("a_page_released");
   });
 
   it("restates its face, dated, when a setting changes, and the next page says it went under that setting", async () => {

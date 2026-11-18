@@ -44,7 +44,7 @@ import {
   signedRegistration,
   writeProposal,
 } from "../../src/services/outbound-service.js";
-import { decideAtGate, gateQueue, shownRelease, type GateActor } from "../../src/services/release-gate-service.js";
+import { decideAtGate, gateQueue, receivedRelease, type GateActor } from "../../src/services/release-gate-service.js";
 import { askRelease, endRelease, followReleases } from "../../src/services/release-service.js";
 import { A, B, C, asPerson, attachSource, seedNode, seedUser, system, tag, unwall, wall, personDecidesAt, sendAsReleasedAt } from "./review-3-common.js";
 import { mirrorDatabaseUrl } from "./urls.js";
@@ -171,7 +171,7 @@ async function seedPrivateWork(node: string): Promise<void> {
 
 /** The latest page of a node under a release, by its id on the destination side. */
 async function latestPageOf(releaseId: string, node: string): Promise<string> {
-  const record = (await everyone(() => shownRelease(releaseId)))!;
+  const record = (await everyone(() => receivedRelease(releaseId)))!;
   return (record.nodes as any[]).find((n) => n.node_id === node).versions[0].page_id as string;
 }
 
@@ -283,12 +283,12 @@ afterAll(async () => {
     const proposals = await rawQuery<{ id: string }>(`SELECT id FROM releases WHERE kind = 'proposal'`);
     const releases = [id.release, id.privateRelease, id.standingChoice, ...proposals.map((p) => p.id)].filter(Boolean);
     for (const releaseId of releases) {
-      const [release] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM shown_releases WHERE id = $1`, [releaseId]);
+      const [release] = await rawQuery<{ boundary_id: string }>(`SELECT boundary_id FROM received_releases WHERE id = $1`, [releaseId]);
       await rawQuery(`DELETE FROM outbound_sends WHERE package_id IN (SELECT id FROM outbound_packages WHERE release_id = $1) OR proposal_id IN (SELECT id FROM outbound_proposals WHERE release_id = $1)`, [releaseId]);
       for (const table of ["outbound_packages", "outbound_proposals"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = $1`, [releaseId]);
-      await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE release_id = $1)`, [releaseId]);
-      for (const table of ["release_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = $1`, [releaseId]);
-      await rawQuery(`DELETE FROM shown_releases WHERE id = $1`, [releaseId]);
+      await rawQuery(`DELETE FROM received_parts WHERE page_id IN (SELECT id FROM received_pages WHERE release_id = $1)`, [releaseId]);
+      for (const table of ["release_acts", "received_pages", "received_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = $1`, [releaseId]);
+      await rawQuery(`DELETE FROM received_releases WHERE id = $1`, [releaseId]);
       await rawQuery(`DELETE FROM redaction_policies WHERE boundary_id = $1`, [release?.boundary_id ?? null]);
     }
   }).catch((err: unknown) => console.warn("[published-pages] cleanup:", err instanceof Error ? err.message : err));
@@ -382,7 +382,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     // Rows that look like the destination side's, written at another label under the same release and page.
     await system(async () => {
       await rawQuery(
-        `INSERT INTO shown_parts (id, page_id, position, kind, descriptor, commitment, text, marks, salt, released_at, sensitivity_label)
+        `INSERT INTO received_parts (id, page_id, position, kind, descriptor, commitment, text, marks, salt, released_at, sensitivity_label)
          VALUES (gen_random_uuid(), $1, 99, 'reasoning', 'reasoning', repeat('0', 64), $2, '[]'::jsonb, 'salt', now(), $3)`,
         [pageId, OTHER_LABEL_TEXT, B]
       );
@@ -408,7 +408,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     const asBuilder = <T>(fn: () => Promise<T>) => runAtLabel("public", "what the builder may read", fn);
     expect(await asBuilder(() => rawQuery(`SELECT original FROM release_parts WHERE page_id = $1`, [pageId]))).toEqual([]);
     expect(await asBuilder(() => rawQuery(`SELECT note FROM release_removals`))).toEqual([]);
-    expect(await asBuilder(() => rawQuery(`SELECT text FROM shown_parts WHERE page_id = $1 AND position = 99`, [pageId]))).toEqual([]);
+    expect(await asBuilder(() => rawQuery(`SELECT text FROM received_parts WHERE page_id = $1 AND position = 99`, [pageId]))).toEqual([]);
     expect(await asBuilder(() => rawQuery(`SELECT summary FROM assessments WHERE claim_id = $1 AND sensitivity_label = $2`, [id.p, A]))).toEqual([]);
     // And it cannot write anywhere but `public`.
     await expect(asBuilder(() => rawQuery(`INSERT INTO outbound_packages (release_id, node_id, public_node_id, sequence, content_hash, hash, package, sensitivity_label) VALUES ($1, $2, $2, 999, 'x', 'x', '{}'::jsonb, $3)`, [id.release, id.p, A]))).rejects.toThrow();
@@ -417,7 +417,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(refusal).toBeInstanceOf(OutboundError);
     expect((refusal as Error).message).toBe("No release outside has that id.");
     await system(async () => {
-      await rawQuery(`DELETE FROM shown_parts WHERE page_id = $1 AND position = 99`, [pageId]);
+      await rawQuery(`DELETE FROM received_parts WHERE page_id = $1 AND position = 99`, [pageId]);
       await rawQuery(`DELETE FROM release_acts WHERE release_id = $1 AND sensitivity_label = $2`, [id.release, B]);
     });
   });
@@ -583,7 +583,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     marked.marks = [];
     tampered.push(["a removal filled in", await resign(p), /does not match its hash/, true]);
     p = copy();
-    p.page!.always_shown!.text = p.page!.always_shown!.text.replace('"supported"', '"verified"');
+    p.page!.always_released!.text = p.page!.always_released!.text.replace('"supported"', '"verified"');
     tampered.push(["the verdict changed", await resign(p), /verdict and what is shown with it do not match/, true]);
     p = copy();
     p.state = "released_whole";
@@ -634,13 +634,13 @@ describe("a mirrored node's page, shown outside and standing", () => {
     const read = (await pubApi("GET", `/published-pages/${publishedPageId}`, undefined, null)).json;
     expect(read.state).toBe("held");
     expect(read.held.because).toBe("waiting for funds: none of the budgets that pay for its redaction could pay for it");
-    expect(read.shown_state).toBe("released_in_part");
+    expect(read.released_state).toBe("released_in_part");
     expect(read.page.verdict.status).toBe("supported");
     expect(read.versions.map((v: any) => v.state)).toEqual(["held", "released_in_part"]);
     // The node's Steward is told that a version exists and is not shown.
     const messages = await pubRows<{ trigger: string; body: string }>(`SELECT trigger, body FROM node_messages WHERE node_id = $1 ORDER BY created_at`, [id.p]);
     expect(messages).toHaveLength(2);
-    expect(messages[1]!.trigger).toBe("page_shown");
+    expect(messages[1]!.trigger).toBe("page_released");
     expect(messages[1]!.body).toContain("A later version exists and is not shown.");
 
     // The earlier package is still served.
@@ -657,7 +657,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(sent.sent.map((s) => [s.sequence, s.result])).toEqual([[4, "admitted"]]);
     let read = (await pubApi("GET", `/published-pages/${publishedPageId}`, undefined, null)).json;
     // The argument is out; Acme's name is still held.
-    expect(read.shown_state).toBe("released_in_part");
+    expect(read.released_state).toBe("released_in_part");
     expect(read.parts_held).toBe(1);
     expect(read.page.arguments[1]).toMatchObject({ stance: "against", name: "From the missing logs", content: HELD_TEXT });
     // The hold stays on the record after it is lifted.
@@ -685,7 +685,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(read.versions.map((v: any) => v.state)).toEqual(["released_whole", "released_in_part"]);
     expect(read.packages).toHaveLength(5);
     // One waiting message for the publication at a time: a later package's takes the place of an earlier one nobody has read.
-    expect(await pubRows(`SELECT 1 FROM node_messages WHERE node_id = $1 AND trigger = 'page_shown'`, [id.p])).toHaveLength(1);
+    expect(await pubRows(`SELECT 1 FROM node_messages WHERE node_id = $1 AND trigger = 'page_released'`, [id.p])).toHaveLength(1);
   });
 
   it("can be carried as a file where the network does not reach, and the handing over is recorded", async () => {

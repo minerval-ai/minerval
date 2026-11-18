@@ -1,7 +1,7 @@
 import { toReleases, type Query } from "../../../to-releases";
 
 // One page under a release moved to /releases/:id/pages/:pageId.
-export default async function ShownPagePage({
+export default async function OldReleasedPageAddress({
   params,
   searchParams,
 }: {

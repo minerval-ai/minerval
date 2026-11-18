@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { holdingWords } from "@/lib/stored-words";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { can, viewer, when } from "@/components/admin/access";
@@ -26,7 +25,7 @@ import {
   shortWhen,
 } from "@/components/work/ui";
 import { fetchGrants } from "@/lib/admin-api";
-import { fetchOutbound, fetchRelease, fetchReleases, type AskedPage, type ReleaseAct, type ShownVersion } from "@/lib/inside-api";
+import { fetchOutbound, fetchRelease, fetchReleases, type AskedPage, type ReleaseAct, type ReceivedVersion } from "@/lib/inside-api";
 import { NOT_YET_ASSESSED, type Pipeline as Status } from "@/lib/pipeline";
 import { endReleaseAction, holdPageAction, payForWorkAction } from "../actions";
 import { destinationOf, gateFor, kindOf, kindTip, loadGates, statusOf, wholeOf } from "../releases";
@@ -55,7 +54,7 @@ interface Version {
   pageId: string;
   versionOf: string;
   page?: AskedPage;
-  version?: ShownVersion;
+  version?: ReceivedVersion;
   status: Status;
 }
 
@@ -110,22 +109,22 @@ export default async function ReleasePage({
   const query = await searchParams;
   const [release, listed, gates] = await Promise.all([
     fetchRelease(who.externalId, id).catch(() => null),
-    fetchReleases(who.externalId).catch(() => ({ shown: [], asked: [], hold_reasons: {} as Record<string, string>, end_reasons: {} as Record<string, string> })),
+    fetchReleases(who.externalId).catch(() => ({ received: [], asked: [], hold_reasons: {} as Record<string, string>, end_reasons: {} as Record<string, string> })),
     loadGates(who.externalId),
   ]);
   const asked = listed.asked.find((a) => a.release_id === id) ?? null;
-  const shownRow = listed.shown.find((s) => s.release_id === id) ?? null;
+  const receivedRow = listed.received.find((s) => s.release_id === id) ?? null;
   if (!release && !asked) notFound();
 
-  const outside = (release?.shown_to ?? asked?.shown_to) === "outside this deployment";
+  const outside = (release?.released_to ?? asked?.released_to) === "outside this deployment";
   const outbound = outside ? await fetchOutbound(who.externalId, id).catch(() => null) : null;
   const from = asked?.page_label ?? null;
-  const to = destinationOf(release?.shown_to ?? asked!.shown_to);
+  const to = destinationOf(release?.released_to ?? asked!.released_to);
   const form = release?.form ?? asked!.form;
   // The detail says what it covers in words and by its code; the page's side lists the code.
   const scope = release?.scope_code ?? asked!.scope;
   const ended = release?.ended_at ?? asked?.ended_at ?? null;
-  const mainNodeId = shownRow?.node_id ?? asked?.node_id ?? null;
+  const mainNodeId = receivedRow?.node_id ?? asked?.node_id ?? null;
   const gate = gateFor(gates, from, to);
   const policyHref = gate ? `/gates/${gate.gate_id}?tab=policy` : "/gates";
   const kind = kindOf(form, scope);
@@ -244,8 +243,8 @@ export default async function ReleasePage({
               {release?.asked_by ? `${release.asked_by} · ` : ""}
               {shortDay(release?.asked_at ?? asked!.asked_at)}
               {release && release.asked_holding.length > 0 && (
-                <div className="w-faint w-small" title={`Holding ${holdingWords(release.asked_holding).join(", ")}`}>
-                  holding {holdingWords(release.asked_holding).slice(0, 2).join(", ")}
+                <div className="w-faint w-small" title={`Holding ${release.asked_holding.join(", ")}`}>
+                  holding {release.asked_holding.slice(0, 2).join(", ")}
                   {release.asked_holding.length > 2 && ` +${release.asked_holding.length - 2}`}
                 </div>
               )}
@@ -482,7 +481,7 @@ export default async function ReleasePage({
                   {shortWhen(a.at)}
                 </td>
                 <td>{a.by}</td>
-                <td className="w-small">{holdingWords(a.holding).join(", ") || <span className="w-faint">nothing recorded</span>}</td>
+                <td className="w-small">{a.holding.join(", ") || <span className="w-faint">nothing recorded</span>}</td>
                 <td>{actLine(a)}</td>
               </tr>
             ))}
@@ -689,7 +688,7 @@ function Sees({ v, releaseVisible }: { v: Version; releaseVisible: boolean }) {
   return (
     <span title={[title, ver.held_kinds].filter(Boolean).join(" · ") || undefined}>
       {bits.join(" · ")}
-      {ver.shown_at && <div className="w-faint">released {shortDay(ver.shown_at)}</div>}
+      {ver.released_at && <div className="w-faint">released {shortDay(ver.released_at)}</div>}
     </span>
   );
 }

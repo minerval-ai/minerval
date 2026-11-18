@@ -720,7 +720,7 @@ function Settings({ gate, gates, mandates }: { gate: Gate; gates: Gates; mandate
       <Kv
         rows={[
           ["Flow", <span key="f">{gate.flow_in_words}</span>],
-          ["Backlog", gate.backlog_shown_to_the_other_side ? "Shown to the other side, in counts" : "Kept to the gate's authorities"],
+          ["Backlog", gate.backlog_visible_to_the_other_side ? "Shown to the other side, in counts" : "Kept to the gate's authorities"],
           gate.to_outside && ["Sending", gate.send_as_released ? "Automatic, as it is released" : "By a person, package by package"],
           [
             "Keeping current",
@@ -784,7 +784,7 @@ function Settings({ gate, gates, mandates }: { gate: Gate; gates: Gates; mandate
             </div>
           </fieldset>
           <label className="w-check">
-            <input type="checkbox" name="backlog_shown" defaultChecked={gate.backlog_shown_to_the_other_side} />
+            <input type="checkbox" name="backlog_visible" defaultChecked={gate.backlog_visible_to_the_other_side} />
             <span>Show the other side how much waits here, in counts</span>
           </label>
           {gate.to_outside && (

@@ -3,13 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArgumentText } from "@/components/ArgumentText";
 import { viewer } from "@/components/admin/access";
-import { CheckShownPage } from "@/components/claim/CheckShownPage";
+import { CheckReleasedPage } from "@/components/claim/CheckReleasedPage";
 import { Icon } from "@/components/work/icons";
 import { Boundary, ButtonLink, Card, Empty, Kv, Pill, Tip, WorkHead, WorkPage, plural, shortDay, shortWhen, type Tone } from "@/components/work/ui";
 import { auditPill, coverageWords, figure, headerOf, labelOf, verdictPill } from "@/lib/gate-review";
-import { fetchRelease, fetchReleases, fetchShownPage, type ReleaseAct, type ShownPage } from "@/lib/inside-api";
+import { fetchRelease, fetchReleases, fetchReleasedPage, type ReleaseAct, type ReceivedPage } from "@/lib/inside-api";
 import { capital, kindWords, stateOfVersion } from "@/lib/inside-words";
-import "./shown-page.css";
+import "./released-page.css";
 
 export const metadata: Metadata = { title: "A page as released · Minerval" };
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ const SUPPLIER: Record<string, { text: string; tone: Tone; title: string }> = {
   not_recorded: { text: "not recorded", tone: "neu", title: "Its supplier is not on record" },
 };
 
-function stateTone(page: ShownPage): Tone {
+function stateTone(page: ReceivedPage): Tone {
   return page.state === "released_whole" ? "ok" : page.state === "released_in_part" ? "warn" : page.state === "held" ? "bad" : "neu";
 }
 
@@ -37,25 +37,25 @@ function actLine(a: ReleaseAct): string {
   return `${capital(a.by)} ${a.what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${a.reason}` : ""}${a.rule_id ? ", under a setting of the gate" : ""}`;
 }
 
-export default async function ShownPagePage({ params }: { params: Promise<{ id: string; pageId: string }> }) {
+export default async function ReleasedPagePage({ params }: { params: Promise<{ id: string; pageId: string }> }) {
   const who = await viewer();
   if (!who) return null;
   const { id, pageId } = await params;
   const [release, page, releases] = await Promise.all([
     fetchRelease(who.externalId, id).catch(() => null),
-    fetchShownPage(who.externalId, id, pageId).catch(() => null),
+    fetchReleasedPage(who.externalId, id, pageId).catch(() => null),
     fetchReleases(who.externalId).catch(() => null),
   ]);
   if (!release || !page) notFound();
   const node = release.nodes.find((n) => n.versions.some((v) => v.page_id === pageId));
-  const header = headerOf(page.always_shown);
+  const header = headerOf(page.always_released);
   const acts = release.acts.filter((a) => a.page_id === pageId);
   const actsOn = (on: string) => acts.filter((a) => a.on === on);
   const removals = page.removals_under_the_policy ?? header.removals ?? {};
   const categories = Object.keys(removals);
   const from = releases?.asked.find((s) => s.release_id === id)?.page_label ?? null;
-  const to = labelOf(release.shown_to);
-  const shownTo = to === "outside" ? "outside readers" : `${to} readers`;
+  const to = labelOf(release.released_to);
+  const releasedTo = to === "outside" ? "outside readers" : `${to} readers`;
   const nodeText = node?.text ?? null;
   const crumb = nodeText ? (nodeText.length > 48 ? `${nodeText.slice(0, 46)}…` : nodeText) : "The release";
 
@@ -70,7 +70,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
       sub={
         <>
           Version of {shortDay(page.version_of)}
-          {page.shown_at ? ` · shown ${shortWhen(page.shown_at)}` : ""} · {release.form === "standing" ? "standing release" : "shown once"}
+          {page.released_at ? ` · shown ${shortWhen(page.released_at)}` : ""} · {release.form === "standing" ? "standing release" : "shown once"}
         </>
       }
       tags={
@@ -81,7 +81,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
       }
       actions={
         nodeText && node ? (
-          <ButtonLink href={`/claims/${node.node_id}?shown=${pageId}`} icon="external">
+          <ButtonLink href={`/claims/${node.node_id}?released=${pageId}`} icon="external">
             Open on the node
           </ButtonLink>
         ) : undefined
@@ -109,7 +109,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
   const held = page.parts.length - released;
   const verdict = verdictPill(header.verdict);
   const v = header.verdict ?? {};
-  const coverage = coverageWords(header.coverage, shownTo);
+  const coverage = coverageWords(header.coverage, releasedTo);
   const made = header.made ?? {};
   const runLog = (made.run_log ?? null) as { sealed?: boolean; steps?: number | null; chain_verifies?: boolean | null } | null;
   const paid = (made.paid_for ?? null) as { by?: string } | null;
@@ -308,7 +308,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
               {(page.earlier_fingerprints ?? []).length > 1 && (
                 <span className="w-help">An earlier round of redaction was returned by Audit&apos;s check; its fingerprint is kept as well.</span>
               )}
-              <CheckShownPage releaseId={id} pageId={pageId} arrivedOk={page.verification?.ok ?? false} work />
+              <CheckReleasedPage releaseId={id} pageId={pageId} arrivedOk={page.verification?.ok ?? false} work />
             </div>
           </Card>
 
@@ -325,7 +325,7 @@ export default async function ShownPagePage({ params }: { params: Promise<{ id: 
           </Card>
 
           {nodeText && node && (
-            <Link className="w-small" href={`/claims/${node.node_id}?shown=${pageId}`}>
+            <Link className="w-small" href={`/claims/${node.node_id}?released=${pageId}`}>
               The same page on the node&apos;s own tab
             </Link>
           )}

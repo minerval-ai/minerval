@@ -28,7 +28,7 @@
 import { createHash } from "node:crypto";
 import { rawQuery, withTransaction } from "../db/client.js";
 import { runAtLabel } from "../llm/usage-context.js";
-import { verifyShownPage, type Mark, type Verification } from "./page-fingerprint.js";
+import { verifyReleasedPage, type Mark, type Verification } from "./page-fingerprint.js";
 import { releaseCovers } from "../published-page/shape.js";
 import { RemovalError, applyRemovals, countByCategory, heldWords, kindWords, locate, overlaps } from "./page-parts.js";
 import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES, HOLDERS, HOLD_REASONS, type GateKind, type HoldReason, type Holder } from "./gate-kinds.js";
@@ -225,9 +225,9 @@ const gatePartsOf = (pageId: string) =>
  * there: without the lock both would show the page and it would arrive
  * twice. The second waits for the first, then finds nothing left to do.
  */
-async function settle(pageId: string): Promise<{ shown: boolean; newlyReleased: number }> {
+async function settle(pageId: string): Promise<{ released: boolean; newlyReleased: number }> {
   const { outsidePage, ...result } = await withTransaction(async (lock) => {
-    await lock.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`settle-shown-page:${pageId}`]);
+    await lock.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`settle-released-page:${pageId}`]);
     return settleLocked(pageId);
   });
   // A node's page released outside leaves in its signed package, built and sent now (outbound-service.ts),
@@ -241,9 +241,9 @@ async function settle(pageId: string): Promise<{ shown: boolean; newlyReleased: 
   return result;
 }
 
-async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyReleased: number; outsidePage?: string }> {
+async function settleLocked(pageId: string): Promise<{ released: boolean; newlyReleased: number; outsidePage?: string }> {
   const [page] = await rawQuery<GatePage>(`SELECT ${GATE_PAGE_COLUMNS} FROM release_pages WHERE id = $1`, [pageId]);
-  if (!page || page.stage !== "at_gate") return { shown: false, newlyReleased: 0 };
+  if (!page || page.stage !== "at_gate") return { released: false, newlyReleased: 0 };
   const [release] = await rawQuery<ReleaseRow>(`SELECT ${RELEASE_COLUMNS} FROM releases WHERE id = $1`, [page.release_id]);
   const destination = destinationOf(release!);
   const parts = await gatePartsOf(pageId);
@@ -286,28 +286,28 @@ async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyRele
       acts = await actsOfPage(pageId);
     }
   }
-  const [shown] = await rawQuery<{ shown_at: Date | null }>(`SELECT shown_at FROM shown_pages WHERE id = $1`, [pageId]);
+  const [received] = await rawQuery<{ released_at: Date | null }>(`SELECT released_at FROM received_pages WHERE id = $1`, [pageId]);
   let changed = 0;
-  let isShown = !!shown?.shown_at;
+  let isReleased = !!received?.released_at;
   const free = (partId: string | null) => !gateHold(acts, partId) && !delayOn(acts, partId);
-  if (!isShown) {
+  if (!isReleased) {
     const verdictReleased = page.rests_on.every((party) => standingOf(acts, null, party) === "consented");
-    if (!verdictReleased || !free(null) || pageHeldByDirect(acts)) return { shown: false, newlyReleased: 0 };
+    if (!verdictReleased || !free(null) || pageHeldByDirect(acts)) return { released: false, newlyReleased: 0 };
     const first = await rawQuery(
-      `UPDATE shown_pages SET header = $2, header_salt = $3, shown_at = now() WHERE id = $1 AND shown_at IS NULL RETURNING id`,
+      `UPDATE received_pages SET header = $2, header_salt = $3, released_at = now() WHERE id = $1 AND released_at IS NULL RETURNING id`,
       [pageId, page.header, page.header_salt]
     );
-    isShown = true;
+    isReleased = true;
     changed += first.length;
   }
   const released = new Set(
-    (await rawQuery<{ id: string }>(`SELECT id FROM shown_parts WHERE page_id = $1 AND released_at IS NOT NULL`, [pageId])).map((r) => r.id)
+    (await rawQuery<{ id: string }>(`SELECT id FROM received_parts WHERE page_id = $1 AND released_at IS NOT NULL`, [pageId])).map((r) => r.id)
   );
   for (const part of parts) {
     if (released.has(part.id)) continue;
     if (!free(part.id) || !part.rests_on.every((party) => standingOf(acts, part.id, party) === "consented")) continue;
     const now = await rawQuery(
-      `UPDATE shown_parts SET text = $2, marks = $3::jsonb, salt = $4, released_at = now() WHERE id = $1 AND released_at IS NULL RETURNING id`,
+      `UPDATE received_parts SET text = $2, marks = $3::jsonb, salt = $4, released_at = now() WHERE id = $1 AND released_at IS NULL RETURNING id`,
       [part.id, part.redacted ?? part.original, JSON.stringify(part.marks ?? []), part.salt]
     );
     changed += now.length;
@@ -322,10 +322,10 @@ async function settleLocked(pageId: string): Promise<{ shown: boolean; newlyRele
         .then((out) => out.sendThroughOutside({ itemId: pageId }))
         .catch((err: unknown) => console.error(`[gate] item ${pageId} is through the gate to outside and was not sent yet: ${err instanceof Error ? err.message : String(err)}`));
     } else {
-      return { shown: isShown, newlyReleased: changed, outsidePage: release!.id };
+      return { released: isReleased, newlyReleased: changed, outsidePage: release!.id };
     }
   }
-  return { shown: isShown, newlyReleased: changed };
+  return { released: isReleased, newlyReleased: changed };
 }
 
 /**
@@ -348,7 +348,7 @@ async function stampReleasedUnder(pageId: string, release: ReleaseRow, page: Gat
       set_on: m.setAt ? m.setAt.toISOString().slice(0, 10) : null,
     }))
     .sort((a, b) => a.for_party.localeCompare(b.for_party));
-  await rawQuery(`UPDATE shown_pages SET released_under = $2::jsonb WHERE id = $1`, [pageId, JSON.stringify(stamp)]);
+  await rawQuery(`UPDATE received_pages SET released_under = $2::jsonb WHERE id = $1`, [pageId, JSON.stringify(stamp)]);
 }
 
 /** How the gate treats this item for each party it or a part of it rests on. */
@@ -367,8 +367,8 @@ export async function settleWaiting(opts: { boundaryId?: string } = {}): Promise
     const pages = await rawQuery<{ id: string }>(
       `SELECT p.id FROM release_pages p JOIN releases s ON s.id = p.release_id
         WHERE p.stage = 'at_gate' AND ($1::uuid IS NULL OR s.boundary_id = $1)
-          AND EXISTS (SELECT 1 FROM shown_parts sp WHERE sp.page_id = p.id AND sp.released_at IS NULL
-                      UNION ALL SELECT 1 FROM shown_pages o WHERE o.id = p.id AND o.shown_at IS NULL)
+          AND EXISTS (SELECT 1 FROM received_parts sp WHERE sp.page_id = p.id AND sp.released_at IS NULL
+                      UNION ALL SELECT 1 FROM received_pages o WHERE o.id = p.id AND o.released_at IS NULL)
         ORDER BY p.checked_at`,
       [opts.boundaryId ?? null]
     );
@@ -380,7 +380,7 @@ export async function settleWaiting(opts: { boundaryId?: string } = {}): Promise
 
 // ---- arrival at a destination label -------------------------------------------
 
-interface ShownPageRow {
+interface ReceivedPageRow {
   id: string;
   release_id: string;
   kind: GateKind;
@@ -392,12 +392,13 @@ interface ShownPageRow {
   round: number;
   root: string | null;
   roots: unknown[];
+  fingerprint_format: string;
   header_commitment: string | null;
   header: string | null;
   header_salt: string | null;
   needs: string[];
   audit_answer: FidelityAnswer | null;
-  shown_at: Date | null;
+  released_at: Date | null;
   source_id: string | null;
   released_under: ReleasedUnder[] | null;
 }
@@ -411,9 +412,21 @@ export interface ReleasedUnder {
   set_on: string | null;
 }
 
-const SHOWN_PAGE_COLUMNS = `id, release_id, kind, node_id, judged_at, opened_at, waiting_for_funds, stage, round, root, roots, header_commitment, header, header_salt, needs, audit_answer, shown_at, source_id, released_under`;
+/**
+ * Where a released page is found as a source at the label it arrived at:
+ * `minerval:released-page/<received_pages.id>/<n>`, the nth arrival of that
+ * page. Sources made before the name changed are at
+ * `minerval:shown-page/...`, and are found there still: the address of a
+ * source already made is not rewritten.
+ */
+export const RELEASED_PAGE_ADDRESS = "minerval:released-page/";
+const RELEASED_PAGE_ADDRESS_1 = "minerval:shown-page/";
+/** The LIKE patterns of every arrival of one page, under either address. */
+export const arrivalsOf = (pageId: string): string[] => [RELEASED_PAGE_ADDRESS, RELEASED_PAGE_ADDRESS_1].map((a) => `${a}${pageId}/%`);
 
-interface ShownPartRow {
+const RECEIVED_PAGE_COLUMNS = `id, release_id, kind, node_id, judged_at, opened_at, waiting_for_funds, stage, round, root, roots, fingerprint_format, header_commitment, header, header_salt, needs, audit_answer, released_at, source_id, released_under`;
+
+interface ReceivedPartRow {
   id: string;
   position: number;
   kind: string;
@@ -426,9 +439,9 @@ interface ShownPartRow {
   released_at: Date | null;
 }
 
-const shownPartsOf = (pageId: string) =>
-  rawQuery<ShownPartRow>(
-    `SELECT id, position, kind, descriptor, commitment, needs, text, marks, salt, released_at FROM shown_parts WHERE page_id = $1 ORDER BY position`,
+const receivedPartsOf = (pageId: string) =>
+  rawQuery<ReceivedPartRow>(
+    `SELECT id, position, kind, descriptor, commitment, needs, text, marks, salt, released_at FROM received_parts WHERE page_id = $1 ORDER BY position`,
     [pageId]
   );
 
@@ -462,10 +475,10 @@ function heldByKind(parts: readonly { descriptor: string }[]): string {
 }
 
 /** The page as shown, as one text: what a reader or a Steward on the destination side reads. */
-function renderShownPage(
-  page: ShownPageRow,
-  parts: readonly ShownPartRow[],
-  holders: (part: ShownPartRow) => string[],
+function renderReleasedPage(
+  page: ReceivedPageRow,
+  parts: readonly ReceivedPartRow[],
+  holders: (part: ReceivedPartRow) => string[],
   policy: { version: number | null; hash: string | null },
   acts: readonly ActRow[]
 ): string {
@@ -510,7 +523,7 @@ function renderShownPage(
 }
 
 /** What the Steward at the destination label is told when a shown page arrives among its node's sources. */
-export function pageShownMessage(input: { heldParts: number; parts: number; removals: number; again: boolean }): string {
+export function pageReleasedMessage(input: { heldParts: number; parts: number; removals: number; again: boolean }): string {
   return (
     `A page of this node, written at a label this one does not read, ${input.again ? "has had more of it released and is released here again" : "has been released here"}. ` +
     `It is now one of this node's sources, of the kind released_page. It is that label's Steward's assessment as written, ` +
@@ -535,25 +548,25 @@ export function pageShownMessage(input: { heldParts: number; parts: number; remo
 async function arrive(pageId: string, release: ReleaseRow): Promise<void> {
   if (release.kind !== "page") return arriveItem(pageId, release);
   const destination = destinationOf(release);
-  const [page] = await rawQuery<ShownPageRow>(`SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE id = $1`, [pageId]);
-  if (!page?.shown_at || !page.header) return;
-  const parts = await shownPartsOf(pageId);
+  const [page] = await rawQuery<ReceivedPageRow>(`SELECT ${RECEIVED_PAGE_COLUMNS} FROM received_pages WHERE id = $1`, [pageId]);
+  if (!page?.released_at || !page.header) return;
+  const parts = await receivedPartsOf(pageId);
   const acts = await actsOfPage(pageId);
   const names = await partyNames(parts.flatMap((p) => p.needs));
-  const holders = (part: ShownPartRow) => holdersOf(acts, part, names);
+  const holders = (part: ReceivedPartRow) => holdersOf(acts, part, names);
   const [policy] = await rawQuery<{ version: number; hash: string }>(
     `SELECT p.version, p.hash FROM release_pages sp JOIN redaction_policies p ON p.id = sp.policy_id WHERE sp.id = $1`,
     [pageId]
   );
-  const text = renderShownPage(page, parts, holders, { version: policy?.version ?? null, hash: policy?.hash ?? null }, acts);
+  const text = renderReleasedPage(page, parts, holders, { version: policy?.version ?? null, hash: policy?.hash ?? null }, acts);
   const [{ n }] = (await rawQuery<{ n: number }>(
-    `SELECT count(*)::int AS n FROM sources WHERE url LIKE $1`,
-    [`minerval:shown-page/${pageId}/%`]
+    `SELECT count(*)::int AS n FROM sources WHERE url LIKE ANY($1::text[])`,
+    [arrivalsOf(pageId)]
   )) as [{ n: number }];
   const [node] = await rawQuery<{ readable: boolean; latest: boolean }>(
     `SELECT c.sensitivity_label = ANY (minerval_labels_readable_from(ARRAY[$2::text])) AS readable,
-            NOT EXISTS (SELECT 1 FROM shown_pages o
-                         WHERE o.release_id = $3 AND o.node_id = c.id AND o.shown_at IS NOT NULL AND o.judged_at > $4) AS latest
+            NOT EXISTS (SELECT 1 FROM received_pages o
+                         WHERE o.release_id = $3 AND o.node_id = c.id AND o.released_at IS NOT NULL AND o.judged_at > $4) AS latest
        FROM claims c WHERE c.id = $1`,
     [page.node_id, destination, page.release_id, page.judged_at]
   );
@@ -563,14 +576,14 @@ async function arrive(pageId: string, release: ReleaseRow): Promise<void> {
       `INSERT INTO sources (url, title, content_hash, raw_content, source_type, page_url_hash, sensitivity_label)
        VALUES ($1, $2, $3, $4, 'released_page', '', $5) RETURNING id`,
       [
-        `minerval:shown-page/${pageId}/${n + 1}`,
+        `${RELEASED_PAGE_ADDRESS}${pageId}/${n + 1}`,
         `A page released from a label this one does not read (version of ${page.judged_at.toISOString().slice(0, 10)})`,
         createHash("sha256").update(text, "utf8").digest("hex"),
         text,
         destination,
       ]
     );
-    await tx.query(`UPDATE shown_pages SET source_id = $2 WHERE id = $1`, [pageId, source!.id]);
+    await tx.query(`UPDATE received_pages SET source_id = $2 WHERE id = $1`, [pageId, source!.id]);
     if (node?.readable && node.latest) {
       // Earlier arrivals of this node's page under this release give way to this one. The sources stay.
       await tx.query(
@@ -579,7 +592,7 @@ async function arrive(pageId: string, release: ReleaseRow): Promise<void> {
                 detached_reason = 'A later release of this page replaced it.'
           WHERE i.claim_id = $1 AND i.detached_at IS NULL AND i.created_by = 'release' AND i.sensitivity_label = $3
             AND EXISTS (SELECT 1 FROM sources s WHERE s.id = i.source_id AND s.url LIKE ANY (
-                  SELECT 'minerval:shown-page/' || o.id || '/%' FROM shown_pages o WHERE o.release_id = $2 AND o.node_id = $1))`,
+                  SELECT a || o.id || '/%' FROM received_pages o, unnest(ARRAY['minerval:released-page/', 'minerval:shown-page/']) AS a WHERE o.release_id = $2 AND o.node_id = $1))`,
         [nodeId, page.release_id, destination]
       );
       await tx.query(
@@ -598,7 +611,7 @@ async function arrive(pageId: string, release: ReleaseRow): Promise<void> {
   });
   if (!node?.readable || !node.latest) return;
   const header = JSON.parse(page.header) as { removals?: Record<string, number> };
-  const message = pageShownMessage({
+  const message = pageReleasedMessage({
     heldParts: parts.filter((p) => p.released_at === null).length,
     parts: parts.length,
     removals: Object.values(header.removals ?? {}).reduce((a, b) => a + b, 0),
@@ -609,9 +622,9 @@ async function arrive(pageId: string, release: ReleaseRow): Promise<void> {
     const { enqueueSteward } = await import("./queue-service.js");
     await enqueueSteward({
       claimId: nodeId,
-      trigger: "page_shown",
+      trigger: "page_released",
       context: message,
-      sender: { kind: "system", ref: `shown:${sourceId}` },
+      sender: { kind: "system", ref: `released:${sourceId}` },
     });
   }).catch((err: unknown) => {
     console.error(`[release] could not open the reassessment for shown page ${pageId}: ${err instanceof Error ? err.message : String(err)}`);
@@ -621,7 +634,7 @@ async function arrive(pageId: string, release: ReleaseRow): Promise<void> {
 // ---- arrival of an item that is not a node's page ---------------------------------
 
 /** An item as shown, as one text: what a reader or an agent on the destination side reads. */
-function renderShownItem(page: ShownPageRow, parts: readonly ShownPartRow[], holders: (part: ShownPartRow) => string[], policyVersion: number | null): string {
+function renderReceivedItem(page: ReceivedPageRow, parts: readonly ReceivedPartRow[], holders: (part: ReceivedPartRow) => string[], policyVersion: number | null): string {
   const header = JSON.parse(page.header!) as Record<string, unknown>;
   const removals = Object.entries((header.removals ?? {}) as Record<string, number>);
   const held = parts.filter((p) => p.released_at === null);
@@ -665,34 +678,34 @@ function holdersOf(acts: readonly ActRow[], part: { id: string; needs: string[] 
  * did. An answer to a message is sent to the node that sent the message.
  * A mandate's funding of work is placed on the node's pass there. That a
  * request was taken up, and that a mandate exists, are read from the
- * item's own row (shownItems). Arriving again, with more released,
+ * item's own row (receivedItems). Arriving again, with more released,
  * replaces what the earlier arrival recorded. Called inside bothSides.
  */
 async function arriveItem(pageId: string, release: ReleaseRow): Promise<void> {
   const destination = destinationOf(release);
-  const [page] = await rawQuery<ShownPageRow>(`SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE id = $1`, [pageId]);
-  if (!page?.shown_at || !page.header) return;
-  const parts = await shownPartsOf(pageId);
+  const [page] = await rawQuery<ReceivedPageRow>(`SELECT ${RECEIVED_PAGE_COLUMNS} FROM received_pages WHERE id = $1`, [pageId]);
+  if (!page?.released_at || !page.header) return;
+  const parts = await receivedPartsOf(pageId);
   const acts = await actsOfPage(pageId);
   const names = await partyNames(parts.flatMap((p) => p.needs));
   const [policy] = await rawQuery<{ version: number }>(
     `SELECT p.version FROM release_pages sp JOIN redaction_policies p ON p.id = sp.policy_id WHERE sp.id = $1`,
     [pageId]
   );
-  const text = renderShownItem(page, parts, (p) => holdersOf(acts, p, names), policy?.version ?? null);
-  const [{ n }] = (await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM sources WHERE url LIKE $1`, [`minerval:shown-page/${pageId}/%`])) as [{ n: number }];
+  const text = renderReceivedItem(page, parts, (p) => holdersOf(acts, p, names), policy?.version ?? null);
+  const [{ n }] = (await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM sources WHERE url LIKE ANY($1::text[])`, [arrivalsOf(pageId)])) as [{ n: number }];
   const [source] = await rawQuery<{ id: string }>(
     `INSERT INTO sources (url, title, content_hash, raw_content, source_type, page_url_hash, sensitivity_label)
      VALUES ($1, $2, $3, $4, 'released_page', '', $5) RETURNING id`,
     [
-      `minerval:shown-page/${pageId}/${n + 1}`,
+      `${RELEASED_PAGE_ADDRESS}${pageId}/${n + 1}`,
       `${capitalize(GATE_KINDS[page.kind])}, from a label this one does not read (${page.judged_at.toISOString().slice(0, 10)})`,
       createHash("sha256").update(text, "utf8").digest("hex"),
       text,
       destination,
     ]
   );
-  await rawQuery(`UPDATE shown_pages SET source_id = $2 WHERE id = $1`, [pageId, source!.id]);
+  await rawQuery(`UPDATE received_pages SET source_id = $2 WHERE id = $1`, [pageId, source!.id]);
   const released = parts.filter((p) => p.released_at !== null);
   const marker = `gate item ${pageId}`;
   const onRequest: Partial<Record<GateKind, string>> = {
@@ -726,7 +739,7 @@ async function arriveItem(pageId: string, release: ReleaseRow): Promise<void> {
           body:
             `Your message of ${message.created_at.toISOString().slice(0, 10)} was also read by work at a label this one does not read, ` +
             `and its answer came through the gate (source ${source!.id}):\n\n${released.map((p) => p.text!).join("\n\n")}`,
-          sender: { kind: "system", ref: `shown:${source!.id}` },
+          sender: { kind: "system", ref: `released:${source!.id}` },
           replyTo: release.reply_ref!,
         });
       }).catch((err: unknown) => console.error(`[gate] could not deliver the answer to message ${release.reply_ref}: ${err instanceof Error ? err.message : String(err)}`));
@@ -739,7 +752,7 @@ async function arriveItem(pageId: string, release: ReleaseRow): Promise<void> {
       await raiseToMandate({
         grantId: release.reply_ref!,
         targetNodeId: null,
-        targetRef: `shown:${source!.id}`,
+        targetRef: `released:${source!.id}`,
         source: "the gate",
         summary:
           `Work this mandate pays for at a label it does not read has petitioned it, and the petition came through the gate (source ${source!.id}). ` +
@@ -767,19 +780,19 @@ export function answerArrivedMessage(input: { released: number; parts: number; a
  * Released parts with their text, marks in place; held parts with who
  * holds them and the reasons given. Called inside bothSides.
  */
-export async function itemAsShown(itemId: string): Promise<{
+export async function itemAsReceived(itemId: string): Promise<{
   kind: GateKind;
   release_id: string;
   version_of: Date;
-  shown_at: Date;
+  released_at: Date;
   header: Record<string, unknown>;
   parts: Array<{ kind: string; text: string } | { kind: string; held: { by: string[]; because: string[] } }>;
   policy: { version: number; hash: string } | null;
   released_under: ReleasedUnder[];
 } | null> {
-  const [page] = await rawQuery<ShownPageRow>(`SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE id = $1`, [itemId]);
-  if (!page?.shown_at || !page.header) return null;
-  const parts = await shownPartsOf(itemId);
+  const [page] = await rawQuery<ReceivedPageRow>(`SELECT ${RECEIVED_PAGE_COLUMNS} FROM received_pages WHERE id = $1`, [itemId]);
+  if (!page?.released_at || !page.header) return null;
+  const parts = await receivedPartsOf(itemId);
   const acts = await actsOfPage(itemId);
   const names = await partyNames(parts.flatMap((p) => p.needs));
   const [policy] = await rawQuery<{ version: number; hash: string }>(
@@ -790,7 +803,7 @@ export async function itemAsShown(itemId: string): Promise<{
     kind: page.kind,
     release_id: page.release_id,
     version_of: page.judged_at,
-    shown_at: page.shown_at,
+    released_at: page.released_at,
     header: JSON.parse(page.header) as Record<string, unknown>,
     parts: parts.map((p) => {
       if (p.released_at !== null) return { kind: p.kind, text: p.text! };
@@ -814,7 +827,7 @@ export async function itemAsShown(itemId: string): Promise<{
  * there, so that the Steward that asked reads it on a later pass.
  */
 async function answerReachesItsNodes(pageId: string, release: ReleaseRow, destination: string, sourceId: string, again: boolean): Promise<void> {
-  const parts = await shownPartsOf(pageId);
+  const parts = await receivedPartsOf(pageId);
   const nodes = await rawQuery<{ claim_id: string }>(
     `SELECT t.claim_id FROM request_targets t JOIN claims c ON c.id = t.claim_id
       WHERE t.request_id = $1 AND t.claim_id IS NOT NULL AND c.state = 'active'
@@ -825,8 +838,8 @@ async function answerReachesItsNodes(pageId: string, release: ReleaseRow, destin
     await rawQuery(
       `UPDATE claim_instances i SET detached_at = now(), detached_by = 'release', detached_reason = 'A later arrival of this answer replaced it.'
         WHERE i.claim_id = $1 AND i.detached_at IS NULL AND i.created_by = 'release' AND i.sensitivity_label = $3
-          AND EXISTS (SELECT 1 FROM sources s WHERE s.id = i.source_id AND s.url LIKE $2)`,
-      [claim_id, `minerval:shown-page/${pageId}/%`, destination]
+          AND EXISTS (SELECT 1 FROM sources s WHERE s.id = i.source_id AND s.url LIKE ANY($2::text[]))`,
+      [claim_id, arrivalsOf(pageId), destination]
     );
     await rawQuery(
       `INSERT INTO claim_instances (claim_id, source_id, verbatim_text, context, stance, created_by, sensitivity_label)
@@ -834,7 +847,7 @@ async function answerReachesItsNodes(pageId: string, release: ReleaseRow, destin
       [
         claim_id,
         sourceId,
-        // The passage is the source's own first sentence (renderShownItem), so
+        // The passage is the source's own first sentence (renderReceivedItem), so
         // that a Steward checking the instance against the source finds it.
         `${capitalize(GATE_KINDS.answer)}, from work at a label this one does not read.`,
         "The source's text is the answer as it came through the gate, with removals marked and held parts named.",
@@ -845,9 +858,9 @@ async function answerReachesItsNodes(pageId: string, release: ReleaseRow, destin
       const { enqueueSteward } = await import("./queue-service.js");
       await enqueueSteward({
         claimId: claim_id,
-        trigger: "page_shown",
+        trigger: "page_released",
         context: answerArrivedMessage({ released: parts.filter((p) => p.released_at !== null).length, parts: parts.length, again }),
-        sender: { kind: "system", ref: `shown:${sourceId}` },
+        sender: { kind: "system", ref: `released:${sourceId}` },
       });
     }).catch((err: unknown) => console.error(`[gate] could not open the pass for the answer in item ${pageId}: ${err instanceof Error ? err.message : String(err)}`));
   }
@@ -964,7 +977,7 @@ export async function decideAtGate(input: {
   decision?: GateDecision;
   reason?: string;
   until?: string;
-}): Promise<{ decided: number; unchanged: number; refused: Array<{ item: GateItem; why: string }>; shown: string[] }> {
+}): Promise<{ decided: number; unchanged: number; refused: Array<{ item: GateItem; why: string }>; released: string[] }> {
   if (input.partyId && !input.actor.consentParties.includes(input.partyId)) {
     throw new ReleaseError("NOT_YOUR_PARTY", "This decision is for a party you do not hold the permission to consent for.");
   }
@@ -1110,9 +1123,9 @@ export async function decideAtGate(input: {
         touched.add(page.id);
       } else unchanged++;
     }
-    const shown: string[] = [];
-    for (const pageId of touched) if ((await settle(pageId)).shown) shown.push(pageId);
-    return { decided, unchanged, refused, shown };
+    const releasedPages: string[] = [];
+    for (const pageId of touched) if ((await settle(pageId)).released) releasedPages.push(pageId);
+    return { decided, unchanged, refused, released: releasedPages };
   });
 }
 
@@ -1135,10 +1148,10 @@ async function removeAtGate(input: {
   category: string;
 }): Promise<boolean> {
   const { page, part } = input;
-  const [shown] = await rawQuery<{ shown_at: Date | null }>(`SELECT shown_at FROM shown_pages WHERE id = $1`, [page.id]);
-  if (shown?.shown_at) {
+  const [received] = await rawQuery<{ released_at: Date | null }>(`SELECT released_at FROM received_pages WHERE id = $1`, [page.id]);
+  if (received?.released_at) {
     throw new ReleaseError(
-      "ALREADY_SHOWN",
+      "ALREADY_RELEASED",
       "This item has been released, with the count of removals that is always shown with it, so nothing more is removed from it. A part not yet released can be held."
     );
   }
@@ -1187,7 +1200,7 @@ async function removeAtGate(input: {
     { position: 0, descriptor: VERDICT_DESCRIPTOR, commitment: headerCommitment },
     ...all.map((p) => ({ position: p.position, descriptor: p.descriptor, commitment: p.id === part.id ? commitment : p.commitment })),
   ];
-  const root = pageRoot(leaves);
+  const root = pageRoot(leaves, full!.fingerprint_format);
   await withTransaction(async (tx) => {
     await tx.query(
       `INSERT INTO release_removals (part_id, start_offset, end_offset, category, note, policy_id, made_in_round, made_by, sensitivity_label)
@@ -1196,9 +1209,9 @@ async function removeAtGate(input: {
     );
     await tx.query(`UPDATE release_parts SET redacted = $2, marks = $3::jsonb, commitment = $4 WHERE id = $1`, [part.id, now.text, JSON.stringify(now.marks), commitment]);
     await tx.query(`UPDATE release_pages SET header = $2, root = $3 WHERE id = $1`, [page.id, header, root]);
-    await tx.query(`UPDATE shown_parts SET commitment = $2 WHERE id = $1`, [part.id, commitment]);
+    await tx.query(`UPDATE received_parts SET commitment = $2 WHERE id = $1`, [part.id, commitment]);
     await tx.query(
-      `UPDATE shown_pages SET root = $2, header_commitment = $3,
+      `UPDATE received_pages SET root = $2, header_commitment = $3,
               roots = roots || jsonb_build_object('round', round, 'root', $2::text, 'recorded_at', now(), 'after', 'a removal by a person at the gate')
         WHERE id = $1`,
       [page.id, root, headerCommitment]
@@ -1286,12 +1299,12 @@ export async function holdPage(input: { actor: GateActor; pageId: string; lift?:
     const [page] = await rawQuery<GatePage>(`SELECT ${GATE_PAGE_COLUMNS} FROM release_pages WHERE id = $1`, [input.pageId]);
     if (!page || !input.actor.clearance.includes(page.page_label)) throw new ReleaseError("PAGE_NOT_FOUND", "No page under a release has that id at a label you read.");
     const [release] = await rawQuery<ReleaseRow>(`SELECT ${RELEASE_COLUMNS} FROM releases WHERE id = $1`, [page.release_id]);
-    const [shown] = await rawQuery<{ shown_at: Date | null }>(`SELECT shown_at FROM shown_pages WHERE id = $1`, [page.id]);
+    const [received] = await rawQuery<{ released_at: Date | null }>(`SELECT released_at FROM received_pages WHERE id = $1`, [page.id]);
     const held = pageHeldByDirect(await actsOfPage(page.id));
     if (input.lift) {
       if (!held) throw new ReleaseError("NOT_HELD", "No hold by a person who directs the graph is on this page.");
     } else {
-      if (shown?.shown_at) throw new ReleaseError("ALREADY_SHOWN", "This page has been released, and that is not taken back. Ending the release stops later versions from following.");
+      if (received?.released_at) throw new ReleaseError("ALREADY_RELEASED", "This page has been released, and that is not taken back. Ending the release stops later versions from following.");
       if (held) throw new ReleaseError("ALREADY_HELD", "This page is already held.");
     }
     await withTransaction((tx) =>
@@ -1326,7 +1339,7 @@ export async function holdPage(input: { actor: GateActor; pageId: string; lift?:
  * organization's by default, at a label this person does not read, and
  * what a policy removed from it is what that label holds.
  */
-const SHOWN_AS_RELEASED =
+const SEEN_AS_RELEASED =
   "You hold the permission to consent for this party and do not read the label this page was written at. " +
   "You are shown what your consent would release, as it would be released: the part with each removal marked, what " +
   "is always shown of the page, and the node's wording. You are not shown the passages the Redactor removed, its " +
@@ -1460,11 +1473,11 @@ export async function gateQueue(
         ...(page.node_id ? { node_id: page.node_id } : {}),
         ...(node && actor.clearance.includes(node.label) ? { node: node.text } : {}),
         // What is shown whenever anything of the page is shown, and so with any part this person releases.
-        always_shown: JSON.parse(page.header),
-        ...(wording ? { wording_as_it_would_be_shown: wording.redacted ?? wording.original } : {}),
+        always_released: JSON.parse(page.header),
+        ...(wording ? { wording_as_it_would_be_released: wording.redacted ?? wording.original } : {}),
         audit: auditAnswerWords(page.audit_answer, acts),
         waiting_since: page.checked_at?.toISOString() ?? null,
-        ...(reads ? {} : { shown_as_released: SHOWN_AS_RELEASED }),
+        ...(reads ? {} : { seen_as_released: SEEN_AS_RELEASED }),
       };
       // A part that rests on the material of outside parties this person releases for, and on nobody else's:
       // what was removed from it is those parties' own.
@@ -1498,7 +1511,7 @@ export async function gateQueue(
           ...(heldBy(part.id).length > 0 ? { held: heldBy(part.id) } : {}),
           removals_by_category: counts,
           redactor_least_sure: unsure(part).length > 0,
-          as_it_would_be_shown: part.redacted ?? part.original,
+          as_it_would_be_released: part.redacted ?? part.original,
           ...(reads
             ? {
                 as_written: part.original,
@@ -1521,7 +1534,7 @@ export async function gateQueue(
       }
       if (more) break;
     }
-    const unread = items.filter((i) => "shown_as_released" in i).length;
+    const unread = items.filter((i) => "seen_as_released" in i).length;
     return {
       items,
       more_waiting: more,
@@ -1610,7 +1623,7 @@ export function auditAnswerWords(answer: FidelityAnswer | null, acts: readonly P
 }
 
 /** Why an item that has not been shown is held, in fixed words: a person's hold, the Redactor's, a delay, who it waits on, or the stage it is at. */
-function heldBecause(page: ShownPageRow, acts: readonly ActRow[], waitingOn: readonly string[]): string {
+function heldBecause(page: ReceivedPageRow, acts: readonly ActRow[], waitingOn: readonly string[]): string {
   const directHold = pageHeldByDirect(acts);
   if (directHold) return `held by a person who directs the graph (${HOLD_REASONS[(directHold.reason ?? "no_reason_given") as HoldReason]})`;
   if (page.stage !== "at_gate") return (page.waiting_for_funds ? STAGE_WORDS_UNPAID[page.stage] : undefined) ?? STAGE_WORDS[page.stage];
@@ -1622,13 +1635,13 @@ function heldBecause(page: ShownPageRow, acts: readonly ActRow[], waitingOn: rea
 }
 
 /** One version of a node's page as the destination side may describe it without any of its text. */
-async function describeShownPage(page: ShownPageRow): Promise<Record<string, unknown>> {
-  const parts = await shownPartsOf(page.id);
+async function describeReceivedPage(page: ReceivedPageRow): Promise<Record<string, unknown>> {
+  const parts = await receivedPartsOf(page.id);
   const acts = await actsOfPage(page.id);
   const names = await partyNames([...page.needs, ...parts.flatMap((p) => p.needs)]);
   const held = parts.filter((p) => p.released_at === null);
   const waitingOn = page.needs.filter((party) => standingOf(acts, null, party) !== "consented").map((party) => names.get(party) ?? "a party");
-  const state: NodeState = !page.shown_at ? "held" : held.length === 0 ? "released_whole" : "released_in_part";
+  const state: NodeState = !page.released_at ? "held" : held.length === 0 ? "released_whole" : "released_in_part";
   return {
     page_id: page.id,
     version_of: page.judged_at.toISOString(),
@@ -1639,7 +1652,7 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
           held_for: age(page.opened_at),
         }
       : {
-          shown_at: page.shown_at!.toISOString(),
+          released_at: page.released_at!.toISOString(),
           source_id: page.source_id,
           // Beside the state, always: a page released whole can still have passages removed inside its parts.
           removals_under_the_policy: (JSON.parse(page.header!) as { removals?: Record<string, number> }).removals ?? {},
@@ -1648,6 +1661,7 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
     ...(state === "released_whole" ? { of_parts: parts.length } : {}),
     redaction_round: page.round,
     fingerprint: page.root,
+    fingerprint_format: page.fingerprint_format,
     audit: auditAnswerWords(page.audit_answer, acts),
   };
 }
@@ -1659,29 +1673,29 @@ async function describeShownPage(page: ShownPageRow): Promise<Record<string, unk
  * caller's own clearance: a caller who does not read the destination label
  * finds nothing.
  */
-export async function shownRelease(releaseId: string): Promise<Record<string, unknown> | null> {
+export async function receivedRelease(releaseId: string): Promise<Record<string, unknown> | null> {
   const [release] = await rawQuery<{
     id: string; kind: GateKind; node_id: string; to_outside: boolean; boundary_id: string; form: string; scope: string;
     asked_at: Date; ended_at: Date | null; end_reason: string | null; label: string; asker: string | null; asked_holding: string[];
   }>(
     `SELECT s.id, s.kind, s.node_id, s.to_outside, s.boundary_id, s.form, s.scope, s.asked_at, s.ended_at, s.end_reason,
             s.sensitivity_label AS label, c.display_name AS asker, s.asked_holding
-       FROM shown_releases s LEFT JOIN contributors c ON c.id = s.asked_by WHERE s.id = $1`,
+       FROM received_releases s LEFT JOIN contributors c ON c.id = s.asked_by WHERE s.id = $1`,
     [releaseId]
   );
   if (!release) return null;
   const nodes = await rawQuery<{ id: string; node_id: string; place_parent_id: string | null; entered_at: Date; left_at: Date | null; left_reason: string | null; first_assessed_at: Date | null; text: string | null }>(
     `SELECT n.id, n.node_id, n.place_parent_id, n.entered_at, n.left_at, n.left_reason, n.first_assessed_at, c.text
-       FROM shown_nodes n LEFT JOIN claims c ON c.id = n.node_id
+       FROM received_nodes n LEFT JOIN claims c ON c.id = n.node_id
       WHERE n.release_id = $1 ORDER BY n.entered_at, n.id`,
     [releaseId]
   );
-  const pages = await rawQuery<ShownPageRow>(`SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE release_id = $1 ORDER BY judged_at DESC, opened_at DESC`, [releaseId]);
+  const pages = await rawQuery<ReceivedPageRow>(`SELECT ${RECEIVED_PAGE_COLUMNS} FROM received_pages WHERE release_id = $1 ORDER BY judged_at DESC, opened_at DESC`, [releaseId]);
   const acts = await rawQuery<ActRow & { actor: string | null; party: string | null; position: number | null }>(
     `SELECT a.id, a.release_id, a.page_id, a.part_id, a.act, a.party_id, a.actor_id, a.holding, a.rule_id, a.reason, a.at, a.by, a.run_id, a.until,
             c.display_name AS actor, p.name AS party, sp.position
        FROM release_acts a LEFT JOIN contributors c ON c.id = a.actor_id LEFT JOIN parties p ON p.id = a.party_id
-       LEFT JOIN shown_parts sp ON sp.id = a.part_id
+       LEFT JOIN received_parts sp ON sp.id = a.part_id
       WHERE a.release_id = $1 ORDER BY a.at, a.id`,
     [releaseId]
   );
@@ -1690,11 +1704,11 @@ export async function shownRelease(releaseId: string): Promise<Record<string, un
     [release.boundary_id]
   );
   const described = new Map<string, Record<string, unknown>>();
-  for (const page of pages) described.set(page.id, await describeShownPage(page));
+  for (const page of pages) described.set(page.id, await describeReceivedPage(page));
   const covers = await coversOfRelease(release);
   return {
     release_id: release.id,
-    shown_to: release.to_outside ? "outside this deployment" : `readers at "${release.label}"`,
+    released_to: release.to_outside ? "outside this deployment" : `readers at "${release.label}"`,
     form: release.form,
     // What the release covers, in words (releaseCovers); `scope_code` is the scope as GET /releases lists it.
     scope: covers,
@@ -1756,18 +1770,18 @@ async function coversOfRelease(release: { id: string; kind: GateKind; scope: str
 }
 
 /** The releases whose destination side the caller reads, newest first. */
-export async function shownReleases(opts: { nodeId?: string } = {}): Promise<Array<Record<string, unknown>>> {
+export async function receivedReleases(opts: { nodeId?: string } = {}): Promise<Array<Record<string, unknown>>> {
   const rows = await rawQuery<{ id: string; node_id: string; to_outside: boolean; form: string; scope: string; asked_at: Date; ended_at: Date | null; label: string }>(
     `SELECT s.id, s.node_id, s.to_outside, s.form, s.scope, s.asked_at, s.ended_at, s.sensitivity_label AS label
-       FROM shown_releases s
-      WHERE ($1::uuid IS NULL OR s.node_id = $1 OR EXISTS (SELECT 1 FROM shown_nodes n WHERE n.release_id = s.id AND n.node_id = $1))
+       FROM received_releases s
+      WHERE ($1::uuid IS NULL OR s.node_id = $1 OR EXISTS (SELECT 1 FROM received_nodes n WHERE n.release_id = s.id AND n.node_id = $1))
       ORDER BY s.asked_at DESC`,
     [opts.nodeId ?? null]
   );
   return rows.map((r) => ({
     release_id: r.id,
     node_id: r.node_id,
-    shown_to: r.to_outside ? "outside this deployment" : `readers at "${r.label}"`,
+    released_to: r.to_outside ? "outside this deployment" : `readers at "${r.label}"`,
     form: r.form,
     scope: r.scope,
     asked_at: r.asked_at.toISOString(),
@@ -1782,23 +1796,24 @@ export async function shownReleases(opts: { nodeId?: string } = {}): Promise<Arr
  * fingerprint recorded before the gate, with the result of that check.
  * Read with the caller's own clearance.
  */
-export async function shownPage(pageId: string): Promise<(Record<string, unknown> & { verification: Verification | null }) | null> {
-  const [page] = await rawQuery<ShownPageRow>(`SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE id = $1`, [pageId]);
+export async function receivedPage(pageId: string): Promise<(Record<string, unknown> & { verification: Verification | null }) | null> {
+  const [page] = await rawQuery<ReceivedPageRow>(`SELECT ${RECEIVED_PAGE_COLUMNS} FROM received_pages WHERE id = $1`, [pageId]);
   if (!page) return null;
-  const described = await describeShownPage(page);
-  if (!page.shown_at || !page.header) return { ...described, verification: null };
-  const parts = await shownPartsOf(pageId);
+  const described = await describeReceivedPage(page);
+  if (!page.released_at || !page.header) return { ...described, verification: null };
+  const parts = await receivedPartsOf(pageId);
   const acts = await actsOfPage(pageId);
   const names = await partyNames(parts.flatMap((p) => p.needs));
-  const verification = verifyShownPage({
+  const verification = verifyReleasedPage({
     root: page.root!,
+    format: page.fingerprint_format,
     verdict: { position: 0, descriptor: "verdict", commitment: page.header_commitment!, text: page.header, salt: page.header_salt, marks: [] },
     parts: parts.map((p) => ({ position: p.position, descriptor: p.descriptor, commitment: p.commitment, text: p.text, marks: p.marks, salt: p.salt })),
   });
   return {
     ...described,
-    always_shown: JSON.parse(page.header),
-    always_shown_as_hashed: { text: page.header, salt: page.header_salt, hash: page.header_commitment },
+    always_released: JSON.parse(page.header),
+    always_released_as_hashed: { text: page.header, salt: page.header_salt, hash: page.header_commitment },
     earlier_fingerprints: page.roots,
     parts: parts.map((p) =>
       p.released_at !== null
@@ -1865,7 +1880,7 @@ export async function askedReleases(): Promise<Array<Record<string, unknown>>> {
       node_id: s.node_id,
       node: s.text,
       page_label: s.page_label,
-      shown_to: s.to_outside ? "outside this deployment" : s.to_label,
+      released_to: s.to_outside ? "outside this deployment" : s.to_label,
       form: s.form,
       scope: s.scope,
       asked_at: s.asked_at.toISOString(),
@@ -1922,23 +1937,23 @@ export async function outsideRecord(releaseId: string, nodeId: string): Promise<
   const [release] = await rawQuery<{
     id: string; boundary_id: string; form: string; scope: string; asked_at: Date; ended_at: Date | null; end_reason: string | null; send_as_released: boolean;
   }>(
-    `SELECT id, boundary_id, form, scope, asked_at, ended_at, end_reason, send_as_released FROM shown_releases WHERE id = $1 AND to_outside`,
+    `SELECT id, boundary_id, form, scope, asked_at, ended_at, end_reason, send_as_released FROM received_releases WHERE id = $1 AND to_outside`,
     [releaseId]
   );
   if (!release) return null;
   const [node] = await rawQuery<{ entered_at: Date; left_at: Date | null; left_reason: string | null; first_assessed_at: Date | null }>(
-    `SELECT entered_at, left_at, left_reason, first_assessed_at FROM shown_nodes WHERE release_id = $1 AND node_id = $2 ORDER BY entered_at LIMIT 1`,
+    `SELECT entered_at, left_at, left_reason, first_assessed_at FROM received_nodes WHERE release_id = $1 AND node_id = $2 ORDER BY entered_at LIMIT 1`,
     [releaseId, nodeId]
   );
   if (!node) return null;
-  const pages = await rawQuery<ShownPageRow>(
-    `SELECT ${SHOWN_PAGE_COLUMNS} FROM shown_pages WHERE release_id = $1 AND node_id = $2 ORDER BY judged_at DESC, opened_at DESC`,
+  const pages = await rawQuery<ReceivedPageRow>(
+    `SELECT ${RECEIVED_PAGE_COLUMNS} FROM received_pages WHERE release_id = $1 AND node_id = $2 ORDER BY judged_at DESC, opened_at DESC`,
     [releaseId, nodeId]
   );
   const allActs = await rawQuery<ActRow & { party: string | null; position: number | null }>(
     `SELECT a.id, a.release_id, a.page_id, a.part_id, a.act, a.party_id, a.actor_id, a.holding, a.rule_id, a.reason, a.at, a.by, a.run_id, a.until,
             p.name AS party, sp.position
-       FROM release_acts a LEFT JOIN parties p ON p.id = a.party_id LEFT JOIN shown_parts sp ON sp.id = a.part_id
+       FROM release_acts a LEFT JOIN parties p ON p.id = a.party_id LEFT JOIN received_parts sp ON sp.id = a.part_id
       WHERE a.release_id = $1 ORDER BY a.at, a.id`,
     [releaseId]
   );
@@ -1953,32 +1968,32 @@ export async function outsideRecord(releaseId: string, nodeId: string): Promise<
   let made: Record<string, unknown> | null = null;
   const live = pages.filter((p) => p.stage !== "overtaken");
   for (const page of pages) {
-    const parts = await shownPartsOf(page.id);
+    const parts = await receivedPartsOf(page.id);
     const acts = allActs.filter((a) => a.page_id === page.id);
     const names = await partyNames([...page.needs, ...parts.flatMap((p) => p.needs)]);
     const heldParts = parts.filter((p) => p.released_at === null);
     const directHold = pageHeldByDirect(acts);
     const waitingOn = page.needs.filter((party) => standingOf(acts, null, party) !== "consented").map((party) => names.get(party) ?? "a party");
-    const header = page.shown_at && page.header ? (JSON.parse(page.header) as Record<string, unknown>) : null;
+    const header = page.released_at && page.header ? (JSON.parse(page.header) as Record<string, unknown>) : null;
     const state: NodeState | "not_redacted" =
-      page.stage === "overtaken" ? "not_redacted" : !page.shown_at ? "held" : heldParts.length === 0 ? "released_whole" : "released_in_part";
+      page.stage === "overtaken" ? "not_redacted" : !page.released_at ? "held" : heldParts.length === 0 ? "released_whole" : "released_in_part";
     const because = heldBecause(page, acts, waitingOn);
     const since = (directHold?.at ?? page.opened_at).toISOString();
     versions.push({
       page_id: page.id,
       version_of: page.judged_at.toISOString(),
       state,
-      ...(state === "held" || state === "not_redacted" ? { held_because: because, held_since: since } : { shown_at: page.shown_at!.toISOString() }),
+      ...(state === "held" || state === "not_redacted" ? { held_because: because, held_since: since } : { released_at: page.released_at!.toISOString() }),
       ...(state === "released_in_part" ? { parts_held: heldParts.length, held_kinds: heldByKind(heldParts) } : {}),
       ...(header ? { of_parts: parts.length, removals: (header.removals as Record<string, number>) ?? {} } : {}),
       // How the publisher's gate was set for this version when it went, stamped by the gate (stampReleasedUnder).
-      ...(page.shown_at && page.released_under ? { released_under: page.released_under } : {}),
+      ...(page.released_at && page.released_under ? { released_under: page.released_under } : {}),
       fingerprint: page.root,
     });
     if (page.id === live[0]?.id) currentState = state as NodeState;
     // The page carried is the latest version that is shown, or the latest version where none is.
-    if (page.id !== (live.find((p) => p.shown_at !== null) ?? live[0])?.id) continue;
-    const heldOf = (part: ShownPartRow) => {
+    if (page.id !== (live.find((p) => p.released_at !== null) ?? live[0])?.id) continue;
+    const heldOf = (part: ReceivedPartRow) => {
       const holders = part.needs.filter((party) => standingOf(acts, part.id, party) !== "consented");
       const holds = holders
         .map((party) => [...acts].reverse().find((a) => a.part_id === part.id && a.party_id === party && a.act === "held" && standingOf(acts, part.id, party) === "held"))
@@ -1993,20 +2008,21 @@ export async function outsideRecord(releaseId: string, nodeId: string): Promise<
       id: page.id,
       version_of: page.judged_at.toISOString(),
       state,
-      held: page.shown_at ? null : { because, since },
-      shown_at: page.shown_at?.toISOString() ?? null,
+      held: page.released_at ? null : { because, since },
+      released_at: page.released_at?.toISOString() ?? null,
       redaction_round: page.round,
       fingerprint: page.root,
+      fingerprint_format: page.fingerprint_format,
       earlier_fingerprints: page.roots,
-      always_shown: page.shown_at && page.header ? { text: page.header, salt: page.header_salt } : null,
-      always_shown_hash: page.header_commitment,
+      always_released: page.released_at && page.header ? { text: page.header, salt: page.header_salt } : null,
+      always_released_hash: page.header_commitment,
       // Until the page itself is shown no part's text is on this side, whoever has released it.
       parts: parts.map((p) =>
-        page.shown_at && p.released_at !== null
+        page.released_at && p.released_at !== null
           ? { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, text: p.text, marks: p.marks ?? [], salt: p.salt }
           : { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, held: heldOf(p) }
       ),
-      audit: page.shown_at ? auditAnswerWords(page.audit_answer, acts) : null,
+      audit: page.released_at ? auditAnswerWords(page.audit_answer, acts) : null,
     };
     if (header) {
       const how = (header.made ?? {}) as Record<string, unknown>;
@@ -2092,14 +2108,14 @@ export async function gateBacklog(
 ): Promise<Record<string, unknown>> {
   const authority = reader.administer || reader.consentParties.length > 0;
   const read = async () => {
-    const pages = await rawQuery<ShownPageRow & { boundary_id: string; to_outside: boolean; to: string; backlog_shown: boolean }>(
-      `SELECT ${SHOWN_PAGE_COLUMNS.split(", ").map((c) => `p.${c}`).join(", ")}, s.boundary_id, s.to_outside, s.sensitivity_label AS to,
-              COALESCE(g.backlog_shown, true) AS backlog_shown
-         FROM shown_pages p JOIN shown_releases s ON s.id = p.release_id
+    const pages = await rawQuery<ReceivedPageRow & { boundary_id: string; to_outside: boolean; to: string; backlog_visible: boolean }>(
+      `SELECT ${RECEIVED_PAGE_COLUMNS.split(", ").map((c) => `p.${c}`).join(", ")}, s.boundary_id, s.to_outside, s.sensitivity_label AS to,
+              COALESCE(g.backlog_visible, true) AS backlog_visible
+         FROM received_pages p JOIN received_releases s ON s.id = p.release_id
          LEFT JOIN gates g ON g.boundary_id = s.boundary_id
         WHERE p.stage IN ('to_redact', 'to_check', 'at_gate', 'cannot_cross')
           AND ($1::uuid IS NULL OR s.boundary_id = $1)
-          AND (p.shown_at IS NULL OR EXISTS (SELECT 1 FROM shown_parts sp WHERE sp.page_id = p.id AND sp.released_at IS NULL))
+          AND (p.released_at IS NULL OR EXISTS (SELECT 1 FROM received_parts sp WHERE sp.page_id = p.id AND sp.released_at IS NULL))
         ORDER BY p.opened_at`,
       [opts.boundaryId ?? null]
     );
@@ -2112,19 +2128,19 @@ export async function gateBacklog(
       if (page.opened_at < line.oldest) line.oldest = page.opened_at;
       lines.set(key, line);
     };
-    const gatesSeen = new Map<string, { to: string; to_outside: boolean; shown: boolean }>();
+    const gatesSeen = new Map<string, { to: string; to_outside: boolean; visible: boolean }>();
     for (const page of pages) {
-      gatesSeen.set(page.boundary_id, { to: page.to, to_outside: page.to_outside, shown: page.backlog_shown });
-      if (!page.backlog_shown && !authority) continue;
+      gatesSeen.set(page.boundary_id, { to: page.to, to_outside: page.to_outside, visible: page.backlog_visible });
+      if (!page.backlog_visible && !authority) continue;
       if (page.stage === "to_redact") count(page, page.waiting_for_funds ? "funds" : "redactor_run", null, 0);
       else if (page.stage === "to_check") count(page, page.waiting_for_funds ? "funds" : "check", null, 0);
       else if (page.stage === "cannot_cross") count(page, "redactor", null, 0);
       else {
         const acts = await actsOfPage(page.id);
-        const parts = await shownPartsOf(page.id);
+        const parts = await receivedPartsOf(page.id);
         const names = await partyNames([...page.needs, ...parts.flatMap((p) => p.needs)]);
-        const targets = [...(page.shown_at ? [] : [{ id: null as string | null, needs: page.needs }]), ...parts.filter((p) => p.released_at === null)];
-        if (pageHeldByDirect(acts) && !page.shown_at) count(page, "person", null, 0);
+        const targets = [...(page.released_at ? [] : [{ id: null as string | null, needs: page.needs }]), ...parts.filter((p) => p.released_at === null)];
+        if (pageHeldByDirect(acts) && !page.released_at) count(page, "person", null, 0);
         for (const t of targets) {
           const n = t.id === null ? 0 : 1;
           if (gateHold(acts, t.id)) count(page, "redactor", null, n);
@@ -2155,7 +2171,7 @@ export async function gateBacklog(
   const hours = (since: Date) => Math.max(0, Math.floor((Date.now() - since.getTime()) / 3_600_000));
   return {
     gates: [...gatesSeen.entries()]
-      .filter(([, g]) => g.shown || authority)
+      .filter(([, g]) => g.visible || authority)
       .map(([id, g]) => {
         const own = lines.filter((l) => l.gate === id);
         return {
@@ -2190,10 +2206,10 @@ export async function gateBacklog(
  * the caller's own clearance. `replyRef` narrows it to what answers one
  * row on this side (a request, a message).
  */
-export async function shownItems(opts: { kind?: string; replyRef?: string } = {}): Promise<Array<Record<string, unknown>>> {
-  const rows = await rawQuery<{ id: string; kind: GateKind; reply_ref: string | null; opened_at: Date; shown_at: Date | null; source_id: string | null; stage: PageStage; waiting_for_funds: boolean }>(
-    `SELECT p.id, p.kind, s.reply_ref, p.opened_at, p.shown_at, p.source_id, p.stage, p.waiting_for_funds
-       FROM shown_pages p JOIN shown_releases s ON s.id = p.release_id
+export async function receivedItems(opts: { kind?: string; replyRef?: string } = {}): Promise<Array<Record<string, unknown>>> {
+  const rows = await rawQuery<{ id: string; kind: GateKind; reply_ref: string | null; opened_at: Date; released_at: Date | null; source_id: string | null; stage: PageStage; waiting_for_funds: boolean }>(
+    `SELECT p.id, p.kind, s.reply_ref, p.opened_at, p.released_at, p.source_id, p.stage, p.waiting_for_funds
+       FROM received_pages p JOIN received_releases s ON s.id = p.release_id
       WHERE p.kind <> 'page' AND p.stage <> 'overtaken'
         AND ($1::text IS NULL OR p.kind = $1) AND ($2::uuid IS NULL OR s.reply_ref = $2)
       ORDER BY p.opened_at DESC`,
@@ -2205,8 +2221,8 @@ export async function shownItems(opts: { kind?: string; replyRef?: string } = {}
     kind_in_words: GATE_KINDS[r.kind],
     ...(r.reply_ref ? { answers: r.reply_ref } : {}),
     offered_at: r.opened_at.toISOString(),
-    state: r.shown_at ? "through the gate" : r.waiting_for_funds ? STAGE_WORDS_UNPAID[r.stage] ?? STAGE_WORDS[r.stage] : STAGE_WORDS[r.stage],
-    ...(r.shown_at ? { came_through_at: r.shown_at.toISOString(), source_id: r.source_id } : {}),
+    state: r.released_at ? "through the gate" : r.waiting_for_funds ? STAGE_WORDS_UNPAID[r.stage] ?? STAGE_WORDS[r.stage] : STAGE_WORDS[r.stage],
+    ...(r.released_at ? { came_through_at: r.released_at.toISOString(), source_id: r.source_id } : {}),
   }));
 }
 
@@ -2222,16 +2238,16 @@ async function askedFromHere(): Promise<Array<Record<string, unknown>>> {
   const rows = await rawQuery<{ face: string; at: string; asks: number; owls: string; told: number; answered: number; waiting: number; nothing: number }>(
     `SELECT f.name AS face, r.sensitivity_label AS at, count(*)::int AS asks,
             COALESCE(sum(r.asked_budget_micro_usd), 0) AS owls,
-            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM shown_releases s JOIN shown_pages p ON p.release_id = s.id
-                                            WHERE s.reply_ref = r.id AND p.kind = 'taken_up' AND p.shown_at IS NOT NULL))::int AS told,
-            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM shown_releases s JOIN shown_pages p ON p.release_id = s.id
-                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.shown_at IS NOT NULL))::int AS answered,
-            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM shown_releases s JOIN shown_pages p ON p.release_id = s.id
-                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.shown_at IS NULL AND p.stage <> 'overtaken')
-                               AND NOT EXISTS (SELECT 1 FROM shown_releases s JOIN shown_pages p ON p.release_id = s.id
-                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.shown_at IS NOT NULL))::int AS waiting,
-            count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM shown_releases s JOIN shown_pages p ON p.release_id = s.id
-                                            WHERE s.reply_ref = r.id AND p.stage <> 'overtaken' AND (p.shown_at IS NOT NULL OR p.kind = 'answer')))::int AS nothing
+            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM received_releases s JOIN received_pages p ON p.release_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'taken_up' AND p.released_at IS NOT NULL))::int AS told,
+            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM received_releases s JOIN received_pages p ON p.release_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.released_at IS NOT NULL))::int AS answered,
+            count(*) FILTER (WHERE EXISTS (SELECT 1 FROM received_releases s JOIN received_pages p ON p.release_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.released_at IS NULL AND p.stage <> 'overtaken')
+                               AND NOT EXISTS (SELECT 1 FROM received_releases s JOIN received_pages p ON p.release_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.kind = 'answer' AND p.released_at IS NOT NULL))::int AS waiting,
+            count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM received_releases s JOIN received_pages p ON p.release_id = s.id
+                                            WHERE s.reply_ref = r.id AND p.stage <> 'overtaken' AND (p.released_at IS NOT NULL OR p.kind = 'answer')))::int AS nothing
        FROM requests r JOIN label_faces f ON f.id = r.asked_of_face_id
       GROUP BY f.name, r.sensitivity_label ORDER BY f.name, r.sensitivity_label`
   ).catch(() => []);

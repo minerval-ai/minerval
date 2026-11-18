@@ -50,7 +50,7 @@ export async function executePolicyReadTool(name: string, input: Record<string, 
     success: true,
     policies: rows.map((r) => ({
       policy_id: r.id,
-      shown_to: r.to_outside ? "outside this deployment" : r.to_label,
+      released_to: r.to_outside ? "outside this deployment" : r.to_label,
       version: r.version,
       categories: r.categories.map((c) => c.name),
     })),
