@@ -112,11 +112,6 @@ export function mandateIsPublic(row: {
   );
 }
 
-/** mandateIsPublic, in SQL, over grants aliased `g`. */
-export const MANDATE_PUBLIC_SQL = `(g.directed_in_public
-  OR g.status IN ('active', 'completed', 'cancelled')
-  OR (g.status = 'planning' AND g.mandate->>'origin' = 'deep_decomposition'))`;
-
 const GRANT_SELECT = `
   SELECT g.id, g.name, g.status, g.is_platform, g.scope_claim_id,
          g.scope_query, g.plan, g.plan_cursor, g.mandate, g.budget_job_id,
@@ -378,8 +373,11 @@ export async function listMandatesPage(query: MandateListQuery): Promise<Mandate
     which === "mine"
       ? "g.funder_user_id = $1::uuid"
       : which === "platform"
-        ? `g.is_platform AND ${MANDATE_PUBLIC_SQL}`
-        : MANDATE_PUBLIC_SQL;
+        ? "g.is_platform AND g.status IN ('active', 'completed', 'cancelled')"
+        : "g.status IN ('active', 'completed', 'cancelled')";
+  // The public list holds the mandates that have started. One directed in
+  // public that has not (being planned, or waiting for approval) is public
+  // too, by its link and through SQL, but is not offered to backers yet.
   // $1 is typed here because a public scope does not otherwise mention it.
   const wordsSql = `$1::uuid IS NOT DISTINCT FROM $1::uuid AND ($2::text IS NULL
         OR COALESCE(g.mandate->>'title', g.name) ILIKE '%' || $2 || '%'
