@@ -331,12 +331,17 @@ export function markRunWroteGraph(trace: AgentTrace): void {
  * Idempotent per reason, fire-and-forget like every trace write. The client
  * calls it for each tool a run executes that reads private data; agent code
  * calls it (through markCurrentRunPrivate) when it hands a run private input.
+ *
+ * The write joins the append queue (trace.tail) with the steps, so the seal,
+ * which waits for the queue, stamps a run finished only after every reason
+ * it was marked with is on its row: a finished run never reads as less
+ * private than it is. Awaiting trace.tail waits for the marks too.
  */
 export function markRunPrivate(trace: AgentTrace, reason: string): void {
   const seen = (trace.privateReasons ??= new Set());
   if (seen.has(reason)) return;
   seen.add(reason);
-  void writingRunLog(async () => {
+  trace.tail = trace.tail.then(() => writingRunLog(async () => {
     try {
       await trace.ready;
       await rawQuery(
@@ -351,7 +356,7 @@ export function markRunPrivate(trace: AgentTrace, reason: string): void {
         err instanceof Error ? err.message : err
       );
     }
-  });
+  }));
 }
 
 /**
