@@ -140,7 +140,7 @@ describe("match_claim when a platform fault stops the Matcher", () => {
     // What to do, in the result itself: nothing is refused elsewhere.
     expect(out.note).toContain("Identity was NOT checked");
     expect(out.note).toContain("Do not create a node from this result");
-    expect(out.note).toContain("search_similar_claims alone");
+    expect(out.note).toContain("search_claims alone");
     expect(out.note).toContain("leave the premise in prose");
     expect(out.note).toContain("not your run's budget");
     expect(out.note).toContain("do not raise_issue");

@@ -119,6 +119,7 @@ vi.mock("../../../src/services/tree-service.js", () => ({
   getSubclaimCount: mocks.getSubclaimCount,
   listClaimDependents: mocks.listClaimDependents,
   getTransitiveDependents: mocks.getTransitiveDependents,
+  getQuantityCuts: vi.fn(async () => []),
 }));
 vi.mock("../../../src/services/argument-service.js", () => ({
   getArgumentsForClaim: mocks.getArgumentsForClaim,

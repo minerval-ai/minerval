@@ -52,7 +52,8 @@ than in anyone's account of it:
   plan_items (a plan's items with the standing last written on each; join
   action_id to ledger to find an item out of step with what ran);
 - the claim and contributor a decision touched: get_claim,
-  get_claim_dependents, get_claim_instances, get_contributor_profile.
+  get_dependents, get_claim_instances, get_contributor_profile; and the
+  graph around it: search_claims, get_decomposition, get_argument.
 
 Read your own record too: get_audit_findings lists prior findings with
 their status. An issue already found and acted on must not be punished

@@ -277,7 +277,10 @@ export async function listPartitions(minTagClaims: number): Promise<PartitionSta
             COUNT(*) FILTER (WHERE EXISTS (
               SELECT 1 FROM claims c ${CURRENT_RECORD_JOINS}
                WHERE c.id = k.claim_id AND ${RECORD_ID} IS NOT NULL))::int AS assessed,
-            COALESCE(SUM(k.importance), 0)::real AS importance_mass,
+            -- Summed as numeric, which is exact: a sum of reals depends on the
+            -- order the rows arrive in, so the same partition could read back
+            -- a different last digit from one call to the next.
+            COALESCE(SUM(k.importance::numeric), 0)::real AS importance_mass,
             k.at AS last_swept_at,
             COALESCE(MAX(ch.n), 0)::int AS changed_since,
             COALESCE(MAX(ch.own), 0)::int AS changed_at_own_label

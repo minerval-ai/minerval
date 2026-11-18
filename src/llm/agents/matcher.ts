@@ -5,7 +5,6 @@ import { getMatcherSystemPromptBlocks, getMatchingPrompt } from "../prompts/matc
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { generateEmbedding } from "../../services/embedding-service.js";
 import { findSimilarClaims, keywordClaimSearch } from "../../services/search-service.js";
-import { SIMILAR_CLAIMS_FLOOR } from "../tools/graph-tools.js";
 import { loadConfig } from "../../config.js";
 import { getUsageContext, runBudget, withAgent, withPassBudget, withSkills } from "../usage-context.js";
 import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
@@ -86,6 +85,13 @@ const MATCH_DECISION_SCHEMA = {
   },
   required: ["is_match", "confidence", "reasoning", "instance_stance"],
 };
+
+/**
+ * The similarity floor for the Matcher's search_similar_claims (#773). Low on
+ * purpose: a counterpart or a rival framing can embed far from the claim it
+ * matches (#25). The floor only trims noise; the Matcher's judgment decides.
+ */
+export const SIMILAR_CLAIMS_FLOOR = 0.4;
 
 /**
  * The first run's tool-use turn cap (#727). The decision's budget

@@ -23,7 +23,6 @@ import {
   type Skill,
   type SkillRole,
 } from "../prompts/skills.js";
-import { getGraphToolDefinitions } from "./graph-tools.js";
 import {
   getClaimContextToolDefinitions,
   getGovernanceToolDefinitions,
@@ -200,7 +199,6 @@ const AGENT_INLINE_TOOL_NAMES = [
 /** Every tool name the existing families define, plus the inline ones above. */
 export function builtinToolNames(): Set<string> {
   const families: Tool[][] = [
-    getGraphToolDefinitions(),
     getGovernanceToolDefinitions(),
     getClaimContextToolDefinitions(),
     getStewardToolDefinitions(),

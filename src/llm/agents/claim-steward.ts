@@ -15,10 +15,6 @@ import { getClaimStewardSystemPromptBlocks } from "../prompts/claim-steward.js";
 import { listSkills } from "../prompts/skills.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import {
-  getGraphToolDefinitions,
-  executeGraphTool,
-} from "../tools/graph-tools.js";
-import {
   getClaimContextToolDefinitions,
   executeGovernanceTool,
 } from "../tools/governance-tools.js";
@@ -145,12 +141,6 @@ function withheldFor(kind: NodeKind): Set<string> {
   if (kind === "quantity") return PROPOSITION_ONLY_TOOLS;
   return new Set();
 }
-
-/**
- * The graph read whose rows get_claim carries (include dependents, #760):
- * the Curator keeps it; for the Steward it would only duplicate the view.
- */
-const STEWARD_REDUNDANT_READS = new Set(["get_parent_claims"]);
 
 /** The tool that records each kind's assessment. */
 const ASSESSMENT_TOOL: Record<NodeKind, string> = {
@@ -708,15 +698,9 @@ async function runClaimStewardImpl(input: {
   const webSearch = createWebSearch(model);
   const figureTools = createFigureTools({ model });
 
-  // The graph search the Curator also gets (#69). get_claim reads the claim,
-  // its subclaims and their credences, and get_claim_dependents what rests on
-  // it, so the narrower read the Curator keeps (get_parent_claims) would
-  // only duplicate them here (#760).
-  const graphTools = getGraphToolDefinitions().filter((t) => !STEWARD_REDUNDANT_READS.has(t.name));
-  const graphNames = new Set(graphTools.map((t) => t.name));
-
-  // Claim-scoped subset only: the contribution/contributor/decision tools in
-  // the full governance bundle are never referenced by the Steward's prompt.
+  // The shared graph reads (search_claims, get_claim, get_decomposition,
+  // get_dependents, get_argument) and the claim-scoped governance reads. The
+  // contributor and decision-history tools stay out (#100).
   const claimContextTools = getClaimContextToolDefinitions();
   const claimContextNames = new Set(claimContextTools.map((t) => t.name));
 
@@ -788,7 +772,6 @@ async function runClaimStewardImpl(input: {
   const sandbox = resolveProvider(model) === "anthropic";
 
   const tools = [
-    ...graphTools,
     ...claimContextTools,
     // A search hit is a snippet; the page is where an abstract, a results
     // table, or a retraction notice actually is (#333).
@@ -1092,9 +1075,6 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
       context: input.context,
     });
     if (kindOutput !== null) return kindOutput;
-    if (graphNames.has(name)) {
-      return executeGraphTool(name, toolInput);
-    }
     if (claimContextNames.has(name)) {
       return executeGovernanceTool(name, toolInput);
     }

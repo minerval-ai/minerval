@@ -72,7 +72,8 @@ let toolNames: Set<string> | null = null;
  */
 export async function minervalToolNames(): Promise<Set<string>> {
   if (toolNames) return toolNames;
-  const names = new Set<string>(["web_search", "code_execution"]);
+  // search_similar_claims is the Matcher's own search, defined inline in its agent file.
+  const names = new Set<string>(["web_search", "code_execution", "search_similar_claims"]);
   const add = (defs: Array<{ name?: string }>) => defs.forEach((d) => typeof d.name === "string" && names.add(d.name));
   const t = "../llm/tools/";
   add((await import(`${t}steward-tools.js`)).getStewardToolDefinitions());
@@ -82,7 +83,6 @@ export async function minervalToolNames(): Promise<Set<string>> {
   add((await import(`${t}reviewer-tools.js`)).getReviewerToolDefinitions());
   add((await import(`${t}governance-tools.js`)).getGovernanceToolDefinitions());
   add((await import(`${t}arbitrator-tools.js`)).getArbitratorToolDefinitions());
-  add((await import(`${t}graph-tools.js`)).getGraphToolDefinitions());
   add((await import(`${t}graph-read-tools.js`)).getGraphReadToolDefinitions());
   add((await import(`${t}redactor-tools.js`)).getRedactorToolDefinitions() as Array<{ name?: string }>);
   add((await import(`${t}report-tools.js`)).getReportToolDefinitions());

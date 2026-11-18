@@ -4,7 +4,6 @@
  * These give agents the ability to gather context about claims, contributions,
  * and contributors before making decisions.
  */
-import { oneCutForClaimSql } from "../../services/layer-service.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
 import { eq, sql, desc } from "drizzle-orm";
@@ -25,12 +24,10 @@ import {
   MAX_INSTANCE_PAGE,
   getClaimInstancePage,
 } from "../../services/claim-instance-service.js";
-import { getClaimDependents as fetchClaimDependents } from "../../services/tree-service.js";
-import { executeGraphReadTool, getClaimToolDefinition } from "./graph-read-tools.js";
+import { executeGraphReadTool, getGraphReadToolDefinitions } from "./graph-read-tools.js";
 import { MANDATE_LABEL } from "../../services/contribution-service.js";
 import { STATED_VIEW_CONTRIBUTION_TYPE } from "../../schemas/common.js";
 import { statedViewForContribution } from "../../services/stated-view-service.js";
-import { importanceSql } from "../../services/overlay-service.js";
 
 const HISTORY_DEFAULT = 10;
 const HISTORY_MAX = 30;
@@ -39,9 +36,13 @@ const HISTORY_EXCERPT = 1500;
 
 export function getGovernanceToolDefinitions(): Tool[] {
   return [
-    // The one get_claim every agent and MCP share (#774): the governance
-    // roles read the same view, asking for the sections they need.
-    getClaimToolDefinition(),
+    // The shared graph reads every agent and MCP carry (#766): search_claims,
+    // the one get_claim (#774), get_decomposition, get_dependents and
+    // get_argument. A governance role reads the node and what stands around
+    // it as the Steward who acts on its decision does. get_dependents
+    // replaced get_claim_dependents: its first level is the same rows, and on
+    // a quantity it lists the claims that cut it.
+    ...getGraphReadToolDefinitions(),
     {
       name: "get_claim_instances",
       description:
@@ -176,26 +177,6 @@ export function getGovernanceToolDefinitions(): Tool[] {
       },
     },
     {
-      name: "get_claim_dependents",
-      description:
-        "Get the nodes that depend on a given one: those that have it as a " +
-        "subclaim, answer, or subquestion, and, for a quantity, the claims " +
-        "that cut it (say which side of a figure it lies; relation 'cuts'), " +
-        "whose credence must agree with its estimate. Each comes with its " +
-        "status, confidence and credence. Use it to see whom a change of " +
-        "judgment could matter to.",
-      input_schema: {
-        type: "object" as const,
-        properties: {
-          claim_id: {
-            type: "string",
-            description: "The UUID of the claim to find dependents of",
-          },
-        },
-        required: ["claim_id"],
-      },
-    },
-    {
       name: "get_recent_decisions",
       description:
         "List contribution review decisions in force, newest first, with " +
@@ -250,9 +231,8 @@ export function getGovernanceToolDefinitions(): Tool[] {
 // paraphrase of it (#697). The Reviewer, Arbitrator, and Audit Agent keep
 // the full bundle.
 const CLAIM_CONTEXT_TOOL_NAMES = new Set([
-  "get_claim",
+  ...getGraphReadToolDefinitions().map((t) => t.name),
   "get_claim_instances",
-  "get_claim_dependents",
   "get_contribution_details",
 ]);
 
@@ -268,8 +248,12 @@ export async function executeGovernanceTool(
 ): Promise<string> {
   try {
     switch (toolName) {
+      case "search_claims":
       case "get_claim":
-        return (await executeGraphReadTool("get_claim", input))!;
+      case "get_decomposition":
+      case "get_dependents":
+      case "get_argument":
+        return (await executeGraphReadTool(toolName, input))!;
 
       case "get_claim_instances":
         return JSON.stringify(
@@ -313,12 +297,6 @@ export async function executeGovernanceTool(
           2
         );
 
-      case "get_claim_dependents":
-        return JSON.stringify(
-          await getClaimDependents(input.claim_id as string),
-          null,
-          2
-        );
 
       case "get_recent_decisions":
         return JSON.stringify(
@@ -661,60 +639,6 @@ async function getContributorProfile(
         : null,
     last_active_at: contributor.lastActiveAt.toISOString(),
   };
-}
-
-// Same reverse-edge query as the API's dependents endpoint (tree-service), kept
-// behind the agents' historical field names so tool payloads don't change.
-async function getClaimDependents(claimId: string) {
-  const rows = await fetchClaimDependents(claimId);
-  // A claim that says which side of a figure a quantity lies is joined to
-  // the quantity by a cut, not an edge, yet its credence must agree with the
-  // quantity's estimate (§21), so it is a dependent the quantity's Steward
-  // tells when the estimate moves (§22; #767).
-  const cuts = await rawQuery<{
-    id: string;
-    text: string;
-    claim_type: string;
-    direction: string;
-    value: number;
-    status: string | null;
-    confidence: number | null;
-    credence: number | null;
-  }>(
-    `SELECT c.id, c.text, c.claim_type, qc.direction, qc.value,
-            a.status, a.confidence, a.claim_credence AS credence
-       FROM quantity_cuts qc
-       JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
-       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
-      WHERE qc.quantity_id = $1${oneCutForClaimSql("qc")}
-      ORDER BY ${importanceSql("c")} DESC, c.id`,
-    [claimId]
-  );
-
-  const dependents = [
-    ...rows.map((r) => ({
-      id: r.id,
-      text: r.text,
-      type: r.claim_type,
-      kind: r.node_kind,
-      relation: r.relation_type,
-      current_status: r.assessment_status,
-      confidence: r.assessment_confidence,
-      credence: r.assessment_credence,
-    })),
-    ...cuts.map((c) => ({
-      id: c.id,
-      text: c.text,
-      type: c.claim_type,
-      kind: "claim",
-      relation: "cuts",
-      cut: { direction: c.direction, value: c.value },
-      current_status: c.status,
-      confidence: c.confidence,
-      credence: c.credence,
-    })),
-  ];
-  return { child_claim_id: claimId, dependents, count: dependents.length };
 }
 
 /** The most rows one get_recent_decisions page returns. */

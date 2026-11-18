@@ -1,5 +1,5 @@
 import { rawQuery } from "../db/client.js";
-import { layered, lowerRowSql, oneDefinitionForQuantitySql } from "./layer-service.js";
+import { layered, lowerRowSql, oneCutForClaimSql, oneDefinitionForQuantitySql } from "./layer-service.js";
 import { evaluationsInForce, judgmentsInForce, markSeveralInForce, severalEvaluationsNote, severalInForceNote } from "./judgment-version-service.js";
 import type { TreeNode } from "../schemas/claim.js";
 import {
@@ -357,7 +357,7 @@ function dependentRow<T extends MathRowFields>(row: T): T & Omit<TreeNodeMathFie
  * Get the claims that depend on (have as a subclaim) the given claim — the
  * reverse of the decomposition tree. Each row is a parent claim plus the
  * relationship edge by which it leans on this claim, and the parent's current
- * assessment. Mirrors the agents' `get_claim_dependents` graph query.
+ * assessment. The first level of the agents' `get_dependents` walk.
  *
  * Ordered by importance so consumers that truncate (the claim map shows a few
  * chips plus a count) surface the most load-bearing dependents first.
@@ -381,6 +381,37 @@ export async function getClaimDependents(claimId: string): Promise<DependentClai
   const out = rows.map(dependentRow);
   await markSeveralInForce(out, (r) => r.id);
   return out;
+}
+
+/** A claim that says which side of a figure a quantity lies (relation 'cuts'). */
+export interface QuantityCut {
+  id: string;
+  text: string;
+  claim_type: string;
+  direction: string;
+  value: number;
+  status: string | null;
+  confidence: number | null;
+  credence: number | null;
+}
+
+/**
+ * The claims that cut a quantity. A cut joins a claim to the quantity by a
+ * cut, not an edge, yet the claim's credence must agree with the quantity's
+ * estimate (§21), so it is a dependent the quantity's Steward tells when the
+ * estimate moves (§22; #767). Empty for anything but a quantity.
+ */
+export async function getQuantityCuts(quantityId: string): Promise<QuantityCut[]> {
+  return rawQuery<QuantityCut>(
+    `SELECT c.id, c.text, c.claim_type, qc.direction, qc.value,
+            a.status, a.confidence, a.claim_credence AS credence
+       FROM quantity_cuts qc
+       JOIN claims c ON c.id = qc.claim_id AND c.state = 'active'
+       LEFT JOIN assessments_in_force a ON a.claim_id = c.id
+      WHERE qc.quantity_id = $1${oneCutForClaimSql("qc")}
+      ORDER BY ${importanceSql("c")} DESC, c.id`,
+    [quantityId]
+  );
 }
 
 /** One claim reached by walking upward, with how many edges away it sits. */
