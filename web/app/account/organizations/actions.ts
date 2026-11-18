@@ -13,13 +13,19 @@ import {
   cancelInvitation,
   createOrganization,
   makeInvitation,
+  approveConnectRequest,
+  denyConnectRequest,
   organizationAddToMandate,
+  organizationContinueConversation,
+  organizationFundConversation,
+  organizationStartConversation,
   organizationCheckout,
   organizationFundClaim,
   removeMember,
   renameOrganization,
   revokeOldKey,
   setRole,
+  type DeploymentGrant,
   type OrganizationRole,
 } from "../../../lib/organizations-api";
 
@@ -236,4 +242,79 @@ export async function fundClaimAction(_prev: FormState, form: FormData): Promise
   }
   revalidatePath(page(id));
   return { notice: `Paid ${owls} owls from the organization toward the claim's next assessment.` };
+}
+
+// ---- the organization's public mandates, in conversation with the public Grantmaker ----
+
+export async function startMandateAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const id = field(form, "organization_id");
+  const message = field(form, "message");
+  if (!message) return { error: "Write what the mandate is for." };
+  let conversation: string;
+  try {
+    conversation = (await organizationStartConversation(who, id, message)).id;
+  } catch (err) {
+    return said(err, "The conversation could not be started.");
+  }
+  redirect(`${page(id)}?tab=acts&conversation=${conversation}`);
+}
+
+export async function continueMandateAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const id = field(form, "organization_id");
+  const conversation = field(form, "conversation_id");
+  const message = field(form, "message");
+  if (!message) return { error: "Write a message." };
+  try {
+    await organizationContinueConversation(who, id, conversation, message);
+  } catch (err) {
+    return said(err, "The message could not be sent.");
+  }
+  revalidatePath(page(id));
+  return { notice: "Sent. The Grantmaker's reply appears here when it has written it; reload to see it." };
+}
+
+export async function fundMandateAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const id = field(form, "organization_id");
+  const owls = amount(form);
+  if (owls === null) return { error: "Say how many owls." };
+  try {
+    await organizationFundConversation(who, id, field(form, "conversation_id"), owls, field(form, "acknowledge") === "1");
+  } catch (err) {
+    return said(err, "The mandate could not be funded.");
+  }
+  revalidatePath(page(id));
+  return { notice: `Funded with ${owls} owls from the organization.` };
+}
+
+// ---- connecting a deployment ----
+
+export async function approveConnectAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const grants = form.getAll("grant").map(String).filter((g): g is DeploymentGrant => ["read_feed", "report_usage", "publish", "act"].includes(g));
+  if (grants.length === 0) return { error: "Leave at least one grant ticked, or deny it." };
+  try {
+    await approveConnectRequest(who, field(form, "code"), organizationId, field(form, "name"), grants);
+  } catch (err) {
+    return said(err, "The deployment could not be approved.");
+  }
+  redirect(`${page(organizationId)}?tab=deployments`);
+}
+
+export async function denyConnectAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  try {
+    await denyConnectRequest(who, field(form, "code"));
+  } catch (err) {
+    return said(err, "The request could not be denied.");
+  }
+  return { notice: "Denied. The deployment is told so." };
 }

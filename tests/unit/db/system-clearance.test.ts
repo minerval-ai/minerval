@@ -94,6 +94,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A key for the account the caller was checked to be, its revocation, and the time it was last used. Nothing read from another row.",
     ],
   ],
+  "src/services/deployment-service.ts": [
+    [
+      "A deployment's key and grants say who a signed request is, so they are written on the owner's connection, as API keys are. The caller has checked the signature, or the admin approving it.",
+      "A connect request, the deployment an admin approved with its grants and the organization's log entry for it, the nonces of signed writes, and the record of those writes: all for a key whose signature was checked or an admin of the organization. Nothing that carries a label.",
+    ],
+  ],
   "src/services/organization-service.ts": [
     [
       "Organizations say who acts for an account, so their rows are written on the owner's connection, as API keys are. The caller has been checked against the organization's members.",

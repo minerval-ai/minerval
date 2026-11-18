@@ -578,10 +578,16 @@ describe("the columns", () => {
       // A per-account allowance: a number.
       "assistant_allowances",
       "contributors",
+      // Connected deployments: who a signed request is, what it may do, and the writes it signed (docs/organizations.md).
+      "deployment_connect_requests",
       // What is wrong with the deployment itself, one row for each kind of fault and provider (the credit ran out, a
       // key was refused): the same whoever asks. Its last_error is the provider's own message for a failure of
       // that kind, and is shown on no surface (deployment-fault-service.ts).
       "deployment_faults",
+      "deployment_grants",
+      "deployment_request_nonces",
+      "deployment_requests",
+      "deployments",
       // Scorecards of the corpus harness, written by scripts into its own database.
       "eval_runs",
       // Where the subscription router has read the event log to: a number.

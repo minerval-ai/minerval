@@ -63,13 +63,25 @@ import {
   resolveDispatchedAuth,
 } from "../../mcp/dispatch.js";
 import { membersOnly, type Standing } from "../../permissions.js";
+import type { DeploymentGrant } from "../../db/schema.js";
+import { DEPLOYMENT_ROUTE_GRANTS } from "../deployment-grants.js";
+import { deploymentByKey, logDeploymentRequest, recordNonce } from "../../services/deployment-service.js";
+import {
+  EMPTY_BODY_HASH,
+  SIGNATURE_FAULT_WORDS,
+  checkSignature,
+  isSignedRequest,
+  parseSignatureHeader,
+} from "../../services/request-signature.js";
+import { Transform } from "node:stream";
+import { createHash } from "node:crypto";
 import {
   isLiveAdmin,
   isOrganizationExternalId,
   logActedAs,
 } from "../../services/organization-service.js";
 
-export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass";
+export type AuthMethod = "api_key" | "env_key" | "oauth" | "dev_bypass" | "deployment";
 
 /**
  * The one label a credential works at (server/request-labels.ts), and what
@@ -123,6 +135,12 @@ export interface RequestAuth {
    * log names.
    */
   actingAdmin?: { accountId: string; externalId: string | null };
+  /**
+   * Set for a request signed by a connected deployment's key
+   * (docs/organizations.md, "Signed requests"). The request is its
+   * organization's (userId); this is the deployment and its live grants.
+   */
+  deployment?: { id: string; grants: DeploymentGrant[] };
 }
 
 /**
@@ -236,9 +254,34 @@ export function presentsCredentials(request: FastifyRequest): boolean {
   );
 }
 
+/**
+ * The sha-256 of a signed request's body as it arrived, taken while the body
+ * is read (the preParsing hook below), before it is parsed. A request with
+ * no body has none here, and is checked against the hash of nothing.
+ */
+const signedBodyHash = new WeakMap<FastifyRequest, string>();
+
 export async function registerAuth(app: FastifyInstance): Promise<void> {
   app.decorateRequest("contributorExternalId", null);
   app.decorateRequest("auth", null);
+
+  // Hash the raw body of a deployment's signed request as it streams in, so
+  // the signature can be checked against the bytes that were signed.
+  app.addHook("preParsing", async (request, _reply, payload) => {
+    if (!isSignedRequest(request.headers.authorization)) return payload;
+    const hash = createHash("sha256");
+    const pass = new Transform({
+      transform(chunk, _enc, done) {
+        hash.update(chunk);
+        done(null, chunk);
+      },
+      flush(done) {
+        signedBodyHash.set(request, hash.digest("hex"));
+        done();
+      },
+    });
+    return payload.pipe(pass);
+  });
 
   app.decorate(
     "authenticate",
@@ -276,7 +319,60 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         return;
       }
 
-      if (bearer && isOAuthAccessToken(bearer)) {
+      // A connected deployment, signing with its own key
+      // (docs/organizations.md, "Signed requests"): the request is its
+      // organization's, on the routes its grants open and no others.
+      if (isSignedRequest(authz)) {
+        const presented = parseSignatureHeader(authz!);
+        if (!presented) {
+          return reply.code(401).send({ error: SIGNATURE_FAULT_WORDS.MALFORMED, code: "SIGNATURE_MALFORMED" });
+        }
+        const deployment = await deploymentByKey(presented.keyId);
+        if (!deployment) {
+          return reply.code(401).send({
+            error: "No connected deployment has this key. It may have been retired or never approved; connect it again.",
+            code: "DEPLOYMENT_NOT_CONNECTED",
+          });
+        }
+        const fault = checkSignature(presented, deployment.public_key, {
+          host: String(request.headers.host ?? ""),
+          method: request.method,
+          path: request.url,
+          bodyHash: signedBodyHash.get(request) ?? EMPTY_BODY_HASH,
+        });
+        if (fault) {
+          return reply.code(401).send({ error: SIGNATURE_FAULT_WORDS[fault], code: `SIGNATURE_${fault}` });
+        }
+        const route = routeKeyOf(request);
+        const needed = DEPLOYMENT_ROUTE_GRANTS[route];
+        if (!needed) {
+          return reply.code(403).send({
+            error: "A connected deployment may not call this route. What it may call is the routes its grants open.",
+            code: "NOT_A_DEPLOYMENT_ROUTE",
+          });
+        }
+        const holds = needed === "any" ? deployment.grants.length > 0 : deployment.grants.includes(needed);
+        if (!holds) {
+          return reply.code(403).send({
+            error: `This deployment does not hold ${needed === "any" ? "any grant" : needed}. An admin of ${deployment.organization_name} gives it on minerval.ai.`,
+            code: "GRANT_NOT_HELD",
+            grant: needed,
+          });
+        }
+        // A write may be made once: its nonce is refused if seen with this key lately.
+        if (request.method !== "GET" && !(await recordNonce(presented.keyId, presented.nonce))) {
+          return reply.code(401).send({ error: "This signed request has been made already.", code: "SIGNATURE_REPLAYED" });
+        }
+        auth = {
+          method: "deployment",
+          userId: deployment.organization_id,
+          apiKeyId: null,
+          contributorExternalId: deployment.organization_external_id,
+          isService: false,
+          isSession: false,
+          deployment: { id: deployment.id, grants: deployment.grants },
+        };
+      } else if (bearer && isOAuthAccessToken(bearer)) {
         const resolved = await resolveAccessToken(bearer);
         if (!resolved) {
           return reply
@@ -493,6 +589,20 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
   // Every act an admin made for an organization is on the organization's
   // log, with the route and what the API answered. Reads are not logged.
   app.addHook("onResponse", async (request, reply) => {
+    // Every write a deployment signed is on its organization's record of them.
+    const deployment = request.auth?.deployment;
+    if (deployment && request.method !== "GET") {
+      try {
+        await logDeploymentRequest({
+          deploymentId: deployment.id,
+          method: request.method,
+          route: request.routeOptions.url ?? request.url,
+          status: reply.statusCode,
+        });
+      } catch (err) {
+        request.log.error({ err }, "deployment requests: could not record a signed write");
+      }
+    }
     const acting = request.auth?.actingAdmin;
     if (!acting || request.method === "GET" || !request.auth?.userId) return;
     try {

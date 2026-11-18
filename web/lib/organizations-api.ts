@@ -1,5 +1,15 @@
 import "server-only";
-import { accountFetch, pathSegment, type Entitlement, type GrantView, type OwlLedgerEntry, type OwlPack } from "./account-api";
+import {
+  accountFetch,
+  pathSegment,
+  type Entitlement,
+  type GrantConversationSummary,
+  type GrantConversationView,
+  type GrantSentMessageView,
+  type GrantView,
+  type OwlLedgerEntry,
+  type OwlPack,
+} from "./account-api";
 
 // Organizations on minerval.ai (docs/organizations.md). Every call acts for
 // the signed-in person; the ones that act for an organization pass its id,
@@ -179,4 +189,112 @@ export async function organizationAddToMandate(me: string, id: string, mandateId
 
 export async function organizationFundClaim(me: string, id: string, claimId: string, owls: number): Promise<void> {
   await accountFetch(`/claims/${pathSegment(claimId)}/contribute`, { method: "POST", body: { owls }, actingUser: me, actingOrganization: id });
+}
+
+// ---- the organization's conversations with the public Grantmaker ----
+
+export async function organizationConversations(me: string, id: string): Promise<GrantConversationSummary[]> {
+  return (await accountFetch<{ conversations: GrantConversationSummary[] }>("/grant-conversations", { actingUser: me, actingOrganization: id })).conversations;
+}
+
+export async function organizationConversation(me: string, id: string, conversationId: string): Promise<GrantConversationView> {
+  return (
+    await accountFetch<{ conversation: GrantConversationView }>(`/grant-conversations/${pathSegment(conversationId)}`, {
+      actingUser: me,
+      actingOrganization: id,
+    })
+  ).conversation;
+}
+
+export async function organizationStartConversation(me: string, id: string, message: string): Promise<GrantSentMessageView> {
+  return (
+    await accountFetch<{ conversation: GrantSentMessageView }>("/grant-conversations", {
+      method: "POST",
+      body: { message },
+      actingUser: me,
+      actingOrganization: id,
+    })
+  ).conversation;
+}
+
+export async function organizationContinueConversation(me: string, id: string, conversationId: string, message: string): Promise<GrantSentMessageView> {
+  return (
+    await accountFetch<{ conversation: GrantSentMessageView }>(`/grant-conversations/${pathSegment(conversationId)}/messages`, {
+      method: "POST",
+      body: { message },
+      actingUser: me,
+      actingOrganization: id,
+    })
+  ).conversation;
+}
+
+export async function organizationFundConversation(
+  me: string,
+  id: string,
+  conversationId: string,
+  budgetOwls: number,
+  acknowledgeWarnings: boolean
+): Promise<{ grant_id: string }> {
+  return accountFetch(`/grant-conversations/${pathSegment(conversationId)}/fund`, {
+    method: "POST",
+    body: { budget_owls: budgetOwls, ...(acknowledgeWarnings ? { acknowledge_warnings: true } : {}) },
+    actingUser: me,
+    actingOrganization: id,
+  });
+}
+
+// ---- connected deployments ----
+
+export type DeploymentGrant = "read_feed" | "report_usage" | "publish" | "act";
+
+export interface ConnectRequestView {
+  code: string;
+  suggested_name: string;
+  hosting: string;
+  hosting_words: string;
+  key_id: string;
+  asked_grants: DeploymentGrant[];
+  expires_at: string;
+  state: "waiting" | "approved" | "denied" | "expired";
+  your_organizations: Array<{ id: string; name: string }>;
+}
+
+export interface DeploymentView {
+  id: string;
+  name: string;
+  hosting: string;
+  hosting_words: string;
+  key_id: string;
+  approved_at: string;
+  approved_by: string | null;
+  retired_at: string | null;
+  grants: DeploymentGrant[];
+  last_write_at: string | null;
+  recent_writes: Array<{ method: string; route: string; status: number; at: string }>;
+}
+
+export async function readConnectRequest(me: string, code: string): Promise<ConnectRequestView> {
+  return (await accountFetch<{ request: ConnectRequestView }>(`/connect-requests/${pathSegment(code)}`, { actingUser: me })).request;
+}
+
+export async function approveConnectRequest(
+  me: string,
+  code: string,
+  organizationId: string,
+  name: string,
+  grants: DeploymentGrant[]
+): Promise<{ deployment_id: string }> {
+  return accountFetch(`/connect-requests/${pathSegment(code)}/approve`, {
+    method: "POST",
+    body: { organization_id: organizationId, grants, ...(name ? { name } : {}) },
+    actingUser: me,
+  });
+}
+
+export async function denyConnectRequest(me: string, code: string): Promise<void> {
+  await accountFetch(`/connect-requests/${pathSegment(code)}/deny`, { method: "POST", actingUser: me });
+}
+
+export async function listDeployments(me: string, id: string): Promise<DeploymentView[]> {
+  return (await accountFetch<{ deployments: DeploymentView[] }>(`${org(id)}/deployments`, { actingUser: me })).deployments;
 }
