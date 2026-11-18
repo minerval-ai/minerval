@@ -24,14 +24,14 @@ outside is to read it, at the moment it was built
 
 | Field | |
 | --- | --- |
-| `format` | `minerval-published-page/2` (a package signed in `/1` names the release `showing` and `node.release_began` `node.showing_began`, and is checked and read as it was signed) |
+| `format` | `minerval-published-page/2` (a package signed in `/1` names the release `showing`, `node.release_began` `node.showing_began`, `page.always_released` `always_shown` and `released_at` `shown_at`, and has no `page.fingerprint_format`; it is checked and read as it was signed, its page under the old construction of the fingerprint) |
 | `publisher` | The signing key: its id and its 32 bytes |
 | `deployment` | Where the deployment runs, as one of three fixed words (the organization's own machines; Minerval's; a third party's), and what outside the publisher's control attests to the run. Today nothing can, and the field says so |
 | `release` | The release: its id, form (once or standing), scope (the node alone, the node with what sits under it, one mandate's work, or every node assessed at the label), when it was asked for, how its packages are sent, and its ending with date and reason |
 | `node` | The node's id on the public graph, when the release came to cover it, when it was first assessed at the page's label, which came first, and its leaving |
 | `sequence`, `previous_hash` | 1, 2, 3, ... for this node under this release, each naming the one before |
 | `state` | The node's state now: not yet assessed, released whole, released in part, or held |
-| `page` | The latest version that is released: what is always shown, as hashed, with its salt; each released part with its text, marks and salt; each held part with its hash, its kind, who holds it, any reason given and since when; the fingerprint. Where no version has been shown, the latest version as held, by kind and hash alone |
+| `page` | The latest version that is released: what is always released with it (`always_released`), as hashed, with its salt; each released part with its text, marks and salt; each held part with its hash, its kind, who holds it, any reason given and since when; the fingerprint, and the construction it is made under (`fingerprint_format`: `minerval-released-page/2`, or `minerval-shown-page/1` for a page recorded before that name). Where no version has been shown, the latest version as held, by kind and hash alone |
 | `policy` | The version the page was redacted under, in full |
 | `record.made` | The prompt-set hash, the model that assessed and the model that redacted, any addition to a role's prompt, the seal of the assessing run's log with whether its chain checked out, and how the assessment was paid for |
 | `record.acts` | Everything a person, a rule or the process did on the release, each with the permissions the person held. People are numbered; no name crosses |
