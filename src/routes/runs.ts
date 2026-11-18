@@ -52,6 +52,7 @@ export async function runRoutes(app: FastifyInstance): Promise<void> {
   const reader = (request: FastifyRequest) => ({
     isService: isService(request),
     memberReads: membersOnly() ? standingOf(request.auth).clearance : null,
+    accountId: request.auth?.userId ?? null,
     rawSourceLabels: rawSourceLabelsOf(request.auth),
   });
 

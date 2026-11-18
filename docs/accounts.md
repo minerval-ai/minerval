@@ -1047,6 +1047,12 @@ or is charged before that. The draft carries the mandate's pace, agreed
 with the funder: as needed (the escrow is the only bound, the default) or
 steady (at most so many owls allocated to runs in any rolling window), which only
 the funder changes afterwards (docs/allocation.md, "Pace and reserve").
+The conversation is public from its first message, funded or not
+(`GET /grant-conversations/public/:id`), with the funder shown as "a
+reader" unless they choose to be named, and the page says so before the
+first message is sent: talking to a Grantmaker directs the public graph
+(docs/allocation.md, "Directing the public graph is public"). A
+conversation held before that rule stays private to its funder.
 
 The Grantmaker replies in the background. Sending a message saves it and
 returns at once with the message's place (`message.index`,
@@ -1212,12 +1218,18 @@ and mandates, the conversation with its composer pinned at the bottom, and
 a right-hand panel that shows a cited node while its citation is pointed
 at, or a saved page opened from the conversation.
 
-**Privacy.** A conversation is private to its user. Its runs are logged
-like a granting conversation's, with the transcript private to the user
-(`AGENT_INPUTS.assistant`). Deleting a conversation deletes its text, its
-held actions and, unless run logs are kept as a record
-(`RUN_LOG_MODE=record`), the transcripts of its runs. What it cost stays
-in the owl ledger.
+**Privacy.** A conversation is private to its user, and is where they
+weigh what they would not publish before anything reaches the graph. Its
+runs are logged, private (`AGENT_INPUTS.assistant`), and read whole by
+their user and no one else (docs/run-log.md, "Who reads a log"). Deleting a
+conversation deletes its text, its held actions and, unless run logs are
+kept as a record (`RUN_LOG_MODE=record`), the transcripts of every one of
+its runs, those that sent something to the graph included: what they sent
+is public on its own. What it cost stays in the owl ledger. A granting
+conversation the Assistant holds for its user is not private: talking to a
+Grantmaker directs the public graph, so it is public from its first
+message, the Assistant's messages in it marked as the Assistant's
+(docs/allocation.md, "Directing the public graph is public").
 
 **The Grantmaker.** The Assistant may hold a granting conversation for
 its user. What it writes there is stored with `via: "assistant"` and shown
@@ -1471,13 +1483,19 @@ have to cover (#356), so the promise stays keepable as tables are added.
   never reach the database: the pipeline runs untraced and keeps its result
   only in an in-memory cache (see the extension section of
   [architecture.md](architecture.md)). Erasure has nothing to find here,
-  which is the point of keeping it that way. This is true of a deployment
+  which is the point of keeping it that way. One thing is kept for a short
+  while: a text analysis's result (`extract_claims`, `assess_text`) quotes
+  the passages it found claims in, and is deleted a day after it finishes
+  (`TEXT_ANALYSIS_KEEP_HOURS`, `expireTextAnalyses`, run by the
+  trace-retention sweep in every mode). This is true of a deployment
   whose run log is best-effort, as the public graph's is. One that keeps
   its log as a record (`RUN_LOG_MODE=record`) logs that work, privately,
   and keeps the log (docs/run-log.md).
 - **Rows keyed to the account** (`contributors.id`), deletable outright:
   `api_keys`, `oauth_tokens`, `oauth_authorization_requests`,
-  `grant_conversations`, `assessment_orders`, `budget_jobs`, `grants`
+  `grant_conversations` (one begun since grantmaking was made public is
+  public, and like a contribution is detached from the account rather than
+  deleted), `assessment_orders`, `budget_jobs`, `grants`
   (`funder_user_id`), `action_allocations` (`user_id`), `owl_ledger`,
   `jobs` (`user_id`), and the attribution columns on `llm_usage` and
   `agent_runs` (`user_id`, plain uuids with no FK). Transcripts in

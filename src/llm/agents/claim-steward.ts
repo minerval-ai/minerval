@@ -956,7 +956,7 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${loo
   // A resumed pass continues the paused run's transcript, with what arrived:
   // it takes on that run's private reasons (llm/run-visibility.ts).
   if (resumed) {
-    for (const r of sessionPrivateReasons(resumed.session, resumed.replies)) markCurrentRunPrivate(r);
+    for (const r of await sessionPrivateReasons(resumed.session, resumed.replies)) markCurrentRunPrivate(r);
   }
   let transcript: Parameters<NonNullable<Parameters<typeof toolUseLoop>[0]["onEnd"]>>[0] | null = null;
 

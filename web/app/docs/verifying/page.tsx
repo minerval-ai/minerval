@@ -144,7 +144,7 @@ console.log(hash === step.hash ? "matches" : \`does not match: \${hash}\`);`}</C
             </tr>
             <tr>
               <td>A run that handled private material</td>
-              <td><code>public: false</code>, <code>withheld: true</code>, its agent and <code>private_reasons</code>, which name what made it private without repeating it. Nothing else. Some agents always start private, the Grantmaker, the Assistant, the Correspondent and the maths solver among them, and any run becomes private once it calls a tool whose output can carry private data.</td>
+              <td><code>public: false</code>, <code>withheld: true</code>, its agent and <code>private_reasons</code>, which name what made it private without repeating it. Nothing else. Some agents always start private, the Assistant and the maths solver among them, and any run becomes private once it calls a tool whose output can carry private data. The account an Assistant&rsquo;s run worked for reads it whole. A run that directs a mandate made before grantmaking was public is private, keeping the promise its funder was given; one made since is public.</td>
             </tr>
             <tr>
               <td>An unsealed run</td>

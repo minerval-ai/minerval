@@ -240,8 +240,8 @@ describe("toolUseLoop visibility marks", () => {
   });
 
   it("marks the run for a tool that reads private data", async () => {
-    await loop("grant_overview");
-    expect(mocks.markRunPrivate).toHaveBeenCalledWith(expect.anything(), "tool:grant_overview");
+    await loop("get_contributor_profile");
+    expect(mocks.markRunPrivate).toHaveBeenCalledWith(expect.anything(), "tool:get_contributor_profile");
   });
 
   it("leaves the run alone for a public read", async () => {

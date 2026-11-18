@@ -144,6 +144,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /grant-conversations/platform/:id": {
     name: "get_platform_grant_conversation",
   },
+  "GET /grant-conversations/public/:id": { name: "get_public_grant_conversation" },
   "POST /grant-conversations/:id/messages": { name: "send_grant_message" },
   "POST /grant-conversations/:id/fund": { name: "fund_grant", note: ESCROWS_OWLS },
   "GET /grants": { name: "list_grants" },

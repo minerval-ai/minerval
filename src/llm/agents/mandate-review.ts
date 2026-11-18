@@ -25,6 +25,7 @@
  * against the escrow, and a pace bounds the spend. The refusal duties
  * that govern mandate design govern this pass equally.
  */
+import { keepGrantmakingPromise } from "../private-grantmaking.js";
 import { recordMandateUpdate } from "../../services/mandate-work-service.js";
 import { openSession, executeSessionTool, getSessionToolDefinitions, type SessionResume } from "../tools/session-tools.js";
 import { executeSubscriptionTool, getSubscriptionToolDefinitions } from "../tools/subscription-tools.js";
@@ -231,6 +232,9 @@ async function runMandateReviewImpl(input: {
   model?: string;
 }, resume?: SessionResume): Promise<MandateReviewResult> {
   const config = loadConfig();
+  // A mandate made before grantmaking was public keeps its promise
+  // (private-grantmaking.ts); any other review pass is public.
+  await keepGrantmakingPromise({ grantId: input.grantId });
   // Anchors the two-pass closure rule: a close request is only
   // confirmable by a pass that STARTED after it was recorded.
   const passStartedAt = new Date();

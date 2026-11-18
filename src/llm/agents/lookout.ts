@@ -46,6 +46,7 @@
  * program officers; and it has no feeds and no paid contribution review,
  * which are a mandate's.
  */
+import { keepGrantmakingPromise } from "../private-grantmaking.js";
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
 type Tool = Anthropic.Tool;
@@ -59,7 +60,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { STANDING_ORDER_RETRY_MINUTES } from "../../services/standing-order-service.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
-import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
+import { withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
 import { getLookoutSystemPromptBlocks } from "../prompts/lookout.js";
@@ -212,6 +213,9 @@ async function runLookoutImpl(input: {
   }
   // A Steward's lookout (lookout-fund.ts) or a mandate's: who it answers to.
   const grantId = lookout.grant_id;
+  // A mandate made before grantmaking was public keeps its promise
+  // (private-grantmaking.ts); any other lookout's run is public.
+  await keepGrantmakingPromise({ grantId });
   const stewardNode = grantId ? null : lookout.node_id;
   const fundLeft = stewardNode ? await lookoutFundLeftMicroUsd(lookout.id) : null;
 
@@ -302,11 +306,9 @@ async function runLookoutImpl(input: {
     if (summarized.length === 0 && (shownInFull.length === 0 || briefingChars + full.length <= EVENTS_FULL_CHARS)) {
       shownInFull.push(full);
       briefingChars += full.length;
-      // A poke's note can relay a funder's words, which are not public
-      // (llm/run-visibility.ts); a briefing that shows one is private.
-      if (e.kind === "manual" && typeof e.payload?.note === "string") {
-        markCurrentRunPrivate("input:lookout-poke-note");
-      }
+      // A poke's note can relay a funder's words. They direct the public
+      // graph, so they are public, except on a mandate made before that
+      // rule, whose run keepGrantmakingPromise has already marked.
     } else {
       summarized.push(summarizeLookoutEvent(e));
     }

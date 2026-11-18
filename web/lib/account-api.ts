@@ -1091,8 +1091,19 @@ export interface MandateDetailView extends MandateSummaryView {
   updates_total?: number;
   direction?: { text: string; at: string | null } | null;
   platform_faults?: Array<{ reason: string; since: string; waiting_rows: number }>;
-  /** Set only for the manager: what its Grantmaker has asked of them, newest first. */
+  /**
+   * What its Grantmaker has asked of the funder, newest first: for the
+   * manager, and for anyone on a mandate directed in public.
+   */
   funder_notes?: Array<{ at: string; note: string }>;
+  /**
+   * Set on a mandate directed in public: its conversation, funder notes,
+   * working notes and the runs that direct it are public. Absent on a
+   * mandate made before that rule, whose funder was promised privacy.
+   */
+  directed_in_public?: true;
+  /** The Grantmaker's working notes, on a mandate directed in public. */
+  workspace?: string | null;
   funded_assessments: Array<{
     claim_id: string;
     text: string;

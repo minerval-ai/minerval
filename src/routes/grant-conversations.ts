@@ -8,6 +8,8 @@
  *   POST /grant-conversations/:id/fund     — escrow the budget and turn the
  *     drafted mandate into a live grant. Refused for the platform account,
  *     whose mandates are funded under a public approval (#529).
+ *   GET  /grant-conversations/public/:id — a public granting conversation
+ *     (every one begun since directing the public graph was made public).
  *   GET  /grant-conversations/platform/:id — one of the platform's
  *     conversations, public (#529).
  *
@@ -58,7 +60,7 @@ import {
   SUGGESTED_TURN_WAIT_SECONDS,
 } from "../services/grant-conversation-service.js";
 import { mandateFunderUrl, mandatePageUrl } from "../services/mandate-urls.js";
-import { getPublicPlatformConversation } from "../services/platform-mandate-service.js";
+import { getPublicConversation, getPublicPlatformConversation } from "../services/platform-mandate-service.js";
 import { requirePermission } from "../server/require-permission.js";
 import { deploymentHoldsLabels } from "../db/client.js";
 import { membersOnly } from "../permissions.js";
@@ -173,6 +175,53 @@ export async function grantConversationRoutes(
       if (!convo) {
         return reply.code(404).send({
           error: "No platform granting conversation has that id",
+          code: "NOT_FOUND",
+        });
+      }
+      const after = Math.min(request.query.after ?? 0, convo.messages.length);
+      return reply.send({
+        conversation: {
+          ...convo,
+          message_count: convo.messages.length,
+          ...(after > 0 ? { messages_after: after, messages: convo.messages.slice(after) } : {}),
+        },
+      });
+    },
+  });
+
+  // A granting conversation anyone may read: every one begun since directing
+  // the public graph was made public, funded or not, and the platform's
+  // (docs/allocation.md, "Directing the public graph is public"). One held
+  // before that rule was promised privacy and answers 404 here, as it does
+  // to anyone but its funder on GET /grant-conversations/:id.
+  app.get<{ Params: { id: string }; Querystring: { after?: number } }>("/public/:id", {
+    schema: {
+      tags: ["grants"],
+      summary:
+        "Read a public granting conversation: transcript, standing draft, the draft's hash, " +
+        "and the funder as they chose to be shown (public)",
+      description:
+        "Talking to the Grantmaker directs the public graph, so every conversation is public from " +
+        "its first message, whether or not it is funded. The funder is shown by name only if they " +
+        "chose to be named on the mandate, and otherwise as \"a reader\". A conversation held " +
+        "before this rule was promised privacy and is not served. after=<n> returns only the " +
+        "messages after the first n.",
+      params: {
+        type: "object",
+        properties: { id: { type: "string", format: "uuid" } },
+      },
+      querystring: {
+        type: "object",
+        properties: {
+          after: { type: "integer", minimum: 0, description: "How many messages you already hold." },
+        },
+      },
+    },
+    handler: async (request, reply) => {
+      const convo = await getPublicConversation(request.params.id);
+      if (!convo) {
+        return reply.code(404).send({
+          error: "No public granting conversation has that id",
           code: "NOT_FOUND",
         });
       }

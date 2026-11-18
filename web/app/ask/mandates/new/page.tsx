@@ -4,6 +4,7 @@ import { auth } from "../../../../auth";
 import { GrantmakerConversation } from "../../GrantmakerConversation";
 import { fetchMyLabels } from "../../../../lib/admin-api";
 import { loadStanding } from "../../../../lib/standing";
+import { membersOnly } from "../../../../lib/members";
 
 export const metadata: Metadata = { title: "Start a mandate · Minerval" };
 
@@ -45,6 +46,20 @@ export default async function StartMandatePage({
           not spend comes back. A Grantmaker works for the graph: it declines a mandate designed to steer
           conclusions.
         </p>
+        {membersOnly() ? (
+          <p className="ask-public-notice">
+            <strong>Every member who reads this mandate&rsquo;s label can read this conversation</strong>, from
+            your first message, whether or not you fund it: what directs the graph is open to those it directs.
+          </p>
+        ) : (
+        <p className="ask-public-notice">
+          <strong>This conversation is public from your first message</strong>, whether or not you fund it.
+          Talking to a Grantmaker directs the public graph, and what directs it is public, so that anyone can
+          see why work was paid for. You are shown as &ldquo;a reader&rdquo; unless you choose to be named.
+          Weigh anything you would not publish with your <a href="/ask">Assistant</a> first, or in a private
+          graph your organization runs.
+        </p>
+        )}
       </div>
     </GrantmakerConversation>
   );

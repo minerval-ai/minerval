@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchRunStep } from "@/lib/api";
+import { fetchOwnRunStep } from "@/lib/own-runs";
 import { PageHead } from "@/components/PageHead";
 
 // One step of an agent run, in full: the setup it was given, a model turn,
@@ -29,7 +30,8 @@ export default async function RunStepPage({ params }: { params: Promise<Params> 
   const { id, seq: rawSeq } = await params;
   const seq = Number(rawSeq);
   if (!apiConfigured() || !Number.isInteger(seq) || seq < 0) notFound();
-  const step = await fetchRunStep(id, seq);
+  // A step of a run that worked only for the signed-in reader is theirs to read.
+  const step = (await fetchRunStep(id, seq)) ?? (await fetchOwnRunStep(id, seq));
   if (!step) notFound();
 
   const c = (step.content ?? {}) as Record<string, unknown>;

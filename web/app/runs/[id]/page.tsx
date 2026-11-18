@@ -2,12 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchRun, fetchRunSteps } from "@/lib/api";
+import { fetchOwnRun, fetchOwnRunSteps } from "@/lib/own-runs";
 import { modelDisplayName } from "@/lib/model-names";
 import { PageHead } from "@/components/PageHead";
 import { LiveRefresh } from "@/components/LiveRefresh";
 
 // One agent run (#553): what it was given, what it did, step by step. A run
-// that read private data is withheld, and the page says why.
+// that read private data is withheld, and the page says why, unless it
+// worked only for the signed-in reader (their Assistant's, say): then it is
+// shown to them, and to no one else.
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +26,9 @@ const REASON_TEXT: Record<string, string> = {
   "input:lookout-poke-note": "its briefing included a note that can relay a funder's words",
   "input:grantmaker-brief": "its task came from a funder's private conversation",
   "input:audit-brief": "its task came from an audit context that can carry operator data",
-  "input:research-report": "a research report reached it, and research reports are not published",
+  "input:research-report": "a research report from a run that is not public reached it",
+  "input:private-grantmaking":
+    "it works for a mandate made before grantmaking was public, whose funder was promised that their words were private",
 };
 
 function reasonText(r: string): string {
@@ -41,8 +46,10 @@ function fmt(iso: string | null): string {
 export default async function RunPage({ params }: { params: Promise<Params> }) {
   const { id } = await params;
   if (!apiConfigured()) notFound();
-  const run = await fetchRun(id);
-  if (!run) notFound();
+  const found = await fetchRun(id);
+  if (!found) notFound();
+  const own = "withheld" in found ? await fetchOwnRun(id) : null;
+  const run = own ?? found;
 
   if ("withheld" in run) {
     return (
@@ -64,7 +71,7 @@ export default async function RunPage({ params }: { params: Promise<Params> }) {
     );
   }
 
-  const page = await fetchRunSteps(id);
+  const page = own ? await fetchOwnRunSteps(id) : await fetchRunSteps(id);
   const steps = page?.steps ?? [];
   const setup = run.setup;
 

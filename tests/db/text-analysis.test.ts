@@ -2,11 +2,13 @@
  * Background text analyses (MCP extract_claims / assess_text), against real
  * Postgres: the job comes back before the work runs, progress is readable
  * while it runs, the result is the asking account's alone, a failure is
- * recorded, and an analysis whose process died reads as failed.
+ * recorded, an analysis whose process died reads as failed, and a finished
+ * one is deleted a day later, since its result quotes the reader's text.
  */
 import { describe, it, expect } from "vitest";
 import { rawQuery } from "../../src/db/client.js";
 import {
+  expireTextAnalyses,
   getTextAnalysis,
   settleTextAnalyses,
   startTextAnalysis,
@@ -114,5 +116,23 @@ describe("text analyses", () => {
       status: "failed",
       error: expect.stringMatching(/interrupted/),
     });
+  });
+
+  it("deletes a finished analysis a day after it finished, and leaves the rest", async () => {
+    const userId = await seedUser("analysis-expiry");
+    const owner = { userId, apiKeyId: null };
+    const old = await startTextAnalysis("extract_claims", {}, owner, async () => ({ claims: [] }));
+    const fresh = await startTextAnalysis("extract_claims", {}, owner, async () => ({ claims: [] }));
+    await settleTextAnalyses();
+    await rawQuery(`UPDATE jobs SET completed_at = now() - interval '25 hours' WHERE id = $1`, [old.id]);
+    const other = await rawQuery<{ id: string }>(
+      `INSERT INTO jobs (type, status, input, completed_at) VALUES ('ingest', 'complete', '{}'::jsonb, now() - interval '400 days') RETURNING id`
+    );
+
+    expect(await expireTextAnalyses()).toBeGreaterThanOrEqual(1);
+    expect(await getTextAnalysis(old.id, owner)).toBeNull();
+    expect(await getTextAnalysis(fresh.id, owner)).toMatchObject({ status: "complete" });
+    // Only text analyses expire; other jobs are not a reader's own text.
+    expect(await rawQuery(`SELECT id FROM jobs WHERE id = $1`, [other[0]!.id])).toHaveLength(1);
   });
 });

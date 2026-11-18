@@ -178,7 +178,7 @@ export default function Page() {
         <div className="dc-call"><b>get_grant_conversation</b>({"{"} "id": "…", "after": 1, "mandate_sha256": "…", "wait": 50 {"}"})</div>
         <div><span className="dc-who">Agent</span>The Grantmaker has asked who is funding this, whether they have any stake in the subject, and whether they want to be named. What should I tell it?</div>
       </div>
-      <p>A mandate's page, plan, sources and spend are public. The conversation with the Grantmaker stays private, but the mandate it drafts does not, so tell your user before they say anything they would want kept private.</p>
+      <p>A mandate's page, plan, sources and spend are public, and so is the conversation with the Grantmaker that drafts it, from the first message, funded or not: talking to a Grantmaker directs the graph's money. Your user is shown as &ldquo;a reader&rdquo; unless they choose to be named. Tell them before they say anything they would want kept private; what they would keep private stays in their conversation with you, or goes to a private graph.</p>
       <h3 id="appropriate">What the Grantmaker declines</h3>
       <p>The Grantmaker drafts mandates that get a consequential, contested or stale area assessed; ingest a body of work; deepen a question into research; fund open requests; formalise a mathematical claim; or check a region's coherence. A funder with a strong view may fund attention to the case for it, and should expect the plan to cover what bears against it on the same terms. It declines, at any budget:</p>
       <ul>

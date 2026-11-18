@@ -20,6 +20,7 @@
  * the openness the constitution asks of the one budget no outside funder
  * checks.
  */
+import { PUBLIC_LABEL } from "../labels.js";
 import { rawQuery, withTransaction } from "../db/client.js";
 import type { GrantMandate } from "../llm/agents/grantmaker.js";
 import {
@@ -215,6 +216,70 @@ export async function fundPlatformConversation(input: {
  * any conversation that is not the platform's; a person's conversations
  * stay private to them.
  */
+/**
+ * A granting conversation anyone may read (grant_conversations.in_public):
+ * every conversation begun since directing the public graph was made public,
+ * funded or not, and the platform's own, which always were (#529). One held
+ * before that rule was promised privacy and is not served here.
+ *
+ * Only a conversation at `public` is served: inside a private graph a
+ * conversation at another label is open to the members who read that label,
+ * on the routes they read it by, and to no one here.
+ *
+ * The funder is named only as they chose on the mandate the conversation
+ * made (funder_named, constitution §19 and terms 7.5(c)); before they choose,
+ * and if they chose not to be named, they are "a reader". The platform is
+ * "Minerval". Whose account it is is never served.
+ */
+export async function getPublicConversation(conversationId: string) {
+  const [row] = await rawQuery<{
+    id: string;
+    status: string;
+    messages: ConversationMessage[] | null;
+    mandate: GrantMandate | null;
+    grant_id: string | null;
+    turn_started_at: Date | null;
+    turn_heartbeat_at: Date | null;
+    turn_error: string | null;
+    turn_partial: string | null;
+    created_at: Date;
+    updated_at: Date;
+    is_platform: boolean;
+    funder_named: boolean | null;
+    display_name: string | null;
+  }>(
+    `SELECT gc.id, gc.status, gc.messages, gc.mandate, gc.grant_id,
+            gc.turn_started_at, gc.turn_heartbeat_at, gc.turn_error, gc.turn_partial,
+            gc.created_at, gc.updated_at,
+            c.external_id = $2 AS is_platform,
+            (g.mandate->>'funder_named')::boolean AS funder_named,
+            c.display_name
+       FROM grant_conversations gc
+       JOIN contributors c ON c.id = gc.user_id
+       LEFT JOIN grants g ON g.id = gc.grant_id
+      WHERE gc.id = $1 AND gc.in_public AND gc.sensitivity_label = $3`,
+    [conversationId, PLATFORM_EXTERNAL_ID, PUBLIC_LABEL]
+  );
+  if (!row) return null;
+  return {
+    id: row.id,
+    funder: row.is_platform ? "Minerval" : row.funder_named && row.display_name ? row.display_name : "a reader",
+    status: row.status,
+    messages: row.messages ?? [],
+    draft: row.mandate,
+    draft_sha256: row.mandate ? mandateDraftHash(row.mandate) : null,
+    turn: serializeTurn({
+      turnStartedAt: row.turn_started_at,
+      turnHeartbeatAt: row.turn_heartbeat_at,
+      turnError: row.turn_error,
+      turnPartial: row.turn_partial,
+    }),
+    grant_id: row.grant_id,
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
+
 export async function getPublicPlatformConversation(conversationId: string) {
   const [row] = await rawQuery<{
     id: string;
