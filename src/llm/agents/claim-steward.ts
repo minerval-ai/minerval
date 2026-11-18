@@ -58,6 +58,11 @@ import { withAgent, runWithUsageContext, withSkills, budgetRefusal, markCurrentR
 import { turnBudgetLine } from "../prompts/turn-budget.js";
 import { getInboxToolDefinitions, executeInboxTool } from "../tools/inbox-tools.js";
 import { getSpendToolDefinitions, executeSpendTool } from "../tools/spend-tools.js";
+import {
+  executeStewardLookoutTool,
+  getStewardLookoutToolDefinitions,
+  stewardLookoutNote,
+} from "../tools/steward-lookout-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { executePolicyReadTool, getPolicyReadToolDefinition } from "../tools/policy-read-tool.js";
 import { executeLeaveStandingTool, getLeaveStandingToolDefinition, LEAVE_STANDING_TOOL_NAME } from "../tools/leave-standing-tool.js";
@@ -783,6 +788,8 @@ async function runClaimStewardImpl(input: {
     ...getStewardToolDefinitions().filter((t) => !withheldFor(kind).has(t.name)),
     ...getInboxToolDefinitions(),
     ...getSpendToolDefinitions(),
+    // Every kind of Steward may keep watch after its pass (#300 follow-up).
+    ...getStewardLookoutToolDefinitions(),
     ...getSessionToolDefinitions(),
     getSqlToolDefinition(),
     // Where a page may be shown below its label, the policy it would be
@@ -887,6 +894,9 @@ a cent.`
   // Every unread message on the node, whole (inbox-service.ts). The lane's
   // own context, when it has one, still comes first.
   const inbox = await openInbox(input.claimId);
+  // The watches earlier passes posted on this node, with their funds and
+  // what they raised (steward-lookout-tools.ts). Nothing when there are none.
+  const lookoutNote = await stewardLookoutNote(input.claimId).catch(() => "");
 
   const userMessage = `You have been triggered to steward a ${noun}.
 
@@ -895,7 +905,7 @@ Trigger: ${input.trigger}
 ${kind === "claim" ? "Claim" : kind === "quantity" ? "Quantity" : kind === "artifact" ? "List" : "Question"} ID: ${input.claimId}
 ${input.context.trim() ? `Context: ${input.context}\n\n` : ""}${inbox.brief ? `${inbox.brief}\n\n` : ""}${turnBudgetLine(iterationBudget, { canSpend: true })}
 
-${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
+${task.text}${changesNote ? `\n\n${changesNote}` : ""}${lookoutNote ? `\n\n${lookoutNote}` : ""}${elicitNote}${pangramNote}${sandboxNote}${connectionTools.note ? `\n\n${connectionTools.note}` : ""}${fileSetTools.note ? `\n\n${fileSetTools.note}` : ""}${skillsNote}`;
 
   // One cached block for the constitution and role; skills arrive as tool
   // results when the run loads them.
@@ -935,6 +945,7 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
             : "",
           input.context.trim() ? `Context: ${input.context}` : "",
           inbox.brief,
+          lookoutNote,
           connectionTools.note,
           fileSetTools.note,
         ].filter(Boolean).join("\n\n"),
@@ -1016,6 +1027,8 @@ ${task.text}${changesNote ? `\n\n${changesNote}` : ""}${elicitNote}${pangramNote
     if (sessionOutput !== null) return sessionOutput;
     const spendOutput = await executeSpendTool(name, toolInput);
     if (spendOutput !== null) return spendOutput;
+    const lookoutOutput = await executeStewardLookoutTool(name, toolInput);
+    if (lookoutOutput !== null) return lookoutOutput;
     const sqlOutput = await executeSqlTool(name, toolInput);
     if (sqlOutput !== null) return sqlOutput;
     const policyOutput = await executePolicyReadTool(name, toolInput);

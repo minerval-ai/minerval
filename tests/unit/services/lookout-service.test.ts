@@ -178,6 +178,8 @@ describe("createLookout", () => {
       // No commission window unless one is given (#1043): the per-item limit alone, over a day.
       0,
       24,
+      // A mandate's lookout, not a Steward's (lookout-fund.ts).
+      null,
     ]);
     // The retired per-run count is no longer written; the column keeps its default (#695).
     expect(insert.q).not.toContain("max_ingests_per_run");
@@ -211,10 +213,13 @@ describe("updateLookout", () => {
     expect(res.ok).toBe(true);
     const upd = queries.find((x) => x.q.startsWith("UPDATE lookouts SET"))!;
     expect(upd.q).toContain("status = $2");
-    expect(upd.q).toContain("next_due_at = $3");
-    expect(upd.q).toContain("commission_limit_micro_usd = $4");
+    // Whoever sets the status decides it, so a pause for want of money ends.
+    expect(upd.q).toContain("paused_for_fund = $3");
+    expect(upd.q).toContain("next_due_at = $4");
+    expect(upd.q).toContain("commission_limit_micro_usd = $5");
     expect(upd.params[1]).toBe("active");
-    expect(upd.params[3]).toBe(3_000_000);
+    expect(upd.params[2]).toBe(false);
+    expect(upd.params[4]).toBe(3_000_000);
   });
 
   it("sets a commission window, keeps the stored part not given, and refuses a window it cannot hold to (#1043)", async () => {

@@ -337,6 +337,8 @@ export const TOOL_READS: Readonly<Record<string, Classification>> = {
   set_request_targets: { reads: "public", why: "confirms the run's own write to public graph records" },
   spawn_correspondent: { reads: "public", why: "correspondent updates and plans, public on GET /correspondents/:id" },
   spawn_lookout: { reads: "public", why: "lookout records, public on the mandate's lookout route" },
+  post_lookout: { reads: "public", why: "confirms the run's own write: the lookout's id, its fund and the budget the run has left" },
+  amend_lookout: { reads: "public", why: "confirms the run's own write to a lookout its node's Steward posted, with what its fund holds" },
   spawn_mandate: { reads: "public", why: "confirms the run's own write; the output carries nothing beyond the run's input" },
   split_argument: { reads: "public", why: "confirms the run's own write to public graph records" },
   submit_contribution: { reads: "public", why: "confirms the contribution, which is public, and a mandate's review budget, public on its dashboard" },

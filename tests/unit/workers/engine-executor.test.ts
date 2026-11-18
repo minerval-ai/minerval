@@ -51,7 +51,7 @@ vi.mock("../../../src/db/client.js", () => ({
     if (q.includes("FROM grants g JOIN budget_jobs")) {
       return state.grant ? [state.grant] : [];
     }
-    if (q.includes("FROM lookouts l JOIN grants g")) {
+    if (q.includes("LEFT JOIN grants g ON g.id = l.grant_id")) {
       return state.lookout ? [state.lookout] : [];
     }
     if (q.includes("FROM grants WHERE id = $1")) {
@@ -231,7 +231,7 @@ beforeEach(() => {
     id: "l-1",
     status: "active",
     grant_id: "g-1",
-    grant_status: "active",
+    owner_active: true,
     funder_user_id: "u-1",
     budget_job_id: "job-1",
   };

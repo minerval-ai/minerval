@@ -34,6 +34,7 @@ const OTHERWISE: Record<string, string> = {
   "src/llm/agents/program-officer.ts actions": "A sitting's ledger row, for its mandate, at the mandate's label (LABEL_ON_REOPEN_SQL).",
   "src/services/prize-claim-service.ts actions": "A prize review's ledger row: the update sets a time and nothing else.",
   "src/services/commission-service.ts action_allocations": "Money added to a placement already there: an amount.",
+  "src/services/lookout-fund.ts action_allocations": "A run's unspent money added back to its lookout's fund, onto the same mandate's row already there: an amount.",
   "src/services/report-service.ts agent_reports":
     "A repeat of a report. The update applies only where the row is at the reporter's own label (its own WHERE says so, with the incoming row's label); a repeat at another label changes nothing on the row and is recorded as a sighting at the reporter's label.",
   "src/services/attempt-service.ts lean_checks":

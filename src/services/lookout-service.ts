@@ -1,6 +1,8 @@
 /**
  * Lookouts — the standing watches a mandate funds (docs/allocation.md,
- * "Lookouts: cheap standing watch").
+ * "Lookouts: cheap standing watch"), and those a node's Steward posts and
+ * pays for from a fund of its own (lookout-fund.ts; "A Steward's own
+ * lookout").
  *
  * A lookout is the cheapest agent in the system with the narrowest
  * question: has anything happened, in the scope its brief describes, that
@@ -71,10 +73,15 @@ export const LOOKOUT_BOUNDS = {
 
 export interface LookoutRow {
   id: string;
-  grant_id: string;
+  /** The mandate that posted it; null for a Steward's lookout. */
+  grant_id: string | null;
+  /** The node whose Steward posted it (lookout-fund.ts); null for a mandate's. */
+  node_id: string | null;
   title: string;
   brief: string;
   status: LookoutStatus;
+  /** Paused because its fund could not pay for a run (a Steward's lookout). */
+  paused_for_fund: boolean;
   heartbeat_hours: number;
   triggers: LookoutTriggerKind[];
   model: string | null;
@@ -104,7 +111,7 @@ export interface LookoutRow {
  * or a route's reply. Every read of a whole lookout uses these.
  */
 export const LOOKOUT_COLUMNS = [
-  "id", "grant_id", "title", "brief", "status", "heartbeat_hours", "triggers", "model",
+  "id", "grant_id", "node_id", "title", "brief", "status", "paused_for_fund", "heartbeat_hours", "triggers", "model",
   "commission_limit_micro_usd", "commission_window_micro_usd", "commission_window_hours", "territory_claim_ids", "territory_tag_ids",
   "changes_cursor", "workspace", "last_note", "last_run_at",
   "next_due_at", "runs", "flags", "created_by", "created_at", "updated_at",
@@ -175,13 +182,16 @@ function clampInt(v: unknown, min: number, max: number, dflt: number): number {
 
 
 /**
- * Stand up a lookout on an active mandate. The brief is the lookout's
- * scope and instructions in the Grantmaker's words; everything numeric is
- * clamped to LOOKOUT_BOUNDS rather than refused, except a model id that
- * resolves to no provider, which would fail every run.
+ * Stand up a lookout on an active mandate, or for a node's Steward (nodeId;
+ * the Steward puts up its fund separately, lookout-fund.ts). The brief is
+ * the lookout's scope and instructions in its poster's words; everything
+ * numeric is clamped to LOOKOUT_BOUNDS rather than refused, except a model
+ * id that resolves to no provider, which would fail every run.
  */
 export async function createLookout(input: {
-  grantId: string;
+  /** Exactly one of grantId and nodeId: who posted it. */
+  grantId?: string;
+  nodeId?: string;
   title: string;
   brief: string;
   heartbeatHours?: number;
@@ -198,12 +208,22 @@ export async function createLookout(input: {
   territory?: { claimIds?: unknown; tagSlugs?: unknown };
   createdBy: string;
 }): Promise<LookoutWriteResult> {
-  const [grant] = await rawQuery<{ id: string }>(
-    `SELECT id FROM grants WHERE id = $1 AND status = 'active'`,
-    [input.grantId]
-  );
-  if (!grant) {
-    return { ok: false, code: "MANDATE_NOT_ACTIVE", message: "Mandate not found or not active" };
+  if (Boolean(input.grantId) === Boolean(input.nodeId)) {
+    return { ok: false, code: "OWNER", message: "A lookout is posted by a mandate or by a node's Steward, one of the two" };
+  }
+  if (input.grantId) {
+    const [grant] = await rawQuery<{ id: string }>(
+      `SELECT id FROM grants WHERE id = $1 AND status = 'active'`,
+      [input.grantId]
+    );
+    if (!grant) {
+      return { ok: false, code: "MANDATE_NOT_ACTIVE", message: "Mandate not found or not active" };
+    }
+  } else {
+    const [node] = isUuid(input.nodeId)
+      ? await rawQuery<{ id: string }>(`SELECT id FROM claims WHERE id = $1 AND state = 'active'`, [input.nodeId])
+      : [];
+    if (!node) return { ok: false, code: "NODE", message: "No active node with that id" };
   }
   const title = String(input.title ?? "").trim();
   if (title.length < LOOKOUT_BOUNDS.titleChars.min) {
@@ -243,6 +263,9 @@ export async function createLookout(input: {
   if (typeof commissionWindow === "string") return { ok: false, code: "COMMISSION_WINDOW", message: commissionWindow };
   const territory = await resolveTerritory(input.territory);
   if (typeof territory === "string") return { ok: false, code: "TERRITORY", message: territory };
+  // A Steward's graph feed follows its own node, with everything beneath
+  // it, unless it names more.
+  if (input.nodeId && territory.claimIds.length + territory.tagIds.length === 0) territory.claimIds = [input.nodeId];
   // An empty territory follows the whole graph. Only a mandate whose own
   // scope is the whole graph (no scope node, no scope query) may watch it
   // all; a scoped mandate's feed names what it follows.
@@ -266,11 +289,11 @@ export async function createLookout(input: {
     `INSERT INTO lookouts
        (grant_id, title, brief, heartbeat_hours, triggers, model, created_by,
         commission_limit_micro_usd, territory_claim_ids, territory_tag_ids, sensitivity_label,
-        commission_window_micro_usd, commission_window_hours)
-     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::uuid[], $10::uuid[], $11, $12, $13)
+        commission_window_micro_usd, commission_window_hours, node_id)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9::uuid[], $10::uuid[], $11, $12, $13, $14)
      RETURNING id`,
     [
-      input.grantId,
+      input.grantId ?? null,
       title.slice(0, LOOKOUT_BOUNDS.titleChars.max),
       brief.slice(0, LOOKOUT_BOUNDS.briefChars.max),
       heartbeat,
@@ -283,6 +306,7 @@ export async function createLookout(input: {
       currentLabel(),
       commissionWindow.micro,
       commissionWindow.hours,
+      input.nodeId ?? null,
     ]
   );
   return { ok: true, lookoutId: row!.id };
@@ -294,7 +318,9 @@ export async function createLookout(input: {
  * workspace for a later resume.
  */
 export async function updateLookout(input: {
-  grantId: string;
+  /** Who amends it: the mandate that posted it, or the node whose Steward did. */
+  grantId?: string;
+  nodeId?: string;
   lookoutId: string;
   title?: string;
   brief?: string;
@@ -308,8 +334,17 @@ export async function updateLookout(input: {
   territory?: { claimIds?: unknown; tagSlugs?: unknown };
 }): Promise<LookoutWriteResult> {
   const current = isUuid(input.lookoutId) ? await getLookout(input.lookoutId) : null;
-  if (!current || current.grant_id !== input.grantId) {
-    return { ok: false, code: "NOT_FOUND", message: "No such lookout on this mandate" };
+  const owns = current
+    ? input.grantId
+      ? current.grant_id === input.grantId
+      : Boolean(input.nodeId) && current.node_id === input.nodeId
+    : false;
+  if (!current || !owns) {
+    return {
+      ok: false,
+      code: "NOT_FOUND",
+      message: input.grantId ? "No such lookout on this mandate" : "No such lookout posted for this node",
+    };
   }
   if (current.status === "retired") {
     return { ok: false, code: "RETIRED", message: "A retired lookout cannot be changed" };
@@ -335,6 +370,8 @@ export async function updateLookout(input: {
       return { ok: false, code: "STATUS", message: `status must be one of ${LOOKOUT_STATUSES.join(", ")}` };
     }
     set("status", input.status);
+    // Whoever set the status has decided it, fund or no fund.
+    set("paused_for_fund", false);
     // Resuming makes the heartbeat due now rather than whenever it was.
     if (input.status === "active" && current.status !== "active") set("next_due_at", new Date());
   }
@@ -370,6 +407,8 @@ export async function updateLookout(input: {
   if (input.territory !== undefined) {
     const territory = await resolveTerritory(input.territory);
     if (typeof territory === "string") return { ok: false, code: "TERRITORY", message: territory };
+    // A Steward's lookout never follows the whole graph: emptied, it follows its node.
+    if (current.node_id && territory.claimIds.length + territory.tagIds.length === 0) territory.claimIds = [current.node_id];
     params.push(territory.claimIds);
     sets.push(`territory_claim_ids = $${params.length}::uuid[]`);
     params.push(territory.tagIds);
@@ -380,6 +419,12 @@ export async function updateLookout(input: {
     `UPDATE lookouts SET ${sets.join(", ")}, updated_at = now() WHERE id = $1`,
     params
   );
+  // A Steward's lookout retired: what is left of its fund goes back to
+  // whoever put it up.
+  if (input.status === "retired" && current.node_id) {
+    const { releaseLookoutFund } = await import("./lookout-fund.js");
+    await releaseLookoutFund(input.lookoutId);
+  }
   return { ok: true, lookoutId: input.lookoutId };
 }
 
@@ -408,6 +453,14 @@ export async function listLookouts(grantId: string): Promise<LookoutRow[]> {
   return rawQuery<LookoutRow>(
     `${LOOKOUT_SELECT} WHERE grant_id = $1 ORDER BY created_at ASC`,
     [grantId]
+  );
+}
+
+/** The lookouts a node's Steward posted, newest first. */
+export async function listNodeLookouts(nodeId: string): Promise<LookoutRow[]> {
+  return rawQuery<LookoutRow>(
+    `${LOOKOUT_SELECT} WHERE node_id = $1 ORDER BY created_at DESC`,
+    [nodeId]
   );
 }
 
@@ -540,7 +593,7 @@ export type FlagResult =
  */
 async function actOnFind(input: {
   lookoutId: string;
-  grantId: string;
+  grantId: string | null;
   actionId: string;
   claimId: string | null;
   url: string | null;
@@ -548,15 +601,21 @@ async function actOnFind(input: {
   budgetMicroUsd: number;
   commissionLimitMicroUsd: number;
 }): Promise<{ commissioned: boolean; note: string }> {
-  const [lookout] = await rawQuery<{ title: string }>(`SELECT title FROM lookouts WHERE id = $1`, [input.lookoutId]);
+  const [lookout] = await rawQuery<{ title: string; node_id: string | null }>(
+    `SELECT title, node_id FROM lookouts WHERE id = $1`,
+    [input.lookoutId]
+  );
   const title = lookout?.title ?? "a lookout";
+  if (!input.grantId && lookout?.node_id) return actOnFindForSteward({ ...input, nodeId: lookout.node_id, title });
+  if (!input.grantId) return { commissioned: false, note: "This lookout has no mandate and no node; nothing was raised." };
+  const grantId = input.grantId;
   // Why a commission within the per-item limit was refused (the window, the
   // pace, the escrow), so the lookout is told why the item went up.
   let refused: string | null = null;
   if (input.budgetMicroUsd > 0 && input.budgetMicroUsd <= input.commissionLimitMicroUsd) {
     const { commissionAction } = await import("./commission-service.js");
     const res = await commissionAction({
-      payer: { kind: "grant", grantId: input.grantId },
+      payer: { kind: "grant", grantId },
       actionId: input.actionId,
       budgetMicroUsd: input.budgetMicroUsd,
       brief: input.rationale,
@@ -569,7 +628,7 @@ async function actOnFind(input: {
       await rawQuery(
         `INSERT INTO mandate_decisions (grant_id, decided_by, item_kind, decision, target, owls_micro_usd, reason, action_id, sensitivity_label)
          VALUES ($1, 'lookout', 'commission', $2, $3, $4, $5, $6, $7)`,
-        [input.grantId, res.status === "commissioned" ? "commissioned" : "joined a paid pass", input.claimId ?? input.url,
+        [grantId, res.status === "commissioned" ? "commissioned" : "joined a paid pass", input.claimId ?? input.url,
          res.status === "commissioned" ? input.budgetMicroUsd : null, input.rationale, input.actionId, currentLabel()]
       );
       // What is left of the window, so the lookout sees its running state
@@ -589,7 +648,7 @@ async function actOnFind(input: {
   // Through raiseToMandate, so a repeat about the same row folds into the
   // item still waiting and, when sittings are on, an officer sits on it now.
   await raiseToMandate({
-    grantId: input.grantId,
+    grantId,
     targetNodeId: input.claimId,
     targetRef: input.url,
     source: `the lookout "${title}"`,
@@ -609,6 +668,77 @@ async function actOnFind(input: {
 }
 
 /**
+ * actOnFind for a Steward's lookout (lookout-fund.ts): within its limit the
+ * work is commissioned from its fund; otherwise the find goes to its
+ * Steward's inbox, as a note for the node's next pass (free, like any
+ * message), and the Steward decides whether it is worth its money. A pass
+ * flagged on the Steward's own node already left its brief in that inbox
+ * (flagReassessment's enqueue), so nothing is sent twice.
+ */
+async function actOnFindForSteward(input: {
+  lookoutId: string;
+  nodeId: string;
+  title: string;
+  actionId: string;
+  claimId: string | null;
+  url: string | null;
+  rationale: string;
+  budgetMicroUsd: number;
+  commissionLimitMicroUsd: number;
+}): Promise<{ commissioned: boolean; note: string }> {
+  const { lookoutFundLeftMicroUsd } = await import("./lookout-fund.js");
+  const owls = (micro: number) => Math.round(micro / 10_000) / 100;
+  let refused: string | null = null;
+  if (input.budgetMicroUsd > 0 && input.budgetMicroUsd <= input.commissionLimitMicroUsd) {
+    const { commissionAction } = await import("./commission-service.js");
+    const res = await commissionAction({
+      payer: { kind: "fund", lookoutId: input.lookoutId },
+      actionId: input.actionId,
+      budgetMicroUsd: input.budgetMicroUsd,
+      brief: input.rationale,
+      reason: `Raised by the lookout "${input.title}", from its fund`,
+      commissionedBy: "lookout",
+      lookoutId: input.lookoutId,
+    });
+    if (!res.ok) refused = res.message;
+    else {
+      const left = await lookoutFundLeftMicroUsd(input.lookoutId).catch(() => null);
+      return {
+        commissioned: res.status === "commissioned",
+        note:
+          res.status === "commissioned"
+            ? `Commissioned at ${owls(input.budgetMicroUsd)} owls from your fund, within your limit.` +
+              (left !== null ? ` Your fund holds ${owls(left)} owls.` : "")
+            : "It already had a run paid for; nothing more was spent.",
+      };
+    }
+  }
+  const own = input.claimId === input.nodeId;
+  if (!own) {
+    const { postMessage } = await import("./inbox-service.js");
+    const target = input.claimId ? `node ${input.claimId}` : input.url ? `the source ${input.url}` : "";
+    await postMessage({
+      nodeId: input.nodeId,
+      trigger: "lookout_flag",
+      sender: { kind: "lookout", ref: input.lookoutId },
+      body:
+        `Your lookout "${input.title}" raises ${target} (ledger row ${input.actionId}): ${input.rationale}` +
+        (input.budgetMicroUsd > 0 ? ` It suggests a budget of ${owls(input.budgetMicroUsd)} owls.` : "") +
+        (refused ? ` It did not commission it itself: ${refused}` : "") +
+        ` Commission it yourself if it is worth your money.`,
+    });
+  }
+  return {
+    commissioned: false,
+    note:
+      (refused ? `Not commissioned: ${refused} ` : "") +
+      (own
+        ? "Left in your Steward's inbox, for its next pass; your Steward decides whether to pay for one sooner."
+        : "Sent to your Steward's inbox, for its next pass, with your reasons; your Steward decides whether it is worth its money."),
+  };
+}
+
+/**
  * A reassess flag: the claim becomes a candidate (enqueued to the Steward
  * lane with the lookout's trigger and context, which materializes its
  * assess/reassess rows), and the lookout acts on it (actOnFind): it
@@ -622,7 +752,8 @@ async function actOnFind(input: {
  */
 export async function flagReassessment(input: {
   lookoutId: string;
-  grantId: string;
+  /** The lookout's mandate; null for a Steward's lookout. */
+  grantId: string | null;
   /** The most the lookout may commission alone (lookouts.commission_limit_micro_usd). */
   commissionLimitMicroUsd: number;
   claimId: string;
@@ -675,12 +806,19 @@ export async function flagReassessment(input: {
     [input.claimId]
   );
 
+  const [poster] = input.grantId
+    ? []
+    : await rawQuery<{ node_id: string | null }>(`SELECT node_id FROM lookouts WHERE id = $1`, [input.lookoutId]);
   await enqueueSteward({
     claimId: input.claimId,
     trigger: "lookout_flag",
-    context:
-      `A lookout funded by a mandate reports a development bearing on this ` +
-      `claim and asks for a fresh look: ${rationale}`,
+    context: input.grantId
+      ? `A lookout funded by a mandate reports a development bearing on this ` +
+        `claim and asks for a fresh look: ${rationale}`
+      : poster?.node_id === input.claimId
+        ? `The lookout you posted on this node reports a development bearing on it and asks for a fresh look: ${rationale}`
+        : `A lookout posted by the Steward of node ${poster?.node_id ?? "(unknown)"} reports a development ` +
+          `bearing on this claim and asks for a fresh look: ${rationale}`,
   });
   await ensureAssessActions(input.claimId);
   const [standard] = await rawQuery<{ id: string }>(
@@ -744,7 +882,8 @@ export async function flagReassessment(input: {
  */
 export async function flagIngest(input: {
   lookoutId: string;
-  grantId: string;
+  /** The lookout's mandate; null for a Steward's lookout. */
+  grantId: string | null;
   url: string;
   rationale: string;
   focus?: string | null;
@@ -779,7 +918,7 @@ export async function flagIngest(input: {
           : `That source is already in the graph, read in full ("${coverage.title}", ${coverage.sourceId}). If it changed materially, flag the claims that rest on it for reassessment instead.`,
     };
   }
-  const [planned] = await rawQuery<{ id: string }>(
+  const [planned] = !input.grantId ? [] : await rawQuery<{ id: string }>(
     `SELECT id FROM grants
       WHERE id = $1 AND status = 'active'
         AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(plan->'items', '[]'::jsonb)) t
@@ -869,7 +1008,11 @@ export async function flagIngest(input: {
   };
 }
 
-/** A note for the Grantmaker's next review pass; no ledger effect. */
+/**
+ * A note for the Grantmaker's next review pass; no ledger effect. A
+ * Steward's lookout's note goes to its Steward's inbox instead, for the
+ * node's next pass, free like any message.
+ */
 export async function flagNote(input: {
   lookoutId: string;
   text: string;
@@ -888,13 +1031,29 @@ export async function flagNote(input: {
      RETURNING id`,
     [input.lookoutId, claimId, input.url ?? null, text, currentLabel()]
   );
+  const [poster] = await rawQuery<{ node_id: string | null; title: string }>(
+    `SELECT node_id, title FROM lookouts WHERE id = $1`,
+    [input.lookoutId]
+  );
+  if (poster?.node_id) {
+    const { postMessage } = await import("./inbox-service.js");
+    const anchor = [claimId ? `node ${claimId}` : "", input.url ?? ""].filter(Boolean).join(", ");
+    await postMessage({
+      nodeId: poster.node_id,
+      trigger: "lookout_flag",
+      sender: { kind: "lookout", ref: input.lookoutId },
+      body: `A note from your lookout "${poster.title}"${anchor ? ` (on ${anchor})` : ""}: ${text}`,
+    });
+  }
   return {
     ok: true,
     flag_id: flag!.id,
     duplicate: false,
     action_id: null,
     value_written: null,
-    note: "Noted for the Grantmaker's next review pass.",
+    note: poster?.node_id
+      ? "Sent to your Steward's inbox, for its next pass."
+      : "Noted for the Grantmaker's next review pass.",
   };
 }
 
