@@ -162,6 +162,10 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
     note: "Returns owls to your balance; confirm with your user before withdrawing their share.",
   },
   "GET /mandates/:id/lookouts/:lookoutId": { name: "get_mandate_lookout" },
+  "GET /claims/:claim_id/lookouts": {
+    name: "get_node_lookouts",
+    note: "Free. The watches a node's own Steward keeps on it; a mandate's lookouts are on get_mandate_lookout.",
+  },
 
   // ---- the Assistant (#646): reads of the account's own conversations ----
   "GET /assistant/conversations": { name: "list_assistant_conversations" },
