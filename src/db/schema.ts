@@ -244,7 +244,7 @@ const workLabelColumn = () =>
 // supplier, a developer whose system is being evaluated). A deployment holds
 // material from as many parties as it deals with, so a party is a row and an
 // engagement is never a new graph or a new account. The permission to
-// release is granted for one party's material (permission_grants.party_id).
+// consent is granted for one party's material (permission_grants.party_id).
 //
 // At most one row is the organization itself (is_own_organization). The
 // public graph has no parties and its sources have none.
@@ -314,7 +314,7 @@ export const permissionGrants = pgTable(
   (table) => [
     check(
       "ck_permission_grants_permission",
-      sql`${table.permission} IN ('direct', 'release', 'fund', 'read', 'read_sources', 'administer', 'clear_providers')`
+      sql`${table.permission} IN ('direct', 'consent', 'fund', 'read', 'read_sources', 'administer', 'clear_providers')`
     ),
     check(
       "ck_permission_grants_subject",
@@ -326,7 +326,7 @@ export const permissionGrants = pgTable(
     ),
     check(
       "ck_permission_grants_party_scope",
-      sql`(${table.partyId} IS NOT NULL) = (${table.permission} = 'release')`
+      sql`(${table.partyId} IS NOT NULL) = (${table.permission} = 'consent')`
     ),
     check(
       "ck_permission_grants_granted_via",
@@ -1349,7 +1349,7 @@ export const sources = pgTable("sources", {
   // two together).
   check(
     "ck_sources_source_type",
-    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'shown_page', 'published_page', 'unknown')`
+    sql`${table.sourceType} IN ('dataset', 'official_statistics', 'transcript', 'treaty', 'court_record', 'legislation', 'journal_article', 'preprint', 'conference_paper', 'book', 'book_chapter', 'thesis', 'report', 'standard', 'news_article', 'opinion', 'press_release', 'blog_post', 'social_media_post', 'reference_work', 'broadcast', 'webpage', 'released_page', 'published_page', 'unknown')`
   ),
 ]);
 
@@ -8114,37 +8114,41 @@ export const artifactAssessmentVersions = pgView("artifact_assessments_versions"
 );
 
 // ---------------------------------------------------------------------------
-// Showing a node's page below its label (services/showing-service.ts,
+// Releasing a node's page below its label (services/release-service.ts,
 // docs/releasing-a-page.md)
 //
 // A page written at one label can be shown to readers who may not read that
 // label: at another label inside the deployment, or outside it. It is one
 // act at every boundary. What is shown is the ordinary page, read from the
 // rows the Steward's ordinary work wrote, less what a Redactor removed under
-// the boundary's policy and less the parts the holders of `release` hold.
+// the boundary's policy and less the parts the holders of `consent` hold.
 //
-// Two sets of readers need rows about one showing, and they may share no
+// Two sets of readers need rows about one release, and they may share no
 // label: the people and runs at the page's label, who see the page whole,
 // and the readers on the destination side, who see what was released. So the
 // tables come in two families, and a row's sensitivity_label says which side
 // it is for.
 //
-//   At the page's label:        showings, showing_pages, showing_parts,
-//                               showing_removals, gate_settings
-//   At the destination's label: shown_showings, shown_nodes, shown_pages,
-//                               shown_parts, showing_acts, gates
+//   At the page's label:        releases, release_pages, release_parts,
+//                               release_removals, gate_settings
+//   At the destination's label: shown_releases, shown_nodes, shown_pages,
+//                               shown_parts, release_acts, gates
 //   One row on each side:       redaction_policies
 //
+// The destination side's tables are named for what its readers are shown
+// (`shown_*`): they hold a held part as well as a released one, with its
+// text null, so they are not named for what was released.
+//
 // These tables are the gate's (docs/the-gate.md). They were built for a
-// node's page and keep those names. A row of `showings` is one thing
-// offered across one boundary, or a flow of pages, and `showings.kind`
-// says which kind of thing; a row of `showing_pages` is one version of an
+// node's page and keep those names. A row of `releases` is one thing
+// offered across one boundary, or a flow of pages, and `releases.kind`
+// says which kind of thing; a row of `release_pages` is one version of an
 // item of any kind, with its parts.
 //
-// A showing outside the deployment keeps its destination-side rows at
+// A release outside the deployment keeps its destination-side rows at
 // `public`: what is released to anyone may be read by every member.
 //
-// The rows on the destination side are written by the showing service as
+// The rows on the destination side are written by the release service as
 // the tables' owner, once the route has checked the permission of the
 // person acting, or by the step that follows an agent's run. They are the
 // one way text reaches a label that does not read the label it was written
@@ -8156,16 +8160,16 @@ export const artifactAssessmentVersions = pgView("artifact_assessments_versions"
 // table here stays empty there.
 // ---------------------------------------------------------------------------
 
-// A request to show a node's page, as the page's side holds it.
-export const showings = pgTable(
-  "showings",
+// A request to release a node's page, as the page's side holds it.
+export const releases = pgTable(
+  "releases",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     // What kind of thing goes down (GATE_KINDS in services/gate-kinds.ts):
     // a node's page, an answer to a request, the fact that a request was
     // taken up, a mandate's funding of work below, that a mandate exists,
     // an answer to a message. One row is one subject offered across one
-    // boundary; each version of it is a row of showing_pages.
+    // boundary; each version of it is a row of release_pages.
     kind: text("kind").notNull().default("page"),
     // The node, for a page asked for by node. Null for every other kind and
     // for a flow of pages set for a mandate or for the whole boundary.
@@ -8194,52 +8198,53 @@ export const showings = pgTable(
     scope: text("scope").notNull(),
     askedBy: uuid("asked_by").references((): AnyPgColumn => contributors.id),
     // The permissions the person held when they asked, as the record shows
-    // them ("direct", "release for <party>", ...).
+    // them ("direct", "consent for <party>", ...). Rows made before the
+    // permission was called consent say "release for <party>".
     askedHolding: text("asked_holding").array().notNull().default([]),
     askedAt: timestamp("asked_at", { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
     endedHolding: text("ended_holding").array(),
-    // One of END_REASONS in services/showing-service.ts.
+    // One of END_REASONS in services/release-service.ts.
     endReason: text("end_reason"),
     // The page's label.
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    check("ck_showings_destination", sql`(${table.toLabel} IS NULL) = ${table.toOutside}`),
-    check("ck_showings_form", sql`${table.form} IN ('once', 'standing')`),
-    check("ck_showings_scope", sql`${table.scope} IN ('node', 'under', 'mandate', 'boundary', 'item')`),
-    check("ck_showings_kind", sql`${table.kind} IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement', 'report', 'proposal')`),
+    check("ck_releases_destination", sql`(${table.toLabel} IS NULL) = ${table.toOutside}`),
+    check("ck_releases_form", sql`${table.form} IN ('once', 'standing')`),
+    check("ck_releases_scope", sql`${table.scope} IN ('node', 'under', 'mandate', 'boundary', 'item')`),
+    check("ck_releases_kind", sql`${table.kind} IN ('page', 'answer', 'taken_up', 'funding', 'mandate', 'message', 'petition', 'statement', 'report', 'proposal')`),
     check(
-      "ck_showings_subject",
+      "ck_releases_subject",
       sql`CASE WHEN ${table.scope} IN ('node', 'under') THEN ${table.nodeId} IS NOT NULL AND ${table.kind} = 'page'
                WHEN ${table.scope} = 'boundary' THEN ${table.nodeId} IS NULL AND ${table.kind} = 'page'
                ELSE ${table.nodeId} IS NULL AND ${table.subjectRef} IS NOT NULL END`
     ),
-    check("ck_showings_not_own_label", sql`${table.toLabel} IS NULL OR ${table.toLabel} <> ${table.sensitivityLabel}`),
-    index("idx_showings_node").on(table.nodeId),
-    // One live showing of a node across a boundary in each form and scope:
+    check("ck_releases_not_own_label", sql`${table.toLabel} IS NULL OR ${table.toLabel} <> ${table.sensitivityLabel}`),
+    index("idx_releases_node").on(table.nodeId),
+    // One live release of a node across a boundary in each form and scope:
     // asking again for what already stands is refused, not stacked.
-    uniqueIndex("uq_showings_live")
+    uniqueIndex("uq_releases_live")
       .on(table.nodeId, table.boundaryId, table.form, table.scope)
       .where(sql`ended_at IS NULL AND form = 'standing'`),
     // One live flow for a mandate or a whole boundary, and one row for each
     // subject of another kind across a boundary.
-    uniqueIndex("uq_showings_live_subject")
+    uniqueIndex("uq_releases_live_subject")
       .on(table.sensitivityLabel, table.boundaryId, table.kind, table.scope, sql`COALESCE(subject_ref, '00000000-0000-0000-0000-000000000000'::uuid)`, sql`COALESCE(payer_grant_id, '00000000-0000-0000-0000-000000000000'::uuid)`)
       .where(sql`ended_at IS NULL AND node_id IS NULL`),
   ]
 );
 
-// One version of one node's page under a showing: the page as recorded when
+// One version of one node's page under a release: the page as recorded when
 // the version was found, and where its redaction, check and gate stand.
-export const showingPages = pgTable(
-  "showing_pages",
+export const releasePages = pgTable(
+  "release_pages",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    showingId: uuid("showing_id")
+    releaseId: uuid("release_id")
       .notNull()
-      .references(() => showings.id, { onDelete: "cascade" }),
+      .references(() => releases.id, { onDelete: "cascade" }),
     // Null for an item that is not a node's page.
     nodeId: uuid("node_id").references(() => claims.id, { onDelete: "cascade" }),
     // The version of the node's judgment at the page's label this page
@@ -8274,7 +8279,7 @@ export const showingPages = pgTable(
     header: text("header"),
     headerSalt: text("header_salt"),
     root: text("root"),
-    // The parties whose release the verdict takes: every party whose
+    // The parties whose consent the verdict takes: every party whose
     // material the version read. Empty means the organization's own.
     restsOn: uuid("rests_on").array().notNull().default([]),
     // Every source the page and its parts rest on, as worked out when the
@@ -8299,15 +8304,15 @@ export const showingPages = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("uq_showing_pages_version").on(table.showingId, table.nodeId, table.judgmentId),
-    uniqueIndex("uq_showing_pages_item_version").on(table.sensitivityLabel, table.showingId, table.versionKey).where(sql`node_id IS NULL`),
-    index("idx_showing_pages_stage").on(table.stage),
+    uniqueIndex("uq_release_pages_version").on(table.releaseId, table.nodeId, table.judgmentId),
+    uniqueIndex("uq_release_pages_item_version").on(table.sensitivityLabel, table.releaseId, table.versionKey).where(sql`node_id IS NULL`),
+    index("idx_release_pages_stage").on(table.stage),
     check(
-      "ck_showing_pages_stage",
+      "ck_release_pages_stage",
       sql`${table.stage} IN ('to_redact', 'to_check', 'at_gate', 'cannot_cross', 'overtaken')`
     ),
     check(
-      "ck_showing_pages_kind",
+      "ck_release_pages_kind",
       sql`CASE WHEN ${table.nodeId} IS NULL THEN ${table.judgmentKind} IS NULL AND ${table.versionKey} IS NOT NULL
                ELSE ${table.judgmentKind} IN ('assessment', 'quantity_estimate', 'question_assessment') AND ${table.judgmentId} IS NOT NULL END`
     ),
@@ -8317,13 +8322,13 @@ export const showingPages = pgTable(
 // One part of a page: a paragraph, an argument, a source's reading, a
 // subclaim with its bearing. The page is divided mechanically from its
 // structure when it is recorded (services/page-parts.ts).
-export const showingParts = pgTable(
-  "showing_parts",
+export const releaseParts = pgTable(
+  "release_parts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     pageId: uuid("page_id")
       .notNull()
-      .references(() => showingPages.id, { onDelete: "cascade" }),
+      .references(() => releasePages.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
     // One of PART_KINDS in services/page-parts.ts.
     kind: text("kind").notNull(),
@@ -8335,7 +8340,7 @@ export const showingParts = pgTable(
     // The part as written. Never changed.
     original: text("original").notNull(),
     salt: text("salt").notNull(),
-    // The parties whose release the part takes. Empty means the
+    // The parties whose consent the part takes. Empty means the
     // organization's own.
     restsOn: uuid("rests_on").array().notNull().default([]),
     // Set when the Redactor finishes: the part as it left it, and its hash.
@@ -8344,18 +8349,18 @@ export const showingParts = pgTable(
     commitment: text("commitment"),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("uq_showing_parts_position").on(table.pageId, table.position)]
+  (table) => [uniqueIndex("uq_release_parts_position").on(table.pageId, table.position)]
 );
 
 // One removal the Redactor made inside a part, by its place in the part as
 // written. The note is the Redactor's and stays at the page's label.
-export const showingRemovals = pgTable(
-  "showing_removals",
+export const releaseRemovals = pgTable(
+  "release_removals",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     partId: uuid("part_id")
       .notNull()
-      .references(() => showingParts.id, { onDelete: "cascade" }),
+      .references(() => releaseParts.id, { onDelete: "cascade" }),
     startOffset: integer("start_offset").notNull(),
     endOffset: integer("end_offset").notNull(),
     category: text("category").notNull(),
@@ -8370,14 +8375,14 @@ export const showingRemovals = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    index("idx_showing_removals_part").on(table.partId),
-    check("ck_showing_removals_span", sql`${table.startOffset} >= 0 AND ${table.endOffset} > ${table.startOffset}`),
+    index("idx_release_removals_part").on(table.partId),
+    check("ck_release_removals_span", sql`${table.startOffset} >= 0 AND ${table.endOffset} > ${table.startOffset}`),
   ]
 );
 
-// The same showing as its destination side reads it. Same id as `showings`.
-export const shownShowings = pgTable(
-  "shown_showings",
+// The same release as its destination side reads it. Same id as `releases`.
+export const shownReleases = pgTable(
+  "shown_releases",
   {
     id: uuid("id").primaryKey(),
     kind: text("kind").notNull().default("page"),
@@ -8396,49 +8401,49 @@ export const shownShowings = pgTable(
     endedBy: uuid("ended_by").references((): AnyPgColumn => contributors.id),
     endedHolding: text("ended_holding").array(),
     endReason: text("end_reason"),
-    // For a showing outside: whether the person who asked chose, then, that
+    // For a release outside: whether the person who asked chose, then, that
     // each package is sent to the public graph as it is released, with no
     // person sending each one (services/outbound-service.ts). False means a
     // person sends each package.
     sendAsReleased: boolean("send_as_released").notNull().default(false),
-    // The destination's label; `public` for a showing outside.
+    // The destination's label; `public` for a release outside.
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [index("idx_shown_showings_node").on(table.nodeId)]
+  (table) => [index("idx_shown_releases_node").on(table.nodeId)]
 );
 
-// Each node a showing covers, from when it came under it until it left.
+// Each node a release covers, from when it came under it until it left.
 // A node with no page yet is "not yet assessed".
 export const shownNodes = pgTable(
   "shown_nodes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    showingId: uuid("showing_id").notNull(),
+    releaseId: uuid("release_id").notNull(),
     nodeId: uuid("node_id").notNull(),
-    // The node it sits under in this showing; null for the node asked for.
+    // The node it sits under in this release; null for the node asked for.
     placeParentId: uuid("place_parent_id"),
     enteredAt: timestamp("entered_at", { withTimezone: true }).notNull().defaultNow(),
     leftAt: timestamp("left_at", { withTimezone: true }),
-    // One of LEFT_REASONS in services/showing-service.ts.
+    // One of LEFT_REASONS in services/release-service.ts.
     leftReason: text("left_reason"),
     // When the node was first assessed at the page's label, so a reader can
-    // see whether the showing began before or after.
+    // see whether the release began before or after.
     firstAssessedAt: timestamp("first_assessed_at", { withTimezone: true }),
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    index("idx_shown_nodes_showing").on(table.showingId),
+    index("idx_shown_nodes_release").on(table.releaseId),
     index("idx_shown_nodes_node").on(table.nodeId),
   ]
 );
 
 // One version of a node's page as the destination side reads it. Same id as
-// `showing_pages`. The header and its salt are null until the page is shown.
+// `release_pages`. The header and its salt are null until the page is shown.
 export const shownPages = pgTable(
   "shown_pages",
   {
     id: uuid("id").primaryKey(),
-    showingId: uuid("showing_id").notNull(),
+    releaseId: uuid("release_id").notNull(),
     kind: text("kind").notNull().default("page"),
     nodeId: uuid("node_id"),
     judgedAt: timestamp("judged_at", { withTimezone: true }).notNull(),
@@ -8455,7 +8460,7 @@ export const shownPages = pgTable(
     headerCommitment: text("header_commitment"),
     header: text("header"),
     headerSalt: text("header_salt"),
-    // The parties whose release the verdict takes, by id.
+    // The parties whose consent the verdict takes, by id.
     needs: uuid("needs").array().notNull().default([]),
     auditAnswer: text("audit_answer"),
     shownAt: timestamp("shown_at", { withTimezone: true }),
@@ -8474,11 +8479,11 @@ export const shownPages = pgTable(
     outsideRef: text("outside_ref"),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [index("idx_shown_pages_showing").on(table.showingId, table.nodeId)]
+  (table) => [index("idx_shown_pages_release").on(table.releaseId, table.nodeId)]
 );
 
 // One part of a shown page as the destination side reads it. Same id as
-// `showing_parts`. The text, its marks and its salt are null while held.
+// `release_parts`. The text, its marks and its salt are null while held.
 export const shownParts = pgTable(
   "shown_parts",
   {
@@ -8498,21 +8503,21 @@ export const shownParts = pgTable(
   (table) => [uniqueIndex("uq_shown_parts_position").on(table.pageId, table.position)]
 );
 
-// Everything a person, a rule or the process did on a showing, in order.
+// Everything a person, a rule or the process did on a release, in order.
 // Rows are added and never changed or removed: a hold stays on the record
 // after it is lifted, and a release is not taken back.
-export const showingActs = pgTable(
-  "showing_acts",
+export const releaseActs = pgTable(
+  "release_acts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    showingId: uuid("showing_id").notNull(),
+    releaseId: uuid("release_id").notNull(),
     // The page the act is on, and the part; a page with no part is the act
     // on the page itself (its verdict).
     pageId: uuid("page_id"),
     partId: uuid("part_id"),
-    // One of ACTS in services/showing-service.ts.
+    // One of ACTS in services/release-service.ts.
     act: text("act").notNull(),
-    // The party the act was made for, where it was made under `release`.
+    // The party the act was made for, where it was made under `consent`.
     partyId: uuid("party_id").references(() => parties.id),
     // Who acted; null for an act of the process, of the Redactor or of the gate's setting.
     actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id),
@@ -8533,17 +8538,17 @@ export const showingActs = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    index("idx_showing_acts_showing").on(table.showingId, table.at),
-    index("idx_showing_acts_item").on(table.pageId, table.partId),
+    index("idx_release_acts_release").on(table.releaseId, table.at),
+    index("idx_release_acts_item").on(table.pageId, table.partId),
   ]
 );
 
-// The standing rules a party's holders of `release` could set before a gate
+// The standing rules a party's holders of `consent` could set before a gate
 // had settings (two fixed conditions). Nothing sets or applies one now: each
 // live rule was made into a row of gate_settings, which names it. The rows
-// stay because releases made under a rule name the rule (showing_acts.rule_id).
-export const releaseRules = pgTable(
-  "release_rules",
+// stay because consents given under a rule name the rule (release_acts.rule_id).
+export const consentRules = pgTable(
+  "consent_rules",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     partyId: uuid("party_id")
@@ -8561,8 +8566,8 @@ export const releaseRules = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    index("idx_release_rules_boundary").on(table.boundaryId),
-    check("ck_release_rules_condition", sql`${table.condition} IN ('nothing_removed_and_only_ours', 'only_ours')`),
+    index("idx_consent_rules_boundary").on(table.boundaryId),
+    check("ck_consent_rules_condition", sql`${table.condition} IN ('nothing_removed_and_only_ours', 'only_ours')`),
   ]
 );
 
@@ -8606,7 +8611,7 @@ export const gates = pgTable(
 
 // How a gate treats what reaches it (GATE_MODES in services/gate-kinds.ts):
 // 'open' (it goes as written), 'redactor' (the Redactor decides), 'person'
-// (the Redactor proposes and the people who hold release decide). A row is
+// (the Redactor proposes and the people who hold consent decide). A row is
 // for one kind of thing or every kind ('*'), for one scope, and for one
 // party's material or, with no party, for every party that has not said.
 // Rows are ended and never changed, so the record shows what stood when.
@@ -8691,7 +8696,7 @@ export const redactionPolicies = pgTable(
 //
 //   In a deployment that shows pages outside: outbound_packages,
 //   outbound_sends, outbound_proposals. They are built from the
-//   destination-side rows of a showing outside, which are at `public`, by a
+//   destination-side rows of a release outside, which are at `public`, by a
 //   connection cleared for `public` alone, and they are at `public`
 //   themselves: what is released to anyone may be read by every member.
 //
@@ -8700,14 +8705,14 @@ export const redactionPolicies = pgTable(
 //   at it.
 // ---------------------------------------------------------------------------
 
-// One signed package: the state of one node under one showing outside, as
+// One signed package: the state of one node under one release outside, as
 // the outside reads it, at the moment it was built. A node's packages are
 // numbered and each names the one before.
 export const outboundPackages = pgTable(
   "outbound_packages",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    showingId: uuid("showing_id").notNull(),
+    releaseId: uuid("release_id").notNull(),
     nodeId: uuid("node_id").notNull(),
     // The node's id on the public graph: its own for a mirrored node, and
     // for a node that exists only here the node its proposal became.
@@ -8723,7 +8728,7 @@ export const outboundPackages = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("uq_outbound_packages_sequence").on(table.showingId, table.nodeId, table.sequence),
+    uniqueIndex("uq_outbound_packages_sequence").on(table.releaseId, table.nodeId, table.sequence),
     uniqueIndex("uq_outbound_packages_hash").on(table.hash),
   ]
 );
@@ -8768,7 +8773,7 @@ export const outboundProposals = pgTable(
   "outbound_proposals",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    showingId: uuid("showing_id").notNull(),
+    releaseId: uuid("release_id").notNull(),
     nodeId: uuid("node_id").notNull(),
     // 'claim', 'quantity' or 'question'.
     nodeKind: text("node_kind").notNull().default("claim"),
@@ -8777,13 +8782,13 @@ export const outboundProposals = pgTable(
     writtenBy: uuid("written_by").references((): AnyPgColumn => contributors.id),
     writtenHolding: text("written_holding").array().notNull().default([]),
     writtenAt: timestamp("written_at", { withTimezone: true }).notNull().defaultNow(),
-    // The parties whose release the words take, and the releases given:
+    // The parties whose consent the words take, and the consents given:
     // [{ party_id, by, holding, at }].
     needs: uuid("needs").array().notNull().default([]),
-    releases: jsonb("releases").notNull().default([]),
-    // 'waiting_for_release', 'ready', 'sent', 'on_the_public_graph',
+    consents: jsonb("consents").notNull().default([]),
+    // 'waiting_for_consent', 'ready', 'sent', 'on_the_public_graph',
     // 'not_admitted' or 'replaced'.
-    state: text("state").notNull().default("waiting_for_release"),
+    state: text("state").notNull().default("waiting_for_consent"),
     // The contribution the proposal became on the public graph.
     publicContributionId: text("public_contribution_id"),
     publicNodeId: uuid("public_node_id"),
@@ -8792,10 +8797,10 @@ export const outboundProposals = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    index("idx_outbound_proposals_node").on(table.showingId, table.nodeId),
+    index("idx_outbound_proposals_node").on(table.releaseId, table.nodeId),
     check(
       "ck_outbound_proposals_state",
-      sql`${table.state} IN ('waiting_for_release', 'ready', 'sent', 'on_the_public_graph', 'not_admitted', 'replaced')`
+      sql`${table.state} IN ('waiting_for_consent', 'ready', 'sent', 'on_the_public_graph', 'not_admitted', 'replaced')`
     ),
   ]
 );
@@ -8829,7 +8834,7 @@ export const publishers = pgTable(
   ]
 );
 
-// One node's page under one showing of one publisher: what the packages
+// One node's page under one release of one publisher: what the packages
 // received for it add up to. The contribution is the publisher's
 // submission of it to the node, reviewed as any contribution is.
 export const publishedPages = pgTable(
@@ -8841,8 +8846,8 @@ export const publishedPages = pgTable(
       .notNull()
       .references((): AnyPgColumn => contributors.id),
     keyId: text("key_id").notNull(),
-    // The showing's id in the publisher's deployment.
-    showingId: uuid("showing_id").notNull(),
+    // The release's id in the publisher's deployment.
+    releaseId: uuid("release_id").notNull(),
     nodeId: uuid("node_id")
       .notNull()
       .references((): AnyPgColumn => claims.id),
@@ -8852,7 +8857,7 @@ export const publishedPages = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    uniqueIndex("uq_published_pages_showing_node").on(table.keyId, table.showingId, table.nodeId),
+    uniqueIndex("uq_published_pages_release_node").on(table.keyId, table.releaseId, table.nodeId),
     index("idx_published_pages_node").on(table.nodeId),
   ]
 );
@@ -8918,7 +8923,7 @@ export const publishedPagePackages = pgTable(
 // ---------------------------------------------------------------------------
 // Outward acts, and what comes back (docs/outward-acts.md)
 //
-// Showing a page (above) is one way a private graph reaches the public one.
+// Releasing a page (above) is one way a private graph reaches the public one.
 // These tables are the rest: what the public says back about a page it was
 // shown, public requests taken up, public mandates and funding from inside,
 // keeping the public version of a node current, and an agent's report sent
@@ -9051,7 +9056,7 @@ export const inboundContributions = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     publicContributionId: uuid("public_contribution_id").notNull(),
     publicPageId: uuid("public_page_id").notNull(),
-    showingId: uuid("showing_id").notNull(),
+    releaseId: uuid("release_id").notNull(),
     nodeId: uuid("node_id").notNull(),
     contributionType: text("contribution_type").notNull(),
     submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
@@ -9068,7 +9073,7 @@ export const inboundContributions = pgTable(
   },
   (table) => [
     uniqueIndex("uq_inbound_contributions_public").on(table.publicContributionId),
-    index("idx_inbound_contributions_node").on(table.showingId, table.nodeId),
+    index("idx_inbound_contributions_node").on(table.releaseId, table.nodeId),
     check("ck_inbound_contributions_state", sql`${table.state} IN ('received', 'repeat')`),
     check(
       "ck_inbound_contributions_reassessment",
