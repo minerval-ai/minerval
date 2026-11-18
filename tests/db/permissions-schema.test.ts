@@ -162,7 +162,11 @@ describe("parties, groups and the log", () => {
       failure(`INSERT INTO parties (name, is_own_organization, created_by) VALUES ($1, true, $2)`, [`${name} ${randomUUID()}`, admin]);
     expect(await failure(`INSERT INTO parties (name, created_by) VALUES ($1, $2)`, [name, admin])).toBeNull();
     expect(await failure(`INSERT INTO parties (name, created_by) VALUES ($1, $2)`, [name.toUpperCase(), admin])).toBe(UNIQUE_VIOLATION);
-    expect(await own()).toBeNull();
+    // Another file on this worker may already have recorded the organization
+    // itself (several do, or reuse it); the rule is at most one, so this file
+    // makes it only where none exists, and a further one is refused either way.
+    const [existing] = await rawQuery<{ id: string }>(`SELECT id FROM parties WHERE is_own_organization`);
+    if (!existing) expect(await own()).toBeNull();
     expect(await own()).toBe(UNIQUE_VIOLATION);
   });
 
