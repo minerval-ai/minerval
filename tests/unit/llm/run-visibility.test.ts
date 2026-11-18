@@ -5,6 +5,8 @@ import {
   AGENT_INPUTS,
   TOOL_READS,
   REASONS_A_LABEL_COVERS,
+  AGENTS_AN_OWNER_READS,
+  ownerCoversRun,
   REDACTION_CHECK_REASON,
   agentPrivateReason,
   labelCoversReason,
@@ -97,6 +99,24 @@ describe("run visibility", () => {
   it("makes unclassified tools and agents private", () => {
     expect(toolPrivateReason("no_such_tool")).toBe("tool:no_such_tool:unclassified");
     expect(agentPrivateReason("no_such_agent")).toBe("agent:no_such_agent:unclassified");
+  });
+
+  // The account a run worked for reads it (run-view-service.ts): the
+  // Assistant's and the extension's runs whole, any other run only when
+  // every reason is that account's own text.
+  describe("what the account a run worked for reads", () => {
+    it("is its own agent's runs whole, and another's only over its own text", () => {
+      expect(ownerCoversRun("assistant", ["agent:assistant", "tool:delegate", "tool:raise_issue"])).toBe(true);
+      expect(ownerCoversRun("extension", ["agent:extension"])).toBe(true);
+      expect(ownerCoversRun("matcher", ["input:readers-own-content"])).toBe(true);
+      for (const reasons of [["tool:cost_sheet"], ["agent:grantmaker"], ["input:readers-own-content", "tool:get_issue"]]) {
+        expect(ownerCoversRun("grantmaker", reasons), reasons.join()).toBe(false);
+      }
+    });
+
+    it("names only agents that exist and are private", () => {
+      for (const agent of Object.keys(AGENTS_AN_OWNER_READS)) expect(AGENT_INPUTS[agent]?.reads, agent).toBe("private");
+    });
   });
 
   // In a members-only deployment a member who reads a run's label reads a

@@ -2,12 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { apiConfigured, fetchRun, fetchRunSteps } from "@/lib/api";
+import { fetchOwnRun, fetchOwnRunSteps } from "@/lib/own-runs";
 import { modelDisplayName } from "@/lib/model-names";
 import { PageHead } from "@/components/PageHead";
 import { LiveRefresh } from "@/components/LiveRefresh";
 
 // One agent run (#553): what it was given, what it did, step by step. A run
-// that read private data is withheld, and the page says why.
+// that read private data is withheld, and the page says why, unless it
+// worked only for the signed-in reader (their Assistant's, say): then it is
+// shown to them, and to no one else.
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +44,10 @@ function fmt(iso: string | null): string {
 export default async function RunPage({ params }: { params: Promise<Params> }) {
   const { id } = await params;
   if (!apiConfigured()) notFound();
-  const run = await fetchRun(id);
-  if (!run) notFound();
+  const found = await fetchRun(id);
+  if (!found) notFound();
+  const own = "withheld" in found ? await fetchOwnRun(id) : null;
+  const run = own ?? found;
 
   if ("withheld" in run) {
     return (
@@ -64,7 +69,7 @@ export default async function RunPage({ params }: { params: Promise<Params> }) {
     );
   }
 
-  const page = await fetchRunSteps(id);
+  const page = own ? await fetchOwnRunSteps(id) : await fetchRunSteps(id);
   const steps = page?.steps ?? [];
   const setup = run.setup;
 

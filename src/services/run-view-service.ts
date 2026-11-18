@@ -14,9 +14,12 @@
  * private graph an assessment's run is open to every member cleared to read
  * it (constitution §26). A run with any other reason, a person's own
  * conversation or a funder's words among them, stays withheld from members
- * as from anyone. The account a run was attributed to
- * (user_id) and its job are never served: funding is disclosed on the
- * verdict, by name, not through the run.
+ * as from anyone, except from the account the run worked for: the
+ * Assistant's runs, the extension's, and a run over text the account
+ * handed in are read whole by that account (run-visibility.ts,
+ * ownerCoversRun). The account a run was attributed to (user_id) and its
+ * job are never served: funding is disclosed on the verdict, by name, not
+ * through the run.
  *
  * Shape, for agents that fetch only what they need: the run's summary first,
  * then its steps as one-line summaries with a cursor, then any step in full.
@@ -34,7 +37,12 @@
  */
 import { rawQuery } from "../db/client.js";
 import { PUBLIC_LABEL } from "../labels.js";
-import { AGENTS_GIVEN_SOURCE_TEXT, labelCoversReason, returnsSourceText } from "../llm/run-visibility.js";
+import {
+  AGENTS_GIVEN_SOURCE_TEXT,
+  labelCoversReason,
+  ownerCoversRun,
+  returnsSourceText,
+} from "../llm/run-visibility.js";
 import { withheldRunSourceText, type WithheldSourceText } from "../raw-sources.js";
 import { labelsReadableFrom } from "./permission-service.js";
 import { chainChecker, RUN_LOG_FORMAT, type ChainedStep, type ChainProblem } from "./run-log.js";
@@ -61,6 +69,7 @@ interface RunRow {
   log_hash: string | null;
   sealed_at: Date | null;
   sensitivity_label: string;
+  user_id: string | null;
 }
 
 /** What a caller of these reads says about who is reading. */
@@ -72,6 +81,14 @@ export interface RunReader {
    * graph, where a run with private reasons is served to no reader.
    */
   memberReads?: readonly string[] | null;
+  /**
+   * The account reading, when one is signed in or presents its key. The
+   * account a run is attributed to reads a run of its own agent (the
+   * Assistant, the extension) and a run over text it handed in
+   * (run-visibility.ts, ownerCoversRun). Never served back: whose a run is
+   * stays off the response.
+   */
+  accountId?: string | null;
   /**
    * The labels whose raw sources the reader may open (rawSourceLabelsOf), or
    * null or absent where nothing is held: the public graph.
@@ -152,7 +169,7 @@ export interface StepSummary {
 async function loadRun(runId: string): Promise<RunRow | null> {
   const rows = await rawQuery<RunRow>(
     `SELECT id, agent, claim_id, started_at, finished_at, outcome, error, steps, skills,
-            wrote_to_graph, commit_sha, private_reasons, log_hash, sealed_at, sensitivity_label
+            wrote_to_graph, commit_sha, private_reasons, log_hash, sealed_at, sensitivity_label, user_id
        FROM agent_runs
       WHERE id = COALESCE(
               (SELECT id FROM agent_runs WHERE id = $1),
@@ -164,11 +181,21 @@ async function loadRun(runId: string): Promise<RunRow | null> {
 
 /**
  * Whether `run` may be served to this reader: a public run to anyone, any
- * run to a direct service caller, and to a member who reads the run's
- * label a run whose every private reason that label covers.
+ * run to a direct service caller, to the account it is attributed to a run
+ * that worked only for that account (ownerCoversRun), at a label it still
+ * reads where labels are kept, and to a member who reads the run's label a
+ * run whose every private reason that label covers.
  */
 function servable(run: RunRow, reader: RunReader): boolean {
   if (reader.isService || run.private_reasons.length === 0) return true;
+  if (
+    !!reader.accountId &&
+    run.user_id === reader.accountId &&
+    ownerCoversRun(run.agent, run.private_reasons) &&
+    (reader.memberReads == null || reader.memberReads.includes(run.sensitivity_label))
+  ) {
+    return true;
+  }
   return (
     !!reader.memberReads?.includes(run.sensitivity_label) &&
     run.private_reasons.every((reason) => labelCoversReason(reason, run.private_reasons))

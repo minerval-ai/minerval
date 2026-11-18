@@ -438,6 +438,35 @@ export const REASONS_A_LABEL_COVERS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Agents whose every run works for one account and on that account's
+ * credentials: the Assistant (and the copies it delegates to, which run as
+ * the same agent) and the extension's page analysis. Whatever such a run
+ * read, its user could have read; so the account a run is attributed to
+ * reads it whole, whatever its reasons (services/run-view-service.ts). The
+ * privacy page says these transcripts are visible to their user.
+ */
+export const AGENTS_AN_OWNER_READS: Readonly<Record<string, string>> = {
+  assistant: "a user's own agent, working with that user's own tools",
+  extension: "the page a reader had open, which they sent",
+};
+
+/**
+ * Private reasons that the account a run is attributed to covers in a run
+ * of any other agent: what each protects is that account's own words or
+ * text. A run with any other reason stays withheld from its account too: a
+ * granting conversation's run that read the operator's vendor prices, say.
+ */
+export const REASONS_AN_OWNER_COVERS: Readonly<Record<string, string>> = {
+  "input:readers-own-content": "a passage or page the account handed over for analysis",
+};
+
+/** Whether the account this run is attributed to may read it. */
+export function ownerCoversRun(agent: string, reasons: readonly string[]): boolean {
+  if (agent in AGENTS_AN_OWNER_READS) return true;
+  return reasons.every((r) => r in REASONS_AN_OWNER_COVERS);
+}
+
+/**
  * Whether a label covers this private reason, among all of a run's
  * reasons. A connection's tools are known by the shape of the name, as in
  * toolPrivateReason, and what they return is held to read_sources. An Audit

@@ -9,14 +9,14 @@ import { getRunStep, getRunSummary, listRunSteps } from "../../src/services/run-
 import { openResearchRun, stampResearchRun } from "../../src/services/research-run-service.js";
 import { hashText } from "../../src/services/setup-split.js";
 
-async function seedRun(opts: { reasons?: string[] } = {}): Promise<string> {
+async function seedRun(opts: { reasons?: string[]; agent?: string; userId?: string } = {}): Promise<string> {
   // agent_runs.claim_id has no foreign key; a seeded claim would enter the
   // Steward queue and the allocator, which other files' tests rely on.
   const claimId = randomUUID();
   const [run] = await rawQuery<{ id: string }>(
     `INSERT INTO agent_runs (agent, claim_id, finished_at, outcome, steps, commit_sha, private_reasons, user_id)
-     VALUES ('steward', $1, now(), 'ok', 4, 'abc1234', $2::text[], $3) RETURNING id`,
-    [claimId, opts.reasons ?? [], randomUUID()]
+     VALUES ($4, $1, now(), 'ok', 4, 'abc1234', $2::text[], $3) RETURNING id`,
+    [claimId, opts.reasons ?? [], opts.userId ?? randomUUID(), opts.agent ?? "steward"]
   );
   const roleHash = hashText(`role ${randomUUID()}`);
   const name = `test-role-${randomUUID()}`;
@@ -85,6 +85,27 @@ describe("reading agent runs", () => {
     const service = await getRunSummary(id, { isService: true });
     expect(service).toMatchObject({ public: false, private_reasons: ["tool:grant_overview"], steps_recorded: 4 });
     expect(service && "withheld" in service).toBe(false);
+  });
+
+  // The privacy page says an Assistant's transcript is visible to its user.
+  it("serves an Assistant's run whole to the account it worked for, and to no other", async () => {
+    const owner = randomUUID();
+    const id = await seedRun({ agent: "assistant", userId: owner, reasons: ["agent:assistant", "tool:delegate"] });
+    expect(await getRunSummary(id, { accountId: owner })).toMatchObject({ id, steps_recorded: 4 });
+    expect(await listRunSteps(id, { accountId: owner })).toMatchObject({ steps: expect.any(Array) });
+    expect(await getRunSummary(id, { accountId: randomUUID() })).toMatchObject({ withheld: true });
+    expect(await getRunSummary(id)).toMatchObject({ withheld: true });
+    // Where labels are kept, only while the account still reads the run's label.
+    expect(await getRunSummary(id, { accountId: owner, memberReads: ["other"] })).toMatchObject({ withheld: true });
+    expect(await getRunSummary(id, { accountId: owner, memberReads: ["public"] })).toMatchObject({ steps_recorded: 4 });
+  });
+
+  it("serves another agent's run to its account only when every reason is that account's own text", async () => {
+    const owner = randomUUID();
+    const own = await seedRun({ agent: "matcher", userId: owner, reasons: ["input:readers-own-content"] });
+    expect(await getRunSummary(own, { accountId: owner })).toMatchObject({ steps_recorded: 4 });
+    const mixed = await seedRun({ agent: "grantmaker", userId: owner, reasons: ["agent:grantmaker", "tool:cost_sheet"] });
+    expect(await getRunSummary(mixed, { accountId: owner })).toMatchObject({ withheld: true });
   });
 
   it("reads a Researcher's run by its research run id, as a request's work log names it (#897)", async () => {
