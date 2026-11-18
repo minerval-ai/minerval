@@ -11,7 +11,7 @@ import type { AssessmentStatus } from "./types";
 export type Tone = "ok" | "warn" | "bad" | "info" | "neu";
 
 /** The header a page is shown with whatever is removed or held, as the API records it. */
-export interface AlwaysShown {
+export interface AlwaysReleased {
   verdict?: Record<string, unknown>;
   judged_at?: string;
   coverage?: { examined?: boolean; on?: string[] };
@@ -21,8 +21,8 @@ export interface AlwaysShown {
   removals?: Record<string, number>;
 }
 
-export function headerOf(raw: Record<string, unknown> | undefined): AlwaysShown {
-  return (raw ?? {}) as AlwaysShown;
+export function headerOf(raw: Record<string, unknown> | undefined): AlwaysReleased {
+  return (raw ?? {}) as AlwaysReleased;
 }
 
 /** The verdict as a pill: its word and its tone. Null where the item carries no verdict. */
@@ -52,17 +52,17 @@ export function totalRemovals(removals: Record<string, number> | undefined): num
 }
 
 /** What the page was made on, short, with the API's longer sentence for a tip. */
-export function coverageWords(c: AlwaysShown["coverage"], shownTo = "the people it is released to"): { short: string; long: string } {
+export function coverageWords(c: AlwaysReleased["coverage"], releasedTo = "the people it is released to"): { short: string; long: string } {
   const on = c?.on ?? [];
   const can = on.includes("evidence_this_reader_can_read");
   const cannot = on.includes("evidence_this_reader_cannot_read");
   const [short, base] =
     can && cannot
-      ? [`Partly readable by ${shownTo}`, "Made partly on evidence the people it is released to can read and partly on evidence they cannot."]
+      ? [`Partly readable by ${releasedTo}`, "Made partly on evidence the people it is released to can read and partly on evidence they cannot."]
       : cannot
-        ? [`Not readable by ${shownTo}`, "Made on evidence the people it is released to cannot read."]
+        ? [`Not readable by ${releasedTo}`, "Made on evidence the people it is released to cannot read."]
         : can
-          ? [`Readable by ${shownTo}`, "Made on evidence the people it is released to can read."]
+          ? [`Readable by ${releasedTo}`, "Made on evidence the people it is released to can read."]
           : ["Not recorded", "What it was made on is not recorded."];
   return on.includes("evidence_not_shown")
     ? { short: `${short}; some unpublished`, long: `${base} At least one of its sources reports a result from data it has not published.` }
@@ -85,12 +85,12 @@ export function auditPill(audit: string | null | undefined): { text: string; ton
 
 /**
  * A label as a boundary names it, from where a release goes: the bare label
- * (as GET /showings lists it), `readers at "<label>"` (as one release says
+ * (as GET /releases lists it), `readers at "<label>"` (as one release says
  * it), or the outside, which is "outside".
  */
-export function labelOf(shownTo: string | null | undefined): string {
-  if (!shownTo || shownTo === "outside this deployment") return "outside";
-  return /^readers at "(.+)"$/.exec(shownTo)?.[1] ?? shownTo;
+export function labelOf(releasedTo: string | null | undefined): string {
+  if (!releasedTo || releasedTo === "outside this deployment") return "outside";
+  return /^readers at "(.+)"$/.exec(releasedTo)?.[1] ?? releasedTo;
 }
 
 /** A gate's setting for one party, in a few words. */

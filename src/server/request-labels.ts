@@ -72,7 +72,7 @@ export const CARRIERS = {
   finding: { table: "agent_findings", noun: "finding" },
   request: { table: "requests", noun: "request" },
   prize_claim: { table: "prize_claims", noun: "prize claim" },
-  showing_page: { table: "showing_pages", noun: "page under a release" },
+  release_page: { table: "release_pages", noun: "page under a release" },
   proof_attempt: { table: "proof_attempts", noun: "proof attempt" },
   connection: { table: "connections", noun: "connection" },
   file_set: { table: "file_sets", noun: "file set" },
@@ -120,7 +120,7 @@ const from = (
 ): Extract<RequestLabelRule, { rule: "from" }> => ({ rule: "from", carrier, in: where, field, why });
 
 const RELEASE =
-  "Writes on both sides of a boundary, the label a page was written at and the label it is released to. The two may share no label, so the request cannot work at one. The route checks the person's permission, and the service writes each row on the database owner's connection, naming its label (services/showing-service.ts).";
+  "Writes on both sides of a boundary, the label a page was written at and the label it is released to. The two may share no label, so the request cannot work at one. The route checks the person's permission, and the service writes each row on the database owner's connection, naming its label (services/release-service.ts).";
 
 const OUTBOUND =
   "What a release outside has released is kept at `public`, and so is the record of its leaving: packages, " +
@@ -332,11 +332,11 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   },
 
   // ---- the gate: members-only deployments only ----
-  "POST /showings": { rule: "none", why: RELEASE },
-  "POST /showings/:showing_id/end": { rule: "none", why: RELEASE },
-  "POST /showings/:showing_id/pages/:page_id/hold": { rule: "none", why: RELEASE },
-  "POST /showings/:showing_id/pages/:page_id/commission": from(
-    "showing_page",
+  "POST /releases": { rule: "none", why: RELEASE },
+  "POST /releases/:release_id/end": { rule: "none", why: RELEASE },
+  "POST /releases/:release_id/pages/:page_id/hold": { rule: "none", why: RELEASE },
+  "POST /releases/:release_id/pages/:page_id/commission": from(
+    "release_page",
     "page_id",
     "The money is for the redaction of this page or the check of it, which run at the page's label."
   ),

@@ -109,7 +109,7 @@ export interface SetupChecklist {
     keep_public_current: { setting: "on" | "off"; sends: boolean; in_words: string };
     last_not_taken: string | null;
     /** Pages shown outside that are open, the signing key's fingerprint, and when that key was last registered on the public graph from here. Absent from an older API. */
-    signing_key?: { shown_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
+    signing_key?: { released_outside: number; fingerprint: string | null; registered_from_here_at: string | null };
   };
   connections: {
     total: number;

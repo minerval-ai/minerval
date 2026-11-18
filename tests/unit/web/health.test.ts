@@ -106,22 +106,22 @@ describe("what needs attention", () => {
 
   it("says when pages are released outside and the key they are signed with was never registered from here", () => {
     const c = healthy();
-    c.public_graph!.signing_key = { shown_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
+    c.public_graph!.signing_key = { released_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
     expect(attentionItems(c).map((i) => [i.title, i.owner, i.href])).toEqual([["Signing key not registered", "admin", "/admin/outside?drawer=key"]]);
     // Registered from here, nothing released outside, no key, or no route to the public graph: nothing to say.
     for (const change of [
       () => (c.public_graph!.signing_key!.registered_from_here_at = "2026-11-01T00:00:00Z"),
-      () => (c.public_graph!.signing_key = { shown_outside: 0, fingerprint: "ab12", registered_from_here_at: null }),
-      () => (c.public_graph!.signing_key = { shown_outside: 2, fingerprint: null, registered_from_here_at: null }),
+      () => (c.public_graph!.signing_key = { released_outside: 0, fingerprint: "ab12", registered_from_here_at: null }),
+      () => (c.public_graph!.signing_key = { released_outside: 2, fingerprint: null, registered_from_here_at: null }),
       () => {
-        c.public_graph!.signing_key = { shown_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
+        c.public_graph!.signing_key = { released_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
         c.public_graph!.account_set = false;
       },
     ]) {
       change();
       expect(attentionItems(c)).toEqual([]);
       c.public_graph!.account_set = true;
-      c.public_graph!.signing_key = { shown_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
+      c.public_graph!.signing_key = { released_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
     }
   });
 
@@ -214,7 +214,7 @@ describe("parties nobody can consent for", () => {
   function withParties(): SetupChecklist {
     const c = healthy();
     c.permissions.push({
-      permission: "release",
+      permission: "consent",
       scope: "party",
       accounts: 1,
       groups: 0,

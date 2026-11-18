@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { actWords, storedList, storedWords } from "@/lib/stored-words";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
@@ -26,16 +25,16 @@ import {
   shortWhen,
 } from "@/components/work/ui";
 import { fetchGrants } from "@/lib/admin-api";
-import { fetchOutbound, fetchShowing, fetchShowings, type AskedPage, type ShowingAct, type ShownVersion } from "@/lib/inside-api";
+import { fetchOutbound, fetchRelease, fetchReleases, type AskedPage, type ReleaseAct, type ReceivedVersion } from "@/lib/inside-api";
 import { NOT_YET_ASSESSED, type Pipeline as Status } from "@/lib/pipeline";
-import { endShowingAction, holdPageAction, payForWorkAction } from "../actions";
-import { destinationOf, gateFor, kindOf, kindTip, loadGates, statusOf, wholeOf } from "../showings";
-import "../showings.css";
+import { endReleaseAction, holdPageAction, payForWorkAction } from "../actions";
+import { destinationOf, gateFor, kindOf, kindTip, loadGates, statusOf, wholeOf } from "../releases";
+import "../releases.css";
 
 export const metadata: Metadata = { title: "Release · Minerval" };
 export const dynamic = "force-dynamic";
 
-// One release (GET /showings/:id, and its row in GET /showings for a reader
+// One release (GET /releases/:id, and its row in GET /releases for a reader
 // of the label it was asked at), as one view whichever sides the viewer
 // reads: each version of each node's page with one status (lib/pipeline.ts),
 // what the other side is told, the nodes it covers, for a release outside
@@ -55,7 +54,7 @@ interface Version {
   pageId: string;
   versionOf: string;
   page?: AskedPage;
-  version?: ShownVersion;
+  version?: ReceivedVersion;
   status: Status;
 }
 
@@ -91,13 +90,13 @@ function removedCount(removals: Record<string, number> | undefined): number {
   return Object.values(removals ?? {}).reduce((a, b) => a + b, 0);
 }
 
-function actLine(a: ShowingAct): string {
-  const words = actWords(a.what);
+function actLine(a: ReleaseAct): string {
+  const words = a.what;
   const what = words.charAt(0).toUpperCase() + words.slice(1);
-  return `${what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${storedWords(a.reason)}` : ""}`;
+  return `${what}${a.on ? ` ${a.on}` : ""}${a.for_party ? ` for ${a.for_party}` : ""}${a.reason ? `: ${a.reason}` : ""}`;
 }
 
-export default async function ShowingPage({
+export default async function ReleasePage({
   params,
   searchParams,
 }: {
@@ -108,24 +107,24 @@ export default async function ShowingPage({
   if (!who) return null;
   const { id } = await params;
   const query = await searchParams;
-  const [showing, listed, gates] = await Promise.all([
-    fetchShowing(who.externalId, id).catch(() => null),
-    fetchShowings(who.externalId).catch(() => ({ shown: [], asked: [], hold_reasons: {} as Record<string, string>, end_reasons: {} as Record<string, string> })),
+  const [release, listed, gates] = await Promise.all([
+    fetchRelease(who.externalId, id).catch(() => null),
+    fetchReleases(who.externalId).catch(() => ({ received: [], asked: [], hold_reasons: {} as Record<string, string>, end_reasons: {} as Record<string, string> })),
     loadGates(who.externalId),
   ]);
-  const asked = listed.asked.find((a) => a.showing_id === id) ?? null;
-  const shownRow = listed.shown.find((s) => s.showing_id === id) ?? null;
-  if (!showing && !asked) notFound();
+  const asked = listed.asked.find((a) => a.release_id === id) ?? null;
+  const receivedRow = listed.received.find((s) => s.release_id === id) ?? null;
+  if (!release && !asked) notFound();
 
-  const outside = (showing?.shown_to ?? asked?.shown_to) === "outside this deployment";
+  const outside = (release?.released_to ?? asked?.released_to) === "outside this deployment";
   const outbound = outside ? await fetchOutbound(who.externalId, id).catch(() => null) : null;
   const from = asked?.page_label ?? null;
-  const to = destinationOf(showing?.shown_to ?? asked!.shown_to);
-  const form = showing?.form ?? asked!.form;
+  const to = destinationOf(release?.released_to ?? asked!.released_to);
+  const form = release?.form ?? asked!.form;
   // The detail says what it covers in words and by its code; the page's side lists the code.
-  const scope = showing?.scope_code ?? asked!.scope;
-  const ended = showing?.ended_at ?? asked?.ended_at ?? null;
-  const mainNodeId = shownRow?.node_id ?? asked?.node_id ?? null;
+  const scope = release?.scope_code ?? asked!.scope;
+  const ended = release?.ended_at ?? asked?.ended_at ?? null;
+  const mainNodeId = receivedRow?.node_id ?? asked?.node_id ?? null;
   const gate = gateFor(gates, from, to);
   const policyHref = gate ? `/gates/${gate.gate_id}?tab=policy` : "/gates";
   const kind = kindOf(form, scope);
@@ -133,14 +132,14 @@ export default async function ShowingPage({
   // ---- every version, grouped by node, from whichever sides the viewer reads ----
   const askedPages = new Map((asked?.pages ?? []).map((p) => [p.page_id, p]));
   const groups: Group[] = [];
-  if (showing) {
-    for (const n of showing.nodes) {
+  if (release) {
+    for (const n of release.nodes) {
       groups.push({
         nodeId: n.node_id,
         text: n.text,
         main: n.node_id === mainNodeId,
         since: n.covered_from,
-        began: n.showing_began,
+        began: n.release_began,
         left: n.left_at ? { at: n.left_at, because: n.left_because } : undefined,
         versions: n.versions.map((v) => ({ pageId: v.page_id, versionOf: v.version_of, version: v, page: askedPages.get(v.page_id), status: statusOf(askedPages.get(v.page_id), v) })),
       });
@@ -168,16 +167,16 @@ export default async function ShowingPage({
   const atGate = allVersions.filter((v) => v.status.key === "gate").length;
   const unpaid = allVersions.filter((v) => v.status.key === "funds").length;
   const notAssessed = groups.filter((g) => g.versions.length === 0).length;
-  const title = mainGroup?.text ?? asked?.node ?? wholeOf(scope, from, showing?.scope) ?? "A node you do not read";
+  const title = mainGroup?.text ?? asked?.node ?? wholeOf(scope, from, release?.scope) ?? "A node you do not read";
   const statement = !!(mainGroup?.text ?? asked?.node);
 
   // ---- what the viewer may do ----
-  // Who consents for each party (the permission stored as `release`), where the
+  // Who consents for each party (the permission `consent`), where the
   // viewer may see grants (an administrator): a part waiting on a party nobody
   // can consent for says so.
   const releasers = can(who, "administer")
     ? await fetchGrants(who.externalId)
-        .then((gs) => new Set(gs.filter((g) => g.permission === "release" && !g.removed_at && g.party).map((g) => g.party!.name)))
+        .then((gs) => new Set(gs.filter((g) => g.permission === "consent" && !g.removed_at && g.party).map((g) => g.party!.name)))
         .catch(() => null)
     : null;
   const holdable = (v: Version) => !!v.page && v.version?.state === "held" && can(who, "direct") && !ended && v.page.stage !== "overtaken";
@@ -189,7 +188,7 @@ export default async function ShowingPage({
     { key: "versions", label: "Versions", count: allVersions.length },
     { key: "nodes", label: "Nodes covered", count: groups.length },
     ...(outside ? [{ key: "leaving" as Tab, label: "Leaving", count: outbound?.nodes.reduce((n, x) => n + x.packages.length, 0) }] : []),
-    ...(showing ? [{ key: "history" as Tab, label: "History", count: showing.acts.length }] : []),
+    ...(release ? [{ key: "history" as Tab, label: "History", count: release.acts.length }] : []),
   ];
   const tab: Tab = tabs.some((t) => t.key === query.tab) ? (query.tab as Tab) : "versions";
   const base = `/releases/${id}${tab === "versions" ? "" : `?tab=${tab}`}`;
@@ -220,7 +219,7 @@ export default async function ShowingPage({
             {headHold &&
               (heldByDirector(headHold) ? (
                 <WorkForm action={holdPageAction} submit="Lift hold" inline>
-                  <input type="hidden" name="showing_id" value={id} />
+                  <input type="hidden" name="release_id" value={id} />
                   <input type="hidden" name="page_id" value={headHold.pageId} />
                   <input type="hidden" name="lift" value="true" />
                 </WorkForm>
@@ -241,23 +240,23 @@ export default async function ShowingPage({
           [
             "Asked",
             <span key="a">
-              {showing?.asked_by ? `${showing.asked_by} · ` : ""}
-              {shortDay(showing?.asked_at ?? asked!.asked_at)}
-              {showing && showing.asked_holding.length > 0 && (
-                <div className="w-faint w-small" title={`Holding ${showing.asked_holding.join(", ")}`}>
-                  holding {showing.asked_holding.slice(0, 2).join(", ")}
-                  {showing.asked_holding.length > 2 && ` +${showing.asked_holding.length - 2}`}
+              {release?.asked_by ? `${release.asked_by} · ` : ""}
+              {shortDay(release?.asked_at ?? asked!.asked_at)}
+              {release && release.asked_holding.length > 0 && (
+                <div className="w-faint w-small" title={`Holding ${release.asked_holding.join(", ")}`}>
+                  holding {release.asked_holding.slice(0, 2).join(", ")}
+                  {release.asked_holding.length > 2 && ` +${release.asked_holding.length - 2}`}
                 </div>
               )}
             </span>,
           ],
-          showing?.policy
+          release?.policy
             ? [
                 <span key="pk">
                   Policy <Tip>Everyone the page is released to can read this policy in full.</Tip>
                 </span>,
                 <Link key="p" href={policyHref}>
-                  Version {showing.policy.version}
+                  Version {release.policy.version}
                 </Link>,
               ]
             : gate
@@ -282,14 +281,14 @@ export default async function ShowingPage({
               )}
             </span>,
           ],
-          !!ended && ["Ended", `${shortDay(ended)}${showing?.ended_because ? `: ${storedWords(showing.ended_because)}` : ""}`],
+          !!ended && ["Ended", `${shortDay(ended)}${release?.ended_because ? `: ${release.ended_because}` : ""}`],
         ]}
       />
 
       <Tabs current={tab} tabs={tabs.map((t) => ({ ...t, href: t.key === "versions" ? `/releases/${id}` : `/releases/${id}?tab=${t.key}` }))} />
 
       {tab === "versions" && (
-        <div className="w-showings-grid">
+        <div className="w-releases-grid">
           {groups.length === 0 ? (
             <div className="w-tbox">
               <Empty>
@@ -304,7 +303,7 @@ export default async function ShowingPage({
                   <th>Status</th>
                   <th>
                     {sees.charAt(0).toUpperCase() + sees.slice(1)}{" "}
-                    {!showing && <Tip>That is on their side, which you do not read.</Tip>}
+                    {!release && <Tip>That is on their side, which you do not read.</Tip>}
                   </th>
                   <th>
                     Audit <Tip>Audit&apos;s check: whether what remains after redaction still supports the verdict. Recorded in fixed words only.</Tip>
@@ -318,9 +317,9 @@ export default async function ShowingPage({
                     key={g.nodeId}
                     g={g}
                     id={id}
-                    showingVisible={!!showing}
+                    releaseVisible={!!release}
                     mayFund={can(who, "fund")}
-                    mayRelease={can(who, "release")}
+                    mayRelease={can(who, "consent")}
                     holdable={holdable}
                     heldByDirector={heldByDirector}
                     holdHref={(pageId) => withDrawer("hold", pageId)}
@@ -331,10 +330,10 @@ export default async function ShowingPage({
             </Table>
           )}
           <aside className="w-col">
-            {showing && showing.acts.length > 0 && (
+            {release && release.acts.length > 0 && (
               <Card title="Recent" link={{ href: `/releases/${id}?tab=history`, label: "History" }}>
                 <div>
-                  {showing.acts
+                  {release.acts
                     .slice(-4)
                     .reverse()
                     .map((a, i) => (
@@ -413,7 +412,7 @@ export default async function ShowingPage({
                     <td>
                       <Pipeline status={v?.status ?? NOT_YET_ASSESSED} />
                     </td>
-                    <td>{g.left ? `${shortDay(g.left.at)}${g.left.because ? `: ${storedWords(g.left.because)}` : ""}` : <span className="w-faint">—</span>}</td>
+                    <td>{g.left ? `${shortDay(g.left.at)}${g.left.because ? `: ${g.left.because}` : ""}` : <span className="w-faint">—</span>}</td>
                   </tr>
                 );
               })}
@@ -433,7 +432,7 @@ export default async function ShowingPage({
                 {outbound.nodes[0]!.sent === "as_released" ? "Each package is sent as soon as it is built." : "A person who directs the graph sends each package."}{" "}
                 <Tip>What is released is carried out in signed packages, one each time what the outside would read has changed.</Tip>
               </span>
-              <Link className="w-spacer" href={`/outbound#showing-${id}`}>
+              <Link className="w-spacer" href={`/outbound#release-${id}`}>
                 Open in Outbox
               </Link>
             </div>
@@ -463,7 +462,7 @@ export default async function ShowingPage({
           </div>
         ))}
 
-      {tab === "history" && showing && (
+      {tab === "history" && release && (
         <Table label="What was done, and by whom">
           <thead>
             <tr>
@@ -476,7 +475,7 @@ export default async function ShowingPage({
             </tr>
           </thead>
           <tbody>
-            {showing.acts.map((a, i) => (
+            {release.acts.map((a, i) => (
               <tr key={i}>
                 <td title={when(a.at)} style={{ whiteSpace: "nowrap" }}>
                   {shortWhen(a.at)}
@@ -494,7 +493,7 @@ export default async function ShowingPage({
         <Drawer title="Hold this page" close={base}>
           <Kv rows={[["Assessment of", shortDay(drawerPage.versionOf)], ["Status", <Pipeline key="s" status={drawerPage.status} />]]} />
           <WorkForm action={holdPageAction} submit="Hold page" primary>
-            <input type="hidden" name="showing_id" value={id} />
+            <input type="hidden" name="release_id" value={id} />
             <input type="hidden" name="page_id" value={drawerPage.pageId} />
             <div className="w-field">
               <label htmlFor="hold-reason">
@@ -504,7 +503,7 @@ export default async function ShowingPage({
                 <option value="" disabled>
                   Choose a reason
                 </option>
-                {Object.entries(storedList(listed.hold_reasons)).map(([key, words]) => (
+                {Object.entries(listed.hold_reasons).map(([key, words]) => (
                   <option key={key} value={key}>
                     {words}
                   </option>
@@ -520,8 +519,8 @@ export default async function ShowingPage({
           <p className="w-muted" style={{ margin: 0 }}>
             Later assessments stop following. What was released stays released.
           </p>
-          <WorkForm action={endShowingAction} submit="End release" danger lock="Can't be undone">
-            <input type="hidden" name="showing_id" value={id} />
+          <WorkForm action={endReleaseAction} submit="End release" danger lock="Can't be undone">
+            <input type="hidden" name="release_id" value={id} />
             <div className="w-field">
               <label htmlFor="end-reason">
                 Reason <Tip>Recorded with the date, where the people the page is released to can read it.</Tip>
@@ -530,7 +529,7 @@ export default async function ShowingPage({
                 <option value="" disabled>
                   Choose a reason
                 </option>
-                {Object.entries(storedList(listed.end_reasons)).map(([key, words]) => (
+                {Object.entries(listed.end_reasons).map(([key, words]) => (
                   <option key={key} value={key}>
                     {words}
                   </option>
@@ -548,7 +547,7 @@ export default async function ShowingPage({
 function GroupRows({
   g,
   id,
-  showingVisible,
+  releaseVisible,
   mayFund,
   mayRelease,
   holdable,
@@ -558,7 +557,7 @@ function GroupRows({
 }: {
   g: Group;
   id: string;
-  showingVisible: boolean;
+  releaseVisible: boolean;
   mayFund: boolean;
   mayRelease: boolean;
   holdable: (v: Version) => boolean;
@@ -581,7 +580,7 @@ function GroupRows({
           <span className="w-faint w-small" style={{ fontWeight: 400 }}>
             · {g.main ? "released node" : "under it"}
             {g.since && ` · since ${shortDay(g.since)}`}
-            {g.left && ` · left ${shortDay(g.left.at)}${g.left.because ? `: ${storedWords(g.left.because)}` : ""}`}
+            {g.left && ` · left ${shortDay(g.left.at)}${g.left.because ? `: ${g.left.because}` : ""}`}
           </span>
         </td>
       </tr>
@@ -613,14 +612,14 @@ function GroupRows({
               <Pipeline status={v.status} />
             </td>
             <td className="w-small" style={{ minWidth: 120 }}>
-              <Sees v={v} showingVisible={showingVisible} />
+              <Sees v={v} releaseVisible={releaseVisible} />
             </td>
             <td>{auditPill(v.version?.audit)}</td>
             <td className="w-act">
               <div className="w-row" style={{ justifyContent: "flex-end", flexWrap: "nowrap", gap: 6 }}>
                 {work && mayFund && (
                   <WorkForm action={payForWorkAction} submit="Pay" inline primary={v.status.key === "funds"}>
-                    <input type="hidden" name="showing_id" value={id} />
+                    <input type="hidden" name="release_id" value={id} />
                     <input type="hidden" name="page_id" value={v.pageId} />
                     <input
                       className="w-input w-narrow"
@@ -649,7 +648,7 @@ function GroupRows({
                 {holdable(v) &&
                   (heldByDirector(v) ? (
                     <WorkForm action={holdPageAction} submit="Lift hold" inline>
-                      <input type="hidden" name="showing_id" value={id} />
+                      <input type="hidden" name="release_id" value={id} />
                       <input type="hidden" name="page_id" value={v.pageId} />
                       <input type="hidden" name="lift" value="true" />
                     </WorkForm>
@@ -668,13 +667,13 @@ function GroupRows({
 }
 
 /** What the people it is released to see of one version, compactly. */
-function Sees({ v, showingVisible }: { v: Version; showingVisible: boolean }) {
+function Sees({ v, releaseVisible }: { v: Version; releaseVisible: boolean }) {
   const ver = v.version;
-  if (!ver) return <span className="w-faint">{showingVisible ? "Never sent" : "—"}</span>;
+  if (!ver) return <span className="w-faint">{releaseVisible ? "Never sent" : "—"}</span>;
   if (v.status.key === "overtaken") return <span className="w-faint">Never sent</span>;
   if (ver.state === "held")
     return (
-      <span className="w-muted" title={storedWords(ver.held_because) ?? undefined}>
+      <span className="w-muted" title={ver.held_because ?? undefined}>
         Nothing yet{ver.held_for ? <div className="w-faint">held {ver.held_for === "0 hours" ? "under an hour" : ver.held_for}</div> : null}
       </span>
     );
@@ -689,7 +688,7 @@ function Sees({ v, showingVisible }: { v: Version; showingVisible: boolean }) {
   return (
     <span title={[title, ver.held_kinds].filter(Boolean).join(" · ") || undefined}>
       {bits.join(" · ")}
-      {ver.shown_at && <div className="w-faint">released {shortDay(ver.shown_at)}</div>}
+      {ver.released_at && <div className="w-faint">released {shortDay(ver.released_at)}</div>}
     </span>
   );
 }

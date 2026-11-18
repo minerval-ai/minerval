@@ -34,8 +34,8 @@ const STATE_SHORT: Record<string, string> = {
 };
 
 const PROPOSAL: Record<string, { tone: Tone; text: string }> = {
-  // The state is stored as waiting_for_release: the words wait for each party's consent.
-  waiting_for_release: { tone: "warn", text: "At the gate, waiting for consent" },
+  // The state is stored as waiting_for_consent: the words wait for each party's consent.
+  waiting_for_consent: { tone: "warn", text: "At the gate, waiting for consent" },
   ready: { tone: "ok", text: "Ready" },
   sent: { tone: "info", text: "Under review outside" },
   on_the_public_graph: { tone: "ok", text: "Admitted" },
@@ -131,19 +131,19 @@ function Pages({
 }) {
   if (problem) return <Note tone="bad">{problem}</Note>;
   if (!overview) return null;
-  const showings = [...new Set(overview.nodes.map((n) => n.showing_id))];
+  const releases = [...new Set(overview.nodes.map((n) => n.release_id))];
   const how = overview.how_sending_works;
 
   return (
     <>
-      {showings.length === 0 && (
+      {releases.length === 0 && (
         <div className="w-tbox">
           <Empty>No page has been asked to be released outside this deployment.</Empty>
         </div>
       )}
 
-      {showings.map((showingId) => {
-        const nodes = overview.nodes.filter((n) => n.showing_id === showingId);
+      {releases.map((releaseId) => {
+        const nodes = overview.nodes.filter((n) => n.release_id === releaseId);
         const head = nodes[0]!;
         const waiting = nodes.reduce((n, node) => n + node.packages.filter((p) => !taken(p)).length, 0);
         const ready = nodes.filter((n) => n.proposal?.state === "ready").length;
@@ -153,11 +153,11 @@ function Pages({
           .sort()
           .pop();
         return (
-          <section className="w-tbox" key={showingId} id={`showing-${showingId}`} style={{ scrollMarginTop: 16 }}>
+          <section className="w-tbox" key={releaseId} id={`release-${releaseId}`} style={{ scrollMarginTop: 16 }}>
             <div className="w-pub-grp">
               <span className="w-node">{head.node ?? "A node you do not read"}</span>
               {nodes.length > 1 && <span className="w-muted w-small">and {nodes.length - 1} under it</span>}
-              <Link className="w-small" href={`/releases/${showingId}`}>
+              <Link className="w-small" href={`/releases/${releaseId}`}>
                 Release
               </Link>
               <span className="w-row" style={{ gap: 4 }}>
@@ -172,7 +172,7 @@ function Pages({
                 ) : (
                   mayDirect && (
                     <WorkForm action={sendOutsideAction} submit={`Send ${waiting + ready} waiting`} primary inline lock="Can't be taken back">
-                      <input type="hidden" name="showing_id" value={showingId} />
+                      <input type="hidden" name="release_id" value={releaseId} />
                     </WorkForm>
                   )
                 )}
@@ -190,7 +190,7 @@ function Pages({
                 </tr>
               </thead>
               {nodes.map((node) => (
-                <NodeRows key={node.node_id} node={node} showingId={showingId} mayDirect={mayDirect} />
+                <NodeRows key={node.node_id} node={node} releaseId={releaseId} mayDirect={mayDirect} />
               ))}
             </table>
           </section>
@@ -229,7 +229,7 @@ function Pages({
   );
 }
 
-function NodeRows({ node, showingId, mayDirect }: { node: OutboundNode; showingId: string; mayDirect: boolean }) {
+function NodeRows({ node, releaseId, mayDirect }: { node: OutboundNode; releaseId: string; mayDirect: boolean }) {
   const packages = [...node.packages].sort((a, b) => a.sequence - b.sequence);
   const latest = packages[packages.length - 1];
   const sends = packages
@@ -335,7 +335,7 @@ function NodeRows({ node, showingId, mayDirect }: { node: OutboundNode; showingI
                   {node.proposal.waits_on.length > 0 && ` · waits on ${node.proposal.waits_on.map((p) => p.name).join(", ")}`}
                 </span>
                 <p className="w-pub-quote">{node.proposal.text}</p>
-                {node.proposal.state === "waiting_for_release" && (
+                {node.proposal.state === "waiting_for_consent" && (
                   <span className="w-help">
                     At the gate to outside as an item of its own. Where a person decides as well, it is approved on <Link href="/gate">Review</Link>.
                   </span>
@@ -344,7 +344,7 @@ function NodeRows({ node, showingId, mayDirect }: { node: OutboundNode; showingI
             )}
             {mayWord && (
               <WorkForm action={writeProposalAction} submit="Record these words" small>
-                <input type="hidden" name="showing_id" value={showingId} />
+                <input type="hidden" name="release_id" value={releaseId} />
                 <input type="hidden" name="node_id" value={node.node_id} />
                 <div className="w-field">
                   <label htmlFor={`words-${node.node_id}`}>

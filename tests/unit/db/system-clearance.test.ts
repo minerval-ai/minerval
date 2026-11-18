@@ -71,7 +71,7 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   "src/preflight-deployment.ts": [
     [
       "The preflight asks about the whole deployment, whoever reads it: counts over every label of releases, mandates, connections and file sets.",
-      "Nothing. What it reports to the operator, and to an administrator through the setup checklist, is counts and the names of labels: how many showings outside are open, whether a General mandate is set up at each label that holds material, how many connections at each label name a credential variable that is not set, how many file sets are on. No row's text is read.",
+      "Nothing. What it reports to the operator, and to an administrator through the setup checklist, is counts and the names of labels: how many releases outside are open, whether a General mandate is set up at each label that holds material, how many connections at each label name a credential variable that is not set, how many file sets are on. No row's text is read.",
     ],
   ],
   "src/db/enforcement.ts": [
@@ -284,7 +284,7 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
   "src/services/outbound-service.ts": [
     [
       "A person's act on what leaves the deployment is recorded at `public`, where the record of a release outside is kept, once the route has checked the person.",
-      "Rows at `public` and nowhere else, each naming that label: the words of a proposal a person wrote, a party's release of them, and the log of each send. It reads the destination-side rows of showings outside, which are at `public`. The package itself is not built here: it is built by work at `public` (runAtLabel), which leaves this clearance and can read no other label.",
+      "Rows at `public` and nowhere else, each naming that label: the words of a proposal a person wrote, a party's release of them, and the log of each send. It reads the destination-side rows of releases outside, which are at `public`. The package itself is not built here: it is built by work at `public` (runAtLabel), which leaves this clearance and can read no other label.",
     ],
   ],
   "src/services/gate-face.ts": [
@@ -311,7 +311,7 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A gate's authorities are administrators and holders of release for a party, who may read neither side's label; the route checks the permission and this reads and writes the gate's own rows: the setting rows at the label things come from, which can name a mandate, a node or a request there and are returned only to a person with a say over the gate, and the one row for the gate as a whole on the destination side, which names nothing. It writes no text of any item, and what it returns to a person is the settings and the two labels' names.",
     ],
   ],
-  "src/services/showing-service.ts": [
+  "src/services/release-service.ts": [
     [
       "Releasing a page to readers who do not read its label keeps rows on both sides of a boundary, the page's label and the destination's, and the two may share no label.",
       "This is the one path by which text reaches a label that does not read the label it was written at, so it is the exception to the rule above and is held to its own: on the destination side it writes fixed words, ids, dates, hashes, counts and party names, and the text of a part only once every party the part rests on has released it, with the Redactor's removals already made (settle in release-gate-service.ts, which is the only statement that writes text there). The page is read inside runAtLabel at the page's label, and the reassessment that follows an arrival is opened inside runAtLabel at the destination's.",

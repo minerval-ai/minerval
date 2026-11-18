@@ -1,5 +1,5 @@
 /**
- * A private graph acting on the public graph other than by showing a page,
+ * A private graph acting on the public graph other than by releasing a page,
  * and what comes back (docs/outward-acts.md). Mounted only where
  * READS=members, beside the outbound routes.
  *

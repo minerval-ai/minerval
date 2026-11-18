@@ -29,7 +29,7 @@ const OTHERWISE: Record<string, string> = {
     "The sending of one report, keyed by the report and written at the report's own label by work at that label: on a conflict it sets the time, the public graph's id for the report and a count, and no words.",
   "src/services/action-service.ts actions":
     "The ledger's rows. A row's label never changes, and work at each label has its own key for a subject several labels can work on (groupAtLabel), so the row an upsert lands on is at the writer's own label; the database refuses any other. A finished row that is reopened takes the new work's text and target (LABEL_ON_REOPEN_SQL).",
-  "src/services/showing-service.ts actions":
+  "src/services/release-service.ts actions":
     "The ledger row of a page's redaction, keyed by the page, which has one label: the update reopens a finished row and changes no text.",
   "src/llm/agents/program-officer.ts actions": "A sitting's ledger row, for its mandate, at the mandate's label (LABEL_ON_REOPEN_SQL).",
   "src/services/prize-claim-service.ts actions": "A prize review's ledger row: the update sets a time and nothing else.",

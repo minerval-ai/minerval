@@ -43,8 +43,8 @@ export interface WorkSection {
 const has = (m: Mine, ...ps: string[]) => ps.some((p) => m.permissions.includes(p));
 // Where the deployment holds material at more than one label, pages are released
 // from one label to another, and every member may read the releases their labels reach.
-// The permission to consent for a party is stored as `release` (docs/releasing-a-page.md).
-const readsReleases = (m: Mine) => m.clearance.some((label) => label !== "public") || has(m, "release", "direct");
+// The permission to consent for a party is `consent` (docs/releasing-a-page.md).
+const readsReleases = (m: Mine) => m.clearance.some((label) => label !== "public") || has(m, "consent", "direct");
 const administers = (m: Mine) => has(m, "administer");
 
 export const WORK_SECTIONS: WorkSection[] = [
@@ -54,7 +54,7 @@ export const WORK_SECTIONS: WorkSection[] = [
       // What waits on the person, from every part of the deployment.
       { href: "/inbox", name: "Inbox", icon: "inbox", signal: "inbox" },
       // The queue of what waits at a gate on the decision of someone who consents for a party.
-      { href: "/gate", name: "Review", icon: "review", signal: "review", shown: (m) => has(m, "release") },
+      { href: "/gate", name: "Review", icon: "review", signal: "review", shown: (m) => has(m, "consent") },
     ],
   },
   {
@@ -96,20 +96,20 @@ export const WORK_SECTIONS: WorkSection[] = [
     // Everything that passes between this deployment and the public graph (docs/outward-acts.md).
     name: "Public graph",
     pages: [
-      { href: "/admin/outside", name: "Overview", icon: "globe", shown: (m) => has(m, "direct", "release") },
+      { href: "/admin/outside", name: "Overview", icon: "globe", shown: (m) => has(m, "direct", "consent") },
       {
         href: "/admin/outside/requests",
         name: "Requests",
         icon: "public-requests",
         signal: "public_requests",
-        shown: (m) => has(m, "direct", "release"),
+        shown: (m) => has(m, "direct", "consent"),
       },
       {
         href: "/admin/outside/said-back",
         name: "Replies",
         icon: "replies",
         signal: "replies",
-        shown: (m) => has(m, "direct", "release"),
+        shown: (m) => has(m, "direct", "consent"),
       },
       {
         // Pages sent outside, and agents' reports to Minerval's maintainers.
@@ -117,7 +117,7 @@ export const WORK_SECTIONS: WorkSection[] = [
         name: "Outbox",
         icon: "outbox",
         also: ["/admin/outside/reports"],
-        shown: (m) => has(m, "direct", "release"),
+        shown: (m) => has(m, "direct", "consent"),
       },
     ],
   },

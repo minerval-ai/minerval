@@ -300,19 +300,19 @@ describe("what the tool refuses, with the reason", () => {
     expect(await system(() => rawQuery(`SELECT 1 FROM audit_log WHERE claim_id = $1`, [node]))).toEqual([]);
   });
 
-  it("retiring a judgment whose page is under a standing showing: its readers would be shown a page with its judgment withdrawn", async () => {
+  it("retiring a judgment whose page is under a standing release: its readers would be shown a page with its judgment withdrawn", async () => {
     const node = await seedNode(PUBLIC_LABEL, "A public claim whose page at a is shown standing");
     await runAt(PUBLIC_LABEL, () => assess(node, "supported", "On the public record."));
     await runAt(A, () => assess(node, "doubtful", "With what a holds."));
-    const showing = await system(async () => {
+    const release = await system(async () => {
       const [mine] = await rawQuery<{ id: string }>(`SELECT id FROM assessments WHERE claim_id = $1 AND sensitivity_label = $2 AND is_current`, [node, A]);
       const [row] = await rawQuery<{ id: string }>(
-        `INSERT INTO showings (node_id, to_label, boundary_id, form, scope, sensitivity_label)
+        `INSERT INTO releases (node_id, to_label, boundary_id, form, scope, sensitivity_label)
          VALUES ($1, 'public', gen_random_uuid(), 'standing', 'node', $2) RETURNING id`,
         [node, A]
       );
       await rawQuery(
-        `INSERT INTO showing_pages (showing_id, node_id, judgment_kind, judgment_id, judged_at, sensitivity_label)
+        `INSERT INTO release_pages (release_id, node_id, judgment_kind, judgment_id, judged_at, sensitivity_label)
          VALUES ($1, $2, 'assessment', $3, now(), $4)`,
         [row!.id, node, mine!.id, A]
       );
@@ -326,10 +326,10 @@ describe("what the tool refuses, with the reason", () => {
         `graph. Until then, record your judgment as it now stands with update_claim_assessment.`
     );
     expect((await current(node)).map((r) => r.label).sort()).toEqual([A, PUBLIC_LABEL].sort());
-    // Once the showing has ended, it may.
-    await system(() => rawQuery(`UPDATE showings SET ended_at = now() WHERE id = $1`, [showing]));
+    // Once the release has ended, it may.
+    await system(() => rawQuery(`UPDATE releases SET ended_at = now() WHERE id = $1`, [release]));
     expect((await runAt(A, () => leave(node))).retired_own).toBe(true);
-    await system(() => rawQuery(`DELETE FROM showings WHERE id = $1`, [showing]));
+    await system(() => rawQuery(`DELETE FROM releases WHERE id = $1`, [release]));
   });
 
   it("a call with no reasoning", async () => {

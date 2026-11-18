@@ -3,7 +3,7 @@
  * text every boundary starts from, and what a saved version may not do.
  */
 import { describe, expect, it } from "vitest";
-import { ALWAYS_SHOWN, DEFAULT_CATEGORIES, hashPolicy, policyProblems, renderPolicy } from "../../../src/services/redaction-policy.js";
+import { ALWAYS_RELEASED, DEFAULT_CATEGORIES, hashPolicy, policyProblems, renderPolicy } from "../../../src/services/redaction-policy.js";
 
 describe("the text every boundary starts from", () => {
   const body = renderPolicy(DEFAULT_CATEGORIES, 1);
@@ -13,9 +13,9 @@ describe("the text every boundary starts from", () => {
   });
 
   it("states how removal works and everything that is always shown, whatever the categories", () => {
-    for (const line of ALWAYS_SHOWN) expect(body).toContain(`- ${line}`);
+    for (const line of ALWAYS_RELEASED) expect(body).toContain(`- ${line}`);
     const own = renderPolicy([{ name: "plant layout", covers: "Where machines stand.", examples: "A floor plan." }], 4);
-    for (const line of ALWAYS_SHOWN) expect(own).toContain(`- ${line}`);
+    for (const line of ALWAYS_RELEASED) expect(own).toContain(`- ${line}`);
     expect(own).toContain("# Redaction policy, version 4");
     expect(own).toContain("Whether it is favorable or unfavorable to anyone is not a reason to remove it or to keep it.");
     expect(own).not.toContain("personal data\n\nDetail");
@@ -42,7 +42,7 @@ describe("the text every boundary starts from", () => {
     // Three agents in the first run with real models read a sentence inside
     // the always-shown list as making these words unremovable, and held whole
     // pages. Nothing in the list may name words a category can cover.
-    for (const line of ALWAYS_SHOWN) {
+    for (const line of ALWAYS_RELEASED) {
       expect(line, line).not.toMatch(/\bname\b|\bwords\b|part of the page/i);
     }
     const [list, after] = body.split("No category covers any of these.");
@@ -80,14 +80,14 @@ describe("what a version may not do", () => {
     }
   });
 
-  it("name something that is shown whenever a page is shown", () => {
+  it("name something that is shown whenever a page is released", () => {
     for (const [name, covers] of [
       ["bad verdicts", "A status of contradicted."],
       ["uncertainty", "The credence, where it is low."],
       ["method", "The prompt set and the policy version."],
     ] as const) {
       const [problem] = policyProblems(category(name, covers));
-      expect(problem?.problem, name).toContain("names something that is shown whenever a page is shown");
+      expect(problem?.problem, name).toContain("names something that is shown whenever a page is released");
     }
   });
 

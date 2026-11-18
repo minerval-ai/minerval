@@ -111,7 +111,7 @@ export interface StewardMessage {
     // A page of this node written at a label this one does not read has
     // been shown at this label and is now among the node's sources
     // (release-gate-service.ts). The context is counts and fixed words.
-    | "page_shown"
+    | "page_released"
     // A mandate at a label this one does not read paid for, or asked for, a
     // pass on the node here, and its asking came through the gate
     // (release-gate-service.ts). The context is fixed words.
@@ -226,7 +226,7 @@ export interface AuditMessage {
     // Triage of the agents' own reports (#366): cluster, rank, set status.
     | "report_triage"
     // The check of a Redactor's work on a page that is to be shown below its
-    // label (showing-service.ts): once for each round of redaction.
+    // label (release-service.ts): once for each round of redaction.
     | "redaction_fidelity";
   context: string;
   // The audit_runs row this message executes (#180): findings attach to it,
@@ -561,7 +561,7 @@ export async function requestAudit(input: {
     // source's readers (#740): deduped per source.
     | "injected_source"
     // A Redactor finished a page that is to be shown below its label
-    // (showing-service.ts): deduped per page and round.
+    // (release-service.ts): deduped per page and round.
     | "redaction_finished";
   dedupeKey?: string;
   /** The mandate the audit examines, if any: it may not fund its own audit. */

@@ -63,7 +63,7 @@ export const COVERAGE_EVIDENCE = ["public_evidence", "evidence_not_shown"] as co
  * the reader it is served to: evidence that reader can read, and evidence
  * that was examined and that reader cannot read. The second is true of a
  * judgment that took in a page shown from a label the reader does not read
- * (services/showing-service.ts), and of a shown page's own coverage as its
+ * (services/release-service.ts), and of a shown page's own coverage as its
  * destination reads it. `evidence_not_shown` keeps its meaning. The public
  * graph has one label and none of these is ever said there.
  */
@@ -190,7 +190,7 @@ export async function summarizeCoverage(
        -- A reading through a connection, or an analysis of a set of files, that work on the node at the
        -- judgment's label kept as a source before the judgment was written. An agent keeps one when a
        -- judgment rests on it, whether or not an instance was recorded from it, so it is part of what the
-       -- judgment was made on (showing-service.ts counts the same sources for a page's release).
+       -- judgment was made on (release-service.ts counts the same sources for a page's release).
        SELECT j.node_id, s.sensitivity_label, s.source_type, s.origin, s.url
          FROM judged j
          JOIN (SELECT claim_id, source_id, sensitivity_label, called_at FROM connection_calls
@@ -204,13 +204,13 @@ export async function summarizeCoverage(
                 (SELECT x.sensitivity_label FROM question_assessments_in_force x WHERE x.id = j.id))
      )
      SELECT j.node_id,
-            EXISTS (SELECT 1 FROM made_on m WHERE m.node_id = j.node_id AND m.source_type <> 'shown_page'
+            EXISTS (SELECT 1 FROM made_on m WHERE m.node_id = j.node_id AND m.source_type <> 'released_page'
                        AND (m.label = ANY($2::text[]) OR ($3::boolean AND m.origin = 'mirror'))) AS readable,
             EXISTS (SELECT 1 FROM made_on m WHERE m.node_id = j.node_id
-                       AND ((m.source_type = 'shown_page'
+                       AND ((m.source_type = 'released_page'
                              -- unless this reader also reads the label the page was shown from
-                             AND NOT EXISTS (SELECT 1 FROM showing_pages pp
-                                              WHERE m.url LIKE 'minerval:shown-page/' || pp.id::text || '/%'
+                             AND NOT EXISTS (SELECT 1 FROM release_pages pp
+                                              WHERE (m.url LIKE 'minerval:released-page/' || pp.id::text || '/%' OR m.url LIKE 'minerval:shown-page/' || pp.id::text || '/%')
                                                 AND pp.sensitivity_label = ANY($2::text[])))
                             OR NOT (m.label = ANY($2::text[]) OR ($3::boolean AND m.origin = 'mirror')))) AS unreadable
        FROM judged j`,

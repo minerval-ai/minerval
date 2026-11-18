@@ -207,8 +207,8 @@ export async function admitMandatePackage(input: { accountId: string; pkg: unkno
     if (last && last.hash !== pkg.previous_hash) {
       throw new PublishedMandateError("CHAIN_BROKEN", `Package ${pkg.sequence} does not name package ${have}, as this graph received it, as the one before it.`);
     }
-    const shownName = name || "A mandate whose name its publisher holds";
-    const shownTerms = terms || "Its publisher holds its terms.";
+    const releasedName = name || "A mandate whose name its publisher holds";
+    const releasedTerms = terms || "Its publisher holds its terms.";
     let faceId = last?.face_id ?? null;
     if (!faceId) {
       // The face keeps the publisher's own id for the offer, so that the publisher finds the requests addressed to
@@ -218,7 +218,7 @@ export async function admitMandatePackage(input: { accountId: string; pkg: unkno
       const [face] = await tx.query<{ id: string }>(
         `INSERT INTO label_faces (id, publisher_account_id, name, can_be_asked, written_by, withdrawn_at, sensitivity_label)
          VALUES ($1, $2, $3, $4, $2, $5, $6) RETURNING id`,
-        [pkg.mandate.ref, input.accountId, shownName, shownTerms, pkg.mandate.withdrawn ? new Date() : null, currentLabel()]
+        [pkg.mandate.ref, input.accountId, releasedName, releasedTerms, pkg.mandate.withdrawn ? new Date() : null, currentLabel()]
       );
       faceId = face!.id;
     } else {
@@ -226,7 +226,7 @@ export async function admitMandatePackage(input: { accountId: string; pkg: unkno
         `UPDATE label_faces SET name = $2, can_be_asked = $3, updated_at = now(),
                 withdrawn_at = CASE WHEN $4::boolean THEN COALESCE(withdrawn_at, now()) ELSE NULL END
           WHERE id = $1 AND publisher_account_id = $5`,
-        [faceId, shownName, shownTerms, pkg.mandate.withdrawn !== null, input.accountId]
+        [faceId, releasedName, releasedTerms, pkg.mandate.withdrawn !== null, input.accountId]
       );
     }
     const [row] = await tx.query<{ id: string }>(

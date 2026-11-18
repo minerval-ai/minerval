@@ -1,7 +1,7 @@
 /**
  * Every kind of judgment names the run that wrote it, so that a page of it
  * shown across a boundary carries that run's log seal
- * (services/showing-service.ts, runLogFacts). Quantities' estimates had no
+ * (services/release-service.ts, runLogFacts). Quantities' estimates had no
  * run_id, and the first run with real models showed a quantity's page going
  * outside with "run_log": null in record mode.
  */

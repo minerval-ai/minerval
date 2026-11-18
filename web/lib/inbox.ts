@@ -2,7 +2,7 @@ import "server-only";
 import type { MyPermissions } from "./account-api";
 import { fetchConnections, fetchParties, fetchSetupChecklist, type SetupChecklist } from "./admin-api";
 import { attentionItems } from "./health";
-import { fetchGateQueue, fetchGates, fetchOutbound, fetchShowings, type QueueItem } from "./inside-api";
+import { fetchGateQueue, fetchGates, fetchOutbound, fetchReleases, type QueueItem } from "./inside-api";
 import { fetchPublicRequests, fetchSaidBack } from "./outside-api";
 import type { WorkCounts } from "./work-counts";
 
@@ -48,15 +48,15 @@ const oldest = (dates: Array<string | null | undefined>) =>
 const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString("en-GB")} ${n === 1 ? one : many}`;
 
 export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox> {
-  const releases = has(mine, "release");
+  const consents = has(mine, "consent");
   const directs = has(mine, "direct");
   const administers = has(mine, "administer");
-  const outward = has(mine, "direct", "release");
+  const outward = has(mine, "direct", "consent");
 
-  const [queue, checklist, showings, requests, saidBack, outbound, parties] = await Promise.all([
-    releases ? safe(fetchGateQueue(who)) : null,
+  const [queue, checklist, releases, requests, saidBack, outbound, parties] = await Promise.all([
+    consents ? safe(fetchGateQueue(who)) : null,
     administers ? safe(fetchSetupChecklist(who)) : null,
-    directs ? safe(fetchShowings(who)) : null,
+    directs ? safe(fetchReleases(who)) : null,
     outward ? safe(fetchPublicRequests(who)) : null,
     outward ? safe(fetchSaidBack(who)) : null,
     directs ? safe(fetchOutbound(who)) : null,
@@ -114,23 +114,23 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
   }
 
   // Pages whose redaction or check waits for money.
-  if (showings) {
-    for (const row of showings.asked) {
+  if (releases) {
+    for (const row of releases.asked) {
       if (row.ended_at) continue;
       const unpaid = row.pages.filter(
         (p) => (p.stage === "to_redact" || p.stage === "to_check") && /fund/i.test(p.stage_in_words),
       );
       if (unpaid.length === 0) continue;
       items.push({
-        key: `unpaid-${row.showing_id}`,
+        key: `unpaid-${row.release_id}`,
         group: "sharing",
         icon: "money",
         tone: "plain",
         title: unpaid.some((p) => p.stage === "to_check") ? "Check of a redaction unpaid" : "Redaction unpaid",
         node: row.node,
-        boundary: { from: row.page_label, to: row.shown_to },
+        boundary: { from: row.page_label, to: row.released_to },
         facts: [],
-        action: { href: `/releases/${row.showing_id}`, label: "Pay" },
+        action: { href: `/releases/${row.release_id}`, label: "Pay" },
       });
     }
   }
@@ -178,15 +178,15 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
   }
 
   if (outbound) {
-    const byShowing = new Map<string, { node: string | null; waiting: number }>();
+    const byRelease = new Map<string, { node: string | null; waiting: number }>();
     for (const n of outbound.nodes) {
       const waiting = n.packages.filter((p) => p.sends.length === 0).length;
       if (n.sent !== "by_a_person_each_time" || waiting === 0) continue;
-      const entry = byShowing.get(n.showing_id) ?? { node: n.node, waiting: 0 };
+      const entry = byRelease.get(n.release_id) ?? { node: n.node, waiting: 0 };
       entry.waiting += waiting;
-      byShowing.set(n.showing_id, entry);
+      byRelease.set(n.release_id, entry);
     }
-    for (const [id, { node, waiting }] of byShowing) {
+    for (const [id, { node, waiting }] of byRelease) {
       items.push({
         key: `outbox-${id}`,
         group: "public",
@@ -195,7 +195,7 @@ export async function loadInbox(who: string, mine: MyPermissions): Promise<Inbox
         title: `${plural(waiting, "package")} ready to send outside`,
         node,
         facts: [],
-        action: { href: `/outbound#showing-${id}`, label: "Send" },
+        action: { href: `/outbound#release-${id}`, label: "Send" },
       });
     }
   }

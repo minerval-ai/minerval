@@ -189,7 +189,7 @@ const AGENTS: AgentMeta[] = [
     invokedWhen: "The General mandate funds a sweep (a consistency_sweep ledger action, standard or strong variant) over a region of the graph re-assessed since its last sweep: a topic tag, or the claims no sizeable tag covers.",
     model: `${modelLabel(OPENROUTER_MODELS.flash)} (standard sweep), ${modelLabel(MODELS.sonnet)} (strong sweep)`, fn: getConsistencyCheckerSystemPrompt },
   // The Redactor runs only where a deployment holds material at more than
-  // one label (services/showing-service.ts). Its prompt is published like
+  // one label (services/release-service.ts). Its prompt is published like
   // every other, since readers of a shown page weigh how it was made.
   { key: "redactor", name: "Redactor", stage: 10, group: "governance",
     tagline: "Works at the gate where something written at one label goes to readers who may not read that label: a node's page, an answer, a mandate's terms or funding. Under the policy for that boundary it removes the passages a category covers and marks each removal in place, and may hold or delay a part. Its tools change no word. What it lets through goes once Audit has checked its work, unless the gate is set for a person to decide as well.",

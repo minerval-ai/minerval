@@ -53,6 +53,7 @@ import { getChatContextPrompt } from "../llm/prompts/extension-agent.js";
 import {
   alwaysAsks,
   assistantAuth,
+  currentToolInput,
   currentToolName,
   HELD_KINDS,
   HELD_TOOL_LABELS,
@@ -244,7 +245,7 @@ async function allowedKinds(convo: { id: string; userId: string }): Promise<Set<
 // ---- held actions ----------------------------------------------------------
 
 function heldSummary(row: Pick<AssistantHeldAction, "tool" | "input">): string {
-  const input = JSON.stringify(row.input);
+  const input = JSON.stringify(currentToolInput(row.tool, row.input));
   return `${currentToolName(row.tool)} ${input.length > 300 ? `${input.slice(0, 300)}…` : input}`;
 }
 
@@ -347,7 +348,7 @@ export async function decideHeldAction(input: {
     // creates is the turn's work and not the public work of a bare request.
     result = await runAtLabel(claimed.sensitivityLabel, `held action ${claimed.id}`, () =>
       runWithUsageContext({ userId: input.user.id }, () =>
-        account.call(currentToolName(claimed.tool), claimed.input as Record<string, unknown>)
+        account.call(currentToolName(claimed.tool), currentToolInput(claimed.tool, claimed.input) as Record<string, unknown>)
       )
     );
   } catch (err) {
@@ -1049,7 +1050,7 @@ function serializeHeld(row: AssistantHeldAction, showLabels = false) {
     // pressing knows who will be able to read what it files. (`label` above
     // is the card's title.)
     ...(showLabels ? { writes_at: row.sensitivityLabel } : {}),
-    input: row.input,
+    input: currentToolInput(row.tool, row.input),
     status: row.status,
     ran_without_asking: row.auto,
     result: row.result ?? null,

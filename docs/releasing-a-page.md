@@ -22,10 +22,10 @@ The public graph has one label, which everyone reads. Nothing below exists
 there: the routes are not mounted, the tables are empty, and no run is told
 any of it.
 
-In the code this is still called showing a page below its label (see "Old
-names in the code", at the end). Labels are not ranked, and nothing a person
-or an agent reads says "below": a page is released to readers who do not
-read its label.
+This was once called showing a page below its label (see "Old names in
+the code", at the end). Labels are not ranked, and nothing a person or an
+agent reads says "below": a page is released to readers who do not read
+its label.
 
 A *release* is the standing arrangement or the single act: a page, or a
 flow of pages, going from one label to readers who do not read it, or
@@ -44,7 +44,7 @@ arguments with their written forms, stances and evaluations, the readings of
 its sources, its subclaims with how each bears, the requests it records, and
 a stated view where one is recorded. No run produces it and no table holds
 a special form of it. It is read from the rows the Steward's ordinary work
-wrote (`readPage` in `src/services/showing-service.ts`).
+wrote (`readPage` in `src/services/release-service.ts`).
 
 A release covers the rows at the page's label and no others. A row that the
 page's label merely reads belongs to that other label's page: where the
@@ -54,7 +54,7 @@ it is a release across that other boundary, under that boundary's policy.
 ## Asking
 
 A person who holds the permission to direct the graph sets a flow of pages
-at a label they read toward a named label, or outside (`set_page_flow`, `POST /showings`):
+at a label they read toward a named label, or outside (`set_page_flow`, `POST /releases`):
 for one node, a node with what sits under it, every node one mandate's
 work assessed, or every node assessed at the label
 ([the-gate.md](the-gate.md), "What flows"). The destination must not already read the page's label.
@@ -75,14 +75,14 @@ can be released at another that neither reads nor is read by it.
   every node whose judgment at the label that mandate's budget paid for; a
   flow for the boundary covers every node assessed at the label. Both are
   standing. Its record, and a page published from it, say what it covers in
-  those words (`showingCovers`, `src/published-page/shape.ts`), naming the
+  those words (`releaseCovers`, `src/published-page/shape.ts`), naming the
   mandate and the label only to a reader of the label.
 
 No page is offered to a gate that no flow covers. Ending a standing flow is
 a dated event with a reason from a fixed list; what was released stays released.
 
 Every act on a release is a row that names who did it and the permissions
-they held then (`showing_acts`), so a reader on the other side can see when
+they held then (`release_acts`), so a reader on the other side can see when
 a person who directed the work also consented to it.
 
 A part that rests on no outside party's material is the organization's to
@@ -215,7 +215,7 @@ tools:
   shown, and the sources the page rests on with their labels; with a
   source, that source's stored text. The sources are the set the gate works
   out whose consent is needed from ("The gate", below), recorded when the
-  page is opened (`showing_pages.source_ids`): what the version rests on
+  page is opened (`release_pages.source_ids`): what the version rests on
   and what each part rests on, so a reading or an analysis kept in work on
   the node, and a source cited through an argument or a subclaim, can be
   opened whether or not an instance on the node was recorded from them. The
@@ -272,20 +272,25 @@ When the Redactor finishes, each part as it left it is hashed with a salt of
 its own, and the hashes form a tree whose root is recorded on the
 destination side at once, with each part's place, kind and hash, before
 any party consents to anything (`src/services/page-fingerprint.ts`, which
-gives the construction in full).
+gives the construction in full). The root is made under a named
+construction, which the page's record keeps beside it
+(`fingerprint_format`): `minerval-released-page/2` for a page recorded
+now, `minerval-shown-page/1` for one recorded before the name changed. The
+two differ in that name alone, and every check rebuilds a root under the
+name its record gives.
 
 A released part is then shown with its salt, and a held part with its hash
 and its kind. A reader rebuilds the root from what they were given and
 compares it with the root recorded earlier. A match says that every part
 they read is what was written, with the marked removals inside it; that the
 parts are in the order recorded; that none was added or dropped; and that a
-held part is of the kind it is said to be. `get_release_page` (`GET /showings/:id/pages/:page_id`)
+held part is of the kind it is said to be. `get_release_page` (`GET /releases/:id/pages/:page_id`)
 returns the result of that check with everything needed to redo it.
 
 Released text is exactly what was written. Nothing normalizes it: spacing,
 markup and line ends are part of what is hashed.
 
-`verifyShownPage` is a pure function. The standalone verifier of a page
+`verifyReleasedPage` is a pure function. The standalone verifier of a page
 released outside rebuilds the same tree from a signed package
 ([published-pages.md](published-pages.md), "The check").
 
@@ -444,7 +449,7 @@ is not shown to people who may not read it.
 ## Arrival inside the deployment
 
 At a destination label the released page becomes a source like any other
-there, of the kind `shown_page`: its text is the page as released, with the
+there, of the kind `released_page`: its text is the page as released, with the
 verdict, the policy version, the removals by category, what is held and by
 whom, and Audit's answer. Where the destination reads the node, the source
 is attached to it and a reassessment of the node is opened at the
@@ -464,7 +469,7 @@ it one is ordinary intake, which this does not do.
 A version at the destination label that changes only because its Steward
 took in such a page does not make the version at the page's label read as
 made against an earlier one, and no reassessment is opened for it
-(`minerval_only_shown_pages_between`): everything in the page was already
+(`minerval_only_released_pages_between`): everything in the page was already
 in front of the version it was released from.
 
 The gate is the one way text reaches a label that does not read the label
@@ -507,7 +512,7 @@ it was written at.
 
 ## Routes and tools
 
-Every route is an MCP tool (`src/routes/showings.ts`,
+Every route is an MCP tool (`src/routes/releases.ts`,
 `src/mcp/route-tools.ts`): `list_releases`, `get_release` and
 `get_release_page` read; `set_page_flow`, `end_page_flow`,
 `hold_gate_item` and `decide_at_gate` act; `fund_release_work` pays for an
@@ -535,39 +540,68 @@ its user, under the kind "Act at a gate".
 
 ## Old names in the code
 
-What this document calls a release was called a *showing*, and the
-per-party act and permission were called *release*. People and agents now
-read the new words everywhere: the web app, the tools, the role prompts and
-these documents. The routes, the tables and the stored values still carry
-the old names, and will be renamed together with a migration. Until then:
+What this document calls a release was called a *showing*, a party's
+consent was called *release*, and what arrives on the other side was called
+*shown*. The code, the API, the tables and the stored values say release,
+consent and received now:
 
-| In the code and the API | In words |
+| Was | Is |
 | --- | --- |
-| `showings`, `showing_pages`, `showing_parts`, `showing_acts`, `showing_removals`, and the destination-side `shown_showings`, `shown_pages`, `shown_parts`, `shown_nodes` | releases, and their pages, parts, acts and removals |
-| `src/services/showing-service.ts`, `src/routes/showings.ts`, `showing_id` | the release service, its routes, a release's id |
-| `GET /showings`, `GET /showings/:showing_id`, `GET /showings/:showing_id/pages/:page_id` | `list_releases`, `get_release`, `get_release_page` (the tools were `list_showings`, `get_showing`, `get_shown_page`) |
-| `POST /showings/:showing_id/pages/:page_id/commission` | `fund_release_work` (was `fund_showing_work`) |
-| `shown` in the answer of `GET /showings`, `shown_to`, `shown_at` | released, released to, released at |
-| the permission `release` (`permission_grants.permission`) | `consent`, held for one party |
-| the gate act `release` (`POST /gate/decisions`, `decision`) and the recorded act `released` | consent, consented |
-| `release_rules` | the consent rules that settings replaced |
-| `outbound_proposals.state` `waiting_for_release` | waiting for consent |
-| the parties whose release a part takes (`needs`, `rests_on`) | the parties whose consent a part takes |
-| the source kind `shown_page`, the format `minerval-shown-page/1` | a released page arriving at a label |
+| `showings`, `showing_pages`, `showing_parts`, `showing_removals`, `showing_acts` | `releases`, `release_pages`, `release_parts`, `release_removals`, `release_acts` |
+| `shown_showings`, `shown_nodes`, `shown_pages`, `shown_parts` (the destination side) | `received_releases`, `received_nodes`, `received_pages`, `received_parts`: what that side holds, a held part as well as a released one |
+| `showing_id` (on every table that names a release) | `release_id` |
+| a received page's `shown_at`, when it went through to that side | `released_at` (a received part's `released_at` already said the same of a part) |
+| `gates.backlog_shown` | `backlog_visible` |
+| `release_rules` | `consent_rules`, the rules that gate settings replaced |
+| the permission `release`, and "release for <party>" in what a person held | `consent`, "consent for <party>" |
+| the gate act `release` (`POST /gate/decisions`) and the recorded act `released` | `consent`, `consented` |
+| `outbound_proposals.state` `waiting_for_release`, and its `releases` | `waiting_for_consent`, `consents` |
+| the source kind `shown_page`, at `minerval:shown-page/<id>/<n>` | `released_page`, at `minerval:released-page/<id>/<n>` |
+| a node's leaving `showing_ended`; a source attached or detached by `showing`; a Steward's trigger `page_shown`, sent as `shown:<source>` | `release_ended`; `release`; `page_released`, `released:<source>` |
+| `minerval_only_shown_pages_between` | `minerval_only_released_pages_between` |
+| `/showings`, `/showings/:showing_id`, ... and their OpenAPI tag `showings` | `/releases`, `/releases/:release_id`, ..., tag `releases` |
+| in the API: `shown` (the releases received, the items let through), `shown_to`, `always_shown`, `shown_as_released`, `shown_state`, `a_page_shown`, ... | `received`, `released`, `released_to`, `always_released`, `seen_as_released`, `released_state`, `a_page_released`, ... |
+| the fingerprint's construction `minerval-shown-page/1` | `minerval-released-page/2`, named by each page's `fingerprint_format` |
+| `minerval-published-page/1`, with `showing`, `node.showing_began`, `always_shown`, `shown_at` | `minerval-published-page/2`, with `release`, `node.release_began`, `always_released`, `released_at`, and `page.fingerprint_format` |
+| `src/services/showing-service.ts`, `src/routes/showings.ts` | `src/services/release-service.ts`, `src/routes/releases.ts` |
 
-The fixed words a release's record is kept and sent in also keep the old
-names until then, because they are stored and go into every package sent
-outside, and changing them would build a new package for every node under
-every release outside: an act's `what` ("asked for the showing", "ended the
-showing", and "released" for a party's consent), the reasons for ending
-(`END_REASONS`), for a node's leaving (`LEFT_REASONS`) and for a hold
-(`HOLD_REASONS`, "not to be shown yet"), why a version is held, the words
-of a gate's setting stamped on what it let through (`GATE_MODES`), the
-text of a released page as it arrives as a source, and the two sections of
-a redaction policy the code writes. They change with the stored values, in
-one step with the package format. Until then the web app says them in the
-new words where it shows them (`web/lib/stored-words.ts`), and an agent
-reads them as the API gives them.
+The old routes are not kept beside the new ones. Their callers are the web
+app and the MCP tools, which change with them and run from the same
+deployment; the tools had their new names already (`list_releases`,
+`get_release`, `get_release_page`, `fund_release_work`; they were
+`list_showings`, `get_showing`, `get_shown_page`, `fund_showing_work`). The
+web app's old addresses, `/showings` and the pages under it, redirect to
+`/releases`.
+
+What keeps an old name is what a hash or a signature fixes, and the code
+that reads it:
+
+- **A page fingerprinted before the change** keeps its root under
+  `minerval-shown-page/1`, and so does the `format` in what is always
+  released with it, which is hashed as the tree's first leaf. Its record
+  names that construction (`fingerprint_format`), and the three checks
+  (`src/services/page-fingerprint.ts`, `src/published-page/verify.ts`,
+  `web/lib/released-page-check.ts`) rebuild its root under it, and a new
+  page's under the new one.
+- **A package signed in `/1`** stays in `/1`: the check reads both formats,
+  hashes a package under the format it names, takes every page in a `/1`
+  package as fingerprinted under the old construction, and
+  `currentPackage` reads it in the current names. Its acts, reasons,
+  held-becauses and holdings keep their old words; the claim page says them
+  in the new ones (`web/lib/stored-words.ts`), and an agent reads them as
+  the package gives them.
+- **A source already made** keeps its text, which is fixed and hashed, and
+  its address under `minerval:shown-page/`, which the code still finds.
+- **A saved version of a redaction policy** keeps its text, which removals
+  name by hash.
+- **An action the Assistant held before the rename** is stored as it was
+  made: `fund_showing_work` runs as `fund_release_work`, a `showing_id` as
+  `release_id`, and the decision `release` as `consent`
+  (`src/llm/tools/assistant-tools.ts`).
+- **What another graph sends or keeps.** A judgment mirrored from the
+  public graph keeps the trigger it carries there until the public graph
+  updates it, and the reason a request is declined, `cannot_be_shown`, is
+  the public graph's fixed list, which deployments of every version send.
 
 Unchanged, because they name outcomes and not the decision: a part
 *released* or *held*, *released whole*, *released in part*, `released_at`,
@@ -576,5 +610,33 @@ locks (`releaseHolds`, `releaseInboxLease`, ...) is that and nothing else,
 and `press_release` is a kind of source. `release-gate-service.ts` is the
 gate where a release's parts are consented to.
 
-The web app's old addresses, `/showings` and the pages under it, redirect
-to `/releases`.
+### For operators: the migrations
+
+Migration `0175_release_ids` renames the tables, columns, indexes and
+constraints of a release, and rewrites the stored values the code reads:
+permission grants, recorded consents, proposals waiting for consent,
+released pages' source kind and the nodes they attach to, and a node's
+leaving. Migration `0176_received_ids` renames the destination side's
+tables to `received_*`, a received page's `shown_at` to `released_at` and
+`backlog_shown` to `backlog_visible`; records each page's fingerprint
+construction, the old one for every page recorded until then; renames
+`minerval_only_shown_pages_between`; and rewrites the words kept as plain
+text: "release for <party>" in what a person held, the gate's words stamped
+in `released_under`, and a Steward's trigger and its sender. Renaming keeps
+every row, grant, trigger and row-level security policy, which belong to
+the table and not to its name, so the label enforcement step has nothing to
+redo (`npm run db:migrate` runs it all the same).
+
+Deploy the API and the web app together: the routes and the API's fields
+are renamed with no alias, so a web app of the earlier version, or a script
+calling `/showings` or sending the decision `release`, is refused until it
+is updated. After the migrations, the next build of packages for outside
+makes one new package, in `/2`, for every node under every release outside,
+since the format is part of what a package says. Where the gate to outside
+sends what it lets through, they are sent as they are built; otherwise they
+wait in the Outbox for a person to send them. The two sections of a
+redaction policy the code writes say release and consent now, so each
+boundary's policy is saved again, with the same categories, the next time
+the boundary is used, as any change to those sections is
+(`ensureBoundaryPolicy`); what was redacted under an earlier version keeps
+that version.

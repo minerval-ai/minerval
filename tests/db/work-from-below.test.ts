@@ -498,7 +498,7 @@ describe("work asked for from below", () => {
       expect(payers.map((p) => p.grant_id)).toEqual([grantId]);
 
       // While it waits, the company label is shown that one answer is at the gate, from "Evidence room" and never from the room's own name.
-      const reader = { clearance: [A, PUBLIC], administer: false, releaseParties: [] as string[] };
+      const reader = { clearance: [A, PUBLIC], administer: false, consentParties: [] as string[] };
       const waiting = (await runWithUsageContext({ clearance: reader.clearance }, () => gateBacklog(reader))) as { gates: any[]; asked_from_here: any[] };
       expect(waiting.gates.some((g) => g.from === "Evidence room" && g.to === A)).toBe(true);
       expect(waiting.asked_from_here.find((a) => a.asked_of === "Evidence room")).toMatchObject({ answer_waiting_at_the_gate: 1 });
@@ -515,7 +515,7 @@ describe("work asked for from below", () => {
       expect((await redactor("finish_redaction", { least_sure: [] })).success).toBe(true);
       const passed = JSON.parse(await at(ROOM, () => withAgent("audit", () => executeAuditTool("record_fidelity_outcome", { page_id: item.item_id, outcome: "pass", reasons: "The one removal is covered." }, {}))));
       expect(passed.success, JSON.stringify(passed)).toBe(true);
-      expect(await system(() => rawQuery(`SELECT 1 FROM showing_acts WHERE page_id = $1 AND by = 'person'`, [item.item_id]))).toEqual([]);
+      expect(await system(() => rawQuery(`SELECT 1 FROM release_acts WHERE page_id = $1 AND by = 'person'`, [item.item_id]))).toEqual([]);
 
       // At the company label: the answer is work on the Steward's request, and a source on its node, with the mark and without the passage.
       const answered = (await at(A, () => getRequest(asked.request_id)))!;
@@ -530,7 +530,7 @@ describe("work asked for from below", () => {
         )
       );
       expect(sources).toHaveLength(1);
-      expect(sources[0]!.source_type).toBe("shown_page");
+      expect(sources[0]!.source_type).toBe("released_page");
       // The instance's passage is in the source's text, so a Steward's quote check finds it.
       expect(sources[0]!.raw_content).toContain(sources[0]!.verbatim_text);
       expect(sources[0]!.raw_content).toContain("[redacted: commercial figures]");
@@ -580,7 +580,7 @@ describe("work asked for from below", () => {
       await system(async () => {
         await rawQuery(`DELETE FROM gates WHERE boundary_id IN (SELECT boundary_id FROM redaction_policies WHERE from_label = $1)`, [ROOM]);
         if (madeOrg) {
-          await rawQuery(`DELETE FROM showing_acts WHERE party_id = $1`, [madeOrg]);
+          await rawQuery(`DELETE FROM release_acts WHERE party_id = $1`, [madeOrg]);
           await rawQuery(`DELETE FROM gate_settings WHERE party_id = $1`, [madeOrg]);
         }
       }).catch(() => undefined);

@@ -53,7 +53,7 @@ coverage, that each source exists with its kind and fingerprint, whether
 the organization itself or an outside party supplied it and whether an
 interest is recorded for it, the gaps the page records, how the page was
 made, and the count of your removals. get_page_to_redact gives them
-under always_shown. No tool removes anything from them. If one of them
+under always_released. No tool removes anything from them. If one of them
 could not be shown without giving away what a category protects, hold
 the whole item: hold_part with no part, and say in the note which of them
 it is. The readers on the other side then see that it is held, and why in

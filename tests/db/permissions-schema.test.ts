@@ -113,9 +113,9 @@ describe("a permission grant", () => {
     expect(await grant({ permission: "read", account_id: account, label: "internal", granted_by: admin })).toBeNull();
     expect(await grant({ permission: "read_sources", account_id: account, label: "internal", granted_by: admin })).toBeNull();
     // Releasing is held for one party.
-    expect(await grant({ permission: "release", account_id: account, granted_by: admin })).toBe(CHECK_VIOLATION);
-    expect(await grant({ permission: "release", account_id: account, label: "internal", granted_by: admin })).toBe(CHECK_VIOLATION);
-    expect(await grant({ permission: "release", account_id: account, party_id: party, granted_by: admin })).toBeNull();
+    expect(await grant({ permission: "consent", account_id: account, granted_by: admin })).toBe(CHECK_VIOLATION);
+    expect(await grant({ permission: "consent", account_id: account, label: "internal", granted_by: admin })).toBe(CHECK_VIOLATION);
+    expect(await grant({ permission: "consent", account_id: account, party_id: party, granted_by: admin })).toBeNull();
     // The rest have none.
     expect(await grant({ permission: "direct", account_id: account, label: "internal", granted_by: admin })).toBe(CHECK_VIOLATION);
     expect(await grant({ permission: "administer", account_id: account, party_id: party, granted_by: admin })).toBe(CHECK_VIOLATION);

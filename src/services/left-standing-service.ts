@@ -32,9 +32,9 @@
  * A Steward whose label already has a judgment of the node may leave the
  * other standing all the same. Its own judgment is then retired, by this
  * run at its own label, and stays in the node's history. Where that
- * judgment's page is under a standing showing the tool refuses, with the
+ * judgment's page is under a standing release the tool refuses, with the
  * reason: the readers it is shown to would go on being shown a page whose
- * judgment had been withdrawn, and ending a showing is for the people who
+ * judgment had been withdrawn, and ending a release is for the people who
  * direct the graph.
  *
  * On the public graph there is one label, the tool is not offered, and
@@ -172,7 +172,7 @@ export async function leaveJudgmentStanding(nodeId: string, reasoning: string): 
   );
   if (mine) {
     const [shown] = await rawQuery(
-      `SELECT 1 FROM showing_pages p JOIN showings s ON s.id = p.showing_id
+      `SELECT 1 FROM release_pages p JOIN releases s ON s.id = p.release_id
         WHERE p.node_id = $1 AND s.sensitivity_label = $2 AND s.form = 'standing' AND s.ended_at IS NULL LIMIT 1`,
       [nodeId, label]
     );

@@ -5,15 +5,15 @@ import { Drawer, Empty } from "@/components/work/ui";
 import { fetchMyLabels, type MyLabel } from "@/lib/admin-api";
 import { fetchClaimDetail, fetchSearch } from "@/lib/api";
 import type { SearchResultItem } from "@/lib/types";
-import { ShowingsView } from "../ShowingsView";
-import { loadGates } from "../showings";
-import { NewShowingForm } from "./NewShowingForm";
+import { ReleasesView } from "../ReleasesView";
+import { loadGates } from "../releases";
+import { NewReleaseForm } from "./NewReleaseForm";
 
 export const metadata: Metadata = { title: "New release · Minerval" };
 export const dynamic = "force-dynamic";
 
 // Releasing a node's page to people who do not read the label
-// it was written at (POST /showings; docs/releasing-a-page.md, "Asking"), in a
+// it was written at (POST /releases; docs/releasing-a-page.md, "Asking"), in a
 // drawer over the list of releases. A node's page links here with
 // ?node=&at=; without a node, the drawer first finds one, by the same search
 // /claims uses. Nothing about how the page is released is preselected: it is
@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
-export default async function NewShowingPage({ searchParams }: { searchParams: Promise<{ node?: string; at?: string; q?: string }> }) {
+export default async function NewReleasePage({ searchParams }: { searchParams: Promise<{ node?: string; at?: string; q?: string }> }) {
   const who = await viewer();
   if (!who) return null;
   if (!can(who, "direct")) return <NeedsPermission title="New release" permission="direct" />;
@@ -98,7 +98,7 @@ export default async function NewShowingPage({ searchParams }: { searchParams: P
             the node already reads all of it that you do.
           </Empty>
         ) : (
-          <NewShowingForm
+          <NewReleaseForm
             nodeId={detail.claim.id}
             pages={[...byLabel.values()]}
             at={at ?? null}
@@ -111,7 +111,7 @@ export default async function NewShowingPage({ searchParams }: { searchParams: P
   }
 
   return (
-    <ShowingsView
+    <ReleasesView
       who={who}
       query={{}}
       drawer={

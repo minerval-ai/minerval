@@ -126,7 +126,7 @@ export interface ReceivedContribution {
   received_at: string;
   /** The label the page it was made through was written at, where its reassessment is paid for; withheld where the reader does not read it. Absent from an older API. */
   page_label?: string | { withheld: true };
-  showing_id?: string;
+  release_id?: string;
   /** The contribution as it was made on the public graph: public text, written outside this deployment. */
   text_written_outside_this_deployment?: string;
   addresses_it_cites?: string[];

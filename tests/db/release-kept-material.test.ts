@@ -12,7 +12,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { randomUUID } from "node:crypto";
 import { rawQuery } from "../../src/db/client.js";
 import type { GateActor } from "../../src/services/release-gate-service.js";
-import { askShowing } from "../../src/services/showing-service.js";
+import { askRelease } from "../../src/services/release-service.js";
 import { executeRedactorTool } from "../../src/llm/tools/redactor-tools.js";
 import { runAtLabel, withAgent } from "../../src/llm/usage-context.js";
 import { summarizeCoverage } from "../../src/services/coverage-service.js";
@@ -81,9 +81,9 @@ async function analysis(node: string, label: string): Promise<string> {
   });
 }
 
-async function pageOf(showingId: string): Promise<{ rests_on: string[]; header: { sources: Array<Record<string, unknown>> } }> {
+async function pageOf(releaseId: string): Promise<{ rests_on: string[]; header: { sources: Array<Record<string, unknown>> } }> {
   const [page] = await system(() =>
-    rawQuery<{ rests_on: string[]; header: string }>(`SELECT rests_on, header FROM showing_pages WHERE showing_id = $1`, [showingId])
+    rawQuery<{ rests_on: string[]; header: string }>(`SELECT rests_on, header FROM release_pages WHERE release_id = $1`, [releaseId])
   );
   return { rests_on: page!.rests_on, header: JSON.parse(page!.header) };
 }
@@ -113,7 +113,7 @@ beforeAll(async () => {
     id.connection = connection!.id;
   });
   id.director = await seedUser();
-  director = { id: id.director!, holding: ["direct"], clearance: [C, A, "public"], releaseParties: [], direct: true };
+  director = { id: id.director!, holding: ["direct"], clearance: [C, A, "public"], consentParties: [], direct: true };
 
   // Two nodes at c, each with a judgment at c and no instance recorded. The
   // run on the first kept its reading; the run on the second looked and kept nothing.
@@ -133,18 +133,18 @@ afterAll(async () => {
     await rawQuery(`DELETE FROM connections WHERE id = $1`, [id.connection]);
     await rawQuery(`DELETE FROM sandbox_calls WHERE source_id = $1`, [id.analysisSource]);
     await rawQuery(`DELETE FROM sources WHERE id = ANY($1::uuid[])`, [[id.keptSource, id.analysisSource]]);
-  }).catch((err: unknown) => console.warn("[showing-kept-material] cleanup:", err instanceof Error ? err.message : err));
+  }).catch((err: unknown) => console.warn("[release-kept-material] cleanup:", err instanceof Error ? err.message : err));
   await unwall();
   await system(() => rawQuery(`DELETE FROM parties WHERE id = ANY($1::uuid[])`, [[id.corvid, id.dunlin, ...(id.orgMadeHere ? [id.org] : [])]])).catch(
-    (err: unknown) => console.warn("[showing-kept-material] cleanup:", err instanceof Error ? err.message : err)
+    (err: unknown) => console.warn("[release-kept-material] cleanup:", err instanceof Error ? err.message : err)
   );
 }, 180_000);
 
 describe("a page whose run kept a reading", () => {
   it("rests on the party whose system the reading came from, and says the source exists", async () => {
     await personDecidesAt(C, A);
-    const asked = await askShowing({ nodeId: id.rested!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
-    const page = await pageOf(asked.showing_id);
+    const asked = await askRelease({ nodeId: id.rested!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+    const page = await pageOf(asked.release_id);
     // The version read nothing else, so the party of the reading is the one asked.
     expect(page.rests_on).toEqual([id.corvid]);
     expect(page.header.sources).toEqual([
@@ -153,8 +153,8 @@ describe("a page whose run kept a reading", () => {
     // The supplier's name and the words of its interest are a part of their own, resting on that party.
     const parts = await system(() =>
       rawQuery<{ kind: string; rests_on: string[]; original: string }>(
-        `SELECT p.kind, p.rests_on, p.original FROM showing_parts p JOIN showing_pages g ON g.id = p.page_id WHERE g.showing_id = $1 ORDER BY p.position`,
-        [asked.showing_id]
+        `SELECT p.kind, p.rests_on, p.original FROM release_parts p JOIN release_pages g ON g.id = p.page_id WHERE g.release_id = $1 ORDER BY p.position`,
+        [asked.release_id]
       )
     );
     const supplier = parts.find((p) => p.kind === "supplier")!;
@@ -168,8 +168,8 @@ describe("a page whose run kept a reading", () => {
 
   it("an analysis kept in work on the node rests on the party of every set its command had mounted", async () => {
     await personDecidesAt(C, A);
-    const asked = await askShowing({ nodeId: id.compared!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
-    const page = await pageOf(asked.showing_id);
+    const asked = await askRelease({ nodeId: id.compared!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+    const page = await pageOf(asked.release_id);
     // The source itself carries no one party, and is not taken for the organization's own.
     expect([...page.rests_on].sort()).toEqual([id.corvid, id.dunlin].sort());
     expect(page.header.sources).toEqual([
@@ -179,8 +179,8 @@ describe("a page whose run kept a reading", () => {
 
   it("a call that was made and not kept is not a source: the page rests on the organization alone", async () => {
     await personDecidesAt(C, A);
-    const asked = await askShowing({ nodeId: id.looked!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
-    const page = await pageOf(asked.showing_id);
+    const asked = await askRelease({ nodeId: id.looked!, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+    const page = await pageOf(asked.release_id);
     expect(page.rests_on).toEqual([id.org]);
     expect(page.header.sources).toEqual([]);
   });
@@ -192,7 +192,7 @@ describe("what a Redactor can open", () => {
       await runAtLabel(C, "a redactor's run", () => withAgent("redactor", () => executeRedactorTool("get_page_to_redact", input, { pageId })))
     ) as Record<string, any>;
   const pageIdOf = async (node: string) =>
-    (await system(() => rawQuery<{ id: string; source_ids: string[] | null }>(`SELECT id, source_ids FROM showing_pages WHERE node_id = $1 ORDER BY opened_at DESC LIMIT 1`, [node])))[0]!;
+    (await system(() => rawQuery<{ id: string; source_ids: string[] | null }>(`SELECT id, source_ids FROM release_pages WHERE node_id = $1 ORDER BY opened_at DESC LIMIT 1`, [node])))[0]!;
 
   it("is every source the page rests on, a kept reading and a kept analysis with no instance among them", async () => {
     const rested = await pageIdOf(id.rested!);
@@ -237,11 +237,11 @@ describe("what a Redactor can open", () => {
     });
     try {
       await personDecidesAt(C, A);
-      const asked = await askShowing({ nodeId: node, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
+      const asked = await askRelease({ nodeId: node, pageLabel: C, toLabel: A, form: "once", scope: "node", actor: director });
       const parts = await system(() =>
         rawQuery<{ kind: string; rests_on: string[] }>(
-          `SELECT p.kind, p.rests_on FROM showing_parts p JOIN showing_pages g ON g.id = p.page_id WHERE g.showing_id = $1 ORDER BY p.position`,
-          [asked.showing_id]
+          `SELECT p.kind, p.rests_on FROM release_parts p JOIN release_pages g ON g.id = p.page_id WHERE g.release_id = $1 ORDER BY p.position`,
+          [asked.release_id]
         )
       );
       // The gate asks Dunlin about the argument.

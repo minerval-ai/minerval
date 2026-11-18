@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
 import { viewer } from "@/components/admin/access";
-import { ShowingsView, type ShowingsQuery } from "./ShowingsView";
+import { ReleasesView, type ReleasesQuery } from "./ReleasesView";
 
 export const metadata: Metadata = { title: "Releases · Minerval" };
 export const dynamic = "force-dynamic";
 
-// Every release the reader may see (GET /showings; docs/releasing-a-page.md):
+// Every release the reader may see (GET /releases; docs/releasing-a-page.md):
 // pages asked to be released from a label they read, and pages released to a label
-// they read, or outside. The list itself is ShowingsView, which
+// they read, or outside. The list itself is ReleasesView, which
 // /releases/new also draws behind its drawer.
 
-export default async function ShowingsPage({ searchParams }: { searchParams: Promise<ShowingsQuery> }) {
+export default async function ReleasesPage({ searchParams }: { searchParams: Promise<ReleasesQuery> }) {
   const who = await viewer();
   if (!who) return null;
-  return <ShowingsView who={who} query={await searchParams} />;
+  return <ReleasesView who={who} query={await searchParams} />;
 }

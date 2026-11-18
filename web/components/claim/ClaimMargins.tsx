@@ -48,7 +48,7 @@ export function ClaimMargins({
   // The second tab is the same reading column fed the published page. The
   // rails are about the public node's own structure, so they stay with the
   // first tab.
-  if (inside?.open.kind === "shown") {
+  if (inside?.open.kind === "released") {
     const view = inside.open.view;
     return (
       <div className={styles.bleed}>

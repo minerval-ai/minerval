@@ -35,14 +35,14 @@ import {
   gateBacklog,
   gateQueue,
   settleWaiting,
-  shownItems,
-  shownPage,
-  shownShowing,
+  receivedItems,
+  receivedPage,
+  receivedRelease,
   type GateActor,
 } from "../../src/services/release-gate-service.js";
 import { takeUpFromBelow } from "../../src/services/request-adoption-service.js";
 import { fileRequest, getRequest, recordWork } from "../../src/services/request-service.js";
-import { askShowing, followShowings, retryGatePayments } from "../../src/services/showing-service.js";
+import { askRelease, followReleases, retryGatePayments } from "../../src/services/release-service.js";
 import { seedGrantWithJob } from "./helpers.js";
 import { A, B, C, asPerson, at, attachSource, seedNode, seedUser, stewardAt, system, unwall, wall } from "./review-3-common.js";
 
@@ -73,7 +73,7 @@ async function finishAndPass(item: string, opts: { answer?: string; label?: stri
 async function payersOfGateWork(item: string): Promise<string[]> {
   const rows = await everyRow<{ grant_id: string | null }>(
     `SELECT al.grant_id FROM action_allocations al JOIN actions a ON a.id = al.action_id
-      WHERE a.exclusion_group = $1 OR a.id = (SELECT r.action_id FROM showing_pages p JOIN audit_runs r ON r.id = p.audit_run_id WHERE p.id = $2)
+      WHERE a.exclusion_group = $1 OR a.id = (SELECT r.action_id FROM release_pages p JOIN audit_runs r ON r.id = p.audit_run_id WHERE p.id = $2)
       ORDER BY al.created_at`,
     [`redact:${item}`, item]
   );
@@ -81,7 +81,7 @@ async function payersOfGateWork(item: string): Promise<string[]> {
 }
 
 const personActs = (item: string) =>
-  everyRow<{ act: string; by: string }>(`SELECT act, by FROM showing_acts WHERE page_id = $1 AND by = 'person' ORDER BY at`, [item]);
+  everyRow<{ act: string; by: string }>(`SELECT act, by FROM release_acts WHERE page_id = $1 AND by = 'person' ORDER BY at`, [item]);
 
 async function seedMandate(label: string, opts: { general?: boolean } = {}): Promise<{ grantId: string; jobId: string }> {
   const funder = await seedUser();
@@ -104,8 +104,8 @@ async function assessedAtFinance(text: string, jobId: string | null, reasoning: 
   return node;
 }
 
-const latestItem = async (showingId: string) =>
-  (await everyRow<{ id: string }>(`SELECT id FROM showing_pages WHERE showing_id = $1 AND stage <> 'overtaken' ORDER BY opened_at DESC LIMIT 1`, [showingId]))[0]!.id;
+const latestItem = async (releaseId: string) =>
+  (await everyRow<{ id: string }>(`SELECT id FROM release_pages WHERE release_id = $1 AND stage <> 'overtaken' ORDER BY opened_at DESC LIMIT 1`, [releaseId]))[0]!.id;
 
 beforeAll(async () => {
   await wall();
@@ -114,9 +114,9 @@ beforeAll(async () => {
     id.org = existing?.id ?? (await rawQuery<{ id: string }>(`INSERT INTO parties (name, is_own_organization) VALUES ('The organization', true) RETURNING id`))[0]!.id;
     if (!existing) id.orgMadeHere = "yes";
   });
-  admin = { id: await seedUser(), holding: ["administer"], administer: true, releaseParties: [] };
-  orgHolder = { id: await seedUser(), holding: ["release for the organization"], clearance: [FINANCE, COMPANY, "public"], releaseParties: [id.org!], direct: false };
-  director = { id: await seedUser(), holding: ["direct"], clearance: [FINANCE, COMPANY, "public"], releaseParties: [], direct: true };
+  admin = { id: await seedUser(), holding: ["administer"], administer: true, consentParties: [] };
+  orgHolder = { id: await seedUser(), holding: ["consent for the organization"], clearance: [FINANCE, COMPANY, "public"], consentParties: [id.org!], direct: false };
+  director = { id: await seedUser(), holding: ["direct"], clearance: [FINANCE, COMPANY, "public"], consentParties: [], direct: true };
   const work = await seedMandate(FINANCE);
   id.mandate = work.grantId;
   id.mandateJob = work.jobId;
@@ -129,15 +129,15 @@ afterAll(async () => {
   await system(async () => {
     // A gate toward `public` keeps its destination side at `public`, which the review labels' cleanup leaves.
     const toPublic = await rawQuery<{ id: string; boundary_id: string }>(
-      `SELECT id, boundary_id FROM shown_showings WHERE sensitivity_label = 'public' AND boundary_id IN (SELECT boundary_id FROM redaction_policies WHERE from_label = ANY($1::text[]))`,
+      `SELECT id, boundary_id FROM received_releases WHERE sensitivity_label = 'public' AND boundary_id IN (SELECT boundary_id FROM redaction_policies WHERE from_label = ANY($1::text[]))`,
       [[A, B, C]]
     );
-    for (const showing of toPublic) {
-      await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showing.id]);
-      await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM shown_pages WHERE showing_id = $1)`, [showing.id]);
-      await rawQuery(`DELETE FROM shown_parts WHERE page_id IN (SELECT id FROM shown_pages WHERE showing_id = $1)`, [showing.id]);
-      for (const table of ["showing_acts", "shown_pages", "shown_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE showing_id = $1`, [showing.id]);
-      await rawQuery(`DELETE FROM shown_showings WHERE id = $1`, [showing.id]);
+    for (const release of toPublic) {
+      await rawQuery(`DELETE FROM claim_instances WHERE source_id IN (SELECT source_id FROM received_pages WHERE release_id = $1)`, [release.id]);
+      await rawQuery(`DELETE FROM sources WHERE id IN (SELECT source_id FROM received_pages WHERE release_id = $1)`, [release.id]);
+      await rawQuery(`DELETE FROM received_parts WHERE page_id IN (SELECT id FROM received_pages WHERE release_id = $1)`, [release.id]);
+      for (const table of ["release_acts", "received_pages", "received_nodes"]) await rawQuery(`DELETE FROM ${table} WHERE release_id = $1`, [release.id]);
+      await rawQuery(`DELETE FROM received_releases WHERE id = $1`, [release.id]);
     }
     await rawQuery(`DELETE FROM gates WHERE boundary_id IN (SELECT boundary_id FROM redaction_policies WHERE from_label = ANY($1::text[]))`, [[A, B, C]]);
     await rawQuery(`DELETE FROM redaction_policies WHERE sensitivity_label = 'public' AND boundary_id = ANY($1::uuid[])`, [toPublic.map((s) => s.boundary_id)]);
@@ -161,10 +161,10 @@ describe("where a gate starts", () => {
 describe("a node's page, finance to company", () => {
   it("under the Redactor's decision: redacted, checked and released with no person's act, each run paid from the budget of the work that produced the page", async () => {
     id.node = await assessedAtFinance("The reserve covers the liability", id.mandateJob!, `The ledger shows ${SECRET}.\n\nThat exceeds the liability.`);
-    const asked = await askShowing({ nodeId: id.node!, pageLabel: FINANCE, toLabel: COMPANY, form: "standing", scope: "node", actor: director });
+    const asked = await askRelease({ nodeId: id.node!, pageLabel: FINANCE, toLabel: COMPANY, form: "standing", scope: "node", actor: director });
     id.gate = asked.boundary_id;
-    id.flow = asked.showing_id;
-    const item = await latestItem(asked.showing_id);
+    id.flow = asked.release_id;
+    const item = await latestItem(asked.release_id);
     // Nobody commissioned the redaction: it is already paid for, by the mandate that paid for the assessment.
     expect(await payersOfGateWork(item)).toEqual([id.mandate]);
     const told = await redactor(item, "get_page_to_redact");
@@ -173,16 +173,16 @@ describe("a node's page, finance to company", () => {
     await finishAndPass(item, { answer: "supports" });
     // The check was paid for the same way.
     expect(await payersOfGateWork(item)).toEqual([id.mandate, id.mandate]);
-    const page = (await atCompany(() => shownPage(item)))!;
+    const page = (await atCompany(() => receivedPage(item)))!;
     expect(page.state).toBe("released_whole");
     expect(JSON.stringify(page)).not.toContain(SECRET);
     expect((page.parts as any[])[1].text).toBe("The ledger shows [redacted: commercial figures].");
     expect(page.verification).toMatchObject({ ok: true });
     expect(await personActs(item)).toEqual([]);
-    const acts = (await atCompany(() => shownShowing(asked.showing_id)))!.acts as any[];
-    expect(acts.filter((a) => a.what === "released").every((a) => a.by === "the gate's setting")).toBe(true);
+    const acts = (await atCompany(() => receivedRelease(asked.release_id)))!.acts as any[];
+    expect(acts.filter((a) => a.what === "consented").every((a) => a.by === "the gate's setting")).toBe(true);
     // It arrived at company as a source on the node, and a pass was opened there.
-    const [arrived] = await atCompany(() => rawQuery<{ source_id: string }>(`SELECT source_id FROM shown_pages WHERE id = $1`, [item]));
+    const [arrived] = await atCompany(() => rawQuery<{ source_id: string }>(`SELECT source_id FROM received_pages WHERE id = $1`, [item]));
     expect(await atCompany(() => rawQuery(`SELECT 1 FROM claim_instances WHERE source_id = $1 AND claim_id = $2`, [arrived!.source_id, id.node]))).toHaveLength(1);
   });
 
@@ -195,23 +195,23 @@ describe("a node's page, finance to company", () => {
         [id.node, id.mandateJob, FINANCE]
       );
     });
-    expect(await followShowings()).toBe(1);
+    expect(await followReleases()).toBe(1);
     const item = await latestItem(id.flow!);
     expect(await payersOfGateWork(item)).toEqual([id.mandate]);
     await finishAndPass(item, { answer: "supports" });
-    expect((await atCompany(() => shownPage(item)))!.state).toBe("released_whole");
+    expect((await atCompany(() => receivedPage(item)))!.state).toBe("released_whole");
   });
 
   it("open, for everything under one node: it goes as written, no Redactor runs and nothing is paid", async () => {
     id.openNode = await assessedAtFinance("The audit was completed on time", id.mandateJob!, "It was signed in March.");
     await expect(setGateMode({ boundaryId: id.gate!, kind: "page", scope: "under", mode: "open", actor: admin })).rejects.toThrow(/Say which node/);
     await setGateMode({ boundaryId: id.gate!, kind: "page", scope: "under", scopeRef: id.openNode!, mode: "open", actor: admin });
-    const asked = await askShowing({ nodeId: id.openNode!, pageLabel: FINANCE, toLabel: COMPANY, form: "once", scope: "node", actor: director });
-    const item = await latestItem(asked.showing_id);
-    const page = (await atCompany(() => shownPage(item)))!;
+    const asked = await askRelease({ nodeId: id.openNode!, pageLabel: FINANCE, toLabel: COMPANY, form: "once", scope: "node", actor: director });
+    const item = await latestItem(asked.release_id);
+    const page = (await atCompany(() => receivedPage(item)))!;
     expect(page.state).toBe("released_whole");
     expect((page.parts as any[]).map((p) => p.text)).toContain("It was signed in March.");
-    expect((page.always_shown as any).made.redaction).toBe("none: the gate was open for this item");
+    expect((page.always_released as any).made.redaction).toBe("none: the gate was open for this item");
     expect(page.verification).toMatchObject({ ok: true });
     expect(await everyRow(`SELECT 1 FROM actions WHERE exclusion_group = $1`, [`redact:${item}`])).toEqual([]);
     expect(await payersOfGateWork(item)).toEqual([]);
@@ -223,10 +223,10 @@ describe("a node's page, finance to company", () => {
 
   it("a person decides as well, for one mandate's work: the Redactor proposes, and the person approves, removes, or lifts with the same acts", async () => {
     id.personNode = await assessedAtFinance("The covenant was not breached", id.otherJob!, `The ratio stood at 2.4.\n\nCounsel advised on ${SECRET}.\n\nThe lender was told in April.`);
-    await setGateMode({ boundaryId: id.gate!, scope: "mandate", scopeRef: id.otherMandate!, partyId: id.org!, mode: "person", actor: { ...admin, administer: false, releaseParties: [id.org!] } });
-    const asked = await askShowing({ pageLabel: FINANCE, toLabel: COMPANY, scopeRef: id.otherMandate!, form: "standing", scope: "mandate", actor: director });
+    await setGateMode({ boundaryId: id.gate!, scope: "mandate", scopeRef: id.otherMandate!, partyId: id.org!, mode: "person", actor: { ...admin, administer: false, consentParties: [id.org!] } });
+    const asked = await askRelease({ pageLabel: FINANCE, toLabel: COMPANY, scopeRef: id.otherMandate!, form: "standing", scope: "mandate", actor: director });
     expect(asked.pages_opened).toBe(1);
-    const item = await latestItem(asked.showing_id);
+    const item = await latestItem(asked.release_id);
     expect(await payersOfGateWork(item)).toEqual([id.otherMandate]);
     expect((await redactor(item, "get_page_to_redact")).gate).toMatch(/^A person decides as well: your work is a proposal/);
     // The Redactor delays one paragraph and holds another; it has every act a person has.
@@ -235,7 +235,7 @@ describe("a node's page, finance to company", () => {
     expect((await redactor(item, "hold_part", { part: 3, reason: "legal", note: "Counsel's advice." })).success).toBe(true);
     await finishAndPass(item, { answer: "supports" });
     // Nothing went: the gate is set to a person's decision for the organization's material under this mandate.
-    expect((await atCompany(() => shownPage(item)))!.state).toBe("held");
+    expect((await atCompany(() => receivedPage(item)))!.state).toBe("held");
 
     const queue = (await gateQueue(orgHolder)) as { items: any[] };
     const mine = queue.items.filter((i) => i.item_id === item);
@@ -246,7 +246,7 @@ describe("a node's page, finance to company", () => {
     // Each item says where it crosses, and the policy it was redacted under with the categories a passage can be removed under.
     const [policyRow] = await system(() =>
       rawQuery<{ id: string; version: number; categories: Array<{ name: string }> }>(
-        `SELECT r.id, r.version, r.categories FROM redaction_policies r JOIN showing_pages p ON p.policy_id = r.id WHERE p.id = $1`,
+        `SELECT r.id, r.version, r.categories FROM redaction_policies r JOIN release_pages p ON p.policy_id = r.id WHERE p.id = $1`,
         [item]
       )
     );
@@ -269,34 +269,34 @@ describe("a node's page, finance to company", () => {
     const asAdministrator = (await gateQueue({ ...orgHolder, clearance: [COMPANY, "public"], administer: true })) as { items: any[] };
     expect(asAdministrator.items.find((i) => i.item_id === item)).toMatchObject({ from: FINANCE, from_named_by: "its label" });
 
-    // What the showing covers, in words: the mandate by name for a reader of the label it works at, and no name for one who reads only where it is shown.
+    // What the release covers, in words: the mandate by name for a reader of the label it works at, and no name for one who reads only where it is shown.
     const [mandateName] = await system(() => rawQuery<{ name: string }>(`SELECT name FROM grants WHERE id = $1`, [id.otherMandate]));
-    expect((await asPerson([FINANCE, COMPANY, "public"], () => shownShowing(asked.showing_id)))).toMatchObject({
+    expect((await asPerson([FINANCE, COMPANY, "public"], () => receivedRelease(asked.release_id)))).toMatchObject({
       scope: `every node the work of the mandate "${mandateName!.name}" assessed`,
       scope_code: "mandate",
     });
-    expect((await atCompany(() => shownShowing(asked.showing_id)))).toMatchObject({ scope: "every node one mandate's work assessed", scope_code: "mandate" });
+    expect((await atCompany(() => receivedRelease(asked.release_id)))).toMatchObject({ scope: "every node one mandate's work assessed", scope_code: "mandate" });
 
     // A person removes a passage, as the Redactor could, under a category of the policy. No word is changed.
     const badCategory = await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "remove", passage: SECRET, category: "anything awkward" }] });
     expect(badCategory.refused[0]!.why).toMatch(/^"anything awkward" is not a category of the policy this item was redacted under \(version \d+\)\. Its categories are .*"commercial figures"/);
     const noCategory = await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "remove", passage: SECRET }] });
     expect(noCategory.refused[0]!.why).toMatch(/^No category was given/);
-    const before = (await atCompany(() => rawQuery<{ root: string }>(`SELECT root FROM shown_pages WHERE id = $1`, [item])))[0]!.root;
+    const before = (await atCompany(() => rawQuery<{ root: string }>(`SELECT root FROM received_pages WHERE id = $1`, [item])))[0]!.root;
     const removed = await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "remove", passage: SECRET, category: "commercial figures" }] });
     expect(removed).toMatchObject({ decided: 1, refused: [] });
     expect(await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "remove", passage: SECRET, category: "commercial figures" }] })).toMatchObject({ decided: 0, unchanged: 1 });
-    const [after] = await atCompany(() => rawQuery<{ root: string; roots: unknown[] }>(`SELECT root, roots FROM shown_pages WHERE id = $1`, [item]));
+    const [after] = await atCompany(() => rawQuery<{ root: string; roots: unknown[] }>(`SELECT root, roots FROM received_pages WHERE id = $1`, [item]));
     expect(after!.root).not.toBe(before);
     expect(after!.roots).toHaveLength(2);
 
     // Approve as proposed: one act for the whole item. What the Redactor held or delayed stays back.
     const approved = await decideAtGate({ actor: orgHolder, items: [{ item_id: item }], decision: "approve" });
-    expect(approved.shown).toEqual([item]);
-    let page = (await atCompany(() => shownPage(item)))!;
+    expect(approved.released).toEqual([item]);
+    let page = (await atCompany(() => receivedPage(item)))!;
     expect(page.state).toBe("released_in_part");
     expect((page.parts as any[])[2].held).toBe("[A paragraph of reasoning, held by the Redactor]");
-    expect((page.always_shown as any).removals).toEqual({ "commercial figures": 1 });
+    expect((page.always_released as any).removals).toEqual({ "commercial figures": 1 });
     expect(page.verification).toMatchObject({ ok: true });
     // Audit checked the page as the Redactor left it; what the person removed after is said beside its answer.
     expect(page.audit).toBe(
@@ -304,18 +304,18 @@ describe("a node's page, finance to company", () => {
     );
 
     // The person lifts the Redactor's hold and releases the part, with its mark; and the delay runs out by itself.
-    await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "lift" }, { item_id: item, part: 3, decision: "release" }] });
-    await system(() => rawQuery(`UPDATE showing_acts SET until = now() - interval '1 minute' WHERE page_id = $1 AND act = 'delayed'`, [item]));
+    await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "lift" }, { item_id: item, part: 3, decision: "consent" }] });
+    await system(() => rawQuery(`UPDATE release_acts SET until = now() - interval '1 minute' WHERE page_id = $1 AND act = 'delayed'`, [item]));
     expect(await settleWaiting({ boundaryId: id.gate! })).toBeGreaterThanOrEqual(0);
-    await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 4 }], decision: "release" });
-    page = (await atCompany(() => shownPage(item)))!;
+    await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 4 }], decision: "consent" });
+    page = (await atCompany(() => receivedPage(item)))!;
     expect(page.state).toBe("released_whole");
     expect((page.parts as any[])[2].text).toBe("Counsel advised on [redacted: commercial figures].");
     expect(page.audit).toBe(
       "The reasoning shown supports the verdict. The check was made before a person at the gate removed a passage and lifted the Redactor's hold on a part, which it did not check."
     );
     const [arrived] = await atCompany(() =>
-      rawQuery<{ raw_content: string }>(`SELECT s.raw_content FROM sources s JOIN shown_pages p ON p.source_id = s.id WHERE p.id = $1`, [item])
+      rawQuery<{ raw_content: string }>(`SELECT s.raw_content FROM sources s JOIN received_pages p ON p.source_id = s.id WHERE p.id = $1`, [item])
     );
     expect(arrived!.raw_content).toContain("Audit's check of the redaction: The reasoning shown supports the verdict. The check was made before a person at the gate removed a passage and lifted the Redactor's hold on a part, which it did not check.");
     expect(JSON.stringify(page)).not.toContain(SECRET);
@@ -324,13 +324,13 @@ describe("a node's page, finance to company", () => {
     const late = await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 1, decision: "remove", passage: "ratio", category: "commercial figures" }] });
     expect(late.refused).toHaveLength(1);
     // Every act names who made it: the person, the Redactor, or the gate's setting.
-    const by = await everyRow<{ act: string; by: string }>(`SELECT DISTINCT act, by FROM showing_acts WHERE page_id = $1 ORDER BY act, by`, [item]);
+    const by = await everyRow<{ act: string; by: string }>(`SELECT DISTINCT act, by FROM release_acts WHERE page_id = $1 ORDER BY act, by`, [item]);
     expect(by).toEqual(
       expect.arrayContaining([
         { act: "delayed", by: "redactor" },
         { act: "held", by: "redactor" },
         { act: "hold_lifted", by: "person" },
-        { act: "released", by: "person" },
+        { act: "consented", by: "person" },
         { act: "removed", by: "person" },
       ])
     );
@@ -338,8 +338,8 @@ describe("a node's page, finance to company", () => {
 
   it("a person delays a part, and it goes when the time comes", async () => {
     const node = await assessedAtFinance("The facility was renewed", id.otherJob!, "It was renewed for a year.");
-    await followShowings();
-    const [row] = await everyRow<{ id: string }>(`SELECT id FROM showing_pages WHERE node_id = $1`, [node]);
+    await followReleases();
+    const [row] = await everyRow<{ id: string }>(`SELECT id FROM release_pages WHERE node_id = $1`, [node]);
     const item = row!.id;
     await finishAndPass(item, { answer: "supports" });
     const until = new Date(Date.now() + 3_600_000).toISOString();
@@ -347,10 +347,10 @@ describe("a node's page, finance to company", () => {
     expect(await decideAtGate({ actor: orgHolder, items: [{ item_id: item }], decision: "delay", until })).toMatchObject({ decided: 1 });
     await decideAtGate({ actor: orgHolder, items: [{ item_id: item }], decision: "approve" });
     // The parts are approved, and the item itself is kept back until the time.
-    expect((await atCompany(() => shownPage(item)))!.held_because).toBe(`delayed until ${until}`);
-    await system(() => rawQuery(`UPDATE showing_acts SET until = now() - interval '1 minute' WHERE page_id = $1 AND act = 'delayed'`, [item]));
-    await decideAtGate({ actor: orgHolder, items: [{ item_id: item }], decision: "release" });
-    expect((await atCompany(() => shownPage(item)))!.state).toBe("released_whole");
+    expect((await atCompany(() => receivedPage(item)))!.held_because).toBe(`delayed until ${until}`);
+    await system(() => rawQuery(`UPDATE release_acts SET until = now() - interval '1 minute' WHERE page_id = $1 AND act = 'delayed'`, [item]));
+    await decideAtGate({ actor: orgHolder, items: [{ item_id: item }], decision: "consent" });
+    expect((await atCompany(() => receivedPage(item)))!.state).toBe("released_whole");
   });
 });
 
@@ -364,7 +364,7 @@ describe("a request asked at company and taken up at finance", () => {
     const told = await atCompany(() => getRequest(id.asked!));
     expect(told!.taken_up_above).toMatchObject({ answer: "none yet" });
     // The fact carries no text from finance, names no label, and cost nothing.
-    const facts = await atCompany(() => shownItems({ kind: "taken_up", replyRef: id.asked! }));
+    const facts = await atCompany(() => receivedItems({ kind: "taken_up", replyRef: id.asked! }));
     expect(facts).toHaveLength(1);
     expect(JSON.stringify(told) + JSON.stringify(facts)).not.toContain(FINANCE);
     expect(await everyRow(`SELECT 1 FROM actions WHERE exclusion_group = $1`, [`redact:${facts[0]!.item_id}`])).toEqual([]);
@@ -393,7 +393,7 @@ describe("a request asked at company and taken up at finance", () => {
     expect(JSON.stringify(answered)).not.toContain(SECRET);
     expect(JSON.stringify(answered)).not.toContain(FINANCE);
     // A reader of `public` alone is shown none of it.
-    expect(await asPerson(["public"], () => shownItems({ replyRef: id.asked! }))).toEqual([]);
+    expect(await asPerson(["public"], () => receivedItems({ replyRef: id.asked! }))).toEqual([]);
   });
 
   it("for one request, a person decides as well; and with the gate opened for answers, a later answer goes as written", async () => {
@@ -422,7 +422,7 @@ describe("a request asked at company and taken up at finance", () => {
 describe("an answer that rests on another party's material", () => {
   it("is that party's to release as well: its findings wait on the party's own setting, and its holder of release lets them through", async () => {
     const [acme] = await everyRow<{ id: string }>(`INSERT INTO parties (name, is_own_organization) VALUES ($1, false) RETURNING id`, [`A supplier ${randomUUID().slice(0, 8)}`]);
-    const supplier: GateActor = { id: await seedUser(), holding: ["release for the supplier"], clearance: [FINANCE, COMPANY, "public"], releaseParties: [acme!.id], direct: false };
+    const supplier: GateActor = { id: await seedUser(), holding: ["consent for the supplier"], clearance: [FINANCE, COMPANY, "public"], consentParties: [acme!.id], direct: false };
     // The supplier's own setting for answers at this gate: a person decides as well.
     const theirSetting = await setGateMode({ boundaryId: id.gate!, kind: "answer", partyId: acme!.id, mode: "person", actor: { ...supplier, administer: false } });
     const asked = (await at(COMPANY, () => fileRequest({ ask: "What did the supplier's audit find?", why: "It bears on the reserve.", satisfiedBy: "The audit's finding.", claimIds: [id.node!], filer: { kind: "admin", agent: "claim_steward" } }))).id;
@@ -459,7 +459,7 @@ describe("a message sent at company and answered at finance", () => {
     expect(offered.state).toBe("waiting");
     // No mandate paid for the pass that answered, so finance's General mandate would pay; there is none yet, and the item waits.
     expect(await payersOfGateWork(offered.item_id)).toEqual([]);
-    const backlog = JSON.stringify(await atCompany(() => gateBacklog({ clearance: [COMPANY, "public"], administer: false, releaseParties: [] })));
+    const backlog = JSON.stringify(await atCompany(() => gateBacklog({ clearance: [COMPANY, "public"], administer: false, consentParties: [] })));
     expect(backlog).toContain('"kind":"message","kind_in_words":"an answer to a message","waiting_on":"funds"');
     // A General mandate at finance is set up, and the next look pays.
     id.general = (await seedMandate(FINANCE, { general: true })).grantId;
@@ -486,7 +486,7 @@ describe("a mandate at finance: that it exists, and its funding of work at compa
     expect(item.parts.map((p: any) => p.kind)).toEqual(["fact", "name", "terms", "amount"]);
     expect((await redactor(offered.item_id, "hold_part", { part: 4, reason: "confidentiality", note: "Budgets are not shared." })).success).toBe(true);
     await finishAndPass(offered.item_id);
-    const [listed] = await atCompany(() => shownItems({ kind: "mandate" }));
+    const [listed] = await atCompany(() => receivedItems({ kind: "mandate" }));
     expect(listed).toMatchObject({ item_id: offered.item_id, state: "through the gate" });
     const [source] = await atCompany(() => rawQuery<{ raw_content: string }>(`SELECT raw_content FROM sources WHERE id = $1`, [listed!.source_id]));
     expect(source!.raw_content).toContain("Reserve review");
@@ -529,11 +529,11 @@ describe("company to public: the same gate one layer down", () => {
         [node, COMPANY]
       )
     );
-    const asked = await askShowing({ nodeId: node, pageLabel: COMPANY, toLabel: "public", form: "once", scope: "node", actor: { ...director, clearance: [COMPANY, "public"] } });
-    const item = await latestItem(asked.showing_id);
+    const asked = await askRelease({ nodeId: node, pageLabel: COMPANY, toLabel: "public", form: "once", scope: "node", actor: { ...director, clearance: [COMPANY, "public"] } });
+    const item = await latestItem(asked.release_id);
     expect(await payersOfGateWork(item)).toEqual([id.companyGeneral]);
     await finishAndPass(item, { answer: "supports", label: COMPANY });
-    expect((await asPerson(["public"], () => shownPage(item)))!.state).toBe("released_whole");
+    expect((await asPerson(["public"], () => receivedPage(item)))!.state).toBe("released_whole");
     expect(await personActs(item)).toEqual([]);
   });
 });
@@ -542,18 +542,18 @@ describe("the backlog, as the label below sees it", () => {
   it("says how many items wait, of what kinds, for how long and on whom, and nothing of what they contain or where they come from", async () => {
     // Something held by the Redactor, something waiting on a person, something waiting for its redaction.
     const held = await assessedAtFinance("The hedge was effective", id.mandateJob!, `It offset ${SECRET}.`);
-    const asked = await askShowing({ nodeId: held, pageLabel: FINANCE, toLabel: COMPANY, form: "once", scope: "node", actor: director });
-    const item = await latestItem(asked.showing_id);
+    const asked = await askRelease({ nodeId: held, pageLabel: FINANCE, toLabel: COMPANY, form: "once", scope: "node", actor: director });
+    const item = await latestItem(asked.release_id);
     await redactor(item, "hold_part", { reason: "security", note: "The whole page turns on the figure." });
     await finishAndPass(item, { answer: "does_not_show_why" });
     const waiting = await assessedAtFinance("The swap was unwound", id.otherJob!, "It was unwound in May.");
-    await followShowings();
-    const [row] = await everyRow<{ id: string }>(`SELECT id FROM showing_pages WHERE node_id = $1`, [waiting]);
+    await followReleases();
+    const [row] = await everyRow<{ id: string }>(`SELECT id FROM release_pages WHERE node_id = $1`, [waiting]);
     await finishAndPass(row!.id, { answer: "supports" });
     const unredacted = await assessedAtFinance("The loan was repaid", id.mandateJob!, "It was repaid in June.");
-    await askShowing({ nodeId: unredacted, pageLabel: FINANCE, toLabel: COMPANY, form: "once", scope: "node", actor: director });
+    await askRelease({ nodeId: unredacted, pageLabel: FINANCE, toLabel: COMPANY, form: "once", scope: "node", actor: director });
 
-    const reader = { clearance: [COMPANY, "public"], administer: false, releaseParties: [] };
+    const reader = { clearance: [COMPANY, "public"], administer: false, consentParties: [] };
     const backlog = (await atCompany(() => gateBacklog(reader))) as { gates: any[]; note: string };
     const gate = backlog.gates.find((g) => g.gate_id === id.gate)!;
     expect(gate.to).toBe(COMPANY);
@@ -571,38 +571,38 @@ describe("the backlog, as the label below sees it", () => {
       expect(said).not.toContain(hidden);
     }
     // A reader of `public` alone, and a reader of the other partner's label, see none of this gate.
-    expect(((await asPerson(["public"], () => gateBacklog({ clearance: ["public"], administer: false, releaseParties: [] }))) as { gates: any[] }).gates.some((g) => g.gate_id === id.gate)).toBe(false);
-    expect(((await asPerson([B, "public"], () => gateBacklog({ clearance: [B, "public"], administer: false, releaseParties: [] }))) as { gates: any[] }).gates.some((g) => g.gate_id === id.gate)).toBe(false);
+    expect(((await asPerson(["public"], () => gateBacklog({ clearance: ["public"], administer: false, consentParties: [] }))) as { gates: any[] }).gates.some((g) => g.gate_id === id.gate)).toBe(false);
+    expect(((await asPerson([B, "public"], () => gateBacklog({ clearance: [B, "public"], administer: false, consentParties: [] }))) as { gates: any[] }).gates.some((g) => g.gate_id === id.gate)).toBe(false);
 
     // The gate's authorities see the same counts with the label things come from, whether or not they read company.
-    const forAuthority = (await asPerson(["public"], () => gateBacklog({ clearance: ["public"], administer: true, releaseParties: [] }))) as { gates: any[] };
+    const forAuthority = (await asPerson(["public"], () => gateBacklog({ clearance: ["public"], administer: true, consentParties: [] }))) as { gates: any[] };
     expect(forAuthority.gates.find((g) => g.gate_id === id.gate)).toMatchObject({ from: FINANCE, to: COMPANY });
 
     // The authorities can keep the backlog to themselves; it is shown unless they do.
-    await setGate({ boundaryId: id.gate!, backlogShown: false, actor: admin });
+    await setGate({ boundaryId: id.gate!, backlogVisible: false, actor: admin });
     expect(((await atCompany(() => gateBacklog(reader))) as { gates: any[] }).gates.some((g) => g.gate_id === id.gate)).toBe(false);
-    expect(((await asPerson(["public"], () => gateBacklog({ clearance: ["public"], administer: true, releaseParties: [] }))) as { gates: any[] }).gates.some((g) => g.gate_id === id.gate)).toBe(true);
-    await setGate({ boundaryId: id.gate!, backlogShown: true, actor: admin });
+    expect(((await asPerson(["public"], () => gateBacklog({ clearance: ["public"], administer: true, consentParties: [] }))) as { gates: any[] }).gates.some((g) => g.gate_id === id.gate)).toBe(true);
+    await setGate({ boundaryId: id.gate!, backlogVisible: true, actor: admin });
   });
 });
 
 describe("a gate's settings in one place", () => {
   it("lists what is set by kind, scope and party, to those with a say over it, and loosening lets through what was waiting", async () => {
     const [gate] = (await gatesFor({ ...admin, clearance: ["public"] })).filter((g) => g.gate_id === id.gate) as any[];
-    expect(gate).toMatchObject({ from: FINANCE, to: COMPANY, flow: "asked", backlog_shown_to_the_other_side: true });
+    expect(gate).toMatchObject({ from: FINANCE, to: COMPANY, flow: "asked", backlog_visible_to_the_other_side: true });
     expect(gate.settings.map((s: any) => `${s.kind}/${s.scope}/${s.party ? "party" : "all"}/${s.mode}`).sort()).toEqual([
       "*/mandate/party/person",
       "answer/boundary/all/redactor",
       "page/under/all/open",
     ]);
     // A reader of company with no say over the gate is not shown it.
-    const forReader = await gatesFor({ id: await seedUser(), holding: [], administer: false, releaseParties: [], clearance: [COMPANY, "public"] });
+    const forReader = await gatesFor({ id: await seedUser(), holding: [], administer: false, consentParties: [], clearance: [COMPANY, "public"] });
     expect(forReader.some((g) => g.gate_id === id.gate)).toBe(false);
     // The organization's holder loosens its setting for that mandate: what was waiting on a person goes.
     const waitingBefore = ((await gateQueue(orgHolder)) as { items: any[] }).items.length;
     expect(waitingBefore).toBeGreaterThan(0);
     const [setting] = gate.settings.filter((s: any) => s.scope === "mandate");
-    await endGateSetting({ settingId: setting.setting_id, actor: { ...admin, administer: false, releaseParties: [id.org!] } });
+    await endGateSetting({ settingId: setting.setting_id, actor: { ...admin, administer: false, consentParties: [id.org!] } });
     expect(await settleWaiting({ boundaryId: id.gate! })).toBeGreaterThan(0);
     // Only what the Redactor holds is left for a person.
     const left = ((await gateQueue(orgHolder)) as { items: any[] }).items;
@@ -611,14 +611,14 @@ describe("a gate's settings in one place", () => {
 
   it("everything flows, as one setting: each page at the label is offered as it is finished", async () => {
     await setGate({ boundaryId: id.gate!, flow: "everything", actor: admin });
-    const asked = await askShowing({ pageLabel: FINANCE, toLabel: COMPANY, form: "standing", scope: "boundary", actor: director });
+    const asked = await askRelease({ pageLabel: FINANCE, toLabel: COMPANY, form: "standing", scope: "boundary", actor: director });
     expect(asked.pages_opened).toBeGreaterThan(0);
     // It covers every node at the label, and says so: by the label's name to a reader of it, and without it to one who reads only where it goes.
-    expect(await asPerson([FINANCE, COMPANY, "public"], () => shownShowing(asked.showing_id))).toMatchObject({ scope: `every node assessed at "${FINANCE}"`, scope_code: "boundary" });
-    expect(await atCompany(() => shownShowing(asked.showing_id))).toMatchObject({ scope: "every node assessed at the label its pages are written at" });
+    expect(await asPerson([FINANCE, COMPANY, "public"], () => receivedRelease(asked.release_id))).toMatchObject({ scope: `every node assessed at "${FINANCE}"`, scope_code: "boundary" });
+    expect(await atCompany(() => receivedRelease(asked.release_id))).toMatchObject({ scope: "every node assessed at the label its pages are written at" });
     const fresh = await assessedAtFinance("The dividend was covered", null, "It was covered twice.");
-    expect(await followShowings()).toBeGreaterThanOrEqual(1);
-    const [row] = await everyRow<{ id: string }>(`SELECT p.id FROM showing_pages p WHERE p.node_id = $1 AND p.showing_id = $2`, [fresh, asked.showing_id]);
+    expect(await followReleases()).toBeGreaterThanOrEqual(1);
+    const [row] = await everyRow<{ id: string }>(`SELECT p.id FROM release_pages p WHERE p.node_id = $1 AND p.release_id = $2`, [fresh, asked.release_id]);
     // No mandate paid for that judgment, so finance's General mandate pays for sending it down.
     expect(await payersOfGateWork(row!.id)).toEqual([id.general]);
     await setGate({ boundaryId: id.gate!, flow: "asked", actor: admin });

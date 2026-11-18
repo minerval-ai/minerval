@@ -65,8 +65,8 @@ Two kinds of actor have them, and each has all of them:
   What it does not hold or delay it lets through.
 - **A person** the gate's authorities put there: someone who holds
   `consent` for a party the item rests on. They act through
-  `decide_at_gate` (`POST /gate/decisions`), with consent (sent as
-  `release`, its name in the API), `approve` (everything nobody
+  `decide_at_gate` (`POST /gate/decisions`), with `consent`,
+  `approve` (everything nobody
   holds, as the Redactor left it), `remove`, `hold`, `delay` and `lift`.
   They may act from the web app, or through a key or token of their own
   account, so their own agent or a script can do it: the queue
@@ -76,7 +76,7 @@ Two kinds of actor have them, and each has all of them:
   takes up to 500 items, and sending the same decision again changes
   nothing.
 
-Every act is a row (`showing_acts`) naming who made it: the person and the
+Every act is a row (`release_acts`) naming who made it: the person and the
 permissions they held, the Redactor's run, or the gate's setting. A hold
 stays on the record after it is lifted. A consent is not taken back.
 
@@ -151,7 +151,7 @@ produced.
 - **What was asked for from the other side flows by default**: that a
   request was taken up, the answer to it, the answer to a message.
 - **A node's page flows where a flow was set for it**
-  (`set_page_flow`, `POST /showings`, people who direct): one node, a node with what sits
+  (`set_page_flow`, `POST /releases`, people who direct): one node, a node with what sits
   under it, every node one mandate's work assessed, or every node assessed
   at the label. Standing, each later version follows as it is finished.
 - **Everything** is one setting of the gate (`flow: everything`): a
@@ -169,7 +169,7 @@ started with everything flowing would publish every inside page.
 ## Who pays
 
 The Redactor's run and Audit's check are paid for with no person's act
-(`payForGateWork` in `src/services/showing-service.ts`). Sending a result
+(`payForGateWork` in `src/services/release-service.ts`). Sending a result
 down is part of the work that produced it, so it is paid from that work's
 budget: the mandate the offer named; else the mandate whose budget paid
 for the judgment a page carries, or for the work on the request an answer
@@ -189,7 +189,7 @@ through to outside under a gate set to send what is released is packaged
 and sent at once (`followReleaseOutside`), and what the public graph says
 back is taken in when the mirror batch that carries it is applied
 (`afterMirrorApplied`); the scheduler is the backstop for both. A person who holds `fund` can also
-pay by hand (`fund_release_work`, `POST /showings/:showing_id/pages/:page_id/commission`).
+pay by hand (`fund_release_work`, `POST /releases/:release_id/pages/:page_id/commission`).
 
 ## The backlog
 

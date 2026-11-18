@@ -5,7 +5,7 @@ import { pageOf, workSections } from "../../../web/lib/work-sections";
 // one list (web/lib/work-sections.ts), so every page sits in exactly one section
 // and the page being read is marked from its address.
 describe("the members' work pages", () => {
-  const everything = { permissions: ["read", "direct", "release", "administer"], clearance: ["public", "finance"] };
+  const everything = { permissions: ["read", "direct", "consent", "administer"], clearance: ["public", "finance"] };
   const names = (m: { permissions: string[]; clearance: string[] }) =>
     workSections(m).map((s) => `${s.name ?? "-"}: ${s.pages.map((p) => p.name).join(", ")}`);
 
@@ -50,8 +50,8 @@ describe("the members' work pages", () => {
     ]);
     // A reader at a label besides public sees the releases that reach it.
     expect(names({ permissions: ["read"], clearance: ["public", "finance"] })[2]).toBe("Sharing: Releases, Boundaries");
-    // Someone who consents for a party (stored as `release`) reviews, and follows the public graph, since an agent's report goes out through the gate.
-    expect(names({ permissions: ["release"], clearance: ["public"] })).toEqual([
+    // Someone who consents for a party reviews, and follows the public graph, since an agent's report goes out through the gate.
+    expect(names({ permissions: ["consent"], clearance: ["public"] })).toEqual([
       "-: Inbox, Review",
       "Graph: Ask, Claims, Mandates, Findings, Requests, Docs",
       "Sharing: Releases, Boundaries",

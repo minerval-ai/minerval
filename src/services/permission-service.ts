@@ -174,7 +174,7 @@ export async function recordSignInGroups(accountId: string, groups: readonly unk
  * if the deployment has none, under a placeholder name an administrator
  * replaces (party-service.ts, addParty). A part of a page that rests on no
  * outside party's material is the organization's to release
- * (services/showing-service.ts), so without this row and the grant for it
+ * (services/release-service.ts), so without this row and the grant for it
  * nobody could release anything until an administrator had thought to add
  * both.
  */
@@ -229,7 +229,7 @@ function establish(account: { id: string; externalId: string | null }): Promise<
       await logAdministrativeEvent(tx, "party_added", account.id, { party_id: made!.id });
     }
     const parties = await tx.query<{ id: string }>(`SELECT id FROM parties ORDER BY created_at, id`);
-    for (const { id } of parties) await insert("release", null, id);
+    for (const { id } of parties) await insert("consent", null, id);
     return true;
   });
 }
@@ -568,7 +568,7 @@ export async function listAccounts(input: { q?: string; limit?: number } = {}): 
  *
  * A scope's name is withheld from a reader who is not entitled to it, and
  * the entry says so: a label the reader is not cleared for, and a party
- * that is neither the organization itself nor one the reader holds release
+ * that is neither the organization itself nor one the reader holds consent
  * for. A deployment may hold material from parties who are not to learn of
  * each other, and label and party names can say who they are. A connection
  * is named, with its tools, only to a reader cleared for its label, for the
@@ -773,7 +773,7 @@ export async function permissionLog(
   const administers = reader.grants.some((g) => g.permission === "administer");
   const cleared = new Set(reader.clearance);
   const releasesFor = new Set(
-    reader.grants.filter((g) => g.permission === "release" && g.partyId).map((g) => g.partyId!)
+    reader.grants.filter((g) => g.permission === "consent" && g.partyId).map((g) => g.partyId!)
   );
   const parties = new Map(
     (

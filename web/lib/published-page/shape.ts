@@ -3,7 +3,7 @@
  * (docs/published-pages.md, "On the claim's page").
  *
  * A package carries a page as its parts, each the text its Steward wrote
- * (services/showing-service.ts, readPage). A reader should meet it as the
+ * (services/release-service.ts, readPage). A reader should meet it as the
  * page it is: the same verdict band, assessment, reasoning, arguments,
  * sources and subclaims as on any node's page, with each removal marked
  * where it was made and each held part standing in its place. This file
@@ -119,17 +119,17 @@ const KIND_WORDS: Record<string, [string, string]> = {
 };
 
 /**
- * What a showing covers, by its scope (services/showing-service.ts,
- * SHOWING_SCOPES; docs/releasing-a-page.md, "Asking"), in the words every
- * place says it in: the deployment's own record of a showing, what this
+ * What a release covers, by its scope (services/release-service.ts,
+ * RELEASE_SCOPES; docs/releasing-a-page.md, "Asking"), in the words every
+ * place says it in: the deployment's own record of a release, what this
  * graph says of a page published from another, and the web app's page of
  * it. `named` gives what the words may name where the reader may be told
  * it: the mandate's name, the label the pages are written at (or the face
  * it shows where they arrive), and what an item is, in words. Without it
  * they name nothing. Every scope has its words: nobody is told "the node
- * alone" of a showing that covers every node at a label.
+ * alone" of a release that covers every node at a label.
  */
-export function showingCovers(scope: string | null, named: { mandate?: string | null; from?: string | null; item?: string | null } = {}): string {
+export function releaseCovers(scope: string | null, named: { mandate?: string | null; from?: string | null; item?: string | null } = {}): string {
   switch (scope) {
     case "node":
       return "the node alone";
@@ -229,10 +229,10 @@ function shapeSubclaim(part: PackagePart): ShapedSubclaim {
 /** The page a package carries, in the shape of a node's page. Null when the package carries no shown page. */
 export function shapeOfPublishedPage(pkg: PublishedPagePackage): PublishedPageShape | null {
   const page = pkg.page;
-  if (!page || !page.always_shown) return null;
+  if (!page || !page.always_released) return null;
   let header: Record<string, unknown>;
   try {
-    header = JSON.parse(page.always_shown.text) as Record<string, unknown>;
+    header = JSON.parse(page.always_released.text) as Record<string, unknown>;
   } catch {
     return null;
   }
@@ -283,7 +283,7 @@ export function shapeOfPublishedPage(pkg: PublishedPagePackage): PublishedPageSh
 /** The page as one text, for a reader with no page to render it on: an agent, a search index, a diff. */
 export function publishedPageAsText(pkg: PublishedPagePackage): string {
   const page = pkg.page;
-  if (!page || !page.always_shown) return "";
+  if (!page || !page.always_released) return "";
   const lines: string[] = [];
   for (const part of page.parts) {
     if (isReleased(part)) lines.push(part.text, "");

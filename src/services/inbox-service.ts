@@ -26,7 +26,7 @@
  * the message stays unread, and unanswered, for the pass at its own label
  * exactly as if nobody above had looked. The answer from above is not sent
  * to the sender: it was made on material the sender may not read, and
- * anything that goes down goes through the gate (showing-service.ts).
+ * anything that goes down goes through the gate (release-service.ts).
  * Nothing is opened above when a message arrives below. It is read on the
  * next pass at each label that reads it; a mandate above is told how many
  * wait on the nodes it pays for (mandate-reflection-service.ts).

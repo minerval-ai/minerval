@@ -3,18 +3,18 @@ import type { ReactNode } from "react";
 import { can, type Viewer } from "@/components/admin/access";
 import { Pipeline } from "@/components/work/Pipeline";
 import { Boundary, ButtonLink, Empty, Table, Tabs, Tip, WorkHead, WorkPage, plural, shortDay } from "@/components/work/ui";
-import { fetchShowings, type AskedShowingRow, type ShowingScope, type ShownShowing, type ShownShowingRow } from "@/lib/inside-api";
+import { fetchReleases, type AskedReleaseRow, type ReleaseScope, type ReceivedRelease, type ReceivedReleaseRow } from "@/lib/inside-api";
 import { NOT_YET_ASSESSED, type Pipeline as Status, type PipelineKey } from "@/lib/pipeline";
-import { ShowingsFilter } from "./ShowingsFilter";
-import { destinationOf, fetchDetails, gateFor, kindOf, latestPage, loadGates, statusOf, versionsById, wholeOf } from "./showings";
+import { ReleasesFilter } from "./ReleasesFilter";
+import { destinationOf, fetchDetails, gateFor, kindOf, latestPage, loadGates, statusOf, versionsById, wholeOf } from "./releases";
 
-// The list of releases (GET /showings), in two tabs: those asked for from a
+// The list of releases (GET /releases), in two tabs: those asked for from a
 // label the viewer reads, with where each one's latest page stands on its way
 // across, and those released to a label the viewer reads, or outside. One row
 // per release, one status per row (lib/pipeline.ts), and the act that is
 // due, where one is. /releases/new draws this list behind its drawer.
 
-export interface ShowingsQuery {
+export interface ReleasesQuery {
   tab?: string;
   q?: string;
   boundary?: string;
@@ -30,7 +30,7 @@ interface Row {
   from: string | null;
   to: string;
   form: string;
-  scope: ShowingScope;
+  scope: ReleaseScope;
   latest: string | null;
   status: Status;
   ended: string | null;
@@ -43,24 +43,24 @@ const STATUSES: Array<{ key: PipelineKey | "needs"; label: string }> = [
   { key: "audit", label: "Audit check" },
   { key: "gate", label: "At the gate" },
   { key: "held", label: "Held" },
-  { key: "shown_whole", label: "Released whole" },
-  { key: "shown_in_part", label: "Released in part" },
+  { key: "released_whole", label: "Released whole" },
+  { key: "released_in_part", label: "Released in part" },
   { key: "cannot_cross", label: "Can't cross" },
   { key: "overtaken", label: "Overtaken" },
   { key: "not_yet_assessed", label: "Not yet assessed" },
 ];
 
-function askedRow(a: AskedShowingRow, detail: ShownShowing | undefined): Row {
+function askedRow(a: AskedReleaseRow, detail: ReceivedRelease | undefined): Row {
   const page = latestPage(a.pages);
   const version = page ? versionsById(detail).get(page.page_id) : undefined;
   const nodes = detail ? detail.nodes.length : new Set([a.node_id, ...a.pages.map((p) => p.node_id)].filter(Boolean)).size;
   return {
-    id: a.showing_id,
+    id: a.release_id,
     node: a.node,
     whole: wholeOf(a.scope, a.page_label, detail?.scope),
     more: a.node_id ? Math.max(0, nodes - 1) : nodes,
     from: a.page_label,
-    to: destinationOf(a.shown_to),
+    to: destinationOf(a.released_to),
     form: a.form,
     scope: a.scope,
     latest: page?.version_of ?? null,
@@ -69,7 +69,7 @@ function askedRow(a: AskedShowingRow, detail: ShownShowing | undefined): Row {
   };
 }
 
-function shownRow(s: ShownShowingRow, detail: ShownShowing | undefined, asked: AskedShowingRow | undefined): Row {
+function receivedRow(s: ReceivedReleaseRow, detail: ReceivedRelease | undefined, asked: AskedReleaseRow | undefined): Row {
   // A release of a node is about that node; one of a mandate's work or a whole boundary has none of its own,
   // and its latest version is the newest of any node it covers, as on the page's side (latestPage).
   const node = s.node_id ? detail?.nodes.find((n) => n.node_id === s.node_id) : undefined;
@@ -82,12 +82,12 @@ function shownRow(s: ShownShowingRow, detail: ShownShowing | undefined, asked: A
   const latest = statuses.find((x) => x.status.key !== "overtaken") ?? statuses[0];
   const nodes = detail?.nodes.length ?? 0;
   return {
-    id: s.showing_id,
+    id: s.release_id,
     node: node?.text ?? asked?.node ?? null,
     whole: wholeOf(s.scope, asked?.page_label ?? null, detail?.scope),
     more: s.node_id ? Math.max(0, nodes - 1) : nodes,
     from: asked?.page_label ?? null,
-    to: destinationOf(s.shown_to),
+    to: destinationOf(s.released_to),
     form: s.form,
     scope: s.scope,
     latest: latest?.v.version_of ?? null,
@@ -96,29 +96,29 @@ function shownRow(s: ShownShowingRow, detail: ShownShowing | undefined, asked: A
   };
 }
 
-export async function ShowingsView({ who, query, drawer }: { who: Viewer; query: ShowingsQuery; drawer?: ReactNode }) {
-  const [{ shown, asked }, gates] = await Promise.all([
-    fetchShowings(who.externalId).catch(() => ({ shown: [] as ShownShowingRow[], asked: [] as AskedShowingRow[] })),
+export async function ReleasesView({ who, query, drawer }: { who: Viewer; query: ReleasesQuery; drawer?: ReactNode }) {
+  const [{ received, asked }, gates] = await Promise.all([
+    fetchReleases(who.externalId).catch(() => ({ received: [] as ReceivedReleaseRow[], asked: [] as AskedReleaseRow[] })),
     loadGates(who.externalId),
   ]);
-  const tab = query.tab === "shown" || query.tab === "asked" ? query.tab : asked.length === 0 && shown.length > 0 ? "shown" : "asked";
-  const shownIds = new Set(shown.map((s) => s.showing_id));
-  const askedById = new Map(asked.map((a) => [a.showing_id, a]));
+  const tab = query.tab === "received" || query.tab === "asked" ? query.tab : asked.length === 0 && received.length > 0 ? "received" : "asked";
+  const receivedIds = new Set(received.map((s) => s.release_id));
+  const askedById = new Map(asked.map((a) => [a.release_id, a]));
 
   // Only what this tab draws is fetched one by one: on the asked tab, the other side's state for a page
   // that may be waiting for funds or at the gate, where the viewer reads that side too.
   const wanted =
-    tab === "shown"
-      ? shown.map((s) => s.showing_id)
+    tab === "received"
+      ? received.map((s) => s.release_id)
       : asked
-          .filter((a) => shownIds.has(a.showing_id) && ["to_redact", "to_check", "at_gate"].includes(latestPage(a.pages)?.stage ?? ""))
-          .map((a) => a.showing_id);
+          .filter((a) => receivedIds.has(a.release_id) && ["to_redact", "to_check", "at_gate"].includes(latestPage(a.pages)?.stage ?? ""))
+          .map((a) => a.release_id);
   const details = await fetchDetails(who.externalId, wanted);
 
-  const askedRows = asked.map((a) => askedRow(a, details.get(a.showing_id)));
-  const rows = tab === "asked" ? askedRows : shown.map((s) => shownRow(s, details.get(s.showing_id), askedById.get(s.showing_id)));
+  const askedRows = asked.map((a) => askedRow(a, details.get(a.release_id)));
+  const rows = tab === "asked" ? askedRows : received.map((s) => receivedRow(s, details.get(s.release_id), askedById.get(s.release_id)));
 
-  const total = new Set([...asked.map((a) => a.showing_id), ...shown.map((s) => s.showing_id)]).size;
+  const total = new Set([...asked.map((a) => a.release_id), ...received.map((s) => s.release_id)]).size;
   const needing = askedRows.filter((r) => !r.ended && r.status.needs).length;
 
   const showEnded = query.ended === "1";
@@ -155,7 +155,7 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
               current={tab}
               tabs={[
                 { key: "asked", label: "From your labels", href: "/releases?tab=asked", count: asked.length },
-                { key: "shown", label: "Released to you", href: "/releases?tab=shown", count: shown.length },
+                { key: "received", label: "Released to you", href: "/releases?tab=received", count: received.length },
               ]}
             />
           </div>
@@ -164,7 +164,7 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
 
         {rows.length > 0 && (
           <div className="w-toolbar">
-            <ShowingsFilter
+            <ReleasesFilter
               tab={tab}
               q={query.q ?? ""}
               boundary={query.boundary ?? ""}
@@ -261,7 +261,7 @@ export async function ShowingsView({ who, query, drawer }: { who: Viewer; query:
                           Pay
                         </ButtonLink>
                       )}
-                      {!r.ended && r.status.needs === "review" && can(who, "release") && (
+                      {!r.ended && r.status.needs === "review" && can(who, "consent") && (
                         <ButtonLink href="/gate" small primary>
                           Review
                         </ButtonLink>

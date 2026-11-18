@@ -20,7 +20,7 @@
  *     already, and an agent that has not read a challenge cannot answer it.
  *     The message says that the text was written outside the deployment. A
  *     reassessment is opened there, which runs when a mandate or a person
- *     pays for it. Under a standing showing its result goes out as the next
+ *     pays for it. Under a standing release its result goes out as the next
  *     version by the path every version takes.
  *  3. What the outside is told is in the next package of the page: that
  *     the contribution was received, and where the reassessment stands, in
@@ -57,9 +57,9 @@ export async function takeInPublicContributions(): Promise<number> {
   if (oneLabelOnly()) return 0;
   return atPublic("taking in what the public said about published pages", async () => {
     const arrived = await rawQuery<{
-      id: string; contribution_type: string; submitted_at: Date; about_published_page_id: string; showing_id: string; node_id: string;
+      id: string; contribution_type: string; submitted_at: Date; about_published_page_id: string; release_id: string; node_id: string;
     }>(
-      `SELECT DISTINCT f.id, f.contribution_type, f.submitted_at, f.about_published_page_id, p.showing_id, p.node_id
+      `SELECT DISTINCT f.id, f.contribution_type, f.submitted_at, f.about_published_page_id, p.release_id, p.node_id
          FROM feed_contributions f
          JOIN outbound_sends s ON s.public_page_id = f.about_published_page_id
          JOIN outbound_packages p ON p.id = s.package_id
@@ -79,9 +79,9 @@ export async function takeInPublicContributions(): Promise<number> {
         [c.node_id, c.id]
       );
       await rawQuery(
-        `INSERT INTO inbound_contributions (public_contribution_id, public_page_id, showing_id, node_id, contribution_type, submitted_at, state, repeats, sensitivity_label)
+        `INSERT INTO inbound_contributions (public_contribution_id, public_page_id, release_id, node_id, contribution_type, submitted_at, state, repeats, sensitivity_label)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT (public_contribution_id) DO NOTHING`,
-        [c.id, c.about_published_page_id, c.showing_id, c.node_id, c.contribution_type, c.submitted_at, same ? "repeat" : "received", same?.id ?? null, PUBLIC_LABEL]
+        [c.id, c.about_published_page_id, c.release_id, c.node_id, c.contribution_type, c.submitted_at, same ? "repeat" : "received", same?.id ?? null, PUBLIC_LABEL]
       );
     }
     return arrived.length;
@@ -131,7 +131,7 @@ export async function deliverPublicContributions(): Promise<{ delivered: number;
               s.sensitivity_label AS page_label
          FROM inbound_contributions i
          JOIN feed_contributions f ON f.id = i.public_contribution_id
-         LEFT JOIN showings s ON s.id = i.showing_id
+         LEFT JOIN releases s ON s.id = i.release_id
         WHERE i.state = 'received' AND i.delivered_at IS NULL ORDER BY i.submitted_at, i.id`
     );
     let delivered = 0;
@@ -169,7 +169,7 @@ export async function deliverPublicContributions(): Promise<{ delivered: number;
     // or money behind the node's next pass there; or neither.
     const open = await rawQuery<{ id: string; node_id: string; reassessment: string; reassessment_at: Date; page_label: string | null; delivered_at: Date }>(
       `SELECT i.id, i.node_id, i.reassessment, i.reassessment_at, s.sensitivity_label AS page_label, i.delivered_at
-         FROM inbound_contributions i LEFT JOIN showings s ON s.id = i.showing_id
+         FROM inbound_contributions i LEFT JOIN releases s ON s.id = i.release_id
         WHERE i.reassessment IN ('not_funded', 'funded')`
     );
     let moved = 0;
@@ -242,7 +242,7 @@ export async function deliverAddressedRequests(): Promise<number> {
       id: string; ask: string; why: string; satisfied_by: string; bears_on_text: string | null; filed_at: Date; grant_id: string; label: string;
     }>(
       `SELECT f.id, f.ask, f.why, f.satisfied_by, f.bears_on_text, f.filed_at, s.subject_ref AS grant_id, s.sensitivity_label AS label
-         FROM feed_requests f JOIN showings s ON s.id = f.asked_of_face_id
+         FROM feed_requests f JOIN releases s ON s.id = f.asked_of_face_id
         WHERE f.origin = 'mirror' AND s.kind = 'mandate' AND s.to_outside AND s.ended_at IS NULL
           AND f.state IN ('open', 'addressed', 'in_progress')
           AND NOT EXISTS (SELECT 1 FROM mandate_inbox i WHERE i.grant_id = s.subject_ref AND i.target_ref = 'public-request:' || f.id::text)
@@ -320,14 +320,14 @@ const REASSESSMENT_WORDS: Record<string, NonNullable<SaidBack["reassessment"]>> 
 };
 
 /** What a package says of the contributions received through one node's page. No word of a contribution is in it. */
-export async function saidBackFor(showingId: string, nodeId: string): Promise<SaidBack[]> {
+export async function saidBackFor(releaseId: string, nodeId: string): Promise<SaidBack[]> {
   const rows = await rawQuery<{
     public_contribution_id: string; received_at: Date; repeats_public: string | null; reassessment: string | null; reassessment_at: Date | null;
   }>(
     `SELECT i.public_contribution_id, i.received_at, r.public_contribution_id AS repeats_public, i.reassessment, i.reassessment_at
        FROM inbound_contributions i LEFT JOIN inbound_contributions r ON r.id = i.repeats
-      WHERE i.showing_id = $1 AND i.node_id = $2 ORDER BY i.submitted_at, i.public_contribution_id`,
-    [showingId, nodeId]
+      WHERE i.release_id = $1 AND i.node_id = $2 ORDER BY i.submitted_at, i.public_contribution_id`,
+    [releaseId, nodeId]
   );
   return rows.map((r) => ({
     contribution: r.public_contribution_id,
@@ -346,16 +346,16 @@ export async function inboundOverview(opts: { nodeId?: string } = {}): Promise<R
   const rows = await rawQuery<{
     id: string; public_contribution_id: string; node_id: string; node: string | null; contribution_type: string; submitted_at: Date; received_at: Date;
     state: string; content: string | null; evidence_urls: string[] | null; repeats: string | null; delivered_at: Date | null;
-    reassessment: string | null; reassessment_at: Date | null; showing_id: string | null; page_label: string | null;
+    reassessment: string | null; reassessment_at: Date | null; release_id: string | null; page_label: string | null;
   }>(
-    // The showing is read as the reader: where it is at a label they do not read, its row is not theirs, and the label is withheld.
+    // The release is read as the reader: where it is at a label they do not read, its row is not theirs, and the label is withheld.
     `SELECT i.id, i.public_contribution_id, i.node_id, c.text AS node, i.contribution_type, i.submitted_at, i.received_at, i.state,
             f.content, f.evidence_urls, i.repeats, i.delivered_at, i.reassessment, i.reassessment_at,
-            s.id AS showing_id, s.sensitivity_label AS page_label
+            s.id AS release_id, s.sensitivity_label AS page_label
        FROM inbound_contributions i
        LEFT JOIN claims c ON c.id = i.node_id
        LEFT JOIN feed_contributions f ON f.id = i.public_contribution_id
-       LEFT JOIN showings s ON s.id = i.showing_id
+       LEFT JOIN releases s ON s.id = i.release_id
       WHERE ($1::uuid IS NULL OR i.node_id = $1) ORDER BY i.received_at DESC, i.id LIMIT 200`,
     [opts.nodeId ?? null]
   );
@@ -370,7 +370,7 @@ export async function inboundOverview(opts: { nodeId?: string } = {}): Promise<R
       received_at: r.received_at.toISOString(),
       // The label the page it was made through was written at, where its reassessment is opened and paid for.
       page_label: r.page_label ?? { withheld: true as const },
-      ...(r.showing_id ? { showing_id: r.showing_id } : {}),
+      ...(r.release_id ? { release_id: r.release_id } : {}),
       ...(r.content !== null ? { text_written_outside_this_deployment: r.content, addresses_it_cites: r.evidence_urls ?? [] } : {}),
       ...(r.repeats ? { repeats: r.repeats } : {}),
       ...(r.delivered_at ? { given_to_the_steward_at: r.delivered_at.toISOString() } : {}),

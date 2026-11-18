@@ -722,7 +722,7 @@ export function RequestView({ r, cards }: { r: RequestItem; cards: Map<string, C
                 {takenUp.map((t) => (
                   <li key={`${t.account_id}-${t.at}`}>
                     {t.in_words}{" "}
-                    {t.published_page_id && t.node_id && t.followed === "a_page_shown" && (
+                    {t.published_page_id && t.node_id && t.followed === "a_page_released" && (
                       <a href={`/claims/${t.node_id}?published=${t.published_page_id}`}>Read the page</a>
                     )}
                   </li>

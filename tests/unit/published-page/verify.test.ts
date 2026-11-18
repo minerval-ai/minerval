@@ -9,7 +9,15 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { sign as cryptoSign } from "node:crypto";
-import { VERDICT_DESCRIPTOR, newSalt, pageRoot, partCommitment } from "../../../src/services/page-fingerprint.js";
+import {
+  FINGERPRINT_FORMAT,
+  FINGERPRINT_FORMAT_1,
+  VERDICT_DESCRIPTOR,
+  newSalt,
+  pageRoot,
+  partCommitment,
+  type FingerprintFormat,
+} from "../../../src/services/page-fingerprint.js";
 import { applyRemovals, heldWords, kindWords } from "../../../src/services/page-parts.js";
 import { hashPolicy } from "../../../src/services/redaction-policy.js";
 import { generateSigningKey, keyIdOf, parseSigningKey } from "../../../src/services/mirror-batch.js";
@@ -17,6 +25,8 @@ import { canonicalContent } from "../../../src/services/run-log.js";
 import { kindInWords, publishedPageAsText, shapeOfPublishedPage } from "../../../src/published-page/shape.js";
 import {
   PUBLISHED_PAGE_FORMAT,
+  PUBLISHED_PAGE_FORMAT_1,
+  currentPackage,
   keyIdOfPublicKey,
   packageHash,
   verifyPublishedPage,
@@ -31,9 +41,15 @@ async function sign(body: Omit<PublishedPagePackage, "hash" | "signature">, pem 
   return { ...body, hash, signature: cryptoSign(null, Buffer.from(hash, "hex"), parseSigningKey(pem)).toString("base64") };
 }
 
+function withoutSeal(pkg: PublishedPagePackage): Omit<PublishedPagePackage, "hash" | "signature"> {
+  const { hash: _h, signature: _s, ...body } = pkg;
+  return body;
+}
+
 /** A page with a marked removal, an argument each way and one part held. */
-async function example(opts: { shown?: boolean } = {}): Promise<PublishedPagePackage> {
-  const shown = opts.shown !== false;
+async function example(opts: { released?: boolean; fingerprintFormat?: FingerprintFormat } = {}): Promise<PublishedPagePackage> {
+  const shown = opts.released !== false;
+  const fingerprintFormat = opts.fingerprintFormat ?? FINGERPRINT_FORMAT;
   const policy = "# Redaction policy, version 1\n\n## Categories\n\n### commercial figures\n";
   const reasoning = applyRemovals("The meters show 4711 units against a target of 4500.", [{ start: 16, end: 26, category: "commercial figures" }]);
   const written: Array<{ kind: string; descriptor: string; text: string; marks: { at: number; category: string }[]; held?: boolean }> = [
@@ -45,7 +61,7 @@ async function example(opts: { shown?: boolean } = {}): Promise<PublishedPagePac
     { kind: "subclaim", descriptor: "subclaim", text: "Subclaim (supports): The meters were calibrated\n\nCalibrated meters make the count reliable.", marks: [] },
   ];
   const header = JSON.stringify({
-    format: "minerval-shown-page/1",
+    format: fingerprintFormat,
     node_kind: "claim",
     verdict: { status: "supported", confidence: 0.8, credence: 0.85 },
     judged_at: "2026-10-12T00:00:00.000Z",
@@ -65,14 +81,14 @@ async function example(opts: { shown?: boolean } = {}): Promise<PublishedPagePac
       : { part: i + 1, kind: w.kind, descriptor: w.descriptor, hash, held: { by: ["Acme"], reasons: w.held ? ["confidential to the party"] : [], since: w.held ? "2026-10-13T00:00:00.000Z" : null } };
   });
   const headerHash = partCommitment(headerSalt, header, []);
-  const fingerprint = pageRoot([{ position: 0, descriptor: VERDICT_DESCRIPTOR, commitment: headerHash }, ...parts.map((p) => ({ position: p.part, descriptor: p.descriptor, commitment: p.hash }))]);
+  const fingerprint = pageRoot([{ position: 0, descriptor: VERDICT_DESCRIPTOR, commitment: headerHash }, ...parts.map((p) => ({ position: p.part, descriptor: p.descriptor, commitment: p.hash }))], fingerprintFormat);
   const state = shown ? "released_in_part" : "held";
   return sign({
     format: PUBLISHED_PAGE_FORMAT,
     publisher: { key_id: key.keyId, public_key: key.publicKey },
     deployment: { hosting: "own_machines", attested_by: "nothing" },
-    showing: { id: "11111111-1111-4111-8111-111111111111", form: "standing", scope: "node", asked_at: "2026-09-08T00:00:00.000Z", send: "by_a_person_each_time", ended: null },
-    node: { public_id: "22222222-2222-4222-8222-222222222222", covered_from: "2026-09-08T00:00:00.000Z", first_assessed_at: "2026-10-12T00:00:00.000Z", showing_began: "before the node was first assessed", left: null },
+    release: { id: "11111111-1111-4111-8111-111111111111", form: "standing", scope: "node", asked_at: "2026-09-08T00:00:00.000Z", send: "by_a_person_each_time", ended: null },
+    node: { public_id: "22222222-2222-4222-8222-222222222222", covered_from: "2026-09-08T00:00:00.000Z", first_assessed_at: "2026-10-12T00:00:00.000Z", release_began: "before the node was first assessed", left: null },
     sequence: 1,
     previous_hash: null,
     state,
@@ -81,19 +97,20 @@ async function example(opts: { shown?: boolean } = {}): Promise<PublishedPagePac
       version_of: "2026-10-12T00:00:00.000Z",
       state,
       held: shown ? null : { because: "waiting on Acme", since: "2026-10-12T01:00:00.000Z" },
-      shown_at: shown ? "2026-10-14T00:00:00.000Z" : null,
+      released_at: shown ? "2026-10-14T00:00:00.000Z" : null,
       redaction_round: 1,
       fingerprint,
+      fingerprint_format: fingerprintFormat,
       earlier_fingerprints: [],
-      always_shown: shown ? { text: header, salt: headerSalt } : null,
-      always_shown_hash: headerHash,
+      always_released: shown ? { text: header, salt: headerSalt } : null,
+      always_released_hash: headerHash,
       parts,
       audit: shown ? "The reasoning shown supports the verdict in part." : null,
     },
     policy: shown ? { version: 1, hash: hashPolicy(policy), text: policy } : null,
     record: {
       made: shown ? { prompt_set: "ab".repeat(32), assessed_by_model: "a-model", redacted_by_model: "r-model", role_additions: [], run_log: { sealed: true, seal: "cd".repeat(32), steps: 12, chain_verifies: true }, paid_for: { by: "a mandate", stake: "its funder declared no stake in the subject" } } : null,
-      acts: [{ at: "2026-09-08T00:00:00.000Z", what: "asked for the showing", by: "person 1", holding: ["direct"] }],
+      acts: [{ at: "2026-09-08T00:00:00.000Z", what: "asked for the release", by: "person 1", holding: ["direct"] }],
       versions: [{ page_id: "33333333-3333-4333-8333-333333333333", version_of: "2026-10-12T00:00:00.000Z", state, fingerprint }],
     },
     built_at: "2026-10-14T00:00:01.000Z",
@@ -118,6 +135,62 @@ describe("the check of a published page", () => {
     expect((await verifyPublishedPage(JSON.stringify(pkg))).ok).toBe(true);
   });
 
+  it("checks a package signed in the format before, where the release was called a showing, and reads it in the current names", async () => {
+    // A package of minerval-published-page/1, as a deployment signed it before the rename: its page fingerprinted
+    // under the old construction, with no name for it, and the package's fields under their old names, with the
+    // old words of its acts.
+    const now = await example();
+    const before = await example({ fingerprintFormat: FINGERPRINT_FORMAT_1 });
+    const { hash: _h, signature: _s, release, node, page, record, ...rest } = before;
+    const { release_began, ...nodeRest } = node;
+    const { released_at, always_released, always_released_hash, fingerprint_format: _f, ...pageRest } = page!;
+    const old = await sign({
+      ...rest,
+      format: PUBLISHED_PAGE_FORMAT_1,
+      showing: release,
+      node: { ...nodeRest, showing_began: release_began },
+      page: { ...pageRest, shown_at: released_at, always_shown: always_released, always_shown_hash: always_released_hash },
+      record: {
+        ...record,
+        acts: [{ at: "2026-09-08T00:00:00.000Z", what: "asked for the showing", by: "person 1", holding: ["direct", "release for Acme"] }],
+        versions: record.versions.map(({ released_at: at, ...v }) => ({ ...v, ...(at ? { shown_at: at } : {}) })),
+      },
+    } as unknown as Omit<PublishedPagePackage, "hash" | "signature">);
+    expect(JSON.stringify(old)).not.toMatch(/"release"|released_at|always_released|fingerprint_format/);
+    expect(old).not.toHaveProperty("release");
+    const check = await verifyPublishedPage(old, { publisherKey: key.publicKey });
+    expect(check.failed).toEqual([]);
+    expect(check.ok).toBe(true);
+    expect(check.confirmed[0]).toBe("The package's contents match its hash: nothing in it was changed after it was signed.");
+    expect(check.confirmed.some((c) => c.startsWith("The page rebuilds its fingerprint: 5 released parts are word for word"))).toBe(true);
+    // Its hash is taken under its own format: the same body under the current one is another hash.
+    expect(await packageHash({ ...(old as unknown as Record<string, unknown>), format: PUBLISHED_PAGE_FORMAT })).not.toBe(old.hash);
+    // Read in the current names, with what was signed beside it.
+    const read = currentPackage(old);
+    expect(read.release).toEqual(release);
+    expect(read.node.release_began).toBe("before the node was first assessed");
+    expect(read.page).toMatchObject({ released_at, always_released, always_released_hash, fingerprint_format: FINGERPRINT_FORMAT_1 });
+    expect(read.hash).toBe(old.hash);
+    expect(currentPackage(now)).toBe(now);
+    // Tampering with a /1 package is caught as with any other.
+    const altered = JSON.parse(JSON.stringify(old)) as Record<string, { form: string }>;
+    altered.showing!.form = "once";
+    expect((await verifyPublishedPage(altered)).ok).toBe(false);
+    // A /2 package names its page's construction, and is checked under that one alone.
+    expect((await verifyPublishedPage(now)).ok).toBe(true);
+    const misnamed = JSON.parse(JSON.stringify(now)) as PublishedPagePackage;
+    misnamed.page!.fingerprint_format = FINGERPRINT_FORMAT_1;
+    expect((await verifyPublishedPage(await sign(withoutSeal(misnamed)))).failed).toContain(
+      "The parts do not rebuild the page's fingerprint: a part was changed, moved, added or left out, or its kind is not the one recorded."
+    );
+    const unnamed = JSON.parse(JSON.stringify(now)) as PublishedPagePackage;
+    delete (unnamed.page as Partial<NonNullable<PublishedPagePackage["page"]>>).fingerprint_format;
+    expect((await verifyPublishedPage(await sign(withoutSeal(unnamed)))).failed[0]).toContain("its page does not name a construction of the fingerprint this check knows");
+    // A format this check does not read is refused for that.
+    const unknown = await verifyPublishedPage({ ...now, format: "minerval-published-page/9" });
+    expect(unknown.failed[0]).toContain('its format is "minerval-published-page/9" and this check reads "minerval-published-page/2" and "minerval-published-page/1"');
+  });
+
   it("without the publisher's key from elsewhere, says the signature is good and not whose key it is", async () => {
     const check = await verifyPublishedPage(await example());
     expect(check.ok).toBe(true);
@@ -125,7 +198,7 @@ describe("the check of a published page", () => {
   });
 
   it("checks a held page by its kinds and hashes alone", async () => {
-    const pkg = await example({ shown: false });
+    const pkg = await example({ released: false });
     const check = await verifyPublishedPage(pkg, { publisherKey: key.publicKey });
     expect(check.failed).toEqual([]);
     expect(check.confirmed.some((c) => c.startsWith("The page is held, and its 6 parts by kind and hash rebuild the fingerprint"))).toBe(true);
@@ -154,11 +227,11 @@ describe("the check of a published page", () => {
   it("checks a package from a release of a mandate's work or a whole boundary, and refuses a scope no page is released under", async () => {
     const { hash: _h, signature: _s, ...body } = await example();
     for (const scope of ["mandate", "boundary"] as const) {
-      const check = await verifyPublishedPage(await sign({ ...body, showing: { ...body.showing, scope } }), { publisherKey: key.publicKey });
+      const check = await verifyPublishedPage(await sign({ ...body, release: { ...body.release, scope } }), { publisherKey: key.publicKey });
       expect(check.failed).toEqual([]);
       expect(check.ok).toBe(true);
     }
-    const item = await verifyPublishedPage(await sign({ ...body, showing: { ...body.showing, scope: "item" as never } }), { publisherKey: key.publicKey });
+    const item = await verifyPublishedPage(await sign({ ...body, release: { ...body.release, scope: "item" as never } }), { publisherKey: key.publicKey });
     expect(item.ok).toBe(false);
     expect(item.failed.join(" ")).toMatch(/does not describe the release/);
   });
@@ -217,7 +290,7 @@ describe("a published page in the shape of a node's page", () => {
     expect(shape.readings[0]).toMatchObject({ stance: "affirms", passage: "Output was above target.\n\nIt was so in every month.", context: "The annual report.", how_read: "supports. A direct statement." });
     expect(shape.subclaims[0]).toEqual({ part: 6, relation: "supports", wording: "The meters were calibrated", reasoning: "Calibrated meters make the count reliable." });
     expect([shape.parts, shape.held_parts, shape.held_kinds]).toEqual([6, 1, "an argument against"]);
-    expect(shapeOfPublishedPage(await example({ shown: false }))).toBeNull();
+    expect(shapeOfPublishedPage(await example({ released: false }))).toBeNull();
   });
 
   it("names kinds of part in the words the deployment's own pages use", () => {

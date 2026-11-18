@@ -66,7 +66,7 @@ export default async function PartiesPage({ searchParams }: { searchParams: Prom
   // The organisation itself is a party from setup, under a name that stands in
   // for its own until an administrator gives it; it is offered until then.
   const ownOffered = !ownParty || ownParty.name === OWN_ORGANISATION_SETUP_NAME;
-  const release = grants.filter((g) => g.permission === "release" && !g.removed_at);
+  const release = grants.filter((g) => g.permission === "consent" && !g.removed_at);
   const unassigned = unassignedList?.total ?? checklist?.material.sources_with_no_party ?? null;
   const listed = unassignedList?.sources ?? [];
   // A source is also named by its address: to change one that has a party,

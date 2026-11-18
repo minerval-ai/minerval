@@ -172,7 +172,7 @@ export function labelNote(
       `it. ${whoReads}${othersRows}${mirror ? ` ${MIRROR_NOT_CHANGED}` : ""}${reports}`,
     opts.posture ?? "",
     judgments,
-    opts.writesJudgments ? shownBelowNote(label) : "",
+    opts.writesJudgments ? releasedBelowNote(label) : "",
     `If the work cannot be done well on what this label can read, say so in what you record, so that ` +
       `whoever reads it or pays for the next pass knows what it rests on.`,
     opts.askable ?? "",
@@ -182,12 +182,12 @@ export function labelNote(
 
 /**
  * What a run that records judgments is told about its page being released to
- * readers who do not read its label (services/showing-service.ts). One
+ * readers who do not read its label (services/release-service.ts). One
  * passage, separate from the rest of the note: what the machinery does,
  * why, that the run writes what it concludes either way, and the one thing
  * it may do about it.
  */
-export function shownBelowNote(label: string): string {
+export function releasedBelowNote(label: string): string {
   const own = tick(label);
   return (
     `## Releasing a page to readers who do not read its label\n\n` +

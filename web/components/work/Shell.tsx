@@ -14,7 +14,7 @@ import { Sidebar } from "./Sidebar";
 const ROLE_ORDER: Array<[string, string]> = [
   ["administer", "Administrator"],
   ["direct", "Directs the graph"],
-  ["release", "Consents for a party"],
+  ["consent", "Consents for a party"],
   ["fund", "Funds work"],
 ];
 

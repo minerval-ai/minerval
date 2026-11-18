@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { actWords, storedWords } from "@/lib/stored-words";
+import { actWords, holdingWords, storedWords } from "@/lib/stored-words";
 import type { ClaimDetail, Assessment, Stance } from "@/lib/types";
 import type { ArgumentGroup } from "@/lib/ontology";
 import { RELATION, DEFINED_IN } from "@/lib/ontology";
 import type { PublishedPageSummary, PublishedPageView } from "@/lib/published";
-import { SEALED_TAB, day, showingWords, stateWords } from "@/lib/published";
+import { SEALED_TAB, day, releaseWords, stateWords } from "@/lib/published";
 import type { Block, PublishedPageShape } from "@/lib/published-page/shape";
 import { modelDisplayName } from "@/lib/model-names";
 import { ArgumentBlock } from "../DecompositionTree";
@@ -80,7 +80,7 @@ export function PublishedNotes({ claimId, published }: { claimId: string; publis
               )
             ) : (
               <>
-                {p.publisher.name}&rsquo;s graph shows its page of this claim. {showingWords(p)} No page has been released.
+                {p.publisher.name}&rsquo;s graph shows its page of this claim. {releaseWords(p)} No page has been released.
               </>
             )}{" "}
             {p.state === "held" || p.state === "not_yet_assessed" ? <>Its latest version there: {stateWords(p).toLowerCase()}.</> : null}
@@ -174,7 +174,7 @@ export function TakenOut({ view }: { view: PublishedPageView }) {
         <p className="published-later" style={quiet}>
           <span className="held-mark" aria-hidden /> A later version, of {day(view.version_of)}, exists and is not released
           {view.held?.because ? `: ${storedWords(view.held.because)}` : ""}
-          {view.held?.since ? `, since ${day(view.held.since)}` : ""}. What follows is the version of {day(view.shown_version_of)}.
+          {view.held?.since ? `, since ${day(view.held.since)}` : ""}. What follows is the version of {day(view.released_version_of)}.
         </p>
       )}
       {view.ended && (
@@ -194,7 +194,7 @@ export function OtherVerdict({ view }: { view: PublishedPageView }) {
     <div className="claim-assess">
       <span>{"estimate" in v ? `Estimate: ${estimateAsRecorded(v.estimate)}` : `Standing: ${String(v.standing).replace(/_/g, " ")}`}</span>
       <span className="assess-when">
-        version of {day(view.shown_version_of)}
+        version of {day(view.released_version_of)}
         {view.page?.assessed_by_model ? ` · ${modelDisplayName(view.page.assessed_by_model)}` : ""}
       </span>
     </div>
@@ -448,7 +448,7 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
         <Row label="Where it was made">
           {view.publisher.runs_on.charAt(0).toUpperCase() + view.publisher.runs_on.slice(1)}, by the publisher&rsquo;s own statement. {view.publisher.attested_by.charAt(0).toUpperCase() + view.publisher.attested_by.slice(1)}.
         </Row>
-        <Row label="Published">{showingWords(view)}</Row>
+        <Row label="Published">{releaseWords(view)}</Row>
         <Row label="Public versions">{keepsCurrentWords(view.keeps_public_versions_current)}</Row>
         <Row label="Sent">{view.record.sent.charAt(0).toUpperCase() + view.record.sent.slice(1)}. Package {view.package} of {view.packages.length}, received {day(view.received_at)}.</Row>
         {made && (
@@ -490,7 +490,7 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
             {view.record.acts.map((a, i) => (
               <li key={i}>
                 {day(a.at)}: {a.by}
-                {a.holding.length > 0 ? `, holding ${a.holding.join(" and ")},` : ""} {actWords(a.what)}
+                {a.holding.length > 0 ? `, holding ${holdingWords(a.holding).join(" and ")},` : ""} {actWords(a.what)}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
                 {a.reason ? ` (${storedWords(a.reason)})` : ""}
@@ -505,7 +505,7 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
               <li key={v.page_id}>
                 <span className="held-mark" aria-hidden /> Version of {day(v.version_of)}:{" "}
                 {stateWords({ state: v.state, parts: v.of_parts, parts_held: v.parts_held, held_kinds: v.held_kinds, held: { because: v.held_because ?? null, since: v.held_since ?? null } })}
-                {v.shown_at ? `; released ${day(v.shown_at)}` : ""}
+                {v.released_at ? `; released ${day(v.released_at)}` : ""}
               </li>
             ))}
           </ul>

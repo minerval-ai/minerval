@@ -7,7 +7,7 @@
  * already holds, as counts and dates: pages published and in which form,
  * what is held and for how long, pages released whole and in part,
  * contributions made through its pages and what followed, requests it said
- * it was taking up and what followed, showings ended, and where this
+ * it was taking up and what followed, releases ended, and where this
  * graph's own later assessment of a node stands nearer to or further from
  * what a published page said. Nothing here is a score, and nothing says how
  * far a publisher is to be believed: the facts are shown to readers on the
@@ -19,7 +19,7 @@
  */
 import { rawQuery } from "../db/client.js";
 import { shapeOfPublishedPage } from "../published-page/shape.js";
-import type { PackageSaidBack, PublishedPagePackage } from "../published-page/verify.js";
+import { currentPackage, type PackageSaidBack, type PublishedPagePackage } from "../published-page/verify.js";
 import { takenUpOn } from "./request-take-up-service.js";
 
 const day = (iso: string | Date | null | undefined) => (iso ? new Date(iso).toISOString().slice(0, 10) : "a date not recorded");
@@ -86,8 +86,8 @@ export function answerOf(input: {
   return {
     state: "made",
     in_words:
-      pkg?.showing.form === "once"
-        ? `${received} A reassessment was made there on ${day(madeAt)}. The page was shown once, with nothing undertaken about later versions, so it is not published under this showing.`
+      pkg?.release.form === "once"
+        ? `${received} A reassessment was made there on ${day(madeAt)}. The page was released once, with nothing undertaken about later versions, so it is not published under this release.`
         : `${received} A reassessment was made there on ${day(madeAt)}. No version of it has been published or held yet.`,
   };
 }
@@ -113,7 +113,7 @@ export async function saidBackOnPage(publishedPageId: string): Promise<SaidBackE
     type: r.contribution_type,
     submitted_at: r.submitted_at.toISOString(),
     review: r.review_status === "accepted" ? "admitted" : r.review_status === "rejected" ? "not admitted" : "waiting for review",
-    ...answerOf({ publisher: publication.publisher, reviewStatus: r.review_status, entry: said.find((e) => e.contribution === r.id), pkg: latest?.package }),
+    ...answerOf({ publisher: publication.publisher, reviewStatus: r.review_status, entry: said.find((e) => e.contribution === r.id), pkg: latest ? currentPackage(latest.package) : undefined }),
   }));
 }
 
@@ -133,10 +133,10 @@ export async function answerToContribution(contributionId: string): Promise<{ pu
 // ---- the publisher's record ------------------------------------------------------------------
 
 export interface PublisherFacts {
-  pages: { published: number; standing: number; shown_once: number; with_what_sits_under: number };
+  pages: { published: number; standing: number; released_once: number; with_what_sits_under: number };
   now: { released_whole: number; released_in_part: number; held: number; not_yet_assessed: number };
   holds: { held_now_for_days: number[]; versions_ever_held: number };
-  showings_ended: number;
+  releases_ended: number;
   said_back: { admitted: number; received: number; published_since: number; held_since: number; unanswered: number; other: number };
   requests_taken_up: { total: number; a_page_followed: number; declined: number; nothing_yet: number; nothing_yet_for_days: number[] };
   later_assessments: { toward: number; away: number; unchanged: number; none_yet: number };
@@ -157,10 +157,10 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
     [accountId, opts.except ?? null]
   );
   const facts: PublisherFacts = {
-    pages: { published: publications.length, standing: 0, shown_once: 0, with_what_sits_under: 0 },
+    pages: { published: publications.length, standing: 0, released_once: 0, with_what_sits_under: 0 },
     now: { released_whole: 0, released_in_part: 0, held: 0, not_yet_assessed: 0 },
     holds: { held_now_for_days: [], versions_ever_held: 0 },
-    showings_ended: 0,
+    releases_ended: 0,
     said_back: { admitted: 0, received: 0, published_since: 0, held_since: 0, unanswered: 0, other: 0 },
     requests_taken_up: { total: 0, a_page_followed: 0, declined: 0, nothing_yet: 0, nothing_yet_for_days: [] },
     later_assessments: { toward: 0, away: 0, unchanged: 0, none_yet: 0 },
@@ -170,12 +170,13 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
       `SELECT sequence, package, received_at FROM published_page_packages WHERE published_page_id = $1 ORDER BY sequence`,
       [p.id]
     );
-    const latest = packages[packages.length - 1]?.package;
+    const last = packages[packages.length - 1]?.package;
+    const latest = last ? currentPackage(last) : undefined;
     if (!latest) continue;
-    if (latest.showing.form === "standing") facts.pages.standing++;
-    else facts.pages.shown_once++;
-    if (latest.showing.scope === "under") facts.pages.with_what_sits_under++;
-    if (latest.showing.ended) facts.showings_ended++;
+    if (latest.release.form === "standing") facts.pages.standing++;
+    else facts.pages.released_once++;
+    if (latest.release.scope === "under") facts.pages.with_what_sits_under++;
+    if (latest.release.ended) facts.releases_ended++;
     facts.now[latest.state]++;
     const versions = latest.record.versions;
     facts.holds.versions_ever_held += versions.filter((v) => v.state === "held").length;
@@ -193,15 +194,15 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
       else facts.said_back.other++;
     }
     // Where this graph assessed the node again after the page first arrived with a verdict: nearer to it, or further.
-    const firstShown = packages.find((k) => credenceOf(k.package) !== null);
-    if (firstShown) {
-      const page = credenceOf(firstShown.package)!;
+    const firstReleased = packages.find((k) => credenceOf(k.package) !== null);
+    if (firstReleased) {
+      const page = credenceOf(firstReleased.package)!;
       const history = await rawQuery<{ credence: number | null; at: Date }>(
         `SELECT claim_credence AS credence, assessed_at AS at FROM assessments WHERE claim_id = $1 AND claim_credence IS NOT NULL ORDER BY assessed_at`,
         [p.node_id]
       );
-      const before = [...history].filter((h) => h.at.getTime() < firstShown.received_at.getTime()).pop();
-      const after = [...history].filter((h) => h.at.getTime() >= firstShown.received_at.getTime()).pop();
+      const before = [...history].filter((h) => h.at.getTime() < firstReleased.received_at.getTime()).pop();
+      const after = [...history].filter((h) => h.at.getTime() >= firstReleased.received_at.getTime()).pop();
       if (!after || !before) facts.later_assessments.none_yet++;
       else {
         const moved = Math.abs(Number(before.credence) - page) - Math.abs(Number(after.credence) - page);
@@ -216,7 +217,7 @@ export async function publisherFacts(accountId: string, opts: { except?: string 
   for (const list of taken.values()) {
     for (const t of list.filter((x) => x.account_id === accountId)) {
       facts.requests_taken_up.total++;
-      if (t.followed === "a_page_shown") facts.requests_taken_up.a_page_followed++;
+      if (t.followed === "a_page_released") facts.requests_taken_up.a_page_followed++;
       else if (t.followed === "declined") facts.requests_taken_up.declined++;
       else {
         facts.requests_taken_up.nothing_yet++;
@@ -240,7 +241,7 @@ export function publisherFactsLines(facts: PublisherFacts, of: "its pages" | "it
   const p = facts.pages;
   if (p.published > 0) {
     lines.push(
-      `${of === "its other pages" ? "Other pages it has published here" : "Pages it has published here"}: ${p.published} (${p.standing} kept published so that each later version follows, ${p.shown_once} shown once` +
+      `${of === "its other pages" ? "Other pages it has published here" : "Pages it has published here"}: ${p.published} (${p.standing} kept published so that each later version follows, ${p.released_once} released once` +
         (p.with_what_sits_under > 0 ? `; ${p.with_what_sits_under} with what sits under the node` : "") +
         ")."
     );
@@ -249,7 +250,7 @@ export function publisherFactsLines(facts: PublisherFacts, of: "its pages" | "it
     lines.push(
       `As they stand: ${now.released_whole} released whole, ${now.released_in_part} released in part, ${now.held} held` +
         (held.length > 0 ? ` (for ${held.map((d) => n(d, "day", "days")).join(", ")})` : "") +
-        `, ${now.not_yet_assessed} not yet assessed. Versions held at some time: ${facts.holds.versions_ever_held}. Showings ended: ${facts.showings_ended}.`
+        `, ${now.not_yet_assessed} not yet assessed. Versions held at some time: ${facts.holds.versions_ever_held}. Releases ended: ${facts.releases_ended}.`
     );
     const s = facts.said_back;
     lines.push(

@@ -1,5 +1,5 @@
 /**
- * The Redactor's tools (prompts/redactor.ts; services/showing-service.ts).
+ * The Redactor's tools (prompts/redactor.ts; services/release-service.ts).
  *
  * A Redactor's run is given one page and works on that page alone: the
  * tools take no page id from the model. They remove and mark, and nothing
@@ -12,15 +12,15 @@ import { redactorActs } from "../../services/release-gate-service.js";
 import { policyById } from "../../services/redaction-policy.js";
 import { describeIdShape, isMalformedIdError } from "../seen-ids.js";
 import {
-  ShowingError,
+  ReleaseError,
   finishRedaction,
   pageToRedact,
   redactPassage,
   restorePassage,
-  showingPage,
+  releasePage,
   sourceBehindPage,
   whatTheDestinationHolds,
-} from "../../services/showing-service.js";
+} from "../../services/release-service.js";
 
 export const REDACTOR_TOOL_NAMES = [
   "get_redaction_policy",
@@ -45,7 +45,7 @@ export function getRedactorToolDefinitions(): ToolUnion[] {
     {
       name: "get_page_to_redact",
       description:
-        "The item as written, and how this gate is set for it (gate): what is always shown with it (always_shown), each part with its number, its kind and its text, the removals made so far, and the sources the page rests on with their labels. These are the sources the release gate counts for the page, so a reading or an analysis a judgment rests on, and a source cited through an argument or a subclaim, are among them. With source_id, returns that source's stored text instead, 20,000 characters at a time from offset, so that you can tell what a passage gives away.",
+        "The item as written, and how this gate is set for it (gate): what is always shown with it (always_released), each part with its number, its kind and its text, the removals made so far, and the sources the page rests on with their labels. These are the sources the release gate counts for the page, so a reading or an analysis a judgment rests on, and a source cited through an argument or a subclaim, are among them. With source_id, returns that source's stored text instead, 20,000 characters at a time from offset, so that you can tell what a passage gives away.",
       input_schema: {
         type: "object",
         properties: {
@@ -176,7 +176,7 @@ export async function executeRedactorTool(
   try {
     switch (name) {
       case "get_redaction_policy": {
-        const page = await showingPage(ctx.pageId);
+        const page = await releasePage(ctx.pageId);
         const policy = page ? await policyById(page.policy_id) : null;
         if (!policy) return answer({ success: false, message: "This page's policy could not be read." });
         return answer({ success: true, version: policy.version, policy: policy.body, category_names: policy.categories.map((c) => c.name) });
@@ -250,7 +250,7 @@ export async function executeRedactorTool(
         return answer({ success: false, message: `Unknown tool: ${name}` });
     }
   } catch (err) {
-    if (err instanceof ShowingError) return answer({ success: false, code: err.code, message: err.message });
+    if (err instanceof ReleaseError) return answer({ success: false, code: err.code, message: err.message });
     // A mistyped id (a removal's or a source's) reaches the database as a syntax error (22P02). It is the
     // model's slip, so the run is told which id and goes on, rather than ending on the database's words.
     if (isMalformedIdError(err)) {

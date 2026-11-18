@@ -104,7 +104,7 @@ export function QueueForm({
           >
             i
           </span>
-          <button className="w-btn w-sm" type="submit" name="decision" value="release" disabled={pending} title={`${acts.release ?? "Consent."} Can't be undone.`}>
+          <button className="w-btn w-sm" type="submit" name="decision" value="consent" disabled={pending} title={`${acts.consent ?? "Consent."} Can't be undone.`}>
             <Icon name="lock" size={13} />
             Consent
           </button>

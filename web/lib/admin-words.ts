@@ -55,7 +55,7 @@ export function holdersText(h: Holders): string {
 /** What each permission is called on a page, and in the middle of a sentence. */
 const PERMISSION_WORDS: Record<string, { name: string; to: string }> = {
   direct: { name: "Direct the graph", to: "direct the graph" },
-  release: { name: "Consent for a party", to: "consent for a party" },
+  consent: { name: "Consent for a party", to: "consent for a party" },
   fund: { name: "Fund work", to: "fund work" },
   read: { name: "Read at a label", to: "read at a label" },
   read_sources: { name: "Open raw sources at a label", to: "open raw sources at a label" },
@@ -73,7 +73,7 @@ export function permissionName(permission: string): string {
 /** The permission in a word or two, for a chip: "Read", "Raw sources", "Clear providers". */
 const PERMISSION_SHORT: Record<string, string> = {
   direct: "Direct",
-  release: "Consent",
+  consent: "Consent",
   fund: "Fund",
   read: "Read",
   read_sources: "Raw sources",
@@ -98,7 +98,7 @@ export function grantText(grant: {
 }): string {
   if (grant.permission === "read" && grant.label) return `read at ${grant.label}`;
   if (grant.permission === "read_sources" && grant.label) return `open raw sources at ${grant.label}`;
-  if (grant.permission === "release" && grant.party) return `consent for ${grant.party.name}`;
+  if (grant.permission === "consent" && grant.party) return `consent for ${grant.party.name}`;
   return permissionPhrase(grant.permission);
 }
 
@@ -770,7 +770,7 @@ export function logSentence(entry: LogEntry): string {
       ? `read at ${labelWords(entry.label)}`
       : entry.permission === "read_sources"
         ? `open raw sources at ${labelWords(entry.label)}`
-        : entry.permission === "release"
+        : entry.permission === "consent"
           ? `consent for ${partyWords(entry.party)}`
           : permissionPhrase(entry.permission ?? "");
   switch (entry.event) {
