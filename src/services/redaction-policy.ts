@@ -373,17 +373,62 @@ export async function ensureBoundaryPolicy(boundary: Boundary): Promise<PolicyVi
   return saved.policy;
 }
 
+/** Who saved a version, by display name: null for a version the system saved (the starting text, or the fixed sections reworded). */
+const SAVED_BY = `(SELECT c.display_name FROM contributors c WHERE c.id = redaction_policies.saved_by) AS saved_by_name`;
+
+export type ReadablePolicy = PolicyView & {
+  side: "page" | "destination";
+  from: string | null;
+  to: string | null;
+  to_outside: boolean;
+  /** Who saved it, by display name; null where the system saved it. */
+  saved_by: string | null;
+  /** Whether it is the boundary's newest version, the one in force. */
+  in_force: boolean;
+};
+
 /**
- * The policies the caller may read, newest version of each boundary first:
- * those of boundaries it is on the destination side of, and those at a
- * label it reads. `side` says which a row is; a destination row names no
- * label of origin.
+ * The policies the caller may read, one row for each version of a
+ * boundary: the page's side where the caller reads it, else the
+ * destination's, which names no label of origin (`side` says which).
+ * Without `all`, only the version in force at each boundary; with it,
+ * every version, newest first. `boundaryId` keeps to one boundary.
  */
-export async function readablePolicies(): Promise<Array<PolicyView & { side: "page" | "destination"; from: string | null; to: string | null; to_outside: boolean }>> {
-  const rows = await rawQuery<PolicyRow & { side: "page" | "destination"; from_label: string | null; to_label: string | null; to_outside: boolean }>(
-    `SELECT DISTINCT ON (boundary_id, side) ${COLUMNS}, side, from_label, to_label, to_outside
+export async function readablePolicies(input: { boundaryId?: string | null; all?: boolean } = {}): Promise<ReadablePolicy[]> {
+  const rows = await rawQuery<
+    PolicyRow & { side: "page" | "destination"; from_label: string | null; to_label: string | null; to_outside: boolean; saved_by_name: string | null }
+  >(
+    `SELECT DISTINCT ON (boundary_id, version) ${COLUMNS}, side, from_label, to_label, to_outside, ${SAVED_BY}
        FROM redaction_policies
-      ORDER BY boundary_id, side, version DESC`
+      WHERE ($1::uuid IS NULL OR boundary_id = $1::uuid)
+      ORDER BY boundary_id, version DESC, (side = 'page') DESC`,
+    [input.boundaryId ?? null]
   );
-  return rows.map((r) => ({ ...policyView(r), side: r.side, from: r.from_label, to: r.to_label, to_outside: r.to_outside }));
+  const newest = new Map<string, number>();
+  for (const r of rows) newest.set(r.boundary_id, Math.max(newest.get(r.boundary_id) ?? 0, r.version));
+  return rows
+    .filter((r) => input.all === true || r.version === newest.get(r.boundary_id))
+    .map((r) => ({
+      ...policyView(r),
+      side: r.side,
+      from: r.from_label,
+      to: r.to_label,
+      to_outside: r.to_outside,
+      saved_by: r.saved_by_name,
+      in_force: r.version === newest.get(r.boundary_id),
+    }));
+}
+
+/**
+ * One version by id, as a person reads it: with who saved it, by display
+ * name, and whether it is the version in force at its boundary.
+ */
+export async function policyVersionRecord(id: string): Promise<(PolicyView & { saved_by: string | null; in_force: boolean }) | null> {
+  const [row] = await rawQuery<PolicyRow & { saved_by_name: string | null; newest: number }>(
+    `SELECT ${COLUMNS}, ${SAVED_BY},
+            (SELECT max(o.version) FROM redaction_policies o WHERE o.boundary_id = redaction_policies.boundary_id) AS newest
+       FROM redaction_policies WHERE id = $1`,
+    [id]
+  );
+  return row ? { ...policyView(row), saved_by: row.saved_by_name, in_force: row.version >= row.newest } : null;
 }

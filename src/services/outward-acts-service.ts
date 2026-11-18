@@ -35,8 +35,8 @@
  *
  * Nothing here reads the live public graph to learn about a node or a
  * request: those reads are of the mirror. The only reads of the public
- * graph are of the organization's own account, its own mandates and its own
- * conversation with the public Grantmaker.
+ * graph are of the organization's own account, its own mandates, its own
+ * conversations with the public Grantmaker and its own record as a publisher.
  */
 import { loadConfig } from "../config.js";
 import { withSystemClearance } from "../db/clearance.js";
@@ -45,7 +45,8 @@ import { PUBLIC_LABEL } from "../labels.js";
 import type { PermissionName } from "../permissions.js";
 import { runAtLabel } from "../llm/usage-context.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
-import { OutboundError, answerOf, call, publicGraph, signedRegistration } from "./outbound-service.js";
+import { OutboundError, answerOf, call, publicGraph, signedRegistration, signingKeyId, type PublicGraph } from "./outbound-service.js";
+import { keyIdOf } from "./mirror-batch.js";
 import type { GateActor } from "./release-gate-service.js";
 import { DECLINE_REASONS, type DeclineReason } from "./request-take-up-service.js";
 
@@ -149,6 +150,8 @@ async function act(input: {
   path: string;
   body: Record<string, unknown>;
   publicRef?: string | null;
+  /** Where the public graph's id for what was acted on is known only from its answer (a conversation it opened): read from the answer when it took the act. */
+  refFrom?: (answer: Record<string, any>) => string | null;
   ok?: number[];
 }): Promise<Record<string, any>> {
   let graph;
@@ -168,7 +171,8 @@ async function act(input: {
   }
   const fine = (input.ok ?? [200, 201, 202]).includes(res.status);
   const said = fine ? String(res.json.in_words ?? res.json.note ?? "") : `${res.status}: ${answerOf(res.json)}`;
-  await logOutwardAct({ kind: input.kind, by: input.by, publicRef: input.publicRef, sent: input.body, result: fine ? "done" : "refused", said });
+  const publicRef = fine && input.refFrom ? (input.refFrom(res.json) ?? input.publicRef) : input.publicRef;
+  await logOutwardAct({ kind: input.kind, by: input.by, publicRef, sent: input.body, result: fine ? "done" : "refused", said });
   if (!fine) {
     throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not take this, and said: ${answerOf(res.json) || `status ${res.status}`}`, res.status === 402 ? 402 : 409);
   }
@@ -414,25 +418,42 @@ export const FUND_NODE_TOLD =
   "is public on the public graph under the organization's account. It shows outside that your organization wanted this node looked at, " +
   "and when. Nothing this deployment holds is sent.";
 
-/** The organization's account on the public graph: its balance of public owls and its public mandates. Reads its own account only. */
+/** The organization's account on the public graph: its balance of public owls, its public mandates, and its registration as a publisher. Reads its own account only. */
 export async function publicAccount(): Promise<Record<string, unknown>> {
   const who = `Holders of ${publicActsPermission()} may act on the public graph in the organization's name.`;
+  const key = signingKeyId();
   let graph;
   try {
     graph = publicGraph();
   } catch {
-    return { connected: false, in_words: NO_ACCOUNT_WORDS, who_may_act: who };
+    return { connected: false, in_words: NO_ACCOUNT_WORDS, who_may_act: who, signing_key_fingerprint: key, ...(await registrationOf(null, null, key)) };
   }
   try {
     const me = await call(graph, "GET", "/users/me");
     if (me.status !== 200) {
-      return { connected: false, in_words: `The public graph did not accept this deployment's key (${me.status}). An operator checks PUBLIC_GRAPH_API_KEY.`, who_may_act: who };
+      return {
+        connected: false,
+        in_words: `The public graph did not accept this deployment's key (${me.status}). An operator checks PUBLIC_GRAPH_API_KEY.`,
+        who_may_act: who,
+        signing_key_fingerprint: key,
+        ...(await registrationOf(null, null, key)),
+      };
     }
-    const grants = await call(graph, "GET", "/grants");
+    const accountId = typeof me.json.user?.id === "string" ? (me.json.user.id as string) : null;
+    const [grants, conversations, registration] = await Promise.all([
+      call(graph, "GET", "/grants"),
+      call(graph, "GET", "/grant-conversations?limit=100").catch(() => null),
+      registrationOf(graph, accountId ? { id: accountId, name: me.json.user?.display_name ?? null } : null, key),
+    ]);
     const list = (Array.isArray(grants.json.grants) ? grants.json.grants : []) as Array<Record<string, any>>;
+    // Which conversation with the public Grantmaker each mandate was funded from, where the account's own list says.
+    const conversationOf = new Map<string, string>();
+    for (const c of conversations?.status === 200 && Array.isArray(conversations.json.conversations) ? (conversations.json.conversations as Array<Record<string, any>>) : []) {
+      if (typeof c.grant_id === "string" && typeof c.id === "string") conversationOf.set(c.grant_id, c.id);
+    }
     return {
       connected: true,
-      account: { id: me.json.user?.id ?? null, name: me.json.user?.display_name ?? null },
+      account: { id: accountId, name: me.json.user?.display_name ?? null },
       public_owls: Number(me.json.entitlement?.owl_balance ?? 0),
       public_owls_statement:
         "Public owls are the organization's balance on the public graph, bought there. They pay for public work only, and owls created in this deployment never convert to them.",
@@ -442,22 +463,201 @@ export async function publicAccount(): Promise<Record<string, unknown>> {
         status: g.status ?? null,
         budget_owls: g.budget_owls ?? g.budget?.owls ?? null,
         spent_owls: g.spent_owls ?? g.spend?.owls ?? null,
+        conversation_id: conversationOf.get(g.id) ?? null,
         public: true,
       })),
       who_may_act: who,
       what_a_public_mandate_shows: PUBLIC_MANDATE_TOLD,
+      signing_key_fingerprint: key,
+      ...registration,
     };
   } catch (err) {
-    return { connected: false, in_words: `The public graph could not be reached: ${err instanceof Error ? err.message.slice(0, 300) : "no answer"}`, who_may_act: who };
+    return {
+      connected: false,
+      in_words: `The public graph could not be reached: ${err instanceof Error ? err.message.slice(0, 300) : "no answer"}`,
+      who_may_act: who,
+      signing_key_fingerprint: key,
+      ...(await registrationOf(null, null, key)),
+    };
   }
 }
+
+/** Where the deployment's signing key stands on the public graph, as GET /outside/account carries it. */
+export interface PublisherRegistration {
+  registered_at: string;
+  /** The registered key's short name: the sha256 of its public half, as the public graph names it. */
+  key_fingerprint: string;
+  /** The account the key is registered to: its id on the public graph and its name there, where known. */
+  account: { id: string | null; name: string | null };
+  declared_interest: string | null;
+  /** Whether the key registered is the one this deployment signs with now; null where it has no signing key. */
+  is_the_current_key: boolean | null;
+  /** Read from the public graph's record of the account, or, where that cannot be read, from this deployment's log of acts. */
+  read_from: "the public graph" | "this deployment's log";
+  /** The registration of this key made from here, by whom and when, where the log has one. */
+  registered_from_here: { at: string; by: string | null } | null;
+}
+
+const REGISTRATION_WORDS = {
+  current:
+    "The deployment's signing key is registered to the organization's account on the public graph, so the public graph takes pages signed with it from that account.",
+  other:
+    "A key is registered to the organization's account on the public graph, but not the one this deployment signs with now, so the public graph will not take a page it signs. An administrator registers the current key.",
+  none:
+    "No key of this deployment's is registered on the public graph, so the public graph will not take a page it signs. An administrator registers it (POST /outbound/registration/send).",
+  unknown: "This deployment has no signing key (PUBLISH_SIGNING_KEY), so it signs nothing.",
+} as const;
+
+/**
+ * The deployment's registration as a publisher on the public graph. Where
+ * the account can be read there, from the public graph's own record of it
+ * (`GET /publishers/:account_id`, a read of the organization's own account):
+ * the live registration of the current key, or else the newest live one.
+ * Where it cannot, from this deployment's log: the newest registration made
+ * from here that the public graph took. A key registered by a file sent
+ * from elsewhere is then not known.
+ */
+async function registrationOf(graph: PublicGraph | null, account: { id: string; name: string | null } | null, currentKey: string | null): Promise<{ registration: PublisherRegistration | null; registration_in_words: string }> {
+  const logged = await rawQuery<{ at: Date; by: string | null; public_key: string | null; declared_interest: string | null; account_id: string | null }>(
+    `SELECT a.at, c.display_name AS by, a.sent->>'public_key' AS public_key, a.sent->>'declared_interest' AS declared_interest, a.public_ref AS account_id
+       FROM outward_acts a LEFT JOIN contributors c ON c.id = a.acted_by
+      WHERE a.kind = 'register_publisher' AND a.result = 'done' ORDER BY a.at DESC`
+  );
+  const fromHere = logged.map((r) => ({ ...r, key_id: r.public_key ? keyIdOf(r.public_key) : null }));
+  const hereFor = (keyId: string) => {
+    const r = fromHere.find((x) => x.key_id === keyId);
+    return r ? { at: r.at.toISOString(), by: r.by } : null;
+  };
+  const said = (r: PublisherRegistration | null) =>
+    !currentKey ? REGISTRATION_WORDS.unknown : !r ? REGISTRATION_WORDS.none : r.is_the_current_key ? REGISTRATION_WORDS.current : REGISTRATION_WORDS.other;
+
+  if (graph && account) {
+    const res = await call(graph, "GET", `/publishers/${account.id}`).catch(() => null);
+    if (res?.status === 404) return { registration: null, registration_in_words: said(null) };
+    if (res?.status === 200) {
+      const live = ((Array.isArray(res.json.registrations) ? res.json.registrations : []) as Array<Record<string, any>>).filter((r) => !r.retired_at);
+      const chosen = live.find((r) => r.key_id === currentKey) ?? live[0];
+      if (!chosen) return { registration: null, registration_in_words: said(null) };
+      const registration: PublisherRegistration = {
+        registered_at: String(chosen.registered_at),
+        key_fingerprint: String(chosen.key_id),
+        account: { id: account.id, name: res.json.name ?? account.name },
+        declared_interest: chosen.declared_interest ?? null,
+        is_the_current_key: currentKey ? chosen.key_id === currentKey : null,
+        read_from: "the public graph",
+        registered_from_here: hereFor(String(chosen.key_id)),
+      };
+      return { registration, registration_in_words: said(registration) };
+    }
+  }
+  const newest = fromHere.find((r) => r.key_id === currentKey) ?? fromHere[0];
+  if (!newest?.key_id) return { registration: null, registration_in_words: said(null) };
+  const registration: PublisherRegistration = {
+    registered_at: newest.at.toISOString(),
+    key_fingerprint: newest.key_id,
+    account: { id: newest.account_id, name: null },
+    declared_interest: newest.declared_interest,
+    is_the_current_key: currentKey ? newest.key_id === currentKey : null,
+    read_from: "this deployment's log",
+    registered_from_here: { at: newest.at.toISOString(), by: newest.by },
+  };
+  return {
+    registration,
+    registration_in_words: `${said(registration)} This is read from this deployment's log of acts, because the public graph's record of the account could not be read.`,
+  };
+}
+
+// ---- the organization's conversations with the public Grantmaker ----------------------------------
+
+/**
+ * The organization's conversations with the public Grantmaker, newest first:
+ * those opened from here, as this deployment's log of acts records them
+ * (who opened each and when, how many messages were written to it from
+ * here, whether it was funded from here), with what the public graph says
+ * of each now (its draft's title, its state, and the public mandate it was
+ * funded as), read from the account's own list there. A conversation the
+ * account holds there that was not opened from here is listed too, and
+ * says so. Where the public graph cannot be read, the log alone answers.
+ */
+export async function publicConversations(): Promise<Record<string, unknown>> {
+  const rows = await rawQuery<{ kind: OutwardActKind; ref: string; at: Date; by: string | null }>(
+    `SELECT a.kind, a.public_ref AS ref, a.at, c.display_name AS by
+       FROM outward_acts a LEFT JOIN contributors c ON c.id = a.acted_by
+      WHERE a.kind IN ('open_public_mandate', 'public_mandate_message', 'fund_public_mandate') AND a.result = 'done' AND a.public_ref IS NOT NULL
+      ORDER BY a.at`
+  );
+  interface Here { opened: { at: Date; by: string | null } | null; messages: number; funded: { at: Date; by: string | null } | null; first: Date }
+  const here = new Map<string, Here>();
+  for (const r of rows) {
+    const h = here.get(r.ref) ?? { opened: null, messages: 0, funded: null, first: r.at };
+    if (r.kind === "open_public_mandate") h.opened ??= { at: r.at, by: r.by };
+    if (r.kind === "public_mandate_message") h.messages += 1;
+    if (r.kind === "fund_public_mandate") h.funded ??= { at: r.at, by: r.by };
+    here.set(r.ref, h);
+  }
+
+  let live: Map<string, Record<string, any>> | null = null;
+  let unread: string | null = null;
+  try {
+    const res = await call(publicGraph(), "GET", "/grant-conversations?limit=100");
+    if (res.status === 200 && Array.isArray(res.json.conversations)) {
+      live = new Map((res.json.conversations as Array<Record<string, any>>).filter((c) => typeof c.id === "string").map((c) => [c.id as string, c]));
+    } else {
+      unread = `The public graph said: ${answerOf(res.json) || res.status}`;
+    }
+  } catch (err) {
+    unread = err instanceof OutboundError ? NO_ACCOUNT_WORDS : `The public graph could not be reached: ${err instanceof Error ? err.message.slice(0, 300) : "no answer"}`;
+  }
+
+  const ids = new Set<string>([...here.keys(), ...(live?.keys() ?? [])]);
+  const conversations = [...ids].map((id) => {
+    const h = here.get(id) ?? null;
+    const l = live?.get(id) ?? null;
+    const openedAt = h?.opened?.at.toISOString() ?? (typeof l?.created_at === "string" ? l.created_at : (h?.first.toISOString() ?? null));
+    const grantId = typeof l?.grant_id === "string" ? l.grant_id : null;
+    return {
+      id,
+      opened_at: openedAt,
+      opened_by: h?.opened?.by ?? null,
+      opened_from_here: !!h?.opened,
+      title: typeof l?.title === "string" ? l.title : null,
+      status_on_the_public_graph: typeof l?.status === "string" ? l.status : null,
+      funded: l ? l.status === "funded" || grantId !== null : !!h?.funded,
+      public_mandate_id: grantId,
+      ...(h?.funded ? { funded_from_here: { at: h.funded.at.toISOString(), by: h.funded.by } } : {}),
+      messages_from_here: h?.messages ?? 0,
+    };
+  });
+  conversations.sort((a, b) => (b.opened_at ?? "").localeCompare(a.opened_at ?? ""));
+  return {
+    conversations,
+    read_from_the_public_graph: live !== null,
+    in_words:
+      live !== null
+        ? "The organization's conversations with the public Grantmaker. Who opened each, and what was written and funded from here, is this deployment's log of acts; each one's title, state and the public mandate it was funded as are what the public graph says of it now."
+        : `Only this deployment's log of acts answers: who opened each conversation and what was written and funded from here. ${unread ?? ""}`.trim(),
+  };
+}
+
+const conversationIdOf = (answer: Record<string, any>): string | null => {
+  const id = answer.conversation?.id ?? answer.id ?? null;
+  return typeof id === "string" && id ? id : null;
+};
 
 /** Open a conversation with the public Grantmaker about a new public mandate, in the person's own words. */
 export async function openPublicMandate(input: { message: string; actor: GateActor }): Promise<Record<string, unknown>> {
   const message = input.message.trim();
   if (!message) throw new OutwardError("NO_WORDS", "Write what the public mandate is for. These words are sent as you write them.", 422);
-  const answer = await act({ kind: "open_public_mandate", by: { actor: input.actor }, method: "POST", path: "/grant-conversations", body: { message } });
-  const id = answer.conversation?.id ?? answer.id ?? null;
+  const answer = await act({
+    kind: "open_public_mandate",
+    by: { actor: input.actor },
+    method: "POST",
+    path: "/grant-conversations",
+    body: { message },
+    // The conversation's id is the public graph's to give: the log keeps it, so that the conversations opened from here can be listed.
+    refFrom: conversationIdOf,
+  });
+  const id = conversationIdOf(answer);
   return { conversation_id: id, the_public_graph: answer };
 }
 
@@ -586,6 +786,8 @@ export async function registerPublisherOutside(input: { declaredInterest?: strin
     by: { actor: input.actor },
     method: "POST",
     path: "/publishers",
+    // The account the key is registered to, by its id there: what the registration acted on.
+    publicRef: typeof me.json.user?.id === "string" ? me.json.user.id : null,
     body: {
       public_key: statement.public_key,
       hosting: statement.hosting,

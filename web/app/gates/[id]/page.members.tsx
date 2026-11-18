@@ -26,7 +26,7 @@ import {
 } from "@/components/work/ui";
 import type { MandateListRow } from "@/lib/account-api";
 import { fetchClaimTexts } from "@/lib/api";
-import { fetchPolicy, type Gate, type Gates, type GateSetting, type PolicyFull } from "@/lib/inside-api";
+import { fetchPolicy, fetchPolicyVersions, type Gate, type Gates, type GateSetting, type PolicyFull, type PolicySummary } from "@/lib/inside-api";
 import { capital } from "@/lib/inside-words";
 import { british } from "@/lib/outside-api";
 import { addRuleAction, endRuleAction, gateSettingsAction, savePolicyVersionAction } from "../actions";
@@ -68,6 +68,7 @@ export default async function BoundaryPage({
     tab?: string;
     drawer?: string;
     policy?: string;
+    version?: string;
     saved?: string;
   }>;
 }) {
@@ -146,7 +147,7 @@ export default async function BoundaryPage({
       {tab === "waiting" && <Waiting row={row} note={backlog?.note} />}
       {tab === "rules" && gate && gates && <Rules gate={gate} gates={gates} mandates={mandates} nodes={nodes} />}
       {tab === "policy" && (
-        <PolicyTab row={row} administers={can(who, "administer")} externalId={who.externalId} asked={sp.policy} saved={sp.saved === "1"} />
+        <PolicyTab row={row} administers={can(who, "administer")} externalId={who.externalId} asked={sp.policy} version={sp.version} saved={sp.saved === "1"} />
       )}
       {tab === "settings" && gate && gates && <Settings gate={gate} gates={gates} mandates={mandates} />}
 
@@ -514,24 +515,35 @@ async function PolicyTab({
   administers,
   externalId,
   asked,
+  version,
   saved,
 }: {
   row: BoundaryRow;
   administers: boolean;
   externalId: string;
+  /** A version by its id (`?policy=<id>`), as a showing's record links to it. */
   asked?: string;
+  /** A version by its number (`?version=N`), as the versions rail links to it. */
+  version?: string;
   saved: boolean;
 }) {
   const summary = row.policy!;
+  const versions: PolicySummary[] = await fetchPolicyVersions(externalId, row.id).catch(() => [summary]);
+  const listed = versions.length > 0 ? versions : [summary];
+  const inForceRow = listed.find((v) => v.in_force) ?? listed[0];
+  const byNumber = version && /^\d+$/.test(version) ? listed.find((v) => v.version === Number(version)) : undefined;
+  const askedId = byNumber?.policy_id ?? (asked && !listed.some((v) => v.policy_id === asked && v.in_force) ? asked : undefined);
   const [inForce, older] = await Promise.all([
-    fetchPolicy(externalId, summary.policy_id).catch(() => null),
-    asked && asked !== summary.policy_id ? fetchPolicy(externalId, asked).catch(() => null) : null,
+    fetchPolicy(externalId, inForceRow.policy_id).catch(() => null),
+    askedId && askedId !== inForceRow.policy_id ? fetchPolicy(externalId, askedId).catch(() => null) : null,
   ]);
   if (!inForce) return <Banner tone="warn">The policy could not be read just now.</Banner>;
   const viewing: PolicyFull = older && older.boundary_id === row.id && older.version !== inForce.version ? older : inForce;
   const current = viewing === inForce;
   const mayEdit = current && administers && !!summary.from_label;
   const base = `/gates/${row.id}?tab=policy`;
+  const savedBy = (v: { saved_by: string | null; starting_text: boolean }) =>
+    v.saved_by ?? (v.starting_text ? "Starting text" : "The system");
 
   return (
     <div className="w-grid2">
@@ -619,36 +631,37 @@ async function PolicyTab({
           flush
           title={
             <span className="w-row" style={{ gap: 6 }}>
-              Versions{" "}
+              Versions <span className="w-faint">{listed.length}</span>{" "}
               <Tip>
                 Saving makes a new version, in force from then. Earlier versions stay on record, and a removal keeps the version it was made
-                under. Only the version in force is listed here; an earlier one opens from where it was used.
+                under. A version the system saved is the starting text, or the same categories saved again because the sections every
+                version shares were reworded.
               </Tip>
             </span>
           }
         >
           <div className="w-gates-versions">
-            <Link className="w-gates-ver" href={base} aria-current={current ? "page" : undefined}>
-              <b>v{inForce.version}</b>
-              <span className="w-row" style={{ gap: 8 }}>
-                <Pill tone="ok">In force</Pill>
-                <span className="w-small w-muted">{summary.starting_text ? "Starting text" : shortDay(inForce.saved_at)}</span>
-              </span>
-              <span />
-              <span className="w-mono w-faint w-small" title={inForce.hash}>
-                {shortHash(inForce.hash)}
-              </span>
-            </Link>
-            {!current && (
-              <Link className="w-gates-ver" href={`${base}&policy=${viewing.policy_id}`} aria-current="page">
-                <b>v{viewing.version}</b>
-                <span className="w-small w-muted">{shortDay(viewing.saved_at)}</span>
+            {listed.map((v) => (
+              <Link
+                key={v.policy_id}
+                className="w-gates-ver"
+                href={v.in_force ? base : `${base}&version=${v.version}`}
+                aria-current={v.version === viewing.version ? "page" : undefined}
+              >
+                <b>v{v.version}</b>
+                <span className="w-row" style={{ gap: 8 }}>
+                  {v.in_force && <Pill tone="ok">In force</Pill>}
+                  <span className="w-small w-muted">{shortDay(v.saved_at)}</span>
+                </span>
                 <span />
-                <span className="w-mono w-faint w-small" title={viewing.hash}>
-                  {shortHash(viewing.hash)}
+                <span className="w-small w-muted">
+                  {savedBy(v)}{" "}
+                  <span className="w-mono w-faint" title={v.hash}>
+                    · {shortHash(v.hash)}
+                  </span>
                 </span>
               </Link>
-            )}
+            ))}
           </div>
         </Card>
         <div className="w-gates-kv">
@@ -671,7 +684,13 @@ async function PolicyTab({
                 </span>,
               ],
               [
-                "Saved by",
+                `v${viewing.version} saved by`,
+                <span key="b">
+                  {savedBy(viewing)} <span className="w-faint">· {shortDay(viewing.saved_at)}</span>
+                </span>,
+              ],
+              [
+                "Who saves",
                 <span className="w-row" style={{ gap: 6 }} key="s">
                   Administrators who read {row.from ? <Lbl name={row.from} /> : "the label it is written at"}
                 </span>,

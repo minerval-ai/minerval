@@ -17,7 +17,7 @@ import {
   owls,
   shortDay,
 } from "@/components/work/ui";
-import { LOG_PAGE, fetchLogPage } from "@/lib/activity-log";
+import { fetchLogPage } from "@/lib/activity-log";
 import type { LogEntry, Withheld } from "@/lib/admin-api";
 import { LOG_TYPES, logActor, logSentence, logType, permissionShort } from "@/lib/admin-words";
 
@@ -25,13 +25,15 @@ export const metadata: Metadata = { title: "Activity log · Minerval" };
 export const dynamic = "force-dynamic";
 
 // Every administrative act, newest first, grouped by day: grants and
-// removals, labels, parties, connections, owls created and standing mandates
-// set up. Any member may read it, as on the People page before it: who holds
+// removals, labels, parties, connections, file sets, owls created and
+// standing mandates set up. Any member may read it, as on the People page before it: who holds
 // power over a graph is part of what its readers weigh. A name the reader is
 // not entitled to is withheld, and the act, who and when are still shown.
 //
-// GET /permissions/log takes a limit and a time to page back from; the
-// filters here apply to the page read, in the page.
+// The filters are the API's (GET /permissions/log: type, by, q), applied
+// before its limit, and older entries are read from where a page ends
+// (`next_before`). A text is matched against what the reader is shown, so a
+// withheld name is never found by it.
 
 type Params = { type?: string; who?: string; q?: string; before?: string };
 
@@ -53,15 +55,25 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
   if (!who) return null;
   const params = await searchParams;
   const before = params.before && !Number.isNaN(Date.parse(params.before)) ? params.before : null;
-  const type = [...LOG_TYPES, "Other" as const].find((t) => t === params.type) ?? null;
-  const q = (params.q ?? "").trim();
-  const actor = params.who ?? "";
+  const type = LOG_TYPES.find((t) => t === params.type) ?? null;
+  const q = (params.q ?? "").trim().slice(0, 200);
+  const actor = (params.who ?? "").trim().slice(0, 64);
+  const filtered = !!(type || q || actor);
 
-  let entries: LogEntry[] | null;
+  // The people to filter by are those who acted in the newest page of the
+  // whole log, read again unfiltered when a filter is on.
+  let page: Awaited<ReturnType<typeof fetchLogPage>> | null;
+  let newest: LogEntry[];
   try {
-    entries = await fetchLogPage(who.externalId, before);
+    const [read, unfiltered] = await Promise.all([
+      fetchLogPage(who.externalId, { type, by: actor || null, q: q || null, before }),
+      filtered || before ? fetchLogPage(who.externalId).then((p) => p.entries).catch(() => []) : null,
+    ]);
+    page = read;
+    newest = unfiltered ?? read.entries;
   } catch {
-    entries = null;
+    page = null;
+    newest = [];
   }
 
   const head = (
@@ -75,7 +87,7 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
       }
     />
   );
-  if (entries === null) {
+  if (page === null) {
     return (
       <WorkPage>
         {head}
@@ -84,13 +96,12 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
     );
   }
 
-  const actors = [...new Map(entries.map((e) => logActor(e)).map((a) => [a.key, a])).values()].sort(
-    (a, b) => Number(b.person) - Number(a.person) || a.name.localeCompare(b.name),
-  );
-  const byActor = actor ? entries.filter((e) => logActor(e).key === actor) : entries;
-  const byText = q ? byActor.filter((e) => logSentence(e).toLowerCase().includes(q.toLowerCase())) : byActor;
-  const shown = type ? byText.filter((e) => logType(e) === type) : byText;
-  const filtered = !!(type || q || actor);
+  const shown = page.entries;
+  const actors = [...new Map([...newest, ...shown].map((e) => logActor(e)).map((a) => [a.key, a])).values()]
+    // A person is filtered by their account's id; an entry from an API that gave none cannot be.
+    .filter((a) => !a.key.startsWith("name:"))
+    .sort((a, b) => Number(b.person) - Number(a.person) || a.name.localeCompare(b.name));
+  if (actor && !actors.some((a) => a.key === actor)) actors.push({ key: actor, name: "The person chosen", person: true });
 
   const href = (over: Partial<Params>) => {
     const next = new URLSearchParams();
@@ -115,7 +126,7 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
     }
     rows.push(<Row key={`${entry.at}-${i}`} entry={entry} />);
   });
-  const older = entries.length === LOG_PAGE ? entries[entries.length - 1].at : null;
+  const older = page.next_before;
 
   return (
     <WorkPage>
@@ -136,32 +147,28 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
             ))}
           </select>
           {type && <input type="hidden" name="type" value={type} />}
-          {before && <input type="hidden" name="before" value={before} />}
           <button className="w-btn w-sm" type="submit">
             Filter
           </button>
           {filtered && (
-            <Link className="w-small" href={href({ type: undefined, who: undefined, q: undefined })}>
+            <Link className="w-small" href={href({ type: undefined, who: undefined, q: undefined, before: undefined })}>
               Clear
             </Link>
           )}
           <span className="w-muted w-small w-spacer">
-            {filtered ? `${shown.length} of ${entries.length} entries` : `${entries.length} entries`}
+            {`${shown.length} ${shown.length === 1 ? "entry" : "entries"}${filtered ? (shown.length === 1 ? " matches" : " match") : ""}${older ? " on this page" : ""}`}
             {before && <> · before {shortDay(before)}</>}
           </span>
         </form>
         <nav className="w-toolbar" aria-label="Type">
-          <TypeChip href={href({ type: undefined })} on={!type}>
+          <TypeChip href={href({ type: undefined, before: undefined })} on={!type}>
             All
           </TypeChip>
-          {[...LOG_TYPES, ...(byText.some((e) => logType(e) === "Other") ? (["Other"] as const) : [])].map((t) => {
-            const n = byText.filter((e) => logType(e) === t).length;
-            return (
-              <TypeChip key={t} href={href({ type: t })} on={type === t}>
-                {t} <span className="w-faint">{n}</span>
-              </TypeChip>
-            );
-          })}
+          {LOG_TYPES.map((t) => (
+            <TypeChip key={t} href={href({ type: t, before: undefined })} on={type === t}>
+              {logType({ type: t })}
+            </TypeChip>
+          ))}
         </nav>
       </div>
 
@@ -173,7 +180,7 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
             <th>
               <span className="w-row" style={{ gap: 6, flexWrap: "nowrap" }}>
                 What
-                <Tip>Where an entry names a label you aren&apos;t cleared to read, or a party you aren&apos;t entitled to know of, the name is withheld. That the act happened, who did it and when are always shown.</Tip>
+                <Tip>Where an entry names a label you aren&apos;t cleared to read, a party you aren&apos;t entitled to know of, or a source at a label you don&apos;t read, the name is withheld, and searching never finds it. That the act happened, who did it and when are always shown.</Tip>
               </span>
             </th>
             <th style={{ width: 110 }}>Type</th>
@@ -183,7 +190,7 @@ export default async function ActivityLogPage({ searchParams }: { searchParams: 
           {rows.length === 0 ? (
             <tr>
               <td colSpan={4}>
-                <Empty>{entries.length === 0 ? "Nothing has been logged yet." : "No entry matches."}</Empty>
+                <Empty>{filtered ? "No entry matches." : before ? "Nothing older is logged." : "Nothing has been logged yet."}</Empty>
               </td>
             </tr>
           ) : (
@@ -289,6 +296,11 @@ function ConnectionOf({ v }: { v: string | Withheld | undefined }) {
   return <span className="w-chip">{v}</span>;
 }
 
+function FileSetOf({ v }: { v: string | Withheld | undefined }) {
+  if (v === undefined || withheld(v)) return <span className="w-chip" title={WITHHELD_TITLE}>a file set you don&apos;t see</span>;
+  return <span className="w-chip">{v}</span>;
+}
+
 const Chips = ({ items, mono = false }: { items: string[]; mono?: boolean }) => (
   <>
     {items.map((t) => (
@@ -385,7 +397,17 @@ function What({ entry }: { entry: LogEntry }) {
     case "source_party_set":
       return (
         <>
-          set a source&apos;s party to <PartyOf v={entry.party} />{" "}
+          set the party of{" "}
+          {entry.source_title === undefined ? (
+            "a source"
+          ) : withheld(entry.source_title) ? (
+            <span className="w-chip" title="Withheld: you don't read the source's label. The act, who and when are always shown.">
+              a source you don&apos;t read
+            </span>
+          ) : (
+            <span className="w-chip">{entry.source_title}</span>
+          )}{" "}
+          to <PartyOf v={entry.party} />{" "}
           <span className="w-faint w-small">
             (was {entry.previous_party === null || entry.previous_party === undefined ? "none" : withheld(entry.previous_party) ? "withheld" : entry.previous_party})
           </span>
@@ -394,6 +416,41 @@ function What({ entry }: { entry: LogEntry }) {
               Source
             </Link>
           )}
+        </>
+      );
+    case "file_set_added":
+      return (
+        <>
+          added <FileSetOf v={entry.file_set} />
+          {entry.party !== undefined && (
+            <>
+              {" "}
+              of <PartyOf v={entry.party} />
+            </>
+          )}
+          {entry.label !== undefined && (
+            <>
+              {" "}
+              at <LabelOf v={entry.label} />
+            </>
+          )}
+        </>
+      );
+    case "file_set_closed":
+      return (
+        <>
+          closed <FileSetOf v={entry.file_set} />
+          {entry.files !== undefined && (
+            <span className="w-faint w-small">
+              · {entry.files} {entry.files === 1 ? "file" : "files"}, fixed by their hash
+            </span>
+          )}
+        </>
+      );
+    case "file_set_changed":
+      return (
+        <>
+          {entry.enabled === undefined ? "changed" : entry.enabled ? "switched on" : "switched off"} <FileSetOf v={entry.file_set} />
         </>
       );
     case "connection_added":

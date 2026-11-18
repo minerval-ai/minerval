@@ -1,5 +1,6 @@
 import "server-only";
-import { fetchGates, fetchShowing, type AskedPage, type AskedShowingRow, type Gate, type ShownShowing, type ShownVersion } from "@/lib/inside-api";
+import { fetchGates, fetchShowing, type AskedPage, type AskedShowingRow, type Gate, type ShowingScope, type ShownShowing, type ShownVersion } from "@/lib/inside-api";
+import { capital } from "@/lib/inside-words";
 import { pipelineOf, type Pipeline } from "@/lib/pipeline";
 
 // What the pages for showings share: the words for a showing's kind, the two
@@ -7,32 +8,33 @@ import { pipelineOf, type Pipeline } from "@/lib/pipeline";
 // viewer reads, and a bounded fetch of showings' details.
 
 /** "Standing" or "Once", and what it covers, as the Kind column says them. */
-export function kindOf(form: string, scope: string): { form: string; covers: string } {
-  const covers: Record<string, string> = {
-    node: "This node",
-    under: "Subtree",
-    mandate: "A mandate's work",
-    boundary: "Whole boundary",
-    item: "One item",
-  };
-  return { form: form === "standing" ? "Standing" : "Once", covers: covers[scope] ?? scope };
+const COVERS: Record<ShowingScope, string> = {
+  node: "This node",
+  under: "Subtree",
+  mandate: "A mandate's work",
+  boundary: "Whole boundary",
+  item: "One item",
+};
+
+export function kindOf(form: string, scope: ShowingScope): { form: string; covers: string } {
+  return { form: form === "standing" ? "Standing" : "Once", covers: COVERS[scope] };
 }
 
 /** What the kind undertakes, in one line, for a Tip. */
-export function kindTip(form: string, scope: string): string {
+const SCOPE_TIPS: Record<ShowingScope, string> = {
+  node: "",
+  under: " Subtree: nodes under this one are covered too, including ones that come later.",
+  boundary: " Whole boundary: every node assessed at the label goes through.",
+  mandate: " A mandate's work: every node whose assessment that mandate's budget paid for.",
+  item: " One item: a thing offered to the gate that is not a node's page, such as an answer to a request.",
+};
+
+export function kindTip(form: string, scope: ShowingScope): string {
   const f =
     form === "standing"
       ? "Standing: each later assessment follows, and one not released shows on the other side as held."
       : "Once: the page as it stood, with nothing undertaken about later assessments.";
-  const s =
-    scope === "under"
-      ? " Subtree: nodes under this one are covered too, including ones that come later."
-      : scope === "boundary"
-        ? " Whole boundary: everything written at the label goes through."
-        : scope === "mandate"
-          ? " A mandate's work: what that mandate's budget paid for."
-          : "";
-  return f + s;
+  return f + SCOPE_TIPS[scope];
 }
 
 /** The label (or "outside") a showing goes to, from either side's way of saying it. */
@@ -99,12 +101,19 @@ export async function fetchDetails(externalId: string, ids: string[], concurrenc
   return out;
 }
 
-/** What a showing with no single node is about, in place of a node's words. */
-export function wholeOf(scope: string, from: string | null): string | null {
+/**
+ * What a showing with no single node is about, in place of a node's words:
+ * the API's own words for what it covers where the viewer reads the side it
+ * is shown to (GET /showings/:id, `scope`, which names the mandate and the
+ * label where they may be told them), else words from its scope. Null for a
+ * showing of a node.
+ */
+export function wholeOf(scope: ShowingScope, from: string | null, words?: string | null): string | null {
+  if (scope === "node" || scope === "under") return null;
+  if (words) return capital(words);
   if (scope === "boundary") return from ? `Everything written at ${from}` : "Everything written at a label you do not read";
   if (scope === "mandate") return "The work a mandate paid for";
-  if (scope === "item") return "One item";
-  return null;
+  return "One item";
 }
 
 export type { AskedShowingRow };

@@ -62,6 +62,12 @@ can be shown at another that neither reads nor is read by it.
   from the record (the link was removed, the node is no longer active, the
   showing ended). A node that also sits under other things appears once, in
   its place under the shown node.
+- **A mandate's work, or the whole boundary.** A flow for a mandate covers
+  every node whose judgment at the label that mandate's budget paid for; a
+  flow for the boundary covers every node assessed at the label. Both are
+  standing. Its record, and a page published from it, say what it covers in
+  those words (`showingCovers`, `src/published-page/shape.ts`), naming the
+  mandate and the label only to a reader of the label.
 
 No page is offered to a gate that no flow covers. Ending a standing flow is
 a dated event with a reason from a fixed list; what was shown stays shown.
@@ -165,6 +171,17 @@ one on the destination side, because the two sides may share no label. The
 Redactor, Audit and the assessing Steward read the first; everyone a page
 is shown to reads the second. Every removal records the version it was made
 under.
+
+`GET /redaction-policies` (`list_redaction_policies` on MCP) lists the
+version in force at each boundary the caller reads either side of, once a
+boundary, from the page's side where the caller reads the label the pages
+are written at; with `boundary_id` it keeps to one boundary, and with
+`all=true` it lists every version, newest first, `in_force` on the newest.
+Each version, there and on `GET /redaction-policies/:policy_id`, says who
+saved it, by display name (`saved_by`), or null where the system saved it:
+the starting text, or the same categories saved again because the two
+shared sections were reworded. The boundary's Policy tab lists every
+version this way.
 
 ## Redaction
 
@@ -353,7 +370,14 @@ may hold `direct` and `release`.
   marks, and with it what is always shown of the page and the node's
   wording as they would be shown. The parts the Redactor was least sure of
   come first, and each item has its removals by category and Audit's
-  answer. Every holder of `release` for a party is shown that, whether or
+  answer. Each item says where it crosses: the gate, where it goes (a
+  label, or outside), and the label it was written at, named as the
+  gate's settings name it (by its name to a reader of it or an
+  administrator, else by the face it shows where things arrive, else not
+  at all). It carries the policy it was redacted under, with the names of
+  its categories: a person removes a passage under one of those, and
+  `POST /gate/decisions` refuses any other with the policy's list. Every
+  holder of `release` for a party is shown that, whether or
   not they read at the page's label: it is the text their decision would
   release, to readers who read less than they are trusted to decide for,
   and a gate held by someone who cannot see what passes through it is not a

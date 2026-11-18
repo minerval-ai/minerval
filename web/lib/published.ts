@@ -1,7 +1,7 @@
 // A page another graph publishes of a node (docs/published-pages.md): what
 // the API serves of it, and the few words the site says about it in more
 // than one place.
-import type { PublishedPageShape } from "./published-page/shape";
+import { showingCovers, type PublishedPageShape } from "./published-page/shape";
 import type { PackageAct, PackageCheck, PackageVersion } from "./published-page/verify";
 
 export interface PublishedOnNode {
@@ -20,7 +20,7 @@ export interface PublishedPageSummary {
   node?: string | null;
   publisher: { account_id: string; name: string; key_id: string };
   form: "once" | "standing" | null;
-  scope: "node" | "under" | null;
+  scope: "node" | "under" | "mandate" | "boundary" | null;
   showing_began: string | null;
   asked_at: string | null;
   ended: { at: string; because: string } | null;
@@ -133,6 +133,5 @@ export function showingWords(p: { form: string | null; scope: string | null; ask
     p.form === "standing"
       ? `Kept published since ${day(p.asked_at)}, so each later version follows and a version that is held shows as held`
       : `Shown once, on ${day(p.asked_at)}, with nothing undertaken about later versions`;
-  const scope = p.scope === "under" ? "this node and what sits under it" : "this node alone";
-  return `${form}; ${scope}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${p.ended.because}.` : ""}`;
+  return `${form}; covering ${showingCovers(p.scope)}. It began ${p.showing_began ?? "at a time not recorded"}.${p.ended ? ` It ended on ${day(p.ended.at)}: ${p.ended.because}.` : ""}`;
 }

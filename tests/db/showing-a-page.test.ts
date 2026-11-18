@@ -185,9 +185,11 @@ describe("asking", () => {
     const forA = await atA(() => readablePolicies());
     expect(forA.map((p) => [p.side, p.from, p.to])).toEqual([["destination", null, A]]);
     expect(await atB(() => readablePolicies())).toEqual([]);
+    // A reader of both sides is given each version once, from the side that names the label of origin.
     const forC = await atC(() => readablePolicies());
-    expect(forC.map((p) => p.side).sort()).toEqual(["destination", "page"]);
+    expect(forC.map((p) => [p.side, p.from, p.to])).toEqual([["page", C, A]]);
     expect(forC[0]!.hash).toBe(forA[0]!.hash);
+    expect(forC[0]).toMatchObject({ in_force: true, saved_by: null, starting_text: true });
 
     // The Steward at c reads the policy its page may be shown under.
     const listed = JSON.parse((await runAtLabel(C, "a steward's run", () => executePolicyReadTool("get_redaction_policies", {})))!);
@@ -426,8 +428,13 @@ describe("the gate", () => {
       "item_id", "kind_of_thing", "kind_of_thing_in_words", "the_redactor_proposes",
       "page_id", "showing_id", "node_id", "node", "always_shown", "audit", "waiting_since", "shown_as_released",
       "part", "kind", "decide_for", "rests_on", "held", "removals_by_category", "redactor_least_sure", "as_it_would_be_shown",
+      // Where it crosses, as the gate's settings name it to them, and the policy with the categories a passage is removed under.
+      "gate_id", "from", "from_named_by", "to", "to_outside", "policy",
     ]);
     for (const item of forBorealis.items) expect(Object.keys(item).filter((k) => !allowed.has(k))).toEqual([]);
+    // The label the page was written at is not named to them: it shows no face where things arrive, so nothing names it.
+    for (const item of forBorealis.items) expect(item.from).toBeUndefined();
+    expect(said).not.toContain(`"${C}"`);
     // The node is a public one, which they read like anyone; the page carries no wording of its own.
     expect(forBorealis.items[0].node).toMatch(/^The plant met its output target/);
 
@@ -869,6 +876,11 @@ describe("the policy of a boundary", () => {
     const forA = await atA(() => readablePolicies());
     expect(forA.map((p) => [p.version, p.categories.map((c) => c.name)])).toEqual([[2, ["personal data", "plant layout"]]]);
     expect(forA[0]!.body).toContain("### plant layout");
+    // Every version, newest first, with who saved each and which is in force.
+    const every = await atA(() => readablePolicies({ boundaryId: forA[0]!.boundary_id, all: true }));
+    expect(every.map((p) => [p.version, p.in_force, p.starting_text])).toEqual([[2, true, false], [1, false, true]]);
+    expect(every.map((p) => p.saved_by)).toEqual(["review3 member", null]);
+    expect(await atA(() => readablePolicies({ boundaryId: "00000000-0000-4000-8000-000000000000", all: true }))).toEqual([]);
   });
 
   it("takes a new version, with the same categories, when the text every version shares has changed since the last was saved", async () => {

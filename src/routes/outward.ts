@@ -4,7 +4,8 @@
  * READS=members, beside the outbound routes.
  *
  *   GET  /outside/account: the organization's account on the public graph:
- *     its public owls and its public mandates.
+ *     its public owls, its public mandates, and whether and under what the
+ *     deployment's signing key is registered there.
  *   GET  /outside/log: every act this deployment made on the public graph.
  *   GET  /outside/requests: the public graph's requests, from the mirror,
  *     with what this deployment has done about each.
@@ -15,7 +16,8 @@
  *     and offer that the work will not be done.
  *   POST /outside/mandates, POST /outside/mandates/conversations/:id/messages,
  *     GET /outside/mandates/conversations/:id: a new public mandate, in a
- *     person's own words to the public Grantmaker.
+ *     person's own words to the public Grantmaker. GET
+ *     /outside/mandates/conversations lists them.
  *   POST /outside/mandates/conversations/:id/fund, POST
  *     /outside/mandates/:mandate_id/back: pay for one with public owls.
  *   POST /outside/nodes/:node_id/fund, .../raise: pay for the public
@@ -53,6 +55,7 @@ import {
   outwardLog,
   publicAccount,
   publicActsPermission,
+  publicConversations,
   publicRequests,
   raisePublicNode,
   readPublicConversation,
@@ -99,11 +102,15 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
   app.get("/outside/account", {
     schema: {
       tags: TAG,
-      summary: "The organization's account on the public graph: its balance of public owls and its public mandates",
+      summary:
+        "The organization's account on the public graph: its balance of public owls, its public mandates, and whether and under what the deployment's signing key is registered there",
       description:
         "Public owls are bought on the public graph and pay for public work only; owls created in this deployment never convert to them. The " +
-        "mandates listed are public ones the organization funds there, each public on the public graph. Reads the organization's own account and " +
-        "nothing about any node.",
+        "mandates listed are public ones the organization funds there, each public on the public graph, with the conversation with the public " +
+        "Grantmaker it was funded from where known. `registration` is the deployment's registration as a publisher: when, which key (by its " +
+        "fingerprint), to which account, with what declared interest, whether that key is the one the deployment signs with now, and who " +
+        "registered it from here; null where no key is registered. It is read from the public graph's record of the account, or, where that " +
+        "cannot be read, from this deployment's log of acts. Reads the organization's own account and nothing about any node.",
     },
     preHandler: signedIn,
     handler: async (_request, reply) => reply.send(await publicAccount()),
@@ -144,7 +151,8 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
         "A contribution made on the public graph through a published page comes in with the mirror, once the public graph's own review has " +
         "admitted it. This gives each one as it was made: its text, which was written outside this deployment, its type and date, the addresses " +
         "it cites and its id on the public graph. The node's Steward at the label the page came from is given the same, and a reassessment is " +
-        "opened there that runs when it is paid for.",
+        "opened there that runs when it is paid for. Each carries `page_label`, the label the page it was made through was written at, which " +
+        "is where its reassessment is paid for; where you do not read that label it is {withheld: true}.",
       querystring: { type: "object", properties: { node_id: UUID } },
     },
     preHandler: signedIn,
@@ -160,6 +168,21 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: signedIn,
     handler: async (request, reply) => reply.send(await reportsOverview({ limit: request.query.limit })),
+  });
+
+  app.get("/outside/mandates/conversations", {
+    schema: {
+      tags: TAG,
+      summary:
+        "The organization's conversations with the public Grantmaker, newest first: who opened each and when, its draft's title, and whether it was funded, and as which public mandate",
+      description:
+        "Who opened each conversation, and what was written and funded from here, is this deployment's own log of acts on the public graph. Each " +
+        "one's draft title, its state there and the public mandate it was funded as are read from the organization's own list on the public graph; " +
+        "a conversation the account holds there that was not opened from here is listed too, with opened_from_here false. Where the public graph " +
+        "cannot be read, the log alone answers and read_from_the_public_graph is false. Read one with GET /outside/mandates/conversations/:conversation_id.",
+    },
+    preHandler: [app.authenticate, app.requireUser, requirePermission(acts)],
+    handler: async (_request, reply) => reply.send(await publicConversations()),
   });
 
   app.get<{ Params: { conversation_id: string } }>("/outside/mandates/conversations/:conversation_id", {

@@ -613,11 +613,64 @@ export type AdministrativeAction =
   // (standing-mandates.ts).
   | "standing_mandate_created";
 
+/**
+ * The kinds of act the log is filtered by (`type` on GET /permissions/log),
+ * each entry's own `type`. One place says which event is which kind: the
+ * Activity log page shows the API's word, and a new event is given a kind
+ * here or the compiler says so.
+ */
+export const LOG_TYPES = ["access", "labels", "parties", "connections", "owls", "providers", "mandates", "file_sets", "other"] as const;
+export type LogType = (typeof LOG_TYPES)[number];
+
+export const LOG_TYPE_OF: Record<"granted" | "removed" | AdministrativeAction, LogType> = {
+  granted: "access",
+  removed: "access",
+  // Now a setting of the gate to outside; the rows logged under it stay.
+  standing_choice_set: "other",
+  label_defined: "labels",
+  label_read_added: "labels",
+  label_read_removed: "labels",
+  label_face_shown: "labels",
+  label_face_withdrawn: "labels",
+  provider_clearance_set: "providers",
+  party_added: "parties",
+  own_organization_named: "parties",
+  source_party_set: "parties",
+  connection_added: "connections",
+  connection_changed: "connections",
+  connection_tools_offered: "connections",
+  connection_tool_withdrawn: "connections",
+  file_set_added: "file_sets",
+  file_set_closed: "file_sets",
+  file_set_changed: "file_sets",
+  owls_created: "owls",
+  standing_mandate_created: "mandates",
+};
+
+/** The kind of act an event is; "other" for one this build does not know. */
+export const logTypeOf = (event: string): LogType =>
+  (LOG_TYPE_OF as Record<string, LogType | undefined>)[event] ?? "other";
+
+/** The events of the kinds asked for. "other" also covers any event this build does not know. */
+function eventsOfTypes(types: readonly LogType[]): { events: string[]; unknown: boolean } {
+  return {
+    events: Object.entries(LOG_TYPE_OF).filter(([, t]) => types.includes(t)).map(([e]) => e),
+    unknown: types.includes("other"),
+  };
+}
+
+/** Whose acts the log is kept to (`by`): an account's id, or what acts where no person does. */
+export const LOG_ACTORS_WITHOUT_A_PERSON = ["operator", "first_administrator", "deployment"] as const;
+
 export interface LogEntry {
   event: "granted" | "removed" | AdministrativeAction;
+  /** The kind of act (LOG_TYPES), as the log is filtered by. */
+  type: LogType;
   at: string;
   /** Who did it; null for a grant no administrator made (see `via`). */
   by: string | null;
+  /** The account of who did it, by id, as `by` on the log takes it; null where no person did it. */
+  by_id: string | null;
   /** How a grant was made: administrator, first_administrator, or operator. */
   via?: string;
   permission?: PermissionName;
@@ -629,6 +682,8 @@ export interface LogEntry {
   party?: string | { withheld: true };
   previous_party?: string | { withheld: true } | null;
   source_id?: string;
+  /** For source_party_set: the source's title, withheld from a reader not cleared for the source's label. */
+  source_title?: string | { withheld: true };
   /** The connection an act was about, by name. */
   connection?: string | { withheld: true };
   previous_label?: string | { withheld: true };
@@ -660,12 +715,60 @@ export interface LogEntry {
 
 const WITHHELD = { withheld: true } as const;
 
+export interface LogFilter {
+  limit?: number;
+  before?: string;
+  /** Only entries of these kinds. */
+  types?: readonly LogType[];
+  /** Only acts by this account (its id), or by what acts where no person does (LOG_ACTORS_WITHOUT_A_PERSON). */
+  by?: string;
+  /** Only entries whose words, as this reader is shown them, hold this text. */
+  q?: string;
+}
+
+/** The most entries one read of the log with a text looks through (see permissionLog). */
+export const LOG_TEXT_SCAN = 20_000;
+
+/** The words of an entry a text search looks in: every name and word the reader is shown, and none withheld. */
+function entryWords(entry: LogEntry): string {
+  const words: string[] = [entry.event.replace(/_/g, " "), entry.type.replace(/_/g, " ")];
+  const collect = (value: unknown): void => {
+    if (typeof value === "string") words.push(value.replace(/_/g, " "));
+    else if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === "object" && !("withheld" in value)) Object.values(value).forEach(collect);
+  };
+  for (const [key, value] of Object.entries(entry)) {
+    // An id or a hash is not words; the time is matched by `before`.
+    if (key === "event" || key === "type" || key === "at" || key === "by_id" || key === "source_id" || key === "manifest_sha256") continue;
+    if (key === "mandate" && value && typeof value === "object") {
+      collect((value as { title?: string }).title);
+      continue;
+    }
+    collect(value);
+  }
+  return words.join("\n").toLowerCase();
+}
+
+/**
+ * The log, newest first, as one reader is shown it. Kept to the kinds, the
+ * actor and the text asked for before the limit is taken, so that a page of
+ * the log filtered holds `limit` entries where as many match. The text is
+ * matched against the entry as this reader is given it, so a withheld name
+ * is never found by searching for it.
+ */
 export async function permissionLog(
   reader: Standing,
-  input: { limit?: number; before?: string } = {}
-): Promise<LogEntry[]> {
+  input: LogFilter = {}
+): Promise<{ entries: LogEntry[]; next_before: string | null }> {
   const limit = Math.min(Math.max(1, Math.trunc(input.limit ?? 100)), 500);
-  const before = input.before && !Number.isNaN(Date.parse(input.before)) ? input.before : null;
+  const startBefore = input.before && !Number.isNaN(Date.parse(input.before)) ? input.before : null;
+  const q = (input.q ?? "").trim().toLowerCase();
+  const kinds = input.types && input.types.length > 0 ? eventsOfTypes(input.types) : null;
+  const by = input.by?.trim() || null;
+  const byAccount = by !== null && UUID_RE.test(by) ? by : null;
+  const byNoPerson = by !== null && (LOG_ACTORS_WITHOUT_A_PERSON as readonly string[]).includes(by) ? by : null;
+  // An actor named by neither an id nor a word the log knows matches nothing.
+  if (by !== null && byAccount === null && byNoPerson === null) return { entries: [], next_before: null };
 
   const administers = reader.grants.some((g) => g.permission === "administer");
   const cleared = new Set(reader.clearance);
@@ -713,10 +816,11 @@ export async function permissionLog(
     return administers || party.is_own_organization || releasesFor.has(id) ? party.name : WITHHELD;
   };
 
-  const rows = await rawQuery<{
+  type LogRow = {
     event: LogEntry["event"];
     at: Date;
     by_name: string | null;
+    by_id: string | null;
     via: string | null;
     permission: PermissionName | null;
     account_name: string | null;
@@ -724,133 +828,207 @@ export async function permissionLog(
     label: string | null;
     party_id: string | null;
     detail: Record<string, string | null> | null;
-  }>(
-    `SELECT * FROM (
-       SELECT 'granted' AS event, g.granted_at AS at, gb.display_name AS by_name, g.granted_via AS via,
-              g.permission, a.display_name AS account_name, g.group_name, g.label, g.party_id,
-              NULL::jsonb AS detail, g.id::text AS tiebreak
-         FROM permission_grants g
-         LEFT JOIN contributors a ON a.id = g.account_id
-         LEFT JOIN contributors gb ON gb.id = g.granted_by
-       UNION ALL
-       SELECT 'removed', g.removed_at, rb.display_name, NULL,
-              g.permission, a.display_name, g.group_name, g.label, g.party_id,
-              NULL::jsonb, g.id::text
-         FROM permission_grants g
-         LEFT JOIN contributors a ON a.id = g.account_id
-         LEFT JOIN contributors rb ON rb.id = g.removed_by
-        WHERE g.removed_at IS NOT NULL
-       UNION ALL
-       SELECT e.action, e.created_at, actor.display_name, NULL,
-              NULL, NULL, NULL, NULL, NULL,
-              e.detail, e.id::text
-         FROM administrative_events e
-         LEFT JOIN contributors actor ON actor.id = e.actor_id
-     ) log
-     WHERE ($2::timestamptz IS NULL OR log.at < $2::timestamptz)
-     ORDER BY log.at DESC, log.tiebreak DESC
-     LIMIT $1`,
-    [limit, before]
-  );
+  };
+  // One read of the log: the filters on kind and actor are the query's, the
+  // text is matched below on what this reader is shown, so a page is read
+  // in batches until `limit` entries match or the log is exhausted.
+  const readBatch = (before: string | null, size: number) =>
+    rawQuery<LogRow & { at_text: string }>(
+      `SELECT log.*, to_char(log.at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at_text FROM (
+         SELECT 'granted' AS event, g.granted_at AS at, gb.display_name AS by_name, g.granted_by AS by_id, g.granted_via AS via,
+                g.permission, a.display_name AS account_name, g.group_name, g.label, g.party_id,
+                NULL::jsonb AS detail, g.id::text AS tiebreak
+           FROM permission_grants g
+           LEFT JOIN contributors a ON a.id = g.account_id
+           LEFT JOIN contributors gb ON gb.id = g.granted_by
+         UNION ALL
+         SELECT 'removed', g.removed_at, rb.display_name, g.removed_by, NULL,
+                g.permission, a.display_name, g.group_name, g.label, g.party_id,
+                NULL::jsonb, g.id::text
+           FROM permission_grants g
+           LEFT JOIN contributors a ON a.id = g.account_id
+           LEFT JOIN contributors rb ON rb.id = g.removed_by
+          WHERE g.removed_at IS NOT NULL
+         UNION ALL
+         SELECT e.action, e.created_at, actor.display_name, e.actor_id, NULL,
+                NULL, NULL, NULL, NULL, NULL,
+                e.detail, e.id::text
+           FROM administrative_events e
+           LEFT JOIN contributors actor ON actor.id = e.actor_id
+       ) log
+       WHERE ($2::timestamptz IS NULL OR log.at < $2::timestamptz)
+         AND ($3::text[] IS NULL OR log.event = ANY($3::text[]) OR ($4 AND NOT (log.event = ANY($5::text[]))))
+         AND ($6::uuid IS NULL OR log.by_id = $6::uuid)
+         AND ($7::text IS NULL
+              OR ($7 = 'operator' AND log.by_id IS NULL AND log.via = 'operator')
+              OR ($7 = 'first_administrator' AND log.by_id IS NULL AND log.via = 'first_administrator')
+              OR ($7 = 'deployment' AND log.by_id IS NULL AND log.via IS DISTINCT FROM 'operator' AND log.via IS DISTINCT FROM 'first_administrator'))
+       ORDER BY log.at DESC, log.tiebreak DESC
+       LIMIT $1`,
+      [size, before, kinds?.events ?? null, kinds?.unknown ?? false, Object.keys(LOG_TYPE_OF), byAccount, byNoPerson]
+    );
 
-  // The accounts and mandates the owl entries name, by id.
-  const namedIds = (key: string) => [
-    ...new Set(
-      rows
-        .map((r) => r.detail?.[key])
-        .filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
-    ),
-  ];
-  const accountIds = namedIds("account_id");
-  const grantIds = namedIds("grant_id");
-  const accountNames = new Map(
-    accountIds.length === 0
-      ? []
-      : (
-          await rawQuery<{ id: string; display_name: string }>(
-            `SELECT id, display_name FROM contributors WHERE id = ANY($1::uuid[])`,
-            [accountIds]
-          )
-        ).map((a) => [a.id, a.display_name])
-  );
-  const mandateTitles = new Map(
-    grantIds.length === 0
-      ? []
-      : (
-          await rawQuery<{ id: string; title: string }>(
-            `SELECT id, COALESCE(mandate->>'title', name) AS title FROM grants WHERE id = ANY($1::uuid[])`,
-            [grantIds]
-          )
-        ).map((g) => [g.id, g.title])
-  );
+  const out: LogEntry[] = [];
+  let cursor = startBefore;
+  let exhausted = false;
+  // Unfiltered by text, one read is the page. With a text, the log is read
+  // a thousand entries at a time, up to LOG_TEXT_SCAN entries for one
+  // request: a person or an agent waits on the answer, and a text that
+  // matches nothing would otherwise read the whole log of a large
+  // deployment. Where the bound stops a read, `next_before` says where to
+  // read on from, as it does at the end of any full page.
+  const batch = q ? 1000 : limit;
+  for (let scanned = 0; ; scanned += batch) {
+    if (scanned >= (q ? LOG_TEXT_SCAN : batch)) break;
+    const rows = await readBatch(cursor, batch);
+    const entries = await renderLogRows(rows);
+    let used = 0;
+    for (const entry of entries) {
+      if (out.length >= limit) break;
+      used++;
+      if (!q || entryWords(entry).includes(q)) out.push(entry);
+    }
+    if (rows.length < batch && used === rows.length) {
+      exhausted = true;
+      break;
+    }
+    if (out.length >= limit) break;
+    cursor = rows[rows.length - 1]!.at_text;
+  }
+  const next_before = exhausted ? null : out.length >= limit ? out[out.length - 1]!.at : cursor;
+  return { entries: out, next_before };
 
-  return rows.map((r): LogEntry => {
-    const entry: LogEntry = { event: r.event, at: r.at.toISOString(), by: r.by_name };
-    if (r.event === "granted" || r.event === "removed") {
-      if (r.event === "granted" && r.via) entry.via = r.via;
-      if (r.permission) entry.permission = r.permission;
-      if (r.account_name !== null) entry.account = r.account_name;
-      if (r.group_name !== null) entry.group = r.group_name;
-      if (r.label !== null) entry.label = labelName(r.label);
-      if (r.party_id !== null) entry.party = partyName(r.party_id);
+  async function renderLogRows(rows: LogRow[]): Promise<LogEntry[]> {
+    // The accounts and mandates the owl entries name, by id.
+    const namedIds = (key: string) => [
+      ...new Set(
+        rows
+          .map((r) => r.detail?.[key])
+          .filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
+      ),
+    ];
+    const accountIds = namedIds("account_id");
+    const grantIds = namedIds("grant_id");
+    const accountNames = new Map(
+      accountIds.length === 0
+        ? []
+        : (
+            await rawQuery<{ id: string; display_name: string }>(
+              `SELECT id, display_name FROM contributors WHERE id = ANY($1::uuid[])`,
+              [accountIds]
+            )
+          ).map((a) => [a.id, a.display_name])
+    );
+    const mandateTitles = new Map(
+      grantIds.length === 0
+        ? []
+        : (
+            await rawQuery<{ id: string; title: string }>(
+              `SELECT id, COALESCE(mandate->>'title', name) AS title FROM grants WHERE id = ANY($1::uuid[])`,
+              [grantIds]
+            )
+          ).map((g) => [g.id, g.title])
+    );
+    // A source's title is its material's, and is shown only to a reader
+    // cleared for the source's label: holding `administer` is no clearance.
+    const sourceIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.event === "source_party_set")
+          .map((r) => r.detail?.source_id)
+          .filter((id): id is string => typeof id === "string" && UUID_RE.test(id))
+      ),
+    ];
+    const sources = new Map(
+      sourceIds.length === 0
+        ? []
+        : (
+            await withSystemClearance(
+              "The log names a source by its title to a reader cleared for the source's label, and withholds it from the rest.",
+              () =>
+                rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+                  `SELECT id, title, sensitivity_label FROM sources WHERE id = ANY($1::uuid[])`,
+                  [sourceIds]
+                )
+            )
+          ).map((r) => [r.id, r])
+    );
+    const sourceTitle = (id: string) => {
+      const source = sources.get(id);
+      return source && cleared.has(source.sensitivity_label) ? source.title : WITHHELD;
+    };
+
+    return rows.map((r): LogEntry => {
+      const entry: LogEntry = { event: r.event, type: logTypeOf(r.event), at: r.at.toISOString(), by: r.by_name, by_id: r.by_id };
+      if (r.event === "granted" || r.event === "removed") {
+        if (r.event === "granted" && r.via) entry.via = r.via;
+        if (r.permission) entry.permission = r.permission;
+        if (r.account_name !== null) entry.account = r.account_name;
+        if (r.group_name !== null) entry.group = r.group_name;
+        if (r.label !== null) entry.label = labelName(r.label);
+        if (r.party_id !== null) entry.party = partyName(r.party_id);
+        return entry;
+      }
+      const d = r.detail ?? {};
+      if (typeof d.label === "string") entry.label = labelName(d.label);
+      if (typeof d.reads === "string") entry.reads = labelName(d.reads);
+      if (typeof d.party_id === "string") entry.party = partyName(d.party_id);
+      if (r.event === "source_party_set") {
+        if (typeof d.source_id === "string") {
+          entry.source_id = d.source_id;
+          entry.source_title = sourceTitle(d.source_id);
+        }
+        entry.previous_party =
+          typeof d.previous_party_id === "string" ? partyName(d.previous_party_id) : null;
+      }
+      if (r.event === "provider_clearance_set") {
+        const list = (value: string | null | undefined) =>
+          typeof value === "string" && value.length > 0 ? value.split("\n") : [];
+        entry.cleared = list(d.cleared);
+        entry.no_longer_cleared = list(d.no_longer_cleared);
+      }
+      if (r.event === "owls_created" || r.event === "standing_mandate_created") {
+        const micro = Number(d.amount_micro_usd);
+        if (Number.isFinite(micro) && micro > 0) entry.amount_owls = microUsdToOwls(micro);
+        if (typeof d.account_id === "string") entry.account = accountNames.get(d.account_id) ?? "";
+        if (typeof d.grant_id === "string") {
+          // A mandate at a label the reader does not read is named by its id alone.
+          const title = mandateTitles.get(d.grant_id);
+          entry.mandate = title === undefined ? { id: d.grant_id, title: "", withheld: true } : { id: d.grant_id, title };
+        }
+        if (typeof d.note === "string" && d.note) entry.note = d.note;
+      }
+      if (typeof d.connection_id === "string") {
+        entry.connection = connectionName(d.connection_id);
+        if (typeof d.previous_label === "string") entry.previous_label = labelName(d.previous_label);
+        if (typeof d.previous_party_id === "string") entry.previous_party = partyName(d.previous_party_id);
+        // Lists are stored as one string, a name to a line: a tool's name may
+        // hold a comma.
+        const list = (value: string | null | undefined) =>
+          typeof value === "string" && value.length > 0 ? value.split("\n") : undefined;
+        const changed = list(d.changed);
+        if (changed) entry.changed = changed;
+        if (typeof d.reason === "string") entry.reason = d.reason;
+        // A tool's name can say as much about the system as the connection's
+        // own, so the two are shown or withheld together.
+        if (typeof entry.connection === "string") {
+          const offered = list(d.offered);
+          if (offered) entry.offered = offered;
+          const dropped = list(d.no_longer_offered);
+          if (dropped) entry.no_longer_offered = dropped;
+          if (typeof d.tool === "string") entry.tool = d.tool;
+        }
+      }
+      if (typeof d.file_set_id === "string") {
+        entry.file_set = fileSetName(d.file_set_id);
+        if (typeof d.files === "string") entry.files = Number(d.files);
+        if (typeof d.manifest_sha256 === "string") entry.manifest_sha256 = d.manifest_sha256;
+        if (typeof d.changed === "string" && d.changed.length > 0) entry.changed = d.changed.split("\n");
+        if (typeof d.enabled === "string") entry.enabled = d.enabled === "true";
+      }
       return entry;
-    }
-    const d = r.detail ?? {};
-    if (typeof d.label === "string") entry.label = labelName(d.label);
-    if (typeof d.reads === "string") entry.reads = labelName(d.reads);
-    if (typeof d.party_id === "string") entry.party = partyName(d.party_id);
-    if (r.event === "source_party_set") {
-      if (typeof d.source_id === "string") entry.source_id = d.source_id;
-      entry.previous_party =
-        typeof d.previous_party_id === "string" ? partyName(d.previous_party_id) : null;
-    }
-    if (r.event === "provider_clearance_set") {
-      const list = (value: string | null | undefined) =>
-        typeof value === "string" && value.length > 0 ? value.split("\n") : [];
-      entry.cleared = list(d.cleared);
-      entry.no_longer_cleared = list(d.no_longer_cleared);
-    }
-    if (r.event === "owls_created" || r.event === "standing_mandate_created") {
-      const micro = Number(d.amount_micro_usd);
-      if (Number.isFinite(micro) && micro > 0) entry.amount_owls = microUsdToOwls(micro);
-      if (typeof d.account_id === "string") entry.account = accountNames.get(d.account_id) ?? "";
-      if (typeof d.grant_id === "string") {
-        // A mandate at a label the reader does not read is named by its id alone.
-        const title = mandateTitles.get(d.grant_id);
-        entry.mandate = title === undefined ? { id: d.grant_id, title: "", withheld: true } : { id: d.grant_id, title };
-      }
-      if (typeof d.note === "string" && d.note) entry.note = d.note;
-    }
-    if (typeof d.connection_id === "string") {
-      entry.connection = connectionName(d.connection_id);
-      if (typeof d.previous_label === "string") entry.previous_label = labelName(d.previous_label);
-      if (typeof d.previous_party_id === "string") entry.previous_party = partyName(d.previous_party_id);
-      // Lists are stored as one string, a name to a line: a tool's name may
-      // hold a comma.
-      const list = (value: string | null | undefined) =>
-        typeof value === "string" && value.length > 0 ? value.split("\n") : undefined;
-      const changed = list(d.changed);
-      if (changed) entry.changed = changed;
-      if (typeof d.reason === "string") entry.reason = d.reason;
-      // A tool's name can say as much about the system as the connection's
-      // own, so the two are shown or withheld together.
-      if (typeof entry.connection === "string") {
-        const offered = list(d.offered);
-        if (offered) entry.offered = offered;
-        const dropped = list(d.no_longer_offered);
-        if (dropped) entry.no_longer_offered = dropped;
-        if (typeof d.tool === "string") entry.tool = d.tool;
-      }
-    }
-    if (typeof d.file_set_id === "string") {
-      entry.file_set = fileSetName(d.file_set_id);
-      if (typeof d.files === "string") entry.files = Number(d.files);
-      if (typeof d.manifest_sha256 === "string") entry.manifest_sha256 = d.manifest_sha256;
-      if (typeof d.changed === "string" && d.changed.length > 0) entry.changed = d.changed.split("\n");
-      if (typeof d.enabled === "string") entry.enabled = d.enabled === "true";
-    }
-    return entry;
-  });
+    });
+  }
 }
 
 /** Write one administrative event inside the transaction that makes the change. */

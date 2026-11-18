@@ -129,6 +129,10 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "Removing a grant changes who may read a label, so it is written on the owner's connection. The caller has checked that the actor may administer.",
       "The removal mark on one grant.",
     ],
+    [
+      "The log names a source by its title to a reader cleared for the source's label, and withholds it from the rest.",
+      "The title of each source a log entry names, kept only where the reader's own clearance holds the source's label; every other reader is told it is withheld.",
+    ],
   ],
   "src/services/reading-service.ts": [
     [
@@ -164,6 +168,10 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
     [
       "The setup checklist tells an administrator how much material the whole deployment holds, which is a count of rows at every label.",
       "Nothing. It returns counts: sources by the party each belongs to, submitted sources waiting for review, and nodes. Party names are the administrators' own list; no row's content or label is read out.",
+    ],
+    [
+      "The setup checklist tells an administrator whether pages are shown outside under a signing key that is not registered, and the key signs pages at every label.",
+      "Nothing. It returns one count, of showings outside that are open, at every label; no row's content or label is read out.",
     ],
   ],
   "src/services/setup-service.ts": [

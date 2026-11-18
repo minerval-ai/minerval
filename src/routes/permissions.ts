@@ -8,7 +8,8 @@
  *   GET    /permissions/mine: what the signed-in account holds.
  *   GET    /permissions/log: every grant, removal and
  *     administrative change, newest first, owls created and standing
- *     mandates set up included (routes/owls.ts). Any member may read it.
+ *     mandates set up included (routes/owls.ts), filtered by kind, actor
+ *     and text before the limit. Any member may read it.
  *   GET    /permissions/grants: who holds what now.
  *   POST   /permissions/grants: grant one permission.
  *   DELETE /permissions/grants/:grant_id: remove a grant (the row stays).
@@ -67,6 +68,9 @@ import {
   setSourceParty,
 } from "../services/party-service.js";
 import {
+  LOG_TEXT_SCAN,
+  LOG_TYPES,
+  type LogType,
   getGrant,
   grantAdministratorByOperator,
   grantPermission,
@@ -145,32 +149,59 @@ export async function permissionRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.get<{ Querystring: { limit?: number; before?: string } }>("/permissions/log", {
+  app.get<{ Querystring: { limit?: number; before?: string; type?: string; by?: string; q?: string } }>("/permissions/log", {
     schema: {
       tags: ["permissions"],
       summary:
-        "The log of who was granted what, who removed it, every change to labels, parties and whose material a source is, and every creation of owls or of a standing mandate, newest first",
+        "The log of who was granted what, who removed it, every change to labels, parties, connections, file sets and whose material a source is, and every creation of owls or of a standing mandate, newest first, filtered by kind, by who acted and by text",
       description:
         "Any member may read it. People appear by display name. The name of a label you are " +
         "not cleared to read, or of a party that is neither the organization itself nor one " +
-        "you hold release for, is replaced by {withheld: true}; that the act happened, who " +
-        "did it, to whom and when is always shown. Page back with before=<the last entry's at>.",
+        "you hold release for, is replaced by {withheld: true}, and so is a source's title " +
+        "unless you read the source's label; that the act happened, who did it, to whom and " +
+        "when is always shown. Each entry has a `type`, one of " +
+        LOG_TYPES.join(", ") +
+        ". `type` (one, or several separated by commas), `by` and `q` are applied before " +
+        "`limit`. `by` is an account's id (an entry's `by_id`), or `operator`, `first_administrator` or " +
+        "`deployment` for what acts where no person does. `q` matches the entry's words as " +
+        "you are shown them, never a withheld name; with `q` one request reads at most " +
+        LOG_TEXT_SCAN.toLocaleString("en-US") +
+        " entries of the log, so a page can hold fewer than `limit` with more to read. " +
+        "`next_before` is where the next page starts (pass it as `before`); null when the " +
+        "log has nothing older that matches.",
       querystring: {
         type: "object",
         properties: {
           limit: { type: "integer", minimum: 1, maximum: 500, description: "Entries to return (default 100)" },
           before: { type: "string", format: "date-time", description: "Only entries earlier than this time" },
+          type: {
+            type: "string",
+            pattern: `^(${LOG_TYPES.join("|")})(,(${LOG_TYPES.join("|")}))*$`,
+            description: `Only entries of these kinds, separated by commas: ${LOG_TYPES.join(", ")}`,
+          },
+          by: {
+            type: "string",
+            maxLength: 64,
+            description: "Only acts by this account (its id), or by operator, first_administrator or deployment",
+          },
+          q: { type: "string", maxLength: 200, description: "Only entries whose words hold this text, case aside" },
         },
       },
     },
     preHandler: signedIn,
-    handler: async (request, reply) =>
-      reply.send({
-        entries: await permissionLog(standingOf(request.auth), {
-          limit: request.query.limit,
-          before: request.query.before,
-        }),
-      }),
+    handler: async (request, reply) => {
+      const types = request.query.type
+        ? (request.query.type.split(",") as LogType[]).filter((t) => (LOG_TYPES as readonly string[]).includes(t))
+        : undefined;
+      const log = await permissionLog(standingOf(request.auth), {
+        limit: request.query.limit,
+        before: request.query.before,
+        types,
+        by: request.query.by,
+        q: request.query.q,
+      });
+      return reply.send({ entries: log.entries, next_before: log.next_before });
+    },
   });
 
   app.get("/permissions/grants", {

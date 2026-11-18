@@ -243,10 +243,45 @@ describe("a node's page, finance to company", () => {
     expect(mine.map((i) => [i.part, i.the_redactor_proposes])).toEqual([[null, "let through"], [3, "hold"], [1, "let through"], [2, "let through"], [4, "delay"]]);
     expect(mine[0].decide_for[0].setting).toBe("person");
     expect(mine[1].held_by_the_redactor.reason).toBe("a legal or contractual reason");
+    // Each item says where it crosses, and the policy it was redacted under with the categories a passage can be removed under.
+    const [policyRow] = await system(() =>
+      rawQuery<{ id: string; version: number; categories: Array<{ name: string }> }>(
+        `SELECT r.id, r.version, r.categories FROM redaction_policies r JOIN showing_pages p ON p.policy_id = r.id WHERE p.id = $1`,
+        [item]
+      )
+    );
+    for (const row of mine) {
+      expect(row).toMatchObject({ gate_id: id.gate, from: FINANCE, from_named_by: "its label", to: COMPANY, to_outside: false });
+      expect(row.policy).toMatchObject({ policy_id: policyRow!.id, version: policyRow!.version, categories: policyRow!.categories.map((c) => c.name) });
+    }
+    expect(mine[0].policy.categories).toContain("commercial figures");
+    // A holder who reads neither the label the item was written at nor administers is not told that label's name.
+    const notReading = (await gateQueue({ ...orgHolder, clearance: [COMPANY, "public"] })) as { items: any[] };
+    const theirRows = notReading.items.filter((i) => i.item_id === item);
+    expect(theirRows.length).toBeGreaterThan(0);
+    for (const row of theirRows) {
+      expect(row.from).not.toBe(FINANCE);
+      expect(row.from_named_by).not.toBe("its label");
+      expect(row).toMatchObject({ to: COMPANY, to_outside: false });
+      expect(row.policy.categories).toContain("commercial figures");
+    }
+    // An administrator who does not read it is, as on the gate's settings.
+    const asAdministrator = (await gateQueue({ ...orgHolder, clearance: [COMPANY, "public"], administer: true })) as { items: any[] };
+    expect(asAdministrator.items.find((i) => i.item_id === item)).toMatchObject({ from: FINANCE, from_named_by: "its label" });
+
+    // What the showing covers, in words: the mandate by name for a reader of the label it works at, and no name for one who reads only where it is shown.
+    const [mandateName] = await system(() => rawQuery<{ name: string }>(`SELECT name FROM grants WHERE id = $1`, [id.otherMandate]));
+    expect((await asPerson([FINANCE, COMPANY, "public"], () => shownShowing(asked.showing_id)))).toMatchObject({
+      scope: `every node the work of the mandate "${mandateName!.name}" assessed`,
+      scope_code: "mandate",
+    });
+    expect((await atCompany(() => shownShowing(asked.showing_id)))).toMatchObject({ scope: "every node one mandate's work assessed", scope_code: "mandate" });
 
     // A person removes a passage, as the Redactor could, under a category of the policy. No word is changed.
     const badCategory = await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "remove", passage: SECRET, category: "anything awkward" }] });
-    expect(badCategory.refused[0]!.why).toMatch(/A removal is made under a category of this boundary's policy/);
+    expect(badCategory.refused[0]!.why).toMatch(/^"anything awkward" is not a category of the policy this item was redacted under \(version \d+\)\. Its categories are .*"commercial figures"/);
+    const noCategory = await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "remove", passage: SECRET }] });
+    expect(noCategory.refused[0]!.why).toMatch(/^No category was given/);
     const before = (await atCompany(() => rawQuery<{ root: string }>(`SELECT root FROM shown_pages WHERE id = $1`, [item])))[0]!.root;
     const removed = await decideAtGate({ actor: orgHolder, items: [{ item_id: item, part: 3, decision: "remove", passage: SECRET, category: "commercial figures" }] });
     expect(removed).toMatchObject({ decided: 1, refused: [] });
@@ -578,6 +613,9 @@ describe("a gate's settings in one place", () => {
     await setGate({ boundaryId: id.gate!, flow: "everything", actor: admin });
     const asked = await askShowing({ pageLabel: FINANCE, toLabel: COMPANY, form: "standing", scope: "boundary", actor: director });
     expect(asked.pages_opened).toBeGreaterThan(0);
+    // It covers every node at the label, and says so: by the label's name to a reader of it, and without it to one who reads only where it goes.
+    expect(await asPerson([FINANCE, COMPANY, "public"], () => shownShowing(asked.showing_id))).toMatchObject({ scope: `every node assessed at "${FINANCE}"`, scope_code: "boundary" });
+    expect(await atCompany(() => shownShowing(asked.showing_id))).toMatchObject({ scope: "every node assessed at the label its pages are written at" });
     const fresh = await assessedAtFinance("The dividend was covered", null, "It was covered twice.");
     expect(await followShowings()).toBeGreaterThanOrEqual(1);
     const [row] = await everyRow<{ id: string }>(`SELECT p.id FROM showing_pages p WHERE p.node_id = $1 AND p.showing_id = $2`, [fresh, asked.showing_id]);

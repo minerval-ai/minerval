@@ -346,13 +346,16 @@ export async function inboundOverview(opts: { nodeId?: string } = {}): Promise<R
   const rows = await rawQuery<{
     id: string; public_contribution_id: string; node_id: string; node: string | null; contribution_type: string; submitted_at: Date; received_at: Date;
     state: string; content: string | null; evidence_urls: string[] | null; repeats: string | null; delivered_at: Date | null;
-    reassessment: string | null; reassessment_at: Date | null;
+    reassessment: string | null; reassessment_at: Date | null; showing_id: string | null; page_label: string | null;
   }>(
+    // The showing is read as the reader: where it is at a label they do not read, its row is not theirs, and the label is withheld.
     `SELECT i.id, i.public_contribution_id, i.node_id, c.text AS node, i.contribution_type, i.submitted_at, i.received_at, i.state,
-            f.content, f.evidence_urls, i.repeats, i.delivered_at, i.reassessment, i.reassessment_at
+            f.content, f.evidence_urls, i.repeats, i.delivered_at, i.reassessment, i.reassessment_at,
+            s.id AS showing_id, s.sensitivity_label AS page_label
        FROM inbound_contributions i
        LEFT JOIN claims c ON c.id = i.node_id
        LEFT JOIN feed_contributions f ON f.id = i.public_contribution_id
+       LEFT JOIN showings s ON s.id = i.showing_id
       WHERE ($1::uuid IS NULL OR i.node_id = $1) ORDER BY i.received_at DESC, i.id LIMIT 200`,
     [opts.nodeId ?? null]
   );
@@ -365,6 +368,9 @@ export async function inboundOverview(opts: { nodeId?: string } = {}): Promise<R
       type: r.contribution_type,
       submitted_at: r.submitted_at.toISOString(),
       received_at: r.received_at.toISOString(),
+      // The label the page it was made through was written at, where its reassessment is opened and paid for.
+      page_label: r.page_label ?? { withheld: true as const },
+      ...(r.showing_id ? { showing_id: r.showing_id } : {}),
       ...(r.content !== null ? { text_written_outside_this_deployment: r.content, addresses_it_cites: r.evidence_urls ?? [] } : {}),
       ...(r.repeats ? { repeats: r.repeats } : {}),
       ...(r.delivered_at ? { given_to_the_steward_at: r.delivered_at.toISOString() } : {}),
@@ -375,5 +381,8 @@ export async function inboundOverview(opts: { nodeId?: string } = {}): Promise<R
       "review has admitted it. It is given as it was written to the node's Steward at the label the page came from, and a reassessment is " +
       "opened there, which runs when it is paid for. One whose text is the same as an earlier one's on the node is counted with that one " +
       "and opens nothing. The outside is told that the contribution was received and where the reassessment stands.",
+    page_label:
+      "page_label is the label the page each contribution was made through was written at: the reassessment it opened is at that label, and " +
+      "is paid for there (POST /claims/:claim_id/order with that label). Where you do not read that label, its name is withheld.",
   };
 }
