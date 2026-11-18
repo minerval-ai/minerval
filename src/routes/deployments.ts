@@ -25,6 +25,7 @@ import {
   organizationForDeployment,
   readConnectRequest,
   recordNonce,
+  retireSelf,
 } from "../services/deployment-service.js";
 import { OrganizationError, requireMember } from "../services/organization-service.js";
 import {
@@ -235,6 +236,26 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
         });
       }
       return answer(reply, () => organizationForDeployment(deployment.id));
+    },
+  });
+
+  app.post("/deployments/me/retire", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "A connected deployment, signed with its key, retires itself: its key stops working at once and its grants are withdrawn. " +
+        "Its administrators disconnect it this way; it can connect again with a new key",
+    },
+    preHandler: reader,
+    handler: (request, reply) => {
+      const deployment = request.auth?.deployment;
+      if (!deployment) {
+        return reply.code(403).send({ error: "This is sent by a connected deployment, with its signed key.", code: "DEPLOYMENT_REQUIRED" });
+      }
+      return answer(reply, async () => {
+        await retireSelf(deployment.id);
+        return { retired: true };
+      });
     },
   });
 

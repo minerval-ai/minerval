@@ -2,10 +2,11 @@
 
 The design agreed in #1118, with the questions its review raised
 answered ("Decisions", at the end). Phase 1, organizations on minerval.ai,
-is built ([accounts.md](accounts.md), "Organizations"), and so is the public
-graph's side of phase 2: signed requests, grants and connecting. The
-deployment's side of phase 2, and the phases after it, are not ("Phases",
-below). It replaces the shared login and the bearer keys a private deployment uses
+is built ([accounts.md](accounts.md), "Organizations"), and so is phase 2,
+connected deployments, but for the Mirror page: signed requests, grants and
+connecting on both sides, and the mirror, usage reports, Outbox and outward
+acts signed with the connection key. The Mirror page and the phases after
+phase 2 are not ("Phases", below). It replaces the shared login and the bearer keys a private deployment uses
 to reach minerval.ai. It covers both kinds of private deployment: one an
 organization runs itself (`own_machines`, or `third_party` for a host it
 hires), and one Minerval runs for it (`minerval`). The two differ where
@@ -727,7 +728,12 @@ Each phase is one pull request or a few, and leaves things working.
    its test, `POST /deployments/connect` and its poll, the approve page at
    `/connect`, `GET /organizations/me`, and the organization's Deployments
    tab, with opening a public mandate as the organization on Public acts
-   folded in. The deployment's side is next. In full: `deployments`, `deployment_grants`,
+   folded in. The deployment's side is built too: `public_graph_connection`
+   (the owner's alone, by an owner_only list in the enforcement step), the
+   connection on Overview with Connect and Disconnect, Health's Organization
+   owner, the sidebar's dot, the Inbox's rows, Budget's billed-to line, and
+   `services/public-graph-client.ts` signing what the mirror, the usage report,
+   the Outbox and the outward acts send. The Mirror page is next. In full: `deployments`, `deployment_grants`,
    `deployment_requests`, `deployment_request_nonces`, the signed-request
    method in the auth plugin, `deployment-grants.ts` and its test, the
    connect flow on both sides, the connection on Overview with its Health

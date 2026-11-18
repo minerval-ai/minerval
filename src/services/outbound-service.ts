@@ -37,6 +37,7 @@
  * page outside itself.
  */
 import { createHash, createPublicKey, sign as cryptoSign, type KeyObject } from "node:crypto";
+import { liveConnection, publicGraphFetch } from "./public-graph-client.js";
 import { loadConfig } from "../config.js";
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
@@ -408,27 +409,46 @@ export type Sender = { actor: GateActor } | { standing: true };
 
 export interface PublicGraph {
   url: string;
+  /** The account key from the settings, where the deployment is not connected; empty where it signs instead. */
   key: string;
+  /** True where requests are signed with the deployment's connection key (services/public-graph-client.ts). */
+  signed: boolean;
 }
 
-export function publicGraph(): PublicGraph {
+/**
+ * Where this deployment reaches the public graph, and how: signed with its
+ * connection key where it is connected (docs/organizations.md, "Connecting"),
+ * otherwise with the account key in its settings. PUBLIC_GRAPH_API_URL, where
+ * set, names the address either way.
+ */
+export async function publicGraph(): Promise<PublicGraph> {
   const { publicGraphApiUrl, publicGraphApiKey } = loadConfig();
+  const connection = await liveConnection();
+  if (connection) {
+    return { url: (publicGraphApiUrl || connection.apiUrl).replace(/\/+$/, ""), key: "", signed: true };
+  }
   if (!publicGraphApiUrl || !publicGraphApiKey) {
     throw new OutboundError(
       "NO_ROUTE_OUT",
-      "This deployment has no address or key for the public graph (PUBLIC_GRAPH_API_URL, PUBLIC_GRAPH_API_KEY), so it " +
-        "sends nothing itself. A person can take each package as a file and submit it on the public graph under the " +
-        "organization's account."
+      "This deployment is not connected to minerval.ai and has no account key for it (PUBLIC_GRAPH_API_KEY), so it " +
+        "sends nothing itself. An administrator connects it on the public graph's Overview; meanwhile a person can take each " +
+        "package as a file and submit it on the public graph under the organization's account."
     );
   }
-  return { url: publicGraphApiUrl.replace(/\/+$/, ""), key: publicGraphApiKey };
+  return { url: publicGraphApiUrl.replace(/\/+$/, ""), key: publicGraphApiKey, signed: false };
+}
+
+/** Whether anything can be sent to the public graph from here: a connection, or an account key with its address. */
+export async function hasRouteOut(): Promise<boolean> {
+  const { publicGraphApiUrl, publicGraphApiKey } = loadConfig();
+  return Boolean(await liveConnection()) || Boolean(publicGraphApiUrl && publicGraphApiKey);
 }
 
 export async function call(graph: PublicGraph, method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; json: Record<string, any> }> {
-  const res = await fetch(`${graph.url}${path}`, {
+  const res = await publicGraphFetch(`${graph.url}${path}`, {
     method,
-    headers: { "x-api-key": graph.key, ...(body === undefined ? {} : { "content-type": "application/json" }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    fallbackKey: graph.key,
   });
   const text = await res.text();
   let json: Record<string, any> = {};
@@ -504,7 +524,7 @@ export interface SendReport {
  */
 export async function sendOutbound(input: { releaseId: string; sender: Sender }): Promise<SendReport> {
   if (oneLabelOnly()) throw new OutboundError("ONE_LABEL", "This graph holds everything at one label and shows no page outside itself.");
-  const graph = publicGraph();
+  const graph = await publicGraph();
   return asOwner(async () => {
     const [release] = await rawQuery<{ id: string; send_as_released: boolean; kind: string }>(`SELECT id, send_as_released, kind FROM received_releases WHERE id = $1 AND to_outside`, [input.releaseId]);
     if (!release) throw new OutboundError("RELEASE_NOT_FOUND", "No release outside has that id.");
@@ -569,7 +589,7 @@ export async function followOutbound(): Promise<{ built: number; sent: number }>
   const config = loadConfig();
   if (!config.publishSigningKey || !config.deploymentHosting) return { built: 0, sent: 0 };
   const built = await buildOutboundPackages();
-  if (!config.publicGraphApiUrl || !config.publicGraphApiKey) return { built, sent: 0 };
+  if (!(await hasRouteOut())) return { built, sent: 0 };
   const standing = await asOwner(() =>
     rawQuery<{ id: string }>(`SELECT id FROM received_releases WHERE to_outside AND send_as_released AND kind = 'page' ORDER BY asked_at`)
   );
@@ -601,7 +621,7 @@ export function followReleaseOutside(releaseId: string): Promise<void> {
   const work = async (): Promise<void> => {
     if (oneLabelOnly()) return;
     const config = loadConfig();
-    if (!config.publishSigningKey || !config.deploymentHosting || !config.publicGraphApiUrl || !config.publicGraphApiKey) return;
+    if (!config.publishSigningKey || !config.deploymentHosting || !(await hasRouteOut())) return;
     const [release] = await asOwner(() =>
       rawQuery<{ send_as_released: boolean }>(`SELECT send_as_released FROM received_releases WHERE id = $1 AND to_outside AND kind = 'page'`, [releaseId])
     );

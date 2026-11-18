@@ -783,7 +783,7 @@ function Usage({ outgoing }: { outgoing: OutgoingUsageReports }) {
       {outgoing.reporting && (
         <>
           <Section title="Where reports go">
-            <Destination destination={outgoing.destination} />
+            <Destination destination={outgoing.destination} billedTo={outgoing.billed_to ?? null} />
             <div className="w-card">
               <div className="w-card-b">
                 <WorkForm action={sendUsageReportsAction} submit="Prepare and send now" inline>
@@ -835,13 +835,27 @@ function Said({ k, text }: { k: string; text: string }) {
   );
 }
 
-function Destination({ destination }: { destination: OutgoingUsageReports["destination"] }) {
+function Destination({ destination, billedTo }: { destination: OutgoingUsageReports["destination"]; billedTo: string | null }) {
+  if (destination.kind === "online" && destination.signed) {
+    return (
+      <Banner>
+        <span>
+          Billed to <b>{billedTo ?? "the organisation"}</b>. Sent privately to <code className="w-mono">{destination.url}</code>, signed with this
+          deployment&rsquo;s own key. Admins of {billedTo ?? "the organisation"} can read what Minerval recorded, on minerval.ai.
+        </span>
+      </Banner>
+    );
+  }
   if (destination.kind === "online") {
     return (
       <Banner tone={destination.ready ? "neu" : "warn"}>
         <span>
           Sent privately to <code className="w-mono">{destination.url}</code>, under the organisation&rsquo;s account with Minerval.{" "}
-          {destination.ready ? "The key is set." : "The key they are sent under (USAGE_REPORT_API_KEY) is not set, so nothing can be sent yet."}
+          {destination.ready
+            ? "The key is set."
+            : billedTo
+              ? `This deployment is connected for ${billedTo} and does not hold report_usage, so nothing can be sent yet. An admin of ${billedTo} grants it on minerval.ai.`
+              : "This deployment is not connected to minerval.ai, so nothing can be sent yet. Connect it on the public graph's Overview."}
         </span>
       </Banner>
     );

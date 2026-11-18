@@ -146,7 +146,7 @@ describe("the areas", () => {
       ["General mandates", "done", "/admin/budget"],
       ["Owls", "done", "/admin/budget"],
       ["Usage report", "done", "/admin/budget"],
-      ["Public graph", "done", "/gates"],
+      ["Public graph", "done", "/admin/outside"],
       ["Connections", "done", "/admin/connections"],
       ["Material", "done", "/sources"],
     ]);

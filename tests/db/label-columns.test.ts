@@ -230,6 +230,8 @@ describe("the label column, in the catalog", () => {
       "prize_payouts",
       // Which providers the administrators cleared for each label: names, part of the wall.
       "provider_clearances",
+      // This deployment's key for its connection to the public graph: the owner's alone (docs/organizations.md).
+      "public_graph_connection",
       // Counts of what waits, with no content.
       "queue_depth_snapshots",
       // Database time used by query_sql, per account and day.

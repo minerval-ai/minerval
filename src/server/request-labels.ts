@@ -312,6 +312,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "DELETE /account-conversion": { rule: "none", why: ORGANIZATION },
   "POST /account-conversions/:id/accept": { rule: "none", why: ORGANIZATION },
   "POST /deployments/connect": { rule: "none", why: "A deployment's request to connect: a key and what it asks for, which carry no label." },
+  "POST /deployments/me/retire": { rule: "none", why: ORGANIZATION },
   "POST /connect-requests/:code/approve": { rule: "none", why: ORGANIZATION },
   "POST /connect-requests/:code/deny": { rule: "none", why: ORGANIZATION },
   "POST /operator/organizations/:id/admins": { rule: "none", why: "The operator key, which acts for no person, on an organization's members, which carry no label." },
@@ -445,6 +446,9 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "POST /outbound/proposals": { rule: "none", why: OUTBOUND },
   "POST /outbound/registration": { rule: "none", why: "Signs a statement with the deployment's key and writes nothing." },
   "POST /outbound/registration/send": { rule: "none", why: OUTWARD },
+  "POST /outside/connection": { rule: "none", why: "This deployment's own connection to minerval.ai: a key and what minerval.ai said, in a table that carries no label." },
+  "POST /outside/connection/check": { rule: "none", why: "Reads the connection's state from minerval.ai into a table that carries no label." },
+  "DELETE /outside/connection": { rule: "none", why: "Forgets the connection's key, in a table that carries no label, and logs the act." },
   "POST /outside/requests/:public_request_id/adopt": { rule: "none", why: OUTWARD },
   "POST /requests/:request_id/adopt": {
     rule: "none",

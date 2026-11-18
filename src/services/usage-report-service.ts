@@ -37,6 +37,7 @@
  *    (receiveUsageReport). The same report again changes nothing. Nothing
  *    is billed from it yet: the price per owl is not decided.
  */
+import { liveConnection, signedAuthorization, type Connection } from "./public-graph-client.js";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -320,16 +321,26 @@ export async function prepareUsageReports(
   }));
 }
 
-/** Where this deployment's reports go, as configured. */
+/**
+ * Where this deployment's reports go: a directory, where one is set; else
+ * Minerval's server, at USAGE_REPORT_URL or, where the deployment is
+ * connected, at its connection's address. Online, a report is signed with
+ * the connection key where the deployment is connected and holds
+ * report_usage, and carries the account key otherwise
+ * (docs/organizations.md, "Billing").
+ */
 export function usageReportDestination(
-  config: Pick<Config, "usageReportUrl" | "usageReportApiKey" | "usageReportDir"> = loadConfig()
+  config: Pick<Config, "usageReportUrl" | "usageReportApiKey" | "usageReportDir"> = loadConfig(),
+  connection: Pick<Connection, "apiUrl" | "grants"> | null = null
 ):
-  | { kind: "online"; url: string; ready: boolean }
+  | { kind: "online"; url: string; ready: boolean; signed: boolean }
   | { kind: "file"; directory: string }
   | { kind: "none" } {
   if (config.usageReportDir) return { kind: "file", directory: config.usageReportDir };
-  if (config.usageReportUrl) {
-    return { kind: "online", url: config.usageReportUrl, ready: config.usageReportApiKey.length > 0 };
+  const url = config.usageReportUrl || (connection ? `${connection.apiUrl.replace(/\/+$/, "")}/usage-reports` : "");
+  if (url) {
+    const signed = connection !== null && connection.grants.includes("report_usage");
+    return { kind: "online", url, ready: signed || config.usageReportApiKey.length > 0, signed };
   }
   return { kind: "none" };
 }
@@ -360,21 +371,25 @@ export async function sendUsageReports(
 ): Promise<SendOutcome> {
   const config = loadConfig();
   if (!usageReporting(config)) return { sent: 0, stopped: null };
-  const destination = usageReportDestination(config);
+  const connection = await liveConnection();
+  const destination = usageReportDestination(config, connection);
   if (destination.kind === "none") {
     return {
       sent: 0,
       stopped:
-        "No destination is set. Set USAGE_REPORT_URL and USAGE_REPORT_API_KEY to send reports to " +
-        "Minerval, or USAGE_REPORT_DIR to write them as files to hand over.",
+        "No destination is set. Connect this deployment to minerval.ai with report_usage, or set " +
+        "USAGE_REPORT_DIR to write reports as files to hand over.",
     };
   }
   if (destination.kind === "online" && !destination.ready) {
     return {
       sent: 0,
       stopped:
-        "USAGE_REPORT_URL is set and USAGE_REPORT_API_KEY is not. A report is sent under an API " +
-        "key of the organization's account with Minerval.",
+        connection
+          ? "This deployment is connected to minerval.ai and does not hold report_usage. An admin of the " +
+            "organization grants it there; until then reports are prepared and kept, and sent oldest first after."
+          : "USAGE_REPORT_URL is set, and this deployment is neither connected to minerval.ai nor has " +
+            "USAGE_REPORT_API_KEY. Connect it, with report_usage.",
     };
   }
 
@@ -395,7 +410,12 @@ export async function sendUsageReports(
       } else {
         const response = await (dependencies.fetch ?? fetch)(destination.url, {
           method: "POST",
-          headers: { "content-type": "application/json", "x-api-key": config.usageReportApiKey },
+          headers: {
+            "content-type": "application/json",
+            ...(destination.signed && connection
+              ? { authorization: signedAuthorization(connection, destination.url, "POST", report.body) }
+              : { "x-api-key": config.usageReportApiKey }),
+          },
           body: report.body,
           signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         });
@@ -438,9 +458,11 @@ export interface OutgoingUsageReports {
   what_is_never_sent: string | null;
   corrections: string | null;
   destination:
-    | { kind: "online"; url: string; ready: boolean }
+    | { kind: "online"; url: string; ready: boolean; signed: boolean }
     | { kind: "file"; directory: string }
     | { kind: "none" };
+  /** The organization the reports are billed to, where this deployment is connected to minerval.ai. */
+  billed_to: string | null;
   /** Every report, newest day first, each exactly as it is sent. */
   reports: UsageReportRow[];
 }
@@ -449,6 +471,7 @@ export interface OutgoingUsageReports {
 export async function outgoingUsageReports(limit = 400): Promise<OutgoingUsageReports> {
   const config = loadConfig();
   const reporting = usageReporting(config);
+  const connection = await liveConnection();
   const rows = await rawQuery<ReportDbRow>(
     `SELECT ${REPORT_COLUMNS} FROM usage_reports ORDER BY period DESC, revision DESC LIMIT $1`,
     [Math.min(Math.max(1, Math.trunc(limit)), 2000)]
@@ -459,7 +482,8 @@ export async function outgoingUsageReports(limit = 400): Promise<OutgoingUsageRe
     what_is_sent: reporting ? WHAT_IS_SENT : FLAT_PRICE_SENDS_NOTHING,
     what_is_never_sent: reporting ? WHAT_IS_NEVER_SENT : null,
     corrections: reporting ? HOW_A_REPORT_IS_CORRECTED : null,
-    destination: usageReportDestination(config),
+    destination: usageReportDestination(config, connection),
+    billed_to: connection?.organizationName ?? null,
     reports: rows.map(reportRow),
   };
 }

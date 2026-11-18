@@ -42,6 +42,7 @@ export const DEPLOYMENT_ROUTE_GRANTS: Readonly<Record<string, RouteGrant>> = {
 
   // ---- any grant: the organization's own state ----
   "GET /organizations/me": "any",
+  "POST /deployments/me/retire": "any",
   "GET /users/me": "any",
   "GET /grants": "any",
   "GET /reports/mine/:id": "any",

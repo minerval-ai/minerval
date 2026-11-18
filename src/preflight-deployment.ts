@@ -36,6 +36,7 @@
  *    names is set, and whether the key that sealed a credential given on a
  *    connection's page is (by the key's id; nothing is opened).
  */
+import { readConnection } from "./services/public-graph-client.js";
 import { createPrivateKey, X509Certificate } from "node:crypto";
 import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { settingsThatDisagree, type Config } from "./config.js";
@@ -97,6 +98,12 @@ export interface DeploymentFacts {
   grantsSet: { signup: number; monthly: number };
   /** What is wrong with the key credentials given on a connection's page are sealed with, as set; null when nothing is. */
   credentialKeyProblem?: string | null;
+  /**
+   * This deployment's connection to minerval.ai (docs/organizations.md,
+   * "Connecting"): its state, address, organization and grants. Absent or
+   * null where it has none.
+   */
+  connection?: { state: string; apiUrl: string; organizationName: string | null; grants: string[] } | null;
 }
 
 export interface DeploymentCheckFacts {
@@ -178,10 +185,24 @@ function checkPublishing(facts: DeploymentCheckFacts): DeploymentOutcome {
   );
 }
 
-function checkPublicGraph({ config }: DeploymentCheckFacts): DeploymentOutcome {
+function checkPublicGraph({ config, deployment }: DeploymentCheckFacts): DeploymentOutcome {
   const url = config.publicGraphApiUrl.trim();
   const key = config.publicGraphApiKey.trim();
   const signs = config.publishSigningKey.trim().length > 0;
+  const connection = deployment.connection ?? null;
+  if (url && !httpsUrl(url)) {
+    return fail(`public_graph.api_url is "${url}", which is not an https address; it is the public graph's API, for example "https://api.minerval.ai".`);
+  }
+  if (connection?.state === "connected") {
+    const at = url && url.replace(/\/+$/, "") !== connection.apiUrl ? ` public_graph.api_url (${url}) overrides the connection's address, ${connection.apiUrl}.` : "";
+    return pass(
+      `Connected to minerval.ai${connection.organizationName ? ` for ${connection.organizationName}` : ""}, holding ${connection.grants.length ? connection.grants.join(", ") : "no grant"}. ` +
+        `Every request there is signed with this deployment's own key.${key ? " PUBLIC_GRAPH_API_KEY is set and no longer used; it can be removed." : ""}${at}`
+    );
+  }
+  if (connection?.state === "waiting") {
+    return toDo("A connection to minerval.ai waits for an admin of the organization to approve its code, shown on the public graph's Overview.");
+  }
   if (!url) {
     if (key) return fail("PUBLIC_GRAPH_API_KEY is set but public_graph.api_url (PUBLIC_GRAPH_API_URL) is not, so the key is used for nothing.");
     return signs
@@ -193,10 +214,12 @@ function checkPublicGraph({ config }: DeploymentCheckFacts): DeploymentOutcome {
   }
   if (!key) {
     return fail(
-      "public_graph.api_url is set and PUBLIC_GRAPH_API_KEY is not, so nothing can be sent or done on the public graph: every act there is made under the organization's own account. Set the key in the environment; it is a secret."
+      "public_graph.api_url is set and this deployment is not connected to minerval.ai, so nothing can be sent or done on the public graph. An administrator connects it on the public graph's Overview."
     );
   }
-  return pass(`The public graph is reached at ${url} under the organization's own account key. The key is not tried here: nothing is sent to the public graph by this check.`);
+  return pass(
+    `The public graph is reached at ${url} under the organization's account key (PUBLIC_GRAPH_API_KEY). Connecting this deployment on the public graph's Overview replaces the key with its own signed requests. The key is not tried here.`
+  );
 }
 
 function checkOwnOrganization(facts: DeploymentCheckFacts): DeploymentOutcome {
@@ -275,11 +298,22 @@ function checkUsageReport(facts: DeploymentCheckFacts): DeploymentOutcome {
     if (!dir.writable) return fail(`usage_report.dir is "${config.usageReportDir}", which this process cannot write to, so no report can be written there.`);
     return pass(`Usage is reported as files written to ${config.usageReportDir}, to be handed over: one total of owls spent for each day, and nothing about what the work was on.${from}`);
   }
-  if (config.usageReportUrl) {
-    if (!config.usageReportApiKey) {
-      return fail("usage_report.url is set and USAGE_REPORT_API_KEY is not, so reports are prepared and none can be sent. Set the key in the environment: an API key of the organization's account with Minerval.");
+  const connection = facts.deployment.connection ?? null;
+  const connected = connection?.state === "connected";
+  const signedReports = connected && connection!.grants.includes("report_usage");
+  const where = config.usageReportUrl || (connected ? `${connection!.apiUrl}/usage-reports` : "");
+  if (where) {
+    if (connected && !signedReports && !config.usageReportApiKey) {
+      return fail(
+        `This deployment is connected to minerval.ai and does not hold report_usage, so reports are prepared and none can be sent. An admin of ${connection!.organizationName ?? "the organization"} grants it on minerval.ai.`
+      );
     }
-    return pass(`Usage is reported privately to ${config.usageReportUrl}, for billing: one total of owls spent for each day, and nothing about what the work was on.${from}`);
+    if (!signedReports && !config.usageReportApiKey) {
+      return fail("usage_report.url is set and this deployment is not connected to minerval.ai, so reports are prepared and none can be sent. Connect it, with report_usage.");
+    }
+    return pass(
+      `Usage is reported privately to ${where}, for billing, ${signedReports ? "signed with this deployment's own key" : "under the account key"}: one total of owls spent for each day, and nothing about what the work was on.${from}`
+    );
   }
   return pass(`Usage is metered and no destination is set (usage_report.url or usage_report.dir), so reports are prepared and kept until one is.${from}`);
 }
@@ -667,6 +701,11 @@ export async function gatherDeploymentFacts(config: Config, reachable: boolean):
       monthly: Number(process.env.MONTHLY_GRANT_OWLS) || 0,
     },
     credentialKeyProblem: credentialKeys().problem,
+    connection: reachable
+      ? await readConnection()
+          .then((c) => (c ? { state: c.state, apiUrl: c.apiUrl, organizationName: c.organizationName, grants: c.grants } : null))
+          .catch(() => null)
+      : null,
   };
 }
 

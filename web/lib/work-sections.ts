@@ -22,7 +22,7 @@ export type WorkIcon =
   | "health" | "people" | "labels" | "parties" | "budget" | "log";
 
 /** What the sidebar shows beside an entry once the counts are read (app/api/work/counts). */
-export type WorkSignal = "inbox" | "review" | "public_requests" | "replies" | "health" | "connections";
+export type WorkSignal = "inbox" | "review" | "public_requests" | "replies" | "health" | "connections" | "public_graph";
 
 export interface WorkPage {
   href: string;
@@ -96,7 +96,7 @@ export const WORK_SECTIONS: WorkSection[] = [
     // Everything that passes between this deployment and the public graph (docs/outward-acts.md).
     name: "Public graph",
     pages: [
-      { href: "/admin/outside", name: "Overview", icon: "globe", shown: (m) => has(m, "direct", "consent") },
+      { href: "/admin/outside", name: "Overview", icon: "globe", signal: "public_graph", shown: (m) => has(m, "direct", "consent") },
       {
         href: "/admin/outside/requests",
         name: "Requests",

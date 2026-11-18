@@ -120,7 +120,11 @@ export default async function HealthPage({ searchParams }: { searchParams: Promi
               <Pill tone="info" title={OWNER_WORDS.admin.title}>
                 Admin
               </Pill>{" "}
-              works here
+              works here ·{" "}
+              <Pill tone="warn" title={OWNER_WORDS.organization.title}>
+                Organization
+              </Pill>{" "}
+              grants on minerval.ai
             </span>
           )
         }
@@ -274,7 +278,7 @@ function Status({ checklist, counts }: { checklist: SetupChecklist; counts: Retu
 
 function OwnerPill({ owner }: { owner: Owner }) {
   return (
-    <Pill tone={owner === "admin" ? "info" : "neu"} title={OWNER_WORDS[owner].title}>
+    <Pill tone={owner === "admin" ? "info" : owner === "organization" ? "warn" : "neu"} title={OWNER_WORDS[owner].title}>
       {OWNER_WORDS[owner].name}
     </Pill>
   );
