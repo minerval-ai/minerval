@@ -247,6 +247,19 @@ describe("in a members-only deployment", () => {
     fetchMock.mockResolvedValue(answer(500, {}));
     expect(await data.loadDeploymentFront()).toEqual({ topics: [], flagship: null });
   });
+
+  it("the /claims overview has none of public Minerval's curated territories, and reads none of their anchors", async () => {
+    for (const api of [true, false]) {
+      const { data } = await load("members", api);
+      h.session = { externalId: "oidc:alice" };
+      fetchMock.mockClear();
+      expect(await data.loadTerritories(), String(api)).toEqual([]);
+      expect(fetchMock, String(api)).not.toHaveBeenCalled();
+    }
+    // The public graph keeps them, as before.
+    const { data } = await load(undefined, false);
+    expect((await data.loadTerritories()).length).toBeGreaterThan(0);
+  });
 });
 
 describe("the gate", () => {
