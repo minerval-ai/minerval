@@ -751,8 +751,10 @@ a.tag.topic:hover { background: var(--paper-sunk); border-color: var(--ink); }
 }
 .claim-topics > .sc { color: var(--faint); margin-right: 0.15rem; }
 .topic-chips { display: inline-flex; gap: 0.35rem; flex-wrap: wrap; align-items: center; }
-.topic-chips .tag.topic .count {
-  color: var(--faint); margin-left: 0.35rem; font-variant-numeric: tabular-nums;
+/* a chip's claim count (the strip on /claims): set apart from the name so
+   "Psychology 1" never reads as "Psychology1". */
+.tag.topic .count {
+  color: var(--faint); margin-left: 0.45rem; font-variant-numeric: tabular-nums;
 }
 /* ==========================================================================
    Findings (#394): published as written; the page adds only footing
