@@ -4219,18 +4219,26 @@ export const lookouts = pgTable(
   "lookouts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // Who posted it: exactly one of a mandate or a node's Steward.
+    //
     // The funding mandate. Every run is a `lookout_run` action covered
     // from its escrow (fundGrantSelfActions), so a lookout can never
     // outspend the mandate that stands it up.
-    grantId: uuid("grant_id")
-      .notNull()
-      .references(() => grants.id, { onDelete: "cascade" }),
+    grantId: uuid("grant_id").references(() => grants.id, { onDelete: "cascade" }),
+    // The node whose Steward posted it. Its runs are paid from the fund the
+    // Steward put up from its own pass's budget (lookout-fund.ts), so it can
+    // never outspend that fund; what it raises and cannot pay for itself
+    // goes to the node's inbox.
+    nodeId: uuid("node_id").references((): AnyPgColumn => claims.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     // The brief, written by the Grantmaker: scope, where to look, what
     // to look out for, what to leave alone. Read in full every run.
     brief: text("brief").notNull(),
     // active | paused | retired
     status: text("status").notNull().default("active"),
+    // Paused because its fund could no longer pay for a run (a Steward's
+    // lookout, lookout-fund.ts), not by whoever posted it: a top-up resumes it.
+    pausedForFund: boolean("paused_for_fund").notNull().default(false),
     // Heartbeat cadence in hours; 0 = event-driven only.
     heartbeatHours: integer("heartbeat_hours").notNull().default(24),
     // Input kinds beyond the heartbeat this lookout wakes on:
@@ -4286,6 +4294,8 @@ export const lookouts = pgTable(
   },
   (table) => [
     index("idx_lookouts_grant").on(table.grantId, table.createdAt),
+    index("idx_lookouts_node").on(table.nodeId).where(sql`node_id IS NOT NULL`),
+    check("ck_lookouts_one_owner", sql`(${table.grantId} IS NULL) <> (${table.nodeId} IS NULL)`),
     index("idx_lookouts_due")
       .on(table.nextDueAt)
       .where(sql`status = 'active'`),

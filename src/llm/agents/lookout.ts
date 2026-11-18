@@ -38,6 +38,13 @@
  * importance. It spends only within its limit; the rest is the officers'
  * call. Its flags are recorded so its precision can be read
  * (lookout-service.ts).
+ *
+ * A node's Steward may post a lookout too (lookout-fund.ts). It runs the
+ * same way with three differences, each said in its briefing and tools: it
+ * is paid from the fund its Steward put up, not a mandate's escrow; what it
+ * raises and does not pay for itself goes to its Steward's inbox, not to
+ * program officers; and it has no feeds and no paid contribution review,
+ * which are a mandate's.
  */
 import { RUN_TURN_GUARD, runBudgetSentence } from "../prompts/turn-budget.js";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -83,6 +90,7 @@ import {
 } from "../../services/lookout-service.js";
 import { createLookoutFeedTools, getReadListingToolDefinition } from "../tools/feed-tools.js";
 import { lookoutWindow, lookoutWindowSentence } from "../../services/lookout-window.js";
+import { lookoutFundLeftMicroUsd, lookoutRunCostMicroUsd } from "../../services/lookout-fund.js";
 import {
   checkDoi,
   claimsRestingOnSources,
@@ -182,23 +190,30 @@ async function runLookoutImpl(input: {
       grant_skills: string[] | null;
       mandate_title: string | null;
       mandate_objective: string | null;
-      grant_status: string;
-      scope_claim_id: string | null;
-      scope_query: string | null;
+      owner_active: boolean;
+      node_text: string | null;
+      node_kind: string | null;
     }
   >(
     `SELECT ${LOOKOUT_COLUMNS.map((c) => `l.${c}`).join(", ")},
-            g.skills AS grant_skills, g.status AS grant_status,
+            g.skills AS grant_skills,
+            COALESCE(g.status = 'active', n.state = 'active', false) AS owner_active,
             COALESCE(g.mandate->>'title', g.name) AS mandate_title,
             g.mandate->>'objective' AS mandate_objective,
-            g.scope_claim_id, g.scope_query
-       FROM lookouts l JOIN grants g ON g.id = l.grant_id
+            n.text AS node_text, n.kind AS node_kind
+       FROM lookouts l
+       LEFT JOIN grants g ON g.id = l.grant_id
+       LEFT JOIN claims n ON n.id = l.node_id
       WHERE l.id = $1`,
     [input.lookoutId]
   );
-  if (!lookout || lookout.status !== "active" || lookout.grant_status !== "active") {
-    throw new Error(`lookout ${input.lookoutId} not found, not active, or its mandate is not active`);
+  if (!lookout || lookout.status !== "active" || !lookout.owner_active) {
+    throw new Error(`lookout ${input.lookoutId} not found, not active, or whoever posted it is not active`);
   }
+  // A Steward's lookout (lookout-fund.ts) or a mandate's: who it answers to.
+  const grantId = lookout.grant_id;
+  const stewardNode = grantId ? null : lookout.node_id;
+  const fundLeft = stewardNode ? await lookoutFundLeftMicroUsd(lookout.id) : null;
 
   // Skills load on demand; the mandate's skills point the lookout to the
   // ones its watch may need, as they do the review pass.
@@ -250,18 +265,25 @@ async function runLookoutImpl(input: {
   let flagsRaised = 0;
   let ingestsProposed = 0;
   let notesLeft = 0;
-  const feedTools = createLookoutFeedTools({
-    lookoutId: lookout.id,
-    grantId: lookout.grant_id,
-    commissionLimitMicroUsd: Number(lookout.commission_limit_micro_usd ?? 0),
-    onIngested: (n) => {
-      ingestsProposed += n;
-      flagsRaised += n;
-    },
-  });
+  // Feeds are a mandate's (their ingests are its plan's); a Steward's
+  // lookout has read_listing alone.
+  const feedTools = grantId
+    ? createLookoutFeedTools({
+        lookoutId: lookout.id,
+        grantId,
+        commissionLimitMicroUsd: Number(lookout.commission_limit_micro_usd ?? 0),
+        onIngested: (n) => {
+          ingestsProposed += n;
+          flagsRaised += n;
+        },
+      })
+    : null;
 
   // Contributions through the Reviewer, paid from the mandate's escrow (§19).
-  const contributionTools = createGrantContributionTools(lookout.grant_id);
+  // A Steward's lookout brings evidence to its Steward instead (leave_note).
+  const contributionTools = grantId
+    ? createGrantContributionTools(grantId)
+    : { definitions: [] as Tool[], execute: async () => null };
   // read_page is the mandate toolbox's, one implementation in every mode
   // (#691). No grantId: the lookout's workspace is its own, not the
   // mandate's, and is written by its own tool below.
@@ -376,17 +398,23 @@ async function runLookoutImpl(input: {
       },
     },
     // read_listing is every lookout's; the inbox tools only matter with feeds.
-    ...(feeds.length > 0 ? feedTools.definitions : [getReadListingToolDefinition()]),
+    ...(feedTools && feeds.length > 0 ? feedTools.definitions : [getReadListingToolDefinition()]),
     {
       name: "flag_reassessment",
       description:
         "Raise a claim for a fresh Steward pass because something you saw " +
         "bears on it. With budget_owls within the limit your task message " +
-        "states, the pass is commissioned from the mandate at once; " +
-        "otherwise it is raised to the mandate's program officers, who " +
-        "decide under its operating policy. Your rationale reaches the " +
-        "Steward as its brief, so say concretely what happened, where you " +
-        "saw it, and why it bears on this claim; never name the mandate. A " +
+        (stewardNode
+          ? "states, the pass is commissioned from your fund at once; " +
+            "otherwise it goes to the inbox of the Steward who posted you, who " +
+            "decides whether it is worth its money. Your rationale reaches the " +
+            "claim's Steward as its brief, so say concretely what happened, where you " +
+            "saw it, and why it bears on this claim. A "
+          : "states, the pass is commissioned from the mandate at once; " +
+            "otherwise it is raised to the mandate's program officers, who " +
+            "decide under its operating policy. Your rationale reaches the " +
+            "Steward as its brief, so say concretely what happened, where you " +
+            "saw it, and why it bears on this claim; never name the mandate. A ") +
         "claim you already flagged and that is still waiting counts as a " +
         "repeat, not a new flag.",
       input_schema: {
@@ -398,7 +426,9 @@ async function runLookoutImpl(input: {
             type: "number",
             description:
               "Optional: the pass's budget, from cost_sheet's high end for a pass " +
-              "on such a node. Leave it out to raise the claim to the officers.",
+              (stewardNode
+                ? "on such a node. Leave it out to send the claim to your Steward."
+                : "on such a node. Leave it out to raise the claim to the officers."),
           },
         },
         required: ["claim_id", "rationale"],
@@ -410,9 +440,13 @@ async function runLookoutImpl(input: {
         "Raise a source you have actually seen for ingestion (extract and " +
         "match its claims into the graph). It becomes open work on the " +
         "ledger; with budget_owls within the limit your task message states " +
-        "it is commissioned at once, and otherwise it is raised to the " +
-        "mandate's program officers. Refused for a URL already in the graph, already on " +
-        "the plan, or already ingested; one you raised that still waits is " +
+        (stewardNode
+          ? "it is commissioned from your fund at once, and otherwise it goes to " +
+            "your Steward's inbox. Refused for a URL already in the graph or already " +
+            "ingested; one you raised that still waits is "
+          : "it is commissioned at once, and otherwise it is raised to the " +
+            "mandate's program officers. Refused for a URL already in the graph, already on " +
+            "the plan, or already ingested; one you raised that still waits is ") +
         "a repeat. A focus scopes the ingest: the " +
         "extractor reads the whole document but proposes only the claims " +
         "bearing on that subject. Use one when your brief wants one subject " +
@@ -429,7 +463,7 @@ async function runLookoutImpl(input: {
             type: "number",
             description:
               "Optional: the ingest's budget, from cost_sheet. Leave it out to " +
-              "raise the source to the officers.",
+              (stewardNode ? "send the source to your Steward." : "raise the source to the officers."),
           },
           focus: {
             type: "string",
@@ -442,11 +476,16 @@ async function runLookoutImpl(input: {
     {
       name: "leave_note",
       description:
-        "Leave a note for your Grantmaker's next review pass: a pattern " +
-        "across several claims, a source you could not read, a happening " +
-        "that needs a judgment above your pay grade, a suggestion for your " +
-        "own brief or triggers. No ledger effect. Optionally anchor it to a " +
-        "claim id or a URL.",
+        (stewardNode
+          ? "Leave a note in your Steward's inbox, for its node's next pass: evidence " +
+            "you found that bears on the node, a pattern across several claims, a source " +
+            "you could not read, a suggestion for your own brief or triggers. Free; it " +
+            "waits for the next pass and buys none. "
+          : "Leave a note for your Grantmaker's next review pass: a pattern " +
+            "across several claims, a source you could not read, a happening " +
+            "that needs a judgment above your pay grade, a suggestion for your " +
+            "own brief or triggers. No ledger effect. ") +
+        "Optionally anchor it to a claim id or a URL.",
       input_schema: {
         type: "object" as const,
         properties: {
@@ -534,16 +573,8 @@ async function runLookoutImpl(input: {
         `program officers with its budget, as one above the per-item limit does: several small items in a short ` +
         `time add up to a large call on the funder's money, and that is the officers' to weigh.\n`
       : "";
-  const briefing =
-    `## Lookout run\n\n` +
-    `You are "${lookout.title}", a lookout posted by the mandate ` +
-    `"${lookout.mandate_title ?? ""}". Nobody is watching this run; act with ` +
-    `the judgment of a careful person paid to keep watch over one thing.\n\n` +
-    (lookout.mandate_objective?.trim()
-      ? `The mandate's objective, for context (your brief is your scope): ${lookout.mandate_objective.trim()}\n\n`
-      : "") +
-    `### Your brief\n\n${lookout.brief}\n\n` +
-    `### Your delegated bounds\n\n` +
+  const owls = (micro: number) => Math.round(micro / 10_000) / 100;
+  const mandateBounds = (): string =>
     `These are the figures your Grantmaker set when it posted you, and the ones you are held to. Where your ` +
     `brief names a different figure (a daily allowance, another amount), these govern.\n\n` +
     (Number(lookout.commission_limit_micro_usd ?? 0) > 0
@@ -558,7 +589,35 @@ async function runLookoutImpl(input: {
         `mandate could buy; the limit exists so that larger calls on the funder's money get that weighing.\n` +
         windowLine
       : `- Your commission limit is 0: everything you raise goes to the mandate's program officers, who decide ` +
-        `under its operating policy. Your Grantmaker kept every spending decision for them.\n`) +
+        `under its operating policy. Your Grantmaker kept every spending decision for them.\n`);
+  const stewardLimit = Number(lookout.commission_limit_micro_usd ?? 0);
+  const stewardBounds = (): string =>
+    `These are the figures your Steward set when it posted you, and the ones you are held to. Where your ` +
+      `brief names a different figure, these govern.\n\n` +
+      `- You run on a fund your Steward put up from its own budget. It holds ${owls(fundLeft ?? 0)} owls now. ` +
+      `Each run is paid from it at ${owls(lookoutRunCostMicroUsd())} owls, and what a run does not spend goes ` +
+      `back to it. When it can no longer pay for a run you pause, and your Steward is told; it may top you up.\n` +
+      (stewardLimit > 0
+        ? `- You may commission work yourself up to ${owls(stewardLimit)} owls for each item (name budget_owls), paid ` +
+          `from the same fund, so every owl you commission is a run fewer of watching. Anything above the limit, ` +
+          `or raised without a budget, goes to your Steward's inbox for its next pass, and your Steward decides.\n`
+        : `- Your commission limit is 0: everything you raise goes to your Steward's inbox for its next pass, ` +
+          `and your Steward decides what is worth its money.\n`);
+  const briefing =
+    `## Lookout run\n\n` +
+    (stewardNode
+      ? `You are "${lookout.title}", a lookout posted by the Steward of ${lookout.node_kind ?? "node"} ` +
+        `${stewardNode} ("${(lookout.node_text ?? "").slice(0, 300)}"). Nobody is watching this run; act with ` +
+        `the judgment of a careful person paid to keep watch over one thing.\n\n`
+      : `You are "${lookout.title}", a lookout posted by the mandate ` +
+        `"${lookout.mandate_title ?? ""}". Nobody is watching this run; act with ` +
+        `the judgment of a careful person paid to keep watch over one thing.\n\n`) +
+    (lookout.mandate_objective?.trim()
+      ? `The mandate's objective, for context (your brief is your scope): ${lookout.mandate_objective.trim()}\n\n`
+      : "") +
+    `### Your brief\n\n${lookout.brief}\n\n` +
+    `### Your ${stewardNode ? "fund and bounds" : "delegated bounds"}\n\n` +
+    (stewardNode ? stewardBounds() : mandateBounds()) +
     `- ${runBudgetSentence() || "This run has no budget of its own."} Each tool result shows what you have spent.\n` +
     `- Heartbeat: ${
       lookout.heartbeat_hours > 0
@@ -586,7 +645,7 @@ async function runLookoutImpl(input: {
     `Do what the brief needs this run and nothing more. Read the queued ` +
     `inputs first; then look where the brief says to look; raise what ` +
     `warrants work; update your workspace; finish with a short note ` +
-    `(recorded on the mandate's page) saying what you checked and what, if ` +
+    `(recorded ${stewardNode ? "on your record, which your Steward reads" : "on the mandate's page"}) saying what you checked and what, if ` +
     `anything, you raised. Finding nothing is the common outcome and a ` +
     `fine one.`;
 
@@ -676,7 +735,7 @@ async function runLookoutImpl(input: {
             if ("ok" in page) return JSON.stringify(page);
             return JSON.stringify({ days, ...page });
           }
-          const feedResult = await feedTools.execute(name, toolInput);
+          const feedResult = feedTools ? await feedTools.execute(name, toolInput) : null;
           if (feedResult !== null) return feedResult;
           if (name === "flag_reassessment") {
             const res = await flagReassessment({

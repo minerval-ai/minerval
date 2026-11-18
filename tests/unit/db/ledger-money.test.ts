@@ -40,6 +40,9 @@ const ON_THE_TABLE: Record<string, string[]> = {
   "src/services/inbound-service.ts": [
     "FROM action_allocations: whether any money is behind a node's next pass at the label a published page came from, read under system clearance and reduced to one of three fixed words for the outside. No amount and no reason is read.",
   ],
+  "src/services/lookout-fund.ts": [
+    "INTO action_allocations: what a Steward's lookout's run did not spend, back onto its fund (the group no ledger row runs on), at the lookout's label, with a fixed reason.",
+  ],
   "src/services/mandate-service.ts": [
     "FROM action_allocations: a mandate's commissions as a reader is shown them, each with its reason. A listing with text, so it shows the rows the reader's clearance reads.",
   ],

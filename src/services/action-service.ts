@@ -48,6 +48,7 @@ import {
 import { getMandateAllocationPolicy } from "./allocation-policy-service.js";
 import { reviewPassBudget, type OperatingPolicy } from "./operating-policy-service.js";
 import { capMicroUsd, microUsdToOwls, owlsToMicroUsd } from "./owl.js";
+import { returnUnspentToFund } from "./lookout-fund.js";
 import { groupAtLabel, ingestGroup, normalizeFocus, recordIngestFocus } from "./ingest-focus-service.js";
 import { oneLabelOnly } from "./judgment-version-service.js";
 import { slotColumnSql } from "./steward-lease.js";
@@ -781,10 +782,15 @@ export async function openDueAgentRuns(): Promise<void> {
   // only says what is wanted.
   const lookoutCost = capMicroUsd("lookout_run");
   const dueLookouts = await rawQuery<{ id: string; title: string; sensitivity_label: string }>(
+    // A Steward's lookout (no mandate) is due by the same rule while its
+    // node is active; its fund pays for the run, or pauses it when it
+    // cannot (lookout-fund.ts, fundStewardLookoutRuns).
     `SELECT l.id, l.title, l.sensitivity_label
        FROM lookouts l
-       JOIN grants g ON g.id = l.grant_id
-      WHERE l.status = 'active' AND g.status = 'active'
+       LEFT JOIN grants g ON g.id = l.grant_id
+       LEFT JOIN claims n ON n.id = l.node_id
+      WHERE l.status = 'active'
+        AND (g.status = 'active' OR n.state = 'active')
         AND ((l.heartbeat_hours > 0 AND l.next_due_at <= now())
              OR EXISTS (SELECT 1 FROM lookout_events e
                          WHERE e.lookout_id = l.id AND e.consumed_at IS NULL))
@@ -3129,10 +3135,12 @@ export async function completeAction(
       user_id: string | null;
       claim_id: string | null;
       action_id: string | null;
+      commissioned_by: string | null;
+      created_at: Date;
       amount: number;
       unspent: number;
     }>(
-      `SELECT id, grant_id, user_id, claim_id, action_id,
+      `SELECT id, grant_id, user_id, claim_id, action_id, commissioned_by, created_at,
               amount_micro_usd::bigint AS amount,
               (amount_micro_usd - spent_micro_usd)::bigint AS unspent
          FROM minerval_whole.allocation_money
@@ -3267,12 +3275,15 @@ export async function completeAction(
     // metered cost releases back to its funders — a mandate's headroom
     // returns, a person's owls return to their balance. The ceiling was
     // theirs to rely on; the meter is what they pay.
+    // Except money a Steward's lookout's fund put on its run: what the run
+    // did not spend goes back to the fund it came from (lookout-fund.ts).
     for (const r of covering) {
       if (Number(r.unspent) <= 0) continue;
       await tx.query(
         `UPDATE minerval_whole.allocation_money SET released_at = now() WHERE id = $1`,
         [r.id]
       );
+      if (await returnUnspentToFund(tx, { ...r, exclusion_group: action.exclusion_group })) continue;
       await refundUser({ ...r, key: `settle:${r.id}` });
     }
     // Recorded with the settlement, so a subscriber waiting on this run is

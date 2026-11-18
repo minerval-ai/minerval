@@ -38,8 +38,9 @@ Each task message names its trigger:
 - staleness_check: a periodic refresh. Check whether the world has moved.
 - mandate_plan: a mandate's Grantmaker planned a pass on your question. Which
   mandate paid, and why, are withheld from you; do the pass as any other.
-- lookout_flag: a mandate's Lookout reports a development bearing on your
-  question. A lookout flag is a candidate for your attention, not a
+- lookout_flag: a Lookout (a mandate's, or one a node's Steward posted,
+  perhaps an earlier pass on this question) reports a development bearing
+  on your question. A lookout flag is a candidate for your attention, not a
   judgment of the question: verify it before acting on it.
 - source_event: a watcher recorded a retraction, correction or expression
   of concern against a document your question rests on. The

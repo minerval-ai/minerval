@@ -60,7 +60,7 @@ vi.mock("../../../src/llm/tools/connection-tools.js", () => ({
 
 vi.mock("../../../src/db/client.js", () => ({
   rawQuery: vi.fn(async (q: string) => {
-    if (q.includes("FROM lookouts l JOIN grants g")) return state.lookout ? [state.lookout] : [];
+    if (q.includes("LEFT JOIN grants g ON g.id = l.grant_id")) return state.lookout ? [state.lookout] : [];
     return [];
   }),
 }));
@@ -196,7 +196,7 @@ const lookout = (over: Record<string, unknown> = {}) => ({
   max_value: 6,
   workspace: null,
   grant_skills: [],
-  grant_status: "active",
+  owner_active: true,
   mandate_title: "Nutrition literature",
   mandate_objective: null,
   scope_claim_id: null,
@@ -448,7 +448,7 @@ describe("runLookout", () => {
     const { rawQuery } = await import("../../../src/db/client.js");
     vi.mocked(rawQuery).mockClear();
     await runLookout({ lookoutId: LOOKOUT });
-    const read = vi.mocked(rawQuery).mock.calls.map((c) => String(c[0])).find((q) => q.includes("FROM lookouts l JOIN grants g"))!;
+    const read = vi.mocked(rawQuery).mock.calls.map((c) => String(c[0])).find((q) => q.includes("LEFT JOIN grants g ON g.id = l.grant_id"))!;
     expect(read).toContain("SELECT l.id, l.grant_id, l.title, l.brief, l.status, l.model,");
     expect(read).not.toMatch(/\bl\.\*/);
     expect(read).not.toContain("sensitivity_label");
@@ -457,7 +457,7 @@ describe("runLookout", () => {
   it("refuses to run a lookout that is paused or whose mandate is not active", async () => {
     state.lookout = lookout({ status: "paused" });
     await expect(runLookout({ lookoutId: LOOKOUT })).rejects.toThrow(/not active/);
-    state.lookout = lookout({ grant_status: "completed" });
+    state.lookout = lookout({ owner_active: false });
     await expect(runLookout({ lookoutId: LOOKOUT })).rejects.toThrow(/not active/);
   });
 });

@@ -316,6 +316,8 @@ describe("every labelled table", () => {
     attachments: { storage: "'db'", body: "'enf'" },
     // Money placed by a mandate or by a person, one of the two.
     action_allocations: { grant_id: "gen_random_uuid()" },
+    // Posted by a mandate or by a node's Steward, one of the two.
+    lookouts: { grant_id: "gen_random_uuid()" },
     // About a node or about a source, one of the two.
     request_targets: { claim_id: "gen_random_uuid()" },
     // Taken up from the public graph's request or from one at a label read, one of the two.

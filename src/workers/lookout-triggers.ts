@@ -203,8 +203,12 @@ export async function retractionPollTick(
   }
   const subscribers = noticeFor.size > 0
     ? await rawQuery<{ id: string; sensitivity_label: string }>(
-        `SELECT l.id, l.sensitivity_label FROM lookouts l JOIN grants g ON g.id = l.grant_id
-          WHERE l.status = 'active' AND g.status = 'active' AND l.triggers ? 'retraction'`
+        // A mandate's lookouts and a Steward's alike (lookout-fund.ts).
+        `SELECT l.id, l.sensitivity_label FROM lookouts l
+           LEFT JOIN grants g ON g.id = l.grant_id
+           LEFT JOIN claims n ON n.id = l.node_id
+          WHERE l.status = 'active' AND (g.status = 'active' OR n.state = 'active')
+            AND l.triggers ? 'retraction'`
       )
     : [];
   for (const lookout of subscribers) {
@@ -438,8 +442,10 @@ export async function graphFeedTick(): Promise<{ woke: number }> {
     sensitivity_label: string;
   }>(
     `SELECT l.id, l.changes_cursor, l.last_run_at, l.territory_claim_ids, l.territory_tag_ids, l.sensitivity_label
-       FROM lookouts l JOIN grants g ON g.id = l.grant_id
-      WHERE l.status = 'active' AND g.status = 'active'
+       FROM lookouts l
+       LEFT JOIN grants g ON g.id = l.grant_id
+       LEFT JOIN claims n ON n.id = l.node_id
+      WHERE l.status = 'active' AND (g.status = 'active' OR n.state = 'active')
         AND l.triggers ? 'graph'
         AND (l.last_run_at IS NULL OR l.last_run_at < now() - interval '15 minutes')
         AND NOT EXISTS (SELECT 1 FROM lookout_events e
