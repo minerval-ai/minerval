@@ -8131,13 +8131,13 @@ export const artifactAssessmentVersions = pgView("artifact_assessments_versions"
 //
 //   At the page's label:        releases, release_pages, release_parts,
 //                               release_removals, gate_settings
-//   At the destination's label: shown_releases, shown_nodes, shown_pages,
-//                               shown_parts, release_acts, gates
+//   At the destination's label: received_releases, received_nodes, received_pages,
+//                               received_parts, release_acts, gates
 //   One row on each side:       redaction_policies
 //
-// The destination side's tables are named for what its readers are shown
-// (`shown_*`): they hold a held part as well as a released one, with its
-// text null, so they are not named for what was released.
+// The destination side's tables are named for what that side holds
+// (`received_*`): a held part as well as a released one, with its text
+// null, so they are not named for what was released.
 //
 // These tables are the gate's (docs/the-gate.md). They were built for a
 // node's page and keep those names. A row of `releases` is one thing
@@ -8279,6 +8279,9 @@ export const releasePages = pgTable(
     header: text("header"),
     headerSalt: text("header_salt"),
     root: text("root"),
+    // The construction the root is made under (services/page-fingerprint.ts).
+    // A page recorded before the construction was renamed keeps the old one.
+    fingerprintFormat: text("fingerprint_format").notNull().default("minerval-released-page/2"),
     // The parties whose consent the verdict takes: every party whose
     // material the version read. Empty means the organization's own.
     restsOn: uuid("rests_on").array().notNull().default([]),
@@ -8381,8 +8384,8 @@ export const releaseRemovals = pgTable(
 );
 
 // The same release as its destination side reads it. Same id as `releases`.
-export const shownReleases = pgTable(
-  "shown_releases",
+export const receivedReleases = pgTable(
+  "received_releases",
   {
     id: uuid("id").primaryKey(),
     kind: text("kind").notNull().default("page"),
@@ -8409,13 +8412,13 @@ export const shownReleases = pgTable(
     // The destination's label; `public` for a release outside.
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [index("idx_shown_releases_node").on(table.nodeId)]
+  (table) => [index("idx_received_releases_node").on(table.nodeId)]
 );
 
 // Each node a release covers, from when it came under it until it left.
 // A node with no page yet is "not yet assessed".
-export const shownNodes = pgTable(
-  "shown_nodes",
+export const receivedNodes = pgTable(
+  "received_nodes",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     releaseId: uuid("release_id").notNull(),
@@ -8432,15 +8435,15 @@ export const shownNodes = pgTable(
     sensitivityLabel: sensitivityLabelColumn(),
   },
   (table) => [
-    index("idx_shown_nodes_release").on(table.releaseId),
-    index("idx_shown_nodes_node").on(table.nodeId),
+    index("idx_received_nodes_release").on(table.releaseId),
+    index("idx_received_nodes_node").on(table.nodeId),
   ]
 );
 
 // One version of a node's page as the destination side reads it. Same id as
 // `release_pages`. The header and its salt are null until the page is shown.
-export const shownPages = pgTable(
-  "shown_pages",
+export const receivedPages = pgTable(
+  "received_pages",
   {
     id: uuid("id").primaryKey(),
     releaseId: uuid("release_id").notNull(),
@@ -8457,14 +8460,18 @@ export const shownPages = pgTable(
     // anyone decided anything. An earlier round's root stays in `roots`.
     root: text("root"),
     roots: jsonb("roots").notNull().default([]),
+    // The construction its roots are made under, the same as on the page's side.
+    fingerprintFormat: text("fingerprint_format").notNull().default("minerval-released-page/2"),
     headerCommitment: text("header_commitment"),
     header: text("header"),
     headerSalt: text("header_salt"),
     // The parties whose consent the verdict takes, by id.
     needs: uuid("needs").array().notNull().default([]),
     auditAnswer: text("audit_answer"),
-    shownAt: timestamp("shown_at", { withTimezone: true }),
-    // The source this page arrived as at the destination label, once shown.
+    // When the page went through to this side: its verdict and what is
+    // always released with it. Null while it is held.
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    // The source this page arrived as at the destination label, once released.
     sourceId: uuid("source_id"),
     // How the gate was set for the item when it was let through, for each
     // party it rests on, in the gate's fixed vocabulary:
@@ -8479,13 +8486,13 @@ export const shownPages = pgTable(
     outsideRef: text("outside_ref"),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [index("idx_shown_pages_release").on(table.releaseId, table.nodeId)]
+  (table) => [index("idx_received_pages_release").on(table.releaseId, table.nodeId)]
 );
 
 // One part of a shown page as the destination side reads it. Same id as
 // `release_parts`. The text, its marks and its salt are null while held.
-export const shownParts = pgTable(
-  "shown_parts",
+export const receivedParts = pgTable(
+  "received_parts",
   {
     id: uuid("id").primaryKey(),
     pageId: uuid("page_id").notNull(),
@@ -8500,7 +8507,7 @@ export const shownParts = pgTable(
     releasedAt: timestamp("released_at", { withTimezone: true }),
     sensitivityLabel: sensitivityLabelColumn(),
   },
-  (table) => [uniqueIndex("uq_shown_parts_position").on(table.pageId, table.position)]
+  (table) => [uniqueIndex("uq_received_parts_position").on(table.pageId, table.position)]
 );
 
 // Everything a person, a rule or the process did on a release, in order.
@@ -8584,7 +8591,7 @@ export const gates = pgTable(
     flow: text("flow").notNull().default("asked"),
     // Whether the destination's readers are shown the backlog. False keeps
     // it to the gate's authorities.
-    backlogShown: boolean("backlog_shown").notNull().default(true),
+    backlogVisible: boolean("backlog_visible").notNull().default(true),
     // For the boundary to outside: whether what is released is sent to the
     // public graph as it is released, with no person sending each package.
     sendAsReleased: boolean("send_as_released").notNull().default(true),
