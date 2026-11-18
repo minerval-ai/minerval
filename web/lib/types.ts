@@ -1395,6 +1395,8 @@ export interface LeaderboardContributor {
 export interface ContributorProfile {
   contributor: {
     id: string;
+    /** "person" or "organization" (docs/organizations.md). Absent from an API older than organizations. */
+    kind?: string;
     display_name: string;
     avatar_url: string | null;
     member_since: string;

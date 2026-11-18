@@ -2591,10 +2591,20 @@ export const jobs = pgTable(
 // talks to the auth provider itself. Consumer concerns (API keys, usage,
 // credits) and contributor concerns (reputation, owl awards — #71) both hang off
 // this row.
+//
+// `kind` says what the account is (docs/organizations.md): a person, who
+// signs in; an organization, which nobody signs in as (its external id is
+// `org:<id>`, which no sign-in provider makes) and whose admins and members
+// are people (organization_members); or the platform account
+// (`platform:minerval`, services/platform-account.ts).
 // ---------------------------------------------------------------------------
+export const ACCOUNT_KINDS = ["person", "organization", "platform"] as const;
+export type AccountKind = (typeof ACCOUNT_KINDS)[number];
+
 export const contributors = pgTable("contributors", {
   id: uuid("id").primaryKey().defaultRandom(),
   externalId: text("external_id").unique(),
+  kind: text("kind").$type<AccountKind>().notNull().default("person"),
   displayName: text("display_name").notNull(),
   email: text("email").unique(),
   avatarUrl: text("avatar_url"),
@@ -2644,7 +2654,131 @@ export const contributors = pgTable("contributors", {
   lastActiveAt: timestamp("last_active_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
-});
+}, (table) => [
+  check("ck_contributors_kind", sql`${table.kind} IN ('person', 'organization', 'platform')`),
+]);
+
+// ---------------------------------------------------------------------------
+// Organizations (docs/organizations.md, "Organizations on minerval.ai")
+//
+// An organization is a `contributors` row of kind 'organization'. The people
+// who act for it are here, each an admin or a member. A removal sets
+// removed_at and keeps the row, so the record of who belonged when stays;
+// a change of role is changed on the row and written to organization_log.
+// None of these tables carries a label: they say who an account is, as
+// api_keys does.
+// ---------------------------------------------------------------------------
+export const ORGANIZATION_ROLES = ["admin", "member"] as const;
+export type OrganizationRole = (typeof ORGANIZATION_ROLES)[number];
+
+export const organizationMembers = pgTable(
+  "organization_members",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    // A person's account. Deleting it takes them out of every organization;
+    // what the organization did stays the organization's.
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    role: text("role").$type<OrganizationRole>().notNull(),
+    // Null where the operator key added them, or a conversion made them the
+    // first admin of the account they were named for.
+    addedBy: uuid("added_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+    removedBy: uuid("removed_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_organization_members_live")
+      .on(table.organizationId, table.accountId)
+      .where(sql`${table.removedAt} IS NULL`),
+    index("idx_organization_members_account").on(table.accountId),
+    check("ck_organization_members_role", sql`${table.role} IN ('admin', 'member')`),
+  ]
+);
+
+// A single-use link an admin makes to add a person. Only its hash is kept,
+// as for an API key. The person opens it signed in as themselves and
+// accepts; nobody is added without accepting.
+export const organizationInvitations = pgTable(
+  "organization_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    role: text("role").$type<OrganizationRole>().notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    madeBy: uuid("made_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    madeAt: timestamp("made_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedBy: uuid("accepted_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    cancelledBy: uuid("cancelled_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_organization_invitations_org").on(table.organizationId),
+    check("ck_organization_invitations_role", sql`${table.role} IN ('admin', 'member')`),
+  ]
+);
+
+// Every change to an organization, readable by its members and by nobody
+// else: who made it (null for the operator key), with which credential, and
+// what it was. Rows are added, never changed.
+export const organizationLog = pgTable(
+  "organization_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    // 'session' (a person signed in) or 'operator' (the operator key).
+    credential: text("credential").notNull(),
+    kind: text("kind").notNull(),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_organization_log_org").on(table.organizationId, table.createdAt),
+    check("ck_organization_log_credential", sql`${table.credential} IN ('session', 'operator')`),
+  ]
+);
+
+// A shared login's request to become an organization, naming the person
+// who is to be its first admin. Nothing changes until that person accepts
+// from their own session (docs/organizations.md, "Converting an existing
+// shared account").
+export const accountConversions = pgTable(
+  "account_conversions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    firstAdminId: uuid("first_admin_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    askedAt: timestamp("asked_at", { withTimezone: true }).notNull().defaultNow(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_account_conversions_open")
+      .on(table.accountId)
+      .where(sql`${table.acceptedAt} IS NULL AND ${table.cancelledAt} IS NULL`),
+    index("idx_account_conversions_first_admin").on(table.firstAdminId),
+  ]
+);
+
+export type OrganizationMember = typeof organizationMembers.$inferSelect;
+export type OrganizationInvitation = typeof organizationInvitations.$inferSelect;
+export type AccountConversion = typeof accountConversions.$inferSelect;
 
 // ---------------------------------------------------------------------------
 // api_keys
@@ -6841,9 +6975,9 @@ export const questionAssessments = pgTable(
 // ordinary edges in claim_relationships with relation_type 'draws_on', the
 // artifact the parent and each entry the child, so propagation reaches the
 // artifact when an entry changes and judgment_inputs records the entries a
-// judgment was made against. A 'draws_on' edge confers no support: nothing
-// reads it as evidence for or against either end. The judgment is fidelity
-// (artifact_assessments), never truth.
+// judgment was made against. A 'draws_on' edge is not decomposition (§6):
+// nothing reads it as evidence for or against either end. The judgment
+// (artifact_assessments) says how far the artifact can be relied on (§7b).
 // ---------------------------------------------------------------------------
 
 // What an artifact is: for a list, what it is for, what qualifies an entry,

@@ -199,14 +199,14 @@ skill bundles it in full, and the section numbers below point into it.
   narrow it. A question carries a `standing` (`answered`, `leaning`,
   `open`, `ill_posed`, `unknown`); `ill_posed` means it rests on a false
   presupposition, which is worth saying.
-- **A list is not a verdict.** A node of kind `artifact` is a list (§7b):
-  made from nodes the graph holds under criteria in `list.spec`, judged for
-  its `fidelity` (`faithful`, `incomplete`, `misleading`, `ill_specified`)
-  to those criteria, never for truth. Cite an entry's own status, not the
-  list's fidelity, for what the entry asserts, and say when `list.stale`
-  is true: something it draws on moved after it was judged. A list
-  carries no weight as evidence; "most entries point one way" is your
-  reading unless a node's Steward has recorded it there.
+- **A list's judgment is about the list.** A node of kind `artifact` (§7b)
+  is, today, a list: made from nodes the graph holds under criteria in
+  `list.spec`, and judged for how far it can be relied on under them
+  (`faithful`, `incomplete`, `misleading`, `ill_specified`). Cite an
+  entry's own status, not the list's judgment, for what the entry asserts,
+  and say when `list.stale` is true: something it draws on moved after it
+  was judged. "Most entries point one way" is your reading unless a node's
+  Steward has recorded it there.
 
 ## Decomposition: find what it turns on
 

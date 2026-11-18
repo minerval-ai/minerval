@@ -94,6 +94,12 @@ const SYSTEM_CALLERS: Record<string, SystemCall[]> = {
       "A key for the account the caller was checked to be, its revocation, and the time it was last used. Nothing read from another row.",
     ],
   ],
+  "src/services/organization-service.ts": [
+    [
+      "Organizations say who acts for an account, so their rows are written on the owner's connection, as API keys are. The caller has been checked against the organization's members.",
+      "An organization's account row, its members, invitations and log, a converted account's own row and OAuth tokens, and the revocation of its old keys: all for the organization the caller was checked to belong to. Nothing that carries a label.",
+    ],
+  ],
   "src/services/oauth-service.ts": [
     [
       "OAuth clients, authorizations and tokens say who a request is, so they are written on the owner's connection. The flow has verified the client, the code or the token.",
