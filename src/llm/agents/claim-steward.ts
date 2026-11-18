@@ -118,9 +118,10 @@ const PROPOSITION_ONLY_TOOLS = new Set(["update_claim_assessment", "record_claim
 /**
  * The Steward's tools withheld from a list's Steward (§7b): a list has no
  * verdict, no arguments, no decomposition and no instances of its own. It
- * draws on its entries through its own tools (list-tools.ts), and an edge
- * that would make it rest on a node, or a node rest on it, would give it the
- * evidential weight it must not carry.
+ * draws on its entries through its own tools (list-tools.ts). A decomposition
+ * edge joins claims, quantities and questions (§6), and an artifact is none
+ * of those, so the edge tools that would make it rest on a node, or a node
+ * rest on it, are not its.
  */
 const ARTIFACT_WITHHELD_TOOLS = new Set([
   ...CLAIM_ONLY_TOOLS,

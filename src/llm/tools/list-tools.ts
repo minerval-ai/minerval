@@ -100,15 +100,14 @@ export function getListToolDefinitions(): Tool[] {
     {
       name: LIST_ASSESSMENT_TOOL,
       description:
-        "Record this list's judgment: its fidelity to what it draws on under its specification " +
-        "(§7b). fidelity is one of: faithful (every entry meets the criteria, every node the graph " +
-        "holds that meets them is on it or accounted for in left_out, and the order and notes " +
-        "present the entries honestly); incomplete (qualifying entries are known to be missing: say " +
-        "which in gaps); misleading (the selection, order or framing would lead a reader to a " +
-        "conclusion the entries do not support, and you cannot yet repair it); ill_specified (the " +
-        "criteria cannot be checked against, or quietly assert something contested). A list is " +
-        "never verified. Also records the order the entries are shown in and the nodes considered " +
-        "and left out, each with why.",
+        "Record this list's judgment: how far it can be relied on under its specification (§7b). " +
+        "fidelity is one of: faithful (every entry meets the criteria and is presented accurately, " +
+        "every node the graph holds that meets them is on it or accounted for in left_out, and the " +
+        "order and notes present the entries fairly); incomplete (qualifying entries are known to be " +
+        "missing: say which in gaps); misleading (the selection, order or framing would lead a reader " +
+        "to a conclusion the entries do not support, and you cannot yet repair it); ill_specified (the " +
+        "criteria cannot be checked against, or quietly assert something contested). Also records the " +
+        "order the entries are shown in and the nodes considered and left out, each with why.",
       input_schema: {
         type: "object",
         properties: {

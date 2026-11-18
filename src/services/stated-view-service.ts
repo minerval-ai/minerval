@@ -92,10 +92,14 @@ export function parseStatedView(kind: NodeKind, body: Record<string, unknown>): 
     return refuse("REASONS_TOO_LONG", `reasons is ${reasons.length} characters; at most ${REASONS_MAX_CHARS}.`);
   }
 
-  // A list asserts nothing (§7b): there is no view of it to state, only of
-  // the nodes it draws on.
+  // A stated view takes a stance (affirms, denies, an estimate, an answer),
+  // and an artifact has no stance to take (§7b). A view on something it
+  // states goes on the claim, quantity or question that states it.
   if (kind === "artifact") {
-    return refuse("KIND", "an artifact asserts nothing, so there is no view of it to state; state a view on one of its entries.");
+    return refuse(
+      "KIND",
+      "a stated view takes a stance on a claim, quantity or question, and an artifact has none to take; state a view on the node in it or behind it, or contribute to the artifact."
+    );
   }
   const allowed: readonly string[] = STATED_VIEW_STANCES[kind];
   const stance = trimmed(body.stance);
