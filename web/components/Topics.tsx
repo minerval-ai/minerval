@@ -64,7 +64,10 @@ export function Topics({ items }: { items: TagSummary[] }) {
       </div>
       <div className="topics-cloud">
         {items.map((t) => (
-          <Link key={t.id} href={topicHref(t.slug)} className="tag topic" title={t.description || undefined}>
+          <Link key={t.id} href={topicHref(t.slug)} className="tag topic"
+            title={t.description || undefined}
+            aria-label={`${t.name}, ${t.claim_count} ${t.claim_count === 1 ? "claim" : "claims"}`}
+          >
             {t.name}
             <span className="count">{t.claim_count}</span>
           </Link>
