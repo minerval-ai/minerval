@@ -515,16 +515,16 @@ describe("what the destination sees", () => {
       root: page.fingerprint as string,
       format: page.fingerprint_format as string,
       verdict: { position: 0, descriptor: "verdict", commitment: hashed.hash, text: hashed.text, salt: hashed.salt, marks: [] },
-      parts: (page.parts as any[]).map((p) => ({ position: p.part, descriptor: p.descriptor, commitment: p.hash, text: p.text ?? null, marks: p.removals_marked ?? null, salt: p.salt ?? null })),
+      parts: (page.parts as any[]).map((p) => ({ position: p.part, descriptor: p.descriptor, commitment: p.hash, text: p.text ?? null, marks: p.removals_marked ?? null, salt: p.salt ?? null, refs: p.refs ?? null })),
     });
     // A page recorded now is fingerprinted under the current construction, and what is always released with it says so.
-    expect(page.fingerprint_format).toBe("minerval-released-page/2");
-    expect(JSON.parse(hashed.text).format).toBe("minerval-released-page/2");
+    expect(page.fingerprint_format).toBe("minerval-released-page/3");
+    expect(JSON.parse(hashed.text).format).toBe("minerval-released-page/3");
     expect(verifyReleasedPage(given()).ok).toBe(true);
 
     const altered = given();
     (altered.parts[0] as any).text = (altered.parts[0] as any).text.replace("met", "missed");
-    expect(verifyReleasedPage(altered).problems[0]).toBe("Part 1 does not match its hash: its text, its marks or its salt is not what was recorded.");
+    expect(verifyReleasedPage(altered).problems[0]).toBe("Part 1 does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded.");
 
     const alteredVerdict = given();
     alteredVerdict.verdict.text = alteredVerdict.verdict.text!.replace('"supported"', '"verified"');

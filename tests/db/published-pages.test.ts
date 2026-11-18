@@ -150,7 +150,9 @@ async function assessAtA(node: string, words: { summary: string; reasoning: stri
   });
 }
 
-async function seedPrivateWork(node: string): Promise<void> {
+const PRIVATE_CHILD_TEXT = "The plant's own counter agrees with the meters";
+
+async function seedPrivateWork(node: string, cites = false): Promise<void> {
   const acme = await attachSource(node, A, "Acme's meter export shows what the plant produced.");
   await system(async () => {
     await rawQuery(`UPDATE sources SET party_id = $2, content_hash = 'aaaa1111' WHERE id = $1`, [acme.source, id.acme]);
@@ -162,6 +164,26 @@ async function seedPrivateWork(node: string): Promise<void> {
       rawQuery(`INSERT INTO arguments (claim_id, stance, name, content, created_by, sensitivity_label) VALUES ($1, $2, $3, $4, 'steward', $5)`, [node, stance, name, content, A]);
     await arg("for", "From the meters", "The meters record more than the target.");
     await arg("against", "From the missing logs", HELD_TEXT);
+    if (!cites) return;
+    // The page cites a node the public graph holds, as a subclaim and as a premise of the argument for (#1157), and a
+    // node held only at `a`, whose id never crosses.
+    const [privateChild] = await rawQuery<{ id: string }>(
+      `INSERT INTO claims (text, steward_state, tagged_at, sensitivity_label) VALUES ($1, 'done', now(), $2) RETURNING id`,
+      [`${PRIVATE_CHILD_TEXT} (${tag})`, A]
+    );
+    id.privateChild = privateChild!.id;
+    const edge = async (child: string) =>
+      (await rawQuery<{ id: string }>(
+        `INSERT INTO claim_relationships (parent_claim_id, child_claim_id, relation_type, confidence, reasoning, sensitivity_label)
+         VALUES ($1, $2, 'supports', 1, $3, $4) RETURNING id`,
+        [node, child, `Why it bears (${child === id.q ? "public" : "private"}).`, A]
+      ))[0]!.id;
+    const toPublic = await edge(id.q!);
+    const toPrivate = await edge(id.privateChild);
+    const [forArg] = await rawQuery<{ id: string }>(`SELECT id FROM arguments WHERE claim_id = $1 AND name = 'From the meters' AND sensitivity_label = $2`, [node, A]);
+    for (const rel of [toPublic, toPrivate]) {
+      await rawQuery(`INSERT INTO argument_subclaims (argument_id, relationship_id, sensitivity_label) VALUES ($1, $2, $3)`, [forArg!.id, rel, A]);
+    }
   });
   await assessAtA(node, {
     summary: "The target was met, on meter data.\n\nOne caveat remains.",
@@ -265,7 +287,7 @@ beforeAll(async () => {
   actor.director = { id: id.director!, holding: ["direct"], clearance: [A, "public"], consentParties: [], direct: true };
   actor.acme = { id: id.acmeReviewer!, holding: [`consent for Acme ${tag}`], clearance: [A, "public"], consentParties: [id.acme!], direct: false };
   actor.org = { id: id.orgReviewer!, holding: ["consent for the organization"], clearance: [A, "public"], consentParties: [id.org!], direct: false };
-  await seedPrivateWork(id.p!);
+  await seedPrivateWork(id.p!, true);
 
   Object.assign(loadConfig(), {
     publishSigningKey: publishKey.privateKeyPem,
@@ -372,6 +394,19 @@ describe("a mirrored node's page, shown outside and standing", () => {
       ["against", null, "An argument against"],
     ]);
     expect(shape.arguments[1]!.held).toMatchObject({ by: [id.orgName], reasons: ["confidential to the party"] });
+    // The argument for names its premise the public graph holds by its public id, and its premise held only at `a` not at all.
+    expect(shape.arguments[0]!.premises).toEqual([id.q]);
+    // Each subclaim with how it bears: the public one names its node, the private one names none (#1157).
+    expect(shape.subclaims.map((s) => [s.relation, s.wording, s.node_id])).toEqual([
+      ["supports", null, id.q],
+      ["supports", `${PRIVATE_CHILD_TEXT} (${tag})`, null],
+    ]);
+    const released = first.page!.parts.filter((p) => typeof p.text === "string");
+    expect(released.filter((p) => p.refs && p.refs.length > 0).map((p) => [p.kind, p.refs])).toEqual([
+      ["argument", [id.q]],
+      ["subclaim", [id.q]],
+    ]);
+    expect(JSON.stringify(first)).not.toContain(id.privateChild!);
     expect(shape.removals).toEqual({ "commercial figures": 1 });
     // That an outside party supplied the source and has a recorded interest is always shown; its name and the words are held.
     expect(shape.sources[0]).toMatchObject({ supplied_by: "an_outside_party", interest_recorded: true });
@@ -526,6 +561,11 @@ describe("a mirrored node's page, shown outside and standing", () => {
     expect(page.page.summary.map((b: any) => b.text)).toEqual(["The target was met, on meter data.", "One caveat remains."]);
     expect(page.page.reasoning[0]).toMatchObject({ text: "The meter data shows [redacted: commercial figures] against a target of 4500.", marks: [{ at: 21, category: "commercial figures" }] });
     expect(page.page.arguments[1].held).toMatchObject({ what: "An argument against", by: [id.orgName], reasons: ["confidential to the party"] });
+    // The node the page cites, in this graph's words and with its status here, and nothing for the one held only inside (#1157).
+    expect(page.page.subclaims[0].node_id).toBe(id.q);
+    expect(page.cited).toEqual({
+      [id.q!]: { id: id.q, text: `The plant's meters were calibrated within the year (${tag})`, kind: "claim", status: "inconclusive", page_url: expect.stringMatching(new RegExp(`/claims/${id.q}$`)) },
+    });
     expect(page.page.sources[0]).toMatchObject({ kind: "unknown", supplied_by: "an_outside_party", interest_recorded: true, fingerprint: "aaaa1111" });
     expect(page.audit).toBe("The reasoning shown supports the verdict in part.");
     expect(page.record.prompt_set_is_this_graphs).toBe(true);

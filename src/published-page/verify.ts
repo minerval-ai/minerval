@@ -51,14 +51,18 @@ export const PUBLISHED_PAGE_FORMATS: readonly string[] = [PUBLISHED_PAGE_FORMAT,
 
 /**
  * The constructions a page's fingerprint is made under
- * (services/page-fingerprint.ts): the current one, and the one before it,
- * which every page of a package in format /1 is under. A package in /2 names
- * its page's in `page.fingerprint_format`, and the root is rebuilt under
- * that one alone.
+ * (services/page-fingerprint.ts): the current one, whose part commitments
+ * cover the public ids a part cites (#1157); the one before it, which has no
+ * refs line; and the one before the rename, which every page of a package in
+ * format /1 is under. A package in /2 names its page's in
+ * `page.fingerprint_format`, and the root is rebuilt under that one alone.
  */
-export const TREE_FORMAT = "minerval-released-page/2";
+export const TREE_FORMAT = "minerval-released-page/3";
+export const TREE_FORMAT_2 = "minerval-released-page/2";
 export const TREE_FORMAT_1 = "minerval-shown-page/1";
-const TREE_FORMATS: readonly string[] = [TREE_FORMAT, TREE_FORMAT_1];
+const TREE_FORMATS: readonly string[] = [TREE_FORMAT, TREE_FORMAT_2, TREE_FORMAT_1];
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Where a deployment runs, in the only words a record may say it in. */
 export const HOSTING_WORDS = {
@@ -92,6 +96,12 @@ export interface PackagePart {
   text?: string;
   marks?: PackageMark[];
   salt?: string;
+  /**
+   * Present when the part was released under TREE_FORMAT: the nodes it cites
+   * that the public graph holds, by their ids there, in order. A subclaim's
+   * child, an argument's premises. Covered by the part's hash (#1157).
+   */
+  refs?: string[];
   /** Present while the part is held: who has not released it, the reasons given from the fixed list, and since when. */
   held?: { by: string[]; reasons: string[]; since: string | null };
 }
@@ -195,7 +205,7 @@ export interface PublishedPagePackage {
     released_at: string | null;
     redaction_round: number;
     fingerprint: string | null;
-    /** The construction the fingerprint is made under: TREE_FORMAT, or TREE_FORMAT_1 for a page recorded before it. */
+    /** The construction the fingerprint is made under: TREE_FORMAT, or TREE_FORMAT_2 or TREE_FORMAT_1 for a page recorded before it. */
     fingerprint_format: string;
     earlier_fingerprints: unknown[];
     /** What is always shown, exactly as hashed. Null while the page is held. */
@@ -342,8 +352,10 @@ export async function keyIdOfPublicKey(publicKey: string): Promise<string | null
 
 const markOf = (category: string) => `[redacted: ${category}]`;
 
-async function partCommitment(salt: string, text: string, marks: readonly PackageMark[]): Promise<string> {
-  return sha256(`part\n${salt}\n${JSON.stringify(marks.map((m) => [m.at, m.category]))}\n${text}`);
+/** A part's commitment under the construction its page names: under TREE_FORMAT it covers the ids the part cites. */
+async function partCommitment(salt: string, text: string, marks: readonly PackageMark[], refs: readonly string[], format: string): Promise<string> {
+  const m = JSON.stringify(marks.map((mark) => [mark.at, mark.category]));
+  return format === TREE_FORMAT ? sha256(`part\n${salt}\n${m}\n${JSON.stringify([...refs])}\n${text}`) : sha256(`part\n${salt}\n${m}\n${text}`);
 }
 
 async function treeTop(leaves: readonly string[]): Promise<string> {
@@ -409,6 +421,9 @@ function malformed(p: PublishedPagePackage): string | null {
     for (const part of p.page.parts) {
       if (!part || !Number.isSafeInteger(part.part) || typeof part.descriptor !== "string" || typeof part.kind !== "string" || typeof part.hash !== "string" || !HEX64.test(part.hash)) {
         return "one of its parts has no place, no kind or no hash";
+      }
+      if (part.refs !== undefined && (!Array.isArray(part.refs) || !part.refs.every((r) => typeof r === "string" && UUID.test(r)))) {
+        return "one of its parts cites something that is not a node's id";
       }
     }
   }
@@ -503,7 +518,7 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
     let treeProblems = 0;
     if (page.always_released_hash) {
       if (pageReleased) {
-        if ((await partCommitment(page.always_released!.salt, page.always_released!.text, [])) !== page.always_released_hash) {
+        if ((await partCommitment(page.always_released!.salt, page.always_released!.text, [], [], page.fingerprint_format)) !== page.always_released_hash) {
           treeProblems++;
           failed.push("The verdict and what is shown with it do not match their hash: they are not what was recorded.");
         }
@@ -528,9 +543,13 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
               failed.push(`Part ${part.part} lists a removal marked "${mark.category}" at a place where the text has no such mark.`);
             }
           }
-          if ((await partCommitment(part.salt, part.text, marks)) !== part.hash) {
+          const refs = part.refs ?? [];
+          if (page.fingerprint_format !== TREE_FORMAT && refs.length > 0) {
             treeProblems++;
-            failed.push(`Part ${part.part} does not match its hash: its text, its marks or its salt is not what was recorded.`);
+            failed.push(`Part ${part.part} cites nodes, which a page fingerprinted under "${page.fingerprint_format}" cannot.`);
+          } else if ((await partCommitment(part.salt, part.text, marks, refs, page.fingerprint_format)) !== part.hash) {
+            treeProblems++;
+            failed.push(`Part ${part.part} does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded.`);
           }
         }
       } else {

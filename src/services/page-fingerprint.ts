@@ -19,10 +19,17 @@
  * Every hash is the lowercase hex SHA-256 of a UTF-8 string, and "\n" is
  * the one-character line feed.
  *
- *   commitment of a part  = H("part\n" + salt + "\n" + marks + "\n" + text)
+ *   commitment of a part  = H("part\n" + salt + "\n" + marks + "\n" + refs + "\n" + text)
  *     marks is JSON: [[offset, "category"], ...], the place of each
  *     "[redacted: category]" in `text`, in order, as written by
  *     JSON.stringify with no spaces. offset counts UTF-16 code units.
+ *     refs is JSON: ["<id>", ...], the public graph's ids of the nodes the
+ *     part cites that the public graph holds (a subclaim's child, an
+ *     argument's premises), in order, as written by JSON.stringify; "[]"
+ *     where there are none, and for what is always shown. Inside the
+ *     commitment, a held part says nothing of what it cites, and a released
+ *     one cannot be made to cite another node. Under the two constructions
+ *     before "minerval-released-page/3" there is no refs line.
  *   leaf of a part        = H("leaf\n" + position + "\n" + descriptor + "\n" + commitment)
  *     position is the part's place on the page in decimal; the verdict and
  *     everything else that is always shown is position 0, descriptor
@@ -33,10 +40,12 @@
  *   root                  = H("root\n" + FORMAT + "\n" + count + "\n" + top)
  *     count is the number of leaves in decimal, and FORMAT is the
  *     construction's name, which the page's record keeps beside its root
- *     (`fingerprint_format`): "minerval-released-page/2" for a page recorded
- *     now, "minerval-shown-page/1" for one recorded before the name changed.
- *     The two differ in that name alone. A root is rebuilt under the name
- *     its record gives, never under each in turn.
+ *     (`fingerprint_format`): "minerval-released-page/3" for a page recorded
+ *     now; "minerval-released-page/2" for one recorded before parts carried
+ *     refs, which has no refs line; "minerval-shown-page/1" for one recorded
+ *     before the name changed, which differs from /2 in its name alone. A
+ *     root is rebuilt under the name its record gives, never under each in
+ *     turn.
  *
  * The salt keeps a short part (a verdict, a one-line paragraph) from being
  * guessed from its hash while it is held. The position and the descriptor
@@ -46,12 +55,14 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 
-/** The construction a page recorded now is fingerprinted under. */
-export const FINGERPRINT_FORMAT = "minerval-released-page/2";
-/** The construction before it, for the pages recorded under it (docs/releasing-a-page.md, "Old names in the code"). */
+/** The construction a page recorded now is fingerprinted under: a part's commitment covers the public ids it cites. */
+export const FINGERPRINT_FORMAT = "minerval-released-page/3";
+/** The construction before parts carried refs, for the pages recorded under it. */
+export const FINGERPRINT_FORMAT_2 = "minerval-released-page/2";
+/** The construction before the name changed (docs/releasing-a-page.md, "Old names in the code"). */
 export const FINGERPRINT_FORMAT_1 = "minerval-shown-page/1";
-export const FINGERPRINT_FORMATS: readonly string[] = [FINGERPRINT_FORMAT, FINGERPRINT_FORMAT_1];
-export type FingerprintFormat = typeof FINGERPRINT_FORMAT | typeof FINGERPRINT_FORMAT_1;
+export const FINGERPRINT_FORMATS: readonly string[] = [FINGERPRINT_FORMAT, FINGERPRINT_FORMAT_2, FINGERPRINT_FORMAT_1];
+export type FingerprintFormat = typeof FINGERPRINT_FORMAT | typeof FINGERPRINT_FORMAT_2 | typeof FINGERPRINT_FORMAT_1;
 export const isFingerprintFormat = (f: unknown): f is FingerprintFormat => typeof f === "string" && FINGERPRINT_FORMATS.includes(f);
 
 /** The descriptor of the leaf that holds what is always shown. */
@@ -79,7 +90,25 @@ export function marksJson(marks: readonly Mark[]): string {
   return JSON.stringify(marks.map((m) => [m.at, m.category]));
 }
 
-export function partCommitment(salt: string, text: string, marks: readonly Mark[] = []): string {
+export function refsJson(refs: readonly string[]): string {
+  return JSON.stringify([...refs]);
+}
+
+/**
+ * A part's commitment under the construction its page is recorded under.
+ * Under "minerval-released-page/3" it covers the public ids the part cites;
+ * under the constructions before it there is no refs line, and `refs` must
+ * be empty, since nothing recorded then carried any.
+ */
+export function partCommitment(
+  salt: string,
+  text: string,
+  marks: readonly Mark[] = [],
+  refs: readonly string[] = [],
+  format: FingerprintFormat = FINGERPRINT_FORMAT
+): string {
+  if (format === FINGERPRINT_FORMAT) return sha256(`part\n${salt}\n${marksJson(marks)}\n${refsJson(refs)}\n${text}`);
+  if (refs.length > 0) throw new Error(`A part recorded under "${format}" carries no refs.`);
   return sha256(`part\n${salt}\n${marksJson(marks)}\n${text}`);
 }
 
@@ -115,6 +144,8 @@ export interface ReleasedPartForCheck extends LeafRecord {
   text?: string | null;
   marks?: readonly Mark[] | null;
   salt?: string | null;
+  /** The public ids the part cites, released with its text (FINGERPRINT_FORMAT only). */
+  refs?: readonly string[] | null;
 }
 
 export interface ReleasedPageForCheck {
@@ -164,11 +195,20 @@ export function verifyReleasedPage(page: ReleasedPageForCheck): Verification {
         problems.push(`${name} lists a removal marked "${mark.category}" at a place where the text has no such mark.`);
       }
     }
-    if (partCommitment(part.salt, part.text!, marks) !== part.commitment) {
-      problems.push(`${name} does not match its hash: its text, its marks or its salt is not what was recorded.`);
+    const refs = part.refs ?? [];
+    if (format !== FINGERPRINT_FORMAT && refs.length > 0) {
+      problems.push(`${name} cites nodes, which a page recorded under "${format}" cannot.`);
+    } else if (partCommitment(part.salt, part.text!, marks, refs, format) !== part.commitment) {
+      problems.push(`${name} does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded.`);
     }
     checked++;
   };
+
+  if (!isFingerprintFormat(page.format)) {
+    problems.push(`The page's fingerprint is recorded under "${page.format}", a construction this check does not know.`);
+    return { ok: false, problems, checked, held };
+  }
+  const format: FingerprintFormat = page.format;
 
   if (page.verdict.position !== 0 || page.verdict.descriptor !== VERDICT_DESCRIPTOR) {
     problems.push("The verdict is not in the first place of the page.");
@@ -183,11 +223,7 @@ export function verifyReleasedPage(page: ReleasedPageForCheck): Verification {
     checkOne(part, `Part ${part.position}`);
   });
 
-  if (!isFingerprintFormat(page.format)) {
-    problems.push(`The page's fingerprint is recorded under "${page.format}", a construction this check does not know.`);
-    return { ok: false, problems, checked, held };
-  }
-  const root = pageRoot([page.verdict, ...page.parts], page.format);
+  const root = pageRoot([page.verdict, ...page.parts], format);
   if (root !== page.root) {
     problems.push(
       "The parts do not rebuild the recorded root: a part was changed, moved, added or left out, or its kind is not the one recorded."

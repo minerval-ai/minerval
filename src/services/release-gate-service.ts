@@ -33,7 +33,10 @@ import { releaseCovers } from "../published-page/shape.js";
 import { RemovalError, applyRemovals, countByCategory, heldWords, kindWords, locate, overlaps } from "./page-parts.js";
 import { GATE_ACTS, GATE_KINDS, GATE_MODES, GATE_SCOPES, HOLDERS, HOLD_REASONS, type GateKind, type HoldReason, type Holder } from "./gate-kinds.js";
 import { dueUnder, faceOfGate, gateOf, modesFor, type ModeFound } from "./gate-settings-service.js";
-import { VERDICT_DESCRIPTOR, pageRoot, partCommitment, type LeafRecord } from "./page-fingerprint.js";
+import { FINGERPRINT_FORMAT, VERDICT_DESCRIPTOR, pageRoot, partCommitment, type LeafRecord } from "./page-fingerprint.js";
+
+/** Whether a page is recorded under the construction whose parts carry the public ids they cite (#1157). */
+const isRefsFormat = (format: string) => format === FINGERPRINT_FORMAT;
 import {
   END_REASONS,
   FIDELITY_ANSWERS,
@@ -202,11 +205,13 @@ interface GatePart {
   marks: Mark[] | null;
   salt: string;
   rests_on: string[];
+  /** The public ids the part cites (#1157). */
+  public_refs: string[];
 }
 
 const gatePartsOf = (pageId: string) =>
   rawQuery<GatePart>(
-    `SELECT id, position, kind, descriptor, original, redacted, marks, salt, rests_on FROM release_parts WHERE page_id = $1 ORDER BY position`,
+    `SELECT id, position, kind, descriptor, original, redacted, marks, salt, rests_on, public_refs FROM release_parts WHERE page_id = $1 ORDER BY position`,
     [pageId]
   );
 
@@ -307,8 +312,9 @@ async function settleLocked(pageId: string): Promise<{ released: boolean; newlyR
     if (released.has(part.id)) continue;
     if (!free(part.id) || !part.rests_on.every((party) => standingOf(acts, part.id, party) === "consented")) continue;
     const now = await rawQuery(
-      `UPDATE received_parts SET text = $2, marks = $3::jsonb, salt = $4, released_at = now() WHERE id = $1 AND released_at IS NULL RETURNING id`,
-      [part.id, part.redacted ?? part.original, JSON.stringify(part.marks ?? []), part.salt]
+      `UPDATE received_parts SET text = $2, marks = $3::jsonb, salt = $4, public_refs = $5::uuid[], released_at = now()
+        WHERE id = $1 AND released_at IS NULL RETURNING id`,
+      [part.id, part.redacted ?? part.original, JSON.stringify(part.marks ?? []), part.salt, part.public_refs]
     );
     changed += now.length;
   }
@@ -436,12 +442,14 @@ interface ReceivedPartRow {
   text: string | null;
   marks: Mark[] | null;
   salt: string | null;
+  /** The public ids the part cites, once released (#1157). */
+  public_refs: string[] | null;
   released_at: Date | null;
 }
 
 const receivedPartsOf = (pageId: string) =>
   rawQuery<ReceivedPartRow>(
-    `SELECT id, position, kind, descriptor, commitment, needs, text, marks, salt, released_at FROM received_parts WHERE page_id = $1 ORDER BY position`,
+    `SELECT id, position, kind, descriptor, commitment, needs, text, marks, salt, public_refs, released_at FROM received_parts WHERE page_id = $1 ORDER BY position`,
     [pageId]
   );
 
@@ -1187,7 +1195,8 @@ async function removeAtGate(input: {
   if (asRemovals.some((r) => r.start === span.start && r.end === span.end && r.category === category.name)) return false;
   if (overlaps(asRemovals, span)) throw new ReleaseError("OVERLAPS", "That passage overlaps a removal already made in this part.");
   const now = applyRemovals(part.original, [...asRemovals, { ...span, category: category.name }]);
-  const commitment = partCommitment(part.salt, now.text, now.marks);
+  const format = full!.fingerprint_format;
+  const commitment = partCommitment(part.salt, now.text, now.marks, part.public_refs, format);
   const all = await rawQuery<{ id: string; position: number; descriptor: string; commitment: string; category_list: string[] }>(
     `SELECT p.id, p.position, p.descriptor, p.commitment,
             ARRAY(SELECT r.category FROM release_removals r WHERE r.part_id = p.id AND r.taken_back_at IS NULL) AS category_list
@@ -1195,12 +1204,12 @@ async function removeAtGate(input: {
     [page.id]
   );
   const header = JSON.stringify({ ...JSON.parse(page.header), removals: countByCategory([...all.flatMap((p) => p.category_list), category.name]) });
-  const headerCommitment = partCommitment(page.header_salt, header, []);
+  const headerCommitment = partCommitment(page.header_salt, header, [], [], format);
   const leaves: LeafRecord[] = [
     { position: 0, descriptor: VERDICT_DESCRIPTOR, commitment: headerCommitment },
     ...all.map((p) => ({ position: p.position, descriptor: p.descriptor, commitment: p.id === part.id ? commitment : p.commitment })),
   ];
-  const root = pageRoot(leaves, full!.fingerprint_format);
+  const root = pageRoot(leaves, format);
   await withTransaction(async (tx) => {
     await tx.query(
       `INSERT INTO release_removals (part_id, start_offset, end_offset, category, note, policy_id, made_in_round, made_by, sensitivity_label)
@@ -1808,7 +1817,7 @@ export async function receivedPage(pageId: string): Promise<(Record<string, unkn
     root: page.root!,
     format: page.fingerprint_format,
     verdict: { position: 0, descriptor: "verdict", commitment: page.header_commitment!, text: page.header, salt: page.header_salt, marks: [] },
-    parts: parts.map((p) => ({ position: p.position, descriptor: p.descriptor, commitment: p.commitment, text: p.text, marks: p.marks, salt: p.salt })),
+    parts: parts.map((p) => ({ position: p.position, descriptor: p.descriptor, commitment: p.commitment, text: p.text, marks: p.marks, salt: p.salt, refs: p.public_refs })),
   });
   return {
     ...described,
@@ -1817,7 +1826,11 @@ export async function receivedPage(pageId: string): Promise<(Record<string, unkn
     earlier_fingerprints: page.roots,
     parts: parts.map((p) =>
       p.released_at !== null
-        ? { part: p.position, kind: p.kind, descriptor: p.descriptor, text: p.text, removals_marked: p.marks ?? [], salt: p.salt, hash: p.commitment }
+        ? {
+            part: p.position, kind: p.kind, descriptor: p.descriptor, text: p.text, removals_marked: p.marks ?? [], salt: p.salt,
+            ...(p.public_refs && p.public_refs.length > 0 ? { refs: p.public_refs } : {}),
+            hash: p.commitment,
+          }
         : {
             part: p.position,
             kind: p.kind,
@@ -2019,7 +2032,11 @@ export async function outsideRecord(releaseId: string, nodeId: string): Promise<
       // Until the page itself is shown no part's text is on this side, whoever has released it.
       parts: parts.map((p) =>
         page.released_at && p.released_at !== null
-          ? { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, text: p.text, marks: p.marks ?? [], salt: p.salt }
+          ? {
+              part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, text: p.text, marks: p.marks ?? [], salt: p.salt,
+              // The nodes it cites that the public graph holds, by their public ids, under the construction that covers them (#1157).
+              ...(isRefsFormat(page.fingerprint_format) ? { refs: p.public_refs ?? [] } : {}),
+            }
           : { part: p.position, kind: p.kind, descriptor: p.descriptor, hash: p.commitment, held: heldOf(p) }
       ),
       audit: page.released_at ? auditAnswerWords(page.audit_answer, acts) : null,

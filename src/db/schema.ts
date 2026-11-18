@@ -8298,7 +8298,7 @@ export const releasePages = pgTable(
     root: text("root"),
     // The construction the root is made under (services/page-fingerprint.ts).
     // A page recorded before the construction was renamed keeps the old one.
-    fingerprintFormat: text("fingerprint_format").notNull().default("minerval-released-page/2"),
+    fingerprintFormat: text("fingerprint_format").notNull().default("minerval-released-page/3"),
     // The parties whose consent the verdict takes: every party whose
     // material the version read. Empty means the organization's own.
     restsOn: uuid("rests_on").array().notNull().default([]),
@@ -8357,6 +8357,11 @@ export const releaseParts = pgTable(
     // The row the part was read from (an argument, an instance, an edge, a
     // request), where it has one.
     refId: uuid("ref_id"),
+    // The nodes the part cites that the public graph holds, by their public
+    // ids: a subclaim's child, an argument's premises (#1157). Fixed when the
+    // page is recorded, covered by the part's commitment, and the only ids
+    // of this part that may cross: a node at a private label is never named.
+    publicRefs: uuid("public_refs").array().notNull().default([]),
     // The part as written. Never changed.
     original: text("original").notNull(),
     salt: text("salt").notNull(),
@@ -8478,7 +8483,7 @@ export const receivedPages = pgTable(
     root: text("root"),
     roots: jsonb("roots").notNull().default([]),
     // The construction its roots are made under, the same as on the page's side.
-    fingerprintFormat: text("fingerprint_format").notNull().default("minerval-released-page/2"),
+    fingerprintFormat: text("fingerprint_format").notNull().default("minerval-released-page/3"),
     headerCommitment: text("header_commitment"),
     header: text("header"),
     headerSalt: text("header_salt"),
@@ -8521,6 +8526,9 @@ export const receivedParts = pgTable(
     text: text("text"),
     marks: jsonb("marks"),
     salt: text("salt"),
+    // The public ids the part cites (release_parts.public_refs), released
+    // with its text. Null while the part is held.
+    publicRefs: uuid("public_refs").array(),
     releasedAt: timestamp("released_at", { withTimezone: true }),
     sensitivityLabel: sensitivityLabelColumn(),
   },

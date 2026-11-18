@@ -46,6 +46,9 @@ function withoutSeal(pkg: PublishedPagePackage): Omit<PublishedPagePackage, "has
   return body;
 }
 
+const CALIBRATED = "44444444-4444-4444-8444-444444444444";
+const METERED = "55555555-5555-4555-8555-555555555555";
+
 /** A page with a marked removal, an argument each way and one part held. */
 async function example(opts: { released?: boolean; fingerprintFormat?: FingerprintFormat } = {}): Promise<PublishedPagePackage> {
   const shown = opts.released !== false;
@@ -73,14 +76,18 @@ async function example(opts: { released?: boolean; fingerprintFormat?: Fingerpri
     parts: written.length,
   });
   const headerSalt = newSalt();
+  // Under the current construction the argument for and the subclaim cite nodes the public graph holds (#1157).
+  const refsOf = (w: { kind: string; descriptor: string }) =>
+    fingerprintFormat !== FINGERPRINT_FORMAT ? [] : w.kind === "subclaim" ? [CALIBRATED] : w.descriptor === "argument:for" ? [CALIBRATED, METERED] : [];
   const parts: PackagePart[] = written.map((w, i) => {
     const salt = newSalt();
-    const hash = partCommitment(salt, w.text, w.marks);
+    const refs = refsOf(w);
+    const hash = partCommitment(salt, w.text, w.marks, refs, fingerprintFormat);
     return shown && !w.held
-      ? { part: i + 1, kind: w.kind, descriptor: w.descriptor, hash, text: w.text, marks: w.marks, salt }
+      ? { part: i + 1, kind: w.kind, descriptor: w.descriptor, hash, text: w.text, marks: w.marks, salt, ...(fingerprintFormat === FINGERPRINT_FORMAT ? { refs } : {}) }
       : { part: i + 1, kind: w.kind, descriptor: w.descriptor, hash, held: { by: ["Acme"], reasons: w.held ? ["confidential to the party"] : [], since: w.held ? "2026-10-13T00:00:00.000Z" : null } };
   });
-  const headerHash = partCommitment(headerSalt, header, []);
+  const headerHash = partCommitment(headerSalt, header, [], [], fingerprintFormat);
   const fingerprint = pageRoot([{ position: 0, descriptor: VERDICT_DESCRIPTOR, commitment: headerHash }, ...parts.map((p) => ({ position: p.part, descriptor: p.descriptor, commitment: p.hash }))], fingerprintFormat);
   const state = shown ? "released_in_part" : "held";
   return sign({
@@ -284,11 +291,12 @@ describe("a published page in the shape of a node's page", () => {
     expect(shape.verdict).toEqual({ status: "supported", confidence: 0.8, credence: 0.85 });
     expect(shape.summary).toEqual([{ part: 1, text: "The target was met.", marks: [] }]);
     expect(shape.reasoning[0]).toEqual({ part: 2, text: "The meters show [redacted: commercial figures] against a target of 4500.", marks: [{ at: 16, category: "commercial figures" }] });
-    expect(shape.arguments[0]).toEqual({ part: 3, stance: "for", name: "From the meters", content: "The meters record more than the target.", rating: "likely if the premises hold", decisive: true, evaluation: "The meters are direct evidence." });
-    expect(shape.arguments[1]).toMatchObject({ part: 4, stance: "against", content: null, held: { what: "An argument against", by: ["Acme"], reasons: ["confidential to the party"] } });
+    expect(shape.arguments[0]).toEqual({ part: 3, stance: "for", name: "From the meters", content: "The meters record more than the target.", rating: "likely if the premises hold", decisive: true, evaluation: "The meters are direct evidence.", premises: [CALIBRATED, METERED] });
+    // A held argument says nothing of what it cites.
+    expect(shape.arguments[1]).toMatchObject({ part: 4, stance: "against", content: null, premises: [], held: { what: "An argument against", by: ["Acme"], reasons: ["confidential to the party"] } });
     // A passage that itself holds a blank line stays whole.
     expect(shape.readings[0]).toMatchObject({ stance: "affirms", passage: "Output was above target.\n\nIt was so in every month.", context: "The annual report.", how_read: "supports. A direct statement." });
-    expect(shape.subclaims[0]).toEqual({ part: 6, relation: "supports", wording: "The meters were calibrated", reasoning: "Calibrated meters make the count reliable." });
+    expect(shape.subclaims[0]).toEqual({ part: 6, relation: "supports", wording: "The meters were calibrated", reasoning: "Calibrated meters make the count reliable.", node_id: CALIBRATED });
     expect([shape.parts, shape.held_parts, shape.held_kinds]).toEqual([6, 1, "an argument against"]);
     expect(shapeOfPublishedPage(await example({ released: false }))).toBeNull();
   });
@@ -305,6 +313,33 @@ describe("a published page in the shape of a node's page", () => {
     expect(text).toContain("The meters show [redacted: commercial figures] against a target of 4500.");
     expect(text).toContain("[An argument against, held by Acme. Reason given: confidential to the party]");
     expect(heldWords("argument:against", ["Acme"])).toBe("[An argument against, held by Acme]");
+    // The nodes a released part cites, by their ids on this graph, so the Steward reading it can open each (#1157).
+    expect(text).toContain(`Cites, on this graph: claim ${CALIBRATED}, claim ${METERED}`);
+  });
+});
+
+describe("the nodes a released part cites (#1157)", () => {
+  it("checks them as part of the part: changed, dropped or added to a part of an earlier construction, the page fails", async () => {
+    const base = await example();
+    expect((await verifyPublishedPage(base, { publisherKey: key.publicKey })).ok).toBe(true);
+    const resign = async (edit: (pkg: PublishedPagePackage) => void) => {
+      const copy = JSON.parse(JSON.stringify(withoutSeal(base))) as Omit<PublishedPagePackage, "hash" | "signature">;
+      edit(copy as PublishedPagePackage);
+      return verifyPublishedPage(await sign(copy), { publisherKey: key.publicKey });
+    };
+    // Signed again after the change, so only the fingerprint can catch it.
+    const pointed = await resign((p) => { p.page!.parts[5]!.refs = [METERED]; });
+    expect(pointed.failed).toContain("Part 6 does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded.");
+    const dropped = await resign((p) => { delete p.page!.parts[5]!.refs; });
+    expect(dropped.ok).toBe(false);
+    const notAnId = await resign((p) => { p.page!.parts[5]!.refs = ["the calibration claim"]; });
+    expect(notAnId.ok).toBe(false);
+    expect(notAnId.failed.join(" ")).toContain("cites something that is not a node's id");
+    const before = await example({ fingerprintFormat: FINGERPRINT_FORMAT_1 });
+    const copy = JSON.parse(JSON.stringify(withoutSeal(before))) as PublishedPagePackage;
+    copy.page!.parts[0]!.refs = [CALIBRATED];
+    const earlier = await verifyPublishedPage(await sign(copy), { publisherKey: key.publicKey });
+    expect(earlier.failed).toContain(`Part 1 cites nodes, which a page fingerprinted under "${FINGERPRINT_FORMAT_1}" cannot.`);
   });
 });
 

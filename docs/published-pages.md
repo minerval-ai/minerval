@@ -31,7 +31,7 @@ outside is to read it, at the moment it was built
 | `node` | The node's id on the public graph, when the release came to cover it, when it was first assessed at the page's label, which came first, and its leaving |
 | `sequence`, `previous_hash` | 1, 2, 3, ... for this node under this release, each naming the one before |
 | `state` | The node's state now: not yet assessed, released whole, released in part, or held |
-| `page` | The latest version that is released: what is always released with it (`always_released`), as hashed, with its salt; each released part with its text, marks and salt; each held part with its hash, its kind, who holds it, any reason given and since when; the fingerprint, and the construction it is made under (`fingerprint_format`: `minerval-released-page/2`, or `minerval-shown-page/1` for a page recorded before that name). Where no version has been shown, the latest version as held, by kind and hash alone |
+| `page` | The latest version that is released: what is always released with it (`always_released`), as hashed, with its salt; each released part with its text, marks and salt, and, under `minerval-released-page/3`, the public ids of the nodes it cites (`refs`), which its hash covers; each held part with its hash, its kind, who holds it, any reason given and since when; the fingerprint, and the construction it is made under (`fingerprint_format`: `minerval-released-page/3`; `minerval-released-page/2` for a page recorded before parts carried refs; or `minerval-shown-page/1` for one recorded before that name). Where no version has been shown, the latest version as held, by kind and hash alone |
 | `policy` | The version the page was redacted under, in full |
 | `record.made` | The prompt-set hash, the model that assessed and the model that redacted, any addition to a role's prompt, the seal of the assessing run's log with whether its chain checked out, and how the assessment was paid for |
 | `record.acts` | Everything a person, a rule or the process did on the release, each with the permissions the person held. People are numbered; no name crosses |
@@ -257,8 +257,12 @@ Contribution Reviewer's prompt gained a few lines under `add_instance`.
   arguments with their evaluations, readings, sources, subclaims, each
   released part as written with `[redacted: <category>]` where a passage
   was removed, and each held part in its place as what it was, who holds it
-  and any reason given. With it: the record, the history of versions, and
-  the check.
+  and any reason given. A subclaim that is a node this graph holds carries
+  its `node_id`, and an argument its `premises`, from the public ids the
+  released part cites (#1157); `cited` gives each such node's wording and
+  status here, and the claim page links them. The source the Steward reads
+  lists them too ("Cites, on this graph: claim <id>"). With it: the record,
+  the history of versions, and the check.
 - `GET /published-pages/:id/package`: the package exactly as signed.
 
 ### On the claim's page
@@ -307,10 +311,12 @@ the publisher did about it.
   published page, requests taken up in public, public mandates and funding
   from inside, keeping the public version current, and a publisher's
   record.
-- **A subclaim that is a public node** is shown with how it bears and
-  without saying which node it is: the part's text leaves the wording out
-  because the destination already reads it, and the node's id is not
-  carried.
+- **A subclaim held only inside, that the public graph has since admitted.**
+  A subclaim or a premise that is a public node is named by its public id
+  (below, "Reading"). A node held only inside gets its public id after the
+  page that cites it was fingerprinted, so the page names it by its wording
+  where it was released and not by its id. Naming it would take a statement
+  the publisher signs when it builds the package, outside the fingerprint.
 - **A proposal that the public graph places on the denial of a node.** The
   Matcher may find that a proposed node is the negation of one it holds.
   The page then appears on that node, with its own wording as its first

@@ -112,6 +112,21 @@ kinds.
 An argument that is another label's row, evaluated at the page's label,
 contributes this label's evaluation and not the argument's text.
 
+**The nodes a part cites.** A subclaim part, and an argument part, carry the
+nodes they cite that the public graph holds, by their public ids
+(`release_parts.public_refs`, #1157): a subclaim's child, and the premises
+the argument groups (`argument_subclaims`). A mirrored node keeps the public
+graph's id, so this is its own id. A node at a private label is never named
+in this list, whoever it is released to; a subclaim at the page's label is
+named by its wording, as before. The ids are fixed when the page is recorded
+and are inside the part's commitment, so a held part says nothing of what it
+cites and a released part cannot be made to cite another node. They cross
+with the part's text when it is released (`received_parts.public_refs`), and
+the claim page links each to its node. A node held only inside that the
+public graph later admits gets its public id after the page that cites it
+was fingerprinted, so it is not named this way; that would take a statement
+the publisher signs when it builds the package, which is not built.
+
 **What is always shown** is not a part. It is the page's first leaf, shown
 whenever the page is released and never without it: the verdict with its
 confidence and any credence or estimate; coverage; that each source read at
@@ -274,10 +289,12 @@ destination side at once, with each part's place, kind and hash, before
 any party consents to anything (`src/services/page-fingerprint.ts`, which
 gives the construction in full). The root is made under a named
 construction, which the page's record keeps beside it
-(`fingerprint_format`): `minerval-released-page/2` for a page recorded
-now, `minerval-shown-page/1` for one recorded before the name changed. The
-two differ in that name alone, and every check rebuilds a root under the
-name its record gives.
+(`fingerprint_format`): `minerval-released-page/3` for a page recorded
+now, whose part commitments cover the public ids a part cites;
+`minerval-released-page/2` for one recorded before parts carried them, which
+has no line for them; and `minerval-shown-page/1` for one recorded before the
+name changed, which differs from `/2` in its name alone. Every check rebuilds
+a root under the name its record gives.
 
 A released part is then shown with its salt, and a held part with its hash
 and its kind. A reader rebuilds the root from what they were given and
