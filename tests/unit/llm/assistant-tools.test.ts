@@ -11,10 +11,12 @@ import type { FastifyInstance } from "fastify";
 import {
   assistantAuth,
   createAssistantTools,
+  currentToolName,
   HELD_KINDS,
   HELD_TOOL_LABELS,
   HELD_TOOLS,
   openAccountTools,
+  RENAMED_HELD_TOOLS,
   RUNS_WITHOUT_ASKING,
   type AccountTools,
 } from "../../../src/llm/tools/assistant-tools.js";
@@ -62,7 +64,7 @@ describe("the Assistant's tools", () => {
     // A tool whose route only a members-only deployment mounts is not among
     // this app's tools, and is classified all the same.
     const membersOnly = new Set([
-      "fund_showing_work",
+      "fund_release_work",
       "set_gate",
       "set_gate_mode",
       "end_gate_setting",
@@ -144,5 +146,24 @@ describe("the Assistant's tools", () => {
     const copy = createAssistantTools(account, hooks);
     expect(top.definitions.map((d) => d.name)).toContain("delegate");
     expect(copy.definitions.map((d) => d.name)).not.toContain("delegate");
+  });
+});
+
+describe("a held tool that was renamed", () => {
+  // An action held under the old name before a rename still waits for its
+  // user's press: it must run, and read, as the tool it now is.
+  it("resolves each old name to a held tool that exists, with its card's words", () => {
+    const routeTools = new Set(Object.values(ROUTE_TOOLS).map((t) => t.name));
+    for (const [old, now] of Object.entries(RENAMED_HELD_TOOLS)) {
+      expect(currentToolName(old)).toBe(now);
+      expect(HELD_TOOLS[now], now).toBeDefined();
+      expect(HELD_TOOL_LABELS[now], now).toBeDefined();
+      expect(routeTools.has(now), now).toBe(true);
+      // The old name is gone, so nothing could reach it but the alias.
+      expect(HELD_TOOLS[old], old).toBeUndefined();
+      expect(routeTools.has(old), old).toBe(false);
+    }
+    expect(currentToolName("fund_showing_work")).toBe("fund_release_work");
+    expect(currentToolName("cancel_order")).toBe("cancel_order");
   });
 });

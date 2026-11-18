@@ -21,6 +21,8 @@ describe("the members' work pages", () => {
     expect(sectionOf("/admin/connections/abc")).toBe("Material");
     expect(sectionOf("/admin")).toBe("Admin");
     expect(sectionOf("/admin/owls")).toBe("Admin");
+    expect(sectionOf("/releases/abc/pages/def")).toBe("Sharing");
+    // The old address, which redirects there.
     expect(sectionOf("/showings/abc/pages/def")).toBe("Sharing");
     expect(sectionOf("/redaction-policies/abc")).toBe("Sharing");
     expect(sectionOf("/file-sets/abc")).toBe("Material");
@@ -46,13 +48,13 @@ describe("the members' work pages", () => {
       "Graph: Ask, Claims, Mandates, Findings, Requests, Docs",
       "Admin: People, Activity log",
     ]);
-    // A reader at a label besides public sees the showings that reach it.
-    expect(names({ permissions: ["read"], clearance: ["public", "finance"] })[2]).toBe("Sharing: Showings, Boundaries");
-    // A release holder reviews, and follows the public graph, since an agent's report goes out through the gate.
+    // A reader at a label besides public sees the releases that reach it.
+    expect(names({ permissions: ["read"], clearance: ["public", "finance"] })[2]).toBe("Sharing: Releases, Boundaries");
+    // Someone who consents for a party (stored as `release`) reviews, and follows the public graph, since an agent's report goes out through the gate.
     expect(names({ permissions: ["release"], clearance: ["public"] })).toEqual([
       "-: Inbox, Review",
       "Graph: Ask, Claims, Mandates, Findings, Requests, Docs",
-      "Sharing: Showings, Boundaries",
+      "Sharing: Releases, Boundaries",
       "Public graph: Overview, Requests, Replies, Outbox",
       "Admin: People, Activity log",
     ]);

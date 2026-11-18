@@ -6,13 +6,13 @@ import { ButtonLink, Empty, Pill, Section, Table, Tabs, Tip, WorkHead, WorkPage,
 import { fetchOutbound, type OutboundNode, type OutboundPackage, type OutboundSend } from "@/lib/inside-api";
 import { british, fetchReportsForSending, type ReportForSending } from "@/lib/outside-api";
 import { HeadSub, Note, loadAccount, tryRead } from "../admin/outside/parts";
-import { sendOutsideAction, writeProposalAction } from "../showings/actions";
+import { sendOutsideAction, writeProposalAction } from "../releases/actions";
 
 export const metadata: Metadata = { title: "Outbox · Minerval" };
 export const dynamic = "force-dynamic";
 
 // Everything leaving this deployment for the public graph. Pages: where each
-// node shown outside stands on its way out (GET /outbound; docs/published-pages.md,
+// node released outside stands on its way out (GET /outbound; docs/published-pages.md,
 // "Inside the deployment"): the node on the public graph or its proposal there,
 // each signed package built, and each time one was sent or taken as a file,
 // with what the public graph answered. A person who directs sends. Reports:
@@ -23,7 +23,7 @@ const STATE_WORDS: Record<string, string> = {
   not_yet_assessed: "Says the node is not yet assessed, and carries no page",
   released_whole: "Carries the page released whole",
   released_in_part: "Carries the page released in part, with each held part named in its place",
-  held: "Says the node's latest assessment is held, and gives none of its text; where an earlier assessment was shown, it still carries that page",
+  held: "Says the node's latest assessment is held, and gives none of its text; where an earlier assessment was released, it still carries that page",
 };
 
 const STATE_SHORT: Record<string, string> = {
@@ -34,7 +34,8 @@ const STATE_SHORT: Record<string, string> = {
 };
 
 const PROPOSAL: Record<string, { tone: Tone; text: string }> = {
-  waiting_for_release: { tone: "warn", text: "At the gate" },
+  // The state is stored as waiting_for_release: the words wait for each party's consent.
+  waiting_for_release: { tone: "warn", text: "At the gate, waiting for consent" },
   ready: { tone: "ok", text: "Ready" },
   sent: { tone: "info", text: "Under review outside" },
   on_the_public_graph: { tone: "ok", text: "Admitted" },
@@ -137,7 +138,7 @@ function Pages({
     <>
       {showings.length === 0 && (
         <div className="w-tbox">
-          <Empty>No page has been asked to be shown outside this deployment.</Empty>
+          <Empty>No page has been asked to be released outside this deployment.</Empty>
         </div>
       )}
 
@@ -156,8 +157,8 @@ function Pages({
             <div className="w-pub-grp">
               <span className="w-node">{head.node ?? "A node you do not read"}</span>
               {nodes.length > 1 && <span className="w-muted w-small">and {nodes.length - 1} under it</span>}
-              <Link className="w-small" href={`/showings/${showingId}`}>
-                Showing
+              <Link className="w-small" href={`/releases/${showingId}`}>
+                Release
               </Link>
               <span className="w-row" style={{ gap: 4 }}>
                 <Pill tone="neu">{standing ? "Sent as released" : "Sent by a person"}</Pill>
@@ -178,7 +179,7 @@ function Pages({
                 {waiting + ready > 0 && !mayDirect && <span className="w-muted w-small">{waiting + ready} waiting for a person who directs</span>}
               </div>
             </div>
-            <table className="w-t" aria-label="Nodes under this showing">
+            <table className="w-t" aria-label="Nodes under this release">
               <thead>
                 <tr>
                   <th>Node</th>
@@ -200,7 +201,7 @@ function Pages({
         <summary>What a send shows outside</summary>
         <ul className="w-pub-list">
           <li>
-            The text of each part that every party it rests on has released, with each removal marked, and for each held part its kind, who holds
+            The text of each part that every party it rests on has consented to, with each removal marked, and for each held part its kind, who holds
             it, any reason given and since when. Nothing else of the page.
           </li>
           <li>
@@ -208,7 +209,7 @@ function Pages({
             redaction policy in full.
           </li>
           <li>
-            The record of the showing: when it was asked for and whether that was before the node was first assessed, every act on it with the
+            The record of the release: when it was asked for and whether that was before the node was first assessed, every act on it with the
             permissions the person held, and every assessment made while it stood, the held ones as held. People are numbered, and no
             person&apos;s name is sent. Parties&apos; names are.
           </li>

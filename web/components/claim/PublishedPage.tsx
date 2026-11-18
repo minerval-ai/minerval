@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { actWords, storedWords } from "@/lib/stored-words";
 import type { ClaimDetail, Assessment, Stance } from "@/lib/types";
 import type { ArgumentGroup } from "@/lib/ontology";
 import { RELATION, DEFINED_IN } from "@/lib/ontology";
@@ -171,14 +172,14 @@ export function TakenOut({ view }: { view: PublishedPageView }) {
       </p>
       {view.state === "held" && (
         <p className="published-later" style={quiet}>
-          <span className="held-mark" aria-hidden /> A later version, of {day(view.version_of)}, exists and is not shown
-          {view.held?.because ? `: ${view.held.because}` : ""}
+          <span className="held-mark" aria-hidden /> A later version, of {day(view.version_of)}, exists and is not released
+          {view.held?.because ? `: ${storedWords(view.held.because)}` : ""}
           {view.held?.since ? `, since ${day(view.held.since)}` : ""}. What follows is the version of {day(view.shown_version_of)}.
         </p>
       )}
       {view.ended && (
         <p style={quiet}>
-          The showing ended on {day(view.ended.at)}: {view.ended.because}. What was shown stays shown.
+          The release ended on {day(view.ended.at)}: {storedWords(view.ended.because)}. What was released stays released.
         </p>
       )}
     </>
@@ -489,10 +490,10 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
             {view.record.acts.map((a, i) => (
               <li key={i}>
                 {day(a.at)}: {a.by}
-                {a.holding.length > 0 ? `, holding ${a.holding.join(" and ")},` : ""} {a.what}
+                {a.holding.length > 0 ? `, holding ${a.holding.join(" and ")},` : ""} {actWords(a.what)}
                 {a.on ? ` ${a.on}` : ""}
                 {a.for_party ? ` for ${a.for_party}` : ""}
-                {a.reason ? ` (${a.reason})` : ""}
+                {a.reason ? ` (${storedWords(a.reason)})` : ""}
               </li>
             ))}
           </ul>
@@ -504,11 +505,11 @@ export function PublicationRecord({ view }: { view: PublishedPageView }) {
               <li key={v.page_id}>
                 <span className="held-mark" aria-hidden /> Version of {day(v.version_of)}:{" "}
                 {stateWords({ state: v.state, parts: v.of_parts, parts_held: v.parts_held, held_kinds: v.held_kinds, held: { because: v.held_because ?? null, since: v.held_since ?? null } })}
-                {v.shown_at ? `; shown ${day(v.shown_at)}` : ""}
+                {v.shown_at ? `; released ${day(v.shown_at)}` : ""}
               </li>
             ))}
           </ul>
-          Every version made while the showing stood is listed, the held ones as held.
+          Every version made while the release stood is listed, the held ones as held.
         </Row>
         <Row label="Release check">
           <CheckPublishedPage publishedPageId={view.published_page_id} pkg={view.package} arrived={view.check} />

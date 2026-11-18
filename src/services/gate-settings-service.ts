@@ -300,8 +300,8 @@ export async function setGateMode(input: {
     throw new GateError(
       "NOT_YOURS_TO_SET",
       partyId === null
-        ? "A setting for the gate as a whole is an administrator's. A person who holds release for a party sets the gate for that party's material by naming the party."
-        : "A setting for a party's material is set by someone who holds the permission to release that party's material."
+        ? "A setting for the gate as a whole is an administrator's. A person who consents for a party sets the gate for that party's material by naming the party."
+        : "A setting for a party's material is set by someone who holds the permission to consent for that party."
     );
   }
   const gate = await gateOf(input.boundaryId);

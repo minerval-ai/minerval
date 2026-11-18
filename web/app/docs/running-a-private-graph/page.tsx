@@ -86,7 +86,7 @@ export default function Page() {
               <td>Party</td>
               <td>
                 Whose material something is: your organisation, or a partner, supplier or customer whose material you hold. Nothing
-                resting on a party&rsquo;s material leaves without the say of whoever holds <em>release</em> for that party
+                resting on a party&rsquo;s material leaves without the <em>consent</em> of whoever consents for that party
               </td>
             </tr>
             <tr>
@@ -175,14 +175,14 @@ export default function Page() {
             </tr>
             <tr>
               <td>Direct the graph</td>
-              <td>Those who add material, start mandates, and ask for pages to be shown outside</td>
+              <td>Those who add material, start mandates, and release pages outside</td>
             </tr>
             <tr>
               <td>Fund work</td>
               <td>Those who decide what the agents&rsquo; time is spent on</td>
             </tr>
             <tr>
-              <td>Release a party&rsquo;s material</td>
+              <td>Consent for a party</td>
               <td>
                 For your organisation&rsquo;s party: whoever signs off on what the organisation says in public. For a partner&rsquo;s
                 party: someone at that partner, where they have an account here
@@ -324,9 +324,9 @@ export default function Page() {
           </p>
         </li>
         <li>
-          <strong>Ask for the page to be shown</strong>
+          <strong>Release the page</strong>
           <p>
-            On the node&rsquo;s page, open the version at your label and follow &ldquo;Ask for this page to be shown to them&rdquo;.
+            On the node&rsquo;s page, open the version at your label and follow &ldquo;Release this page to them&rdquo;.
             Choose &ldquo;People outside this deployment&rdquo;, once or standing (standing sends each later version too), and the
             node alone or with what sits under it.
           </p>
@@ -334,8 +334,8 @@ export default function Page() {
         <li>
           <strong>Decide at the gate</strong>
           <p>
-            Where a person decides, the page waits in <b>Review</b> (<code>/gate</code>) for whoever holds release for each party it rests on. Approve
-            it as the Redactor left it, remove a further passage, or hold a part with a reason. Nobody can edit the words, and a release
+            Where a person decides, the page waits in <b>Review</b> (<code>/gate</code>) for whoever consents for each party it rests on. Approve
+            it as the Redactor left it, remove a further passage, or hold a part with a reason. Nobody can edit the words, and a consent
             is not taken back.
           </p>
         </li>
@@ -350,8 +350,8 @@ export default function Page() {
       </ol>
       <div className="dc-callout">
         <b>What the public sees of your choices.</b>A held part is shown as held, with who holds it and since when. A version you did
-        not publish is listed as held. Every act on a showing is listed with the permissions the person held, so a reader can see
-        when the person who directed the work also released it. What a gate hides is visible as hidden: that is what makes a
+        not publish is listed as held. Every act on a release is listed with the permissions the person held, so a reader can see
+        when the person who directed the work also consented to it. What a gate hides is visible as hidden: that is what makes a
         published page worth weighing.
       </div>
 
@@ -397,7 +397,7 @@ export default function Page() {
           what they write at theirs, which reaches you only through the gate between the two.
         </li>
         <li>
-          <b>A party of their own</b>, with release for it granted to them. What rests on their material needs their say to leave;
+          <b>A party of their own</b>, with consent for it granted to them. What rests on their material needs their consent to leave;
           what rests on yours needs yours.
         </li>
         <li>
@@ -440,7 +440,7 @@ export default function Page() {
             <tr><td><code>/gate</code></td><td>Review: what waits for your say</td></tr>
             <tr><td><code>/admin</code></td><td>Health: what needs attention, and whether the operator or an administrator puts it right</td></tr>
             <tr><td><code>/admin/labels</code></td><td>Labels, what each reads, and which providers each is cleared for</td></tr>
-            <tr><td><code>/admin/parties</code></td><td>Parties, who holds release for each, whose a source is</td></tr>
+            <tr><td><code>/admin/parties</code></td><td>Parties, who consents for each, whose a source is</td></tr>
             <tr><td><code>/admin/people</code></td><td>Permissions</td></tr>
             <tr><td><code>/admin/activity</code></td><td>The log of every grant and administrative act</td></tr>
             <tr><td><code>/admin/budget</code></td><td>Creating owls; the General mandate at each label; prices; usage reports</td></tr>
@@ -451,7 +451,7 @@ export default function Page() {
             <tr><td><code>/mandates</code></td><td>Your mandates, and the organisation&rsquo;s public ones</td></tr>
             <tr><td><code>/account</code></td><td>Your owls and your API keys</td></tr>
             <tr><td><code>/gates</code>, <code>/gates/:id</code></td><td>Boundaries: what waits at each, its rules by kind of thing, its redaction policy, its settings</td></tr>
-            <tr><td><code>/showings</code></td><td>Pages asked to be shown</td></tr>
+            <tr><td><code>/releases</code></td><td>Releases: pages released to other labels or outside</td></tr>
             <tr><td><code>/admin/outside</code></td><td>The organisation on the public graph: balance, public mandates, registering the key</td></tr>
             <tr><td><code>/admin/outside/requests</code>, <code>/admin/outside/said-back</code></td><td>Public requests; replies to your published pages</td></tr>
             <tr><td><code>/outbound</code></td><td>Outbox: pages on their way out, and agents&rsquo; reports</td></tr>

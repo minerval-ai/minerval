@@ -1,6 +1,6 @@
 /**
  * The release gate, and what a shown page is on the other side of it
- * (docs/showing-a-page.md, "The gate" and "What the destination sees").
+ * (docs/releasing-a-page.md, "The gate" and "What the destination sees").
  *
  * An item reaches the gate once it is fingerprinted: after the Redactor's
  * run and Audit's check of it, or at once where the gate is open for it.
@@ -966,7 +966,7 @@ export async function decideAtGate(input: {
   until?: string;
 }): Promise<{ decided: number; unchanged: number; refused: Array<{ item: GateItem; why: string }>; shown: string[] }> {
   if (input.partyId && !input.actor.releaseParties.includes(input.partyId)) {
-    throw new ShowingError("NOT_YOUR_PARTY", "This decision is for a party whose material you do not hold the permission to release.");
+    throw new ShowingError("NOT_YOUR_PARTY", "This decision is for a party you do not hold the permission to consent for.");
   }
   if (input.decision === "hold" && !(input.reason && input.reason in HOLD_REASONS) && input.items.every((i) => !i.reason && !i.decision)) {
     throw new ShowingError("BAD_REASON", `A hold gives a reason from this list: ${Object.keys(HOLD_REASONS).join(", ")}.`);
@@ -996,8 +996,8 @@ export async function decideAtGate(input: {
       if (showing!.ended_at && (decision === "release" || decision === "approve")) {
         refuse(
           showing!.kind === "page"
-            ? "This page's showing has ended, so nothing more is released from it. What was shown stays shown."
-            : "This item's flow has ended, so nothing more is released from it. What was shown stays shown."
+            ? "This page's release has ended, so nothing more is released from it. What was released stays released."
+            : "This item's flow has ended, so nothing more is released from it. What was released stays released."
         );
         continue;
       }
@@ -1019,10 +1019,10 @@ export async function decideAtGate(input: {
       if (mine.length === 0) {
         refuse(
           wanted && !input.actor.releaseParties.includes(wanted)
-            ? "That is a party whose material you do not hold the permission to release."
+            ? "That is a party you do not hold the permission to consent for."
             : wanted
-              ? "This item does not rest on that party's material, so it is not that party's to release or hold."
-              : "This item does not rest on the material of a party you release for, so it is not yours to act on."
+              ? "This item does not rest on that party's material, so it is not that party's to consent to or hold."
+              : "This item does not rest on the material of a party you consent for, so it is not yours to act on."
         );
         continue;
       }
@@ -1053,7 +1053,7 @@ export async function decideAtGate(input: {
         }
         const releasedBy = mine.filter((party) => standingOf(acts, partId, party) === "released");
         if (releasedBy.length === mine.length) {
-          refuse("This party has released it, and a release is not taken back.");
+          refuse("This party has consented to it, and consent is not taken back.");
           continue;
         }
         for (const party of mine) {
@@ -1083,7 +1083,7 @@ export async function decideAtGate(input: {
           continue;
         }
         if (mine.every((party) => standingOf(acts, partId, party) === "released") && !gateHold(acts, partId)) {
-          refuse("It has been released, and a release is not taken back.");
+          refuse("It has been consented to, and consent is not taken back.");
           continue;
         }
         const standingDelay = delayOn(acts, partId);
@@ -1139,7 +1139,7 @@ async function removeAtGate(input: {
   if (shown?.shown_at) {
     throw new ShowingError(
       "ALREADY_SHOWN",
-      "This item has been shown, with the count of removals that is always shown with it, so nothing more is removed from it. A part not yet released can be held."
+      "This item has been released, with the count of removals that is always shown with it, so nothing more is removed from it. A part not yet released can be held."
     );
   }
   const [full] = await rawQuery<PageRow>(`SELECT ${PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [page.id]);
@@ -1284,14 +1284,14 @@ export async function holdPage(input: { actor: GateActor; pageId: string; lift?:
   }
   await bothSides(async () => {
     const [page] = await rawQuery<GatePage>(`SELECT ${GATE_PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [input.pageId]);
-    if (!page || !input.actor.clearance.includes(page.page_label)) throw new ShowingError("PAGE_NOT_FOUND", "No page under a showing has that id at a label you read.");
+    if (!page || !input.actor.clearance.includes(page.page_label)) throw new ShowingError("PAGE_NOT_FOUND", "No page under a release has that id at a label you read.");
     const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
     const [shown] = await rawQuery<{ shown_at: Date | null }>(`SELECT shown_at FROM shown_pages WHERE id = $1`, [page.id]);
     const held = pageHeldByDirect(await actsOfPage(page.id));
     if (input.lift) {
       if (!held) throw new ShowingError("NOT_HELD", "No hold by a person who directs the graph is on this page.");
     } else {
-      if (shown?.shown_at) throw new ShowingError("ALREADY_SHOWN", "This page has been shown, and a release is not taken back. Ending the showing stops later versions from following.");
+      if (shown?.shown_at) throw new ShowingError("ALREADY_SHOWN", "This page has been released, and that is not taken back. Ending the release stops later versions from following.");
       if (held) throw new ShowingError("ALREADY_HELD", "This page is already held.");
     }
     await withTransaction((tx) =>
@@ -1327,11 +1327,11 @@ export async function holdPage(input: { actor: GateActor; pageId: string; lift?:
  * what a policy removed from it is what that label holds.
  */
 const SHOWN_AS_RELEASED =
-  "You hold the permission to release this party's material and do not read the label this page was written at. " +
-  "You are shown what your decision would release, as it would be shown: the part with each removal marked, what " +
+  "You hold the permission to consent for this party and do not read the label this page was written at. " +
+  "You are shown what your consent would release, as it would be released: the part with each removal marked, what " +
   "is always shown of the page, and the node's wording. You are not shown the passages the Redactor removed, its " +
   "notes, or why it flagged a part. The one exception is a passage removed from a part that rests only on the " +
-  "material of an outside party you release for, which is that party's own. An administrator of this deployment " +
+  "material of an outside party you consent for, which is that party's own. An administrator of this deployment " +
   "grants reading at a label.";
 
 /**
@@ -1529,7 +1529,7 @@ export async function gateQueue(
         ? {
             not_reading_the_label:
               `${unread} of these ${items.length} item${items.length === 1 ? "" : "s"} ${unread === 1 ? "is" : "are"} of a page written at a label you do not read. ` +
-              `For each you are shown the text your decision would release, as it would be shown, and not what was removed from it or what ` +
+              `For each you are shown the text your consent would release, as it would be released, and not what was removed from it or what ` +
               `the Redactor wrote about it.`,
           }
         : {}),
@@ -1537,7 +1537,7 @@ export async function gateQueue(
       hold_reasons: HOLD_REASONS,
       acts: GATE_ACTS,
       note:
-        "These are the items that wait on you: those whose gate is set to a person's decision for a party you release for, and " +
+        "These are the items that wait on you: those whose gate is set to a person's decision for a party you consent for, and " +
         "those the Redactor or a person holds or has delayed. Everything else went through as the Redactor left it. " +
         "POST /gate/decisions takes many items at once, and sending the same decision again changes nothing. " +
         "The other side sees how many items wait, of what kinds, for how long and on whom.",

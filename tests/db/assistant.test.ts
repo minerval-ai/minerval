@@ -50,6 +50,7 @@ vi.mock("../../src/llm/agents/grantmaker.js", () => ({
   runGrantmakerTurn: vi.fn(async () => ({ reply: "What is the question you want worked?" })),
 }));
 
+import { HELD_TOOL_LABELS } from "../../src/llm/tools/assistant-tools.js";
 import { rawQuery } from "../../src/db/client.js";
 import {
   addAssistantMessage,
@@ -457,6 +458,29 @@ describe("held actions", () => {
     });
     expect(denied.ok).toBe(false);
     if (!denied.ok) expect(denied.code).toBe("NOT_FOUND");
+  });
+
+  it("runs an action held under a tool's old name as the tool it now is", async () => {
+    // Held before fund_showing_work was renamed fund_release_work: stored
+    // under the old name, it reads and runs under the new one.
+    const u = await user("renamed");
+    script(async (input) => {
+      await input.hold("fund_showing_work", "fund", { showing_id: order.claim_id, page_id: order.claim_id, owls: 1 });
+      return { reply: "Held.", stopped: null, toolUses: [], runId: null };
+    });
+    const convo = await start(u);
+    await settleAssistantTurns();
+    const card = (await read(convo.id, u.id)).held_actions[0]!;
+    expect(card).toMatchObject({ tool: "fund_release_work", label: HELD_TOOL_LABELS.fund_release_work });
+    const pressed = await decideHeldAction({ app, user: u, conversationId: convo.id, actionId: card.id, decision: "run" });
+    expect(pressed.ok).toBe(true);
+    if (pressed.ok) {
+      // This deployment is the public graph, where the gate's routes are not
+      // mounted, so the call is refused: by the tool's new name.
+      const said = JSON.stringify(pressed.action.result);
+      expect(said).toContain("fund_release_work");
+      expect(said).not.toContain("fund_showing_work");
+    }
   });
 
   it("runs an allowed kind at once and leaves a receipt", async () => {

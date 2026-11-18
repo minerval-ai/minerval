@@ -1,5 +1,5 @@
-// The check of a page shown inside a deployment, redone in the reader's own
-// browser (docs/showing-a-page.md, "The fingerprint"). It is the
+// The check of a page released inside a deployment, redone in the reader's own
+// browser (docs/releasing-a-page.md, "The fingerprint"). It is the
 // construction src/services/page-fingerprint.ts documents, written again
 // with Web Crypto so that it runs where the reader is: every hash is the
 // lowercase hex SHA-256 of a UTF-8 string.

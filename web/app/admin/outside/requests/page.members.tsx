@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 // work will not be done, with a reason from a fixed list.
 
 const REASONS: Array<[string, string]> = [
-  ["cannot_be_shown", "It can't be shown outside this graph"],
+  ["cannot_be_shown", "It can't be released outside this graph"],
   ["not_held", "We don't hold the evidence it asks about"],
   ["asks_for_a_result", "It asks for a particular result"],
   ["moot", "It no longer bears on anything"],

@@ -330,12 +330,12 @@ function malformed(p: PublishedPagePackage): string | null {
   if (!(p.deployment.attested_by in ATTESTATION_WORDS)) return "it does not say what attests to the run in one of the fixed ways";
   const s = p.showing;
   if (!s || typeof s.id !== "string" || (s.form !== "once" && s.form !== "standing") || !PAGE_SCOPES.includes(s.scope) || !isDate(s.asked_at)) {
-    return "it does not describe the showing: its form, its scope and when it was asked for";
+    return "it does not describe the release: its form, its scope and when it was asked for";
   }
   if (s.send !== "by_a_person_each_time" && s.send !== "as_released") return "it does not say how its packages are sent";
   if (s.ended !== null && (!s.ended || !isDate(s.ended.at) || typeof s.ended.because !== "string")) return "its ending has no date or no reason";
   const n = p.node;
-  if (!n || typeof n.public_id !== "string" || !isDate(n.covered_from)) return "it does not name the node or say when the showing came to cover it";
+  if (!n || typeof n.public_id !== "string" || !isDate(n.covered_from)) return "it does not name the node or say when the release came to cover it";
   if (n.first_assessed_at !== null && !isDate(n.first_assessed_at)) return "the date the node was first assessed is not a date";
   if (!Number.isSafeInteger(p.sequence) || p.sequence < 1) return "it has no sequence number";
   if (p.sequence === 1 ? p.previous_hash !== null : typeof p.previous_hash !== "string" || !HEX64.test(p.previous_hash)) {
@@ -538,12 +538,12 @@ export async function verifyPublishedPage(input: unknown, opts: VerifyOptions = 
     if ((await sha256(pkg.policy.text)) === pkg.policy.hash) confirmed.push(`The redaction policy in the package (version ${pkg.policy.version}) is the text its hash names.`);
     else failed.push("The redaction policy's text does not match its hash.");
   } else if (page?.always_shown) {
-    failed.push("The page is shown, and the package carries no redaction policy.");
+    failed.push("The page is released, and the package carries no redaction policy.");
   }
 
   // 5. The record's stamped fields are well formed.
   const made = pkg.record.made;
-  if (page?.always_shown && !made) failed.push("The page is shown, and the record does not say how it was made.");
+  if (page?.always_shown && !made) failed.push("The page is released, and the record does not say how it was made.");
   if (made) {
     if (made.prompt_set !== null && !HEX64.test(made.prompt_set ?? "")) failed.push("The prompt set in the record is not a hash.");
     if (made.run_log && made.run_log.sealed && !HEX64.test(made.run_log.seal ?? "")) failed.push("The run log is said to be sealed, and the record gives no seal.");

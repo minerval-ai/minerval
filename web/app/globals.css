@@ -415,7 +415,7 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
 /* ---- inside a private deployment that holds material at more than one label:
    a node's assessments by label (components/claim/InsideVersions.tsx), and
    the pages for showings, the release queue, a boundary's policy, sending
-   outside and file sets (app/showings, app/release, app/redaction-policies,
+   outside and file sets (app/releases, app/gate, app/redaction-policies,
    app/outbound, app/file-sets). They take the administration pages' sections,
    tables and forms; what is here is theirs alone. Ink only: a state is said
    in words and never in a status colour, so it cannot be read as a verdict. */

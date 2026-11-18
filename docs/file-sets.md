@@ -489,7 +489,7 @@ The preflight is a separate change. Two functions return what it needs:
   at; with `rehash`, whether each file still has the bytes it was hashed
   at.
 
-## Who may open what was read, and whose release it takes
+## Who may open what was read, and whose consent it takes
 
 In a run's log the output of `run_command` and of `open_output` can be the
 files' own text, so it is shown to a reader who holds the permission to
@@ -499,12 +499,12 @@ text ([accounts.md](accounts.md), "Opening raw sources"). A kept analysis
 and a kept file are sources, and their document views are held to the same
 permission.
 
-When a node's page is shown to readers who do not read its label
-([showing-a-page.md](showing-a-page.md), "The gate"), an analysis kept in
+When a node's page is released to readers who do not read its label
+([releasing-a-page.md](releasing-a-page.md), "The gate"), an analysis kept in
 work on the node is a source the page rests on, and one its Redactor may
 open, whether or not an instance was recorded from it: the call's row says which node its run was working
 on. It rests on the party of every set its command had mounted, so an
-analysis over two parties' sets takes both parties' release. A kept file
+analysis over two parties' sets takes both parties' consent. A kept file
 counts where an instance or the judgment's own record ties it to the node,
 and rests on its set's party.
 
@@ -533,13 +533,13 @@ The same list is in `sandbox/README.md`.
   as for a connection's calls.
 - **A source has one party.** An analysis over two parties' sets belongs
   to neither alone (its party is empty), and one interest row names both
-  with each one's stake. The release gate reads the parties of an analysis
+  with each one's stake. The gate reads the parties of an analysis
   from the sets its command had mounted, so it asks each of them; the
   source's own row still names none.
 - **A set mounted is a set asked about.** A command is recorded with every
   set mounted for it, which is every set the run has unless `sets` named
   fewer, so an analysis that opened one party's files and had another's
-  mounted takes both parties' release. The tool tells the agent to name
+  mounted takes both parties' consent. The tool tells the agent to name
   the sets a command needs.
 - **A kept file shows the set's readers which files work rested on.** A
   file kept by a run at a label above the set's is a source at the set's
@@ -552,7 +552,7 @@ The same list is in `sandbox/README.md`.
   read.
 - **A separate reader of raw sealed evidence** (#556) is not built and is
   not planned. A Steward at a label reads the sets its label reads and
-  judges what it read (docs/showing-a-page.md, "What this does not protect
+  judges what it read (docs/releasing-a-page.md, "What this does not protect
   against").
 
 Not built here: the Docker Compose packaging (the sandbox's Dockerfile,

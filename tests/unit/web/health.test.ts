@@ -104,11 +104,11 @@ describe("what needs attention", () => {
     expect(item).toMatchObject({ title: "Embeddings not cleared for board", owner: "operator" });
   });
 
-  it("says when pages are shown outside and the key they are signed with was never registered from here", () => {
+  it("says when pages are released outside and the key they are signed with was never registered from here", () => {
     const c = healthy();
     c.public_graph!.signing_key = { shown_outside: 2, fingerprint: "ab12", registered_from_here_at: null };
     expect(attentionItems(c).map((i) => [i.title, i.owner, i.href])).toEqual([["Signing key not registered", "admin", "/admin/outside?drawer=key"]]);
-    // Registered from here, nothing shown outside, no key, or no route to the public graph: nothing to say.
+    // Registered from here, nothing released outside, no key, or no route to the public graph: nothing to say.
     for (const change of [
       () => (c.public_graph!.signing_key!.registered_from_here_at = "2026-11-01T00:00:00Z"),
       () => (c.public_graph!.signing_key = { shown_outside: 0, fingerprint: "ab12", registered_from_here_at: null }),
@@ -202,7 +202,7 @@ describe("a model setting's role", () => {
   });
 });
 
-describe("parties nobody releases for", () => {
+describe("parties nobody can consent for", () => {
   const gate = (settings: Array<{ mode: string; party: { id: string } | null }>, starting: Record<string, string> = { page: "redactor" }) => ({
     from: "board",
     to: "public",
@@ -210,7 +210,7 @@ describe("parties nobody releases for", () => {
     starting_positions: starting,
     settings,
   });
-  /** Release is held for the own organisation; nobody holds it for Halvorsen. */
+  /** Consent is held for the own organisation; nobody holds it for Halvorsen. */
   function withParties(): SetupChecklist {
     const c = healthy();
     c.permissions.push({
@@ -226,14 +226,14 @@ describe("parties nobody releases for", () => {
     return c;
   }
 
-  it("names a party nobody releases for where a person decides for it", () => {
+  it("names a party nobody can consent for where a person decides for it", () => {
     const found = partiesReleasedByNobody(withParties(), [gate([{ mode: "person", party: { id: "p2" } }])]);
     expect(found).toEqual([{ party: { id: "p2", name: "Halvorsen" }, boundaries: ["board → public"] }]);
     const rows = attentionItems(withParties(), [gate([{ mode: "person", party: null }])]);
-    expect(rows.find((r) => r.key === "release-nobody-p2")).toMatchObject({ title: "Nobody releases for Halvorsen", owner: "admin", action: "Grant" });
+    expect(rows.find((r) => r.key === "release-nobody-p2")).toMatchObject({ title: "Nobody can consent for Halvorsen", owner: "admin", action: "Grant" });
   });
 
-  it("says nothing where the Redactor decides, or where somebody releases", () => {
+  it("says nothing where the Redactor decides, or where somebody consents", () => {
     expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "redactor", party: { id: "p2" } }])])).toEqual([]);
     expect(partiesReleasedByNobody(withParties(), [gate([{ mode: "person", party: { id: "p1" } }])])).toEqual([]);
   });

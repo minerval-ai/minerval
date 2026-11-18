@@ -561,7 +561,7 @@ type). Its stored text is fixed once it is stored: the application fills
 text only where none is held, and the database refuses an update that would
 put other text in its place (`minerval_source_text_fixed`, SQLSTATE
 `MVL08`), so text that differs is a new source and what a judgment or a
-shown page's fingerprint rests on cannot be swapped under it. The text of a
+released page's fingerprint rests on cannot be swapped under it. The text of a
 document found unreadable can still be cleared, and a mirrored row is the
 public graph's. An **instance** links a canonical claim to one place it actually
 appeared: the exact `verbatim_text` quote (the passage as that source stated
@@ -2758,7 +2758,7 @@ route carries: this document describes that deployment. At `members` the
 deployment is private. One hook authenticates every request, nothing is
 served to anyone who is not signed in, and what a signed-in person may do
 follows from permissions the deployment's own administrators grant: to
-direct the graph, to release one party's material, to fund, to read at a
+direct the graph, to consent for one party, to fund, to read at a
 label, to open raw sources at a label, and to administer. The setting, the
 permissions, how the first administrator is established, and sign-in
 through an organization's identity provider are in
@@ -2840,7 +2840,7 @@ bears. A version recorded at the label later takes the record's place by
 being there. A Steward whose label has a version may leave the other
 standing all the same: its own version is retired, by that run, and stays
 in the node's history. That is refused while the version's page is under a
-standing showing, whose readers would otherwise go on being shown a page
+standing release, whose readers would otherwise go on being shown a page
 with its judgment withdrawn.
 
 On a deployment that mirrors the public graph, the `public` version of a
@@ -3148,15 +3148,15 @@ whether a label holds nodes or judgments of its own, which is what upkeep
 is paid for.
 
 
-**Showing a page to readers who do not read its label.** What a run at
+**Releasing a page to readers who do not read its label.** What a run at
 one label concluded reaches readers who do not read that label in one way:
-a person who directs the graph asks for the node's page to be shown to them,
+a person who directs the graph asks for the node's page to be released to them,
 a Redactor removes what the boundary's policy names and marks it, Audit
 checks the redaction, the page is fingerprinted part by part, and the people
-who hold the permission to release decide what is released. The released
+who consent for each party the page rests on decide what is released. The released
 page arrives at the destination label as a source, and a reassessment of the
 node is opened there. No other path moves text to a label that does not
-read the label it was written at. [showing-a-page.md](showing-a-page.md)
+read the label it was written at. [releasing-a-page.md](releasing-a-page.md)
 describes it.
 
 **A merge under more than one label.** A merge made here moves what was

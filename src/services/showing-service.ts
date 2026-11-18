@@ -1,5 +1,5 @@
 /**
- * Showing a node's page below its label (docs/showing-a-page.md).
+ * Showing a node's page below its label (docs/releasing-a-page.md).
  *
  * Often the best evidence for something is more sensitive than the thing
  * itself. A deployment that holds material at more than one label can show
@@ -66,7 +66,7 @@ import {
 } from "./redaction-policy.js";
 
 const REASON_BOTH_SIDES =
-  "Showing a page below its label keeps rows on both sides of a boundary, the page's label and the destination's, and the two may share no label.";
+  "Releasing a page to readers who do not read its label keeps rows on both sides of a boundary, the page's label and the destination's, and the two may share no label.";
 
 /** Run `fn` as the tables' owner, for the rows a showing keeps on each side of its boundary. */
 export function bothSides<T>(fn: () => Promise<T>): Promise<T> {
@@ -208,7 +208,7 @@ export async function askShowing(input: {
       if (toLabel === pageLabel || reach!.reads.includes(pageLabel)) {
         throw new ShowingError(
           "ALREADY_READ",
-          `Readers at "${toLabel}" already read what is written at "${pageLabel}", so the page is in front of them whole and there is nothing to show.`
+          `Readers at "${toLabel}" already read what is written at "${pageLabel}", so the page is in front of them whole and there is nothing to release.`
         );
       }
     }
@@ -236,7 +236,7 @@ export async function askShowing(input: {
       throw new ShowingError(
         "NO_OWN_ORGANIZATION",
         "This deployment has not said which party is the organization itself. A part of a page that rests on no " +
-          "outside party's material is the organization's to release, so an administrator adds that party first."
+          "outside party's material is the organization's to consent to, so an administrator adds that party first."
       );
     }
     const spec = judgmentOf(node?.kind ?? "claim");
@@ -249,14 +249,14 @@ export async function askShowing(input: {
     if (input.form === "once" && version && node && (await passRunning(node, pageLabel))) {
       throw new ShowingError(
         "PASS_RUNNING",
-        `A pass on this node at "${pageLabel}" is running now, and a page shown once is the page as it stands when it is asked for. ` +
+        `A pass on this node at "${pageLabel}" is running now, and a page released once is the page as it stands when it is asked for. ` +
           `Ask again when the pass has finished, so that the page is the finished one.`
       );
     }
     if (input.form === "once" && !version) {
       throw new ShowingError(
         "NOTHING_TO_SHOW",
-        `This node has no assessment at "${pageLabel}" yet, so there is no page to show once. A standing showing ` +
+        `This node has no assessment at "${pageLabel}" yet, so there is no page to release once. A standing release ` +
           `covers it from now and follows it from its first assessment.`
       );
     }
@@ -366,10 +366,10 @@ export async function endShowing(input: { showingId: string; reason: EndReason; 
   }
   await bothSides(async () => {
     const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [input.showingId]);
-    if (!showing) throw new ShowingError("SHOWING_NOT_FOUND", "No showing has that id.");
-    if (showing.ended_at) throw new ShowingError("ALREADY_ENDED", "This showing has already ended.");
+    if (!showing) throw new ShowingError("SHOWING_NOT_FOUND", "No release has that id.");
+    if (showing.ended_at) throw new ShowingError("ALREADY_ENDED", "This release has already ended.");
     if (showing.form === "once") {
-      throw new ShowingError("NOT_STANDING", "A page shown once undertakes nothing about later versions, so there is nothing to end.");
+      throw new ShowingError("NOT_STANDING", "A page released once undertakes nothing about later versions, so there is nothing to end.");
     }
     const destination = destinationOf(showing);
     await withTransaction(async (tx) => {
@@ -1300,7 +1300,7 @@ interface RemovalRow {
 
 async function pageAtOwnLabel(pageId: string): Promise<PageRow> {
   const [page] = await rawQuery<PageRow>(`SELECT ${PAGE_COLUMNS} FROM showing_pages WHERE id = $1`, [pageId]);
-  if (!page) throw new ShowingError("PAGE_NOT_FOUND", "No page under a showing has that id at a label this work reads.");
+  if (!page) throw new ShowingError("PAGE_NOT_FOUND", "No page under a release has that id at a label this work reads.");
   return page;
 }
 
@@ -1360,7 +1360,7 @@ export async function pageToRedact(pageId: string): Promise<Record<string, unkno
     page_id: page.id,
     kind_of_thing: showing?.kind ?? "page",
     gate: person
-      ? "A person decides as well: your work is a proposal, and each part waits for the people who hold release for the parties it rests on."
+      ? "A person decides as well: your work is a proposal, and each part waits for the people who consent for the parties it rests on."
       : "The Redactor decides: what you let through goes to its readers once Audit has checked your work, and nobody decides after you.",
     stage: page.stage,
     round: page.round,
@@ -1406,7 +1406,7 @@ export const DESTINATION_LOOK_ROWS = 20;
 export async function whatTheDestinationHolds(pageId: string, text?: string): Promise<Record<string, unknown>> {
   const page = await pageAtOwnLabel(pageId);
   const [showing] = await rawQuery<ShowingRow>(`SELECT ${SHOWING_COLUMNS} FROM showings WHERE id = $1`, [page.showing_id]);
-  if (!showing) throw new ShowingError("PAGE_NOT_FOUND", "This item's showing could not be read.");
+  if (!showing) throw new ShowingError("PAGE_NOT_FOUND", "This item's release could not be read.");
   const destination = destinationOf(showing);
   const [reach] = await rawQuery<{ reads: string[]; this_run_reads_all: boolean }>(
     `SELECT minerval_labels_readable_from(ARRAY[$1::text]) AS reads,
@@ -1546,7 +1546,7 @@ export async function redactPassage(input: {
         `A passage no category covers stays.`
     );
   }
-  if (!input.note?.trim()) throw new ShowingError("NOTE_NEEDED", "Say in the note why the category covers this passage. Audit and the people who decide what is released read it.");
+  if (!input.note?.trim()) throw new ShowingError("NOTE_NEEDED", "Say in the note why the category covers this passage. Audit and the people who consent for each party read it.");
   const [part] = (await partsOf(input.pageId)).filter((p) => p.position === input.part);
   if (!part) throw new ShowingError("NO_SUCH_PART", `This page has no part ${input.part}.`);
   const existing = (await removalsOf(input.pageId)).filter((r) => r.part_id === part.id);

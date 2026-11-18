@@ -6,9 +6,9 @@ import { Icon } from "@/components/work/icons";
 
 // The form for the item chosen at a gate: the parts are whatever the page
 // puts inside it, each with a tick box, and the bar at its foot approves,
-// releases, holds, delays or lifts on the ticked ones in one act, or
+// consents, holds, delays or lifts on the ticked ones in one act, or
 // removes a passage from a ticked part. Each button is disabled while the
-// act runs, since a release is not taken back and must not be sent twice.
+// act runs, since a consent is not taken back and must not be sent twice.
 export function QueueForm({
   action,
   partyId,
@@ -99,14 +99,14 @@ export function QueueForm({
           <span
             className="w-tip"
             role="img"
-            title="Releases what nobody holds, as the Redactor left it. The Redactor's holds and delays stay."
-            aria-label="Releases what nobody holds, as the Redactor left it. The Redactor's holds and delays stay."
+            title="Consents to what nobody holds, as the Redactor left it. The Redactor's holds and delays stay."
+            aria-label="Consents to what nobody holds, as the Redactor left it. The Redactor's holds and delays stay."
           >
             i
           </span>
-          <button className="w-btn w-sm" type="submit" name="decision" value="release" disabled={pending} title={`${acts.release ?? "Release"} Can't be undone.`}>
+          <button className="w-btn w-sm" type="submit" name="decision" value="release" disabled={pending} title={`${acts.release ?? "Consent."} Can't be undone.`}>
             <Icon name="lock" size={13} />
-            Release
+            Consent
           </button>
           <details className="w-menu">
             <summary className="w-btn w-sm">Hold…</summary>

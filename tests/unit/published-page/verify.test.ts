@@ -151,7 +151,7 @@ describe("the check of a published page", () => {
     expect([...check.confirmed, ...check.cannot_show].join("\n")).not.toMatch(/given the text|wording/);
   });
 
-  it("checks a package from a showing of a mandate's work or a whole boundary, and refuses a scope no page is shown under", async () => {
+  it("checks a package from a release of a mandate's work or a whole boundary, and refuses a scope no page is released under", async () => {
     const { hash: _h, signature: _s, ...body } = await example();
     for (const scope of ["mandate", "boundary"] as const) {
       const check = await verifyPublishedPage(await sign({ ...body, showing: { ...body.showing, scope } }), { publisherKey: key.publicKey });
@@ -160,7 +160,7 @@ describe("the check of a published page", () => {
     }
     const item = await verifyPublishedPage(await sign({ ...body, showing: { ...body.showing, scope: "item" as never } }), { publisherKey: key.publicKey });
     expect(item.ok).toBe(false);
-    expect(item.failed.join(" ")).toMatch(/does not describe the showing/);
+    expect(item.failed.join(" ")).toMatch(/does not describe the release/);
   });
 
   it("uses the same hash and key id as the code that signs", async () => {

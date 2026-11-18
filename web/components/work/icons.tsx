@@ -14,7 +14,7 @@ const PATHS: Record<WorkIcon | "plus" | "lock" | "warn" | "search" | "close" | "
   findings: <path d="M12 3 4 7v6c0 4 3.5 7 8 8 4.5-1 8-4 8-8V7z" />,
   requests: (<><circle cx="12" cy="12" r="8" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14M12 17h.01" /></>),
   docs: (<><path d="M4 5a2 2 0 0 1 2-2h5v18H6a2 2 0 0 1-2-2z" /><path d="M20 5a2 2 0 0 0-2-2h-5v18h5a2 2 0 0 0 2-2z" /></>),
-  showings: (<><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /></>),
+  releases: (<><path d="M12 15V3M7 8l5-5 5 5" /><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" /></>),
   boundaries: (<><path d="M12 3v18" /><path d="M4 8h5M4 16h5M15 8h5M15 16h5" /></>),
   sources: (<><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /></>),
   "file-sets": <path d="M3 7h6l2 2h10v10H3z" />,

@@ -415,7 +415,7 @@ describe("a mirrored node's page, shown outside and standing", () => {
     // A refusal names no row and no label.
     const refusal = await sendOutbound({ showingId: randomUUID(), sender: { actor: actor.director! } }).catch((e: unknown) => e);
     expect(refusal).toBeInstanceOf(OutboundError);
-    expect((refusal as Error).message).toBe("No showing outside has that id.");
+    expect((refusal as Error).message).toBe("No release outside has that id.");
     await system(async () => {
       await rawQuery(`DELETE FROM shown_parts WHERE page_id = $1 AND position = 99`, [pageId]);
       await rawQuery(`DELETE FROM showing_acts WHERE showing_id = $1 AND sensitivity_label = $2`, [id.showing, B]);

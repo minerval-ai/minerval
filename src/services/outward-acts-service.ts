@@ -719,7 +719,7 @@ async function publicNode(nodeId: string): Promise<string> {
   if (node.origin !== "mirror") {
     throw new OutwardError(
       "NOT_A_PUBLIC_NODE",
-      "This node exists only in this deployment, so the public graph has nothing to assess. A node reaches the public graph by being proposed there when its page is shown outside."
+      "This node exists only in this deployment, so the public graph has nothing to assess. A node reaches the public graph by being proposed there when its page is released outside."
     );
   }
   return node.id;

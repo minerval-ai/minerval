@@ -92,7 +92,7 @@ export default async function ClaimPage({
   const published = onPage ? await loadPublishedPage(onPage.published_page_id, Number(query.package) || undefined) : null;
   // Inside a private deployment that holds material at more than one label:
   // the node's assessment at each label this reader reads, and the pages of
-  // it shown to a label they read (lib/inside-node.ts). Null on the public
+  // it released to a label they read (lib/inside-node.ts). Null on the public
   // graph, where the page is as it always was.
   const inside =
     source === "live"

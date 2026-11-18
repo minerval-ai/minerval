@@ -180,9 +180,9 @@ export async function leaveJudgmentStanding(nodeId: string, reasoning: string): 
       return {
         success: false,
         message:
-          `Not recorded. This node's page at ${own} is under a standing showing to readers who do not read ` +
-          `${own}. Retiring the judgment at ${own} would leave them shown a page whose judgment had been ` +
-          `withdrawn, with nothing to tell them so. Ending a showing is for the people who direct this ` +
+          `Not recorded. This node's page at ${own} is under a standing release to readers who do not read ` +
+          `${own}. Retiring the judgment at ${own} would leave them a released page whose judgment had been ` +
+          `withdrawn, with nothing to tell them so. Ending a release is for the people who direct this ` +
           `graph. Until then, record your judgment as it now stands with ${spec.tool}.`,
       };
     }

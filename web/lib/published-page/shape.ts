@@ -120,7 +120,7 @@ const KIND_WORDS: Record<string, [string, string]> = {
 
 /**
  * What a showing covers, by its scope (services/showing-service.ts,
- * SHOWING_SCOPES; docs/showing-a-page.md, "Asking"), in the words every
+ * SHOWING_SCOPES; docs/releasing-a-page.md, "Asking"), in the words every
  * place says it in: the deployment's own record of a showing, what this
  * graph says of a page published from another, and the web app's page of
  * it. `named` gives what the words may name where the reader may be told

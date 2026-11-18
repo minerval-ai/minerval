@@ -23,14 +23,14 @@ import {
   type Tone,
 } from "@/components/work/ui";
 import { british, fetchOutwardLog, fetchPublicConversations, type OutwardAct, type PublicAccount, type PublicConversation } from "@/lib/outside-api";
-import { registerPublisherAction } from "../../showings/actions";
+import { registerPublisherAction } from "../../releases/actions";
 import { backPublicMandateAction, openPublicMandateAction } from "./actions";
 import { HeadSub, Note, loadAccount, tryRead } from "./parts";
 
 export const metadata: Metadata = { title: "Public graph · Minerval" };
 export const dynamic = "force-dynamic";
 
-// What this deployment does on the public graph besides showing pages
+// What this deployment does on the public graph besides releasing pages
 // (docs/outward-acts.md): the organisation's account there, its public owls
 // and public mandates, and every act made in its name, with who made it and
 // exactly what was sent. Every member may read this page. The forms are shown

@@ -18,10 +18,10 @@ export function getPolicyReadToolDefinition(): Tool {
   return {
     name: POLICY_READ_TOOL_NAME,
     description:
-      "The policies under which a page written at this run's label may be shown to readers who do not read that " +
-      "label: one for each boundary a page has been asked to be shown across, with where it is shown, its version " +
+      "The policies under which a page written at this run's label may be released to readers who do not read that " +
+      "label: one for each boundary a page has been asked to be released across, with where it goes, its version " +
       "and the names of its categories. With policy_id, that policy in full: how removal works, what is shown " +
-      "whenever a page is shown, and what each category covers.",
+      "whenever a page is released, and what each category covers.",
     input_schema: {
       type: "object",
       properties: { policy_id: { type: "string", description: "One of the listed policies, to read it in full." } },
@@ -55,7 +55,7 @@ export async function executePolicyReadTool(name: string, input: Record<string, 
       categories: r.categories.map((c) => c.name),
     })),
     ...(rows.length === 0
-      ? { note: "No page written at this label has been asked to be shown to readers who do not read it, so no boundary has a policy yet. Every boundary starts from the same text." }
+      ? { note: "No page written at this label has been asked to be released to readers who do not read it, so no boundary has a policy yet. Every boundary starts from the same text." }
       : {}),
   });
 }
