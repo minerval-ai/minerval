@@ -54,7 +54,7 @@ describe("the checks as a list", () => {
       "database_tls", "database_owner", "owls", "model_prices", "usage_report", "standing_mandates", "own_organization",
       "publishing", "public_graph", "public_acts", "private_run_fetches", "connections", "file_sets", "sandbox", "sandbox_confinement",
     ]);
-    expect(DEPLOYMENT_CHECKS.filter((c) => c.blocking).map((c) => c.name)).toEqual(["model_prices", "sandbox_confinement"]);
+    expect(DEPLOYMENT_CHECKS.filter((c) => c.blocking).map((c) => c.name)).toEqual(["sandbox_confinement"]);
   });
 
   it("asks nothing of a deployment that uses none of it: no check fails on public Minerval's settings", () => {

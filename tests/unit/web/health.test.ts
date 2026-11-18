@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { SetupChecklist } from "../../../web/lib/admin-api";
 import { logActor, logType } from "../../../web/lib/admin-words";
-import { areaTiles, attentionItems, checkCounts, firstLine, labelsWithoutMandate } from "../../../web/lib/health";
+import { areaTiles, attentionItems, checkCounts, firstLine, labelsWithoutMandate, roleOfSetting } from "../../../web/lib/health";
 
 // The Health page's short rows (web/lib/health.ts): what needs someone, each
 // with a title short enough to scan, who puts it right, and where; and each
@@ -166,5 +166,13 @@ describe("small pieces", () => {
     expect(logActor({ by: "Priya", via: undefined })).toEqual({ key: "by:Priya", name: "Priya", person: true });
     expect(logActor({ by: null, via: "operator" }).name).toBe("Operator key");
     expect(logActor({ by: null }).name).toBe("The deployment");
+  });
+});
+
+describe("a model setting's role", () => {
+  it("names the role a model setting sets", () => {
+    expect(roleOfSetting("MODELS_RESEARCHER")).toBe("The researcher role");
+    expect(roleOfSetting("STEWARD_MODEL")).toBe("The steward role");
+    expect(roleOfSetting("MODELS_PROGRAM_OFFICER")).toBe("The program officer role");
   });
 });

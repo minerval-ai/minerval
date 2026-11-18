@@ -349,13 +349,14 @@ export function attentionItems(c: SetupChecklist): AttentionItem[] {
     });
   }
 
-  // Owls: a model with no price, and none created.
+  // Owls: a model with no price, and none created. A call on an unpriced
+  // model is refused where it is made, so only the roles set to it stop.
   for (const m of c.owls.unpriced_models) {
     covered.add("model_prices");
     out.push({
       key: `owls-price-${m.setting}`,
       title: `No price for ${m.model} (${m.setting})`,
-      consequence: "Every run on it is refused until it has one",
+      consequence: `${roleOfSetting(m.setting)} does no work until it has one; other roles run`,
       owner: "operator",
       href: "/admin#check-model_prices",
       action: "View",
@@ -655,4 +656,10 @@ export function checkCounts(checks: readonly PreflightCheck[]): Record<Preflight
   const n = { pass: 0, fail: 0, to_do: 0, not_applicable: 0 };
   for (const k of checks) n[k.status] += 1;
   return n;
+}
+
+/** The role a model setting sets, in words: MODELS_RESEARCHER or RESEARCHER_MODEL → "The researcher role". */
+export function roleOfSetting(setting: string): string {
+  const role = setting.replace(/^MODELS?_/, "").replace(/_MODELS?$/, "").toLowerCase().replace(/_/g, " ").trim();
+  return role ? `The ${role} role` : "The role set to it";
 }
