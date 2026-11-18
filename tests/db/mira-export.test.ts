@@ -15,6 +15,10 @@ import {
 import { fileRequest } from "../../src/services/request-service.js";
 import { citationUrl } from "../../src/services/citation-service.js";
 import { assembleClaimMira, type JsonLdNode } from "../../src/services/mira-service.js";
+import { assembleClaimNanopub } from "../../src/services/nanopub-service.js";
+import { assembleClaimScasp, claimAtom } from "../../src/services/scasp-service.js";
+import { addArgument } from "../../src/services/argument-service.js";
+import { attachEdgeToArgument, insertRelationshipEdge } from "../../src/services/relationship-service.js";
 import { validateMira } from "../mira-shacl.js";
 
 vi.mock("../../src/services/embedding-service.js", () => ({
@@ -78,5 +82,28 @@ describe("assembleClaimMira", () => {
       "@type": "Claim",
       addresses: citationUrl(q),
     });
+  });
+
+  // On the public graph nothing is set aside. Other files in this suite may
+  // leave labels behind in the worker's database, so the test does not
+  // assume one label; it needs only that nothing here is set aside.
+  it("where nothing is set aside, as on the public graph: every edge and argument is live in every export", async () => {
+    const parent = await seedClaim("parent");
+    const child = await seedClaim("premise");
+    const made = await insertRelationshipEdge({ parentId: parent, childId: child, relationType: "requires", reasoning: "r", createdBy: "dbtest" });
+    const argument = await addArgument({ claimId: parent, stance: "for", name: "The one argument", content: "c", createdBy: "dbtest" });
+    await attachEdgeToArgument(argument.id, made.id);
+
+    const doc = await assembleClaimMira(parent);
+    await expectValid(doc);
+    expect(doc!["@graph"].find((n: JsonLdNode) => n["@id"] === citationUrl(child))).toMatchObject({ supports: citationUrl(parent) });
+    const trig = (await assembleClaimNanopub(parent, "trig"))!.body;
+    expect(trig).toContain(`mv:requires <${citationUrl(child)}>`);
+    const scasp = (await assembleClaimScasp(parent, 3))!;
+    expect(scasp).toContain(`edge(${claimAtom(parent)}, ${claimAtom(child)}, 'requires').`);
+    for (const out of [JSON.stringify(doc), trig, scasp]) {
+      expect(out).not.toContain("setAside");
+      expect(out).not.toContain("Left out");
+    }
   });
 });

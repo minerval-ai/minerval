@@ -218,3 +218,54 @@ describe("treeToScasp", () => {
     expect(out).toContain(`assessed(${a}, unassessed).`);
   });
 });
+
+describe("treeToScasp: structure set aside at a label", () => {
+  const MARK = { at: "fin", reason: "Finance's ledger says otherwise." };
+
+  it("does not follow a set-aside edge, nor encode what lies only beyond it", () => {
+    const beyond = premise(C, "Only reached through the set-aside edge.", "supported", null);
+    const aside = { ...premise(B, "Ports were congested.", "supported", null), set_aside: MARK, children: [beyond] };
+    const out = treeToScasp(tree([premise(A, "Supply chains broke.", "supported", null), aside]), opts);
+    expect(out).toContain(`edge(${claimAtom(ROOT)}, ${claimAtom(A)}, 'requires').`);
+    expect(out).not.toContain(claimAtom(B));
+    expect(out).not.toContain(claimAtom(C));
+    expect(out).toContain("% Left out: 1 edge set aside for whoever asked for this export.");
+  });
+
+  it("still encodes a node reached by a live edge after a set-aside one first reached it", () => {
+    const shared = { ...premise(C, "A shared premise.", "supported", null), children: [premise(B, "Below the shared premise.", "doubtful", null)] };
+    const aside = { ...premise(A, "Set aside here.", "supported", null), children: [shared] };
+    // The tree expands C under A (first) and collapses it under the root.
+    const collapsed = { ...premise(C, "A shared premise.", "supported", null), subtree_collapsed: true };
+    const out = treeToScasp(tree([{ ...aside, set_aside: MARK }, collapsed]), opts);
+    expect(out).toMatch(line(`edge(${claimAtom(ROOT)}, ${claimAtom(C)}, 'requires').`));
+    expect(out).toMatch(line(`edge(${claimAtom(C)}, ${claimAtom(B)}, 'requires').`));
+    expect(out).not.toContain(claimAtom(A));
+  });
+
+  it("does not make a rule of a set-aside argument, and keeps its edges", () => {
+    const arg = { id: ARG_FOR, stance: "for", verdict: "certain", name: "The supply argument" };
+    const out = treeToScasp(
+      tree([{ ...premise(A, "Supply chains broke.", "supported", arg), argument_set_aside: MARK }]),
+      opts
+    );
+    expect(out).not.toContain("The supply argument");
+    expect(out).not.toMatch(line(`holds(${claimAtom(ROOT)}) :-`));
+    expect(out).toContain(`edge(${claimAtom(ROOT)}, ${claimAtom(A)}, 'requires').`);
+    expect(out).toContain("% Left out: 1 argument set aside for whoever asked for this export.");
+  });
+
+  it("keeps a live argument that lost a premise's edge as a comment, not a rule", () => {
+    const arg = { id: ARG_FOR, stance: "for", verdict: "certain", name: "The supply argument" };
+    const out = treeToScasp(
+      tree([premise(A, "Supply chains broke.", "supported", arg), { ...premise(B, "Ports were congested.", "supported", arg), set_aside: MARK }]),
+      opts
+    );
+    expect(out).toContain("% Not encoded: the edge to one of its premises is set aside at fin, so the rule would be incomplete.");
+    expect(out).not.toMatch(/^holds\(c_1111.*\) :-$/m);
+  });
+
+  it("is unchanged where nothing is set aside", () => {
+    expect(treeToScasp(tree([premise(A, "Supply chains broke.", "supported", null)]), opts)).not.toContain("Left out");
+  });
+});

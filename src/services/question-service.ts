@@ -23,7 +23,7 @@ import {
 import { recordJudgmentInputs } from "./judgment-inputs-service.js";
 import { markSeveralInForce, recordMadeBeside } from "./judgment-version-service.js";
 import { layered, lowerRowSql, oneDefinitionForQuantitySql, oneForKeySql, refuseWhereHeldBelow } from "./layer-service.js";
-import { overlaid } from "./overlay-service.js";
+import { overlaid, withSetAside } from "./overlay-service.js";
 import { publicGraphJudges, publicJudgmentMessage } from "./mirrored-node-service.js";
 import { convertKind, KindError, lockNodeKind, requireKind } from "./node-kind.js";
 import { orderPair } from "./claim-link-service.js";
@@ -307,6 +307,8 @@ export interface QuestionNodeRefView {
   /** Present only where more than one judgment of the node is in force for the asker (judgment-version-service.ts). */
   judgments_in_force?: number;
   judgments_in_force_note?: string;
+  /** A subquestion or presupposition whose edge a label the reader reads has set aside (overlay-service.ts). */
+  set_aside?: { at: string; reason: string | null; since: string };
 }
 
 export interface QuestionAnswerView {
@@ -389,12 +391,13 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
         estimate: QuantityEstimate | null;
         unit: QuantityUnit | null;
         label?: string;
+        edge_id?: string;
       }
     >(
       // An edge held at two layers is listed once, by the lowest layer's
       // row (layer-service.ts); each row says which label it is at.
       `SELECT ${NODE_REF_COLUMNS}, r.relation_type, r.answer_basis,
-              a.claim_credence AS credence, qe.estimate, qd.unit${overlaid() ? ", r.sensitivity_label AS label" : ""}
+              a.claim_credence AS credence, qe.estimate, qd.unit${overlaid() ? ", r.sensitivity_label AS label, r.id AS edge_id" : ""}
          FROM claim_relationships r
          JOIN claims c ON c.id = r.child_claim_id AND c.state = 'active'
          ${NODE_REF_JOINS}
@@ -442,7 +445,16 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
     status: r.status,
     standing: r.standing,
     ...(r.label ? { label: r.label } : {}),
+    ...(r.set_aside ? { set_aside: r.set_aside } : {}),
   });
+  // A subquestion or presupposition edge set aside at a label the reader
+  // reads is listed, marked. An answer cannot be set aside: it leaves the
+  // set through remove_answer. Nothing is asked on a graph with one label.
+  const structure = await withSetAside(
+    "claim_relationships",
+    children.filter((r) => r.relation_type !== "answers"),
+    (r) => r.edge_id
+  );
   const answers = children.filter((r) => r.relation_type === "answers");
   const answerSet = new Set(answers.map((r) => r.id));
   const detail: QuestionDetailView = {
@@ -461,10 +473,10 @@ export async function getQuestionDetail(claimId: string): Promise<QuestionDetail
         }
       : null,
     incomplete: cur?.incomplete ?? null,
-    presuppositions: children
+    presuppositions: structure
       .filter((r) => r.relation_type === "assumes" || r.relation_type === "requires")
       .map(ref),
-    subquestions: children.filter((r) => r.relation_type === "part_of").map(ref),
+    subquestions: structure.filter((r) => r.relation_type === "part_of").map(ref),
     answers: answers.map((r) => ({
       id: r.id,
       text: r.text,

@@ -61,6 +61,10 @@ undocumented predicate.
 | `mv:verdict` | The Steward's rating of an argument's inference: how far the conclusion follows if the premises hold (`certain` / `likely` / `slight` / `none`). It rates the step, not the conclusion; whether the premises hold is read from their own assessments. Nanopublications exported before #540 carry the earlier values `holds` / `holds_with_caveats` / `fails` / `contested`, which are not mapped onto the new ones. |
 | `mv:decisive` | `xsd:boolean`. Whether the Steward judged the argument, taken alone and with its premises as they were then assessed, to settle its conclusion. Exported only for an evaluated argument. |
 | `mv:evaluation` | The prose of that evaluation. |
+| `mv:setAsideAt` | On an argument, or on an `mv:Edge` left out of the assertion: the label that set it aside, in a deployment with more than one (docs/mira.md, "At a label"). Never present on the public graph. |
+| `mv:setAsideReason` | The Steward's reason for setting it aside. |
+| `mv:setAsideSince` | `xsd:dateTime`. Since when. |
+| `mv:Edge` | In the provenance graph, only for an edge set aside: `mv:from`, `mv:to`, `mv:relation`, with the marks above. A live edge is a decomposition predicate in the assertion graph. |
 
 ## Publication-info properties
 
@@ -117,7 +121,8 @@ MIRA's shapes are closed, so the MIRA export (docs/mira.md) says what MIRA
 has no term for on nodes of its own that point at the MIRA nodes. Besides
 the terms above (`mv:status`, `mv:confidence`, `mv:credence`,
 `mv:reasoningTrace`, `mv:stance`, `mv:verdict`, `mv:decisive`,
-`mv:evaluation`, `mv:hasPremise`, `mv:quote`, the publication-info terms),
+`mv:evaluation`, `mv:hasPremise`, `mv:quote`, `mv:setAsideAt`,
+`mv:setAsideReason`, `mv:setAsideSince`, the publication-info terms),
 it uses:
 
 | Term | Meaning |

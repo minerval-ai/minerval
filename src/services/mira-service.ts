@@ -6,6 +6,7 @@ import {
   assembleEvidenceRecord,
   citationUrl,
   type EvidenceRecord,
+  type SetAsideMark,
 } from "./citation-service.js";
 import {
   CONTENT_LICENSE_IRI,
@@ -175,6 +176,17 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
     return n;
   };
 
+  // At a label (a deployment with more than one), an argument or an edge the
+  // reader's label set aside is kept on its mv: node, marked with
+  // mv:setAsideAt, mv:setAsideReason and mv:setAsideSince, and lends no MIRA
+  // relation: a consumer that reads MIRA alone sees only live structure.
+  const markSetAside = (n: JsonLdNode, mark: SetAsideMark | undefined) => {
+    if (!mark) return;
+    n["mv:setAsideAt"] = mark.at;
+    if (mark.reason) n["mv:setAsideReason"] = prose(mark.reason);
+    n["mv:setAsideSince"] = dateTime(mark.since);
+  };
+
   // --- the export itself: what, when, under which terms ---
   node(`${rootUri}#mira`, {
     "@type": "mv:MiraExport",
@@ -280,17 +292,19 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
     for (const q of question.subquestions) {
       neighbour(q.id, q.text, q.kind, q);
       if (q.judgments_in_force) nodeRecord(q.id, q.kind)["mv:judgmentsInForce"] = integer(q.judgments_in_force);
-      edge(record.claim.id, q.id, "part_of");
+      markSetAside(edge(record.claim.id, q.id, "part_of"), q.set_aside);
     }
     for (const p of question.presuppositions) {
       neighbour(p.id, p.text, p.kind, p);
-      edge(record.claim.id, p.id, "presupposes");
+      markSetAside(edge(record.claim.id, p.id, "presupposes"), p.set_aside);
     }
   }
 
   // Decomposition: a premise of an argument for the claim supports it, one
   // of an argument against opposes it (MIRA's Argument relations); the
-  // argument itself, and the kind of each edge, are Minerval's.
+  // argument itself, and the kind of each edge, are Minerval's. A premise
+  // lends the relation only through a live argument and a live edge: set
+  // aside at the reader's label, either is on its mv: node alone, marked.
   record.arguments.forEach((arg, i) => {
     const argNode = node(`${rootUri}#argument-${i + 1}`, {
       "@type": "mv:Argument",
@@ -298,6 +312,7 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
       "mv:stance": arg.stance,
       "rdfs:comment": prose(arg.content),
     });
+    markSetAside(argNode, arg.set_aside);
     if (arg.name) argNode["rdfs:label"] = arg.name;
     if (arg.verdict) argNode["mv:verdict"] = arg.verdict;
     // Only a recorded mark: an unevaluated argument says nothing about
@@ -309,9 +324,10 @@ export function buildMiraDocument(input: MiraInput, opts: MiraOpts): MiraDocumen
     const relation = arg.stance === "against" ? "opposes" : "supports";
     for (const s of arg.subclaims) {
       add(argNode, "mv:hasPremise", ref(nodeUri(s.id)));
-      add(neighbour(s.id, s.text, "claim", { status: s.status }), relation, rootUri);
+      const premise = neighbour(s.id, s.text, "claim", { status: s.status });
+      if (!arg.set_aside && !s.set_aside) add(premise, relation, rootUri);
       if (s.judgments_in_force) nodeRecord(s.id, "claim")["mv:judgmentsInForce"] = integer(s.judgments_in_force);
-      edge(record.claim.id, s.id, s.relation);
+      markSetAside(edge(record.claim.id, s.id, s.relation), s.set_aside);
     }
   });
 

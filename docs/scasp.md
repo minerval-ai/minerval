@@ -69,3 +69,33 @@ the open premises a conclusion depends on.
 record the graph as it stands. A reader who wants a different basis policy can
 write their own rules over these facts, for example treating `doubtful` as
 open.
+
+## At a label
+
+On the public graph, where there is one label, nothing is set aside and
+what follows does not apply.
+
+In a deployment with more than one label, `GET /claims/:id/scasp` walks the
+tree as whoever asks for it reads the graph, and a label can set aside an
+edge or an argument it reads from a layer below (docs/architecture.md, "A
+label's overlay on the structure below"). The judgment at that label does
+not rest on what it set aside, so the program does not either. Set-aside
+structure is left out, not marked, because a mark cannot stop a rule from
+firing:
+
+- **An edge set aside** is not followed. It is not in `edge/3`, it gives no
+  `requires` or `assumes` rule, and a claim reached only through it is not
+  in the program. A claim reached through it and also through a live edge
+  is encoded from the live one.
+- **An argument set aside** is not encoded, as a rule or as a comment. Its
+  edges are their own, so they stay in `edge/3` and keep their relation's
+  rule.
+- **A live argument whose edge to one premise is set aside** stays a
+  comment ("the edge to one of its premises is set aside at ..."): a rule
+  over the premises that are left would conclude from less than the
+  argument rests on.
+
+The header says how many edges and arguments were left out, and nothing
+else about them. Their content is in the MIRA export, marked (docs/mira.md,
+"At a label"). A reader at a label below or beside gets the program it got
+before (`tests/db/export-set-aside.test.ts`).

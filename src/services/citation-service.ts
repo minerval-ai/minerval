@@ -11,6 +11,7 @@ import {
   getArgumentsForClaim,
   getEvaluationStateForClaim,
 } from "./argument-service.js";
+import { withSetAside } from "./overlay-service.js";
 
 // "Cite this claim" (#290): a conventional scholarly citation plus the
 // grounded evidence record — why the graph currently holds the claim, in a
@@ -60,6 +61,18 @@ export interface ClaimCitation {
   judgments_in_force_note?: string;
 }
 
+/**
+ * Where a label the reader reads has set an edge or an argument aside
+ * (overlay-service.ts): that label, its reason, and since when. Present only
+ * in a deployment with more than one label; the public graph sets nothing
+ * aside.
+ */
+export interface SetAsideMark {
+  at: string;
+  reason: string | null;
+  since: string;
+}
+
 export interface EvidenceRecord {
   claim: {
     id: string;
@@ -105,6 +118,11 @@ export interface EvidenceRecord {
     /** Decisive as its premises now stand (§7); null until evaluated. */
     decisive: boolean | null;
     evaluation: string | null;
+    /**
+     * The argument is set aside at a label the reader reads: it stays in the
+     * record, marked, and the judgment at that label does not rest on it.
+     */
+    set_aside?: SetAsideMark;
     subclaims: {
       id: string;
       text: string;
@@ -113,6 +131,8 @@ export interface EvidenceRecord {
       /** Present only where more than one judgment of the premise is in force for the caller. */
       judgments_in_force?: number;
       judgments_in_force_note?: string;
+      /** The edge to this premise is set aside at a label the reader reads. */
+      set_aside?: SetAsideMark;
     }[];
   }[];
   instances: {
@@ -292,7 +312,11 @@ export async function assembleEvidenceRecord(
     version = row?.count ?? 1;
   }
 
-  const args = await getArgumentsForClaim(claimId);
+  // Each argument, and below each edge, carries `set_aside` where a label
+  // the reader reads has set it aside: the record shows it, marked, and
+  // never as live structure (docs/mira.md, "At a label"). On the public
+  // graph nothing is set aside and the record is as it was.
+  const args = await withSetAside("arguments", await getArgumentsForClaim(claimId), (a) => a.id);
   const evalStates = await getEvaluationStateForClaim(claimId);
   const evalByArgument = new Map(evalStates.map((s) => [s.argument_id, s]));
 
@@ -300,12 +324,13 @@ export async function assembleEvidenceRecord(
   // load-bearing premises the record names alongside the argument.
   const subclaimRows = await rawQuery<{
     argument_id: string;
+    edge_id: string;
     id: string;
     text: string;
     relation: string;
     status: string | null;
   }>(
-    `SELECT am.argument_id, c.id, c.text, cr.relation_type AS relation, a.status
+    `SELECT am.argument_id, cr.id AS edge_id, c.id, c.text, cr.relation_type AS relation, a.status
        FROM argument_subclaims am
        JOIN claim_relationships cr ON cr.id = am.relationship_id
        JOIN claims c ON c.id = cr.child_claim_id
@@ -318,9 +343,15 @@ export async function assembleEvidenceRecord(
     string,
     EvidenceRecord["arguments"][number]["subclaims"]
   >();
-  for (const row of subclaimRows) {
+  for (const row of await withSetAside("claim_relationships", subclaimRows, (r) => r.edge_id)) {
     const list = subclaimsByArgument.get(row.argument_id) ?? [];
-    list.push({ id: row.id, text: row.text, relation: row.relation, status: row.status });
+    list.push({
+      id: row.id,
+      text: row.text,
+      relation: row.relation,
+      status: row.status,
+      ...(row.set_aside ? { set_aside: row.set_aside } : {}),
+    });
     subclaimsByArgument.set(row.argument_id, list);
   }
   // A premise's status is one judgment's. Where the caller has two in force, the premise says so.
@@ -356,8 +387,11 @@ export async function assembleEvidenceRecord(
   );
 
   const UNSETTLED = new Set(["inconclusive", "doubtful", "contradicted", "unknown"]);
+  // Disagreement is read off live structure: an argument, or a premise, set
+  // aside at the reader's label is not one the claim's standing turns on.
   const argumentsOnUnsettledPremises = args
     .filter((a) => {
+      if (a.set_aside) return false;
       const v = evalByArgument.get(a.id)?.verdict;
       return v === "certain" || v === "likely";
     })
@@ -365,7 +399,7 @@ export async function assembleEvidenceRecord(
       id: a.id,
       name: a.name,
       premises: (subclaimsByArgument.get(a.id) ?? [])
-        .filter((s) => s.status !== null && UNSETTLED.has(s.status))
+        .filter((s) => !s.set_aside && s.status !== null && UNSETTLED.has(s.status))
         .map((s) => ({ id: s.id, text: s.text, status: s.status })),
     }))
     .filter((a) => a.premises.length > 0);
@@ -410,6 +444,7 @@ export async function assembleEvidenceRecord(
       verdict: evalByArgument.get(a.id)?.verdict ?? null,
       decisive: evalByArgument.get(a.id)?.decisive ?? null,
       evaluation: evalByArgument.get(a.id)?.content ?? null,
+      ...(a.set_aside ? { set_aside: a.set_aside } : {}),
       subclaims: subclaimsByArgument.get(a.id) ?? [],
     })),
     instances: instanceRows.map((i) => ({

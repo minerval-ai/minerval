@@ -2976,7 +2976,10 @@ is the first case. The others are built the same way
   label see it marked (`set_aside`: the label, the reason, since when). The
   judgment at the label does not rest on it: the record of what a judgment
   was made against leaves it out, and a coherence sweep at the label reads
-  no commitment from it. `set_edge_relation` on an edge below records the
+  no commitment from it. The claim exports at the label follow: the MIRA
+  export and the nanopublication keep it, marked, outside the structure
+  they present as live, and the s(CASP) program leaves it out
+  (docs/mira.md and docs/scasp.md, "At a label"). `set_edge_relation` on an edge below records the
   label's own edge with the relation it means and sets the one below aside.
 - **A cut or a reading of its own.** Each layer has its own row under the
   key, so the label's own row is its overlay. A quantity's definition is

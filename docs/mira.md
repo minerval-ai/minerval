@@ -109,6 +109,44 @@ The nanopub export's rules hold here too:
   (`dct:license`). Importance, prizes, bounties, and how work was funded are
   not exported (docs/vocab.md, "What is not exported").
 
+## At a label
+
+On the public graph, where there is one label, nothing is set aside and
+what follows does not apply: the export is what it was.
+
+In a deployment with more than one label, the export is read as whoever
+asks for it reads the graph (`GET /claims/:id/mira` runs in the caller's
+own context, and an answer to a request that carried a credential is
+`private, no-store`, so no shared cache holds one label's export for
+another). A label can set aside an edge or an argument it reads from a
+layer below (docs/architecture.md, "A label's overlay on the structure
+below"). Set-aside structure is not live at that label, and the export
+says so without dropping it:
+
+- **MIRA's own relations carry live structure only.** A premise
+  `supports` or `opposes` the claim only through an argument and an edge
+  that are both live for the reader. A consumer that reads MIRA alone
+  sees what the label goes by.
+- **The `mv:` nodes keep it, marked.** A set-aside argument is still an
+  `mv:Argument`, and a set-aside edge still an `mv:Edge` (including a
+  question's `part_of` and presupposition edges), each with
+  `mv:setAsideAt` (the label that set it aside), `mv:setAsideReason` (the
+  Steward's reason) and `mv:setAsideSince`. Marking fits here because the
+  export already carries what each label holds (`mv:Assessment`,
+  `mv:judgmentsInForce`).
+
+The same rule holds for the nanopublication, which reads the same
+evidence record (`assembleEvidenceRecord`, src/services/citation-service.ts):
+a set-aside edge is left out of the assertion graph, which states what the
+graph holds, and recorded in the provenance graph as an `mv:Edge` with the
+same three marks; a set-aside argument stays in the provenance, marked. An
+edge is the edge's own, not its argument's, so an edge grouped only under
+a set-aside argument stays asserted. The evidence record itself carries
+`set_aside` (`at`, `reason`, `since`) on each such argument and premise,
+and `arguments_on_unsettled_premises` counts only live ones. The rows below
+are never changed: a reader at the label below, or beside it, gets the
+export it got before, to the byte (`tests/db/export-set-aside.test.ts`).
+
 ## Signing and publishing
 
 MIRA records are meant to be signed by whoever made them. This export names
