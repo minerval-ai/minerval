@@ -1,8 +1,9 @@
 # Organizations on minerval.ai, and how a private deployment connects
 
 The design agreed in #1118, with the questions its review raised
-answered ("Decisions", at the end). Nothing in it is built yet. It
-replaces the shared login and the bearer keys a private deployment uses
+answered ("Decisions", at the end). Phase 1, organizations on minerval.ai,
+is built ([accounts.md](accounts.md), "Organizations"); the phases after it
+are not ("Phases", below). It replaces the shared login and the bearer keys a private deployment uses
 to reach minerval.ai. It covers both kinds of private deployment: one an
 organization runs itself (`own_machines`, or `third_party` for a host it
 hires), and one Minerval runs for it (`minerval`). The two differ where
@@ -712,7 +713,7 @@ The files are checked exactly as fetched ones are.
 
 Each phase is one pull request or a few, and leaves things working.
 
-1. **Organizations.** `contributors.kind`, `organization_members`,
+1. **Organizations** (built). `contributors.kind`, `organization_members`,
    `organization_log`, making an organization, invitations, admins, the
    last-admin rule and its operator route, the organization's page and its
    public contributor page, the organization's pages drawn with the

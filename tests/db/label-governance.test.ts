@@ -567,6 +567,8 @@ describe("the columns", () => {
         ORDER BY t.table_name`
     );
     expect(rows.map((r) => r.table_name)).toEqual([
+      // A shared login's request to become an organization (docs/organizations.md).
+      "account_conversions",
       // What a sign-in asserted about an account: the groups it carried.
       "account_groups",
       // The administrators' own log: who granted what, and which labels were defined.
@@ -596,6 +598,10 @@ describe("the columns", () => {
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
+      // Who acts for an organization, the invitations that add them, and its log: who an account is.
+      "organization_invitations",
+      "organization_log",
+      "organization_members",
       // The owl ledger and what is paid out of it.
       "owl_ledger",
       // Whose material a source is, and who may do what (src/permissions.ts).

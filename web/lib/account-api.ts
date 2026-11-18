@@ -68,6 +68,12 @@ export async function accountFetch<T>(
     body?: unknown;
     actingUser?: string;
     noViewer?: true;
+    /**
+     * An organization the signed-in admin acts for (docs/organizations.md,
+     * "Acting from minerval.ai"). The API checks that they are its admin and
+     * that the route is one an organization's admin may call for it.
+     */
+    actingOrganization?: string;
   } = {}
 ): Promise<T> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
@@ -77,6 +83,7 @@ export async function accountFetch<T>(
     headers: {
       ...(KEY ? { "x-api-key": KEY } : {}),
       ...(acting ? { "x-acting-user": acting } : {}),
+      ...(options.actingOrganization ? { "x-acting-organization": options.actingOrganization } : {}),
       ...(options.body !== undefined
         ? { "content-type": "application/json" }
         : {}),
