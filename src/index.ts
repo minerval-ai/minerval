@@ -17,6 +17,7 @@ import { startMonitorScheduler } from "./workers/monitor-scheduler.js";
 import { startAllocationScheduler } from "./workers/allocation-scheduler.js";
 import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
+import { startModelPriceRefresh } from "./workers/model-price-refresh.js";
 import { startUsageReports } from "./workers/usage-reports.js";
 import { usageReporting } from "./services/usage-report-service.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
@@ -311,7 +312,15 @@ async function main() {
   // starts as it always has. The API listens either way, so the checks can
   // be read at GET /setup/preflight while work is held.
   const work = startGatedWork({ start: () => startWork(app, config, logger), logger });
-  const pollers: Array<{ stop: () => void }> = [work];
+  // The prices calls are metered at (services/model-price-service.ts): read
+  // from the public price lists every few hours, and loaded from the
+  // database at start. Outside the gate, because requests the API serves
+  // meter calls too, and the lists carry nothing of any label's. Every task
+  // may run it; the write holds a lock.
+  const prices = startModelPriceRefresh({
+    logger: { ...logger, warn: (...args: unknown[]) => app.log.warn(args) },
+  });
+  const pollers: Array<{ stop: () => void }> = [work, prices];
 
   // Graceful shutdown. ECS kills the task 30s after SIGTERM, so the HTTP
   // close gets a bounded wait; then any Steward run still in flight hands

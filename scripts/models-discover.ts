@@ -8,14 +8,14 @@
  * Three findings:
  *   - candidates: ids a provider lists that nothing here registers (MODELS,
  *     OPENROUTER_MODELS, the production pins in infra/lib/api-stack.ts, the
- *     pricing prefixes) — the models an adopt run (corpus:adopt) could try;
+ *     price snapshot) — the models an adopt run (corpus:adopt) could try;
  *   - deprecated: ids we register that the provider no longer lists — the
  *     drift the per-PR guard (tests/unit/scripts/production-pins.test.ts,
  *     tests/unit/llm/model-guard.test.ts) cannot see because it checks our
  *     tables against themselves;
- *   - pricing drift: a model priced in src/llm/pricing.ts that OpenRouter
- *     also lists at a different rate (a reseller's rate — a hint to check
- *     the vendor's page, not a verdict).
+ *   - pricing drift: a model in the price snapshot that OpenRouter lists at
+ *     a different rate. Running deployments read the price lists themselves,
+ *     so this only means the snapshot is behind (`npm run prices:snapshot`).
  *
  * Network: GET api.anthropic.com/v1/models (needs ANTHROPIC_API_KEY),
  * api.openai.com/v1/models (needs OPENAI_API_KEY), openrouter.ai/api/v1/models
@@ -24,21 +24,19 @@
  *
  * This opens no issues. The operator's next step for a candidate worth
  * trying is `npm run corpus:adopt -- --agent=<agent> --model=<id>`; for a
- * deprecation, edit the source the row names; for pricing drift, check the
- * vendor's list price and update pricing.ts. An automated version would run
+ * deprecation, edit the source the row names; for pricing drift, run
+ * `npm run prices:snapshot`. An automated version would run
  * this weekly in a workflow and `gh issue create` one issue per new
  * candidate titled "model candidate: <id>", deduplicated by title.
  */
 import { config as loadDotenv } from "dotenv";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { MODELS, OPENROUTER_MODELS } from "../src/llm/models.js";
 import { hasExplicitRates, ratesForModel } from "../src/llm/pricing.js";
+import { PRICE_SNAPSHOT } from "../src/llm/price-snapshot.js";
 import { productionPins } from "./corpus/production-pins.js";
 import {
   diffModels,
-  parsePricingPrefixes,
+  PRICE_SNAPSHOT_SOURCE,
   renderDiscovery,
   type AnthropicModelEntry,
   type OpenAiModelEntry,
@@ -49,16 +47,13 @@ import {
 
 loadDotenv({ quiet: true });
 
-const here = dirname(fileURLToPath(import.meta.url));
-const PRICING_PATH = join(here, "..", "src", "llm", "pricing.ts");
-
 /** Everything this codebase declares a model id for, with where. */
 export function registeredModels(): RegisteredModel[] {
   const out: RegisteredModel[] = [];
   for (const [key, id] of Object.entries(MODELS)) out.push({ id, source: `MODELS.${key}` });
   for (const [key, id] of Object.entries(OPENROUTER_MODELS)) out.push({ id, source: `OPENROUTER_MODELS.${key}` });
   for (const pin of productionPins()) out.push({ id: pin.model, source: `pin ${pin.envVar}` });
-  for (const prefix of parsePricingPrefixes(readFileSync(PRICING_PATH, "utf8"))) out.push({ id: prefix, source: "pricing prefix" });
+  for (const id of Object.keys(PRICE_SNAPSHOT)) out.push({ id, source: PRICE_SNAPSHOT_SOURCE });
   return out;
 }
 
@@ -129,7 +124,7 @@ async function main(): Promise<void> {
   for (const n of notes) console.log(`  note: ${n}`);
   console.log(
     "\n  next: a candidate worth trying → npm run corpus:adopt -- --agent=<agent> --model=<id>;" +
-      "\n        a deprecation → edit the source named; pricing drift → check the vendor's list price, then src/llm/pricing.ts.\n"
+      "\n        a deprecation → edit the source named; pricing drift → npm run prices:snapshot.\n"
   );
 }
 

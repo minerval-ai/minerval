@@ -267,13 +267,15 @@ on when its key is set, which is how it worked before the file existed.
 | `owl_packs` | What is sold, as a list of `"owls:cents:name"`. An empty list sells nothing. | `OWL_PACKS` |
 | `signup_grant_owls`, `monthly_grant_owls` | Owls given to a new account, and each month. | `SIGNUP_GRANT_OWLS`, `MONTHLY_GRANT_OWLS` |
 | `cap_claim_proposal_owls`, `cap_assessment_owls`, `cap_source_ingest_owls`, `cap_extension_analysis_owls`, `cap_text_analysis_owls` | The most each paid operation can cost its buyer. | `CAP_CLAIM_PROPOSAL_OWLS`, `CAP_ASSESSMENT_OWLS`, `CAP_SOURCE_INGEST_OWLS`, `CAP_EXTENSION_ANALYSIS_OWLS`, `CAP_TEXT_ANALYSIS_OWLS` |
+| `model_price_refresh_hours` | How many hours apart the deployment reads the public price lists and updates the prices its calls are metered at. The starting value is `6`; `0` never reads them, and calls are metered at what was read before or at the prices the release carries ([accounts.md](accounts.md), "Where model prices come from"). | `MODEL_PRICE_REFRESH_HOURS` |
 | `owls` | `"sold"`, the starting value, or `"created"`: the deployment's administrators create the owls that budget its agents' work, each act logged, and nothing is sold ([accounts.md](accounts.md), "Owls a deployment creates for itself"). `"created"` needs a members-only deployment, no Stripe key and no free grants. | `OWLS` |
 
 #### `[[pricing.model_prices]]`
 
-A price the deployment states for a model, for one the rate table does not
-know or in place of the table's ([accounts.md](accounts.md), "Owls a
-deployment creates for itself"). Each model is one group, and the groups
+A price the deployment states for a model, for one the price catalog does
+not know or in place of the catalog's: a negotiated rate, or a model the
+public lists do not carry ([accounts.md](accounts.md), "Where model prices
+come from"). Each model is one group, and the groups
 together are the setting whose environment variable is `MODEL_PRICES` (the
 same list as JSON). Where owls are created, a run on a model with no price
 is refused.
@@ -467,7 +469,7 @@ at that label does not run at all.
 | `database_tls` | How the connection to the database is secured. `tls = "off"` passes and says when that is right. A `ca_file` must be readable and hold a certificate. In production, a database that is not on RDS with neither set, and which cannot be reached, fails naming the two settings. | no |
 | `database_owner` | Where a label besides `public` is defined, the role in `DATABASE_URL` is not a superuser: row-level security does not bind one. | no |
 | `owls` | The settings about owls agree (`OWLS=created` needs a members-only deployment, no Stripe key and no free grants). A members-only deployment that sells owls with payments off fails: no account could get one. | no |
-| `model_prices` | Where owls are created, every model a role is set to has a price, from the rate table or `[[pricing.model_prices]]`. It fails naming each setting and model, because a run on a model with no price is refused there. It does not hold other agent work: the refusal is made call by call, so only the roles set to an unpriced model stop. | no |
+| `model_prices` | Where owls are created, every model a role is set to has a price, from the price catalog or `[[pricing.model_prices]]`. It fails naming each setting and model, because a run on a model with no price is refused there. It does not hold other agent work: the refusal is made call by call, so only the roles set to an unpriced model stop. | no |
 | `usage_report` | On the metered price: the report's destination is an address with its key or a directory that can be written, not both. With neither it passes and says reports are kept. Not applicable on the flat price or on a deployment anyone may read. | no |
 | `standing_mandates` | In a members-only deployment, a General mandate is set up, and at every label that holds material of the deployment's own. It names the labels that have none. A label with none that holds nothing yet (no source, node or mandate) is to do, not a failure, so that it is on the list while the label is being decided about; a label that will hold only work someone asks for and pays for needs none. | no |
 | `own_organization` | In a members-only deployment, a party is marked as the organization itself. Without one a request to show a page is refused. | no |

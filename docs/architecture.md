@@ -1899,10 +1899,13 @@ prefix caching with a stable `prompt_cache_key` per agent instead of explicit
 breakpoints.
 
 **Metering** stays at one chokepoint regardless of provider. Anthropic and
-OpenAI calls are priced from the rate table in `src/llm/pricing.ts`; OpenRouter
-reports its own computed cost per call, which overrides the table (no rate table
-can cover its zoo), and a declared endpoint's calls are priced from its declared
-rates and take the same path. Unknown model ids fall back to the top-tier rate
+OpenAI calls are priced from the price catalog (`src/llm/pricing.ts`), which a
+worker refreshes from two public price lists every few hours
+(`src/services/model-price-service.ts`, docs/accounts.md, "Where model prices
+come from") over a snapshot the release carries; OpenRouter reports its own
+computed cost per call, which overrides the catalog (no catalog can cover its
+zoo), and a declared endpoint's calls are priced from its declared rates and
+take the same path. Unknown model ids fall back to the top-tier rate
 so nothing ever meters as free. Every usage row records which provider served
 it.
 

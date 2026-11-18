@@ -81,6 +81,7 @@ const MODULE_STATE: Record<string, string> = {
   "src/provider-labels.ts:lastStored": "The administrators' choice of which providers each label may be sent to, as this process last read it, and when: provider and label names from a table that carries no label and is the same for every reader. Read again when it is a few seconds old.",
   "src/llm/provider-clearance.ts:settingFoundWhole": "The provider setting once every label it names was found defined: the configuration object itself, which is the same for every reader.",
   "src/services/prompt-set.ts:cached": "The prompt set, read from files in the repository.",
+  "src/llm/pricing.ts:liveCatalog": "The vendors' list prices for their models, read from the public price lists into a row of platform_flags, which carries no label and is the same for every reader.",
   "src/services/report-sending-service.ts:toolNames": "The names of Minerval's own tools, gathered once from the tool definitions in the code. No rows.",
   "src/services/outbound-service.ts:cachedSigner": "The deployment's signing key for pages shown outside, parsed once from the configuration. No rows.",
   "src/services/outbound-service.ts:followingRelease": "The sends of packages in flight, by release id, so that two sends for one release wait for each other. No rows.",

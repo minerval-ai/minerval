@@ -531,6 +531,10 @@ if (invokedDirectly) {
     };
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
+    // Meter at the prices the API's refresh keeps (services/model-price-service.ts),
+    // and refresh them from here too: the solver is its own process.
+    const { startModelPriceRefresh } = await import("./model-price-refresh.js");
+    startModelPriceRefresh({ logger: console });
     await runSolverWorker();
     await closeDb();
     process.exit(0);

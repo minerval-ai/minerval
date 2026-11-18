@@ -106,6 +106,7 @@ services:
       - RUN_LOG_MODE=${RUN_LOG_MODE:-record}
       - TRACE_RETENTION_DAYS
       - OWLS
+      - MODEL_PRICE_REFRESH_HOURS
       - MODEL_PRICES
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY

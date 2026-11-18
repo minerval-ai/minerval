@@ -184,10 +184,13 @@ cap_extension_analysis_owls = 1
 cap_text_analysis_owls = 0.1
 # "sold", or "created" where the deployment's administrators create its owls.
 # owls = "sold"
+# How many hours apart the public price lists are read, to keep the prices
+# calls are metered at up to date. 0 never reads them.
+# model_price_refresh_hours = 6
 
 # A price this deployment states for a model, in US dollars per million
-# tokens: for a model the rate table does not know, or in place of the
-# table's. Where owls are created, a run on a model with no price is refused.
+# tokens: for a model the price catalog does not know, or in place of the
+# catalog's. Where owls are created, a run on a model with no price is refused.
 # [[pricing.model_prices]]
 # model = "gpt-oss-120b"
 # input_usd_per_mtok = 0.5
