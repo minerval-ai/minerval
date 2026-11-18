@@ -590,14 +590,16 @@ export default async function AccountPage({
         <div className="acct-head">
           <h2>API keys</h2>
         </div>
-        <div className="acct-cols acct-cols-end">
+        {/* The prose sits level with the name and button, unless a label is
+            asked for first: then the form is tall and they start together. */}
+        <div className={myLabels?.must_choose ? "acct-cols" : "acct-cols acct-cols-end"}>
           <p className="acct-prose acct-main acct-measure">
             Keys authenticate requests to the Minerval API as you (header <code>x-api-key</code>).
             Create one for each surface
             {extensionOn && <>, a CLI or the browser extension,</>} so that each can be revoked on
             its own.
           </p>
-          <div className="acct-side">
+          <div className={myLabels?.must_choose ? "acct-side acct-side-wide" : "acct-side"}>
             <KeyCreator extension={extensionOn} labels={myLabels} />
           </div>
         </div>
