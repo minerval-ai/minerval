@@ -3,6 +3,7 @@ import { checkReleasedPage, type PageToCheck } from "../../../web/lib/released-p
 import {
   FINGERPRINT_FORMAT,
   FINGERPRINT_FORMAT_1,
+  FINGERPRINT_FORMAT_2,
   leafHash,
   pageRoot,
   partCommitment,
@@ -16,6 +17,8 @@ import {
 // records the fingerprint with (src/services/page-fingerprint.ts) on a page
 // that is whole, and catch what that one catches on a page that is not.
 
+const CITED = "618187c4-1053-48ab-8d7e-32394ab18eea";
+
 function page(format: FingerprintFormat = FINGERPRINT_FORMAT): PageToCheck {
   const header = { text: JSON.stringify({ verdict: { status: "supported", confidence: 0.8 } }), salt: "aa".repeat(32) };
   const parts = [
@@ -23,10 +26,12 @@ function page(format: FingerprintFormat = FINGERPRINT_FORMAT): PageToCheck {
     { part: 2, descriptor: "reasoning", text: "The meters show [redacted: commercial figures] against a target of 4500.", marks: [{ at: 16, category: "commercial figures" }], salt: "02".repeat(32) },
     { part: 3, descriptor: "argument:against", text: "Argument (against): From the missing logs", marks: [], salt: "03".repeat(32) },
     { part: 4, descriptor: "reading", text: "Reading of a source (affirms)\n\nPassage: with  two spaces\r\nand a line end kept", marks: [], salt: "04".repeat(32) },
-    { part: 5, descriptor: "subclaim", text: "Subclaim (supports): x", marks: [], salt: "05".repeat(32) },
+    { part: 5, descriptor: "subclaim", text: "Subclaim (supports)\n\nWhy it bears.", marks: [], salt: "05".repeat(32) },
   ];
-  const headerHash = partCommitment(header.salt, header.text, []);
-  const hashes = parts.map((p) => partCommitment(p.salt, p.text, p.marks));
+  // Under the current construction the subclaim cites a node the public graph holds (#1157).
+  const refsOf = (p: { part: number }) => (format === FINGERPRINT_FORMAT && p.part === 5 ? [CITED] : []);
+  const headerHash = partCommitment(header.salt, header.text, [], [], format);
+  const hashes = parts.map((p) => partCommitment(p.salt, p.text, p.marks, refsOf(p), format));
   const root = pageRoot([
     { position: 0, descriptor: "verdict", commitment: headerHash },
     ...parts.map((p, i) => ({ position: p.part, descriptor: p.descriptor, commitment: hashes[i]! })),
@@ -39,7 +44,7 @@ function page(format: FingerprintFormat = FINGERPRINT_FORMAT): PageToCheck {
       // Part 3 is held: its hash and kind are given, and none of its text.
       p.part === 3
         ? { part: p.part, descriptor: p.descriptor, hash: hashes[i]! }
-        : { part: p.part, descriptor: p.descriptor, hash: hashes[i]!, text: p.text, removals_marked: p.marks, salt: p.salt }
+        : { part: p.part, descriptor: p.descriptor, hash: hashes[i]!, text: p.text, removals_marked: p.marks, salt: p.salt, ...(refsOf(p).length ? { refs: refsOf(p) } : {}) }
     ),
   };
 }
@@ -53,7 +58,7 @@ describe("the check of a released page, in the browser", () => {
       root: shown.fingerprint!,
       format: shown.fingerprint_format!,
       verdict: { position: 0, descriptor: "verdict", commitment: shown.always_released_as_hashed!.hash, text: shown.always_released_as_hashed!.text, salt: shown.always_released_as_hashed!.salt, marks: [] },
-      parts: shown.parts!.map((p) => ({ position: p.part, descriptor: p.descriptor, commitment: p.hash, text: p.text, marks: p.removals_marked, salt: p.salt })),
+      parts: shown.parts!.map((p) => ({ position: p.part, descriptor: p.descriptor, commitment: p.hash, text: p.text, marks: p.removals_marked, salt: p.salt, refs: p.refs })),
     });
     expect(theirs.ok).toBe(true);
     // The verdict counts among the parts the deployment's check checked; here it is said apart.
@@ -87,6 +92,26 @@ describe("the check of a released page, in the browser", () => {
     const check = await checkReleasedPage({ fingerprint: null });
     expect(check.ok).toBe(false);
     expect(check.problems).toEqual(["This page has not been released, so there is nothing to check yet."]);
+  });
+
+  it("catches a part made to cite another node, as the deployment's check does", async () => {
+    const pointed = page();
+    pointed.parts![4]!.refs = ["20014d26-9bcb-472b-81f0-2339335d5ec2"];
+    expect((await checkReleasedPage(pointed)).problems).toContain(
+      "Part 5 does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded."
+    );
+    const stripped = page();
+    delete stripped.parts![4]!.refs;
+    expect((await checkReleasedPage(stripped)).ok).toBe(false);
+  });
+
+  it("checks a page recorded before parts carried refs by the construction its record names", async () => {
+    const before = page(FINGERPRINT_FORMAT_2);
+    expect(await checkReleasedPage(before)).toEqual({ ok: true, released: 4, held: 1, problems: [] });
+    expect((await checkReleasedPage({ ...before, fingerprint_format: FINGERPRINT_FORMAT })).ok).toBe(false);
+    const citing = page(FINGERPRINT_FORMAT_2);
+    citing.parts![0]!.refs = ["20014d26-9bcb-472b-81f0-2339335d5ec2"];
+    expect((await checkReleasedPage(citing)).problems).toContain(`Part 1 cites nodes, which a page fingerprinted under "${FINGERPRINT_FORMAT_2}" cannot.`);
   });
 
   it("checks a page recorded under the old construction by the construction its record names", async () => {

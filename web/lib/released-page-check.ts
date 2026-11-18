@@ -4,21 +4,26 @@
 // with Web Crypto so that it runs where the reader is: every hash is the
 // lowercase hex SHA-256 of a UTF-8 string.
 //
-//   commitment of a part = H("part\n" + salt + "\n" + marks + "\n" + text)
+//   commitment of a part = H("part\n" + salt + "\n" + marks + "\n" + refs + "\n" + text)
+//                          refs is the JSON array of the public ids the part
+//                          cites, "[]" where none; there is no refs line
+//                          under the constructions before /3
 //   leaf of a part       = H("leaf\n" + position + "\n" + descriptor + "\n" + commitment)
 //   inner node           = H("node\n" + left + "\n" + right), splitting n
 //                          leaves at the largest power of two smaller than n
 //   root                 = H("root\n" + FORMAT + "\n" + count + "\n" + top)
 //
 // FORMAT is the construction the page's record names (`fingerprint_format`):
-// "minerval-released-page/2", or "minerval-shown-page/1" for a page recorded
+// "minerval-released-page/3"; "minerval-released-page/2" for a page recorded
+// before parts carried refs; or "minerval-shown-page/1" for a page recorded
 // before the construction was renamed. The root is rebuilt under that one.
 //
 // A released part is checked against its own text; a held part is taken by
 // the hash recorded for it, so its place and kind are checked and its
 // content is not.
 
-const FORMATS: readonly string[] = ["minerval-released-page/2", "minerval-shown-page/1"];
+const REFS_FORMAT = "minerval-released-page/3";
+const FORMATS: readonly string[] = [REFS_FORMAT, "minerval-released-page/2", "minerval-shown-page/1"];
 
 export interface PartToCheck {
   part: number;
@@ -27,6 +32,8 @@ export interface PartToCheck {
   text?: string;
   removals_marked?: Array<{ at: number; category: string }>;
   salt?: string;
+  /** The public ids the part cites, under "minerval-released-page/3". */
+  refs?: string[];
 }
 
 export interface PageToCheck {
@@ -69,7 +76,8 @@ export async function checkReleasedPage(page: PageToCheck): Promise<ReleasedPage
   if (!FORMATS.includes(format)) {
     return { ok: false, released, held, problems: [`The fingerprint is recorded under "${format}", a construction this check does not know.`] };
   }
-  if ((await sha256(`part\n${header.salt}\n[]\n${header.text}`)) !== header.hash) {
+  const refsLine = (refs: readonly string[]) => (format === REFS_FORMAT ? `${JSON.stringify([...refs])}\n` : "");
+  if ((await sha256(`part\n${header.salt}\n[]\n${refsLine([])}${header.text}`)) !== header.hash) {
     problems.push("What is always shown with the page (the verdict, coverage and the rest) does not match its hash.");
   }
   const leaves = [await sha256(`leaf\n0\nverdict\n${header.hash}`)];
@@ -84,8 +92,13 @@ export async function checkReleasedPage(page: PageToCheck): Promise<ReleasedPage
           problems.push(`Part ${p.part} lists a removal marked "${m.category}" at a place where the text has no such mark.`);
         }
       }
-      const commitment = await sha256(`part\n${p.salt ?? ""}\n${JSON.stringify(marks.map((m) => [m.at, m.category]))}\n${p.text}`);
-      if (commitment !== p.hash) problems.push(`Part ${p.part} does not match its hash: its text, its marks or its salt is not what was recorded.`);
+      const refs = p.refs ?? [];
+      if (format !== REFS_FORMAT && refs.length > 0) {
+        problems.push(`Part ${p.part} cites nodes, which a page fingerprinted under "${format}" cannot.`);
+      } else {
+        const commitment = await sha256(`part\n${p.salt ?? ""}\n${JSON.stringify(marks.map((m) => [m.at, m.category]))}\n${refsLine(refs)}${p.text}`);
+        if (commitment !== p.hash) problems.push(`Part ${p.part} does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded.`);
+      }
       released++;
     } else {
       held++;

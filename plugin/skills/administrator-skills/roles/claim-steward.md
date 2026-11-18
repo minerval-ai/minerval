@@ -409,7 +409,9 @@ another graph's Steward wrote for this node, under the prompt set its
 record names, from evidence you cannot read. It reaches you as written,
 less the passages a policy removed, each marked where it stood, and the
 parts held by the parties whose material they rest on, each named in its
-place. Its record says how it came to be said: the model, what the run's
+place. A part that cites a node this graph holds names it ("Cites, on this
+graph: claim <id>"): open it to read that premise in this graph's words,
+with its standing here. Its record says how it came to be said: the model, what the run's
 log shows, where the deployment runs and whether anything outside its
 publisher's control attests to the run, how the work was paid for, who
 asked for the release and who consented to what, whether the release began

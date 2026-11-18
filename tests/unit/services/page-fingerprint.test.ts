@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   FINGERPRINT_FORMAT,
   FINGERPRINT_FORMAT_1,
+  FINGERPRINT_FORMAT_2,
   type FingerprintFormat,
   leafHash,
   markOf,
@@ -23,17 +24,27 @@ import { applyRemovals } from "../../../src/services/page-parts.js";
 
 const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
-/** A page of a verdict and `texts`, with the parts at `held` (1-based) held. */
+const PUBLIC_NODE = "618187c4-1053-48ab-8d7e-32394ab18eea";
+const OTHER_NODE = "20014d26-9bcb-472b-81f0-2339335d5ec2";
+
+/**
+ * A page of a verdict and `texts`, with the parts at `held` (1-based) held,
+ * recorded under `format`. Under the current construction the second part
+ * cites a node the public graph holds.
+ */
 function page(texts: string[], held: number[] = [], format: FingerprintFormat = FINGERPRINT_FORMAT): ReleasedPageForCheck {
   const verdictSalt = newSalt();
   const verdictText = '{"verdict":{"status":"supported","confidence":0.8}}';
-  const verdict: ReleasedPartForCheck = { position: 0, descriptor: "verdict", commitment: partCommitment(verdictSalt, verdictText), text: verdictText, salt: verdictSalt, marks: [] };
+  const verdict: ReleasedPartForCheck = {
+    position: 0, descriptor: "verdict", commitment: partCommitment(verdictSalt, verdictText, [], [], format), text: verdictText, salt: verdictSalt, marks: [],
+  };
   const full = texts.map((original, i) => {
     const salt = newSalt();
     const { text, marks } = original.includes("SECRET")
       ? applyRemovals(original, [{ start: original.indexOf("SECRET"), end: original.indexOf("SECRET") + 6, category: "commercial figures" }])
       : { text: original, marks: [] };
-    return { position: i + 1, descriptor: i % 2 ? "argument:against" : "reasoning", commitment: partCommitment(salt, text, marks), text, salt, marks };
+    const refs = format === FINGERPRINT_FORMAT && i === 1 ? [PUBLIC_NODE] : [];
+    return { position: i + 1, descriptor: i % 2 ? "argument:against" : "reasoning", commitment: partCommitment(salt, text, marks, refs, format), text, salt, marks, refs };
   });
   const root = pageRoot([verdict, ...full], format);
   return {
@@ -48,18 +59,27 @@ describe("the construction", () => {
   it("can be redone with nothing but SHA-256", () => {
     const salt = "00".repeat(32);
     const commitment = partCommitment(salt, "A paragraph.", []);
-    expect(commitment).toBe(sha(`part\n${salt}\n[]\nA paragraph.`));
+    expect(commitment).toBe(sha(`part\n${salt}\n[]\n[]\nA paragraph.`));
     expect(partCommitment(salt, "x [redacted: personal data] y", [{ at: 2, category: "personal data" }])).toBe(
-      sha(`part\n${salt}\n[[2,"personal data"]]\nx [redacted: personal data] y`)
+      sha(`part\n${salt}\n[[2,"personal data"]]\n[]\nx [redacted: personal data] y`)
     );
+    // The nodes a part cites are in its commitment, in order (#1157).
+    expect(partCommitment(salt, "Subclaim (supports)", [], [PUBLIC_NODE, OTHER_NODE])).toBe(
+      sha(`part\n${salt}\n[]\n["${PUBLIC_NODE}","${OTHER_NODE}"]\nSubclaim (supports)`)
+    );
+    // Before /3 there is no refs line, and a part recorded then cites nothing.
+    expect(partCommitment(salt, "A paragraph.", [], [], FINGERPRINT_FORMAT_2)).toBe(sha(`part\n${salt}\n[]\nA paragraph.`));
+    expect(partCommitment(salt, "A paragraph.", [], [], FINGERPRINT_FORMAT_1)).toBe(sha(`part\n${salt}\n[]\nA paragraph.`));
+    expect(() => partCommitment(salt, "A paragraph.", [], [PUBLIC_NODE], FINGERPRINT_FORMAT_2)).toThrow(/carries no refs/);
     const leaf = (n: number, d: string, c: string) => sha(`leaf\n${n}\n${d}\n${c}`);
     expect(leafHash(3, "argument:against", commitment)).toBe(leaf(3, "argument:against", commitment));
     const leaves = [0, 1, 2].map((n) => ({ position: n, descriptor: n ? "reasoning" : "verdict", commitment: sha(String(n)) }));
     const [a, b, c] = leaves.map((l) => leaf(l.position, l.descriptor, l.commitment));
     // Three leaves split two and one, as RFC 6962 splits them.
     const top = sha(`node\n${sha(`node\n${a}\n${b}`)}\n${c}`);
-    expect(FINGERPRINT_FORMAT).toBe("minerval-released-page/2");
-    expect(pageRoot(leaves, FINGERPRINT_FORMAT)).toBe(sha(`root\nminerval-released-page/2\n3\n${top}`));
+    expect(FINGERPRINT_FORMAT).toBe("minerval-released-page/3");
+    expect(pageRoot(leaves, FINGERPRINT_FORMAT)).toBe(sha(`root\nminerval-released-page/3\n3\n${top}`));
+    expect(pageRoot(leaves, FINGERPRINT_FORMAT_2)).toBe(sha(`root\nminerval-released-page/2\n3\n${top}`));
     // A page recorded before the construction was renamed keeps its root under the name it was made with.
     expect(pageRoot(leaves, FINGERPRINT_FORMAT_1)).toBe(sha(`root\nminerval-shown-page/1\n3\n${top}`));
     expect(() => pageRoot(leaves, "minerval-page/9" as FingerprintFormat)).toThrow(/No fingerprint is made under/);
@@ -90,7 +110,7 @@ describe("checking a shown page", () => {
   it("catches an altered part, whether or not its listed hash was altered to match", () => {
     const one = page(texts);
     (one.parts[0] as ReleasedPartForCheck).text = "First paragraph, improved.";
-    expect(verifyReleasedPage(one).problems).toContain("Part 1 does not match its hash: its text, its marks or its salt is not what was recorded.");
+    expect(verifyReleasedPage(one).problems).toContain("Part 1 does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded.");
     const two = page(texts);
     const part = two.parts[0] as ReleasedPartForCheck;
     part.text = "First paragraph, improved.";
@@ -152,12 +172,35 @@ describe("checking a shown page", () => {
     expect(verifyReleasedPage(saltless).problems[0]).toBe("Part 1 is shown without its salt, so it cannot be checked against its hash.");
   });
 
-  it("checks a page recorded under the old construction by that construction, and by no other", () => {
+  it("catches a part made to cite another node, or to cite nothing, and keeps a held part's citations to itself", () => {
+    const pointed = page(texts);
+    (pointed.parts[1] as ReleasedPartForCheck).refs = [OTHER_NODE];
+    expect(verifyReleasedPage(pointed).problems).toContain(
+      "Part 2 does not match its hash: its text, its marks, the nodes it cites or its salt is not what was recorded."
+    );
+    const dropped = page(texts);
+    (dropped.parts[1] as ReleasedPartForCheck).refs = [];
+    expect(verifyReleasedPage(dropped).ok).toBe(false);
+    // Held, the part is taken by its hash: nothing says what it cites, and the page still checks.
+    const held = page(texts, [2]);
+    expect(held.parts[1]).not.toHaveProperty("refs");
+    expect(verifyReleasedPage(held)).toEqual({ ok: true, problems: [], checked: 5, held: 1 });
+  });
+
+  it("checks a page recorded under an earlier construction by that construction, and by no other", () => {
+    for (const earlier of [FINGERPRINT_FORMAT_2, FINGERPRINT_FORMAT_1]) {
+      const old = page(texts, [2], earlier);
+      expect(verifyReleasedPage(old)).toEqual({ ok: true, problems: [], checked: 5, held: 1 });
+      // The record names the construction: the same parts under another name do not check.
+      expect(verifyReleasedPage({ ...old, format: FINGERPRINT_FORMAT }).ok).toBe(false);
+      expect(verifyReleasedPage({ ...page(texts), format: earlier }).ok).toBe(false);
+      // A part recorded under an earlier construction cites nothing.
+      const citing = page(texts, [], earlier);
+      (citing.parts[0] as ReleasedPartForCheck).refs = [PUBLIC_NODE];
+      expect(verifyReleasedPage(citing).problems).toContain(`Part 1 cites nodes, which a page recorded under "${earlier}" cannot.`);
+    }
     const old = page(texts, [2], FINGERPRINT_FORMAT_1);
-    expect(verifyReleasedPage(old)).toEqual({ ok: true, problems: [], checked: 5, held: 1 });
-    // The record names the construction: the same parts under the other name do not rebuild its root.
-    expect(verifyReleasedPage({ ...old, format: FINGERPRINT_FORMAT }).ok).toBe(false);
-    expect(verifyReleasedPage({ ...page(texts), format: FINGERPRINT_FORMAT_1 }).ok).toBe(false);
+    expect(verifyReleasedPage({ ...old, format: FINGERPRINT_FORMAT_2 }).ok).toBe(false);
     expect(verifyReleasedPage({ ...old, format: "minerval-page/9" }).problems).toEqual([
       'The page\'s fingerprint is recorded under "minerval-page/9", a construction this check does not know.',
     ]);

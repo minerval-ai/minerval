@@ -47,6 +47,8 @@ export interface ShapedArgument {
   rating: string | null;
   decisive: boolean;
   evaluation: string | null;
+  /** Its premises the public graph holds, by their ids there (#1157). Empty for a page recorded before parts carried them. */
+  premises: string[];
 }
 
 export interface ShapedReading {
@@ -67,6 +69,13 @@ export interface ShapedSubclaim {
   /** The subclaim's wording, where the subclaim itself was written at the page's label. */
   wording: string | null;
   reasoning: string | null;
+  /**
+   * The node on this graph, where the public graph holds the subclaim: its
+   * wording and its status are read from there (#1157). Null for a node held
+   * only at the publisher's label, and for a page recorded before parts
+   * carried it.
+   */
+  node_id: string | null;
 }
 
 export interface ShapedSource {
@@ -176,7 +185,9 @@ function paragraphs(text: string): string[] {
 
 function shapeArgument(part: PackagePart): ShapedArgument {
   const stanceOf = part.descriptor.split(":")[1] ?? null;
-  const base: ShapedArgument = { part: part.part, stance: stanceOf, name: null, content: null, rating: null, decisive: false, evaluation: null };
+  const base: ShapedArgument = {
+    part: part.part, stance: stanceOf, name: null, content: null, rating: null, decisive: false, evaluation: null, premises: isReleased(part) ? [...(part.refs ?? [])] : [],
+  };
   if (!isReleased(part)) return { ...base, held: heldOf(part) };
   const paras = paragraphs(part.text);
   const head = paras[0] ?? "";
@@ -218,7 +229,7 @@ function shapeReading(part: PackagePart): ShapedReading {
 }
 
 function shapeSubclaim(part: PackagePart): ShapedSubclaim {
-  const base: ShapedSubclaim = { part: part.part, relation: null, wording: null, reasoning: null };
+  const base: ShapedSubclaim = { part: part.part, relation: null, wording: null, reasoning: null, node_id: isReleased(part) ? (part.refs?.[0] ?? null) : null };
   if (!isReleased(part)) return { ...base, held: heldOf(part) };
   const paras = paragraphs(part.text);
   const head = /^Subclaim \(([^)]*)\)(?:: ([\s\S]*))?$/.exec(paras[0] ?? "");
@@ -286,8 +297,11 @@ export function publishedPageAsText(pkg: PublishedPagePackage): string {
   if (!page || !page.always_released) return "";
   const lines: string[] = [];
   for (const part of page.parts) {
-    if (isReleased(part)) lines.push(part.text, "");
-    else {
+    if (isReleased(part)) {
+      lines.push(part.text, "");
+      // The nodes it cites that this graph holds, by their ids here, so a reader can open each (#1157).
+      if (part.refs && part.refs.length > 0) lines.push(`Cites, on this graph: ${part.refs.map((id) => `claim ${id}`).join(", ")}`, "");
+    } else {
       const h = heldOf(part);
       lines.push(`[${h.what}, held${h.by.length > 0 ? ` by ${h.by.join(" and ")}` : ""}${h.reasons.length > 0 ? `. Reason given: ${h.reasons.join("; ")}` : ""}]`, "");
     }

@@ -50,6 +50,15 @@ export interface SaidBackEntry {
   in_words: string;
 }
 
+/** A node a published page cites that this graph holds: its wording and its status here. */
+export interface CitedNode {
+  id: string;
+  text: string;
+  kind: string;
+  status: string | null;
+  page_url: string;
+}
+
 export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher" | "said_back"> {
   package: number;
   received_at: string;
@@ -64,6 +73,8 @@ export interface PublishedPageView extends Omit<PublishedPageSummary, "publisher
     registered_at: string | null;
   };
   page: PublishedPageShape | null;
+  /** The nodes the page cites that this graph holds, by id, in this graph's words (#1157). Absent from an older API. */
+  cited?: Record<string, CitedNode>;
   source_id: string | null;
   audit: string | null;
   fingerprint: string | null;

@@ -304,6 +304,27 @@ export function sourceTextOf(
   return lines.join("\n").trimEnd();
 }
 
+/**
+ * The nodes a page cites that this graph holds (#1157): each subclaim's
+ * node and each argument's premises, with their wording and their status
+ * here, so the page can name them in this graph's words. An id this graph
+ * does not hold is left out: the page names a node, not what it says.
+ */
+export async function citedNodes(
+  shape: PublishedPageShape | null
+): Promise<Record<string, { id: string; text: string; kind: string; status: string | null; page_url: string }>> {
+  if (!shape) return {};
+  const ids = [...new Set([...shape.subclaims.flatMap((s) => (s.node_id ? [s.node_id] : [])), ...shape.arguments.flatMap((a) => a.premises)])];
+  if (ids.length === 0) return {};
+  const rows = await rawQuery<{ id: string; text: string; kind: string; status: string | null }>(
+    `SELECT c.id, c.text, c.kind, a.status FROM claims c LEFT JOIN assessments_in_force a ON a.claim_id = c.id
+      WHERE c.id = ANY($1::uuid[]) AND c.state = 'active'`,
+    [ids]
+  );
+  const base = loadConfig().publicWebBaseUrl.replace(/\/$/, "");
+  return Object.fromEntries(rows.map((r) => [r.id, { ...r, page_url: `${base}/claims/${r.id}` }]));
+}
+
 const SOURCE_ADDRESS = (publishedPageId: string, sequence: number) => `minerval:published-page/${publishedPageId}/${sequence}`;
 
 // ---- what the Reviewer and the Steward are told -----------------------------------------
@@ -848,6 +869,7 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
     released_package: shapeOfPublishedPage(releasedPkg) ? releasedRow.sequence : null,
     released_version_of: shapeOfPublishedPage(releasedPkg) ? releasedPkg.page!.version_of : null,
     page: shapeOfPublishedPage(releasedPkg),
+    cited: await citedNodes(shapeOfPublishedPage(releasedPkg)),
     source_id: releasedRow.source_id,
     audit: releasedPkg.page?.audit ?? null,
     fingerprint: releasedPkg.page?.fingerprint ?? null,

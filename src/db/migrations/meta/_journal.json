@@ -1247,6 +1247,13 @@
       "when": 1795010599403,
       "tag": "0177_connection_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1795021871727,
+      "tag": "0178_released_part_public_refs",
+      "breakpoints": true
     }
   ]
 }

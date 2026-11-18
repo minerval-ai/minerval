@@ -66,7 +66,7 @@ function viewOfReleasedPage(tab: ReleasedTab, release: ReceivedRelease, page: Re
         descriptor: p.descriptor,
         hash: p.hash,
         ...(typeof p.text === "string"
-          ? { text: p.text, marks: p.removals_marked ?? [], salt: p.salt }
+          ? { text: p.text, marks: p.removals_marked ?? [], salt: p.salt, ...(p.refs ? { refs: p.refs } : {}) }
           : {
               // "[An argument against, held by Acme]": the API's own words name the holders after "held by".
               held: { by: heldBy(p.held), ...holdOf(release, tab.page_id, p.part) },

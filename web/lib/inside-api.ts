@@ -143,6 +143,8 @@ export interface ReceivedPart {
   /** Released: the text as written, with each removal marked where it was made. */
   text?: string;
   removals_marked?: ReceivedMark[];
+  /** The public ids the part cites, for a page recorded under minerval-released-page/3 (#1157). */
+  refs?: string[];
   salt?: string;
   /** Held: the words that stand in its place. */
   held?: string;

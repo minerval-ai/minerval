@@ -246,6 +246,20 @@ function Blocks({ blocks, categories }: { blocks: Block[]; categories: string[] 
   return <AssessmentText content="" blocks={blocks} categories={categories} />;
 }
 
+/** A node the page cites, in this graph's words, linked to its page here (#1157). */
+function Cited({ id, view }: { id: string; view: PublishedPageView }) {
+  // Inside a deployment the released page's view carries no `cited`: the reader's own graph holds the node, so link it.
+  if (!view.cited) return <Link href={`/claims/${id}`}>the claim this cites</Link>;
+  const node = view.cited[id];
+  if (!node) return <em>a node the page cites, which this graph does not hold as active</em>;
+  return (
+    <>
+      <Link href={`/claims/${node.id}`}>{node.text}</Link>
+      {node.status && <span className={`swatch st-${node.status}`} title={`On this graph: ${node.status}`} style={{ marginLeft: ".4rem" }} />}
+    </>
+  );
+}
+
 export function PublishedDecomposition({ view }: { view: PublishedPageView }) {
   const shape = view.page!;
   const categories = Object.keys(shape.removals);
@@ -255,7 +269,24 @@ export function PublishedDecomposition({ view }: { view: PublishedPageView }) {
   return (
     <div className="tree">
       {shape.arguments.map((a) =>
-        a.held ? <HeldPart key={a.part} held={a.held} /> : <ArgumentBlock key={a.part} group={groupOf(a)} check={null} published={{ categories }} />,
+        a.held ? (
+          <HeldPart key={a.part} held={a.held} />
+        ) : (
+          <div key={a.part}>
+            <ArgumentBlock group={groupOf(a)} check={null} published={{ categories }} />
+            {a.premises.length > 0 && (
+              <p className="published-premises" style={quiet}>
+                <span className="sc">Its premises on this graph</span>{" "}
+                {a.premises.map((id, i) => (
+                  <span key={id}>
+                    {i > 0 ? "; " : ""}
+                    <Cited id={id} view={view} />
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+        ),
       )}
       {shape.subclaims.length > 0 && (
         <section className="argblock">
@@ -277,7 +308,13 @@ export function PublishedDecomposition({ view }: { view: PublishedPageView }) {
                       s.relation && <span className="relation node-relation">{s.relation}</span>
                     )}{" "}
                     <span className="basis-text">
-                      {s.wording ? <ArgumentText content={s.wording} categories={categories} /> : <em>a node the page does not name, which this graph already holds</em>}
+                      {s.wording ? (
+                        <ArgumentText content={s.wording} categories={categories} />
+                      ) : s.node_id ? (
+                        <Cited id={s.node_id} view={view} />
+                      ) : (
+                        <em>a node held only where the page was written, which the page does not name</em>
+                      )}
                     </span>
                   </div>
                   {s.reasoning && (

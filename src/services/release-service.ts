@@ -569,6 +569,8 @@ interface RecordedPart {
   kind: PartKind;
   descriptor: string;
   refId: string | null;
+  /** The nodes the part cites that the public graph holds, by their public ids (#1157). */
+  publicRefs: string[];
   original: string;
   /** The sources the part rests on, for working out whose release it takes. */
   sources: string[];
@@ -733,8 +735,14 @@ async function readPage(
     [node.id, label]
   );
   const versionSources = [...new Set([...(await sourcesUnder([node.id], memo)), ...instances.map((i) => i.source_id)])];
-  const whole = (kind: PartKind, original: string, refId: string | null = null, sources = versionSources, stance?: string | null) =>
-    parts.push({ kind, descriptor: descriptorOf(kind, stance), refId, original, sources });
+  const whole = (
+    kind: PartKind,
+    original: string,
+    refId: string | null = null,
+    sources = versionSources,
+    stance?: string | null,
+    publicRefs: string[] = []
+  ) => parts.push({ kind, descriptor: descriptorOf(kind, stance), refId, publicRefs, original, sources });
 
   if (node.label === label) whole("wording", node.text);
   for (const p of paragraphsOf(version.summary as string | null)) whole("summary", p);
@@ -770,18 +778,24 @@ async function readPage(
       `SELECT DISTINCT source_id FROM argument_instances WHERE argument_id = $1 AND dismissed_at IS NULL`,
       [a.id]
     );
-    const premises = await rawQuery<{ child: string }>(
-      `SELECT r.child_claim_id AS child FROM argument_subclaims s JOIN claim_relationships r ON r.id = s.relationship_id WHERE s.argument_id = $1`,
+    const premises = await rawQuery<{ child: string; mirrored: boolean }>(
+      `SELECT r.child_claim_id AS child, c.origin = 'mirror' AS mirrored
+         FROM argument_subclaims s JOIN claim_relationships r ON r.id = s.relationship_id JOIN claims c ON c.id = r.child_claim_id
+        WHERE s.argument_id = $1
+        ORDER BY s.created_at, r.created_at, r.id`,
       [a.id]
     );
+    // The premises the public graph holds, by the ids it knows them by: a mirrored node keeps its public id
+    // (outbound-service.ts, publicNodeOf). A premise at a private label is not named (#1157).
+    const publicRefs = [...new Set(premises.filter((p) => p.mirrored).map((p) => p.child))];
     const sources = [...new Set([...passages.map((p) => p.source_id), ...(await sourcesUnder(premises.map((p) => p.child), memo))])];
     const evaluation = a.evaluation !== null ? `Evaluation: ${ratingWords(a.verdict!, a.decisive === true)}\n\n${a.evaluation}` : null;
     if (a.label === label) {
       const head = `Argument (${a.stance})${a.name ? `: ${a.name}` : ""}`;
-      whole("argument", [head, a.content, ...(evaluation ? [evaluation] : [])].join("\n\n"), null, sources, a.stance);
+      whole("argument", [head, a.content, ...(evaluation ? [evaluation] : [])].join("\n\n"), null, sources, a.stance, publicRefs);
     } else if (evaluation) {
       // The argument is another label's row. Only this label's evaluation of it is part of this page.
-      whole("argument", `Evaluation of an argument recorded at another label\n\n${evaluation}`, a.id, sources, a.stance);
+      whole("argument", `Evaluation of an argument recorded at another label\n\n${evaluation}`, a.id, sources, a.stance, publicRefs);
     }
   }
 
@@ -845,8 +859,11 @@ async function readPage(
     whole("supplier", text.join("\n\n"), null, [s.id]);
   });
 
-  const edges = await rawQuery<{ id: string; child: string; relation_type: string; reasoning: string; child_text: string; child_label: string }>(
-    `SELECT r.id, r.child_claim_id AS child, r.relation_type, r.reasoning, c.text AS child_text, c.sensitivity_label AS child_label
+  const edges = await rawQuery<{
+    id: string; child: string; relation_type: string; reasoning: string; child_text: string; child_label: string; mirrored: boolean;
+  }>(
+    `SELECT r.id, r.child_claim_id AS child, r.relation_type, r.reasoning, c.text AS child_text, c.sensitivity_label AS child_label,
+            c.origin = 'mirror' AS mirrored
        FROM claim_relationships r JOIN claims c ON c.id = r.child_claim_id
       WHERE r.parent_claim_id = $1 AND r.sensitivity_label = $2
       ORDER BY r.created_at, r.id`,
@@ -855,7 +872,8 @@ async function readPage(
   for (const e of edges) {
     const own = e.child_label === label;
     const head = `Subclaim (${e.relation_type.replace(/_/g, " ")})${own ? `: ${e.child_text}` : ""}`;
-    whole("subclaim", `${head}\n\n${e.reasoning}`, own ? null : e.child, await sourcesUnder([e.child], memo));
+    // A child the public graph holds is named by its public id, so a reader on the other side can open it there.
+    whole("subclaim", `${head}\n\n${e.reasoning}`, own ? null : e.child, await sourcesUnder([e.child], memo), null, e.mirrored ? [e.child] : []);
   }
 
   // What is always shown when the page is shown.
@@ -1028,7 +1046,9 @@ async function openPage(
     header: page.recorded.header,
     needs: page.needs,
     sourceIds: page.recorded.restsOn,
-    parts: page.recorded.parts.map((p, i) => ({ kind: p.kind, descriptor: p.descriptor, refId: p.refId, original: p.original, needs: page.partNeeds[i]! })),
+    parts: page.recorded.parts.map((p, i) => ({
+      kind: p.kind, descriptor: p.descriptor, refId: p.refId, publicRefs: p.publicRefs, original: p.original, needs: page.partNeeds[i]!,
+    })),
   });
 }
 
@@ -1044,7 +1064,8 @@ export interface RecordedVersion {
   /** The parties the item itself rests on. */
   needs: string[];
   sourceIds: string[];
-  parts: Array<{ kind: string; descriptor: string; refId: string | null; original: string; needs: string[] }>;
+  /** A part's `publicRefs` are the public ids it cites (#1157); an item that is not a node's page cites none. */
+  parts: Array<{ kind: string; descriptor: string; refId: string | null; publicRefs?: string[]; original: string; needs: string[] }>;
 }
 
 /**
@@ -1077,9 +1098,9 @@ export async function recordVersion(release: ReleaseRow, destination: string, v:
     let position = 1;
     for (const part of v.parts) {
       await tx.query(
-        `INSERT INTO release_parts (page_id, position, kind, descriptor, ref_id, original, salt, rests_on, sensitivity_label)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[], $9)`,
-        [row!.id, position++, part.kind, part.descriptor, part.refId, part.original, newSalt(), part.needs, release.page_label]
+        `INSERT INTO release_parts (page_id, position, kind, descriptor, ref_id, public_refs, original, salt, rests_on, sensitivity_label)
+         VALUES ($1, $2, $3, $4, $5, $6::uuid[], $7, $8, $9::uuid[], $10)`,
+        [row!.id, position++, part.kind, part.descriptor, part.refId, part.publicRefs ?? [], part.original, newSalt(), part.needs, release.page_label]
       );
     }
     await tx.query(
@@ -1284,6 +1305,7 @@ interface PartRow {
   kind: string;
   descriptor: string;
   ref_id: string | null;
+  public_refs: string[];
   original: string;
   salt: string;
   rests_on: string[];
@@ -1310,7 +1332,7 @@ async function pageAtOwnLabel(pageId: string): Promise<PageRow> {
 
 const partsOf = (pageId: string) =>
   rawQuery<PartRow>(
-    `SELECT id, position, kind, descriptor, ref_id, original, salt, rests_on, redacted, marks, commitment
+    `SELECT id, position, kind, descriptor, ref_id, public_refs, original, salt, rests_on, redacted, marks, commitment
        FROM release_parts WHERE page_id = $1 ORDER BY position`,
     [pageId]
   );
@@ -1648,14 +1670,15 @@ export async function finishRedaction(input: {
     removals: counts,
     parts: parts.length,
   });
-  const leaves: LeafRecord[] = [{ position: 0, descriptor: VERDICT_DESCRIPTOR, commitment: partCommitment(page.header_salt, header, []) }];
+  const format = page.fingerprint_format;
+  const leaves: LeafRecord[] = [{ position: 0, descriptor: VERDICT_DESCRIPTOR, commitment: partCommitment(page.header_salt, header, [], [], format) }];
   const finished: Array<PartRow & { text: string; marksNow: Mark[]; commitmentNow: string }> = [];
   for (const part of parts) {
     const { text, marks } = applyRemovals(
       part.original,
       removals.filter((r) => r.part_id === part.id).map((r) => ({ start: r.start_offset, end: r.end_offset, category: r.category }))
     );
-    const commitment = partCommitment(part.salt, text, marks);
+    const commitment = partCommitment(part.salt, text, marks, part.public_refs, format);
     finished.push({ ...part, text, marksNow: marks, commitmentNow: commitment });
     leaves.push({ position: part.position, descriptor: part.descriptor, commitment });
   }
