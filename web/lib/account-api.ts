@@ -61,6 +61,30 @@ async function actingFor(options: { actingUser?: string; noViewer?: true }): Pro
   return viewerExternalId();
 }
 
+// Who an act on the public graph is made as (docs/organizations.md, "Acting
+// as the organization"). "switch" is what the person chose in the header:
+// themselves, or an organization they may act for (lib/acting-as.ts). "self"
+// is for a page that is the person's own, such as their account, which shows
+// what is theirs whoever they are acting as. A helper that takes no `as`
+// always acts as the person.
+export type ActAs = "switch" | "self";
+
+async function actingAs(as: ActAs): Promise<{ actingOrganization?: string }> {
+  if (as === "self") return {};
+  // Loaded when first asked, not at the top: it reads the request's cookies
+  // (next/headers), which the root unit suite, importing this module without
+  // the web app's packages, cannot load. Where it cannot be loaded this is
+  // not running in the web app, and acting as the person is the safe answer.
+  let acting: typeof import("./acting-as") | null = null;
+  try {
+    acting = await import("./acting-as");
+  } catch {
+    return {};
+  }
+  const org = await acting.actingOrganization();
+  return org ? { actingOrganization: org.id } : {};
+}
+
 export async function accountFetch<T>(
   path: string,
   options: {
@@ -424,11 +448,12 @@ export async function createAssessmentOrder(
    * made and read there, beside the node's own judgment (docs/accounts.md,
    * "The label a request works at"). Left out, the node's own label.
    */
-  label?: string
+  label?: string,
+  as: ActAs = "switch"
 ): Promise<AssessmentOrderView> {
   const r = await accountFetch<{ order: AssessmentOrderView }>(
     `/claims/${pathSegment(claimId)}/order`,
-    { method: "POST", actingUser: externalId, ...(label ? { body: { label } } : {}) }
+    { method: "POST", actingUser: externalId, ...(await actingAs(as)), ...(label ? { body: { label } } : {}) }
   );
   return r.order;
 }
@@ -436,20 +461,22 @@ export async function createAssessmentOrder(
 /** The user's open order for one claim (the claim-page poll), or null. */
 export async function getOpenOrderForClaim(
   externalId: string,
-  claimId: string
+  claimId: string,
+  as: ActAs = "switch"
 ): Promise<AssessmentOrderView | null> {
   const r = await accountFetch<{ orders: AssessmentOrderView[] }>(
     `/orders?claim_id=${encodeURIComponent(claimId)}`,
-    { actingUser: externalId }
+    { actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.orders[0] ?? null;
 }
 
 export async function listAssessmentOrders(
-  externalId: string
+  externalId: string,
+  as: ActAs = "switch"
 ): Promise<AssessmentOrderView[]> {
   const r = await accountFetch<{ orders: AssessmentOrderView[] }>("/orders", {
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
   return r.orders;
 }
@@ -457,11 +484,12 @@ export async function listAssessmentOrders(
 /** Cancel a pending order (free — pending orders are uncharged). */
 export async function cancelAssessmentOrder(
   externalId: string,
-  orderId: string
+  orderId: string,
+  as: ActAs = "switch"
 ): Promise<{ cancelled: boolean; refunded: boolean }> {
   return accountFetch(`/orders/${pathSegment(orderId)}`, {
     method: "DELETE",
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -494,31 +522,34 @@ export interface DecompositionFunded {
 export async function createDecomposition(
   externalId: string,
   claimId: string,
-  budgetOwls: number
+  budgetOwls: number,
+  as: ActAs = "switch"
 ): Promise<DecompositionFunded> {
   return accountFetch<DecompositionFunded>(`/claims/${pathSegment(claimId)}/decompose`, {
     method: "POST",
     body: { budget_owls: budgetOwls },
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
 export async function listBudgetJobs(
-  externalId: string
+  externalId: string,
+  as: ActAs = "switch"
 ): Promise<BudgetJobView[]> {
   const r = await accountFetch<{ jobs: BudgetJobView[] }>("/budget-jobs", {
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
   return r.jobs;
 }
 
 export async function getBudgetJob(
   externalId: string,
-  jobId: string
+  jobId: string,
+  as: ActAs = "switch"
 ): Promise<BudgetJobView> {
   const r = await accountFetch<{ job: BudgetJobView }>(
     `/budget-jobs/${pathSegment(jobId)}`,
-    { actingUser: externalId }
+    { actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.job;
 }
@@ -526,22 +557,24 @@ export async function getBudgetJob(
 export async function topUpBudgetJob(
   externalId: string,
   jobId: string,
-  owls: number
+  owls: number,
+  as: ActAs = "switch"
 ): Promise<BudgetJobView> {
   const r = await accountFetch<{ job: BudgetJobView }>(
     `/budget-jobs/${pathSegment(jobId)}/topup`,
-    { method: "POST", body: { owls }, actingUser: externalId }
+    { method: "POST", body: { owls }, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.job;
 }
 
 export async function cancelBudgetJob(
   externalId: string,
-  jobId: string
+  jobId: string,
+  as: ActAs = "switch"
 ): Promise<{ cancelled: boolean; refunded_owls: number }> {
   return accountFetch(`/budget-jobs/${pathSegment(jobId)}/cancel`, {
     method: "POST",
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -605,30 +638,32 @@ export async function createGrant(
   return r.grant;
 }
 
-export async function listGrants(externalId: string): Promise<GrantView[]> {
+export async function listGrants(externalId: string, as: ActAs = "switch"): Promise<GrantView[]> {
   const r = await accountFetch<{ grants: GrantView[] }>("/grants", {
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
   return r.grants;
 }
 
 export async function getGrant(
   externalId: string,
-  grantId: string
+  grantId: string,
+  as: ActAs = "switch"
 ): Promise<GrantView> {
   const r = await accountFetch<{ grant: GrantView }>(`/grants/${pathSegment(grantId)}`, {
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
   return r.grant;
 }
 
 export async function approveGrant(
   externalId: string,
-  grantId: string
+  grantId: string,
+  as: ActAs = "switch"
 ): Promise<GrantView> {
   const r = await accountFetch<{ grant: GrantView }>(
     `/grants/${pathSegment(grantId)}/approve`,
-    { method: "POST", actingUser: externalId }
+    { method: "POST", actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.grant;
 }
@@ -636,22 +671,24 @@ export async function approveGrant(
 export async function topUpGrant(
   externalId: string,
   grantId: string,
-  owls: number
+  owls: number,
+  as: ActAs = "switch"
 ): Promise<GrantView> {
   const r = await accountFetch<{ grant: GrantView }>(
     `/grants/${pathSegment(grantId)}/topup`,
-    { method: "POST", body: { owls }, actingUser: externalId }
+    { method: "POST", body: { owls }, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.grant;
 }
 
 export async function cancelGrant(
   externalId: string,
-  grantId: string
+  grantId: string,
+  as: ActAs = "switch"
 ): Promise<{ cancelled: boolean; refunded_owls: number }> {
   return accountFetch(`/grants/${pathSegment(grantId)}/cancel`, {
     method: "POST",
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -679,13 +716,14 @@ export async function submitContribution(
     /** A published page on the node, when the contribution is made through it. */
     aboutPublishedPageId?: string;
     displayName?: string;
-  }
+  },
+  as: ActAs = "switch"
 ): Promise<SubmittedContribution> {
   const r = await accountFetch<{ contribution: SubmittedContribution }>(
     "/contributions",
     {
       method: "POST",
-      actingUser: externalId,
+      actingUser: externalId, ...(await actingAs(as)),
       body: {
         claim_id: input.claimId,
         contribution_type: input.contributionType,
@@ -714,13 +752,14 @@ export async function submitContribution(
 /** Intake (#157): propose a claim not yet in the graph; reviewed before it materializes. */
 export async function proposeClaimIntake(
   externalId: string,
-  input: { claim: string; label?: string }
+  input: { claim: string; label?: string },
+  as: ActAs = "switch"
 ): Promise<{ id: string; review_status: string }> {
   const r = await accountFetch<{
     contribution: { id: string; review_status: string };
   }>("/claims/propose", {
     method: "POST",
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
     body: { claim: input.claim, ...(input.label ? { label: input.label } : {}) },
   });
   return r.contribution;
@@ -841,11 +880,12 @@ export async function startGrantConversation(
   externalId: string,
   message: string,
   /** The label the conversation and its mandate work at, where the deployment holds more than one. */
-  label?: string
+  label?: string,
+  as: ActAs = "switch"
 ): Promise<GrantSentMessageView> {
   const r = await accountFetch<{ conversation: GrantSentMessageView }>(
     "/grant-conversations",
-    { method: "POST", body: { message, ...(label ? { label } : {}) }, actingUser: externalId }
+    { method: "POST", body: { message, ...(label ? { label } : {}) }, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.conversation;
 }
@@ -853,11 +893,12 @@ export async function startGrantConversation(
 export async function continueGrantConversation(
   externalId: string,
   conversationId: string,
-  message: string
+  message: string,
+  as: ActAs = "switch"
 ): Promise<GrantSentMessageView> {
   const r = await accountFetch<{ conversation: GrantSentMessageView }>(
     `/grant-conversations/${pathSegment(conversationId)}/messages`,
-    { method: "POST", body: { message }, actingUser: externalId }
+    { method: "POST", body: { message }, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.conversation;
 }
@@ -866,7 +907,8 @@ export async function fundGrantConversation(
   externalId: string,
   conversationId: string,
   budgetOwls: number,
-  acknowledgeWarnings?: boolean | string[]
+  acknowledgeWarnings?: boolean | string[],
+  as: ActAs = "switch"
 ): Promise<{ grant_id: string; conversation: { id: string; status: string } }> {
   return accountFetch(`/grant-conversations/${pathSegment(conversationId)}/fund`, {
     method: "POST",
@@ -874,7 +916,7 @@ export async function fundGrantConversation(
       budget_owls: budgetOwls,
       ...(acknowledgeWarnings !== undefined ? { acknowledge_warnings: acknowledgeWarnings } : {}),
     },
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -890,20 +932,21 @@ export interface GrantConversationSummary {
 }
 
 /** The user's conversations with Grantmakers, newest first. */
-export async function listGrantConversations(externalId: string): Promise<GrantConversationSummary[]> {
+export async function listGrantConversations(externalId: string, as: ActAs = "switch"): Promise<GrantConversationSummary[]> {
   const r = await accountFetch<{ conversations: GrantConversationSummary[] }>("/grant-conversations", {
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
   return r.conversations;
 }
 
 export async function getGrantConversation(
   externalId: string,
-  conversationId: string
+  conversationId: string,
+  as: ActAs = "switch"
 ): Promise<GrantConversationView> {
   const r = await accountFetch<{ conversation: GrantConversationView }>(
     `/grant-conversations/${pathSegment(conversationId)}`,
-    { actingUser: externalId }
+    { actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.conversation;
 }
@@ -1320,11 +1363,12 @@ export async function fetchMandateView(
 export async function contributeToMandateApi(
   externalId: string,
   mandateId: string,
-  owls: number
+  owls: number,
+  as: ActAs = "switch"
 ): Promise<MandateDetailView> {
   const r = await accountFetch<{ mandate: MandateDetailView }>(
     `/mandates/${pathSegment(mandateId)}/contribute`,
-    { method: "POST", body: { owls }, actingUser: externalId }
+    { method: "POST", body: { owls }, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.mandate;
 }
@@ -1340,12 +1384,13 @@ export interface ClaimAllocationResult {
 export async function allocateToClaim(
   externalId: string,
   claimId: string,
-  owls: number
+  owls: number,
+  as: ActAs = "switch"
 ): Promise<ClaimAllocationResult> {
   return accountFetch(`/claims/${pathSegment(claimId)}/contribute`, {
     method: "POST",
     body: { owls },
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -1361,12 +1406,13 @@ export interface RequestAllocationResult {
 export async function allocateToRequest(
   externalId: string,
   requestId: string,
-  owls: number
+  owls: number,
+  as: ActAs = "switch"
 ): Promise<RequestAllocationResult> {
   return accountFetch(`/requests/${pathSegment(requestId)}/contribute`, {
     method: "POST",
     body: { owls },
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -1374,11 +1420,12 @@ export async function allocateToRequest(
 // request up (POST /requests/:id/take-up). `already` when it said so before.
 export async function takeUpRequest(
   externalId: string,
-  requestId: string
+  requestId: string,
+  as: ActAs = "switch"
 ): Promise<{ work_id: string; already: boolean; in_words: string }> {
   return accountFetch(`/requests/${pathSegment(requestId)}/take-up`, {
     method: "POST",
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -1838,11 +1885,12 @@ export async function submitStatedView(
     stake?: string;
     noStake?: boolean;
     displayName?: string;
-  }
+  },
+  as: ActAs = "switch"
 ): Promise<SubmittedStatedView> {
   return accountFetch<SubmittedStatedView>(`/claims/${pathSegment(claimId)}/stated-views`, {
     method: "POST",
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
     body: {
       statement: input.statement,
       stance: input.stance,

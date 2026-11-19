@@ -1,5 +1,7 @@
 "use client";
 
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { OwlMark } from "../OwlMark";
@@ -64,6 +66,7 @@ export function MandateProposal({
   mandate: MandateView;
 }) {
   const router = useRouter();
+  const blocked = useActingBlocked("spend");
   const [budget, setBudget] = useState(mandate.expected_cost_owls);
   const [funding, setFunding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,10 +170,11 @@ export function MandateProposal({
             owls
           </span>
         </label>
+        <ActingLine permission="spend" />
         <button
           className="order-button"
           onClick={fund}
-          disabled={funding || (warnings.length > 0 && !acknowledged)}
+          disabled={funding || blocked || (warnings.length > 0 && !acknowledged)}
         >
           {funding ? "escrowing…" : `Fund this mandate (${budget} owls)`}
         </button>

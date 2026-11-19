@@ -16,7 +16,7 @@ export const PERMISSION_WORDS: Record<OrganizationPermission, string> = {
   speak: "Put words on the public record in the organization's name: contributions, stated views, appeals, issues raised.",
   propose: "Propose claims and lists, and submit sources, as the organization.",
   take_up: "Take up a request, committing the organization to its work, and decline one taken up.",
-  claim_prizes: "File a prize claim as the organization; the prize is paid to the organization's owls.",
+  claim_prizes: "File a prize claim as the organization; the prize is paid to the organization's owls. Not yet in force: the prize rules name natural persons until a new version allows organizations.",
   publish: "Register the deployment's signing key, and send pages and mandates released at its gate, under the organization.",
   read_feed: "Pull the whole mirror feed. It shows only that the deployment exists and when it pulls.",
   report_usage: "Send one day's total of owls spent, privately to Minerval, for the metered price.",

@@ -3,17 +3,17 @@ import {
   accountFetch,
   pathSegment,
   type Entitlement,
-  type GrantConversationSummary,
-  type GrantConversationView,
-  type GrantSentMessageView,
   type GrantView,
   type OwlLedgerEntry,
   type OwlPack,
 } from "./account-api";
+import type { MemberPermission, OrganizationPermission } from "./organization-permissions";
 
 // Organizations on minerval.ai (docs/organizations.md). Every call acts for
-// the signed-in person; the ones that act for an organization pass its id,
-// which the API checks against its admins.
+// the signed-in person; the few that read as the organization pass its id,
+// which the API checks against its members and their permissions. Acting as
+// the organization on the public graph is done on the public graph's own
+// pages, through the switch (lib/acting-as.ts), not from here.
 
 export type OrganizationRole = "admin" | "member";
 
@@ -23,6 +23,17 @@ export interface OrganizationView {
   external_id: string;
   created_at: string;
   role?: OrganizationRole;
+  /** What the reader may do as it: every member permission for an admin. */
+  permissions?: MemberPermission[];
+}
+
+export interface GrantRow {
+  id: string;
+  permission: OrganizationPermission;
+  account_id: string | null;
+  deployment_id: string | null;
+  granted_at: string;
+  granted_by: string | null;
 }
 
 export interface MemberView {
@@ -32,6 +43,10 @@ export interface MemberView {
   role: OrganizationRole;
   added_at: string;
   added_by: string | null;
+  /** What they may do as the organization: every member permission for an admin. */
+  permissions: MemberPermission[];
+  /** Their live grants, for withdrawing. Empty for an admin. */
+  grants: GrantRow[];
 }
 
 export interface InvitationView {
@@ -159,7 +174,7 @@ export async function acceptConversion(me: string, conversionId: string): Promis
   return (await accountFetch<{ organization: OrganizationView }>(`/account-conversions/${pathSegment(conversionId)}/accept`, { method: "POST", actingUser: me })).organization;
 }
 
-// ---- as the organization (its admins, from a session) ----
+// ---- reading as the organization, for its own pages ----
 
 export async function organizationAccount(me: string, id: string): Promise<{ entitlement: Entitlement; packs: OwlPack[] }> {
   return accountFetch(`/users/me`, { actingUser: me, actingOrganization: id });
@@ -183,64 +198,22 @@ export async function organizationCheckout(me: string, id: string, packId: strin
   return r.checkout_url;
 }
 
-export async function organizationAddToMandate(me: string, id: string, mandateId: string, owls: number): Promise<void> {
-  await accountFetch(`/mandates/${pathSegment(mandateId)}/contribute`, { method: "POST", body: { owls }, actingUser: me, actingOrganization: id });
+// ---- what each member and deployment may do as the organization ----
+
+export async function listOrganizationGrants(me: string, id: string): Promise<GrantRow[]> {
+  return (await accountFetch<{ grants: GrantRow[] }>(`${org(id)}/grants`, { actingUser: me })).grants;
 }
 
-export async function organizationFundClaim(me: string, id: string, claimId: string, owls: number): Promise<void> {
-  await accountFetch(`/claims/${pathSegment(claimId)}/contribute`, { method: "POST", body: { owls }, actingUser: me, actingOrganization: id });
-}
-
-// ---- the organization's conversations with the public Grantmaker ----
-
-export async function organizationConversations(me: string, id: string): Promise<GrantConversationSummary[]> {
-  return (await accountFetch<{ conversations: GrantConversationSummary[] }>("/grant-conversations", { actingUser: me, actingOrganization: id })).conversations;
-}
-
-export async function organizationConversation(me: string, id: string, conversationId: string): Promise<GrantConversationView> {
-  return (
-    await accountFetch<{ conversation: GrantConversationView }>(`/grant-conversations/${pathSegment(conversationId)}`, {
-      actingUser: me,
-      actingOrganization: id,
-    })
-  ).conversation;
-}
-
-export async function organizationStartConversation(me: string, id: string, message: string): Promise<GrantSentMessageView> {
-  return (
-    await accountFetch<{ conversation: GrantSentMessageView }>("/grant-conversations", {
-      method: "POST",
-      body: { message },
-      actingUser: me,
-      actingOrganization: id,
-    })
-  ).conversation;
-}
-
-export async function organizationContinueConversation(me: string, id: string, conversationId: string, message: string): Promise<GrantSentMessageView> {
-  return (
-    await accountFetch<{ conversation: GrantSentMessageView }>(`/grant-conversations/${pathSegment(conversationId)}/messages`, {
-      method: "POST",
-      body: { message },
-      actingUser: me,
-      actingOrganization: id,
-    })
-  ).conversation;
-}
-
-export async function organizationFundConversation(
+export async function grantPermission(
   me: string,
   id: string,
-  conversationId: string,
-  budgetOwls: number,
-  acknowledgeWarnings: boolean
-): Promise<{ grant_id: string }> {
-  return accountFetch(`/grant-conversations/${pathSegment(conversationId)}/fund`, {
-    method: "POST",
-    body: { budget_owls: budgetOwls, ...(acknowledgeWarnings ? { acknowledge_warnings: true } : {}) },
-    actingUser: me,
-    actingOrganization: id,
-  });
+  grant: { permission: OrganizationPermission; account_id?: string; deployment_id?: string }
+): Promise<GrantRow[]> {
+  return (await accountFetch<{ grants: GrantRow[] }>(`${org(id)}/grants`, { method: "POST", body: grant, actingUser: me })).grants;
+}
+
+export async function withdrawGrant(me: string, id: string, grantId: string): Promise<GrantRow[]> {
+  return (await accountFetch<{ grants: GrantRow[] }>(`${org(id)}/grants/${pathSegment(grantId)}`, { method: "DELETE", actingUser: me })).grants;
 }
 
 // ---- connected deployments ----

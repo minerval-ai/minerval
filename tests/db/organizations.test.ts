@@ -123,6 +123,17 @@ describe("making an organization", () => {
     expect(actingAs.json().code).toBe("ORGANIZATION_NOT_ACTABLE");
   });
 
+  it("is given no owls: the free tier is a person's", async () => {
+    const dana = await signIn("dana");
+    const org = await makeOrganization(dana);
+    // Reading its balance is what lands a person's free grants; it lands none here.
+    const me = await as(dana, { url: "/users/me", organization: org });
+    expect(me.statusCode, me.body).toBe(200);
+    expect(me.json().entitlement.owl_balance).toBe(0);
+    const entries = await rawQuery<{ reason: string }>(`SELECT reason FROM owl_ledger WHERE user_id = $1`, [org]);
+    expect(entries).toEqual([]);
+  });
+
   it("is shown to its members and is not there for anyone else", async () => {
     const dana = await signIn("dana");
     const stranger = await signIn("stranger");

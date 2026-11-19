@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Mark } from "./Mark";
 import { THEME_SCRIPT } from "./theme";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { ActingAsProvider, ActingChip } from "@/components/account/ActingAs";
 import { MembersGate } from "@/components/MembersGate";
 import { membersOnly } from "@/lib/members";
 import "./globals.css";
@@ -33,6 +34,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </body>
       ) : (
       <body>
+        {/* Who the signed-in person is acting as: themselves, or an organization
+            they may act for, asked after the page draws (docs/organizations.md,
+            "Acting as the organization"). */}
+        <ActingAsProvider>
         <header className="masthead">
           <div className="masthead-inner">
             <Link href="/" className="wordmark plain">
@@ -52,6 +57,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link className="wide-only" href="/about">about</Link>
               <Link href="/account">account</Link>
             </nav>
+            <ActingChip />
             <ThemeToggle />
           </div>
         </header>
@@ -86,6 +92,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </nav>
           </div>
         </footer>
+        </ActingAsProvider>
       </body>
       )}
     </html>

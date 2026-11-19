@@ -1,5 +1,6 @@
 "use client";
 
+import { ActingLine } from "@/components/account/ActingAs";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -833,6 +834,7 @@ export function AssistantConversation({
                 aria-label="Your message"
                 autoFocus
               />
+              <ActingLine permission={null} ownWhy="the Assistant acts for the person for now; acting for an organization comes next." />
               <div className="ask-composer-row">
                 {offered.length > 1 ? (
                   <select

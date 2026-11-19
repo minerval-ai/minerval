@@ -2,15 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "../../../../auth";
-import {
-  AccountApiError,
-  fetchAccount,
-  type GrantConversationSummary,
-  type GrantConversationView,
-  type GrantView,
-  type OwlLedgerEntry,
-  type OwlPack,
-} from "../../../../lib/account-api";
+import { AccountApiError, fetchAccount, type GrantView, type OwlLedgerEntry, type OwlPack } from "../../../../lib/account-api";
 import {
   getOrganization,
   listDeployments,
@@ -18,12 +10,12 @@ import {
   listLog,
   listMembers,
   listOldKeys,
+  listOrganizationGrants,
   organizationAccount,
-  organizationConversation,
-  organizationConversations,
   organizationLedger,
   organizationMandates,
   type DeploymentView,
+  type GrantRow,
   type InvitationView,
   type LogEntry,
   type MemberView,
@@ -31,58 +23,60 @@ import {
   type OrganizationView,
 } from "../../../../lib/organizations-api";
 import {
-  Banner,
-  ButtonLink,
-  Card,
-  Drawer,
-  Empty,
-  Pill,
-  Section,
-  Stat,
-  Stats,
-  Table,
-  Tabs,
-  WorkHead,
-  WorkPage,
-  owls,
-  plural,
-  shortDay,
-  shortWhen,
-} from "../../../../components/work/ui";
-import { WorkForm } from "../../../../components/work/WorkForm";
+  DEPLOYMENT_GRANTS,
+  MEMBER_PERMISSIONS,
+  PERMISSION_WORDS,
+  type OrganizationPermission,
+} from "../../../../lib/organization-permissions";
+import { actingOrganization } from "../../../../lib/acting-as";
+import { dateish, owls } from "../../../../lib/account-format";
+import { ActionForm } from "../../../../components/admin/ActionForm";
+import { MastheadHeight } from "@/components/MastheadHeight";
+import { PageHead } from "@/components/PageHead";
+import { switchActingAction } from "../../acting-actions";
 import {
-  addToMandateAction,
   buyOwlsAction,
   cancelInvitationAction,
-  continueMandateAction,
-  fundClaimAction,
-  fundMandateAction,
+  grantAction,
   inviteAction,
   removeMemberAction,
   renameAction,
   revokeOldKeyAction,
   setRoleAction,
-  startMandateAction,
+  withdrawGrantAction,
 } from "../actions";
 
 export const metadata: Metadata = { title: "Organization · Minerval" };
 export const dynamic = "force-dynamic";
 
-// One organization (docs/organizations.md, "The organization's pages"). Its
-// members read every tab but the two that act with its money; its admins
-// change it and act for it, from their own session, as themselves.
+// One organization (docs/organizations.md, "The organization's pages"): for
+// running it, drawn as the rest of the account is. Who is in it, what each
+// member and deployment may do as it, its deployments, its money and its
+// record. Acting as it on the public graph is done on the public graph's own
+// pages, after switching to it (lib/acting-as.ts); nothing here acts there.
 
-type Tab = "overview" | "members" | "deployments" | "acts" | "billing" | "log";
-const TABS: Tab[] = ["overview", "members", "deployments", "acts", "billing", "log"];
-const ADMIN_TABS: ReadonlySet<Tab> = new Set(["acts", "billing"]);
+type Tab = "overview" | "members" | "deployments" | "activity" | "billing" | "log";
+const TABS: Tab[] = ["overview", "members", "deployments", "activity", "billing", "log"];
+const TAB_WORDS: Record<Tab, string> = {
+  overview: "Overview",
+  members: "Members",
+  deployments: "Deployments",
+  activity: "Activity",
+  billing: "Billing",
+  log: "Log",
+};
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** A log entry in words. */
-function logLine(e: LogEntry, names: Map<string, string>): string {
+function logLine(e: LogEntry, names: Map<string, string>, deployments: Map<string, string>): string {
   const who = (id: unknown) => (typeof id === "string" ? names.get(id) ?? "someone" : "someone");
+  const grantee = (d: Record<string, unknown>) =>
+    typeof d.deployment_id === "string" ? `the deployment ${deployments.get(d.deployment_id) ?? ""}`.trim() : who(d.account_id);
   const d = e.detail;
   switch (e.kind) {
     case "created":
-      return `made the organization`;
+      return "made the organization";
     case "renamed":
       return `renamed it from ${String(d.from)} to ${String(d.to)}`;
     case "invited":
@@ -97,6 +91,12 @@ function logLine(e: LogEntry, names: Map<string, string>): string {
       return `removed ${who(d.account_id)}`;
     case "left":
       return "left";
+    case "granted":
+      return `gave ${grantee(d)} ${String(d.permission)}`;
+    case "withdrew":
+      return `withdrew ${String(d.permission)} from ${grantee(d)}`;
+    case "grants_withdrawn":
+      return `withdrew what ${who(d.account_id)} held (${Array.isArray(d.permissions) ? (d.permissions as string[]).join(", ") : ""})`;
     case "admin_added_by_operator":
       return `made ${who(d.account_id)} an admin, with the operator key`;
     case "converted":
@@ -105,10 +105,12 @@ function logLine(e: LogEntry, names: Map<string, string>): string {
       return `revoked the old key ${String(d.key_prefix)}…`;
     case "deployment_approved":
       return `approved the deployment ${String(d.name)}, with ${Array.isArray(d.grants) ? (d.grants as string[]).join(", ") : "its grants"}`;
+    case "deployment_disconnected":
+      return `the deployment ${String(d.name)} disconnected`;
     case "acted":
-      return `acted for the organization: ${String(d.method)} ${String(d.route)} (${String(d.status)})`;
+      return `acted as the organization: ${String(d.method)} ${String(d.route)} (${String(d.status)})`;
     default:
-      return e.kind;
+      return e.kind.replace(/_/g, " ");
   }
 }
 
@@ -117,10 +119,10 @@ export default async function OrganizationPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string; drawer?: string; conversation?: string }>;
+  searchParams: Promise<{ tab?: string }>;
 }) {
   const { id } = await params;
-  const { tab: askedTab, drawer, conversation: conversationId } = await searchParams;
+  const { tab: askedTab } = await searchParams;
   const session = await auth();
   if (!session?.externalId) redirect("/signin");
   const me = session.externalId;
@@ -133,581 +135,604 @@ export default async function OrganizationPage({
     throw err;
   }
   const admin = org.role === "admin";
-  const wanted = (TABS as string[]).includes(askedTab ?? "") ? (askedTab as Tab) : "overview";
-  const tab: Tab = ADMIN_TABS.has(wanted) && !admin ? "overview" : wanted;
+  const mine = org.permissions ?? [];
+  const mayBuy = admin || mine.includes("buy");
+  const mayAct = admin || mine.length > 0;
+  const tabs = TABS.filter((t) => t !== "billing" || mayBuy);
+  const tab: Tab = (tabs as string[]).includes(askedTab ?? "") ? (askedTab as Tab) : "overview";
   const base = `/account/organizations/${id}`;
-  const here = (t: Tab, extra = "") => `${base}?tab=${t}${extra}`;
+  const here = (t: Tab) => (t === "overview" ? base : `${base}?tab=${t}`);
 
-  const [myId, members, invitations, oldKeys, log, account] = await Promise.all([
+  const [myId, members, invitations, oldKeys, deployments, log, account, acting] = await Promise.all([
     fetchAccount(me).then((a) => a.user.id, () => null),
     listMembers(me, id).catch(() => [] as MemberView[]),
     listInvitations(me, id).catch(() => [] as InvitationView[]),
     listOldKeys(me, id).catch(() => [] as OldKeyView[]),
-    tab === "log" || tab === "overview" ? listLog(me, id, tab === "log" ? 200 : 6).catch(() => [] as LogEntry[]) : Promise.resolve([] as LogEntry[]),
-    admin ? organizationAccount(me, id).catch(() => null) : Promise.resolve(null),
+    listDeployments(me, id).catch(() => [] as DeploymentView[]),
+    tab === "log" || tab === "overview" || tab === "activity"
+      ? listLog(me, id, tab === "overview" ? 6 : 200).catch(() => [] as LogEntry[])
+      : Promise.resolve([] as LogEntry[]),
+    organizationAccount(me, id).catch(() => null),
+    actingOrganization(),
   ]);
-  const [mandates, ledger, deployments, conversations, conversation] = await Promise.all([
-    admin && tab === "acts" ? organizationMandates(me, id).catch(() => [] as GrantView[]) : Promise.resolve([] as GrantView[]),
-    admin && tab === "billing" ? organizationLedger(me, id, 100).catch(() => [] as OwlLedgerEntry[]) : Promise.resolve([] as OwlLedgerEntry[]),
-    tab === "deployments" || tab === "overview" ? listDeployments(me, id).catch(() => [] as DeploymentView[]) : Promise.resolve([] as DeploymentView[]),
-    admin && tab === "acts" ? organizationConversations(me, id).catch(() => [] as GrantConversationSummary[]) : Promise.resolve([] as GrantConversationSummary[]),
-    admin && tab === "acts" && conversationId
-      ? organizationConversation(me, id, conversationId).catch(() => null as GrantConversationView | null)
-      : Promise.resolve(null as GrantConversationView | null),
+  const [mandates, ledger, grants] = await Promise.all([
+    tab === "activity" || tab === "overview" ? organizationMandates(me, id).catch(() => [] as GrantView[]) : Promise.resolve([] as GrantView[]),
+    tab === "billing" && admin ? organizationLedger(me, id, 100).catch(() => [] as OwlLedgerEntry[]) : Promise.resolve([] as OwlLedgerEntry[]),
+    tab === "deployments" ? listOrganizationGrants(me, id).catch(() => [] as GrantRow[]) : Promise.resolve([] as GrantRow[]),
   ]);
-  const liveDeployments = deployments.filter((d) => !d.retired_at);
-  const names = new Map(members.map((m) => [m.account_id, m.display_name]));
-  const admins = members.filter((m) => m.role === "admin").length;
-  const openInvitations = invitations.filter((i) => i.state === "open");
-  const balance = account?.entitlement.owl_balance;
 
-  const tabs = [
-    { key: "overview", label: "Overview", href: here("overview") },
-    { key: "members", label: "Members", href: here("members"), count: members.length },
-    { key: "deployments", label: "Deployments", href: here("deployments"), count: liveDeployments.length },
-    ...(admin
-      ? [
-          { key: "acts", label: "Public acts", href: here("acts") },
-          { key: "billing", label: "Billing", href: here("billing") },
-        ]
-      : []),
-    { key: "log", label: "Log", href: here("log") },
-  ];
+  const live = deployments.filter((d) => !d.retired_at);
+  const names = new Map(members.map((m) => [m.account_id, m.display_name]));
+  const deploymentNames = new Map(deployments.map((d) => [d.id, d.name]));
+  const balance = account?.entitlement.owl_balance;
+  const actingHere = acting?.id === id;
+  const openInvitations = invitations.filter((i) => i.state === "open");
 
   return (
-    <WorkPage>
-      <WorkHead
+    <div className="account-home org-home">
+      <MastheadHeight />
+      <PageHead
+        back={{ href: "/account/organizations", label: "Your organizations" }}
+        kicker="Organization"
         title={org.name}
-        sub={`Organization · you are ${admin ? "an admin" : "a member"}`}
-        crumbs={[
-          { href: "/account", label: "Account" },
-          { href: "/account/organizations", label: "Organizations" },
-        ]}
-        actions={
+        actions={<Link href={`/contributors/${id}`}>public page</Link>}
+        meta={
           <>
-            <ButtonLink href={`/contributors/${id}`}>Public page</ButtonLink>
-            {admin && (
-              <ButtonLink href={here("billing")} primary>
-                Buy owls
-              </ButtonLink>
-            )}
+            You are {admin ? "an admin" : "a member"} · {plural(members.length, "member")} · {plural(live.length, "deployment")} connected · made{" "}
+            {dateish(org.created_at)}
           </>
         }
       />
-      <Tabs tabs={tabs} current={tab} />
+
+      <ActingAsBox org={org} mayAct={mayAct} actingHere={actingHere} admin={admin} />
+
+      <nav className="acct-nav" aria-label="Organization">
+        {tabs.map((t) => (
+          <Link key={t} href={here(t)} aria-current={t === tab ? "page" : undefined} className={t === tab ? "org-tab-current" : undefined}>
+            {TAB_WORDS[t]}
+          </Link>
+        ))}
+      </nav>
 
       {tab === "overview" && (
         <>
-          <Stats>
-            <Stat k="Public owls" v={balance === undefined ? "—" : owls(balance)} s={admin ? "Bought on minerval.ai" : "Admins see the balance"} />
-            <Stat k="Members" v={members.length} s={`${plural(admins, "admin")} · ${plural(openInvitations.length, "invitation")} open`} />
-            <Stat k="Deployments" v={liveDeployments.length} s={liveDeployments.length ? "Connected" : "None connected"} />
-            <Stat k="Old keys still live" v={oldKeys.length} s={oldKeys.length ? "From before it was an organization" : "None"} />
-          </Stats>
+          <section className="acct-figures" aria-label="Summary">
+            <div className="acct-figure">
+              <div className="sc">Balance</div>
+              <p className="acct-figure-value">{balance === undefined ? "—" : `${owls(balance)} owls`}</p>
+              <p className="acct-figure-note">The organization&rsquo;s own, apart from any member&rsquo;s.</p>
+            </div>
+            <div className="acct-figure">
+              <div className="sc">Members</div>
+              <p className="acct-figure-value">{members.length}</p>
+              <p className="acct-figure-note">
+                {plural(members.filter((m) => m.role === "admin").length, "admin")} · {plural(openInvitations.length, "invitation")} open
+              </p>
+            </div>
+            <div className="acct-figure">
+              <div className="sc">Deployments</div>
+              <p className="acct-figure-value">{live.length}</p>
+              <p className="acct-figure-note">{live.length ? "Connected, each under its own grants" : "None connected"}</p>
+            </div>
+            <div className="acct-figure">
+              <div className="sc">Mandates</div>
+              <p className="acct-figure-value">{mandates.length}</p>
+              <p className="acct-figure-note">Funded in its name</p>
+            </div>
+          </section>
+
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>What you may do as {org.name}</h2>
+            </div>
+            <PermissionList held={admin ? [...MEMBER_PERMISSIONS] : mine} all={[...MEMBER_PERMISSIONS]} />
+            <p className="acct-note">
+              {admin
+                ? "As an admin you hold every permission a member can be given, and you give them to others on the Members tab."
+                : "An admin gives these on the Members tab. What you do as the organization is on its log under your name."}
+            </p>
+          </section>
+
           {oldKeys.length > 0 && (
-            <Section title="Old keys still live" aside="They can do anything the organization can. Revoke each once nothing uses it">
-              <Table label="Old keys">
-                <thead>
-                  <tr>
-                    <th>Key</th>
-                    <th>Name</th>
-                    <th>Made</th>
-                    <th>Last used</th>
-                    {admin && <th aria-label="Actions" />}
-                  </tr>
-                </thead>
-                <tbody>
-                  {oldKeys.map((k) => (
-                    <tr key={k.id}>
-                      <td className="w-mono">{k.key_prefix}…</td>
-                      <td>{k.name}</td>
-                      <td>{shortDay(k.created_at)}</td>
-                      <td>{k.last_used_at ? shortWhen(k.last_used_at) : "Never"}</td>
-                      {admin && (
-                        <td>
-                          <WorkForm action={revokeOldKeyAction} submit="Revoke" danger inline>
-                            <input type="hidden" name="organization_id" value={id} />
-                            <input type="hidden" name="key_id" value={k.id} />
-                          </WorkForm>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </Section>
-          )}
-          {admin && (
-            <Section title="Name">
-              <Card>
-                <WorkForm action={renameAction} submit="Rename">
-                  <input type="hidden" name="organization_id" value={id} />
-                  <div className="w-field">
-                    <label htmlFor="org-rename">Name</label>
-                    <input id="org-rename" className="w-input" name="name" defaultValue={org.name} required maxLength={120} />
-                    <span className="w-help">Public, and proves nothing on its own.</span>
+            <section className="acct-section">
+              <div className="acct-head">
+                <h2>Old keys still live</h2>
+                <span className="acct-note">They can do anything the organization can. Revoke each once nothing uses it.</span>
+              </div>
+              {oldKeys.map((k) => (
+                <div key={k.id} className="acct-line">
+                  <div>
+                    <code>{k.key_prefix}…</code> {k.name}
+                    <span className="acct-detail">
+                      made {dateish(k.created_at)} · {k.last_used_at ? `last used ${dateish(k.last_used_at)}` : "never used"}
+                    </span>
                   </div>
-                </WorkForm>
-              </Card>
-            </Section>
+                  {admin && (
+                    <ActionForm action={revokeOldKeyAction} submit="Revoke" inline danger>
+                      <input type="hidden" name="organization_id" value={id} />
+                      <input type="hidden" name="key_id" value={k.id} />
+                    </ActionForm>
+                  )}
+                </div>
+              ))}
+            </section>
           )}
-          <Section title="Recent" actions={<Link href={here("log")}>Whole log</Link>}>
-            <LogTable log={log} names={names} />
-          </Section>
+
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Recent</h2>
+              <Link className="acct-note" href={here("log")}>
+                The whole log →
+              </Link>
+            </div>
+            <LogLines log={log} names={names} deployments={deploymentNames} />
+          </section>
+
+          {admin && (
+            <section className="acct-section">
+              <div className="acct-head">
+                <h2>Name</h2>
+              </div>
+              <ActionForm action={renameAction} submit="Rename">
+                <input type="hidden" name="organization_id" value={id} />
+                <label>
+                  Name
+                  <input name="name" defaultValue={org.name} required maxLength={120} />
+                  <small>Public, and proves nothing on its own: two organizations can share a name.</small>
+                </label>
+              </ActionForm>
+            </section>
+          )}
         </>
       )}
 
       {tab === "members" && (
         <>
-          <Section
-            title="Members"
-            aside="An organization always has an admin"
-            actions={admin ? <ButtonLink href={here("members", "&drawer=invite")} primary>Invite</ButtonLink> : undefined}
-          >
-            <Table label="Members">
-              <thead>
-                <tr>
-                  <th>Person</th>
-                  <th>Role</th>
-                  <th>Added</th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {members.map((m) => {
-                  const self = m.account_id === myId;
-                  return (
-                    <tr key={m.account_id}>
-                      <td>
-                        <Link href={`/contributors/${m.account_id}`}>{m.display_name}</Link>
-                        {self && <span className="w-muted"> (you)</span>}
-                      </td>
-                      <td>
-                        <Pill tone={m.role === "admin" ? "info" : "neu"}>{m.role === "admin" ? "Admin" : "Member"}</Pill>
-                      </td>
-                      <td>
-                        {shortDay(m.added_at)}
-                        {m.added_by ? ` by ${m.added_by}` : ""}
-                      </td>
-                      <td>
-                        <div className="w-row">
-                          {admin && (
-                            <WorkForm action={setRoleAction} submit={m.role === "admin" ? "Make member" : "Make admin"} inline>
-                              <input type="hidden" name="organization_id" value={id} />
-                              <input type="hidden" name="account_id" value={m.account_id} />
-                              <input type="hidden" name="role" value={m.role === "admin" ? "member" : "admin"} />
-                            </WorkForm>
-                          )}
-                          {admin && (
-                            <WorkForm action={removeMemberAction} submit="Remove" danger inline>
-                              <input type="hidden" name="organization_id" value={id} />
-                              <input type="hidden" name="account_id" value={m.account_id} />
-                            </WorkForm>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </Section>
-          <Section title="Invitations" aside="Single use, for seven days">
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Members</h2>
+              <span className="acct-note">An organization always has an admin. An admin holds every permission.</span>
+            </div>
+            {members.map((m) => (
+              <MemberLine key={m.account_id} m={m} self={m.account_id === myId} admin={admin} organizationId={id} />
+            ))}
+          </section>
+
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Invitations</h2>
+              <span className="acct-note">A link for one person, open for seven days</span>
+            </div>
             {invitations.length === 0 ? (
-              <Empty>No invitations made.</Empty>
+              <p className="acct-prose acct-quiet">No invitations made.</p>
             ) : (
-              <Table label="Invitations">
-                <thead>
-                  <tr>
-                    <th>Role</th>
-                    <th>Made</th>
-                    <th>State</th>
-                    <th aria-label="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {invitations.map((i) => (
-                    <tr key={i.id}>
-                      <td>{i.role === "admin" ? "Admin" : "Member"}</td>
-                      <td>
-                        {shortDay(i.made_at)}
-                        {i.made_by ? ` by ${i.made_by}` : ""}
-                      </td>
-                      <td>
-                        {i.state === "open" && <Pill tone="info">Open until {shortDay(i.expires_at)}</Pill>}
-                        {i.state === "accepted" && <Pill tone="ok">Accepted{i.accepted_by ? ` by ${i.accepted_by}` : ""}</Pill>}
-                        {i.state === "cancelled" && <Pill>Cancelled</Pill>}
-                        {i.state === "expired" && <Pill>Expired</Pill>}
-                      </td>
-                      <td>
-                        {admin && i.state === "open" && (
-                          <WorkForm action={cancelInvitationAction} submit="Cancel" inline>
-                            <input type="hidden" name="organization_id" value={id} />
-                            <input type="hidden" name="invitation_id" value={i.id} />
-                          </WorkForm>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
+              invitations.map((i) => (
+                <div key={i.id} className="acct-line">
+                  <div>
+                    As {i.role}
+                    <span className="acct-detail">
+                      made {dateish(i.made_at)}
+                      {i.made_by ? ` by ${i.made_by}` : ""} ·{" "}
+                      {i.state === "open"
+                        ? `open until ${dateish(i.expires_at)}`
+                        : i.state === "accepted"
+                          ? `accepted${i.accepted_by ? ` by ${i.accepted_by}` : ""}`
+                          : i.state}
+                    </span>
+                  </div>
+                  {admin && i.state === "open" && (
+                    <ActionForm action={cancelInvitationAction} submit="Cancel" inline>
+                      <input type="hidden" name="organization_id" value={id} />
+                      <input type="hidden" name="invitation_id" value={i.id} />
+                    </ActionForm>
+                  )}
+                </div>
+              ))
             )}
-          </Section>
-          <Section title="Leaving">
-            <WorkForm action={removeMemberAction} submit={`Leave ${org.name}`} danger>
+            {admin && (
+              <ActionForm action={inviteAction} submit="Make an invitation link">
+                <input type="hidden" name="organization_id" value={id} />
+                <fieldset className="admin-fieldset">
+                  <legend>Invite someone as</legend>
+                  <label className="admin-check">
+                    <input type="radio" name="role" value="member" defaultChecked /> a member, who reads everything here and does as the organization
+                    what you then give them
+                  </label>
+                  <label className="admin-check">
+                    <input type="radio" name="role" value="admin" /> an admin, who also runs the organization and holds every permission
+                  </label>
+                </fieldset>
+                <small className="acct-note">The link is shown once. The person opens it signed in as themselves and accepts.</small>
+              </ActionForm>
+            )}
+          </section>
+
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Leaving</h2>
+            </div>
+            <ActionForm action={removeMemberAction} submit={`Leave ${org.name}`} danger inline>
               <input type="hidden" name="organization_id" value={id} />
               <input type="hidden" name="account_id" value={myId ?? ""} />
               <input type="hidden" name="leaving" value="1" />
-            </WorkForm>
-          </Section>
-          {admin && drawer === "invite" && (
-            <Drawer title={`Invite to ${org.name}`} close={here("members")}>
-              <p className="w-muted" style={{ marginTop: 0 }}>
-                Make a link and send it however you like. The person opens it signed in as themselves and accepts. Nobody is added without
-                accepting.
-              </p>
-              <WorkForm action={inviteAction} submit="Make link" primary lock="Shown once">
-                <input type="hidden" name="organization_id" value={id} />
-                <div className="w-options" role="radiogroup" aria-label="Role">
-                  <label className="w-option">
-                    <input type="radio" name="role" value="member" defaultChecked />
-                    <div>
-                      <b>Member</b>
-                      <span>Sees the organization, its members and its log.</span>
-                    </div>
-                  </label>
-                  <label className="w-option">
-                    <input type="radio" name="role" value="admin" />
-                    <div>
-                      <b>Admin</b>
-                      <span>Also changes members and invitations, buys owls, and spends them for the organization.</span>
-                    </div>
-                  </label>
-                </div>
-              </WorkForm>
-            </Drawer>
-          )}
+            </ActionForm>
+          </section>
         </>
       )}
 
       {tab === "deployments" && (
         <>
-          <Section title="Deployments" aside="Private deployments that act for the organization with their own keys">
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Deployments</h2>
+              <span className="acct-note">Private deployments that act as the organization with their own keys, each under its own grants</span>
+            </div>
             {deployments.length === 0 ? (
-              <Empty>
-                None connected. On a deployment, an administrator presses Connect to minerval.ai on its public-graph Overview; it shows a code
-                and a link, which an admin opens here.
-              </Empty>
+              <div className="acct-prose acct-measure">
+                <p>
+                  None connected. A private deployment holds the organization&rsquo;s own material and its private graph, publishes
+                  through its gate, and follows the public graph.
+                </p>
+                <p>
+                  To connect one, an administrator of it presses <b>Connect to minerval.ai</b> on its Public graph overview, and an
+                  admin here approves. To run one, see <Link href="/docs/self-hosting">running a deployment</Link>.
+                </p>
+              </div>
             ) : (
-              <Table label="Deployments">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Runs on</th>
-                    <th>Grants</th>
-                    <th>Approved</th>
-                    <th>Last write</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deployments.map((d) => (
-                    <tr key={d.id}>
-                      <td>
-                        <b>{d.name}</b>
-                        <div className="w-mono w-muted">{d.key_id.slice(0, 8)}</div>
-                        {d.retired_at && <Pill>Retired {shortDay(d.retired_at)}</Pill>}
-                      </td>
-                      <td>{d.hosting_words} <span className="w-muted">(stated)</span></td>
-                      <td>
-                        <div className="w-row" style={{ flexWrap: "wrap", gap: 4 }}>
-                          {d.grants.map((g) => (
-                            <Pill key={g}>{g}</Pill>
-                          ))}
-                        </div>
-                      </td>
-                      <td>
-                        {shortDay(d.approved_at)}
-                        {d.approved_by ? ` by ${d.approved_by}` : ""}
-                      </td>
-                      <td>{d.last_write_at ? shortWhen(d.last_write_at) : "None"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
+              deployments.map((d) => (
+                <DeploymentBlock key={d.id} d={d} grants={grants.filter((g) => g.deployment_id === d.id)} admin={admin} organizationId={id} />
+              ))
             )}
-          </Section>
-          {liveDeployments.some((d) => d.recent_writes.length > 0) && (
-            <Section title="Recent writes" aside="Reads are not recorded: the public graph keeps no record of what a deployment looks at">
-              <Table label="Recent writes">
-                <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>Deployment</th>
-                    <th>Route</th>
-                    <th>Answer</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {liveDeployments
-                    .flatMap((d) => d.recent_writes.map((w) => ({ ...w, deployment: d.name })))
-                    .sort((a, b) => b.at.localeCompare(a.at))
-                    .slice(0, 30)
-                    .map((w, i) => (
-                      <tr key={i}>
-                        <td>{shortWhen(w.at)}</td>
-                        <td>{w.deployment}</td>
-                        <td className="w-mono">
-                          {w.method} {w.route}
-                        </td>
-                        <td>
-                          <Pill tone={w.status < 400 ? "ok" : "warn"}>{w.status}</Pill>
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </Table>
-            </Section>
-          )}
+          </section>
         </>
       )}
 
-      {tab === "acts" && admin && (
-        <>
-          <Banner>
-            You act as {org.name} here. The public record shows {org.name}; the organization&apos;s log shows you. Balance:{" "}
-            {balance === undefined ? "unknown" : `${owls(balance)} public owls`}.
-          </Banner>
-          <Section title="Public mandates" aside={`Funded by ${org.name}`}>
-            {mandates.length === 0 ? (
-              <Empty>None yet. A mandate is opened in a conversation with the public Grantmaker.</Empty>
-            ) : (
-              <Table label="Mandates">
-                <thead>
-                  <tr>
-                    <th>Mandate</th>
-                    <th>State</th>
-                    <th>Budget</th>
-                    <th>Spent</th>
-                    <th>Add owls</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mandates.map((g) => (
-                    <tr key={g.id}>
-                      <td>
-                        <Link href={`/mandates/${g.id}`}>{g.name}</Link>
-                      </td>
-                      <td>
-                        <Pill>{g.status}</Pill>
-                      </td>
-                      <td>{owls(g.budget_owls)}</td>
-                      <td>{owls(g.spent_owls)}</td>
-                      <td>
-                        <WorkForm action={addToMandateAction} submit="Add" inline>
-                          <input type="hidden" name="organization_id" value={id} />
-                          <input type="hidden" name="mandate_id" value={g.id} />
-                          <input className="w-input w-narrow" name="owls" inputMode="decimal" aria-label="Owls to add" required />
-                        </WorkForm>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            )}
-          </Section>
-          {conversation ? (
-            <Section
-              title={conversation.mandate?.title ?? "A mandate in conversation"}
-              aside={`With the public Grantmaker · ${conversation.status}`}
-              actions={<Link href={here("acts")}>All conversations</Link>}
-            >
-              <Card>
-                <div className="w-col" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {conversation.messages.map((m, i) => (
-                    <div key={i}>
-                      <div className="w-muted" style={{ fontSize: 12 }}>
-                        {m.role === "user" ? org.name : "The Grantmaker"} · {shortWhen(m.at)}
-                      </div>
-                      <div style={{ whiteSpace: "pre-wrap" }}>{m.content}</div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-              {conversation.status !== "funded" && conversation.status !== "declined" && (
-                <WorkForm action={continueMandateAction} submit="Send">
-                  <input type="hidden" name="organization_id" value={id} />
-                  <input type="hidden" name="conversation_id" value={conversation.id} />
-                  <div className="w-field">
-                    <label htmlFor="mandate-reply">Your reply, as {org.name}</label>
-                    <textarea id="mandate-reply" className="w-input" name="message" required />
-                  </div>
-                </WorkForm>
-              )}
-              {conversation.mandate && conversation.status === "proposed" && (
-                <Card title="Fund it">
-                  <p className="w-muted" style={{ marginTop: 0 }}>
-                    {conversation.mandate.objective} Expected cost: {owls(conversation.mandate.expected_cost_owls)} owls.
-                  </p>
-                  {(conversation.mandate.warnings ?? []).map((w) => (
-                    <Banner key={w.id} tone="warn">
-                      {w.text}
-                    </Banner>
-                  ))}
-                  <WorkForm action={fundMandateAction} submit={`Fund from ${org.name}`} primary lock="Escrows the organization's owls">
-                    <input type="hidden" name="organization_id" value={id} />
-                    <input type="hidden" name="conversation_id" value={conversation.id} />
-                    <div className="w-field">
-                      <label htmlFor="mandate-budget">Budget in owls</label>
-                      <input
-                        id="mandate-budget"
-                        className="w-input w-narrow"
-                        name="owls"
-                        inputMode="decimal"
-                        required
-                        defaultValue={String(Math.ceil(conversation.mandate.expected_cost_owls))}
-                      />
-                    </div>
-                    {(conversation.mandate.warnings ?? []).length > 0 && (
-                      <label className="w-check">
-                        <input type="checkbox" name="acknowledge" value="1" required />
-                        <span>I have read the warnings above.</span>
-                      </label>
-                    )}
-                  </WorkForm>
-                </Card>
-              )}
-            </Section>
-          ) : (
-            <Section title="Open a public mandate" aside="In conversation with the public Grantmaker, which designs and quotes it, and may decline">
-              <Card>
-                <WorkForm action={startMandateAction} submit="Start the conversation" primary>
-                  <input type="hidden" name="organization_id" value={id} />
-                  <div className="w-field">
-                    <label htmlFor="mandate-message">What it is for</label>
-                    <textarea id="mandate-message" className="w-input" name="message" required />
-                    <span className="w-help">Sent as {org.name}, as you write it.</span>
-                  </div>
-                </WorkForm>
-              </Card>
-              {conversations.length > 0 && (
-                <Table label="Conversations">
-                  <thead>
-                    <tr>
-                      <th>Conversation</th>
-                      <th>State</th>
-                      <th>Updated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {conversations.map((c) => (
-                      <tr key={c.id}>
-                        <td>
-                          <Link href={here("acts", `&conversation=${c.id}`)}>{c.title ?? "Untitled draft"}</Link>
-                        </td>
-                        <td>
-                          <Pill>{c.turn.state === "replying" ? "The Grantmaker is writing" : c.status}</Pill>
-                        </td>
-                        <td>{shortWhen(c.updated_at)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-              )}
-            </Section>
-          )}
-          <Section title="Pay for a claim's assessment">
-            <Card>
-              <WorkForm action={fundClaimAction} submit={`Pay from ${org.name}`} primary>
-                <input type="hidden" name="organization_id" value={id} />
-                <div className="w-field">
-                  <label htmlFor="fund-claim">Claim</label>
-                  <input id="fund-claim" className="w-input" name="claim" required placeholder="The claim's address or id" />
-                </div>
-                <div className="w-field">
-                  <label htmlFor="fund-owls">Owls</label>
-                  <input id="fund-owls" className="w-input w-narrow" name="owls" inputMode="decimal" required />
-                </div>
-              </WorkForm>
-            </Card>
-          </Section>
-          <p className="w-muted">
-            Contributing, proposing nodes and publishing pages are not offered here: they are a connected deployment&apos;s work, under its
-            grants. No key, token or Assistant card acts as {org.name}; only an admin in a session.
-          </p>
-        </>
+      {tab === "activity" && (
+        <Activity org={org} mandates={mandates} log={log} deployments={live} names={names} />
       )}
 
-      {tab === "billing" && admin && (
+      {tab === "billing" && mayBuy && (
         <>
-          <Stats>
-            <Stat k="Public owls" v={balance === undefined ? "—" : owls(balance)} />
-          </Stats>
-          <Section title="Buy owls" aside={`For ${org.name}, paid by you through Stripe`}>
-            <div className="w-row" style={{ flexWrap: "wrap", gap: 8 }}>
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Buy owls for {org.name}</h2>
+              <span className="acct-note">Paid by you, through Stripe; they go to the organization&rsquo;s balance, not yours</span>
+            </div>
+            <div className="org-packs">
               {(account?.packs ?? ([] as OwlPack[])).map((p) => (
-                <WorkForm key={p.id} action={buyOwlsAction} submit={`${owls(p.owls)} owls · ${(p.price_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}`} inline>
+                <ActionForm
+                  key={p.id}
+                  action={buyOwlsAction}
+                  submit={`${owls(p.owls)} owls · ${(p.price_cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" })}`}
+                >
                   <input type="hidden" name="organization_id" value={id} />
                   <input type="hidden" name="pack_id" value={p.id} />
-                </WorkForm>
+                </ActionForm>
               ))}
             </div>
-          </Section>
-          <Section title="Owl history">
-            {ledger.length === 0 ? (
-              <Empty>Nothing yet.</Empty>
-            ) : (
-              <Table label="Owl history">
-                <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>What</th>
-                    <th>Owls</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ledger.map((e) => (
-                    <tr key={e.id}>
-                      <td>{shortWhen(e.created_at)}</td>
-                      <td>{e.reason.replace(/_/g, " ")}</td>
-                      <td>{owls(e.amount_micro_usd / 1_000_000)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
-            )}
-          </Section>
+          </section>
+          {admin && (
+            <section className="acct-section">
+              <div className="acct-head">
+                <h2>Owl history</h2>
+                <span className="acct-note">Balance {balance === undefined ? "—" : `${owls(balance)} owls`}</span>
+              </div>
+              {ledger.length === 0 ? (
+                <p className="acct-prose acct-quiet">Nothing yet.</p>
+              ) : (
+                ledger.map((e) => (
+                  <div key={e.id} className="acct-line">
+                    <div>
+                      {e.reason.replace(/_/g, " ")}
+                      <span className="acct-detail">{dateish(e.created_at)}</span>
+                    </div>
+                    <span className="acct-amount">{owls(e.amount_micro_usd / 1_000_000)}</span>
+                  </div>
+                ))
+              )}
+            </section>
+          )}
         </>
       )}
 
       {tab === "log" && (
-        <Section title="Log" aside={`Readable by members of ${org.name} only`}>
-          <LogTable log={log} names={names} />
-        </Section>
+        <section className="acct-section">
+          <div className="acct-head">
+            <h2>Log</h2>
+            <span className="acct-note">Every change and every act in its name. Read by members of {org.name} only.</span>
+          </div>
+          <LogLines log={log} names={names} deployments={deploymentNames} />
+        </section>
       )}
-    </WorkPage>
+    </div>
   );
 }
 
-function LogTable({ log, names }: { log: LogEntry[]; names: Map<string, string> }) {
-  if (log.length === 0) return <Empty>Nothing yet.</Empty>;
+/** The switch, on the organization's own page: act as it, or back as yourself. */
+function ActingAsBox({ org, mayAct, actingHere, admin }: { org: OrganizationView; mayAct: boolean; actingHere: boolean; admin: boolean }) {
+  if (!mayAct) {
+    return (
+      <p className="acct-prose acct-measure org-acting">
+        You hold no permission to act as {org.name} on the public graph. An admin can give you some on the Members tab.
+      </p>
+    );
+  }
   return (
-    <Table label="Log">
-      <thead>
-        <tr>
-          <th>When</th>
-          <th>Who</th>
-          <th>What</th>
-        </tr>
-      </thead>
-      <tbody>
-        {log.map((e) => (
-          <tr key={e.id}>
-            <td>{shortWhen(e.at)}</td>
-            <td>{e.credential === "operator" ? "The operator key" : e.actor?.display_name ?? "A removed account"}</td>
-            <td>{logLine(e, names)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </Table>
+    <form action={switchActingAction} className={`org-acting${actingHere ? " org-acting-on" : ""}`}>
+      <input type="hidden" name="organization_id" value={actingHere ? "" : org.id} />
+      <input type="hidden" name="return_to" value={`/account/organizations/${org.id}`} />
+      <p>
+        {actingHere ? (
+          <>
+            You are acting as <b>{org.name}</b>. Every page of the public graph works as it, with what you may do as it, and the header
+            says so on every page.
+          </>
+        ) : (
+          <>
+            Act as {org.name} on the public graph, with the same pages you use as yourself: contributing, funding, mandates, requests and
+            the rest, {admin ? "with every permission" : "with what you have been given"}. The public record shows {org.name}; its log
+            shows you.
+          </>
+        )}
+      </p>
+      <button type="submit" className="order-button">
+        {actingHere ? "Act as yourself again" : `Act as ${org.name}`}
+      </button>
+    </form>
+  );
+}
+
+function PermissionList({ held, all }: { held: readonly OrganizationPermission[]; all: readonly OrganizationPermission[] }) {
+  return (
+    <ul className="org-permissions">
+      {all.map((p) => (
+        <li key={p} className={held.includes(p) ? "org-held" : "org-not-held"}>
+          <code>{p}</code> <span>{PERMISSION_WORDS[p]}</span>
+          <span className="acct-status">{held.includes(p) ? "yours" : "not given"}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function MemberLine({ m, self, admin, organizationId }: { m: MemberView; self: boolean; admin: boolean; organizationId: string }) {
+  const missing = MEMBER_PERMISSIONS.filter((p) => !m.permissions.includes(p));
+  return (
+    <div className="acct-line org-member">
+      <div>
+        <Link href={`/contributors/${m.account_id}`}>{m.display_name}</Link>
+        {self && <span className="acct-detail">(you)</span>}
+        <span className="acct-detail">
+          {m.role === "admin" ? "admin" : "member"} · added {dateish(m.added_at)}
+          {m.added_by ? ` by ${m.added_by}` : ""}
+        </span>
+        <div className="acct-line-under org-grants">
+          {m.role === "admin" ? (
+            <span className="acct-note">Holds every permission.</span>
+          ) : m.grants.length === 0 ? (
+            <span className="acct-note">May not act as the organization yet.</span>
+          ) : (
+            <GrantChips grants={m.grants} admin={admin} organizationId={organizationId} />
+          )}
+          {admin && m.role !== "admin" && missing.length > 0 && (
+            <GiveForm organizationId={organizationId} field="account_id" grantee={m.account_id} choices={missing} />
+          )}
+        </div>
+      </div>
+      {admin && (
+        <div className="org-member-acts">
+          <ActionForm action={setRoleAction} submit={m.role === "admin" ? "make member" : "make admin"} inline>
+            <input type="hidden" name="organization_id" value={organizationId} />
+            <input type="hidden" name="account_id" value={m.account_id} />
+            <input type="hidden" name="role" value={m.role === "admin" ? "member" : "admin"} />
+          </ActionForm>
+          {!self && (
+            <ActionForm action={removeMemberAction} submit="remove" inline danger>
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <input type="hidden" name="account_id" value={m.account_id} />
+            </ActionForm>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GrantChips({ grants, admin, organizationId }: { grants: GrantRow[]; admin: boolean; organizationId: string }) {
+  return (
+    <ul className="admin-grants org-grant-list">
+      {grants.map((g) => (
+        <li key={g.id}>
+          <code title={PERMISSION_WORDS[g.permission]}>{g.permission}</code>
+          <span className="acct-detail">
+            given {dateish(g.granted_at)}
+            {g.granted_by ? ` by ${g.granted_by}` : ""}
+          </span>
+          {admin && (
+            <ActionForm action={withdrawGrantAction} submit="withdraw" inline danger>
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <input type="hidden" name="grant_id" value={g.id} />
+            </ActionForm>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function GiveForm({
+  organizationId,
+  field,
+  grantee,
+  choices,
+}: {
+  organizationId: string;
+  field: "account_id" | "deployment_id";
+  grantee: string;
+  choices: readonly OrganizationPermission[];
+}) {
+  return (
+    <ActionForm action={grantAction} submit="Give">
+      <input type="hidden" name="organization_id" value={organizationId} />
+      <input type="hidden" name={field} value={grantee} />
+      <label>
+        Give a permission
+        <select name="permission" defaultValue={choices[0]}>
+          {choices.map((p) => (
+            <option key={p} value={p} title={PERMISSION_WORDS[p]}>
+              {p}
+            </option>
+          ))}
+        </select>
+      </label>
+    </ActionForm>
+  );
+}
+
+function DeploymentBlock({
+  d,
+  grants,
+  admin,
+  organizationId,
+}: {
+  d: DeploymentView;
+  grants: GrantRow[];
+  admin: boolean;
+  organizationId: string;
+}) {
+  const missing = DEPLOYMENT_GRANTS.filter((g) => !d.grants.includes(g));
+  return (
+    <div className="acct-job org-deployment">
+      <div className="acct-job-head">
+        <div>
+          <b>{d.name}</b>
+          <span className="acct-detail">
+            {d.hosting_words} (its statement) · key <code>{d.key_id.slice(0, 8)}</code>
+          </span>
+        </div>
+        <span className="acct-status">{d.retired_at ? `retired ${dateish(d.retired_at)}` : d.last_write_at ? `last wrote ${dateish(d.last_write_at)}` : "connected"}</span>
+      </div>
+      <p className="acct-note">
+        Approved {dateish(d.approved_at)}
+        {d.approved_by ? ` by ${d.approved_by}` : ""}.
+      </p>
+      {!d.retired_at && (
+        <>
+          {grants.length === 0 ? (
+            <p className="acct-note">Holds no grant: it can do nothing on the public graph.</p>
+          ) : (
+            <GrantChips grants={grants} admin={admin} organizationId={organizationId} />
+          )}
+          {admin && missing.length > 0 && <GiveForm organizationId={organizationId} field="deployment_id" grantee={d.id} choices={missing} />}
+          {d.recent_writes.length > 0 && (
+            <details className="acct-asTable">
+              <summary>{plural(d.recent_writes.length, "recent write")} · reads are not recorded</summary>
+              {d.recent_writes.slice(0, 30).map((w, i) => (
+                <div key={i} className="acct-line">
+                  <div>
+                    <code>
+                      {w.method} {w.route}
+                    </code>
+                    <span className="acct-detail">{dateish(w.at)}</span>
+                  </div>
+                  <span className="acct-status">{w.status}</span>
+                </div>
+              ))}
+            </details>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function Activity({
+  org,
+  mandates,
+  log,
+  deployments,
+  names,
+}: {
+  org: OrganizationView;
+  mandates: GrantView[];
+  log: LogEntry[];
+  deployments: DeploymentView[];
+  names: Map<string, string>;
+}) {
+  const acts = [
+    ...log
+      .filter((e) => e.kind === "acted")
+      .map((e) => ({
+        at: e.at,
+        what: `${String(e.detail.method)} ${String(e.detail.route)}`,
+        status: Number(e.detail.status),
+        by: e.actor?.display_name ?? names.get(e.actor?.id ?? "") ?? "a former member",
+        how: "on minerval.ai",
+      })),
+    ...deployments.flatMap((d) =>
+      d.recent_writes.map((w) => ({ at: w.at, what: `${w.method} ${w.route}`, status: w.status, by: d.name, how: "through its deployment" }))
+    ),
+  ].sort((a, b) => b.at.localeCompare(a.at));
+  return (
+    <>
+      <section className="acct-section">
+        <div className="acct-head">
+          <h2>Mandates in its name</h2>
+          <span className="acct-note">Funded by {org.name}</span>
+        </div>
+        {mandates.length === 0 ? (
+          <p className="acct-prose acct-quiet">None yet. Act as {org.name} and open one in conversation with the Grantmaker, from Ask.</p>
+        ) : (
+          mandates.map((g) => (
+            <div key={g.id} className="acct-line">
+              <div>
+                <Link href={`/mandates/${g.id}`}>{g.name}</Link>
+                <span className="acct-detail">{g.status.replace(/_/g, " ")}</span>
+              </div>
+              <span className="acct-amount">
+                {owls(g.spent_owls)} of {owls(g.budget_owls)} owls
+              </span>
+            </div>
+          ))
+        )}
+      </section>
+      <section className="acct-section">
+        <div className="acct-head">
+          <h2>Done in its name</h2>
+          <span className="acct-note">By its members on minerval.ai and by its deployments, newest first</span>
+        </div>
+        {acts.length === 0 ? (
+          <p className="acct-prose acct-quiet">Nothing yet.</p>
+        ) : (
+          acts.slice(0, 100).map((a, i) => (
+            <div key={i} className="acct-line">
+              <div>
+                <code>{a.what}</code>
+                <span className="acct-detail">
+                  {a.by}, {a.how} · {dateish(a.at)}
+                </span>
+              </div>
+              <span className={`acct-status${a.status >= 400 ? " acct-status-rejected" : ""}`}>{a.status < 400 ? "done" : `refused (${a.status})`}</span>
+            </div>
+          ))
+        )}
+      </section>
+    </>
+  );
+}
+
+function LogLines({ log, names, deployments }: { log: LogEntry[]; names: Map<string, string>; deployments: Map<string, string> }) {
+  if (log.length === 0) return <p className="acct-prose acct-quiet">Nothing yet.</p>;
+  return (
+    <>
+      {log.map((e) => (
+        <div key={e.id} className="acct-line">
+          <div>
+            {e.credential === "operator" ? "The operator key" : e.actor?.display_name ?? "A removed account"} {logLine(e, names, deployments)}
+          </div>
+          <span className="acct-detail">{dateish(e.at)}</span>
+        </div>
+      ))}
+    </>
   );
 }

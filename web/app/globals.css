@@ -20,6 +20,9 @@
 
   /* — links — */
   --link:       #2a5078;
+  /* acting as an organization (components/account/ActingAs.tsx): a colour
+     nothing else uses, so the header's sign cannot be read as a status */
+  --acting:      #6b3f8f;  --acting-tint: #f1eaf6;
   --link-visited:#5a4a78;
 
   /* — assessment status: muted, serious, never traffic-light — */
@@ -78,6 +81,7 @@
   --rule-heavy: #4a4d50;
 
   --link:       #84b4ea;
+  --acting:      #c39be6;  --acting-tint: #251c2d;
   --link-visited:#b3a2dc;
 
   --st-verified:      #62c08a;  --st-verified-tint:    #15261c;
@@ -225,6 +229,27 @@ code, .mono { font-family: var(--mono); font-size: 0.86em; }
   letter-spacing: 0.02em; color: var(--ink-soft); text-transform: lowercase;
 }
 .masthead nav a:hover { color: var(--link); text-decoration: none; }
+
+/* acting as an organization (components/account/ActingAs.tsx): the header
+   says so on every page, and a form says who it is sent as */
+.acting-chip {
+  display: inline-flex; align-items: center; gap: 0.35rem; align-self: center;
+  padding: 0.12rem 0.25rem 0.12rem 0.55rem; border: 1px solid var(--acting); border-radius: 999px;
+  background: var(--acting-tint); color: var(--acting);
+  font-family: var(--sans); font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+  max-width: 14rem; overflow: hidden; text-overflow: ellipsis;
+}
+.acting-chip a, .acting-chip a:visited { color: var(--acting); }
+.acting-chip .linklike { color: var(--acting); font-size: 0.8rem; padding: 0 0.25rem; text-decoration: none; }
+.acting-line {
+  margin: 0.4rem 0; padding-left: 0.6rem; border-left: 2px solid var(--acting);
+  font-family: var(--sans); font-size: 0.74rem; color: var(--acting);
+}
+.acting-line.acting-blocked { color: var(--ink-soft); }
+.acting-line .linklike { font-size: inherit; }
+@media (max-width: 640px) {
+  .acting-chip { max-width: 8rem; }
+}
 
 /* light/dark switch (components/ThemeToggle.tsx): an icon button at the far
    end of the masthead, showing the theme it switches to */
@@ -1840,6 +1865,38 @@ a.acct-buy:hover { background: var(--ink-soft); text-decoration: none; }
 .acct-pager {
   display: flex; align-items: baseline; justify-content: space-between; gap: 1rem;
   padding-top: 0.8rem; font-family: var(--sans); font-size: 0.74rem; font-weight: 500;
+}
+
+/* an organization's pages (app/account/organizations/[id]): drawn as the
+   account is, with its tabs as the account's section links */
+.acct-nav a[aria-current="page"] { color: var(--ink); text-decoration: underline; text-underline-offset: 0.3em; }
+.org-acting {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1.4rem;
+  margin: 0.4rem 0 1rem; padding: 0.75rem 0.9rem; border: 1px solid var(--rule); border-radius: 4px;
+  background: var(--paper-card);
+}
+.org-acting p { flex: 1 1 22rem; margin: 0; font-size: 0.86rem; color: var(--ink-soft); }
+.org-acting-on { border-color: var(--acting); background: var(--acting-tint); }
+.org-acting-on p { color: var(--ink); }
+p.org-acting { display: block; border: 0; padding: 0; background: none; }
+.org-home .admin-form input[type="radio"] { width: auto; padding: 0; border: 0; background: none; }
+.org-home .admin-form label.admin-check { display: flex; align-items: baseline; gap: 0.45rem; }
+.org-permissions { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.org-permissions li {
+  display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) auto; gap: 0.2rem 0.8rem; align-items: baseline;
+  padding: 0.38rem 0; border-bottom: 1px solid var(--rule-soft); font-size: 0.84rem;
+}
+.org-permissions li.org-not-held { color: var(--muted); }
+.org-permissions li.org-held .acct-status { color: var(--st-verified); }
+.org-grants { margin-top: 0.35rem; }
+.org-grants .admin-form { margin-top: 0.4rem; max-width: 26rem; }
+.org-grant-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.4rem; font-size: 0.82rem; }
+.org-member-acts { display: flex; gap: 0.9rem; align-self: start; }
+.org-packs { display: flex; flex-wrap: wrap; gap: 0 1.2rem; }
+.org-packs .admin-form { margin-top: 0.6rem; }
+@media (max-width: 640px) {
+  .org-permissions li { grid-template-columns: 1fr auto; }
+  .org-permissions li > span:not(.acct-status) { grid-column: 1 / -1; }
 }
 
 /* a section's anchor clears the sticky masthead */
