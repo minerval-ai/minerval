@@ -2,6 +2,8 @@
 
 Jackson often takes a few days to get to a PR review, so after opening a PR a check-in or two is plenty. Hourly re-checks over several days are not needed.
 
+Comments and docs in the code describe what was built; they're good evidence of how it works and weaker evidence of what was intended. Most design choices are deliberate, but when something looks wrong from a user's point of view (an admin setting up a deployment, a member using a page), say so plainly and ask, rather than explaining it away.
+
 MCP keeps parity with the REST API: every route an account can call is also an MCP tool unless there is a written reason it shouldn't be. When you add or rename a route, decide its MCP side in `src/mcp/route-tools.ts` (usually one line in `ROUTE_TOOLS`; an exclusion needs its reason). `tests/unit/mcp/parity.test.ts` fails until you do. See docs/mcp.md, "Parity with the REST API".
 
 The Assistant (`/ask`, docs/accounts.md) uses the MCP tool list as its own. A new tool that is not a read must be classified in `src/llm/tools/assistant-tools.ts` as held for the user or as running without asking, with its reason; `tests/unit/llm/assistant-tools.test.ts` fails until it is. When you add, move or remove a page under `web/app`, update the table in `plugin/skills/using-minerval/SKILL.md` (`tests/unit/plugin/using-minerval.test.ts`).
