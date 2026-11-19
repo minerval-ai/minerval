@@ -144,13 +144,13 @@ export function ConnectionFields({
       </div>
       <div className="w-field">
         <label htmlFor="c-stake" className="w-row" style={{ gap: 6 }}>
-          Stake{" "}
+          Stake {optional}
           <Tip>
-            What the party stands to gain or lose from what the system shows, in a sentence or two. It is recorded on every reading kept from the connection, as a fact about the source and never a finding against it.
+            What the party stands to gain or lose from what the system shows, where that is worth saying: for an outside party&rsquo;s system, say, whose interest in what it shows the agents could not guess. Given, it is recorded on every reading kept from the connection, as a fact about the source and never a finding against it. Left empty, none is recorded, and an interest that bears on one question is recorded by the agent weighing that question.
           </Tip>
         </label>
-        <textarea id="c-stake" className="w-input" name="stake" required rows={2} maxLength={1000} defaultValue={current?.stake} />
-        <span className="w-help">What the party stands to gain or lose from what the system shows</span>
+        <textarea id="c-stake" className="w-input" name="stake" rows={2} maxLength={1000} defaultValue={current?.stake ?? ""} />
+        <span className="w-help">Usually empty for your own organisation&rsquo;s systems</span>
       </div>
       <div style={pair}>
         <div className="w-field">

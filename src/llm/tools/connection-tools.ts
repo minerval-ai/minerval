@@ -143,8 +143,10 @@ export function getKeepReadingToolDefinition(): Tool {
       "named by the `reading` id in the call's result. Kept, it is a source like any other: the " +
       "call and its result together, stored whole with a hash and the time of the call, so that " +
       "what a judgment rests on does not move when the data does. It belongs to the party whose " +
-      "system it is, with that party's stake recorded on it as a fact about the source; what the " +
-      "system shows is still evidence. Keep a reading when a judgment rests on it: the calls you " +
+      "system it is, with that party's stake recorded on it as a fact about the source where the " +
+      "connection's administrator gave one (the result says whether); what the system shows is still " +
+      "evidence. An interest the party has in one claim, where none is recorded or the recorded one " +
+      "does not say it, is recorded for that claim with record_source_interest, where you are offered it. Keep a reading when a judgment rests on it: the calls you " +
       "made while looking are in the run's log either way, and sources are what assessments rest " +
       "on. The result gives the address to cite the source by, wherever a tool takes a source's " +
       `url and in your reasoning. ${PRIVATE_PERSONS_REMINDER}`,
@@ -346,7 +348,12 @@ async function keep(input: Record<string, unknown>): Promise<string> {
       (kept.already_kept ? "This reading was already kept; this is the source made then. " : "Kept as a source. ") +
       `Cite it by its address, ${kept.address}, wherever a tool takes a source's url, and in your reasoning ` +
       `where a judgment rests on it. Its text is the call and its result together, and reads back like any ` +
-      `source's. It belongs to the party whose system it is, with that party's stake recorded on it.`,
+      `source's. It belongs to the party whose system it is` +
+      (kept.stake_recorded
+        ? `, with the stake its administrator gave for that party recorded on it.`
+        : `. No stake is recorded on it: the connection's administrator gave none. Where the party has an ` +
+          `interest in the claim you are weighing, it is recorded for that claim with record_source_interest, ` +
+          `where you are offered it.`),
   });
 }
 

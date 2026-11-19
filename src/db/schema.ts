@@ -2131,10 +2131,13 @@ export const sourceInterests = pgTable(
 //     credential_key_id says which key sealed it. Changing the address or
 //     the transport clears it. credential_header is the header either is
 //     sent in. Both empty means the server asks for none.
-//   - whose system it is (party_id) and what that party stands to gain or
-//     lose from what the system shows (stake). Both are carried by every
-//     reading kept from it: the source belongs to the party, and the stake
-//     is recorded on it in source_interests.
+//   - whose system it is (party_id), carried by every reading kept from it:
+//     the source belongs to the party. stake, where an administrator gave
+//     one, is what that party stands to gain or lose from what the system
+//     shows, and is recorded on every reading kept in source_interests.
+//     NULL records none: for an organization's own system it is usually
+//     nothing the party does not already say, and an interest that bears on
+//     one claim is the Steward's to record for that claim (§9).
 //   - its one label (sensitivity_label): who may read what comes through it.
 //     A run is offered the connection only when its label reads this one.
 //     The column has the shared default like every labelled table; the
@@ -2168,7 +2171,7 @@ export const connections = pgTable(
     partyId: uuid("party_id")
       .notNull()
       .references(() => parties.id),
-    stake: text("stake").notNull(),
+    stake: text("stake"),
     sensitivityLabel: sensitivityLabelColumn(),
     callsPerMinute: integer("calls_per_minute"),
     timeoutSeconds: integer("timeout_seconds").notNull().default(120),
@@ -2337,9 +2340,10 @@ export const connectionCalls = pgTable(
 //     root, never an absolute path: the API and the sandbox mount the same
 //     files at different places. Both names are the code's and not held to
 //     a list here.
-//   - whose material it is (party_id) and what that party stands to gain or
-//     lose from what the files show (stake), as a connection has. Both are
-//     carried by every source kept from the set.
+//   - whose material it is (party_id), carried by every source kept from
+//     the set, and what that party stands to gain or lose from what the
+//     files show (stake), recorded on those sources where it was given and
+//     NULL where it was not, as a connection has.
 //   - its one label (sensitivity_label): who may read its files. A run is
 //     offered the set only when the label it works at reads this one. The
 //     column has the shared default like every labelled table; the service
@@ -2367,7 +2371,7 @@ export const fileSets = pgTable(
     partyId: uuid("party_id")
       .notNull()
       .references(() => parties.id),
-    stake: text("stake").notNull(),
+    stake: text("stake"),
     sensitivityLabel: sensitivityLabelColumn(),
     state: text("state").notNull().default("open"),
     problem: text("problem"),

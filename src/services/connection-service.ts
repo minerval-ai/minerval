@@ -94,7 +94,7 @@ interface ConnectionRow {
   party_id: string;
   party_name: string;
   party_is_own: boolean;
-  stake: string;
+  stake: string | null;
   sensitivity_label: string;
   calls_per_minute: number | null;
   timeout_seconds: number;
@@ -194,7 +194,8 @@ export interface ConnectionView {
     stored: { given_at: string; key: "current" | "previous" | "missing" } | null;
   };
   party: { id: string; name: string; is_own_organization: boolean };
-  stake: string;
+  /** What the party stands to gain or lose from what the system shows, where an administrator gave it; recorded on every reading kept. */
+  stake: string | null;
   label: string;
   calls_per_minute: number | null;
   timeout_seconds: number;
@@ -436,7 +437,7 @@ export interface ConnectionSettings {
   credentialHeader?: string;
   partyId?: string;
   label?: string;
-  stake?: string;
+  stake?: string | null;
   callsPerMinute?: number | null;
   timeoutSeconds?: number;
   enabled?: boolean;
@@ -497,16 +498,16 @@ function cleanSettings(input: ConnectionSettings): { ok: true; value: Connection
     out.credentialHeader = header;
   }
   if (input.stake !== undefined) {
-    const stake = input.stake.trim();
-    if (!stake || stake.length > CONNECTION_STAKE_MAX_CHARS) {
+    // Optional: an empty one is none, and none is recorded on what is kept.
+    const stake = input.stake === null ? "" : input.stake.trim();
+    if (stake.length > CONNECTION_STAKE_MAX_CHARS) {
       return refuse(
         "INVALID_STAKE",
-        `A connection needs the stake of the party whose system it is, in a sentence or two (at most ` +
-          `${CONNECTION_STAKE_MAX_CHARS} characters): what that party stands to gain or lose from what the system ` +
-          `shows. It is recorded on every reading kept from the connection, as a fact about the source.`
+        `A connection's stake is a sentence or two (at most ${CONNECTION_STAKE_MAX_CHARS} characters): what the ` +
+          `party whose system it is stands to gain or lose from what the system shows.`
       );
     }
-    out.stake = stake;
+    out.stake = stake || null;
   }
   if (input.callsPerMinute !== undefined) {
     const rate = input.callsPerMinute;
@@ -560,7 +561,7 @@ function takenRefusal(err: unknown, s: ConnectionSettings): Refusal | null {
  * server does not answer yet is still added, and shows as failing.
  */
 export async function addConnection(
-  input: ConnectionSettings & { name: string; url: string; partyId: string; label: string; stake: string },
+  input: ConnectionSettings & { name: string; url: string; partyId: string; label: string },
   actorId: string,
   /** The credential itself, given on the page, to be kept sealed; absent when it is named in credentialEnv or none is needed. */
   credential?: string
@@ -606,7 +607,7 @@ export async function addConnection(
           s.credentialEnv ?? null,
           header,
           s.partyId,
-          s.stake,
+          s.stake ?? null,
           s.label,
           s.callsPerMinute ?? null,
           s.timeoutSeconds ?? CONNECTION_TIMEOUT_SECONDS.default,
@@ -1215,7 +1216,7 @@ export interface RunConnection {
   toolPrefix: string;
   partyId: string;
   partyName: string;
-  stake: string;
+  stake: string | null;
   label: string;
   callsPerMinute: number | null;
   timeoutSeconds: number;

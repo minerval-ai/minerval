@@ -144,7 +144,7 @@ interface FileSetRow {
   party_id: string;
   party_name: string;
   party_is_own: boolean;
-  stake: string;
+  stake: string | null;
   sensitivity_label: string;
   state: string;
   problem: string | null;
@@ -189,7 +189,8 @@ export interface FileSetView {
   /** For a registered directory, its path under the root directories are registered from. */
   directory: string | null;
   party: { id: string; name: string; is_own_organization: boolean };
-  stake: string;
+  /** What the party stands to gain or lose from what the files show, where it was given; recorded on every source kept. */
+  stake: string | null;
   label: string;
   /** open | hashing | closed | failed */
   state: string;
@@ -339,7 +340,8 @@ export interface NewFileSet {
   slug?: string;
   description?: string;
   partyId: string;
-  stake: string;
+  /** Optional: empty or absent records none. */
+  stake?: string | null;
   label: string;
 }
 
@@ -403,13 +405,13 @@ async function add(
       `description says what the set holds, in at most ${FILE_SET_DESCRIPTION_MAX_CHARS} characters with no quotation marks.`
     );
   }
-  const stake = input.stake.trim();
-  if (!stake || stake.length > FILE_SET_STAKE_MAX_CHARS) {
+  // Optional: an empty one is none, and none is recorded on what is kept.
+  const stake = (input.stake ?? "").trim() || null;
+  if (stake !== null && stake.length > FILE_SET_STAKE_MAX_CHARS) {
     return refuse(
       "INVALID_STAKE",
-      `A file set needs the stake of the party whose files they are, in a sentence or two (at most ` +
-        `${FILE_SET_STAKE_MAX_CHARS} characters): what that party stands to gain or lose from what the files ` +
-        `show. It is recorded on every source kept from the set, as a fact about the source.`
+      `A file set's stake is a sentence or two (at most ${FILE_SET_STAKE_MAX_CHARS} characters): what the ` +
+        `party whose files they are stands to gain or lose from what the files show.`
     );
   }
   if (!UUID_RE.test(input.partyId)) return refuse("UNKNOWN_PARTY", "No party has that id.");
@@ -812,7 +814,7 @@ export interface RunFileSet {
   storageKey: string;
   partyId: string;
   partyName: string;
-  stake: string;
+  stake: string | null;
   label: string;
   fileCount: number;
   totalBytes: number;

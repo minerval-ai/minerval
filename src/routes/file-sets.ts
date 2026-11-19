@@ -143,12 +143,13 @@ const SET_PROPERTIES = {
   },
   party_id: { ...UUID, description: "The party whose files these are (GET /parties)." },
   stake: {
-    type: "string",
-    minLength: 1,
-    maxLength: FILE_SET_STAKE_MAX_CHARS,
+    anyOf: [{ type: "string", maxLength: FILE_SET_STAKE_MAX_CHARS }, { type: "null" }],
     description:
-      "What the party stands to gain or lose from what the files show, in a sentence or two. It is " +
-      "recorded on every source kept from the set, as a fact about the source and never a finding against it.",
+      "Optional. What the party stands to gain or lose from what the files show, in a sentence or two, " +
+      "where that is worth saying: for files an outside party supplied, say, whose interest in what they " +
+      "show the agents could not guess. Given, it is recorded on every source kept from the set, as a fact " +
+      "about the source and never a finding against it. Empty or null records none; an interest that bears " +
+      "on one claim is then the Steward's to record for that claim.",
   },
 } as const;
 
@@ -157,7 +158,7 @@ interface SetBody {
   slug?: string;
   description?: string;
   party_id: string;
-  stake: string;
+  stake?: string | null;
   label?: string;
 }
 
@@ -320,7 +321,7 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
         type: "object",
         // `label` is added to the body by the request-label plugin, as on
         // every route that starts something new (server/request-labels.ts).
-        required: ["name", "party_id", "stake"],
+        required: ["name", "party_id"],
         additionalProperties: false,
         properties: {
           ...SET_PROPERTIES,
@@ -368,7 +369,7 @@ export async function fileSetRoutes(app: FastifyInstance): Promise<void> {
         "so is the closing, with the file count and the manifest hash.",
       body: {
         type: "object",
-        required: ["name", "party_id", "stake", "directory"],
+        required: ["name", "party_id", "directory"],
         additionalProperties: false,
         properties: {
           ...SET_PROPERTIES,

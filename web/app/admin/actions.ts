@@ -254,7 +254,8 @@ function connectionSettings(form: FormData): ConnectionSettings {
     // Named only where the deployment holds material at more than one label
     // and the connection is new: a connection keeps the label it was added at.
     ...(text(form, "label") ? { label: text(form, "label") } : {}),
-    stake: text(form, "stake"),
+    // Optional: empty is none.
+    stake: text(form, "stake") || null,
     calls_per_minute: rate ? Number(rate) : null,
     ...(timeout ? { timeout_seconds: Number(timeout) } : {}),
   };
@@ -264,7 +265,6 @@ function settingsProblem(settings: ConnectionSettings): string | null {
   if (!settings.name) return "Give the connection a name.";
   if (!settings.url) return "Give the address of the system's MCP server.";
   if (!settings.party_id) return "Choose whose system it is. Add the party first if it is not listed.";
-  if (!settings.stake) return "Say what the party stands to gain or lose from what the system shows.";
   if (settings.credential_env && !/^CONNECTION_[A-Z0-9_]+$/.test(settings.credential_env)) {
     return "The credential's variable is named in capitals and starts CONNECTION_. Give its name, never the credential itself.";
   }

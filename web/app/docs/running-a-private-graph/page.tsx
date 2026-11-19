@@ -234,11 +234,16 @@ export default function Page() {
         </li>
         <li>
           <b>A connection to a system</b>: <b>Connections</b> (<code>/admin/connections</code>). Agents read a wiki, a warehouse or a ticket system where
-          it lives, through tools you pick one by one. Whoever installed the deployment adds the system&rsquo;s read-only credential;
-          the page names the setting.
+          it lives, through tools you pick one by one. Paste the system&rsquo;s read-only credential on the connection&rsquo;s page,
+          where it is kept encrypted, once whoever installed the deployment has set its key; or name a setting that holds it.
         </li>
       </ul>
-      <p>For each, say whose material it is and what that party stands to gain or lose: the agents weigh a source by its stake.</p>
+      <p>
+        For each, say whose material it is: every source kept from it belongs to that party. Where the party has a stake in what
+        it shows that the agents could not guess, such as an outside vendor&rsquo;s report on its own product, say that too, and it
+        is recorded on every source kept. For your own organisation&rsquo;s material there is usually nothing to add, and an
+        interest that bears on one question is recorded by the agent weighing that question.
+      </p>
 
       <h2 id="questions">6. Ask questions</h2>
       <ul>

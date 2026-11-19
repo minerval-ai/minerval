@@ -86,14 +86,15 @@ describe("a connection", () => {
     });
   });
 
-  it("needs a party that exists, a label that is defined, and a stake", async () => {
+  it("needs a party that exists and a label that is defined; the stake is optional", async () => {
     const values = (over: Record<string, unknown>) => {
       const row = { name: `Needs ${randomUUID()}`, tool_prefix: `p_${randomUUID().slice(0, 8)}`, url: "https://x.example", party_id: party, stake: "s", ...over };
       return [row.name, row.tool_prefix, row.url, row.party_id, row.stake];
     };
     expect(await failure(INSERT, values({ party_id: null }))).toBe(NOT_NULL_VIOLATION);
     expect(await failure(INSERT, values({ party_id: randomUUID() }))).toBe(FOREIGN_KEY_VIOLATION);
-    expect(await failure(INSERT, values({ stake: null }))).toBe(NOT_NULL_VIOLATION);
+    // None given, none recorded on what is kept (docs/connections.md, "Why the stake is optional").
+    expect(await failure(INSERT, values({ stake: null }))).toBeNull();
     expect(
       await failure(
         `INSERT INTO connections (name, tool_prefix, url, party_id, stake, sensitivity_label) VALUES ($1, $2, 'https://x.example', $3, 's', 'no-such-label')`,

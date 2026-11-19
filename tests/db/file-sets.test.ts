@@ -677,7 +677,6 @@ describe("adding a set", () => {
     // What cannot be a set says why.
     for (const [over, code] of [
       [{ name: 'A "quoted" name' }, "INVALID_NAME"],
-      [{ stake: "   " }, "INVALID_STAKE"],
       [{ party_id: randomUUID() }, "UNKNOWN_PARTY"],
       [{ name: "Director's set" }, "NAME_TAKEN"],
       [{ name: "Another", slug: mine.slug }, "SLUG_TAKEN"],
@@ -685,6 +684,9 @@ describe("adding a set", () => {
       const res = await as(admin, { method: "POST", url: "/file-sets", payload: { ...payload, name: "Fresh name", ...over } });
       expect(res.json().code, JSON.stringify(over)).toBe(code);
     }
+    // The stake is optional; one past the length is refused.
+    const long = await as(admin, { method: "POST", url: "/file-sets", payload: { ...payload, name: "Fresh name", stake: "x".repeat(1001) } });
+    expect(long.statusCode).toBe(400);
   });
 
   it("is decided for MCP: the reads are tools, the writes are excluded with the reason", () => {
@@ -1138,11 +1140,12 @@ describe("an analysis", () => {
       call: ran.call,
       address,
       already_kept: false,
+      stake_recorded: true,
       note:
         `Kept as a source. Cite it by its address, ${address}, wherever a tool takes a source's url, and in your ` +
         "reasoning where a judgment rests on it. It reads back like any source's. Its text is the command, the files " +
-        "given with it, the sets it could read and its output together. The stake of each party whose files it could " +
-        "read is recorded on it.",
+        "given with it, the sets it could read and its output together. The stake given for each party whose files " +
+        "it could read is recorded on it.",
     });
     expect(kept.title).toMatch(/^Analysis of Kept ledger, run \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
 
@@ -1262,6 +1265,21 @@ describe("an analysis", () => {
 });
 
 describe("a file", () => {
+  it("kept from a set given no stake, belongs to the party and records no interest, and says so", async () => {
+    await switchAllOff();
+    const set = await addSet({ "notes.txt": "the organization's own notes\n" }, { name: "Own notes set", party_id: outsideParty, stake: null });
+    expect(set.stake ?? null).toBeNull();
+    const bundle = await bundleAt(INTERNAL);
+    const kept = await run(INTERNAL, bundle, "keep_file", { set: "Own notes set", path: "notes.txt" });
+    expect(kept).toMatchObject({ success: true, already_kept: false, stake_recorded: false });
+    expect(kept.note).toContain("No stake is recorded on it: none was given for the set.");
+    const [source] = await rawQuery<{ party_id: string }>(`SELECT party_id FROM sources WHERE id = $1`, [kept.source_id]);
+    expect(source!.party_id).toBe(outsideParty);
+    expect(await rawQuery(`SELECT 1 FROM source_interests WHERE source_id = $1`, [kept.source_id])).toEqual([]);
+    const again = await run(INTERNAL, bundle, "keep_file", { set: "Own notes set", path: "notes.txt" });
+    expect(again).toMatchObject({ already_kept: true, stake_recorded: false });
+  });
+
   it("becomes a source when kept, whole or a passage: the file's own text, at the set's label, whoever keeps it", async () => {
     await switchAllOff();
     const transcript = Array.from({ length: 40 }, (_, i) => `{"turn":${i + 1},"refused":${i % 3 === 0}}`).join("\n") + "\n";
@@ -1283,10 +1301,11 @@ describe("a file", () => {
       file_sha256: sha256(transcript),
       lines: { first: 4, last: 6, of: 40 },
       already_kept: false,
+      stake_recorded: true,
       note:
         `Kept as a source. Cite it by its address, ${address}, wherever a tool takes a source's url, and in your ` +
         "reasoning where a judgment rests on it. It reads back like any source's. It belongs to the party whose set " +
-        "it is, with that party's stake recorded on it.",
+        "it is, with the stake given for that party recorded on it.",
     });
     const [source] = await rawQuery<Record<string, unknown>>(`SELECT * FROM sources WHERE id = $1`, [kept.source_id]);
     const passage = transcript.split("\n").slice(3, 6).join("\n") + "\n";

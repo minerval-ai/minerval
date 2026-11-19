@@ -142,7 +142,7 @@ export default async function FileSetPage({
             "Party",
             <span key="p" className="w-row" style={{ gap: 6, flexWrap: "nowrap" }}>
               <Party name={set.party.name} own={set.party.is_own_organization} />
-              <Tip>{`Stake: ${set.stake}`}</Tip>
+              {set.stake && <Tip>{`Stake: ${set.stake}`}</Tip>}
             </span>,
           ],
           ["Label", <Lbl key="l" name={set.label} />],

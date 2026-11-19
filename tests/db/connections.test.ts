@@ -381,8 +381,18 @@ describe("an administrator's routes", () => {
     expect(unread.statusCode).toBe(403);
     expect(unread.json()).toMatchObject({ code: "LABEL_NOT_READABLE" });
     expect((await post({ party_id: randomUUID() })).json()).toMatchObject({ code: "UNKNOWN_PARTY" });
-    // The stake is asked for: every reading kept carries it.
-    expect((await post({ stake: "   " })).json()).toMatchObject({ code: "INVALID_STAKE" });
+    // The stake is optional, and an empty one is none; one past the length is refused.
+    expect((await post({ stake: "x".repeat(1001) })).statusCode).toBe(400);
+    const noStake = await post({ name: `No stake ${randomUUID()}`, stake: "   " });
+    expect(noStake.statusCode, noStake.body).toBe(201);
+    expect(noStake.json().connection.stake).toBeNull();
+    const omitted = await as(admin, {
+      method: "POST",
+      url: "/connections",
+      payload: { name: `Omitted ${randomUUID()}`, url: server.url, party_id: ownParty, label: INTERNAL },
+    });
+    expect(omitted.statusCode, omitted.body).toBe(201);
+    expect(omitted.json().connection.stake).toBeNull();
     expect((await post({ transport: "stdio" })).statusCode).toBe(400);
 
     const first = await connect({ name: "Taken name", tool_prefix: "taken" });
@@ -883,6 +893,25 @@ describe("a reading", () => {
     expect(failed).toEqual({ outcome: "failed", result: null });
   });
 
+  it("kept from a connection given no stake, belongs to the party and records no interest, and says so", async () => {
+    await switchAllOff();
+    const c = await connect({ name: "Own notes", tool_prefix: "ownnotes", stake: null });
+    await pick(c, ["read_rows"]);
+    const bundle = await bundleAt(INTERNAL);
+    const made = await run(INTERNAL, bundle, "ownnotes__read_rows", { table: "refunds" });
+    const kept = await run(INTERNAL, bundle, "keep_reading", { reading: made.reading });
+    expect(kept).toMatchObject({ success: true, already_kept: false, stake_recorded: false });
+    expect(kept.note).toContain("No stake is recorded on it: the connection's administrator gave none.");
+    expect(kept.note).toContain("record_source_interest");
+    const [source] = await rawQuery<{ party_id: string; raw_content: string }>(`SELECT party_id, raw_content FROM sources WHERE id = $1`, [kept.source_id]);
+    expect(source!.party_id).toBe(ownParty);
+    // Its text still says whose system it was read from.
+    expect(source!.raw_content).toContain('A reading through the connection "Own notes", a system of Halden Evaluations.');
+    expect(await rawQuery(`SELECT 1 FROM source_interests WHERE source_id = $1`, [kept.source_id])).toEqual([]);
+    const again = await run(INTERNAL, bundle, "keep_reading", { reading: made.reading });
+    expect(again).toMatchObject({ already_kept: true, stake_recorded: false });
+  });
+
   it("becomes a source when kept: hashed, at the label of the run that read it, the party's, with its stake recorded", async () => {
     await switchAllOff();
     const c = await connect({ name: "Kept warehouse", tool_prefix: "kept" });
@@ -900,10 +929,12 @@ describe("a reading", () => {
       reading: made.reading,
       address,
       already_kept: false,
+      stake_recorded: true,
       note:
         `Kept as a source. Cite it by its address, ${address}, wherever a tool takes a source's url, and in your ` +
         "reasoning where a judgment rests on it. Its text is the call and its result together, and reads back like " +
-        "any source's. It belongs to the party whose system it is, with that party's stake recorded on it.",
+        "any source's. It belongs to the party whose system it is, with the stake its administrator gave for that " +
+        "party recorded on it.",
     });
     expect(kept.title).toMatch(/^Kept warehouse: read_rows, read \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
 
@@ -951,7 +982,7 @@ describe("a reading", () => {
 
     // Kept again, it is the same source.
     const again = await run(RESTRICTED, bundle, "keep_reading", { reading: made.reading });
-    expect(again).toMatchObject({ success: true, source_id: kept.source_id, address, already_kept: true });
+    expect(again).toMatchObject({ success: true, source_id: kept.source_id, address, already_kept: true, stake_recorded: true });
     const [n] = await rawQuery<{ n: number }>(`SELECT count(*)::int AS n FROM sources WHERE url = $1`, [address]);
     expect(n!.n).toBe(1);
 

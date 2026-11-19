@@ -407,7 +407,8 @@ export interface ConnectionView {
     stored: { given_at: string; key: "current" | "previous" | "missing" } | null;
   };
   party: { id: string; name: string; is_own_organization: boolean };
-  stake: string;
+  /** Where an administrator gave one; recorded on every reading kept. */
+  stake: string | null;
   label: string;
   calls_per_minute: number | null;
   timeout_seconds: number;
@@ -485,7 +486,7 @@ export interface ConnectionSettings {
   credential_header?: string;
   party_id?: string;
   label?: string;
-  stake?: string;
+  stake?: string | null;
   calls_per_minute?: number | null;
   timeout_seconds?: number;
   enabled?: boolean;

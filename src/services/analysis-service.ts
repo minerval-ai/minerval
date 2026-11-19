@@ -46,7 +46,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "../config.js";
-import { rawQuery, withTransaction } from "../db/client.js";
+import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { KEPT_FILE_MAX_CHARS, analysisAddress, keptFileAddress } from "../file-sets.js";
 import { currentLabel, getUsageContext, runAtLabel } from "../llm/usage-context.js";
 import { sanitizeStoredText, windowText, type TextWindow } from "./document-text.js";
@@ -77,7 +77,8 @@ export interface CalledSet {
   slug: string;
   party_id: string;
   party: string;
-  stake: string;
+  /** The stake given for the set's party; null where none was. */
+  stake: string | null;
   files: number;
   manifest_sha256: string;
   /** Where the set was mounted in the sandbox. */
@@ -403,16 +404,30 @@ export interface KeptSource {
   content_sha256: string;
   /** True when it had been kept before, and this is the source made then. */
   already_kept: boolean;
+  /** Whether a stake is recorded on the source: true where one was given for a party whose set it came from. */
+  stake_recorded: boolean;
+}
+
+/** Whether the stake given for a set's party is recorded on a source kept before. */
+async function stakeRecordedOn(tx: TxQuery, sourceId: string): Promise<boolean> {
+  const [row] = await tx.query<{ recorded: boolean }>(
+    `SELECT EXISTS (SELECT 1 FROM source_interests WHERE source_id = $1 AND recorded_by = $2) AS recorded`,
+    [sourceId, FILE_SET_INTEREST_RECORDED_BY]
+  );
+  return row?.recorded === true;
 }
 
 /**
  * The one interest row a source kept from file sets carries: the party and
  * its stake where the sets are one party's, and each party with its stake
  * where they are several (a source's interest is read as its newest row).
+ * Only sets whose stake was given count: a set given none records none, and
+ * a source kept from such sets alone carries no interest row.
  */
-function interestOf(sets: ReadonlyArray<{ party: string; stake: string }>): { party: string; stake: string } | null {
+function interestOf(sets: ReadonlyArray<{ party: string; stake: string | null }>): { party: string; stake: string } | null {
   const seen = new Map<string, Set<string>>();
   for (const set of sets) {
+    if (!set.stake) continue;
     if (!seen.has(set.party)) seen.set(set.party, new Set());
     seen.get(set.party)!.add(set.stake);
   }
@@ -433,7 +448,7 @@ function interestOf(sets: ReadonlyArray<{ party: string; stake: string }>): { pa
  * source carries the call's label, which is the label of the run that ran
  * the command. It belongs to the party whose sets the command could read
  * when they are one party's, and to no single party when they are several;
- * either way each party's stake is recorded on it.
+ * either way each party's stake, where one was given, is recorded on it.
  *
  * Its facts are marked as checked, so the worker that looks sources up at
  * Crossref and the Wayback Machine leaves it alone: an analysis is not on
@@ -482,6 +497,7 @@ export async function keepAnalysis(callId: string): Promise<KeptSource & { call:
         title: source!.title,
         content_sha256: source!.content_hash,
         already_kept: true,
+        stake_recorded: await stakeRecordedOn(tx, source!.id),
       };
     }
     if (row.output === null || row.output_hash === null) {
@@ -543,7 +559,15 @@ export async function keepAnalysis(callId: string): Promise<KeptSource & { call:
       );
     }
     await tx.query(`UPDATE sandbox_calls SET source_id = $2, kept_at = now() WHERE id = $1`, [id, source!.id]);
-    return { call: id, source_id: source!.id, address, title, content_sha256: contentHash, already_kept: false };
+    return {
+      call: id,
+      source_id: source!.id,
+      address,
+      title,
+      content_sha256: contentHash,
+      already_kept: false,
+      stake_recorded: interest !== null,
+    };
   });
   // The source's passages, so an instance recorded from it is anchored like
   // any other. Never fails the keep: the document is already stored.
@@ -668,7 +692,7 @@ export function fileDocument(input: {
  * would then vouch for bytes it never saw.
  *
  * The source carries the set's label and party, with the party's stake
- * recorded on it. `sets` is what the calling run is offered, so a run can
+ * recorded on it where one was given. `sets` is what the calling run is offered, so a run can
  * keep only from a set its label reads.
  */
 export async function keepFile(
@@ -767,7 +791,14 @@ export async function keepFile(
       [address]
     );
     if (existing) {
-      return { source_id: existing.id, address, title: existing.title, content_sha256: existing.content_hash, already_kept: true };
+      return {
+        source_id: existing.id,
+        address,
+        title: existing.title,
+        content_sha256: existing.content_hash,
+        already_kept: true,
+        stake_recorded: await stakeRecordedOn(tx, existing.id),
+      };
     }
     const [source] = await tx.query<{ id: string }>(
       `INSERT INTO sources
@@ -780,17 +811,19 @@ export async function keepFile(
     );
     // Neither row names the run that kept the file: both are at the set's
     // label, and a run at a label that reads the set's may be the one keeping.
-    await tx.query(
-      `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, run_id, sensitivity_label)
-       VALUES ($1, NULL, $2, $3, $4, NULL, $5)`,
-      [source!.id, set.partyName, set.stake, FILE_SET_INTEREST_RECORDED_BY, set.label]
-    );
+    if (set.stake) {
+      await tx.query(
+        `INSERT INTO source_interests (source_id, claim_id, party, stake, recorded_by, run_id, sensitivity_label)
+         VALUES ($1, NULL, $2, $3, $4, NULL, $5)`,
+        [source!.id, set.partyName, set.stake, FILE_SET_INTEREST_RECORDED_BY, set.label]
+      );
+    }
     await tx.query(
       `INSERT INTO file_set_keeps (file_set_id, file_id, first_line, last_line, source_id, sensitivity_label)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [set.id, file.id, lines?.first ?? null, lines?.last ?? null, source!.id, set.label]
     );
-    return { source_id: source!.id, address, title, content_sha256: contentHash, already_kept: false };
+    return { source_id: source!.id, address, title, content_sha256: contentHash, already_kept: false, stake_recorded: Boolean(set.stake) };
   }));
   if (!kept.already_kept) await segmentSourceOnce(kept.source_id);
   return {

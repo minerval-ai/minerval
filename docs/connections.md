@@ -71,7 +71,7 @@ call and keeps none open between them.
 | `url`, `transport` | The MCP server's address (http or https) and how it is spoken to: `streamable_http`, or `sse` for a server that only speaks that. The deployment does not start a server as a local process. |
 | `credential_env`, `credential_header` | The **name** of the environment variable that holds the credential, and the header it is sent in. In `Authorization` it is sent as a bearer token; in any other header, as it is. Or, in place of the variable, the credential itself given on the connection's page and kept sealed (below). |
 | `party_id` | The party whose system it is: the organization itself, or an outside party that granted access. |
-| `stake` | What that party stands to gain or lose from what the system shows, in a sentence or two. |
+| `stake` | Optional. What that party stands to gain or lose from what the system shows, in a sentence or two, where that is worth saying. Given, it is recorded on every reading kept; left out, none is (below, "Its party"). |
 | `label` | The connection's one label: a run is offered the connection when the label it works at reads this one. It is named when the connection is added, among the labels the administrator reads, and the connection keeps it. The same system read at another label is a second connection. |
 | `calls_per_minute` | A rate across all runs, or none. |
 | `timeout_seconds` | How long a call may go unanswered (120 unless set; 5 to 900). |
@@ -366,12 +366,26 @@ cite like any other:
   at the call's label, and a run adds rows at its own label. A run at
   another label that reads the reading may open it, and is told to make the
   call itself if a judgment of its own is to rest on what it shows.
-- **Its party** is the connection's, and the party's stake is recorded on
-  it (`source_interests`, recorded by `connection`): a fact about the
-  source, never a finding against it. What the system shows is evidence of
-  the strength it has, and the Steward weighs it knowing the stake. An
-  agent may still record a sharper interest for one claim with
-  `record_source_interest`.
+- **Its party** is the connection's, and where the connection was given a
+  stake, it is recorded on the source (`source_interests`, recorded by
+  `connection`): a fact about the source, never a finding against it. What
+  the system shows is evidence of the strength it has, and the Steward
+  weighs it knowing the stake. An agent may still record a sharper
+  interest for one claim with `record_source_interest`, and the result of
+  `keep_reading` says whether a stake was recorded (`stake_recorded`).
+
+  **Why the stake is optional.** The constitution records "a source's
+  interest in a claim where it has one" (§9), and an interest recorded
+  for a source as a whole holds for what it says about its party's own
+  affairs. For an outside party's system that is often worth saying, and
+  an administrator knows it where an agent could not guess: a vendor's
+  dashboard of its own uptime, a partner's logs that the partner curates.
+  For an organization's own systems it is mostly the party again in other
+  words, and a field everyone fills with that is noise. So it is asked
+  for and not required. Left out, none is recorded: the source still
+  belongs to the party, its text says whose system it was read from, and
+  an interest that bears on one claim is recorded by the Steward for that
+  claim.
 - **Its address** is `reading:<prefix>/<reading id>`, which `keep_reading`
   returns. It is cited by that address wherever a tool takes a source's
   url (`record_claim_instance`, `record_estimate`, `record_question_instance`,
@@ -405,8 +419,8 @@ What the agent quoted from it is what reading at the label covers.
 **When the node's page is released to readers who do not read its label.** A
 kept reading is a source the page rests on: it is among the sources the
 Redactor may open, among the sources the page
-says exist, the supplier's name and the words of its stake are a part of
-the page, and the party whose system it was read from is among those whose
+says exist, the supplier's name and the words of its stake, where one was
+recorded, are a part of the page, and the party whose system it was read from is among those whose
 consent is asked ([releasing-a-page.md](releasing-a-page.md),
 "The gate"). That holds whether or not an instance was recorded from the
 reading: the call's row says which node its run was working on, and keeping

@@ -185,12 +185,19 @@ export default async function ConnectionPage({
           ],
           [
             "Stake",
-            <span key="st" className="w-row" style={{ gap: 6, flexWrap: "nowrap", maxWidth: 280 }}>
-              <span className="w-muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {connection.stake}
+            connection.stake === null ? (
+              <span key="st" className="w-row" style={{ gap: 6, flexWrap: "nowrap" }}>
+                <span className="w-faint">None given</span>
+                <Tip>No stake is recorded on readings kept from this connection. They still belong to its party, and an interest that bears on one question is recorded by the agent weighing that question.</Tip>
               </span>
-              <Tip>{`${connection.stake} Recorded on every reading kept from the connection, as a fact about the source and never a finding against it.`}</Tip>
-            </span>,
+            ) : (
+              <span key="st" className="w-row" style={{ gap: 6, flexWrap: "nowrap", maxWidth: 280 }}>
+                <span className="w-muted" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {connection.stake}
+                </span>
+                <Tip>{`${connection.stake} Recorded on every reading kept from the connection, as a fact about the source and never a finding against it.`}</Tip>
+              </span>
+            ),
           ],
         ]}
       />

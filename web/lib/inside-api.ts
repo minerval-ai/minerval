@@ -639,7 +639,8 @@ export interface FileSetView {
   origin: "upload" | "directory";
   directory: string | null;
   party: { id: string; name: string; is_own_organization: boolean };
-  stake: string;
+  /** Where one was given; recorded on every source kept from the set. */
+  stake: string | null;
   label: string;
   state: "open" | "hashing" | "closed" | "failed";
   problem: string | null;
@@ -712,7 +713,7 @@ export interface NewFileSet {
   name: string;
   description?: string;
   party_id: string;
-  stake: string;
+  stake?: string | null;
   label?: string;
   directory?: string;
 }

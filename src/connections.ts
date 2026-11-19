@@ -32,7 +32,9 @@
  *  - Every call is stored whole with its hash (connection_calls). A call is
  *    not a source until an agent's work rests on it: keep_reading then makes
  *    the source row a judgment can cite, belonging to the connection's
- *    party, with that party's stake recorded. The call and the source carry
+ *    party, with that party's stake recorded where an administrator gave
+ *    one (it is optional: for an organization's own system there is usually
+ *    nothing to say beyond whose it is). The call and the source carry
  *    the label of the run that made the call, since the arguments are that
  *    run's own words (services/reading-service.ts).
  *
@@ -53,7 +55,7 @@ export function isConnectionTransport(value: unknown): value is ConnectionTransp
 
 /** A connection's name is shown to administrators and to agents, so it is kept to a name. */
 export const CONNECTION_NAME_MAX_CHARS = 120;
-/** The stake is recorded on every reading kept, at the length a source's interest takes. */
+/** A stake, where given, is recorded on every reading kept, at the length a source's interest takes. */
 export const CONNECTION_STAKE_MAX_CHARS = 1000;
 
 /**

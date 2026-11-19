@@ -111,11 +111,13 @@ const SETTINGS = {
   },
   party_id: { ...UUID, description: "The party whose system this is (GET /parties)." },
   stake: {
-    type: "string",
-    minLength: 1,
-    maxLength: CONNECTION_STAKE_MAX_CHARS,
+    anyOf: [{ type: "string", maxLength: CONNECTION_STAKE_MAX_CHARS }, { type: "null" }],
     description:
-      "What the party stands to gain or lose from what the system shows, in a sentence or two. It is recorded on every reading kept from the connection, as a fact about the source and never a finding against it.",
+      "Optional. What the party stands to gain or lose from what the system shows, in a sentence or two, " +
+      "where that is worth saying: for an outside party's system, say, whose interest in what it shows the " +
+      "agents could not guess. Given, it is recorded on every reading kept from the connection, as a fact " +
+      "about the source and never a finding against it. Empty or null records none; an interest that bears " +
+      "on one claim is then the Steward's to record for that claim.",
   },
   calls_per_minute: {
     anyOf: [{ type: "integer", minimum: 1, maximum: 6000 }, { type: "null" }],
@@ -140,7 +142,7 @@ interface SettingsBody {
   credential_header?: string;
   party_id?: string;
   label?: string;
-  stake?: string;
+  stake?: string | null;
   calls_per_minute?: number | null;
   timeout_seconds?: number;
   enabled?: boolean;
@@ -279,7 +281,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
     },
   });
 
-  app.post<{ Body: SettingsBody & { name: string; url: string; party_id: string; stake: string; credential?: string } }>(
+  app.post<{ Body: SettingsBody & { name: string; url: string; party_id: string; credential?: string } }>(
     "/connections",
     {
       schema: {
@@ -299,7 +301,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
         // every route that starts something new (server/request-labels.ts).
         body: {
           type: "object",
-          required: ["name", "url", "party_id", "stake"],
+          required: ["name", "url", "party_id"],
           additionalProperties: false,
           properties: { ...SETTINGS, credential: CREDENTIAL },
         },
@@ -315,7 +317,6 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
             url: string;
             partyId: string;
             label: string;
-            stake: string;
           },
           actorId,
           request.body.credential
