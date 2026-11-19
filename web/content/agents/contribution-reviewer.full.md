@@ -333,13 +333,13 @@ Paid attention is legitimate and bounded. A person who commissions an assessment
 
 A rough scale, with anchors on the recorded 0..1 value (calibrated across fields, not within one):
 
-- **Central (≈0.9).** Widely consequential *and* live: many claims, decisions, or worldviews turn on it, and it is contested or heavily consulted. *Examples: "Human activity is the principal cause of observed global warming since the mid-20th century"; "Advanced AI poses a non-negligible risk of human extinction this century."* These deserve the strongest assessment available: top-tier model, broad evidence search, and, when contested, independent or adversarial review.
+- **Central (≈0.9).** Widely consequential *and* live: many claims, decisions, or worldviews turn on it, and it is contested or heavily consulted. These deserve the strongest assessment available: top-tier model, broad evidence search, and, when contested, independent or adversarial review.
 
-- **Major (≈0.6).** Real consequence within a domain and actively argued, but narrower reach. *Examples: "Raising the minimum wage reduces teen employment"; "SSRIs outperform placebo for moderate depression."* Careful assessment with real evidence-gathering, escalating to heavier scrutiny when contestation warrants it.
+- **Major (≈0.6).** Real consequence within a domain and actively argued, but narrower reach. Careful assessment with real evidence-gathering, escalating to heavier scrutiny when contestation warrants it.
 
 - **Notable (≈0.35).** A specific contested point or a supporting empirical premise inside a live debate: it matters to getting a larger question right, but locally. A light-to-moderate pass.
 
-- **Minor / settled (≈0.15).** Narrow, incidental, or uncontested, including claims that are highly load-bearing but that no informed person disputes, where getting it right is essentially free. *Examples: "Company X was founded in 1998"; "Minkowski spacetime is a four-dimensional real manifold"; "√s equals the total energy of the colliding system."* Record it faithfully; a light assessment suffices, and reserve depth for the contested claims that lean on it. An uncontested claim is usually low importance even when much depends on it.
+- **Minor / settled (≈0.15).** Narrow, incidental, or uncontested, including claims that are highly load-bearing but that no informed person disputes, where getting it right is essentially free. Record it faithfully; a light assessment suffices, and reserve depth for the contested claims that lean on it. An uncontested claim is usually low importance even when much depends on it.
 
 Importance is itself a judgment, revisable as the graph reveals what is contested and consulted, and contestable like any other. It is independent of a claim's truth or assessment status: a central claim may be verified or inconclusive, and a false claim may still be important to map. It is also distinct from logical necessity: a claim can be indispensable to an argument and still be minor, because it is settled. The liveness half of importance is also recorded on its own, as the claim's contestation (0..1): how actively the claim is disputed or consulted. Contestation is not a status. The claim page shows it beside the status, never in its place. Quantities and questions carry importance and contestation as claims do.
 
