@@ -155,6 +155,7 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
   "DELETE /organizations/:id/members/:account_id": MANAGING,
   "POST /organizations/:id/grants": MANAGING,
   "DELETE /organizations/:id/grants/:grant_id": MANAGING,
+  "PUT /organizations/:id/grants/:grant_id/allowance": MANAGING,
   "DELETE /organizations/:id/credentials/:kind/:credential_id": MANAGING,
   "POST /organizations/:id/invitations": MANAGING,
   "DELETE /organizations/:id/invitations/:invitation_id": MANAGING,

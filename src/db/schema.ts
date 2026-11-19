@@ -2880,6 +2880,13 @@ export const organizationGrants = pgTable(
     accountId: uuid("account_id").references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
     deploymentId: uuid("deployment_id").references((): AnyPgColumn => deployments.id, { onDelete: "cascade" }),
     permission: text("permission").$type<OrganizationPermission>().notNull(),
+    // For `spend`: a sum of the organization's owls this grantee may spend,
+    // in micro-USD, set by an admin and raised only by one; null spends from
+    // the whole balance. It has no period (docs/organizations.md, "Decisions").
+    allowanceMicroUsd: bigint("allowance_micro_usd", { mode: "number" }),
+    // What the grantee has spent against it: what each debit held when it was
+    // made. Owls that come back to the organization later go to its balance.
+    allowanceSpentMicroUsd: bigint("allowance_spent_micro_usd", { mode: "number" }).notNull().default(0),
     grantedBy: uuid("granted_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
     grantedAt: timestamp("granted_at", { withTimezone: true }).notNull().defaultNow(),
     withdrawnBy: uuid("withdrawn_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),

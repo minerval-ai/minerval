@@ -17,6 +17,7 @@ import { registerClaimAliasResolution } from "./plugins/claim-alias.js";
 import { registerAnonymousRateLimit } from "./plugins/anonymous-rate-limit.js";
 import { registerMembersOnly } from "./plugins/members-only.js";
 import { registerRequestLabel } from "./plugins/request-label.js";
+import { registerOrganizationSpending } from "./plugins/organization-spending.js";
 import { membersOnly } from "../permissions.js";
 import { healthRoutes } from "../routes/health.js";
 import { claimRoutes } from "../routes/claims.js";
@@ -124,6 +125,9 @@ export async function buildApp() {
   // members-only deployment (server/request-labels.ts). On the public graph
   // this registers nothing.
   await registerRequestLabel(app);
+  // Before any route too: a request made as an organization spends against
+  // its member's or deployment's allowance (services/organization-spending.ts).
+  await registerOrganizationSpending(app);
 
   // Routes
   await app.register(healthRoutes);

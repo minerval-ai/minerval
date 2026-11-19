@@ -390,6 +390,13 @@ export async function organizationForDeployment(deploymentId: string): Promise<R
     `SELECT key_id, hosting, registered_at FROM publishers WHERE account_id = $1 AND retired_at IS NULL ORDER BY registered_at DESC`,
     [live.organization_id]
   );
+  // The allowance on its spend, where an admin set one: what it may spend of
+  // the organization's owls, and what is left, for it to tell its agents.
+  const [spend] = await rawQuery<{ allowance: string | null; spent: string }>(
+    `SELECT allowance_micro_usd AS allowance, allowance_spent_micro_usd AS spent
+       FROM organization_grants WHERE deployment_id = $1 AND permission = 'spend' AND withdrawn_at IS NULL LIMIT 1`,
+    [live.id]
+  );
   return {
     organization: { id: live.organization_id, name: live.organization_name, external_id: live.organization_external_id },
     deployment: {
@@ -399,6 +406,14 @@ export async function organizationForDeployment(deploymentId: string): Promise<R
       key_id: live.key_id,
       approved_at: new Date(live.approved_at).toISOString(),
       grants: live.grants,
+      allowance:
+        spend && spend.allowance !== null
+          ? {
+              allowance_micro_usd: Number(spend.allowance),
+              spent_micro_usd: Number(spend.spent),
+              left_micro_usd: Math.max(0, Number(spend.allowance) - Number(spend.spent)),
+            }
+          : null,
     },
     publisher_registrations: publishers.map((p) => ({ key_id: p.key_id, hosting: p.hosting, registered_at: new Date(p.registered_at).toISOString() })),
   };

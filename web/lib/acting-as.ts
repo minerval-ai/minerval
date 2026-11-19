@@ -24,6 +24,8 @@ export interface ActingOrganization {
   role: "admin" | "member";
   /** What the person may do as it: every member permission for an admin. */
   permissions: MemberPermission[];
+  /** What is left of their allowance on spend, where an admin set one (micro-USD). */
+  allowanceLeftMicroUsd?: number;
 }
 
 /** The organization id the switch names, unchecked. */
@@ -56,7 +58,13 @@ export const actingOrganization = cache(async (): Promise<ActingOrganization | n
     if (!org || !org.role) return null;
     const permissions = (org.permissions ?? []) as MemberPermission[];
     if (org.role !== "admin" && permissions.length === 0) return null;
-    return { id: org.id, name: org.name, role: org.role, permissions };
+    return {
+      id: org.id,
+      name: org.name,
+      role: org.role,
+      permissions,
+      ...(org.allowance_left_micro_usd !== undefined ? { allowanceLeftMicroUsd: org.allowance_left_micro_usd } : {}),
+    };
   } catch {
     return null;
   }

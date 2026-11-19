@@ -25,6 +25,8 @@ export interface OrganizationView {
   role?: OrganizationRole;
   /** What the reader may do as it: every member permission for an admin. */
   permissions?: MemberPermission[];
+  /** What is left of the reader's allowance on spend, where an admin set one. */
+  allowance_left_micro_usd?: number;
 }
 
 export interface GrantRow {
@@ -34,6 +36,9 @@ export interface GrantRow {
   deployment_id: string | null;
   granted_at: string;
   granted_by: string | null;
+  /** For spend: the owls (micro-USD) the grantee may spend in all, or null for the whole balance. */
+  allowance_micro_usd: number | null;
+  allowance_spent_micro_usd: number;
 }
 
 export interface MemberView {
@@ -231,6 +236,16 @@ export async function revokeOrganizationCredential(me: string, id: string, kind:
     method: "DELETE",
     actingUser: me,
   });
+}
+
+export async function setGrantAllowance(me: string, id: string, grantId: string, allowanceOwls: number | null): Promise<GrantRow[]> {
+  return (
+    await accountFetch<{ grants: GrantRow[] }>(`${org(id)}/grants/${pathSegment(grantId)}/allowance`, {
+      method: "PUT",
+      body: { allowance_owls: allowanceOwls },
+      actingUser: me,
+    })
+  ).grants;
 }
 
 export async function withdrawGrant(me: string, id: string, grantId: string): Promise<GrantRow[]> {

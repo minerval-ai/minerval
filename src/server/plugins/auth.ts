@@ -143,7 +143,13 @@ export interface RequestAuth {
    * what tools it is offered (mcp/route-tools.ts). Every request it makes is
    * checked again against their standing as it is then.
    */
-  actingStanding?: { organizationName: string; role: "admin" | "member"; permissions: MemberPermission[] };
+  actingStanding?: {
+    organizationName: string;
+    role: "admin" | "member";
+    permissions: MemberPermission[];
+    /** What is left of the person's allowance on spend there, where an admin set one. */
+    allowanceLeftMicroUsd?: number;
+  };
   /**
    * Set for a request signed by a connected deployment's key
    * (docs/organizations.md, "Signed requests"). The request is its

@@ -26,6 +26,7 @@ import {
   listGrants,
   listOrganizationCredentials,
   revokeOrganizationCredential,
+  setAllowance,
   listConversionsForMe,
   listInvitations,
   listLog,
@@ -216,6 +217,38 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
     handler: (request, reply) =>
       answer(reply, async () => ({ grants: await withdrawGrant({ organizationId: request.params.id, grantId: request.params.grant_id, by: me(request) }) })),
   });
+
+  app.put<{ Params: { id: string; grant_id: string }; Body: { allowance_owls: number | null } }>(
+    "/organizations/:id/grants/:grant_id/allowance",
+    {
+      schema: {
+        tags: TAGS,
+        summary:
+          "Set the allowance on a grant of spend (admins): the owls of the organization that member or deployment may spend in all, " +
+          "counting what they have spent, or null to spend from the whole balance. It has no period; raise it to let them spend more",
+        params: {
+          type: "object",
+          required: ["id", "grant_id"],
+          properties: { id: { type: "string" }, grant_id: { type: "string" } },
+        },
+        body: {
+          type: "object",
+          required: ["allowance_owls"],
+          properties: { allowance_owls: { type: ["number", "null"], minimum: 0 } },
+        },
+      },
+      preHandler: session,
+      handler: (request, reply) =>
+        answer(reply, async () => ({
+          grants: await setAllowance({
+            organizationId: request.params.id,
+            grantId: request.params.grant_id,
+            allowanceOwls: request.body.allowance_owls,
+            by: me(request),
+          }),
+        })),
+    }
+  );
 
   // ---- credentials made to act as the organization ----
 

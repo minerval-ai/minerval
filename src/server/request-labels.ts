@@ -306,6 +306,7 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "DELETE /organizations/:id/members/:account_id": { rule: "none", why: ORGANIZATION },
   "POST /organizations/:id/grants": { rule: "none", why: ORGANIZATION },
   "DELETE /organizations/:id/grants/:grant_id": { rule: "none", why: ORGANIZATION },
+  "PUT /organizations/:id/grants/:grant_id/allowance": { rule: "none", why: ORGANIZATION },
   "DELETE /organizations/:id/credentials/:kind/:credential_id": { rule: "none", why: ORGANIZATION },
   "POST /organizations/:id/invitations": { rule: "none", why: ORGANIZATION },
   "DELETE /organizations/:id/invitations/:invitation_id": { rule: "none", why: ORGANIZATION },

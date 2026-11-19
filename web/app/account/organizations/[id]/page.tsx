@@ -43,6 +43,7 @@ import {
   inviteAction,
   removeMemberAction,
   revokeCredentialAction,
+  setAllowanceAction,
   renameAction,
   revokeOldKeyAction,
   setRoleAction,
@@ -242,6 +243,12 @@ export default async function OrganizationPage({
               <h2>What you may do as {org.name}</h2>
             </div>
             <PermissionList held={admin ? [...MEMBER_PERMISSIONS] : mine} all={[...MEMBER_PERMISSIONS]} />
+            {org.allowance_left_micro_usd !== undefined && (
+              <p className="acct-prose">
+                An admin set an allowance on what you spend of its owls: {owls(org.allowance_left_micro_usd / 1_000_000)} owls are left. It
+                does not renew; an admin raises it.
+              </p>
+            )}
             <p className="acct-note">
               {admin
                 ? "As an admin you hold every permission a member can be given, and you give them to others on the Members tab."
@@ -602,10 +609,33 @@ function GrantChips({ grants, admin, organizationId }: { grants: GrantRow[]; adm
             given {dateish(g.granted_at)}
             {g.granted_by ? ` by ${g.granted_by}` : ""}
           </span>
+          {g.permission === "spend" && (
+            <span className="acct-detail">
+              {g.allowance_micro_usd === null
+                ? "no allowance: the whole balance"
+                : `allowance ${owls(Math.max(0, g.allowance_micro_usd - g.allowance_spent_micro_usd) / 1_000_000)} left of ${owls(g.allowance_micro_usd / 1_000_000)}`}
+            </span>
+          )}
           {admin && (
             <ActionForm action={withdrawGrantAction} submit="withdraw" inline danger>
               <input type="hidden" name="organization_id" value={organizationId} />
               <input type="hidden" name="grant_id" value={g.id} />
+            </ActionForm>
+          )}
+          {admin && g.permission === "spend" && (
+            <ActionForm action={setAllowanceAction} submit="Set allowance">
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <input type="hidden" name="grant_id" value={g.id} />
+              <label>
+                Owls it may spend in all, counting {owls(g.allowance_spent_micro_usd / 1_000_000)} spent
+                <input
+                  name="allowance_owls"
+                  inputMode="decimal"
+                  defaultValue={g.allowance_micro_usd === null ? "" : String(g.allowance_micro_usd / 1_000_000)}
+                  placeholder="blank: the whole balance"
+                />
+                <small>It has no period; raise it to let them spend more.</small>
+              </label>
             </ActionForm>
           )}
         </li>
