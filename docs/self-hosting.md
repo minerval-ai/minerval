@@ -301,6 +301,11 @@ sandbox, and an administrator registers directories under it as file sets.
   sits under.
 - **No TLS.** The web app and the API listen on plain HTTP, on this machine
   only unless `BIND_ADDRESS` says otherwise. Put a reverse proxy in front.
+  For Claude.ai, Cowork and other hosted MCP clients, the proxy also puts
+  the API at a public HTTPS address, and `API_URL` in `.env` names it: the
+  API tells clients to register and sign in there, and members connect at
+  it followed by `/mcp`. The web app's address does not serve for this
+  ([mcp.md](mcp.md), "Connecting from Claude.ai / Cowork").
 - **No published images.** You build from the repository.
 - **One machine, one API process.** The API and its workers are one
   container. Running more than one has not been tried.

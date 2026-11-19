@@ -19,17 +19,19 @@ import styles from "./home.module.css";
 type TabId = "graph" | "ext" | "mcp";
 type SetupId = "cc" | "cursor" | "claude" | "rest";
 
-const SETUPS: { id: SetupId; label: string; code: string; note: string }[] = [
+// The snippets for an API at `api`: public Minerval's, or a members-only
+// deployment's own (lib/mcp-address.ts), whose reads need a key.
+const setups = (api: string, own: boolean): { id: SetupId; label: string; code: string; note: string }[] => [
   {
     id: "cc", label: "Claude Code",
-    code: `claude mcp add --transport http minerval https://api.claimgraph.io/mcp`,
+    code: `claude mcp add --transport http minerval ${api}/mcp`,
     note: "Then run /mcp in Claude Code to sign in through the browser.",
   },
   {
     id: "claude", label: "Claude.ai",
     code: `Settings → Connectors → Add custom connector
   Name  Minerval
-  URL   https://api.claimgraph.io/mcp`,
+  URL   ${api}/mcp`,
     note: "Leave the OAuth client ID and secret empty: the connector registers itself and opens the sign-in page.",
   },
   {
@@ -38,7 +40,7 @@ const SETUPS: { id: SetupId; label: string; code: string; note: string }[] = [
 {
   "mcpServers": {
     "minerval": {
-      "url": "https://api.claimgraph.io/mcp",
+      "url": "${api}/mcp",
       "headers": { "x-api-key": "<your key>" }
     }
   }
@@ -47,8 +49,11 @@ const SETUPS: { id: SetupId; label: string; code: string; note: string }[] = [
   },
   {
     id: "rest", label: "REST",
-    code: `# Reads need no key. One claim's judgment, whole:
-curl https://api.claimgraph.io/claims/dc02e01f-ce69-4dbe-ba36-ed0e2e90d071/card`,
+    code: own
+      ? `# Every call needs a key from your account page.
+curl -H "x-api-key: $MINERVAL_API_KEY" "${api}/claims?limit=5"`
+      : `# Reads need no key. One claim's judgment, whole:
+curl ${api}/claims/dc02e01f-ce69-4dbe-ba36-ed0e2e90d071/card`,
     note: "Every route an account can call is also an MCP tool.",
   },
 ];
@@ -68,7 +73,7 @@ const CAPABILITIES: { title: string; what: string; cost: string; href: string }[
 const VERDICTS = ["verified", "supported", "inconclusive", "doubtful", "contradicted", "unknown"];
 
 export function Surfaces({
-  detail, source, features = ALL_FEATURES_ON, emptyMapNote,
+  detail, source, features = ALL_FEATURES_ON, emptyMapNote, apiBase,
 }: {
   detail: ClaimDetail | null;
   source: DataSource;
@@ -76,7 +81,12 @@ export function Surfaces({
   // What the map's place says when there is no claim to open on: a
   // members-only deployment says why in its own terms (#1092).
   emptyMapNote?: string;
+  // A members-only deployment's own API address, which the setup snippets
+  // name in place of public Minerval's. Null where it could not be read.
+  apiBase?: string | null;
 }) {
+  const own = apiBase !== undefined;
+  const SETUPS = setups(apiBase ?? "https://<this deployment's API address>", own);
   const [tab, setTab] = useState<TabId>("graph");
   const [setup, setSetup] = useState<SetupId>("cc");
 

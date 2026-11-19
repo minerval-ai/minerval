@@ -114,6 +114,7 @@ const CHECK_SHORT: Record<string, { title: string; owner?: Owner }> = {
   public_graph: { title: "Public graph not reachable" },
   public_acts: { title: "Who acts on the public graph is unclear" },
   private_run_fetches: { title: "Private runs may fetch any address" },
+  mcp_address: { title: "Hosted agents can't reach the API" },
   connections: { title: "A connection's credential is missing" },
   file_sets: { title: "File sets have nowhere to be kept" },
   sandbox: { title: "Sandbox not reachable" },

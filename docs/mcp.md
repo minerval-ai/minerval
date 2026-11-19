@@ -63,6 +63,18 @@ Settings → Connectors → *Add custom connector* → URL
 `https://<api-host>/mcp`. Leave the OAuth client ID/secret fields empty —
 the connector registers itself and walks the sign-in/consent flow.
 
+On a members-only deployment `<api-host>` is the API's public address
+(`hosting.api_base_url`, `PUBLIC_API_BASE_URL`; `API_URL` in the compose
+package), never the web app's: the web app refuses every request from
+someone not signed in, discovery and registration included, and the
+connector reports that it "couldn't register with the sign-in service".
+The API must also be reachable from the internet over HTTPS, since hosted
+clients connect from their provider's servers. The web app's Connect an
+agent page (`/docs/connect`) reads the address from the API's discovery
+document and shows it, with what to set when it would not work, and the
+preflight check `mcp_address` fails on an address only the deployment's
+own network reaches.
+
 ### Connecting from Claude Code
 
 ```bash
