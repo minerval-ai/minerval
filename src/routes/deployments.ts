@@ -21,10 +21,16 @@ import {
   connectRequestKey,
   connectState,
   denyConnect,
+  approveByHand,
   listDeployments,
+  listHostingTokens,
+  makeHostingToken,
+  revokeHostingToken,
   organizationForDeployment,
   readConnectRequest,
   recordNonce,
+  replaceKey,
+  retireDeployment,
   retireSelf,
 } from "../services/deployment-service.js";
 import { OrganizationError, requireMember } from "../services/organization-service.js";
@@ -111,6 +117,7 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
         needs?: Array<{ grant: string; why?: string }>;
         address?: string;
         report_identifier?: string;
+        hosting_token?: string;
       };
     }>("/deployments/connect", {
       schema: {
@@ -123,7 +130,8 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
           "`needs` says which grants the deployment's own settings need, each with why; the admin approving sees them ticked and " +
           "chooses from every grant. `grants` is the same list without why, as a deployment built before `needs` sends it. " +
           "`address` is the deployment's own web address: shown to the admin, linked to from the organization's Deployments tab, " +
-          "and where the admin is sent back to after approving. It is never fetched.",
+          "and where the admin is sent back to after approving. It is never fetched. `hosting_token` is the token Minerval's provisioning " +
+          "gave a deployment Minerval runs: `minerval` as the hosting is accepted only with a live one, and any other word is refused with one.",
         body: {
           type: "object",
           required: ["public_key", "name", "hosting"],
@@ -138,6 +146,7 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
             },
             address: { type: "string", maxLength: 500 },
             report_identifier: { type: "string" },
+            hosting_token: { type: "string", maxLength: 200 },
           },
         },
       },
@@ -153,6 +162,7 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
               grants: request.body.grants,
               needs: request.body.needs,
               address: request.body.address,
+              hostingToken: request.body.hosting_token,
               reportIdentifier: request.body.report_identifier,
             });
             return {
@@ -288,6 +298,125 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
         return { retired: true };
       });
     },
+  });
+
+  app.post<{ Body: { public_key: string; proof: string } }>("/deployments/me/key", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "A connected deployment, signed with its current key, replaces it with a new one: the old key stops at once, and its grants, " +
+        "its record and its organization stay. `proof` is the new key's signature over the replacement statement, so the old key " +
+        "alone cannot hand the deployment to a key nobody holds",
+      body: {
+        type: "object",
+        required: ["public_key", "proof"],
+        properties: { public_key: { type: "string", maxLength: 200 }, proof: { type: "string", maxLength: 200 } },
+      },
+    },
+    preHandler: reader,
+    handler: (request, reply) => {
+      const deployment = request.auth?.deployment;
+      if (!deployment) {
+        return reply.code(403).send({ error: "This is sent by a connected deployment, with its signed key.", code: "DEPLOYMENT_REQUIRED" });
+      }
+      return answer(reply, () => replaceKey({ deploymentId: deployment.id, publicKey: request.body.public_key, proof: request.body.proof }));
+    },
+  });
+
+  app.delete<{ Params: { id: string; deployment_id: string } }>("/organizations/:id/deployments/:deployment_id", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "Retire one of an organization's deployments (its admins, from a signed-in session): its key stops at once and its grants are " +
+        "withdrawn. The deployment learns it the next time it asks. It can connect again with a new key and a new approval",
+      params: {
+        type: "object",
+        required: ["id", "deployment_id"],
+        properties: { id: { type: "string" }, deployment_id: { type: "string" } },
+      },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        await retireDeployment({ organizationId: request.params.id, deploymentId: request.params.deployment_id, by: me(request) });
+        return { retired: true };
+      }),
+  });
+
+  app.post<{ Params: { id: string }; Body: { request: string; name?: string; grants: string[]; allowance_owls?: number } }>(
+    "/organizations/:id/deployments/by-hand",
+    {
+      schema: {
+        tags: TAGS,
+        summary:
+          "Approve a deployment the network does not join to minerval.ai (an admin, from a signed-in session), from the connection " +
+          "request it showed, carried by hand and pasted in whole. Checked as a request over the network is: signed by the key it names, " +
+          "made within seven days. The deployment needs nothing back; what it sends travels as files",
+        params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+        body: {
+          type: "object",
+          required: ["request", "grants"],
+          properties: {
+            request: { type: "string", minLength: 1, maxLength: 20_000 },
+            name: { type: "string" },
+            grants: { type: "array", items: GRANT },
+            allowance_owls: { type: "number", minimum: 0 },
+          },
+        },
+      },
+      preHandler: session,
+      handler: (request, reply) =>
+        answer(
+          reply,
+          () =>
+            approveByHand({
+              organizationId: request.params.id,
+              request: request.body.request,
+              name: request.body.name,
+              grants: request.body.grants,
+              allowanceOwls: request.body.allowance_owls,
+              by: me(request),
+            }),
+          201
+        ),
+    }
+  );
+
+  // ---- hosted by Minerval: the operator's tokens (docs/organizations.md, "Hosted by Minerval") ----
+
+  app.post<{ Body: { note: string } }>("/operator/hosted-deployment-tokens", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "Make a hosting token for a deployment Minerval provisions (the operator key). The token is answered once and goes in that " +
+        "deployment's MINERVAL_HOSTING_TOKEN; with it, and only with it, a deployment may say it runs on Minerval's machines",
+      body: { type: "object", required: ["note"], properties: { note: { type: "string", minLength: 1, maxLength: 300 } } },
+    },
+    preHandler: [app.requireOperator],
+    handler: (request, reply) => answer(reply, () => makeHostingToken(request.body.note), 201),
+  });
+
+  app.get("/operator/hosted-deployment-tokens", {
+    schema: {
+      tags: TAGS,
+      summary: "The hosting tokens made, each with the deployment it was last used by (the operator key). The tokens themselves are never answered",
+    },
+    preHandler: [app.requireOperator],
+    handler: (_request, reply) => answer(reply, async () => ({ tokens: await listHostingTokens() })),
+  });
+
+  app.delete<{ Params: { id: string } }>("/operator/hosted-deployment-tokens/:id", {
+    schema: {
+      tags: TAGS,
+      summary: "Revoke a hosting token (the operator key): no deployment connects with it again. One connected with it stays connected",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+    },
+    preHandler: [app.requireOperator],
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        await revokeHostingToken(request.params.id);
+        return { revoked: true };
+      }),
   });
 
   app.get<{ Params: { id: string } }>("/organizations/:id/deployments", {

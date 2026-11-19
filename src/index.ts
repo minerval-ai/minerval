@@ -19,6 +19,8 @@ import { startQueueDepthSampler } from "./workers/queue-depth-sampler.js";
 import { startTraceRetention } from "./workers/trace-retention.js";
 import { startModelPriceRefresh } from "./workers/model-price-refresh.js";
 import { startUsageReports } from "./workers/usage-reports.js";
+import { startDomainChecks } from "./workers/domain-checks.js";
+import { membersOnly } from "./permissions.js";
 import { usageReporting } from "./services/usage-report-service.js";
 import { startRecoverySweep } from "./workers/recovery-sweep.js";
 import { startTaggingScheduler } from "./workers/tagging-pipeline.js";
@@ -211,6 +213,10 @@ function startWork(
   // or on the flat price. Preparing takes a database lock and a report is
   // recorded once, so every task may run it.
   if (usageReporting(config)) pollers.push(startUsageReports({ logger }));
+  // Organizations' domains (docs/organizations.md, "A verified domain"),
+  // checked again daily on the public graph, which is where organizations
+  // live. A members-only deployment has none.
+  if (!membersOnly(config)) pollers.push(startDomainChecks({ logger }));
 
   return pollers;
 }

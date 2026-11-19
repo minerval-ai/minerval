@@ -155,7 +155,7 @@ export interface SetupChecklist {
      * has never been connected.
      */
     connection: {
-      state: "waiting" | "connected" | "denied" | "expired";
+      state: "waiting" | "connected" | "denied" | "expired" | "by_hand";
       organization_name: string | null;
       grants: string[];
       problem: string | null;
@@ -502,7 +502,6 @@ const RELEASED_OUTSIDE_COUNT_REASON =
 /** Where keeping public versions current stands, and whether the signing key is registered from here, for the checklist. */
 async function publicGraphState(config: {
   publicGraphApiUrl?: string;
-  publicGraphApiKey?: string;
   mirrorFeedUrl?: string;
   publicGraphPrice?: string;
   reads?: string;
@@ -530,8 +529,8 @@ async function publicGraphState(config: {
   );
   const ofThisKey = fingerprint ? registrations.find((r) => r.public_key && keyIdOf(r.public_key) === fingerprint) : undefined;
   return {
-    // Connected to minerval.ai with its own key, or reaching it with the account key in the settings.
-    account_set: Boolean(connection?.state === "connected" || (config.publicGraphApiUrl && config.publicGraphApiKey)),
+    // Connected to minerval.ai with its own key: the only way it reaches it (docs/organizations.md, phase 9).
+    account_set: connection?.state === "connected",
     connection: connection
       ? {
           state: connection.state,

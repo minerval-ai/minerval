@@ -1124,6 +1124,12 @@ export async function acceptConversion(input: { conversionId: string; by: string
       [conv.account_id, `${ORGANIZATION_EXTERNAL_PREFIX}${conv.account_id}`, conv.name]
     );
     await tx.query(`UPDATE oauth_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL`, [conv.account_id]);
+    // Its API keys stop too (docs/organizations.md, phase 9): nobody signs in as an organization, a
+    // deployment reaches minerval.ai over its own connection, and a member acts as it as themselves.
+    const stopped = await tx.query<{ id: string; key_prefix: string }>(
+      `UPDATE api_keys SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL RETURNING id, key_prefix`,
+      [conv.account_id]
+    );
     await tx.query(
       `INSERT INTO organization_members (organization_id, account_id, role, added_by) VALUES ($1, $2, 'admin', NULL)`,
       [conv.account_id, input.by]
@@ -1133,7 +1139,7 @@ export async function acceptConversion(input: { conversionId: string; by: string
       organizationId: conv.account_id,
       actorId: input.by,
       kind: "converted",
-      detail: { from_external_id: acct.external_id, name: conv.name },
+      detail: { from_external_id: acct.external_id, name: conv.name, ...(stopped.length ? { api_keys_revoked: stopped.map((k) => k.key_prefix) } : {}) },
     });
     return conv.account_id;
   });

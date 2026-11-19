@@ -6,6 +6,9 @@ import { AccountApiError, fetchAccount, type GrantView, type OwlLedgerEntry, typ
 import {
   getOrganization,
   listDeployments,
+  listDomains,
+  listSignInClients,
+  listReceivedReports,
   listInvitations,
   listLog,
   listMembers,
@@ -17,6 +20,9 @@ import {
   organizationMandates,
   type CredentialRow,
   type DeploymentView,
+  type DomainView,
+  type SignInClient,
+  type ReceivedReport,
   type GrantRow,
   type InvitationView,
   type LogEntry,
@@ -42,7 +48,17 @@ import {
   grantAction,
   inviteAction,
   removeMemberAction,
+  addDomainAction,
+  makeSignInClientAction,
+  setNamingAction,
+  revokeSignInClientAction,
+  approveByHandAction,
+  checkDomainAction,
+  removeDomainAction,
+  retireDeploymentAction,
   revokeCredentialAction,
+  submitCarriedPackageAction,
+  uploadUsageReportAction,
   setAllowanceAction,
   renameAction,
   revokeOldKeyAction,
@@ -119,6 +135,30 @@ function logLine(e: LogEntry, names: Map<string, string>, deployments: Map<strin
       return `approved the deployment ${String(d.name)}, with ${Array.isArray(d.grants) ? (d.grants as string[]).join(", ") : "its grants"}`;
     case "deployment_disconnected":
       return `the deployment ${String(d.name)} disconnected`;
+    case "names_people_set":
+      return d.names_people ? "chose to name the member who acted on the public record" : "chose to name the organization alone on the public record";
+    case "oidc_client_made":
+      return `registered the deployment ${String(d.name)} to sign members in with minerval.ai`;
+    case "oidc_client_revoked":
+      return `revoked sign-in with minerval.ai for ${String(d.name)}`;
+    case "domain_added":
+      return `added the domain ${String(d.domain)}`;
+    case "domain_confirmed":
+      return `the domain ${String(d.domain)} was confirmed`;
+    case "domain_unconfirmed":
+      return `the domain ${String(d.domain)} could not be confirmed: it is shown as unconfirmed for seven days`;
+    case "domain_lapsed":
+      return `the domain ${String(d.domain)} is no longer shown`;
+    case "domain_removed":
+      return `removed the domain ${String(d.domain)}`;
+    case "feed_downloaded":
+      return `downloaded feed batch ${String(d.sequence)} for the deployment ${String(d.name)}, to carry by hand`;
+    case "usage_report_uploaded":
+      return `uploaded the usage report for ${String(d.period)} (revision ${String(d.revision)})${d.recorded ? "" : ", which was recorded already"}`;
+    case "deployment_retired":
+      return `retired the deployment ${String(d.name)}`;
+    case "deployment_key_replaced":
+      return `the deployment ${String(d.name)} replaced its connection key (${String(d.old_key_id ?? "").slice(0, 8)} → ${String(d.key_id ?? "").slice(0, 8)})`;
     case "acted":
       return `acted as the organization${HOW[String(d.how)] ?? ""}: ${String(d.method)} ${String(d.route)} (${String(d.status)})`;
     case "credential_revoked":
@@ -177,6 +217,9 @@ export default async function OrganizationPage({
     tab === "deployments" ? listOrganizationGrants(me, id).catch(() => [] as GrantRow[]) : Promise.resolve([] as GrantRow[]),
   ]);
   const credentials = tab === "members" ? await listOrganizationCredentials(me, id).catch(() => [] as CredentialRow[]) : [];
+  const signInClients = tab === "members" ? await listSignInClients(me, id).catch(() => [] as SignInClient[]) : [];
+  const domains = tab === "overview" ? await listDomains(me, id).catch(() => [] as DomainView[]) : [];
+  const received = tab === "billing" && admin ? await listReceivedReports(me, id).catch(() => [] as ReceivedReport[]) : [];
 
   const live = deployments.filter((d) => !d.retired_at);
   const names = new Map(members.map((m) => [m.account_id, m.display_name]));
@@ -236,6 +279,27 @@ export default async function OrganizationPage({
               <p className="acct-figure-value">{mandates.length}</p>
               <p className="acct-figure-note">Funded in its name</p>
             </div>
+          </section>
+
+          <Domains domains={domains} admin={admin} organizationId={id} />
+
+          <section className="acct-section">
+            <div className="acct-head">
+              <h2>Who acted, on the public record</h2>
+              <span className="acct-note">{org.names_people ? "Named" : "Not named"} · off unless an admin turns it on</span>
+            </div>
+            <p className="acct-prose acct-measure">
+              {org.names_people
+                ? `The words a member puts on the record as ${org.name} (contributions, stated views, proposals) name them beside it, as written on their account.`
+                : `The public record says ${org.name} and nothing else. Which member acted is on its log here.`}{" "}
+              A deployment of {org.name} makes its own choice, on its Public graph page.
+            </p>
+            {admin && (
+              <ActionForm action={setNamingAction} submit={org.names_people ? "Stop naming them" : "Name the member who acted"} inline>
+                <input type="hidden" name="organization_id" value={id} />
+                <input type="hidden" name="on" value={org.names_people ? "0" : "1"} />
+              </ActionForm>
+            )}
           </section>
 
           <section className="acct-section">
@@ -377,6 +441,8 @@ export default async function OrganizationPage({
             )}
           </section>
 
+          <SignInClients clients={signInClients} admin={admin} organizationId={id} orgName={org.name} />
+
           <section className="acct-section">
             <div className="acct-head">
               <h2>Leaving</h2>
@@ -420,6 +486,7 @@ export default async function OrganizationPage({
               ))
             )}
           </section>
+          {admin && <ConnectByHand organizationId={id} />}
         </>
       )}
 
@@ -447,6 +514,26 @@ export default async function OrganizationPage({
               ))}
             </div>
           </section>
+          {admin && <ReceivedReports reports={received} />}
+          {admin && (
+            <section className="acct-section">
+              <div className="acct-head">
+                <h2>Usage reports carried by hand</h2>
+                <span className="acct-note">From a deployment the network does not join to minerval.ai</span>
+              </div>
+              <p className="acct-prose acct-measure">
+                Such a deployment writes each day&rsquo;s usage report as a file (its Budget page, USAGE_REPORT_DIR). Upload them here and they
+                are recorded against {org.name} exactly as if it had sent them: privately, for the metered price, and published nowhere.
+              </p>
+              <ActionForm action={uploadUsageReportAction} submit="Upload">
+                <input type="hidden" name="organization_id" value={id} />
+                <label>
+                  Report files
+                  <input type="file" name="report_file" accept="application/json,.json" multiple required />
+                </label>
+              </ActionForm>
+            </section>
+          )}
           {admin && (
             <section className="acct-section">
               <div className="acct-head">
@@ -723,6 +810,54 @@ function DeploymentBlock({
             <GrantChips grants={grants} admin={admin} organizationId={organizationId} />
           )}
           {admin && missing.length > 0 && <GiveForm organizationId={organizationId} field="deployment_id" grantee={d.id} choices={missing} />}
+          <details className="acct-asTable">
+            <summary>Carried by hand, for a deployment the network does not join</summary>
+            {d.grants.includes("read_feed") ? (
+              <form action={`/api/organizations/${organizationId}/feed`} method="get" className="admin-form">
+                <input type="hidden" name="deployment" value={d.id} />
+                <label>
+                  Download the feed batch after
+                  <input name="after" type="number" min={0} defaultValue={0} />
+                  <small>
+                    The number of the last batch it applied, from its Mirror page (0 for none). Put the file in its MIRROR_FEED_DIR. Each download
+                    is on the log as a pull, and shows no more than a pull over the network does.
+                  </small>
+                </label>
+                <div className="admin-form-foot">
+                  <button className="order-button" type="submit">
+                    Download
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className="acct-note">It does not hold read_feed, so no feed batch is downloaded for it.</p>
+            )}
+            <ActionForm action={submitCarriedPackageAction} submit="Submit">
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <label>
+                Page or mandate packages from its Outbox
+                <input type="file" name="package_file" accept="application/json,.json" multiple required />
+                <small>
+                  Submitted as the organization and checked as if the deployment had sent them: signed with its registered key. A page&rsquo;s first
+                  package is charged to the organization&rsquo;s owls, so this needs spend.
+                </small>
+              </label>
+            </ActionForm>
+          </details>
+          {admin && (
+            <details className="acct-asTable">
+              <summary>Retire this deployment</summary>
+              <p className="acct-note">
+                Its key stops working here at once and everything it may do is withdrawn. Nothing it did is undone. To act again it connects
+                anew, with a new key and an admin&rsquo;s approval. If its key may have been copied, its own administrators can replace the key
+                instead, keeping everything else.
+              </p>
+              <ActionForm action={retireDeploymentAction} submit={`Retire ${d.name}`} inline danger>
+                <input type="hidden" name="organization_id" value={organizationId} />
+                <input type="hidden" name="deployment_id" value={d.id} />
+              </ActionForm>
+            </details>
+          )}
           {d.recent_writes.length > 0 && (
             <details className="acct-asTable">
               <summary>{plural(d.recent_writes.length, "recent write")} · reads are not recorded</summary>
@@ -833,5 +968,217 @@ function LogLines({ log, names, deployments }: { log: LogEntry[]; names: Map<str
         </div>
       ))}
     </>
+  );
+}
+
+/** Approving a deployment the network does not join, from the request it showed, pasted in (docs/organizations.md, "Connecting by hand"). */
+function ConnectByHand({ organizationId }: { organizationId: string }) {
+  return (
+    <section className="acct-section">
+      <details>
+        <summary className="acct-note">Connect one by hand, for a deployment the network does not join to minerval.ai</summary>
+        <p className="acct-prose acct-measure">
+          An administrator of the deployment chooses &ldquo;Connect by hand&rdquo; in its Connect drawer, and it shows a signed request. Paste it
+          here whole, or choose the file it is in. It is checked as one sent over the network is. The deployment needs nothing back: its pages,
+          usage reports and the feed then travel as files, from each deployment&rsquo;s row above and the Billing tab.
+        </p>
+        <ActionForm action={approveByHandAction} submit="Approve it">
+          <input type="hidden" name="organization_id" value={organizationId} />
+          <label>
+            The request
+            <textarea name="request" rows={6} placeholder='{ "format": "minerval-connection-request/1", ... }' />
+          </label>
+          <label>
+            Or its file
+            <input type="file" name="request_file" accept="application/json,.json,.txt" />
+          </label>
+          <label>
+            What to call it
+            <input name="name" maxLength={120} placeholder="the name it asks for" />
+          </label>
+          <fieldset className="admin-fieldset">
+            <legend>What it may do as the organization</legend>
+            {DEPLOYMENT_GRANTS.map((g) => (
+              <label key={g} className="admin-check">
+                <input type="checkbox" name="grant" value={g} defaultChecked={g === "read_feed" || g === "report_usage" || g === "publish"} />
+                <span>
+                  <code>{g}</code> {PERMISSION_WORDS[g]}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <label>
+            Allowance on spend, in owls
+            <input name="allowance_owls" type="number" min={0} step="any" placeholder="none: the whole balance" />
+          </label>
+          <small className="acct-note">Approve only a request an administrator of your own deployment gave you. Recorded on the log under your name.</small>
+        </ActionForm>
+      </details>
+    </section>
+  );
+}
+
+const DOMAIN_STATE: Record<DomainView["state"], string> = {
+  waiting: "not yet found",
+  confirmed: "shown",
+  unconfirmed: "shown as unconfirmed",
+  lapsed: "not shown",
+};
+
+/** The organization's domains: what each says, the record to put in DNS, and checking (docs/organizations.md, "A verified domain"). */
+function Domains({ domains, admin, organizationId }: { domains: DomainView[]; admin: boolean; organizationId: string }) {
+  if (!admin && domains.length === 0) return null;
+  return (
+    <section className="acct-section">
+      <div className="acct-head">
+        <h2>Domain</h2>
+        <span className="acct-note">Shown beside its name: it controls DNS for the domain, and nothing more</span>
+      </div>
+      {domains.map((d) => (
+        <div key={d.id} className="acct-job">
+          <div className="acct-job-head">
+            <div>
+              <b>{d.domain}</b>
+              <span className="acct-detail">{d.in_words}</span>
+            </div>
+            <span className="acct-status">{DOMAIN_STATE[d.state]}</span>
+          </div>
+          {d.state !== "confirmed" && (
+            <p className="acct-note">
+              TXT record at <code>{d.record.name}</code>: <code>{d.record.value}</code>
+              {d.last_error ? ` · last check: ${d.last_error}` : ""}
+            </p>
+          )}
+          {admin && (
+            <div className="org-member-acts">
+              <ActionForm action={checkDomainAction} submit="Check now" inline>
+                <input type="hidden" name="organization_id" value={organizationId} />
+                <input type="hidden" name="domain_id" value={d.id} />
+              </ActionForm>
+              <ActionForm action={removeDomainAction} submit="Remove" inline danger>
+                <input type="hidden" name="organization_id" value={organizationId} />
+                <input type="hidden" name="domain_id" value={d.id} />
+              </ActionForm>
+            </div>
+          )}
+        </div>
+      ))}
+      {admin && domains.length === 0 && (
+        <ActionForm action={addDomainAction} submit="Add a domain">
+          <input type="hidden" name="organization_id" value={organizationId} />
+          <label>
+            Domain
+            <input name="domain" required placeholder="acme.com" autoComplete="off" />
+            <small>
+              You are shown a TXT record to put in its DNS. Once a check finds it, the domain is shown beside the organization&rsquo;s name
+              and checked again daily. One organization holds a domain at a time.
+            </small>
+          </label>
+        </ActionForm>
+      )}
+    </section>
+  );
+}
+
+const VIA: Record<ReceivedReport["via"], string> = { signed: "signed by the deployment", uploaded: "uploaded here", account_key: "sent with an account key" };
+
+/**
+ * What Minerval has recorded against the organization from its deployments'
+ * usage reports (docs/organizations.md, "Billing"): exactly what each
+ * deployment's Budget page shows as sent. Only the latest revision of a day counts.
+ */
+function ReceivedReports({ reports }: { reports: ReceivedReport[] }) {
+  const latest = new Map<string, ReceivedReport>();
+  for (const r of reports) {
+    const k = `${r.deployment_identifier}:${r.period}`;
+    if (!latest.has(k) || latest.get(k)!.revision < r.revision) latest.set(k, r);
+  }
+  return (
+    <section className="acct-section">
+      <div className="acct-head">
+        <h2>Usage recorded</h2>
+        <span className="acct-note">What it will be billed on, once a price per owl is decided</span>
+      </div>
+      {reports.length === 0 ? (
+        <p className="acct-prose acct-quiet">
+          No usage report has been recorded against it. A private deployment on the metered price reports each day&rsquo;s total of owls
+          its runs spent, and nothing else.
+        </p>
+      ) : (
+        reports.slice(0, 120).map((r) => {
+          const counts = latest.get(`${r.deployment_identifier}:${r.period}`) === r;
+          return (
+            <div key={`${r.deployment_identifier}-${r.period}-${r.revision}`} className="acct-line">
+              <div>
+                {r.period}
+                {r.revision > 0 ? ` (revision ${r.revision})` : ""}
+                <span className="acct-detail">
+                  {r.deployment?.name ?? `deployment ${r.deployment_identifier.slice(0, 8)}`} · {VIA[r.via]}
+                  {counts ? "" : " · replaced by a later revision"}
+                </span>
+              </div>
+              <span className="acct-amount" style={counts ? undefined : { textDecoration: "line-through" }}>
+                {r.owls_spent} owls
+              </span>
+            </div>
+          );
+        })
+      )}
+    </section>
+  );
+}
+
+/**
+ * Its deployments signing members in with their minerval.ai accounts
+ * (docs/organizations.md, "Signing in"): for a deployment with no identity
+ * provider of its own, or one Minerval runs.
+ */
+function SignInClients({ clients, admin, organizationId, orgName }: { clients: SignInClient[]; admin: boolean; organizationId: string; orgName: string }) {
+  const live = clients.filter((c) => !c.revoked_at);
+  if (!admin && live.length === 0) return null;
+  return (
+    <section className="acct-section">
+      <div className="acct-head">
+        <h2>Signing in to its deployments</h2>
+        <span className="acct-note">With minerval.ai accounts, for {orgName}&rsquo;s members only</span>
+      </div>
+      <p className="acct-prose acct-measure">
+        A private deployment with no identity provider of its own can sign its members in with their minerval.ai accounts. Only members of{" "}
+        {orgName} can sign in, and the deployment is told their role here as a group (<code>admin</code> or <code>member</code>). That role grants
+        nothing in the deployment: its administrators grant what each person may do there, and can grant it to either group. The deployment
+        then trusts minerval.ai to say who its members are.
+      </p>
+      {live.map((c) => (
+        <div key={c.id} className="acct-line">
+          <div>
+            {c.name}
+            <span className="acct-detail">
+              <code>{c.client_id}</code> · back to {c.redirect_uris.map((u) => u.replace(/^https?:\/\//, "")).join(", ")} ·{" "}
+              {c.last_used_at ? `last used ${c.last_used_at.slice(0, 10)}` : "not used yet"}
+            </span>
+          </div>
+          {admin && (
+            <ActionForm action={revokeSignInClientAction} submit="Revoke" inline danger>
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <input type="hidden" name="client_id" value={c.id} />
+            </ActionForm>
+          )}
+        </div>
+      ))}
+      {admin && (
+        <ActionForm action={makeSignInClientAction} submit="Register a deployment">
+          <input type="hidden" name="organization_id" value={organizationId} />
+          <label>
+            Which deployment
+            <input name="name" required maxLength={120} placeholder="Research" />
+          </label>
+          <label>
+            Where it receives people back
+            <input name="redirect_uris" required placeholder="https://research.acme.com/api/auth/callback/oidc" />
+            <small>Its own address followed by /api/auth/callback/oidc. Several, separated by spaces, if it has more than one address.</small>
+          </label>
+        </ActionForm>
+      )}
+    </section>
   );
 }

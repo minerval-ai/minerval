@@ -1366,6 +1366,41 @@
       "when": 1795113374761,
       "tag": "0194_connect_revised",
       "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "7",
+      "when": 1795117043426,
+      "tag": "0195_control",
+      "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1795117891054,
+      "tag": "0196_verified_domains",
+      "breakpoints": true
+    },
+    {
+      "idx": 197,
+      "version": "7",
+      "when": 1795118318759,
+      "tag": "0197_billing_on_organization",
+      "breakpoints": true
+    },
+    {
+      "idx": 198,
+      "version": "7",
+      "when": 1795119318193,
+      "tag": "0198_oidc_and_naming",
+      "breakpoints": true
+    },
+    {
+      "idx": 199,
+      "version": "7",
+      "when": 1795119902649,
+      "tag": "0199_revoke_old_organization_keys",
+      "breakpoints": true
     }
   ]
 }

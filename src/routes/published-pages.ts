@@ -77,7 +77,7 @@ export async function publishedPageRoutes(app: FastifyInstance): Promise<void> {
     throw err;
   };
 
-  app.post<{ Body: { public_key: string; hosting: string; signature: string; declared_interest?: string } }>("/publishers", {
+  app.post<{ Body: { public_key: string; hosting: string; signature: string; declared_interest?: string; deployment_id?: string } }>("/publishers", {
     schema: {
       tags: ["published pages"],
       summary: "Register a deployment's signing key to your account, so that pages it publishes can be submitted under it",
@@ -96,6 +96,8 @@ export async function publishedPageRoutes(app: FastifyInstance): Promise<void> {
           hosting: { type: "string", enum: Object.keys(HOSTING_WORDS) },
           signature: { type: "string", minLength: 40, maxLength: 200 },
           declared_interest: { type: "string", maxLength: DECLARED_INTEREST_MAX_CHARS },
+          // An admin acting as the organization, registering the key of one of its deployments that the network does not join.
+          deployment_id: UUID,
         },
       },
     },
@@ -112,6 +114,10 @@ export async function publishedPageRoutes(app: FastifyInstance): Promise<void> {
             hosting: request.body.hosting,
             signature: request.body.signature,
             declaredInterest: request.body.declared_interest,
+            // Over a connection, the deployment that signed; by hand, the organization's deployment its admin names.
+            deploymentId: request.auth?.deployment?.id ?? (request.auth?.actingMember ? (request.body.deployment_id ?? null) : null),
+            statementNamesDeployment: Boolean(request.auth?.deployment),
+            organizationId: request.auth?.actingMember ? request.auth.userId : null,
           })
         );
       } catch (err) {

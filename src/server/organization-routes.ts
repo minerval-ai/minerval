@@ -32,10 +32,13 @@ export interface OrganizationRouteRule {
    */
   member?: MemberPermission | "member" | "admin";
   /**
-   * What a deployment needs: any one of these grants, or "any" (any live
-   * grant: the deployment reading its own organization's state).
+   * What a deployment needs: any one of these grants, "any" (any live
+   * grant: the deployment reading its own organization's state), or "self"
+   * (nothing: a live deployment's own standing, which it reads and changes
+   * whatever it holds, so one whose every grant was withdrawn can still see
+   * that, replace its key, or retire).
    */
-  deployment?: readonly DeploymentGrant[] | "any";
+  deployment?: readonly DeploymentGrant[] | "any" | "self";
 }
 
 const spend: OrganizationRouteRule = { member: "spend", deployment: ["spend"] };
@@ -84,9 +87,14 @@ export const ORGANIZATION_ROUTES: Readonly<Record<string, OrganizationRouteRule>
   "POST /requests/:request_id/take-up/decline": takeUp,
 
   // ---- publish, read_feed, report_usage: a deployment's own work ----
-  "POST /publishers": { deployment: ["publish"] },
-  "POST /published-pages": { deployment: ["publish"] },
-  "POST /published-mandates": { deployment: ["publish"] },
+  // A deployment the network does not join sends its packages as files: a
+  // member carries them and submits them acting as the organization, and an
+  // admin registers its key the same way (docs/organizations.md, "Connecting by
+  // hand"). Each is checked as if the deployment had sent it. A package's
+  // first version is charged to the organization's owls, so the member needs spend.
+  "POST /publishers": { member: "admin", deployment: ["publish"] },
+  "POST /published-pages": { member: "spend", deployment: ["publish"] },
+  "POST /published-mandates": { member: "spend", deployment: ["publish"] },
   "GET /mirror/feed/:sequence": { deployment: ["read_feed"] },
   "POST /usage-reports": { deployment: ["report_usage"] },
 
@@ -104,12 +112,16 @@ export const ORGANIZATION_ROUTES: Readonly<Record<string, OrganizationRouteRule>
 
   // ---- the organization's own state ----
   "GET /billing/ledger": { member: "admin" },
-  "GET /organizations/me": { deployment: "any" },
-  "POST /deployments/me/retire": { deployment: "any" },
+  "GET /organizations/me": { deployment: "self" },
+  "POST /deployments/me/retire": { deployment: "self" },
+  "POST /deployments/me/key": { deployment: "self" },
   "GET /users/me": { member: "member", deployment: "any" },
   "GET /grants": { member: "member", deployment: "any" },
   "GET /reports/mine/:id": { member: "member", deployment: "any" },
   "GET /contributions/:id": { member: "member", deployment: "any" },
+  "GET /grant-conversations": { member: "member", deployment: "any" },
+  // Its organization's publisher record, which Overview reads to say whether its signing key is registered.
+  "GET /publishers/:account_id": { member: "member", deployment: "any" },
   "GET /grant-conversations/:id": { member: "member", deployment: "any" },
 };
 
@@ -132,6 +144,9 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
   "POST /oauth/token": PERSONAL,
   "POST /oauth/requests/:request_id/approve": PERSONAL,
   "POST /oauth/requests/:request_id/deny": PERSONAL,
+  "POST /oidc/token": SERVICE,
+  "POST /oidc/requests/:request_id/approve": PERSONAL,
+  "POST /oidc/requests/:request_id/deny": PERSONAL,
   "POST /mcp": "The MCP transport: a client acts as the identity its credential was made for (docs/organizations.md, \"Other credentials\").",
   "DELETE /mcp": "The MCP transport: a client acts as the identity its credential was made for (docs/organizations.md, \"Other credentials\").",
   "POST /users/provision": SERVICE,
@@ -155,6 +170,15 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
   "DELETE /organizations/:id/members/:account_id": MANAGING,
   "POST /organizations/:id/grants": MANAGING,
   "DELETE /organizations/:id/grants/:grant_id": MANAGING,
+  "DELETE /organizations/:id/deployments/:deployment_id": MANAGING,
+  "POST /organizations/:id/deployments/by-hand": MANAGING,
+  "POST /organizations/:id/domains": MANAGING,
+  "POST /organizations/:id/oidc-clients": MANAGING,
+  "PUT /organizations/:id/naming": MANAGING,
+  "DELETE /organizations/:id/oidc-clients/:client_id": MANAGING,
+  "POST /organizations/:id/domains/:domain_id/check": MANAGING,
+  "DELETE /organizations/:id/domains/:domain_id": MANAGING,
+  "POST /organizations/:id/usage-reports": MANAGING,
   "PUT /organizations/:id/grants/:grant_id/allowance": MANAGING,
   "DELETE /organizations/:id/credentials/:kind/:credential_id": MANAGING,
   "POST /organizations/:id/invitations": MANAGING,
@@ -169,6 +193,8 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
   "POST /deployments/connect": "A deployment asks to connect with its own key, before it belongs to any organization.",
 
   "POST /operator/organizations/:id/admins": SERVICE,
+  "POST /operator/hosted-deployment-tokens": SERVICE,
+  "DELETE /operator/hosted-deployment-tokens/:id": SERVICE,
   "POST /operator/platform-grantmaking-keys": SERVICE,
   "DELETE /operator/platform-grantmaking-keys/:id": SERVICE,
   "POST /operator/platform-mandates/fund": SERVICE,
@@ -241,6 +267,6 @@ export function memberMayCall(
 }
 
 /** What a deployment needs to call a route: null where it may not call it at all. */
-export function deploymentNeeds(route: string): readonly DeploymentGrant[] | "any" | null {
+export function deploymentNeeds(route: string): readonly DeploymentGrant[] | "any" | "self" | null {
   return ORGANIZATION_ROUTES[route]?.deployment ?? null;
 }

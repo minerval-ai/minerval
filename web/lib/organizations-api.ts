@@ -27,6 +27,10 @@ export interface OrganizationView {
   permissions?: MemberPermission[];
   /** What is left of the reader's allowance on spend, where an admin set one. */
   allowance_left_micro_usd?: number;
+  /** Its verified domain, where one is shown (read from GET /organizations/:id). */
+  domain?: { domain: string; confirmed_at: string; unconfirmed_since: string | null } | null;
+  /** Whether its public record names who acted for it. */
+  names_people?: boolean;
 }
 
 export interface GrantRow {
@@ -312,6 +316,120 @@ export async function approveConnectRequest(
 
 export async function denyConnectRequest(me: string, code: string): Promise<void> {
   await accountFetch(`/connect-requests/${pathSegment(code)}/deny`, { method: "POST", actingUser: me });
+}
+
+export async function approveByHand(
+  me: string,
+  id: string,
+  request: string,
+  name: string,
+  grants: DeploymentGrant[],
+  allowanceOwls: number | null
+): Promise<{ deployment_id: string; key_id: string }> {
+  return accountFetch(`${org(id)}/deployments/by-hand`, {
+    method: "POST",
+    body: { request, grants, ...(name ? { name } : {}), ...(allowanceOwls !== null ? { allowance_owls: allowanceOwls } : {}) },
+    actingUser: me,
+  });
+}
+
+export interface ReceivedReport {
+  period: string;
+  revision: number;
+  owls_spent: string;
+  deployment_identifier: string;
+  deployment: { id: string; name: string } | null;
+  via: "signed" | "uploaded" | "account_key";
+  received_at: string;
+  body: string;
+}
+
+/** What Minerval has recorded against the organization (admins only). */
+export async function listReceivedReports(me: string, id: string): Promise<ReceivedReport[]> {
+  return (await accountFetch<{ reports: ReceivedReport[] }>(`${org(id)}/usage-reports?limit=400`, { actingUser: me })).reports;
+}
+
+/** Upload a usage report a deployment wrote as a file, recorded against the organization as if sent. */
+export async function uploadUsageReport(me: string, id: string, report: string): Promise<{ recorded: boolean; period: string; revision: number }> {
+  return accountFetch(`${org(id)}/usage-reports`, { method: "POST", body: { report }, actingUser: me });
+}
+
+/**
+ * Submit a page or mandate package a deployment of the organization wrote as
+ * a file, acting as the organization: checked and admitted as if the
+ * deployment had sent it.
+ */
+export async function submitCarriedPackage(me: string, id: string, kind: "page" | "mandate", pkg: unknown): Promise<Record<string, unknown>> {
+  return accountFetch(kind === "page" ? "/published-pages" : "/published-mandates", {
+    method: "POST",
+    body: { package: pkg },
+    actingUser: me,
+    actingOrganization: id,
+  });
+}
+
+// ---- a verified domain (docs/organizations.md, "A verified domain") ----
+
+export interface DomainView {
+  id: string;
+  domain: string;
+  record: { name: string; type: "TXT"; value: string };
+  state: "waiting" | "confirmed" | "unconfirmed" | "lapsed";
+  added_at: string;
+  verified_at: string | null;
+  confirmed_at: string | null;
+  unconfirmed_since: string | null;
+  last_checked_at: string | null;
+  last_error: string | null;
+  in_words: string;
+}
+
+export async function listDomains(me: string, id: string): Promise<DomainView[]> {
+  return (await accountFetch<{ domains: DomainView[] }>(`${org(id)}/domains`, { actingUser: me })).domains;
+}
+export async function addDomain(me: string, id: string, domain: string): Promise<DomainView> {
+  return (await accountFetch<{ domain: DomainView }>(`${org(id)}/domains`, { method: "POST", body: { domain }, actingUser: me })).domain;
+}
+export async function checkDomain(me: string, id: string, domainId: string): Promise<DomainView> {
+  return (await accountFetch<{ domain: DomainView }>(`${org(id)}/domains/${pathSegment(domainId)}/check`, { method: "POST", actingUser: me })).domain;
+}
+export async function removeDomain(me: string, id: string, domainId: string): Promise<void> {
+  await accountFetch(`${org(id)}/domains/${pathSegment(domainId)}`, { method: "DELETE", actingUser: me });
+}
+
+// ---- signing in to its deployments with minerval.ai (docs/organizations.md, "Signing in") ----
+
+export interface SignInClient {
+  id: string;
+  client_id: string;
+  name: string;
+  redirect_uris: string[];
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export async function listSignInClients(me: string, id: string): Promise<SignInClient[]> {
+  return (await accountFetch<{ clients: SignInClient[] }>(`${org(id)}/oidc-clients`, { actingUser: me })).clients;
+}
+export async function makeSignInClient(me: string, id: string, name: string, redirectUris: string[]): Promise<SignInClient & { client_secret: string; issuer: string }> {
+  return (await accountFetch<{ client: SignInClient & { client_secret: string; issuer: string } }>(`${org(id)}/oidc-clients`, {
+    method: "POST",
+    body: { name, redirect_uris: redirectUris },
+    actingUser: me,
+  })).client;
+}
+export async function revokeSignInClient(me: string, id: string, clientId: string): Promise<void> {
+  await accountFetch(`${org(id)}/oidc-clients/${pathSegment(clientId)}`, { method: "DELETE", actingUser: me });
+}
+
+/** An admin chooses whether the organization's public record names who acted for it. */
+export async function setOrganizationNaming(me: string, id: string, on: boolean): Promise<{ names_people: boolean }> {
+  return accountFetch(`${org(id)}/naming`, { method: "PUT", body: { names_people: on }, actingUser: me });
+}
+
+export async function retireDeployment(me: string, id: string, deploymentId: string): Promise<void> {
+  await accountFetch(`${org(id)}/deployments/${pathSegment(deploymentId)}`, { method: "DELETE", actingUser: me });
 }
 
 export async function listDeployments(me: string, id: string): Promise<DeploymentView[]> {

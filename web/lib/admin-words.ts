@@ -535,7 +535,7 @@ function publicGraphItem(c: SetupChecklist): ChecklistItem | null {
       facts,
       next: p.account_set
         ? "A person who directs the graph can open a public mandate for the purpose and name it there, or turn the setting off."
-        : `${CONFIG_OWNER} can give the deployment the organisation's account on the public graph (PUBLIC_GRAPH_API_URL, PUBLIC_GRAPH_API_KEY), or a person who directs the graph can turn the setting off.`,
+        : "An administrator can connect the deployment to minerval.ai on the public graph's Overview, or a person who directs the graph can turn the setting off.",
     };
   }
   return { ...base, state: "done", facts };
@@ -608,15 +608,15 @@ function usageItem(c: SetupChecklist): ChecklistItem {
         "Each day's total of owls spent is reported to the public graph, and there is nowhere set for the reports to go.",
         ...(waiting ? [waiting] : []),
       ],
-      next: `${CONFIG_OWNER} sets where they go: USAGE_REPORT_URL with USAGE_REPORT_API_KEY to send them, or USAGE_REPORT_DIR to write each one as a file to hand over.`,
+      next: `An administrator connects the deployment to minerval.ai on the public graph's Overview, and they are sent over its connection; or ${CONFIG_OWNER.charAt(0).toLowerCase() + CONFIG_OWNER.slice(1)} sets USAGE_REPORT_DIR to write each one as a file for an admin to upload.`,
     };
   }
   if (!u.destination_ready) {
     return {
       ...base,
       state: "to_do",
-      facts: ["Reports are set to be sent to the public graph, and the key they are sent under is not set.", ...(waiting ? [waiting] : [])],
-      next: `${CONFIG_OWNER} sets USAGE_REPORT_API_KEY in the environment the API runs in.`,
+      facts: ["Reports are set to be sent to the public graph, and they are sent only over this deployment's connection, which it does not have.", ...(waiting ? [waiting] : [])],
+      next: "An administrator connects the deployment to minerval.ai on the public graph's Overview.",
     };
   }
   if (u.unsent > 0 && u.last_error) {

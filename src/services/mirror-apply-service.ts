@@ -1163,7 +1163,7 @@ export function urlSource(baseUrl: string, apiKey: string, fetchImpl?: typeof fe
         throw new MirrorConfigError(
           `The mirror feed at ${base} answered ${res.status} to GET /mirror/feed/${sequence}` +
             (res.status === 401 || res.status === 403
-              ? " (where the deployment is connected, its read_feed grant on minerval.ai; otherwise MIRROR_FEED_API_KEY)."
+              ? " (the deployment must be connected to minerval.ai and hold read_feed, which an admin of the organization gives there)."
               : ".")
         );
       }
@@ -1176,7 +1176,8 @@ export function urlSource(baseUrl: string, apiKey: string, fetchImpl?: typeof fe
 export function configuredSource(): BatchSource | null {
   const config = loadConfig();
   if (config.mirrorFeedDir) return directorySource(config.mirrorFeedDir);
-  if (config.mirrorFeedUrl) return urlSource(config.mirrorFeedUrl, config.mirrorFeedApiKey);
+  // Fetched over the deployment's connection, signed with its key (services/public-graph-client.ts).
+  if (config.mirrorFeedUrl) return urlSource(config.mirrorFeedUrl, "");
   return null;
 }
 

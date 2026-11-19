@@ -97,6 +97,8 @@ const MODULE_STATE: Record<string, string> = {
   "src/services/public-graph-client.ts:cached": "This deployment's connection to minerval.ai, for five seconds: one row, the owner's, read on its connection, and no row that carries a label.",
   "src/services/public-graph-client.ts:fetchImpl": "The function requests to the public graph go out by: a function, no rows.",
   "src/services/public-graph-connection.ts:rawFetch": "The function connecting goes out by: a function, no rows.",
+  "src/services/organization-domains.ts:txtResolver": "The function TXT records are read by: a function, no rows.",
+  "src/services/oidc-provider.ts:signing": "The provider's signing key, read once from OIDC_SIGNING_KEY: a key, no rows.",
   "src/server/plugins/auth.ts:signedBodyHash": "The sha-256 of a deployment's signed request body while it is in flight, keyed by the request. A hash, no rows.",
   "src/server/plugins/members-only.ts:labelOfRequest": "The fixed label of the key or token each request in flight came with. Request objects and a label's name, no rows.",
   "src/server/plugins/quota.ts:windows": "Times of recent requests for each caller, for the rate limit. No content.",

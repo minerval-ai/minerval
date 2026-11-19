@@ -127,7 +127,9 @@ function signer(): Signer {
  * it to minerval.ai (docs/organizations.md, "Connecting").
  */
 export async function statedHosting(): Promise<"own_machines" | "minerval" | "third_party" | null> {
-  const fixed = loadConfig().deploymentHosting;
+  const config = loadConfig();
+  if (config.minervalHostingToken) return "minerval";
+  const fixed = config.deploymentHosting;
   if (fixed) return fixed;
   const { readConnection } = await import("./public-graph-client.js");
   return (await readConnection())?.hosting ?? null;
@@ -173,11 +175,18 @@ export function signingKeyId(): string | null {
   }
 }
 
-/** The registration the organization's account presents on the public graph, signed with the deployment's key. */
-export async function signedRegistration(account: string): Promise<{ public_key: string; hosting: string; account: string; signature: string }> {
+/**
+ * The registration the organization's account presents on the public graph,
+ * signed with the deployment's key. Sent over the deployment's connection, it
+ * names the deployment too (`deploymentId`), as the public graph then checks.
+ */
+export async function signedRegistration(
+  account: string,
+  deploymentId: string | null = null
+): Promise<{ public_key: string; hosting: string; account: string; signature: string }> {
   const s = signer();
   const where = await hosting();
-  const statement = registrationStatement({ account, publicKey: s.publicKey, hosting: where });
+  const statement = registrationStatement({ account, publicKey: s.publicKey, hosting: where, deploymentId });
   return {
     public_key: s.publicKey,
     hosting: where,
@@ -429,38 +438,40 @@ export interface PublicGraph {
 }
 
 /**
- * Where this deployment reaches the public graph, and how: signed with its
- * connection key where it is connected (docs/organizations.md, "Connecting"),
- * otherwise with the account key in its settings. PUBLIC_GRAPH_API_URL, where
- * set, names the address either way.
+ * Where this deployment reaches the public graph: over its connection,
+ * signed with its own key (docs/organizations.md, "Connecting"), and only
+ * so. PUBLIC_GRAPH_API_URL, where set, overrides the connection's address.
  */
 export async function publicGraph(): Promise<PublicGraph> {
-  const { publicGraphApiUrl, publicGraphApiKey } = loadConfig();
+  const { publicGraphApiUrl } = loadConfig();
   const connection = await liveConnection();
   if (connection) {
     return { url: (publicGraphApiUrl || connection.apiUrl).replace(/\/+$/, ""), key: "", signed: true };
   }
-  if (!publicGraphApiUrl || !publicGraphApiKey) {
-    throw new OutboundError(
-      "NO_ROUTE_OUT",
-      "This deployment is not connected to minerval.ai and has no account key for it (PUBLIC_GRAPH_API_KEY), so it " +
-        "sends nothing itself. An administrator connects it on the public graph's Overview; meanwhile a person can take each " +
-        "package as a file and submit it on the public graph under the organization's account."
-    );
-  }
-  return { url: publicGraphApiUrl.replace(/\/+$/, ""), key: publicGraphApiKey, signed: false };
+  throw new OutboundError(
+    "NO_ROUTE_OUT",
+    "This deployment is not connected to minerval.ai, so it sends nothing itself. An administrator connects it on the public " +
+      "graph's Overview; where the network does not join them, by hand, and then a member of the organization submits each " +
+      "package as a file on minerval.ai."
+  );
 }
 
-/** Whether anything can be sent to the public graph from here: a connection, or an account key with its address. */
+/** Whether anything can be sent to the public graph from here: a connection. */
 export async function hasRouteOut(): Promise<boolean> {
-  const { publicGraphApiUrl, publicGraphApiKey } = loadConfig();
-  return Boolean(await liveConnection()) || Boolean(publicGraphApiUrl && publicGraphApiKey);
+  return Boolean(await liveConnection());
 }
 
-export async function call(graph: PublicGraph, method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; json: Record<string, any> }> {
+export async function call(
+  graph: PublicGraph,
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<{ status: number; json: Record<string, any> }> {
   const res = await publicGraphFetch(`${graph.url}${path}`, {
     method,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(headers ? { headers } : {}),
     fallbackKey: graph.key,
   });
   const text = await res.text();

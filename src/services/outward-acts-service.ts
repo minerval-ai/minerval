@@ -3,9 +3,9 @@
  * (docs/outward-acts.md).
  *
  * A deployment acts on the public graph as an ordinary account and only as
- * one. Everything here is a call to a route any account could call, with
- * the key of the organization's own account (PUBLIC_GRAPH_API_URL,
- * PUBLIC_GRAPH_API_KEY; outbound-service.ts has the client):
+ * one. Everything here is a call to a route any account could call, made
+ * as the organization over this deployment's connection, signed with its
+ * own key (outbound-service.ts has the client):
  *
  *   - opening a public mandate with the public Grantmaker, funding it,
  *     backing an existing one, funding a public node's assessment, and
@@ -86,7 +86,8 @@ export type OutwardActKind =
   | "send_failure_facts"
   | "register_publisher"
   | "connect_deployment"
-  | "disconnect_deployment";
+  | "disconnect_deployment"
+  | "replace_connection_key";
 
 /** What each kind of act is, as the log says it to a member. */
 export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
@@ -105,6 +106,7 @@ export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
   register_publisher: "registered this deployment's signing key to the organization's account on the public graph",
   connect_deployment: "asked minerval.ai to connect this deployment to an organization, with a new connection key",
   disconnect_deployment: "disconnected this deployment from minerval.ai, retiring its connection key there",
+  replace_connection_key: "replaced this deployment's connection key on minerval.ai; the old key stopped working there",
 };
 
 /** Who made a call: a person, or the gate to outside sending what its setting let through with nobody sending it. */
@@ -165,9 +167,19 @@ async function act(input: {
     if (err instanceof OutboundError) throw new OutwardError("NO_ROUTE_OUT", NO_ACCOUNT_WORDS);
     throw err;
   }
+  // The person's name, where this deployment's administrators chose to send it (services/named-person.ts).
+  const headers: Record<string, string> = {};
+  if ("actor" in input.by) {
+    const { sendsPersonName } = await import("./named-person.js");
+    if (await sendsPersonName()) {
+      const [person] = await rawQuery<{ display_name: string }>(`SELECT display_name FROM contributors WHERE id = $1`, [input.by.actor.id]);
+      // Percent-encoded: a header carries Latin-1 only, and a name may be in any script.
+      if (person?.display_name) headers["x-acting-person-name"] = encodeURIComponent(person.display_name.slice(0, 120));
+    }
+  }
   let res: { status: number; json: Record<string, any> };
   try {
-    res = await call(graph, input.method, input.path, input.body);
+    res = await call(graph, input.method, input.path, input.body, Object.keys(headers).length ? headers : undefined);
   } catch (err) {
     const said = err instanceof Error ? err.message.slice(0, 500) : "The public graph could not be reached.";
     await logOutwardAct({ kind: input.kind, by: input.by, publicRef: input.publicRef, sent: input.body, result: "failed", said });
@@ -437,7 +449,7 @@ export async function publicAccount(): Promise<Record<string, unknown>> {
     if (me.status !== 200) {
       return {
         connected: false,
-        in_words: `The public graph did not accept this deployment (${me.status}). Where it is connected, an admin of the organization on minerval.ai can see whether its grants were withdrawn; where it uses an account key, an operator checks PUBLIC_GRAPH_API_KEY.`,
+        in_words: `The public graph did not accept this deployment (${me.status}). An admin of the organization on minerval.ai can see on its Deployments tab whether this deployment's grants were withdrawn or it was retired.`,
         who_may_act: who,
         signing_key_fingerprint: key,
         ...(await registrationOf(null, null, key)),
@@ -775,11 +787,13 @@ export async function registerPublisherOutside(input: { declaredInterest?: strin
   }
   const account = me.status === 200 ? String(me.json.user?.external_id ?? "") : "";
   if (!account) {
-    throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not accept this deployment (${me.status}). Where it is connected, an admin of the organization on minerval.ai can see whether its grants were withdrawn; where it uses an account key, an operator checks PUBLIC_GRAPH_API_KEY.`, 409);
+    throw new OutwardError("PUBLIC_GRAPH_REFUSED", `The public graph did not accept this deployment (${me.status}). An admin of the organization on minerval.ai can see on its Deployments tab whether this deployment's grants were withdrawn or it was retired.`, 409);
   }
   let statement;
   try {
-    statement = await signedRegistration(account);
+    // Over the connection, the statement names this deployment, as the public graph checks.
+    const { liveConnection } = await import("./public-graph-client.js");
+    statement = await signedRegistration(account, (await liveConnection())?.deploymentId ?? null);
   } catch (err) {
     if (err instanceof OutboundError) throw new OutwardError(err.code, err.message, 409);
     throw err;

@@ -8,7 +8,7 @@
  * request with that key, and each signed request is the organization's,
  * limited to what its grants open (server/organization-routes.ts).
  */
-import { randomInt } from "node:crypto";
+import { createHash, createPrivateKey, randomBytes, randomInt, sign as cryptoSign, verify as cryptoVerify } from "node:crypto";
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery, withTransaction, type TxQuery } from "../db/client.js";
 import { ACT_SPLIT, DEPLOYMENT_GRANTS, type DeploymentGrant } from "../db/schema.js";
@@ -82,6 +82,8 @@ export interface ConnectAsk {
   /** Where its own site is, for links back to it. */
   address?: unknown;
   reportIdentifier?: unknown;
+  /** The token Minerval's provisioning gave it, where Minerval runs it. */
+  hostingToken?: unknown;
 }
 
 export interface Need {
@@ -155,6 +157,7 @@ export async function askToConnect(input: ConnectAsk): Promise<{ code: string; e
   }
   const needs = readNeeds(input);
   const address = readAddress(input.address);
+  const hostingTokenId = await checkHostingToken(input.hosting as string, input.hostingToken);
   const report = input.reportIdentifier === undefined || input.reportIdentifier === null ? null : input.reportIdentifier;
   if (report !== null && !isUuid(report)) throw new DeploymentError("BAD_REPORT_IDENTIFIER", "report_identifier is a uuid.", 422);
   const keyId = keyIdOf(input.publicKey);
@@ -165,10 +168,10 @@ export async function askToConnect(input: ConnectAsk): Promise<{ code: string; e
     try {
       const [row] = await asOwner(() =>
         rawQuery<{ expires_at: Date }>(
-          `INSERT INTO deployment_connect_requests (code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, now() + ($10 || ' milliseconds')::interval)
+          `INSERT INTO deployment_connect_requests (code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, hosting_token_id, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, now() + ($11 || ' milliseconds')::interval)
            RETURNING expires_at`,
-          [code, input.publicKey, keyId, name, input.hosting, needs.map((n) => n.grant), JSON.stringify(needs), address, report, String(CONNECT_TTL_MS)]
+          [code, input.publicKey, keyId, name, input.hosting, needs.map((n) => n.grant), JSON.stringify(needs), address, report, hostingTokenId, String(CONNECT_TTL_MS)]
         )
       );
       return { code, expires_at: new Date(row!.expires_at).toISOString(), key_id: keyId };
@@ -191,6 +194,7 @@ interface ConnectRow {
   needs: Array<{ grant: string; why: string | null }>;
   address: string | null;
   report_identifier: string | null;
+  hosting_token_id: string | null;
   expires_at: Date;
   state: "waiting" | "approved" | "denied";
   deployment_id: string | null;
@@ -198,7 +202,7 @@ interface ConnectRow {
 
 async function connectRow(code: string): Promise<ConnectRow | null> {
   const [row] = await rawQuery<ConnectRow>(
-    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, expires_at, state, deployment_id
+    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, hosting_token_id, expires_at, state, deployment_id
        FROM deployment_connect_requests WHERE code = $1`,
     [normalizeCode(code)]
   );
@@ -255,6 +259,8 @@ export interface ConnectRequestView {
   needs: Need[];
   /** Where its own site is, as it stated. */
   address: string | null;
+  /** Whether Minerval provisioned it, which the public graph checked with its hosting token. */
+  hosted_by_minerval: boolean;
   expires_at: string;
   state: "waiting" | "approved" | "denied" | "expired";
   /** The organizations the reader is an admin of, to choose from. */
@@ -300,6 +306,7 @@ export async function readConnectRequest(code: string, readerId: string): Promis
     asked_grants: needs.map((n) => n.grant),
     needs,
     address: row.address,
+    hosted_by_minerval: row.hosting_token_id !== null,
     expires_at: new Date(row.expires_at).toISOString(),
     state: expired(row) ? "expired" : row.state,
     your_organizations: orgs,
@@ -309,7 +316,7 @@ export async function readConnectRequest(code: string, readerId: string): Promis
 
 async function openRow(tx: TxQuery, code: string): Promise<ConnectRow> {
   const [row] = await tx.query<ConnectRow>(
-    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, expires_at, state, deployment_id
+    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, hosting_token_id, expires_at, state, deployment_id
        FROM deployment_connect_requests WHERE code = $1 FOR UPDATE`,
     [normalizeCode(code)]
   );
@@ -352,11 +359,43 @@ export async function approveConnect(input: {
         typeof input.name === "string" && input.name.trim() ? input.name.trim().replace(/\s+/g, " ").slice(0, NAME_MAX) : row.suggested_name;
       const [live] = await tx.query<{ id: string }>(`SELECT id FROM deployments WHERE key_id = $1 AND retired_at IS NULL`, [row.key_id]);
       if (live) throw new DeploymentError("KEY_ALREADY_CONNECTED", "This key is already a connected deployment's.", 409);
+      if (row.report_identifier) {
+        // The identifier its usage reports carry is tied to one organization (docs/organizations.md, "Billing").
+        const [held] = await tx.query<{ id: string }>(
+          `SELECT id FROM deployments WHERE report_identifier = $1 AND organization_id <> $2 LIMIT 1`,
+          [row.report_identifier, input.organizationId]
+        );
+        if (held) {
+          throw new DeploymentError(
+            "IDENTIFIER_HELD",
+            "This deployment's usage-report identifier belongs to a deployment of another organization, so it cannot be connected for this one: " +
+              "its usage is on that organization's record. Ask Minerval if it should move.",
+            409
+          );
+        }
+      }
+      if (row.hosting_token_id) {
+        const [inUse] = await tx.query<{ name: string }>(
+          `SELECT d.name FROM hosted_deployment_tokens t JOIN deployments d ON d.id = t.deployment_id
+            WHERE t.id = $1 AND d.retired_at IS NULL FOR UPDATE OF t`,
+          [row.hosting_token_id]
+        );
+        if (inUse) {
+          throw new DeploymentError(
+            "HOSTING_TOKEN_IN_USE",
+            `The deployment Minerval provisioned with this token, ${inUse.name}, is still connected. Retire it on the Deployments tab first; this one then takes its place.`,
+            409
+          );
+        }
+      }
       const [dep] = await tx.query<{ id: string }>(
-        `INSERT INTO deployments (organization_id, name, hosting, public_key, key_id, report_identifier, address, approved_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-        [input.organizationId, name, row.hosting, row.public_key, row.key_id, row.report_identifier, row.address, input.by]
+        `INSERT INTO deployments (organization_id, name, hosting, public_key, key_id, report_identifier, address, hosted_by_minerval, approved_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+        [input.organizationId, name, row.hosting, row.public_key, row.key_id, row.report_identifier, row.address, row.hosting_token_id !== null, input.by]
       );
+      if (row.hosting_token_id) {
+        await tx.query(`UPDATE hosted_deployment_tokens SET deployment_id = $2 WHERE id = $1`, [row.hosting_token_id, dep!.id]);
+      }
       for (const g of grants) {
         await tx.query(
           `INSERT INTO organization_grants (organization_id, deployment_id, permission, granted_by, allowance_micro_usd) VALUES ($1, $2, $3, $4, $5)`,
@@ -398,6 +437,179 @@ function readAllowance(value: unknown): number | null {
   return Math.round(owls * 1_000_000);
 }
 
+// ---- connecting by hand ------------------------------------------------------------------------
+
+/** What a connection request carried by hand says it is, in its first field. */
+export const BY_HAND_FORMAT = "minerval-connection-request/1";
+/** How long a request carried by hand may wait for an admin: long enough to carry it, short enough that a lost one goes stale. */
+const BY_HAND_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** What the deployment's key signs, for a request carried by hand: the format and the body exactly as written. */
+export function byHandStatement(body: string): string {
+  return `${BY_HAND_FORMAT}\n${body}`;
+}
+
+/**
+ * Make the text of a connection request to carry by hand, signed with the
+ * deployment's new key (the deployment's side). The body is the same as a
+ * request over the network, with when it was made.
+ */
+export function signByHandRequest(privateKeyPem: string, body: Record<string, unknown>): string {
+  const text = JSON.stringify({ ...body, made_at: new Date().toISOString() });
+  const signature = cryptoSign(null, Buffer.from(byHandStatement(text), "utf8"), createPrivateKey(privateKeyPem)).toString("base64");
+  return JSON.stringify({ format: BY_HAND_FORMAT, body: text, signature }, null, 2);
+}
+
+/**
+ * An admin approves a deployment the network does not join to minerval.ai,
+ * from the request it showed, carried by hand and pasted in (docs/organizations.md,
+ * "Connecting by hand"). The request is checked as one sent over the network
+ * is: signed by the key it names, its name, hosting and needs read the same.
+ * The deployment needs nothing back.
+ */
+export async function approveByHand(input: {
+  organizationId: string;
+  request: unknown;
+  name?: unknown;
+  grants: unknown;
+  allowanceOwls?: unknown;
+  by: string;
+}): Promise<{ deployment_id: string; key_id: string }> {
+  if (!(await isLiveAdmin(input.organizationId, input.by))) {
+    throw new DeploymentError("ADMIN_REQUIRED", "Only an admin of that organization can approve a deployment for it.", 403);
+  }
+  const NOT_A_REQUEST =
+    "This is not a connection request a deployment showed. Paste the whole text from its Connect drawer, under Advanced, Connect by hand.";
+  let outer: { format?: unknown; body?: unknown; signature?: unknown };
+  try {
+    outer = JSON.parse(typeof input.request === "string" ? input.request : "") as typeof outer;
+  } catch {
+    throw new DeploymentError("NOT_A_REQUEST", NOT_A_REQUEST, 422);
+  }
+  if (outer?.format !== BY_HAND_FORMAT || typeof outer.body !== "string" || typeof outer.signature !== "string") {
+    throw new DeploymentError("NOT_A_REQUEST", NOT_A_REQUEST, 422);
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(outer.body) as Record<string, unknown>;
+  } catch {
+    throw new DeploymentError("NOT_A_REQUEST", NOT_A_REQUEST, 422);
+  }
+  if (typeof body.public_key !== "string") throw new DeploymentError("NOT_A_REQUEST", NOT_A_REQUEST, 422);
+  let verified = false;
+  try {
+    verified = cryptoVerify(null, Buffer.from(byHandStatement(outer.body), "utf8"), parsePublicKey(body.public_key), Buffer.from(outer.signature, "base64"));
+  } catch {
+    verified = false;
+  }
+  if (!verified) {
+    throw new DeploymentError(
+      "NOT_SIGNED_BY_THE_KEY",
+      "The request is not signed by the key it names: it was changed after the deployment made it, or not copied whole. Copy it again from the deployment.",
+      422
+    );
+  }
+  const made = typeof body.made_at === "string" ? Date.parse(body.made_at) : NaN;
+  if (!Number.isFinite(made) || Date.now() - made > BY_HAND_TTL_MS || made - Date.now() > 5 * 60_000) {
+    throw new DeploymentError(
+      "REQUEST_STALE",
+      "This request was made more than seven days ago, or says it was made in the future. An administrator of the deployment makes a new one.",
+      422
+    );
+  }
+  const asked = await askToConnect({
+    publicKey: body.public_key,
+    name: body.name,
+    hosting: body.hosting,
+    needs: body.needs,
+    grants: body.grants,
+    address: body.address,
+    reportIdentifier: body.report_identifier,
+    hostingToken: body.hosting_token,
+  });
+  const approved = await approveConnect({
+    code: asked.code,
+    organizationId: input.organizationId,
+    name: input.name,
+    grants: input.grants,
+    allowanceOwls: input.allowanceOwls,
+    by: input.by,
+  });
+  return { deployment_id: approved.deployment_id, key_id: asked.key_id };
+}
+
+// ---- hosted by Minerval -----------------------------------------------------------------------
+
+const hashToken = (token: string) => createHash("sha256").update(token, "utf8").digest("hex");
+
+/**
+ * Check what a deployment says of where it runs against the hosting token it
+ * sent: `minerval` only with a live token Minerval's operator made, and any
+ * other word only without one. Answers the token's id, or null.
+ */
+async function checkHostingToken(hosting: string, token: unknown): Promise<string | null> {
+  const given = typeof token === "string" && token.trim() ? token.trim() : null;
+  if (hosting === "minerval" && !given) {
+    throw new DeploymentError(
+      "HOSTING_NOT_MINERVAL",
+      "Only a deployment Minerval runs says it runs on Minerval's machines, and Minerval's provisioning gives it a token to show it. " +
+        "An administrator of this deployment chooses where it really runs: on the organization's own machines, or on machines it hired.",
+      422
+    );
+  }
+  if (!given) return null;
+  const [row] = await rawQuery<{ id: string }>(`SELECT id FROM hosted_deployment_tokens WHERE token_hash = $1 AND revoked_at IS NULL`, [hashToken(given)]);
+  if (!row) {
+    throw new DeploymentError(
+      "BAD_HOSTING_TOKEN",
+      "This deployment sent a hosting token Minerval does not know, or one it revoked (MINERVAL_HOSTING_TOKEN). The operator who runs it asks Minerval for the right one.",
+      422
+    );
+  }
+  if (hosting !== "minerval") {
+    throw new DeploymentError(
+      "HOSTING_TOKEN_MISMATCH",
+      "Minerval provisioned this deployment, so it runs on Minerval's machines and says so; it cannot say it runs anywhere else.",
+      422
+    );
+  }
+  return row.id;
+}
+
+/** Make a hosting token for a deployment Minerval provisions (the operator key). The token is answered once; only its hash is kept. */
+export async function makeHostingToken(note: unknown): Promise<{ id: string; token: string; note: string }> {
+  const words = typeof note === "string" ? note.trim().slice(0, 300) : "";
+  if (!words) throw new DeploymentError("NOTE_REQUIRED", "Say what the token is for: the organization and the machine.", 422);
+  const token = `mht_${randomBytes(32).toString("base64url")}`;
+  const [row] = await asOwner(() =>
+    rawQuery<{ id: string }>(`INSERT INTO hosted_deployment_tokens (token_hash, note) VALUES ($1, $2) RETURNING id`, [hashToken(token), words])
+  );
+  return { id: row!.id, token, note: words };
+}
+
+/** The hosting tokens made, with the deployment each was last used by (the operator key). Never the tokens themselves. */
+export async function listHostingTokens(): Promise<Array<Record<string, unknown>>> {
+  const rows = await rawQuery<{ id: string; note: string; made_at: Date; revoked_at: Date | null; deployment_id: string | null; name: string | null; organization: string | null; retired_at: Date | null }>(
+    `SELECT t.id, t.note, t.made_at, t.revoked_at, t.deployment_id, d.name, c.display_name AS organization, d.retired_at
+       FROM hosted_deployment_tokens t LEFT JOIN deployments d ON d.id = t.deployment_id LEFT JOIN contributors c ON c.id = d.organization_id
+      ORDER BY t.made_at DESC`
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    note: r.note,
+    made_at: r.made_at.toISOString(),
+    revoked_at: r.revoked_at?.toISOString() ?? null,
+    deployment: r.deployment_id ? { id: r.deployment_id, name: r.name, organization: r.organization, retired: r.retired_at !== null } : null,
+  }));
+}
+
+/** Revoke a hosting token (the operator key): a deployment can no longer connect with it. One connected with it stays connected. */
+export async function revokeHostingToken(id: string): Promise<void> {
+  if (!isUuid(id)) throw new DeploymentError("TOKEN_NOT_FOUND", "No hosting token has that id.", 404);
+  const rows = await asOwner(() => rawQuery<{ id: string }>(`UPDATE hosted_deployment_tokens SET revoked_at = COALESCE(revoked_at, now()) WHERE id = $1 RETURNING id`, [id]));
+  if (rows.length === 0) throw new DeploymentError("TOKEN_NOT_FOUND", "No hosting token has that id.", 404);
+}
+
 /** Deny a waiting request. Only someone who admins an organization can, so a stranger with the link cannot block one. */
 export async function denyConnect(input: { code: string; by: string }): Promise<void> {
   const [admin] = await rawQuery<{ ok: boolean }>(
@@ -409,6 +621,98 @@ export async function denyConnect(input: { code: string; by: string }): Promise<
     withTransaction(async (tx) => {
       const row = await openRow(tx, input.code);
       await tx.query(`UPDATE deployment_connect_requests SET state = 'denied', decided_by = $2, decided_at = now() WHERE id = $1`, [row.id, input.by]);
+    })
+  );
+}
+
+// ---- retiring and replacing keys -------------------------------------------------------------
+
+/**
+ * An admin of the organization retires one of its deployments from
+ * minerval.ai: its key stops working at once and its grants are withdrawn.
+ * The deployment learns it the next time it asks, and says so on its pages.
+ */
+export async function retireDeployment(input: { organizationId: string; deploymentId: string; by: string }): Promise<void> {
+  if (!isUuid(input.organizationId) || !isUuid(input.deploymentId)) {
+    throw new DeploymentError("DEPLOYMENT_NOT_FOUND", "The organization has no live deployment with that id.", 404);
+  }
+  if (!(await isLiveAdmin(input.organizationId, input.by))) {
+    throw new DeploymentError("ADMIN_REQUIRED", "Only an admin of the organization can retire one of its deployments.", 403);
+  }
+  await asOwner(() =>
+    withTransaction(async (tx) => {
+      const [dep] = await tx.query<{ name: string }>(
+        `UPDATE deployments SET retired_at = now(), retired_by = $3 WHERE id = $1 AND organization_id = $2 AND retired_at IS NULL RETURNING name`,
+        [input.deploymentId, input.organizationId, input.by]
+      );
+      if (!dep) throw new DeploymentError("DEPLOYMENT_NOT_FOUND", "The organization has no live deployment with that id.", 404);
+      await tx.query(
+        `UPDATE organization_grants SET withdrawn_at = now(), withdrawn_by = $2 WHERE deployment_id = $1 AND withdrawn_at IS NULL`,
+        [input.deploymentId, input.by]
+      );
+      await tx.query(
+        `INSERT INTO organization_log (organization_id, actor_id, credential, kind, detail)
+         VALUES ($1, $2, 'session', 'deployment_retired', $3::jsonb)`,
+        [input.organizationId, input.by, JSON.stringify({ deployment_id: input.deploymentId, name: dep.name })]
+      );
+    })
+  );
+}
+
+/**
+ * What a new connection key signs to show it is held by the deployment that
+ * asks for it, so that the old key alone cannot hand the deployment to a key
+ * nobody holds. The old key signs the request itself.
+ */
+export function keyReplacementStatement(deploymentId: string, newPublicKey: string): string {
+  return `minerval-deployment-key-replacement:v1\ndeployment ${deploymentId}\nnew key ${newPublicKey.trim()}\n`;
+}
+
+/** The proof a deployment sends with a new key: the new key's signature over keyReplacementStatement, as base64. */
+export function signKeyReplacement(privateKeyPem: string, deploymentId: string, newPublicKey: string): string {
+  return cryptoSign(null, Buffer.from(keyReplacementStatement(deploymentId, newPublicKey), "utf8"), createPrivateKey(privateKeyPem)).toString("base64");
+}
+
+/**
+ * A connected deployment replaces its connection key, in a request signed
+ * with the old one and carrying the new key's signature. The old key stops at
+ * once; grants, the record and the organization stay. Recorded on the
+ * organization's log.
+ */
+export async function replaceKey(input: { deploymentId: string; publicKey: unknown; proof: unknown }): Promise<{ key_id: string }> {
+  if (typeof input.publicKey !== "string" || typeof input.proof !== "string") {
+    throw new DeploymentError("BAD_KEY", "public_key is the new Ed25519 key, the base64 of its 32 bytes, and proof its signature.", 422);
+  }
+  let verified = false;
+  try {
+    verified = cryptoVerify(
+      null,
+      Buffer.from(keyReplacementStatement(input.deploymentId, input.publicKey), "utf8"),
+      parsePublicKey(input.publicKey),
+      Buffer.from(input.proof, "base64")
+    );
+  } catch {
+    throw new DeploymentError("BAD_KEY", "public_key must be an Ed25519 key, the base64 of its 32 bytes.", 422);
+  }
+  if (!verified) throw new DeploymentError("BAD_PROOF", "proof is not the new key's signature over the replacement statement for this deployment.", 422);
+  const publicKey = input.publicKey.trim();
+  const keyId = keyIdOf(publicKey);
+  return asOwner(() =>
+    withTransaction(async (tx) => {
+      const [taken] = await tx.query<{ id: string }>(`SELECT id FROM deployments WHERE key_id = $1 AND retired_at IS NULL`, [keyId]);
+      if (taken) throw new DeploymentError("KEY_ALREADY_CONNECTED", "That key is already a connected deployment's. Make a new one.", 409);
+      const [dep] = await tx.query<{ organization_id: string; name: string; key_id: string }>(
+        `UPDATE deployments d SET public_key = $2, key_id = $3 FROM (SELECT key_id FROM deployments WHERE id = $1) old
+          WHERE d.id = $1 AND d.retired_at IS NULL RETURNING d.organization_id, d.name, old.key_id`,
+        [input.deploymentId, publicKey, keyId]
+      );
+      if (!dep) throw new DeploymentError("DEPLOYMENT_RETIRED", "This deployment has been retired.", 403);
+      await tx.query(
+        `INSERT INTO organization_log (organization_id, actor_id, credential, kind, detail)
+         VALUES ($1, NULL, 'deployment', 'deployment_key_replaced', $2::jsonb)`,
+        [dep.organization_id, JSON.stringify({ deployment_id: input.deploymentId, name: dep.name, old_key_id: dep.key_id, key_id: keyId })]
+      );
+      return { key_id: keyId };
     })
   );
 }
@@ -491,7 +795,7 @@ export async function retireSelf(deploymentId: string): Promise<void> {
       await tx.query(`UPDATE organization_grants SET withdrawn_at = now() WHERE deployment_id = $1 AND withdrawn_at IS NULL`, [deploymentId]);
       await tx.query(
         `INSERT INTO organization_log (organization_id, actor_id, credential, kind, detail)
-         VALUES ($1, NULL, 'session', 'deployment_disconnected', $2::jsonb)`,
+         VALUES ($1, NULL, 'deployment', 'deployment_disconnected', $2::jsonb)`,
         [dep.organization_id, JSON.stringify({ deployment_id: deploymentId, name: dep.name })]
       );
     })

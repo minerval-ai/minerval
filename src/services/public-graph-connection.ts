@@ -159,6 +159,16 @@ function ownAddress(config: Pick<Config, "publicWebBaseUrl" | "reads">): string 
   }
 }
 
+/**
+ * Where it runs, where the operator fixed it: a deployment Minerval runs
+ * (MINERVAL_HOSTING_TOKEN) runs on Minerval's machines, and DEPLOYMENT_HOSTING
+ * fixes it otherwise. Null where the administrator answers it.
+ */
+function hostingFixedBy(config: Pick<Config, "deploymentHosting" | "minervalHostingToken">): Hosting | null {
+  if (config.minervalHostingToken) return "minerval";
+  return isHosting(config.deploymentHosting) ? config.deploymentHosting : null;
+}
+
 export interface ConnectWith {
   /** What to call it: the name it has there already, or its own host name. */
   name: string;
@@ -178,7 +188,7 @@ export interface ConnectWith {
 export async function connectWith(): Promise<ConnectWith> {
   const config = loadConfig();
   const c = await readConnection();
-  const fixed = isHosting(config.deploymentHosting) ? config.deploymentHosting : null;
+  const fixed = hostingFixedBy(config);
   return {
     name: c?.deploymentName || ownName(config),
     hosting: fixed ?? c?.hosting ?? null,
@@ -198,11 +208,7 @@ export async function startConnect(input: {
 }): Promise<ConnectionView> {
   const config = loadConfig();
   // The operator's setting fixes the answer; otherwise the administrator gives it here.
-  const hosting: Hosting | null = isHosting(config.deploymentHosting)
-    ? config.deploymentHosting
-    : isHosting(input.hosting)
-      ? input.hosting
-      : null;
+  const hosting: Hosting | null = hostingFixedBy(config) ?? (isHosting(input.hosting) ? input.hosting : null);
   if (!hosting) {
     throw new ConnectionError(
       "HOSTING_NOT_CHOSEN",
@@ -237,6 +243,7 @@ export async function startConnect(input: {
       ...(needs.length > 0 ? { grants: needs.map((n) => n.grant) } : {}),
       ...(address ? { address } : {}),
       ...(report ? { report_identifier: report } : {}),
+      ...(config.minervalHostingToken ? { hosting_token: config.minervalHostingToken } : {}),
     });
   } catch (err) {
     throw new ConnectionError(
@@ -291,6 +298,75 @@ export async function startConnect(input: {
   return (await connectionStatus({ check: false }))!;
 }
 
+/**
+ * Connect by hand (administrators, from a session), for a deployment the
+ * network does not join to minerval.ai: make a key and a signed request that
+ * an admin of the organization pastes into its Deployments tab there. The
+ * deployment needs nothing back: what it sends leaves as files
+ * (docs/organizations.md, "Connecting by hand").
+ */
+export async function startConnectByHand(input: { name: string; hosting?: string | null; replace?: boolean; actor: Actor }): Promise<ConnectionView> {
+  const config = loadConfig();
+  const hosting: Hosting | null = hostingFixedBy(config) ?? (isHosting(input.hosting) ? input.hosting : null);
+  if (!hosting) {
+    throw new ConnectionError(
+      "HOSTING_NOT_CHOSEN",
+      "Choose where this deployment runs: on your own machines, or on machines you hired. Your organization's admin is shown it.",
+      422
+    );
+  }
+  const name = input.name.trim().replace(/\s+/g, " ").slice(0, 120);
+  if (!name) throw new ConnectionError("NAME_REQUIRED", "Say what to call this deployment. Your organization's admin can change it.", 422);
+  const existing = await readConnection();
+  if (existing?.state === "connected" && !input.replace) {
+    throw new ConnectionError("ALREADY_CONNECTED", "This deployment is connected already. Disconnect it first, or connect again to replace the connection.", 409);
+  }
+  const needs = neededGrants(config, { forConnecting: true });
+  const report = await reportIdentifier();
+  const key = generateSigningKey();
+  const { signByHandRequest } = await import("./deployment-service.js");
+  const request = signByHandRequest(key.privateKeyPem, {
+    public_key: key.publicKey,
+    name,
+    hosting,
+    needs,
+    grants: needs.map((n) => n.grant),
+    ...(ownAddress(config) ? { address: ownAddress(config) } : {}),
+    ...(report ? { report_identifier: report } : {}),
+    ...(config.minervalHostingToken ? { hosting_token: config.minervalHostingToken } : {}),
+  });
+  await asOwner(() =>
+    rawQuery(
+      `INSERT INTO public_graph_connection (id, api_url, private_key_pem, public_key, key_id, state, asked_grants, started_by, started_at, hosting, by_hand_request)
+       VALUES ('this', $1, $2, $3, $4, 'by_hand', $5, $6, now(), $7, $8)
+       ON CONFLICT (id) DO UPDATE SET api_url = EXCLUDED.api_url, private_key_pem = EXCLUDED.private_key_pem, public_key = EXCLUDED.public_key,
+         key_id = EXCLUDED.key_id, state = 'by_hand', code = NULL, verification_uri = NULL, code_expires_at = NULL,
+         asked_grants = EXCLUDED.asked_grants, started_by = EXCLUDED.started_by, started_at = now(), hosting = EXCLUDED.hosting,
+         by_hand_request = EXCLUDED.by_hand_request, deployment_id = NULL, deployment_name = NULL, organization_id = NULL,
+         organization_name = NULL, grants = '{}', connected_at = NULL, last_checked_at = NULL, last_error = NULL`,
+      [
+        base(config.publicGraphApiUrl || MINERVAL_API_URL),
+        key.privateKeyPem,
+        key.publicKey,
+        key.keyId,
+        needs.map((n) => n.grant),
+        "actor" in input.actor ? input.actor.actor.id : null,
+        hosting,
+        request,
+      ]
+    )
+  );
+  forgetConnection();
+  await logOutwardAct({
+    kind: "connect_deployment",
+    by: input.actor,
+    sent: { by_hand: true, name, hosting, needs: needs.map((n) => n.grant), key_id: key.keyId },
+    result: "done",
+    said: "A signed request to carry by hand, for an admin of the organization to paste on minerval.ai",
+  });
+  return (await connectionStatus({ check: false }))!;
+}
+
 /** Ask the public graph whether the waiting connection has been approved, and store what it says. */
 export async function checkConnect(): Promise<void> {
   const c = await readConnection();
@@ -339,6 +415,59 @@ export async function checkConnect(): Promise<void> {
 }
 
 /**
+ * Replace the connection key (administrators, from a session): make a new key,
+ * ask the public graph to put it in place of the old one in a request signed
+ * with the old one and carrying the new one's signature, and keep the new one.
+ * Grants, the organization and the record stay. Nothing restarts.
+ */
+export async function replaceConnectionKey(input: { actor: Actor }): Promise<ConnectionView> {
+  const c = await readConnection();
+  if (!c || c.state !== "connected" || !c.deploymentId) {
+    throw new ConnectionError("NOT_CONNECTED", "This deployment is not connected, so it has no key there to replace. Connect it instead.", 409);
+  }
+  const { signKeyReplacement } = await import("./deployment-service.js");
+  const key = generateSigningKey();
+  const body = JSON.stringify({ public_key: key.publicKey, proof: signKeyReplacement(key.privateKeyPem, c.deploymentId, key.publicKey) });
+  let res: Response;
+  try {
+    res = await publicGraphFetch(`${c.apiUrl}/deployments/me/key`, { method: "POST", body, signal: AbortSignal.timeout(20_000) });
+  } catch (err) {
+    throw new ConnectionError(
+      "PUBLIC_GRAPH_UNREACHABLE",
+      `This server could not reach the public graph at ${c.apiUrl} (${err instanceof Error ? err.message.slice(0, 200) : "no answer"}), so the key is unchanged. ` +
+        `The operator who runs this server makes sure it can reach that address.`,
+      502
+    );
+  }
+  let json: Record<string, any> = {};
+  try {
+    json = (await res.json()) as Record<string, any>;
+  } catch {
+    json = {};
+  }
+  if (!res.ok) {
+    await logOutwardAct({ kind: "replace_connection_key", by: input.actor, sent: { old_key_id: c.keyId, key_id: key.keyId }, result: "refused", said: errorWords(json, res.status) });
+    throw new ConnectionError("PUBLIC_GRAPH_REFUSED", `The public graph refused it, so the key is unchanged: ${errorWords(json, res.status)}`, 502);
+  }
+  await asOwner(() =>
+    rawQuery(`UPDATE public_graph_connection SET private_key_pem = $1, public_key = $2, key_id = $3, last_error = NULL WHERE id = 'this'`, [
+      key.privateKeyPem,
+      key.publicKey,
+      key.keyId,
+    ])
+  );
+  forgetConnection();
+  await logOutwardAct({
+    kind: "replace_connection_key",
+    by: input.actor,
+    sent: { old_key_id: c.keyId, key_id: key.keyId },
+    result: "done",
+    said: "The old key stopped working on minerval.ai; the new one signs from now on",
+  });
+  return (await connectionStatus({ check: false }))!;
+}
+
+/**
  * Read the connection's grants and organization again from the public
  * graph (GET /organizations/me), so that a withdrawn grant or a retired
  * deployment is seen here.
@@ -368,17 +497,32 @@ export async function refreshConnection(): Promise<void> {
     const grants = (Array.isArray(json.deployment?.grants) ? json.deployment.grants : []).filter((g: unknown) =>
       (DEPLOYMENT_GRANTS as readonly unknown[]).includes(g)
     );
+    const allowance = json.deployment?.allowance;
     await asOwner(() =>
       rawQuery(
-        `UPDATE public_graph_connection SET grants = $1, organization_name = $2, deployment_name = $3, last_checked_at = now(), last_error = NULL WHERE id = 'this'`,
-        [grants, json.organization?.name ?? c.organizationName, json.deployment?.name ?? c.deploymentName]
+        `UPDATE public_graph_connection SET grants = $1, organization_name = $2, deployment_name = $3, allowance_micro_usd = $4,
+           allowance_left_micro_usd = $5, last_checked_at = now(), last_error = $6 WHERE id = 'this'`,
+        [
+          grants,
+          json.organization?.name ?? c.organizationName,
+          json.deployment?.name ?? c.deploymentName,
+          typeof allowance?.allowance_micro_usd === "number" ? allowance.allowance_micro_usd : null,
+          typeof allowance?.left_micro_usd === "number" ? allowance.left_micro_usd : null,
+          grants.length === 0
+            ? `Every grant this deployment held has been withdrawn. An admin of ${json.organization?.name ?? "the organization"} gives them again on minerval.ai, on its Deployments tab.`
+            : null,
+        ]
       )
     );
   } else {
-    // Retired on minerval.ai, or every grant withdrawn: the deployment holds nothing there now.
+    // Retired on minerval.ai: the deployment holds nothing there now.
+    const retired = res.status === 401 && json.code === "DEPLOYMENT_NOT_CONNECTED";
     await asOwner(() =>
       rawQuery(`UPDATE public_graph_connection SET grants = '{}', last_checked_at = now(), last_error = $1 WHERE id = 'this'`, [
-        errorWords(json, res.status),
+        retired
+          ? `An admin of ${c.organizationName ?? "the organization"} retired this deployment on minerval.ai, so its key no longer works there. ` +
+            `An administrator here disconnects it and connects again, for a new approval.`
+          : errorWords(json, res.status),
       ])
     );
   }
@@ -435,6 +579,10 @@ export interface ConnectionView {
   organization: { id: string; name: string } | null;
   deployment: { id: string; name: string } | null;
   grants: DeploymentGrant[];
+  /** The allowance on its spend, as last read, where an admin set one (micro-USD). */
+  allowance: { allowance_micro_usd: number; left_micro_usd: number } | null;
+  /** The signed request to carry by hand, where it is connected that way. */
+  by_hand_request: string | null;
   connected_at: string | null;
   last_checked_at: string | null;
   problem: string | null;
@@ -480,6 +628,9 @@ export async function connectionStatus(opts: { check?: boolean } = {}): Promise<
     organization: c.organizationId ? { id: c.organizationId, name: c.organizationName ?? "" } : null,
     deployment: c.deploymentId ? { id: c.deploymentId, name: c.deploymentName ?? "" } : null,
     grants: c.grants,
+    allowance:
+      c.allowanceMicroUsd !== null ? { allowance_micro_usd: c.allowanceMicroUsd, left_micro_usd: c.allowanceLeftMicroUsd ?? 0 } : null,
+    by_hand_request: c.state === "by_hand" ? c.byHandRequest : null,
     connected_at: c.connectedAt ? new Date(c.connectedAt).toISOString() : null,
     last_checked_at: c.lastCheckedAt ? new Date(c.lastCheckedAt).toISOString() : null,
     problem: c.lastError,

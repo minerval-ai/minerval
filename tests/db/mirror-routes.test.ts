@@ -148,7 +148,7 @@ describe("a private deployment fed from those routes", () => {
     const [before] = await priv.query<{ n: number }>(`SELECT count(*)::int AS n FROM mirror_applied_batches`);
     await expect(
       syncMirror(urlSource("https://api.public.example", "", viaApp), { db: priv, trustedKeys: [parsePublicKey(env.publicKeyRaw)] })
-    ).rejects.toThrow(/answered 401 to GET \/mirror\/feed\/\d+ \(where the deployment is connected, its read_feed grant on minerval\.ai; otherwise MIRROR_FEED_API_KEY\)\./);
+    ).rejects.toThrow(/answered 401 to GET \/mirror\/feed\/\d+ \(the deployment must be connected to minerval\.ai and hold read_feed/);
     const [after] = await priv.query<{ n: number }>(`SELECT count(*)::int AS n FROM mirror_applied_batches`);
     expect(after!.n).toBe(before!.n);
   });

@@ -48,6 +48,7 @@ import { decideAtGate, gateQueue, receivedRelease, type GateActor } from "../../
 import { askRelease, endRelease, followReleases } from "../../src/services/release-service.js";
 import { A, B, C, asPerson, attachSource, seedNode, seedUser, system, tag, unwall, wall, personDecidesAt, sendAsReleasedAt } from "./review-3-common.js";
 import { mirrorDatabaseUrl } from "./urls.js";
+import { connectForTest, disconnectForTest } from "./connect-for-test.js";
 
 const SECRET = "4711 units";
 const NOTE = "A figure a counterparty could use to price against the plant.";
@@ -293,13 +294,15 @@ beforeAll(async () => {
     publishSigningKey: publishKey.privateKeyPem,
     deploymentHosting: "own_machines",
     publicGraphApiUrl: api,
-    publicGraphApiKey: orgKey,
   });
+  // The deployment reaches the public graph over its own connection, signed (docs/organizations.md, phase 9).
+  await connectForTest({ pub: pubRows, organizationId: id.orgAccount!, apiUrl: api });
 }, 240_000);
 
 afterAll(async () => {
   server?.kill("SIGTERM");
-  Object.assign(loadConfig(), { publishSigningKey: "", deploymentHosting: "", publicGraphApiUrl: "", publicGraphApiKey: "" });
+  Object.assign(loadConfig(), { publishSigningKey: "", deploymentHosting: "", publicGraphApiUrl: "" });
+  await disconnectForTest();
   await system(async () => {
     // The words a node was proposed in went through the gate to outside as an item of their own.
     const proposals = await rawQuery<{ id: string }>(`SELECT id FROM releases WHERE kind = 'proposal'`);

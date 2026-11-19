@@ -62,7 +62,7 @@ describe("what may be done in an organization's name", () => {
     const deployment = new Set<string>(DEPLOYMENT_GRANTS);
     for (const [route, rule] of Object.entries(ORGANIZATION_ROUTES)) {
       if (rule.member) expect(member.has(rule.member), route).toBe(true);
-      if (rule.deployment && rule.deployment !== "any") {
+      if (rule.deployment && rule.deployment !== "any" && rule.deployment !== "self") {
         expect(rule.deployment.length, route).toBeGreaterThan(0);
         for (const g of rule.deployment) expect(deployment.has(g), route).toBe(true);
       }
@@ -99,8 +99,17 @@ describe("a member acting as the organization", () => {
     expect(memberMayCall("POST /billing/checkout", "POST", member(["spend"]))).toMatchObject({ ok: false, permission: "buy" });
   });
 
-  it("cannot do a deployment's work, even as an admin", () => {
-    expect(memberMayCall("POST /published-pages", "POST", admin)).toMatchObject({ ok: false, code: "NOT_AN_ORGANIZATION_ACT" });
+  it("carries a deployment's packages by hand, and only an admin registers its key", () => {
+    // docs/organizations.md, "Connecting by hand": the package is signed by the deployment's key, and checked as if it had sent it.
+    expect(memberMayCall("POST /published-pages", "POST", member(["spend"]))).toEqual({ ok: true });
+    // Its first version is charged to the organization's owls.
+    expect(memberMayCall("POST /published-pages", "POST", member(["speak"]))).toMatchObject({ ok: false });
+    expect(memberMayCall("POST /publishers", "POST", member(["spend", "speak"]))).toMatchObject({ ok: false, code: "ADMIN_REQUIRED" });
+    expect(memberMayCall("POST /publishers", "POST", admin)).toEqual({ ok: true });
+  });
+
+  it("cannot send usage reports as a deployment does: an admin uploads them on the Billing tab", () => {
+    expect(memberMayCall("POST /usage-reports", "POST", admin)).toMatchObject({ ok: false, code: "NOT_AN_ORGANIZATION_ACT" });
   });
 
   it("cannot reach a person's own routes or reads", () => {

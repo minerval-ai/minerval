@@ -58,6 +58,10 @@ async function answer<T>(reply: FastifyReply, fn: () => Promise<T>, status = 200
   }
 }
 
+import { nextFeedBatch, receivedUsageReports, uploadUsageReport } from "../services/organization-carried.js";
+import { addDomain, checkDomain, listDomains, removeDomain, shownDomain } from "../services/organization-domains.js";
+import { namesPeople, setNamesPeople } from "../services/named-person.js";
+
 export async function organizationRoutes(app: FastifyInstance): Promise<void> {
   const reader = [app.authenticate, app.requireUser];
   const session = [app.authenticate, app.requireSession, app.requireUser];
@@ -90,7 +94,76 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
       params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
     },
     preHandler: reader,
-    handler: (request, reply) => answer(reply, async () => ({ organization: await getOrganization(request.params.id, me(request)) })),
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        const organization = await getOrganization(request.params.id, me(request));
+        return { organization: { ...organization, domain: await shownDomain(organization.id), names_people: await namesPeople(organization.id) } };
+      }),
+  });
+
+  app.put<{ Params: { id: string }; Body: { names_people: boolean } }>("/organizations/:id/naming", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "Choose whether the organization's public record names who acted for it (its admins, from a signed-in session): with it on, the " +
+        "words a member puts on the record as the organization (contributions, stated views, proposals) carry their name beside its own. " +
+        "Off unless set. Who acted is always on the organization's own log",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      body: { type: "object", required: ["names_people"], properties: { names_people: { type: "boolean" } } },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, () => setNamesPeople({ organizationId: request.params.id, on: request.body.names_people, by: me(request) })),
+  });
+
+  // ---- a verified domain (docs/organizations.md, "A verified domain") ----
+
+  app.get<{ Params: { id: string } }>("/organizations/:id/domains", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "An organization's domains (its members): each with the TXT record to put at _minerval.<domain>, and whether a check found it: " +
+        "waiting, confirmed (shown beside the name), unconfirmed (failing, shown for seven days) or lapsed (not shown). A domain says the " +
+        "organization controls DNS for it, and nothing more",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+    },
+    preHandler: reader,
+    handler: (request, reply) => answer(reply, async () => ({ domains: await listDomains(request.params.id, me(request)) })),
+  });
+
+  app.post<{ Params: { id: string }; Body: { domain: string } }>("/organizations/:id/domains", {
+    schema: {
+      tags: TAGS,
+      summary: "Add a domain to an organization (its admins, from a signed-in session), and get the TXT record to put in its DNS",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      body: { type: "object", required: ["domain"], properties: { domain: { type: "string", minLength: 1, maxLength: 300 } } },
+    },
+    preHandler: session,
+    handler: (request, reply) => answer(reply, async () => ({ domain: await addDomain(request.params.id, request.body.domain, me(request)) }), 201),
+  });
+
+  app.post<{ Params: { id: string; domain_id: string } }>("/organizations/:id/domains/:domain_id/check", {
+    schema: {
+      tags: TAGS,
+      summary: "Check an organization's domain now (its admins, from a signed-in session): look for its TXT record and keep what was found",
+      params: { type: "object", required: ["id", "domain_id"], properties: { id: { type: "string" }, domain_id: { type: "string" } } },
+    },
+    preHandler: session,
+    handler: (request, reply) => answer(reply, async () => ({ domain: await checkDomain(request.params.id, request.params.domain_id, me(request)) })),
+  });
+
+  app.delete<{ Params: { id: string; domain_id: string } }>("/organizations/:id/domains/:domain_id", {
+    schema: {
+      tags: TAGS,
+      summary: "Remove a domain from an organization (its admins, from a signed-in session): it is no longer shown or checked",
+      params: { type: "object", required: ["id", "domain_id"], properties: { id: { type: "string" }, domain_id: { type: "string" } } },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        await removeDomain(request.params.id, request.params.domain_id, me(request));
+        return { removed: true };
+      }),
   });
 
   app.patch<{ Params: { id: string }; Body: { name: string } }>("/organizations/:id", {
@@ -464,6 +537,80 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: session,
     handler: (request, reply) => answer(reply, async () => ({ organization: await acceptConversion({ conversionId: request.params.id, by: me(request) }) })),
+  });
+
+  // ---- carried by hand (docs/organizations.md, "Connecting by hand") ----
+
+  app.get<{ Params: { id: string; deployment_id: string }; Querystring: { after?: number } }>("/organizations/:id/deployments/:deployment_id/feed", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "The next batch of the public graph's mirror feed after the one named (its members), exactly as signed, as a file to carry to " +
+        "one of the organization's deployments that holds read_feed and follows from files. Every batch after one you name, never a " +
+        "choice among nodes, so the download shows no more than a pull over the network. On the organization's log as a pull. 204 where " +
+        "there is no later batch",
+      params: {
+        type: "object",
+        required: ["id", "deployment_id"],
+        properties: { id: { type: "string" }, deployment_id: { type: "string" } },
+      },
+      querystring: { type: "object", properties: { after: { type: "integer", minimum: 0 } } },
+    },
+    preHandler: reader,
+    handler: async (request, reply) => {
+      try {
+        const batch = await nextFeedBatch({
+          organizationId: request.params.id,
+          deploymentId: request.params.deployment_id,
+          after: Number(request.query.after ?? 0),
+          by: me(request),
+        });
+        if (!batch) return reply.code(204).send();
+        return reply
+          .header("content-type", "application/json; charset=utf-8")
+          .header("content-disposition", `attachment; filename="${batch.file_name}"`)
+          .header("x-mirror-batch-sequence", String(batch.sequence))
+          .send(batch.body);
+      } catch (err) {
+        if (err instanceof OrganizationError) return reply.code(err.status).send({ error: err.message, code: err.code });
+        throw err;
+      }
+    },
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { limit?: number } }>("/organizations/:id/usage-reports", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "The usage reports Minerval has recorded against an organization (its admins only), newest day first: each day's total of owls " +
+        "its deployments spent, which deployment it was of, and whether it was signed or uploaded. Exactly what each deployment's own " +
+        "Budget page shows as sent. What it will be billed on, once a price per owl is decided",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 2000 } } },
+    },
+    preHandler: reader,
+    handler: (request, reply) =>
+      answer(reply, async () => ({
+        reports: await receivedUsageReports({ organizationId: request.params.id, by: me(request), limit: request.query.limit }),
+      })),
+  });
+
+  app.post<{ Params: { id: string }; Body: { report: unknown } }>("/organizations/:id/usage-reports", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "Upload a usage report a deployment of the organization wrote as a file (its admins, from a signed-in session): recorded against " +
+        "the organization exactly as one sent over the network is, privately, and published nowhere",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      body: { type: "object", required: ["report"], properties: { report: {} } },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        const result = await uploadUsageReport({ organizationId: request.params.id, report: request.body.report, by: me(request) });
+        if (!result.ok) throw new OrganizationError(result.code, result.message, result.code === "REPORT_DIFFERS" ? 409 : 422);
+        return { recorded: result.recorded, period: result.period, revision: result.revision, received_at: result.received_at };
+      }),
   });
 
   // ---- the operator's way back ----

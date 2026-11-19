@@ -242,12 +242,12 @@ The settings below stay the operator's overrides: where `MIRROR_FEED_URL` or `MI
 | --- | --- |
 | `MIRROR_PUBLISH` | `true` makes the deployment a publisher |
 | `MIRROR_SIGNING_KEY` | Ed25519 private key, PEM. A secret |
+| `MIRROR_FEED_NEXT_PUBLIC_KEYS` | Keys the feed will sign with next, comma-separated, as the base64 of 32 bytes. Listed at `/mirror/feed/key` after the current key, so followers accept a new key before any batch is signed with it. A follower that meets a batch under a key it has not accepted reads the feed's keys again, and its Mirror page offers the new one |
 | `MIRROR_PUBLISHER_WORKER` | `true` runs the cuts in a process of their own (`npm run worker:mirror-publisher`), and the API only serves the feed. Default `false`: the API cuts too |
 | `MIRROR_PUBLISH_INTERVAL_SECONDS` | How often a cut is made. Default 900 |
 | `MIRROR_BATCH_MAX_BYTES` | Most bytes of rows in one batch. Default 8,000,000 |
 | `MIRROR_FEED_URL` | The publisher's API address. Makes the deployment an applier |
 | `MIRROR_FEED_DIR` | A directory of batch files, in place of an address |
-| `MIRROR_FEED_API_KEY` | The key presented when fetching a batch, by a deployment not connected to minerval.ai. A connected one signs each fetch with its own key and needs the `read_feed` grant ([organizations.md](organizations.md), "Signed requests") |
 | `MIRROR_FEED_PUBLIC_KEYS` | The feed's public key or keys, comma-separated |
 | `MIRROR_APPLY_INTERVAL_SECONDS` | How often the feed is checked. Default 300 |
 

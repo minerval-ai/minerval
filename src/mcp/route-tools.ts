@@ -255,6 +255,9 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /organizations/:id/log": { name: "get_organization_log" },
   "GET /organizations/:id/old-keys": { name: "list_organization_old_keys" },
   "GET /organizations/:id/deployments": { name: "list_organization_deployments" },
+  "GET /organizations/:id/domains": { name: "list_organization_domains" },
+  "GET /organizations/:id/usage-reports": { name: "list_organization_usage_reports" },
+  "GET /organizations/:id/oidc-clients": { name: "list_organization_sign_in_clients" },
   // This deployment's own connection to minerval.ai (docs/organizations.md, "Connecting").
   "GET /outside/connection": { name: "get_public_graph_connection" },
   "GET /account-conversion": { name: "get_account_conversion" },
@@ -549,6 +552,13 @@ const ORGANIZATION_SESSION =
 const ORGANIZATION_INVITATION_LINK =
   "An invitation link is a secret given to one person, opened in their browser while they are signed in. " +
   "An agent has no link of its own to read.";
+const CARRIED_BY_HAND =
+  "A file a person carries between minerval.ai and a deployment the network does not join (docs/organizations.md, " +
+  "\"Connecting by hand\"): a feed batch of several megabytes to take to the deployment, or a report it wrote to bring back. " +
+  "An agent has neither the deployment nor the file, so it is a person's act on the organization's page.";
+const HOSTING_OPERATOR =
+  "Minerval's operator's record of the deployments it provisions, with the operator key, which acts for no person " +
+  "(docs/organizations.md, \"Hosted by Minerval\"). No account holds it, so no agent's tool can.";
 const DEPLOYMENT_SIGNED =
   "Made by a private deployment, signed with its own connection key (docs/organizations.md, " +
   "\"Signed requests\"). An agent holds no deployment key.";
@@ -737,15 +747,32 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "DELETE /account-conversion": ORGANIZATION_SESSION,
   "POST /account-conversions/:id/accept": ORGANIZATION_SESSION,
   "POST /operator/organizations/:id/admins": ORGANIZATION_OPERATOR,
+  "POST /operator/hosted-deployment-tokens": HOSTING_OPERATOR,
+  "GET /operator/hosted-deployment-tokens": HOSTING_OPERATOR,
+  "DELETE /operator/hosted-deployment-tokens/:id": HOSTING_OPERATOR,
   "POST /deployments/connect": DEPLOYMENT_SIGNED,
   "GET /deployments/connect/:code": DEPLOYMENT_SIGNED,
   "GET /organizations/me": DEPLOYMENT_SIGNED,
   "POST /deployments/me/retire": DEPLOYMENT_SIGNED,
+  "POST /deployments/me/key": DEPLOYMENT_SIGNED,
+  "DELETE /organizations/:id/deployments/:deployment_id": ORGANIZATION_SESSION,
+  "POST /organizations/:id/deployments/by-hand": ORGANIZATION_SESSION,
+  "POST /organizations/:id/domains": ORGANIZATION_SESSION,
+  "POST /organizations/:id/oidc-clients": ORGANIZATION_SESSION,
+  "PUT /organizations/:id/naming": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/oidc-clients/:client_id": ORGANIZATION_SESSION,
+  "POST /organizations/:id/domains/:domain_id/check": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/domains/:domain_id": ORGANIZATION_SESSION,
+  "GET /organizations/:id/deployments/:deployment_id/feed": CARRIED_BY_HAND,
+  "POST /organizations/:id/usage-reports": CARRIED_BY_HAND,
   "GET /connect-requests/:code": CONNECT_CODE,
   "POST /connect-requests/:code/approve": ORGANIZATION_SESSION,
   "POST /connect-requests/:code/deny": ORGANIZATION_SESSION,
   "POST /outside/connection": PUBLIC_GRAPH_CONNECTION_SESSION,
   "DELETE /outside/connection": PUBLIC_GRAPH_CONNECTION_SESSION,
+  "POST /outside/connection/key": PUBLIC_GRAPH_CONNECTION_SESSION,
+  "POST /outside/connection/by-hand": PUBLIC_GRAPH_CONNECTION_SESSION,
+  "PUT /outside/naming": PUBLIC_GRAPH_CONNECTION_SESSION,
   "POST /mirror/follow": MIRROR_FOLLOWING_SESSION,
   "POST /mirror/pause": MIRROR_FOLLOWING_SESSION,
   "POST /mirror/check": MIRROR_FOLLOWING_SESSION,
@@ -813,6 +840,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
 export const MCP_EXCLUDED_PREFIXES: Record<string, string> = {
   "/mcp": "The MCP endpoint itself.",
   "/oauth/": "The OAuth authorization server that issues MCP credentials.",
+  "/oidc/":
+    "The OpenID Connect provider a deployment's sign-in calls (docs/organizations.md, \"Signing in\"): a browser's round trip and a " +
+    "deployment's code exchange, not an act an agent makes.",
   "/.well-known/": "OAuth discovery metadata for MCP clients.",
 };
 

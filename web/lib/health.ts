@@ -410,12 +410,12 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
         key: "usage-destination",
         title: "Usage reports have nowhere to go",
         consequence: u.unsent > 0 ? `${count(u.unsent, "report")} waiting` : "Each day's report is kept, unsent",
-        owner: "operator",
-        href: "/admin/budget",
-        action: "View",
+        owner: "admin",
+        href: "/admin/outside",
+        action: "Connect",
         tone: "warn",
         blocks: false,
-        detail: "USAGE_REPORT_URL with USAGE_REPORT_API_KEY to send them, or USAGE_REPORT_DIR to write each one as a file.",
+        detail: "Connect this deployment to minerval.ai on the public graph's Overview, and an admin of the organization gives it report_usage; or the operator sets USAGE_REPORT_DIR to write each one as a file for an admin to upload.",
       });
     } else if (!u.destination_ready && u.waits_on_organization) {
       covered.add("usage_report");
@@ -433,14 +433,15 @@ export function attentionItems(c: SetupChecklist, gates: readonly GateLike[] = [
     } else if (!u.destination_ready) {
       covered.add("usage_report");
       out.push({
-        key: "usage-key",
-        title: "USAGE_REPORT_API_KEY not set",
+        key: "usage-not-connected",
+        title: "Usage reports wait for a connection to minerval.ai",
         consequence: "Usage reports can't be sent",
-        owner: "operator",
-        href: "/admin/budget",
-        action: "View",
+        owner: "admin",
+        href: "/admin/outside",
+        action: "Connect",
         tone: "warn",
         blocks: false,
+        detail: "USAGE_REPORT_URL is set, and reports are sent only over this deployment's connection, signed. Connect it on the public graph's Overview.",
       });
     } else if (u.unsent > 0 && u.last_error) {
       covered.add("usage_report");

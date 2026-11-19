@@ -96,6 +96,17 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
                 // is the organization's own record.
                 kind: { type: "string" },
                 display_name: { type: "string" },
+                // An organization's verified domain, where one is shown (docs/organizations.md,
+                // "A verified domain"): it says the organization controls DNS for it, and nothing more.
+                domain: {
+                  type: "object",
+                  nullable: true,
+                  properties: {
+                    domain: { type: "string" },
+                    confirmed_at: { type: "string" },
+                    unconfirmed_since: { type: "string", nullable: true },
+                  },
+                },
                 avatar_url: { type: "string", nullable: true },
                 member_since: { type: "string", format: "date-time" },
                 reputation_score: { type: "number" },
@@ -179,11 +190,16 @@ export async function contributorRoutes(app: FastifyInstance): Promise<void> {
         contributor.contributionsRejected +
         contributor.contributionsEscalated;
 
+      const domain =
+        contributor.kind === "organization"
+          ? await (await import("../services/organization-domains.js")).shownDomain(contributor.id)
+          : null;
       return reply.send({
         contributor: {
           id: contributor.id,
           kind: contributor.kind,
           display_name: contributor.displayName,
+          domain,
           avatar_url: contributor.avatarUrl,
           member_since: contributor.createdAt.toISOString(),
           reputation_score: contributor.reputationScore,

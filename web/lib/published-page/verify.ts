@@ -257,7 +257,13 @@ export interface PackageCheck {
  * account on the public graph speaks for the key, and where the deployment
  * runs. Signed so that nobody registers a key they do not hold.
  */
-export function registrationStatement(input: { account: string; publicKey: string; hosting: string }): string {
+export function registrationStatement(input: { account: string; publicKey: string; hosting: string; deploymentId?: string | null }): string {
+  // Over a deployment's connection, the statement names the deployment too
+  // (docs/organizations.md, "Publishing"), so a registration signed for one
+  // deployment cannot be presented by another of the same organization.
+  if (input.deploymentId) {
+    return `minerval-publisher-registration/2\n${input.account}\n${input.publicKey}\n${input.hosting}\ndeployment ${input.deploymentId}`;
+  }
   return `minerval-publisher-registration/1\n${input.account}\n${input.publicKey}\n${input.hosting}`;
 }
 

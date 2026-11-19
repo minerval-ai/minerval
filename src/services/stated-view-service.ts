@@ -47,6 +47,7 @@ import {
   type ViewDirection,
   type ViewRelation,
 } from "./stated-view-compare.js";
+import { namedPerson } from "./named-person.js";
 
 /** The view itself is a few sentences; the reasons are where length belongs. */
 export const STATEMENT_MAX_CHARS = 2000;
@@ -235,8 +236,8 @@ export async function createStatedView(input: {
     );
     const [contribution] = await tx.query<{ id: string }>(
       `INSERT INTO contributions
-         (claim_id, contributor_id, contribution_type, content, evidence_urls, source_id, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (claim_id, contributor_id, contribution_type, content, evidence_urls, source_id, sensitivity_label, named_person)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         input.claimId,
@@ -246,6 +247,7 @@ export async function createStatedView(input: {
         view.evidenceUrls,
         source!.id,
         label,
+        namedPerson(),
       ]
     );
     const [row] = await tx.query<{ id: string }>(

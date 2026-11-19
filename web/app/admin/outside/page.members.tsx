@@ -39,7 +39,15 @@ import {
 } from "@/lib/outside-api";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { registerPublisherAction } from "../../releases/actions";
-import { backPublicMandateAction, checkConnectionAction, connectAction, disconnectAction, openPublicMandateAction } from "./actions";
+import {
+  backPublicMandateAction,
+  checkConnectionAction,
+  connectAction,
+  disconnectAction,
+  openPublicMandateAction,
+  replaceKeyAction,
+  setNamingAction,
+} from "./actions";
 import { HeadSub, Note, loadAccount, tryRead } from "./parts";
 import { DEPLOYMENT_GRANTS, PERMISSION_WORDS } from "@/lib/organization-permissions";
 
@@ -74,6 +82,7 @@ const KINDS: Record<string, { verb: string; group: Group }> = {
   register_publisher: { verb: "Registered the signing key", group: "key" },
   connect_deployment: { verb: "Asked to connect to minerval.ai", group: "key" },
   disconnect_deployment: { verb: "Disconnected from minerval.ai", group: "key" },
+  replace_connection_key: { verb: "Replaced the connection key", group: "key" },
 };
 
 type Group = "requests" | "mandates" | "nodes" | "reports" | "key";
@@ -122,7 +131,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
     mayAct
       ? tryRead(() => fetchPublicConversations(who.externalId), "The conversations with the public Grantmaker could not be read")
       : Promise.resolve({ data: null, problem: null }),
-    fetchConnectionAndDefaults(who.externalId).catch(() => ({ connection: null as ConnectionView | null, connect_with: undefined })),
+    fetchConnectionAndDefaults(who.externalId).catch(() => ({ connection: null as ConnectionView | null, connect_with: undefined, naming: undefined })),
   ]);
   const connection = connectionRead.connection;
   const acts = log ?? [];
@@ -162,13 +171,30 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
       {accountProblem && <Note tone="bad">{accountProblem}</Note>}
       {account && !connected && <Note tone="warn">{british(account.in_words ?? "This deployment is not connected to the public graph.")}</Note>}
 
-      <ConnectionCard connection={connection} mayAdminister={mayAdminister} connectHref={drawerHref("connect")} disconnectHref={drawerHref("disconnect")} />
+      <ConnectionCard
+        connection={connection}
+        mayAdminister={mayAdminister}
+        connectHref={drawerHref("connect")}
+        disconnectHref={drawerHref("disconnect")}
+        replaceHref={drawerHref("replace-key")}
+        namesPerson={connectionRead.naming?.names_person ?? false}
+      />
 
       {account && <AccountStats account={account} mayAdminister={mayAdminister} keyHref={drawerHref("key")} />}
 
       {mayAdminister && drawer === "connect" && (
         <Drawer title={connection?.state === "waiting" ? "Waiting for your organization" : "Connect to minerval.ai"} close={close}>
           <ConnectDrawer connection={connection} connectWith={connectionRead.connect_with ?? null} />
+        </Drawer>
+      )}
+      {mayAdminister && drawer === "replace-key" && connection?.connected && (
+        <Drawer title="Replace the connection key" close={close}>
+          <p className="w-muted" style={{ marginTop: 0 }}>
+            This deployment makes a new key and asks minerval.ai, in a request signed with the current one, to put it in its place. The
+            current key (<span className="w-mono">{connection.key_id?.slice(0, 8)}</span>) stops working there at once. What it may do, its
+            organization and its record stay; no admin needs to approve anything. Do this if the current key may have been copied.
+          </p>
+          <WorkForm action={replaceKeyAction} submit="Replace the key" lock="The old key stops at once" />
         </Drawer>
       )}
       {mayAdminister && drawer === "disconnect" && connection && (
@@ -508,13 +534,45 @@ function ConnectionCard({
   mayAdminister,
   connectHref,
   disconnectHref,
+  replaceHref,
+  namesPerson,
 }: {
   connection: ConnectionView | null;
   mayAdminister: boolean;
   connectHref: string;
   disconnectHref: string;
+  replaceHref: string;
+  namesPerson: boolean;
 }) {
   const state = connection?.state ?? "none";
+  if (state === "by_hand" && connection) {
+    return (
+      <Section
+        title="minerval.ai, by hand"
+        aside="Nothing is sent over the network"
+        actions={mayAdminister ? <ButtonLink href={disconnectHref} danger small>Forget the key</ButtonLink> : undefined}
+      >
+        <p className="w-muted" style={{ margin: 0 }}>
+          Give this request to an admin of your organization. They paste it whole on its Deployments tab on minerval.ai, under &ldquo;Connect
+          one by hand&rdquo;, and choose what this deployment may do there. It works for seven days. This deployment needs nothing back: its
+          pages leave from the Outbox as files a member submits there, its usage reports as files an admin uploads on the Billing tab, and
+          the mirror follows from files a member downloads (MIRROR_FEED_DIR).
+        </p>
+        {connection.by_hand_request && (
+          <textarea
+            className="w-input w-mono"
+            readOnly
+            rows={9}
+            style={{ width: "100%", marginTop: 10, fontSize: 11.5, height: "auto" }}
+            defaultValue={connection.by_hand_request}
+          />
+        )}
+        <p className="w-muted" style={{ margin: "6px 0 0", fontSize: 12.5 }}>
+          Key id <span className="w-mono">{connection.key_id?.slice(0, 8)}</span>: the admin sees the same on minerval.ai once it is pasted.
+        </p>
+      </Section>
+    );
+  }
   if (state === "connected" && connection) {
     const orgName = connection.organization?.name ?? "the organization";
     // Its organization's page on minerval.ai, where its admins change what this deployment may do.
@@ -531,7 +589,18 @@ function ConnectionCard({
           )
         }
         aside={`This deployment is ${connection.deployment?.name ?? "connected"} on minerval.ai, since ${shortDay(connection.connected_at)}`}
-        actions={mayAdminister ? <ButtonLink href={disconnectHref} danger small>Disconnect</ButtonLink> : undefined}
+        actions={
+          mayAdminister ? (
+            <>
+              <ButtonLink href={replaceHref} small>
+                Replace the key
+              </ButtonLink>
+              <ButtonLink href={disconnectHref} danger small>
+                Disconnect
+              </ButtonLink>
+            </>
+          ) : undefined
+        }
       >
         <div className="w-row" style={{ flexWrap: "wrap", gap: 6 }}>
           <Pill tone="ok">Connected</Pill>
@@ -553,7 +622,30 @@ function ConnectionCard({
           . Every request there is signed with this deployment&apos;s own key (<span className="w-mono">{connection.key_id?.slice(0, 8)}</span>
           ){connection.hosting ? `, and states that it runs ${HOSTING_LABEL[connection.hosting].toLowerCase()}` : ""}.
         </p>
+        {connection.allowance && (
+          <p className="w-muted" style={{ margin: "6px 0 0", fontSize: 12.5 }}>
+            It may spend <b>{owls(connection.allowance.left_micro_usd / 1_000_000)}</b> more of {orgName}&apos;s owls, of an allowance of{" "}
+            {owls(connection.allowance.allowance_micro_usd / 1_000_000)}. An admin of {orgName} raises it on minerval.ai.
+          </p>
+        )}
         {connection.problem && <Note tone="warn">{british(connection.problem)}</Note>}
+        <div className="w-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="w-muted" style={{ fontSize: 12.5 }}>
+            {namesPerson
+              ? `The public record names the person who made each act, beside ${orgName}.`
+              : `The public record names ${orgName} alone, not the person who made each act.`}{" "}
+            <Tip>
+              Off unless set. With it on, an act a person makes on the public graph sends their name as written on their account here, and the
+              words it puts on the record (contributions, stated views, proposals) show it beside the organisation. Who acted is always in the log
+              below either way.
+            </Tip>
+          </span>
+          {mayAdminister && (
+            <WorkForm action={setNamingAction} submit={namesPerson ? "Stop naming them" : "Name them"} inline>
+              <input type="hidden" name="on" value={namesPerson ? "0" : "1"} />
+            </WorkForm>
+          )}
+        </div>
       </Section>
     );
   }
@@ -593,7 +685,7 @@ const HOSTING_LABEL: Record<Hosting, string> = {
 const HOSTING_HELP: Record<Hosting, string> = {
   own_machines: "Servers the organization owns or controls itself.",
   third_party: "A cloud provider or host the organization pays, such as AWS or a data centre.",
-  minerval: "A deployment Minerval runs for the organization. Minerval checks this one.",
+  minerval: "A deployment Minerval runs for the organization. Only one Minerval provisioned can say this; minerval.ai checks it.",
 };
 
 function ConnectDrawer({ connection, connectWith }: { connection: ConnectionView | null; connectWith: ConnectWith | null }) {
@@ -662,12 +754,17 @@ function ConnectDrawer({ connection, connectWith }: { connection: ConnectionView
               <p style={{ margin: "2px 0" }}>
                 <b>{HOSTING_LABEL[w.hosting]}</b>
               </p>
-              <span className="w-help">Fixed by the operator who runs this server (DEPLOYMENT_HOSTING).</span>
+              <span className="w-help">
+                {w.hosting === "minerval"
+                  ? "Minerval runs this deployment, and its provisioning gave it a token that shows so; minerval.ai checks it."
+                  : "Fixed by the operator who runs this server (DEPLOYMENT_HOSTING)."}
+              </span>
             </>
           ) : (
             <>
               <div className="w-options">
-                {(Object.keys(HOSTING_LABEL) as Hosting[]).map((h) => (
+                {/* "Minerval runs it" is not a choice: a deployment Minerval runs has it fixed, by the token its provisioning gave it. */}
+                {(["own_machines", "third_party"] as Hosting[]).map((h) => (
                   <label key={h} className="w-option">
                     <input type="radio" name="hosting" value={h} required defaultChecked={w?.hosting === h} />
                     <div>
@@ -703,6 +800,16 @@ function ConnectDrawer({ connection, connectWith }: { connection: ConnectionView
             <input id="connect-url" className="w-input" name="api_url" placeholder={w?.api_url ?? "https://api.claimgraph.io"} />
             <span className="w-help">Minerval&apos;s, unless you were told another.</span>
           </div>
+          <label className="w-option" style={{ margin: "8px 0" }}>
+            <input type="checkbox" name="by_hand" value="1" />
+            <div>
+              <b>Connect by hand</b>
+              <span>
+                For a deployment the network does not join to minerval.ai. It shows a signed request that an admin of your organization
+                pastes on minerval.ai; nothing is sent over the network, and what it sends (pages, usage reports) leaves as files.
+              </span>
+            </div>
+          </label>
           {w && (
             <p className="w-muted" style={{ fontSize: 12.5 }}>
               {w.address

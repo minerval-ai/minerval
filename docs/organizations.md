@@ -549,15 +549,20 @@ its address. A missing grant on either side says where it is granted.
 **Connecting by hand**, under "Advanced" in the drawer, is for a
 deployment the network does not join to minerval.ai (`MIRROR_FEED_DIR`,
 `USAGE_REPORT_DIR`). It is kept as a fallback. The deployment shows a
-connection request: the same body, signed, as text. An admin pastes it into the organization's
-page on minerval.ai and approves it there. The deployment needs nothing
+connection request: the same body, signed, as text, good for seven days.
+An admin pastes it into the organization's Deployments tab on minerval.ai,
+under "Connect one by hand", and approves it there. Its publishing key is
+registered the same way, by an admin acting as the organization, naming the
+deployment. The deployment needs nothing
 back, since it sends nothing over the network. What it would have sent
 leaves as files, and two kinds go two ways, because one is public and
 the other is not:
 
 - **Page packages**, from the Outbox, are for the public graph. A member
-  of the organization submits one on minerval.ai, signed in as
-  themselves, and it is checked and admitted as if the deployment had
+  of the organization holding `spend` (a page's first package is charged
+  to the organization's owls) submits one on minerval.ai, from the
+  deployment's row on the Deployments tab, signed in as themselves, and it
+  is checked and admitted as if the deployment had
   sent it, under the organization and the deployment.
 - **Usage reports**, from Budget (`USAGE_REPORT_DIR`), are billing, sent
   privately to Minerval. An admin uploads them on the organization's
@@ -602,10 +607,12 @@ describes.
   `deployment_requests`, which only the organization's members read.
 - **In the deployment**, `outward_acts` keeps who pressed the button,
   holding what, as it does now ([outward-acts.md](outward-acts.md)).
-- **Naming the person outside** is the organization's choice: a gate
-  setting, off unless set, that adds the person's name to an act, as
-  written on their account in the deployment. With it off, the public
-  record says "Acme Corp" and nothing else.
+- **Naming the person outside** is the organization's choice: a setting
+  of the deployment's acts outside, off unless set, that adds the person's
+  name to an act, as written on their account in the deployment. The public
+  graph puts it on the words the act puts on the record (contributions,
+  stated views, proposals). With it off, the public record says "Acme Corp"
+  and nothing else.
 - **On minerval.ai**, a person's acts as the organization, and an admin's
   management of it (approving a deployment, granting), are on the
   organization's log under their own account, with how each was made
@@ -695,7 +702,10 @@ does not get a shortcut because Minerval is on both sides. Reasons:
   `minerval` ("Minerval's machines") are in every package and on the
   deployment's record, and the approving admin sees them.
 - **Hosting is checked, not badged.** The public graph knows which
-  deployments Minerval provisioned. It refuses the hosting word
+  deployments Minerval provisioned: Minerval's operator makes a hosting
+  token for each (`POST /operator/hosted-deployment-tokens`, kept only as a
+  hash), and provisioning puts it in the deployment's
+  `MINERVAL_HOSTING_TOKEN`, which it sends when it connects. It refuses the hosting word
   `minerval` from a deployment Minerval did not provision, and refuses
   any other word from one it did. That holds at connection and at
   publisher registration. The words shown stay the same three, with
@@ -951,24 +961,99 @@ Each phase is one pull request or a few, and leaves things working.
    which asks at once) and the drawer's own checking every five seconds;
    making an organization on the approval page, and a member shown its
    admins; the links both ways; and refusals in words with who fixes them.
-5. **Control.** Withdrawing grants and retiring deployments from
-   minerval.ai, replacing the connection key, the owl allowance, connecting
-   by hand, submitting carried-out page packages and uploading usage
-   reports, feed files to download, accepting a new feed key, publishing
-   through the connection
-   (`publishers.deployment_id`), and the check on hosting words.
-6. **Domains.** Verification, the daily check, and showing the domain.
-7. **Billing on the organization.** The report identifier tied to the
-   organization, reports refused when it does not match, the admins' read of reports received, and
-   the organization's billing page.
-8. **minerval.ai as an OpenID Connect provider** for organizations, which
-   a hosted deployment needs and a self-hosted one may use. Naming the
-   person who acted, as a gate setting.
-9. **Bearer keys go.** `MIRROR_FEED_API_KEY`, `PUBLIC_GRAPH_API_KEY` and
-   `USAGE_REPORT_API_KEY` are removed from `config.ts`, `config-file.ts`,
-   `env.example`, the preflight and the docs. Old keys on converted
-   organization accounts are revoked, after each organization's page has
-   shown, from phase 1 on, which of them are still used.
+5. **Control** (built). Withdrawing grants, and retiring a deployment
+   from its organization's Deployments tab (`DELETE
+   /organizations/:id/deployments/:deployment_id`), which the deployment
+   learns on its next request and says in words. A deployment's own
+   standing is readable whatever it holds (`deployment: "self"` in
+   `organization-routes.ts`: `GET /organizations/me`, retiring itself,
+   replacing its key). Replacing the connection key (`POST
+   /deployments/me/key`, signed with the old key and carrying the new key's
+   signature over `keyReplacementStatement`, so the old key alone cannot
+   hand the deployment to a key nobody holds; Overview's "Replace the
+   key"). The allowance on spend shown on Overview and Budget, as last read.
+   Connecting by hand: the drawer's "Connect by hand" makes a signed request
+   (`signByHandRequest`, good for seven days) that an admin pastes on the
+   Deployments tab (`POST /organizations/:id/deployments/by-hand`); a member
+   downloads the next feed batch after one they name (`GET
+   /organizations/:id/deployments/:deployment_id/feed`, logged as a pull);
+   a member with `spend` submits page and mandate packages acting as the
+   organization, and an admin registers the deployment's key the same way,
+   naming it (`deployment_id` on `POST /publishers`); an admin uploads
+   usage reports on the Billing tab (`POST /organizations/:id/usage-reports`).
+   A new feed key: the feed lists the keys it will sign with next
+   (`MIRROR_FEED_NEXT_PUBLIC_KEYS`), and a follower that meets a batch under
+   a key it has not accepted reads the feed's keys again, so the Mirror page
+   offers it. Publishing through the connection: a key registered over it
+   names the deployment in the statement it signs
+   (`minerval-publisher-registration/2`), is kept with
+   `publishers.deployment_id`, and pages say "deployment Research". The
+   check on hosting words: Minerval's operator makes a hosting token for
+   each deployment Minerval provisions (`/operator/hosted-deployment-tokens`,
+   kept as a hash), which goes in its `MINERVAL_HOSTING_TOKEN`; `minerval`
+   is accepted at connection only with a live token and no other word with
+   one, a token serves one live deployment, a key registered over a
+   connection must say the hosting the deployment connected with, and an
+   account key cannot say `minerval` at all.
+6. **Domains** (built). `organization_domains` and
+   `services/organization-domains.ts`: an admin adds a domain on the
+   organization's Overview and is shown the TXT record; "Check now" and a
+   daily check (`workers/domain-checks.ts`, on the public graph only) look
+   for it; the domain is shown beside the name on the organization's public
+   page and its pages, and in "Published by Acme Corp (acme.com)", with when
+   it was last confirmed; a failing check marks it unconfirmed for seven
+   days, after which it is not shown, and each change is on the
+   organization's log for its admins; one organization holds a domain at a
+   time. `list_organization_domains` is a tool; adding, checking and
+   removing are an admin's, in their session.
+7. **Billing on the organization** (built). The report identifier tied to
+   the organization: a connection that gives one another organization's
+   deployment holds is refused at approval (`IDENTIFIER_HELD`), a signed
+   report must carry its deployment's identifier (`IDENTIFIER_DIFFERS`), a
+   deployment that connected before it had one takes the first it reports,
+   and an uploaded report under another organization's identifier is
+   refused. `usage_reports_received` keeps how each came (`received_via`:
+   signed, uploaded or account key, with the deployment or the admin). The
+   admins' read, `GET /organizations/:id/usage-reports`
+   (`list_organization_usage_reports`), on the Billing tab as "Usage
+   recorded", the latest revision of each day counted.
+8. **minerval.ai as an OpenID Connect provider** (built) for
+   organizations, which a hosted deployment needs and a self-hosted one may
+   use (`services/oidc-provider.ts`, `routes/oidc.ts`). The issuer is the
+   API's address followed by `/oidc`, with discovery, `jwks`, `authorize`,
+   `token` and `userinfo`; ID and access tokens are RS256 JWTs signed with
+   `OIDC_SIGNING_KEY`, ten minutes each, nothing refreshed. An admin
+   registers a deployment as a client on the Members tab, with where it
+   receives people back, and is shown the client id, the secret once, and
+   the issuer to set as `AUTH_OIDC_ISSUER`. A person signs in on
+   `/oidc/consent`; only live members of the client's organization can, and
+   the ID token carries the organization and their role as `groups`. A
+   deployment's `web/auth.ts` needs no change: its OpenID Connect provider,
+   with PKCE, state and nonce, speaks this. Naming the person who acted:
+   an organization's admin chooses it on Overview
+   (`organization_settings.names_people`), and a deployment's
+   administrators for its acts outside (`outside_naming`, on its Public
+   graph page; a deployment-wide setting rather than one per gate, since
+   its acts outside do not all pass a gate), which then sends the person's
+   name (`x-acting-person-name`, percent-encoded). The public graph puts it
+   on the words an organization puts on the record (`contributions.named_person`:
+   contributions, stated views, proposals); funding, taking up a request and
+   the rest stay the organization's alone.
+9. **Bearer keys go** (built). `MIRROR_FEED_API_KEY`, `PUBLIC_GRAPH_API_KEY`
+   and `USAGE_REPORT_API_KEY` are removed from `config.ts`, `config-file.ts`,
+   the compose file, `env.example`, the preflight and the docs: a deployment
+   reaches minerval.ai only over its connection, signed, or by hand. The
+   preflight's public-graph check fails while one is still set on a
+   deployment that is not connected, and says to remove it where it is
+   (`retiredKeysSet`). `PUBLIC_GRAPH_API_URL`, `USAGE_REPORT_URL` and
+   `MIRROR_FEED_URL` stay as overrides of the connection's address. A
+   connected deployment's reads that the account key used to cover are
+   opened to it (`GET /grant-conversations`, `GET /publishers/:account_id`).
+   Old keys on converted organization accounts are revoked by migration
+   0199, each on its organization's log as the operator's, with the reason;
+   and a conversion accepted from now on stops the account's keys as it
+   stops its sign-in tokens. Keys a member made to act as the organization
+   are the member's and stay.
 
 Each phase also does what CLAUDE.md asks of a new route: its MCP side in
 `src/mcp/route-tools.ts`, its label in `src/server/request-labels.ts`, a

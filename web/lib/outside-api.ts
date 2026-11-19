@@ -167,7 +167,7 @@ import type { DeploymentGrant } from "./organization-permissions";
 
 export interface ConnectionView {
   connected: boolean;
-  state: "none" | "waiting" | "connected" | "denied" | "expired";
+  state: "none" | "waiting" | "connected" | "denied" | "expired" | "by_hand";
   api_url: string | null;
   key_id: string | null;
   code: string | null;
@@ -178,6 +178,10 @@ export interface ConnectionView {
   hosting?: Hosting | null;
   /** The public graph's web address, for links to the organization there. */
   web_url?: string | null;
+  /** The allowance on its spend, as last read, where an admin set one (micro-USD). */
+  allowance?: { allowance_micro_usd: number; left_micro_usd: number } | null;
+  /** The signed request to carry by hand, where it is connected that way. */
+  by_hand_request?: string | null;
   organization: { id: string; name: string } | null;
   deployment: { id: string; name: string } | null;
   grants: DeploymentGrant[];
@@ -201,9 +205,14 @@ export interface ConnectWith {
 
 export const fetchConnection = async (who: string) => (await get<{ connection: ConnectionView | null }>("/outside/connection", who)).connection;
 export const fetchConnectionAndDefaults = (who: string) =>
-  get<{ connection: ConnectionView | null; connect_with?: ConnectWith }>("/outside/connection", who);
+  get<{ connection: ConnectionView | null; connect_with?: ConnectWith; naming?: { names_person: boolean } }>("/outside/connection", who);
+export const setOutsideNaming = (who: string, on: boolean) =>
+  accountFetch<{ naming: { names_person: boolean } }>("/outside/naming", { method: "PUT", body: { names_person: on }, actingUser: who });
 export const startConnection = (who: string, body: { name: string; hosting?: Hosting; api_url?: string; replace?: boolean }) =>
   post<{ connection: ConnectionView }>("/outside/connection", who, body);
+export const startConnectionByHand = (who: string, body: { name: string; hosting?: Hosting; replace?: boolean }) =>
+  post<{ connection: ConnectionView }>("/outside/connection/by-hand", who, body);
+export const replaceConnectionKey = (who: string) => post<{ connection: ConnectionView }>("/outside/connection/key", who);
 export const checkConnection = (who: string) => post<{ connection: ConnectionView | null }>("/outside/connection/check", who);
 export const disconnectConnection = (who: string) =>
   accountFetch<{ retired_there: boolean; said: string | null }>("/outside/connection", { method: "DELETE", actingUser: who });

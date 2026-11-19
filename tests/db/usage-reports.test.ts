@@ -46,10 +46,13 @@ import {
   WHAT_IS_NEVER_SENT,
   WHAT_IS_SENT,
   prepareUsageReports,
+  receiveUsageReport,
   sendUsageReports,
 } from "../../src/services/usage-report-service.js";
 import { usageReportTick } from "../../src/workers/usage-reports.js";
 import { OWL, seedClaim } from "./helpers.js";
+import { connectForTest, disconnectForTest } from "./connect-for-test.js";
+import { checkSignature, parseSignatureHeader, sha256Hex } from "../../src/services/request-signature.js";
 
 let app: FastifyInstance;
 
@@ -117,13 +120,34 @@ const stored = () =>
        FROM usage_reports ORDER BY period, revision`
   );
 
-/** The network to the public graph: deliver into this same app, and keep what crossed. */
+/**
+ * The network to the public graph, and the public graph's receiving route as
+ * far as this test needs it: the signature checked against the connected
+ * deployment's key for the host, path and body it was signed for, and the
+ * report recorded against the deployment's organization as the route records
+ * it. (This app is members-only, as the deployment that sends is; the public
+ * graph is not, and its route is tested in tests/db/organization-control.test.ts.)
+ */
 const crossed: Array<{ url: string; headers: Record<string, string>; body: string }> = [];
 const deliver = (async (url: string | URL | Request, init?: RequestInit) => {
   const headers = init!.headers as Record<string, string>;
-  crossed.push({ url: String(url), headers, body: String(init!.body) });
-  const res = await app.inject({ method: "POST", url: "/usage-reports", headers, payload: String(init!.body) });
-  return new Response(res.body, { status: res.statusCode, headers: { "content-type": "application/json" } });
+  const body = String(init!.body);
+  crossed.push({ url: String(url), headers, body });
+  const presented = parseSignatureHeader(headers.authorization ?? "");
+  const [dep] = presented
+    ? await rawQuery<{ id: string; organization_id: string; public_key: string }>(
+        `SELECT id, organization_id, public_key FROM deployments WHERE key_id = $1 AND retired_at IS NULL`,
+        [presented.keyId]
+      )
+    : [];
+  const u = new URL(String(url));
+  if (!presented || !dep || checkSignature(presented, dep.public_key, { host: u.host, method: "POST", path: u.pathname, bodyHash: sha256Hex(body) })) {
+    return new Response(JSON.stringify({ error: "unsigned", code: "SIGNATURE_BAD_SIGNATURE" }), { status: 401 });
+  }
+  const result = await receiveUsageReport(dep.organization_id, JSON.parse(body), new Date(), { deploymentId: dep.id });
+  if (!result.ok) return new Response(JSON.stringify({ error: result.message, code: result.code }), { status: 409 });
+  const { ok: _ok, ...receipt } = result;
+  return new Response(JSON.stringify({ ...receipt, charged: false }), { status: result.recorded ? 201 : 200, headers: { "content-type": "application/json" } });
 }) as typeof fetch;
 const offline = (async () => {
   throw new Error("connect ECONNREFUSED public-graph.example:443");
@@ -185,6 +209,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await disconnectForTest();
   await app?.close();
   await rawQuery(`DELETE FROM llm_usage WHERE request_id = $1`, [REQUEST_ID]);
   await rawQuery(`DELETE FROM usage_reports`);
@@ -294,7 +319,9 @@ describe("sending", () => {
   });
 
   it("keeps them while the deployment is offline, and records the failed attempt", async () => {
-    set({ usageReportUrl: PUBLIC_GRAPH, usageReportApiKey: organizationKey });
+    // Connected for the organization, holding report_usage: reports are signed with the deployment's own key (docs/organizations.md, phase 9).
+    await connectForTest({ pub: (text, params) => rawQuery(text, params), organizationId: organization.id, apiUrl: PUBLIC_GRAPH, grants: ["report_usage"] });
+    set({ usageReportUrl: PUBLIC_GRAPH });
     const outcome = await sendUsageReports({ fetch: offline });
     expect(outcome).toEqual({ sent: 0, stopped: "connect ECONNREFUSED public-graph.example:443" });
     const rows = await stored();
@@ -313,7 +340,7 @@ describe("sending", () => {
     const outcome = await sendUsageReports({ fetch: deliver });
     expect(outcome).toEqual({ sent: 4, stopped: null });
     expect(crossed.map((c) => c.url)).toEqual([PUBLIC_GRAPH, PUBLIC_GRAPH, PUBLIC_GRAPH, PUBLIC_GRAPH]);
-    expect(crossed.every((c) => c.headers["x-api-key"] === organizationKey)).toBe(true);
+    expect(crossed.every((c) => c.headers.authorization?.startsWith("Minerval-Deployment") && !c.headers["x-api-key"])).toBe(true);
     // What crossed the network is the stored text, character for character.
     expect(crossed.map((c) => c.body)).toEqual(prepared.map((r) => r.body));
 
@@ -335,7 +362,7 @@ describe("sending", () => {
     expect(await sendUsageReports({ fetch: deliver })).toEqual({ sent: 0, stopped: null });
     expect(crossed).toEqual([]);
     const page = (await as(admin, { url: "/usage-reports/outgoing" })).json();
-    expect(page.destination).toEqual({ kind: "online", url: PUBLIC_GRAPH, ready: true, signed: false });
+    expect(page.destination).toEqual({ kind: "online", url: PUBLIC_GRAPH, ready: true, signed: true });
     expect(page.reports.every((r: { sent_via: string }) => r.sent_via === "online")).toBe(true);
   });
 });
@@ -391,7 +418,7 @@ describe("handing reports over as files", () => {
   it("writes each unsent report to the directory, exactly as prepared, and records where", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "usage-reports-"));
     try {
-      set({ usageReportUrl: "", usageReportApiKey: "", usageReportDir: directory });
+      set({ usageReportUrl: "", usageReportDir: directory });
       const unsent = (await stored()).filter((r) => r.sent_at === null);
       expect(unsent.length).toBe(11);
       crossed.length = 0;
@@ -425,7 +452,7 @@ describe("handing reports over as files", () => {
 
 describe("the flat price", () => {
   it("prepares nothing and sends nothing, and the page says so", async () => {
-    set({ publicGraphPrice: "flat", usageReportUrl: PUBLIC_GRAPH, usageReportApiKey: organizationKey });
+    set({ publicGraphPrice: "flat", usageReportUrl: PUBLIC_GRAPH });
     try {
       const before = await stored();
       // Days have closed since the last report, with spend in them.
@@ -450,7 +477,7 @@ describe("the flat price", () => {
       expect(send.json()).toMatchObject({ prepared: 0, sent: 0, reporting: false });
       expect(await stored()).toEqual(before);
     } finally {
-      set({ publicGraphPrice: "metered", usageReportUrl: "", usageReportApiKey: "" });
+      set({ publicGraphPrice: "metered", usageReportUrl: "" });
     }
   });
 

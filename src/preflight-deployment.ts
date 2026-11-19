@@ -187,9 +187,13 @@ function checkPublishing(facts: DeploymentCheckFacts): DeploymentOutcome {
 
 function checkPublicGraph({ config, deployment }: DeploymentCheckFacts): DeploymentOutcome {
   const url = config.publicGraphApiUrl.trim();
-  const key = config.publicGraphApiKey.trim();
   const signs = config.publishSigningKey.trim().length > 0;
   const connection = deployment.connection ?? null;
+  // The bearer keys a deployment reached the public graph with before it had a connection are read by nothing now (docs/organizations.md, phase 9).
+  const retired = config.retiredKeysSet ?? [];
+  const leftOver = retired.length
+    ? ` ${retired.join(", ")} ${retired.length === 1 ? "is" : "are"} set and no longer read: remove ${retired.length === 1 ? "it" : "them"}.`
+    : "";
   if (url && !httpsUrl(url)) {
     return fail(`public_graph.api_url is "${url}", which is not an https address; it is the public graph's API, for example "https://api.minerval.ai".`);
   }
@@ -197,28 +201,28 @@ function checkPublicGraph({ config, deployment }: DeploymentCheckFacts): Deploym
     const at = url && url.replace(/\/+$/, "") !== connection.apiUrl ? ` public_graph.api_url (${url}) overrides the connection's address, ${connection.apiUrl}.` : "";
     return pass(
       `Connected to minerval.ai${connection.organizationName ? ` for ${connection.organizationName}` : ""}, holding ${connection.grants.length ? connection.grants.join(", ") : "no grant"}. ` +
-        `Every request there is signed with this deployment's own key.${key ? " PUBLIC_GRAPH_API_KEY is set and no longer used; it can be removed." : ""}${at}`
+        `Every request there is signed with this deployment's own key.${leftOver}${at}`
+    );
+  }
+  if (retired.length) {
+    return fail(
+      `${retired.join(", ")} ${retired.length === 1 ? "is" : "are"} set, and no longer read: this deployment reaches minerval.ai only over a connection of its own now. ` +
+        `An administrator connects it on the public graph's Overview, and an admin of the organization approves it there; then remove ${retired.length === 1 ? "the setting" : "the settings"}.`
     );
   }
   if (connection?.state === "waiting") {
     return toDo("A connection to minerval.ai waits for an admin of the organization to approve its code, shown on the public graph's Overview.");
   }
+  if (connection?.state === "by_hand") {
+    return pass("Connected to minerval.ai by hand: nothing is sent over the network, and what this deployment sends there leaves as files a person carries.");
+  }
   if (!url) {
-    if (key) return fail("PUBLIC_GRAPH_API_KEY is set but public_graph.api_url (PUBLIC_GRAPH_API_URL) is not, so the key is used for nothing.");
     return signs
-      ? pass("No address of the public graph is set, so packages of released pages are carried as files and nothing is sent or done there from here.")
-      : notApplicable("No address of the public graph is set, so this deployment sends nothing to it and does nothing there.");
+      ? pass("This deployment is not connected to minerval.ai, so packages of released pages are carried as files and nothing is sent or done there from here.")
+      : notApplicable("This deployment is not connected to minerval.ai, so it sends nothing there and does nothing there.");
   }
-  if (!httpsUrl(url)) {
-    return fail(`public_graph.api_url is "${url}", which is not an https address; it is the public graph's API, for example "https://api.minerval.ai".`);
-  }
-  if (!key) {
-    return fail(
-      "public_graph.api_url is set and this deployment is not connected to minerval.ai, so nothing can be sent or done on the public graph. An administrator connects it on the public graph's Overview."
-    );
-  }
-  return pass(
-    `The public graph is reached at ${url} under the organization's account key (PUBLIC_GRAPH_API_KEY). Connecting this deployment on the public graph's Overview replaces the key with its own signed requests. The key is not tried here.`
+  return fail(
+    "public_graph.api_url is set and this deployment is not connected to minerval.ai, so nothing can be sent or done on the public graph. An administrator connects it on the public graph's Overview."
   );
 }
 
@@ -303,16 +307,16 @@ function checkUsageReport(facts: DeploymentCheckFacts): DeploymentOutcome {
   const signedReports = connected && connection!.grants.includes("report_usage");
   const where = config.usageReportUrl || (connected ? `${connection!.apiUrl}/usage-reports` : "");
   if (where) {
-    if (connected && !signedReports && !config.usageReportApiKey) {
+    if (connected && !signedReports) {
       return fail(
         `This deployment is connected to minerval.ai and does not hold report_usage, so reports are prepared and none can be sent. An admin of ${connection!.organizationName ?? "the organization"} grants it on minerval.ai.`
       );
     }
-    if (!signedReports && !config.usageReportApiKey) {
+    if (!signedReports) {
       return fail("usage_report.url is set and this deployment is not connected to minerval.ai, so reports are prepared and none can be sent. Connect it, with report_usage.");
     }
     return pass(
-      `Usage is reported privately to ${where}, for billing, ${signedReports ? "signed with this deployment's own key" : "under the account key"}: one total of owls spent for each day, and nothing about what the work was on.${from}`
+      `Usage is reported privately to ${where}, for billing, signed with this deployment's own key: one total of owls spent for each day, and nothing about what the work was on.${from}`
     );
   }
   return pass(`Usage is metered and no destination is set (usage_report.url or usage_report.dir), so reports are prepared and kept until one is.${from}`);

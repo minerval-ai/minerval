@@ -21,7 +21,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("../../web/node_modules/server-only/index.js", () => ({}));
 
 // Public Minerval's own settings with no key of any kind, then what a test sets.
-const BARE = { stripeSecretKey: "", stripeWebhookSecret: "", publishSigningKey: "", publicGraphApiUrl: "", publicGraphApiKey: "", sandboxUrl: "", sandboxToken: "", fileSetStoreDir: "", fileSetDirectoryRoot: "", usageReportUrl: "", usageReportDir: "", usageReportApiKey: "", databaseTls: undefined, databaseCaFile: undefined, deploymentHosting: "", modelPrices: [], owls: "sold", reads: "open", env: "development" };
+const BARE = { stripeSecretKey: "", stripeWebhookSecret: "", publishSigningKey: "", publicGraphApiUrl: "", retiredKeysSet: [], sandboxUrl: "", sandboxToken: "", fileSetStoreDir: "", fileSetDirectoryRoot: "", usageReportUrl: "", usageReportDir: "", databaseTls: undefined, databaseCaFile: undefined, deploymentHosting: "", modelPrices: [], owls: "sold", reads: "open", env: "development" };
 const config = (over: Record<string, unknown> = {}): Config => ({ ...loadConfig(), ...BARE, ...over }) as Config;
 const members = (over: Record<string, unknown> = {}) => config({ reads: "members", ...over });
 
@@ -95,22 +95,25 @@ describe("publishing and the public graph", () => {
     expect(isEd25519PrivateKey("not a key")).toBe(false);
   });
 
-  it("wants an https address with its key, and passes a signing key with no address as carried by file", () => {
+  it("wants a connection, an https address where one is set, and passes a signing key with no address as carried by file", () => {
     expect(run("public_graph", facts()).status).toBe("not_applicable");
     expect(run("public_graph", facts({ config: config({ publishSigningKey: ED25519 }) })).message).toContain("carried as files");
     expect(run("public_graph", facts({ config: config({ publicGraphApiUrl: "http://api.minerval.ai" }) })).message).toContain("not an https address");
     const unconnected = run("public_graph", facts({ config: config({ publicGraphApiUrl: "https://api.minerval.ai" }) }));
     expect(unconnected.status).toBe("fail");
     expect(unconnected.message).toContain("not connected to minerval.ai");
-    const ok = run("public_graph", facts({ config: config({ publicGraphApiUrl: "https://api.minerval.ai", publicGraphApiKey: "mk_secret" }) }));
-    expect(ok.status).toBe("pass");
-    expect(ok.message).not.toContain("mk_secret");
-    expect(ok.message).toContain("The key is not tried here");
+    // A bearer key from before connections is read by nothing, and said so (docs/organizations.md, phase 9).
+    const leftOver = run("public_graph", facts({ config: config({ retiredKeysSet: ["PUBLIC_GRAPH_API_KEY"] }) }));
+    expect(leftOver.status).toBe("fail");
+    expect(leftOver.message).toContain("PUBLIC_GRAPH_API_KEY is set, and no longer read");
     // A connection needs no key, and says what it holds.
     const connection = { state: "connected", apiUrl: "https://api.minerval.ai", organizationName: "Acme Corp", grants: ["act", "read_feed"] };
     const connected = run("public_graph", facts({ deployment: { connection } }));
     expect(connected.status).toBe("pass");
     expect(connected.message).toContain("Connected to minerval.ai for Acme Corp, holding act, read_feed");
+    const connectedWithKey = run("public_graph", facts({ config: config({ retiredKeysSet: ["MIRROR_FEED_API_KEY"] }), deployment: { connection } }));
+    expect(connectedWithKey.status).toBe("pass");
+    expect(connectedWithKey.message).toContain("MIRROR_FEED_API_KEY is set and no longer read: remove it.");
     const waiting = run("public_graph", facts({ deployment: { connection: { ...connection, state: "waiting" } } }));
     expect(waiting.status).toBe("to_do");
   });
@@ -171,7 +174,7 @@ describe("owls, prices and the usage report", () => {
     const withheld = run("usage_report", facts({ config: members(), deployment: { connection: { ...connection, grants: ["read_feed"] } } }));
     expect(withheld.status).toBe("fail");
     expect(withheld.message).toContain("does not hold report_usage");
-    const sent = run("usage_report", facts({ config: members({ usageReportUrl: "https://api.minerval.ai/usage-reports", usageReportApiKey: "mk_x", usageReportFrom: "2026-11-01" }) }));
+    const sent = run("usage_report", facts({ config: members({ usageReportUrl: "https://api.minerval.ai/usage-reports", usageReportFrom: "2026-11-01" }), deployment: { connection } }));
     expect(sent).toMatchObject({ status: "pass" });
     expect(sent.message).toContain("The first day reported is 2026-11-01.");
     const dir = members({ usageReportDir: "/reports" });

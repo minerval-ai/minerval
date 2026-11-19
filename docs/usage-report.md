@@ -4,7 +4,7 @@ The usage report is billing. Every private graph pays Minerval toward the public
 
 The report is one total for one day. It never says which claims, mandates or people the work was for, so the payment shows nothing about what the organization cares about.
 
-**Who receives it and who can read it.** A report is sent privately to Minerval's server (`POST /usage-reports`, for instance at `api.minerval.ai`), under the organization's account with Minerval, and recorded against that account so that Minerval can bill the metered price. It is not published: no route reads a received report back, the mirror feed does not carry it, and no other account can see it (see [Receiving](#receiving)). The pages and messages a deployment shows name Minerval as the recipient, not "the public graph", which an administrator reads as "made public".
+**Who receives it and who can read it.** A report is sent privately to Minerval's server (`POST /usage-reports`, for instance at `api.minerval.ai`), under the organization's account with Minerval, and recorded against that account so that Minerval can bill the metered price. It is not published: the only route that reads a received report back is the organization's own admins' (`GET /organizations/:id/usage-reports`, its Billing tab on minerval.ai), which shows exactly what the deployment's Budget page already shows its administrators; the mirror feed does not carry it, and no other account can see it (see [Receiving](#receiving)). The pages and messages a deployment shows name Minerval as the recipient, not "the public graph", which an administrator reads as "made public".
 
 One codebase serves both sides. A members-only deployment (`READS=members`) on the metered price sends reports. Every deployment can receive them, which is of use on the public graph. The public graph itself reports to no one: with nothing set, no report is prepared, no worker starts and nothing is sent.
 
@@ -46,7 +46,6 @@ One of two ways, set by the deployment:
 | Setting | |
 | --- | --- |
 | `USAGE_REPORT_URL` | The address of the receiving route on Minerval's server. Not needed by a deployment connected to minerval.ai, whose reports go to its connection's address, signed with its own key, where it holds `report_usage` ([organizations.md](organizations.md), "Billing") |
-| `USAGE_REPORT_API_KEY` | For a deployment that is not connected: an API key of the organization's account with Minerval. A secret, and not used by a connected deployment |
 | `USAGE_REPORT_DIR` | A directory. Each report is written there as `usage-report-<day>-r<revision>.json`, to be handed over, for a deployment whose network is restricted |
 | `USAGE_REPORT_FROM` | The first UTC day reported, `YYYY-MM-DD`. Empty by default |
 | `USAGE_REPORT_INTERVAL_SECONDS` | How often the worker runs. Default 3600 |

@@ -19,6 +19,7 @@ import {
   type NewContribution,
 } from "../db/schema.js";
 import { mergedAliasRefusal } from "./claim-alias-service.js";
+import { namedPerson } from "./named-person.js";
 
 /**
  * The review cost a submission reserves against its run's budget until its
@@ -491,6 +492,7 @@ export async function createContribution(input: {
   const values: NewContribution = {
     claimId: input.claimId,
     contributorId: input.contributorId,
+    namedPerson: namedPerson(),
     contributionType: input.contributionType,
     content: input.content,
     evidenceUrls: input.evidenceUrls ?? [],
@@ -712,12 +714,15 @@ export function formatContribution(c: {
   aboutPublishedPageId?: string | null;
   proposedCanonicalForm: string | null;
   grantId?: string | null;
+  namedPerson?: string | null;
 }) {
   return {
     id: c.id,
     claim_id: c.claimId,
     // A mandate's contribution does not name its funder (§12/§19).
     contributor_id: c.grantId ? null : c.contributorId,
+    // Who put it on the record for an organization, where the organization names people (docs/organizations.md, "Who acted").
+    named_person: c.grantId ? null : (c.namedPerson ?? null),
     contribution_type: c.contributionType,
     content: c.content,
     evidence_urls: c.evidenceUrls,

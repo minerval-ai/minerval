@@ -55,6 +55,7 @@ const fake = {
   reports: [] as string[],
   /** The last body a connect request carried. */
   asked: null as Record<string, unknown> | null,
+  allowance: null as { allowance_micro_usd: number; left_micro_usd: number } | null,
 };
 
 function answer(status: number, body: unknown): Response {
@@ -105,12 +106,17 @@ const fakeFetch: typeof fetch = async (input, init) => {
   }
   if (fake.retired) return answer(401, { error: "No connected deployment has this key.", code: "DEPLOYMENT_NOT_CONNECTED" });
   if (url.pathname === "/organizations/me") {
-    return answer(200, { organization: { name: "Acme Corp" }, deployment: { name: "Research", grants: fake.grants } });
+    return answer(200, { organization: { name: "Acme Corp" }, deployment: { name: "Research", grants: fake.grants, allowance: fake.allowance } });
   }
   if (url.pathname === "/users/me") return answer(200, { user: { id: randomUUID(), external_id: "org:x", display_name: "Acme Corp" } });
   if (url.pathname === "/usage-reports" && method === "POST") {
     fake.reports.push(body ?? "");
     return answer(201, { recorded: true, charged: false });
+  }
+  if (url.pathname === "/deployments/me/key" && method === "POST") {
+    // Signed with the old key (checked above); the new key's proof is the public graph's to check (organization-control.test.ts).
+    fake.key = (JSON.parse(body ?? "{}") as { public_key: string }).public_key;
+    return answer(200, { key_id: "new" });
   }
   if (url.pathname === "/deployments/me/retire" && method === "POST") {
     fake.retired = true;
@@ -263,6 +269,27 @@ describe("connecting to minerval.ai", () => {
     expect(fake.seen.filter((s) => s.path === "/usage-reports").every((s) => s.signed && !s.bearer)).toBe(true);
   });
 
+  it("reads the allowance on its spend, for its pages to show", async () => {
+    fake.allowance = { allowance_micro_usd: 5_000_000, left_micro_usd: 3_500_000 };
+    const checked = await asAdmin({ method: "POST", url: "/outside/connection/check" });
+    expect(checked.json().connection.allowance).toEqual({ allowance_micro_usd: 5_000_000, left_micro_usd: 3_500_000 });
+  });
+
+  it("replaces its key there, and signs with the new one from then on", async () => {
+    const before = (await asAdmin({ url: "/outside/connection" })).json().connection.key_id as string;
+    const replaced = await asAdmin({ method: "POST", url: "/outside/connection/key" });
+    expect(replaced.statusCode, replaced.body).toBe(200);
+    const after = replaced.json().connection.key_id as string;
+    expect(after).not.toBe(before);
+    expect(replaced.body).not.toContain("PRIVATE KEY");
+    // The fake public graph now checks signatures against the new key only.
+    forgetConnection();
+    const me = await call(await publicGraph(), "GET", "/users/me");
+    expect(me.status).toBe(200);
+    const [act] = await rawQuery<{ result: string }>(`SELECT result FROM outward_acts WHERE kind = 'replace_connection_key' ORDER BY at DESC LIMIT 1`);
+    expect(act!.result).toBe("done");
+  });
+
   it("disconnects by retiring itself there and forgetting the key", async () => {
     const res = await asAdmin({ method: "DELETE", url: "/outside/connection" });
     expect(res.statusCode, res.body).toBe(200);
@@ -271,5 +298,23 @@ describe("connecting to minerval.ai", () => {
     expect((await asAdmin({ url: "/outside/connection" })).json().connection).toBeNull();
     const [n] = await rawQuery<{ n: string }>(`SELECT count(*)::text AS n FROM public_graph_connection`);
     expect(n!.n).toBe("0");
+  });
+
+  it("connects by hand, showing a request signed with its new key and sending nothing", async () => {
+    fake.seen.length = 0;
+    const made = await asAdmin({ method: "POST", url: "/outside/connection/by-hand", payload: { name: "Offline lab" } });
+    expect(made.statusCode, made.body).toBe(201);
+    const connection = made.json().connection;
+    expect(connection.state).toBe("by_hand");
+    expect(fake.seen).toEqual([]);
+    const outer = JSON.parse(connection.by_hand_request) as { format: string; body: string; signature: string };
+    expect(outer.format).toBe("minerval-connection-request/1");
+    const body = JSON.parse(outer.body) as { public_key: string; name: string; hosting: string };
+    expect(body).toMatchObject({ name: "Offline lab", hosting: "own_machines" });
+    const { byHandStatement } = await import("../../src/services/deployment-service.js");
+    const { parsePublicKey } = await import("../../src/services/mirror-batch.js");
+    const { verify } = await import("node:crypto");
+    expect(verify(null, Buffer.from(byHandStatement(outer.body)), parsePublicKey(body.public_key), Buffer.from(outer.signature, "base64"))).toBe(true);
+    await asAdmin({ method: "DELETE", url: "/outside/connection" });
   });
 });

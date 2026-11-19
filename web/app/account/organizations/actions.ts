@@ -16,6 +16,16 @@ import {
   makeInvitation,
   approveConnectRequest,
   denyConnectRequest,
+  makeSignInClient,
+  setOrganizationNaming,
+  revokeSignInClient,
+  addDomain,
+  checkDomain,
+  removeDomain,
+  approveByHand,
+  retireDeployment,
+  submitCarriedPackage,
+  uploadUsageReport,
   grantPermission,
   organizationCheckout,
   revokeOrganizationCredential,
@@ -316,6 +326,175 @@ export async function createOrganizationForConnectAction(_prev: FormState, form:
     return said(err, "The organization could not be made.");
   }
   redirect(`/connect?code=${encodeURIComponent(code)}&organization=${encodeURIComponent(id)}`);
+}
+
+/** The text of a file in a form, or of the field beside it where the person pasted it instead. */
+async function textOf(form: FormData, fileField: string, textField: string): Promise<string> {
+  const file = form.get(fileField);
+  if (file && typeof file === "object" && "text" in file && (file as File).size > 0) return (await (file as File).text()).trim();
+  return field(form, textField);
+}
+
+export async function approveByHandAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const request = await textOf(form, "request_file", "request");
+  if (!request) return { error: "Paste the request the deployment shows, whole, or choose the file it is in." };
+  const grants = form.getAll("grant").map(String).filter((g): g is DeploymentGrant => (DEPLOYMENT_GRANTS as readonly string[]).includes(g));
+  if (grants.length === 0) return { error: "Tick at least one thing it may do." };
+  const allowanceText = field(form, "allowance_owls");
+  const allowance = allowanceText === "" ? null : Number(allowanceText);
+  if (allowance !== null && (!Number.isFinite(allowance) || allowance < 0)) return { error: "An allowance is a number of owls, zero or more, or empty for none." };
+  try {
+    const done = await approveByHand(who, organizationId, request, field(form, "name"), grants, grants.includes("spend") ? allowance : null);
+    revalidatePath(page(organizationId));
+    return { notice: `Approved. Its key is ${done.key_id.slice(0, 8)}…: the deployment shows the same. What it sends now travels as files.` };
+  } catch (err) {
+    return said(err, "The deployment could not be approved.");
+  }
+}
+
+export async function uploadUsageReportAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const files = form.getAll("report_file").filter((f): f is File => typeof f === "object" && f !== null && "text" in f && (f as File).size > 0);
+  if (files.length === 0) return { error: "Choose the report files the deployment wrote (usage-report-YYYY-MM-DD-rN.json)." };
+  const said_: string[] = [];
+  for (const f of files) {
+    try {
+      const r = await uploadUsageReport(who, organizationId, (await f.text()).trim());
+      said_.push(`${r.period} revision ${r.revision}: ${r.recorded ? "recorded" : "already recorded"}`);
+    } catch (err) {
+      return { error: `${f.name}: ${err instanceof AccountApiError ? err.message : "could not be uploaded."}${said_.length ? ` Before it: ${said_.join("; ")}.` : ""}` };
+    }
+  }
+  revalidatePath(page(organizationId));
+  return { notice: said_.join("; ") + "." };
+}
+
+export async function submitCarriedPackageAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const files = form.getAll("package_file").filter((f): f is File => typeof f === "object" && f !== null && "text" in f && (f as File).size > 0);
+  if (files.length === 0) return { error: "Choose the package files the deployment's Outbox wrote." };
+  const out: string[] = [];
+  for (const f of files) {
+    let pkg: Record<string, unknown>;
+    try {
+      pkg = JSON.parse(await f.text()) as Record<string, unknown>;
+    } catch {
+      return { error: `${f.name} is not a package: it is not JSON. Choose the file the Outbox wrote, as it is.` };
+    }
+    const kind = typeof pkg.format === "string" && pkg.format.includes("mandate") ? "mandate" : "page";
+    try {
+      const r = await submitCarriedPackage(who, organizationId, kind, pkg);
+      out.push(`${f.name}: ${typeof r.in_words === "string" ? r.in_words : "admitted"}`);
+    } catch (err) {
+      return { error: `${f.name}: ${err instanceof AccountApiError ? err.message : "could not be submitted."}${out.length ? ` Before it: ${out.join(" ")}` : ""}` };
+    }
+  }
+  revalidatePath(page(organizationId));
+  return { notice: out.join(" ") };
+}
+
+export async function setNamingAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const on = field(form, "on") === "1";
+  try {
+    await setOrganizationNaming(who, organizationId, on);
+  } catch (err) {
+    return said(err, "The choice could not be saved.");
+  }
+  revalidatePath(page(organizationId));
+  return { notice: on ? "From now on, what a member puts on the record as the organization names them beside it." : "From now on, the public record names the organization alone." };
+}
+
+export async function makeSignInClientAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  const redirects = field(form, "redirect_uris").split(/[\s,]+/).filter(Boolean);
+  try {
+    const c = await makeSignInClient(who, organizationId, field(form, "name"), redirects);
+    revalidatePath(page(organizationId));
+    return {
+      notice:
+        `Registered. Set these on the deployment, in its web app's settings, and keep the secret: it is shown this once. ` +
+        `AUTH_OIDC_ISSUER=${c.issuer}  AUTH_OIDC_ID=${c.client_id}  AUTH_OIDC_SECRET=${c.client_secret}`,
+    };
+  } catch (err) {
+    return said(err, "The client could not be registered.");
+  }
+}
+
+export async function revokeSignInClientAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    await revokeSignInClient(who, organizationId, field(form, "client_id"));
+  } catch (err) {
+    return said(err, "The client could not be revoked.");
+  }
+  revalidatePath(page(organizationId));
+  return { notice: "Revoked. No one signs in to that deployment through minerval.ai again." };
+}
+
+export async function addDomainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    const d = await addDomain(who, organizationId, field(form, "domain"));
+    revalidatePath(page(organizationId));
+    return { notice: `Added. Put a TXT record at ${d.record.name} saying ${d.record.value}, then check it.` };
+  } catch (err) {
+    return said(err, "The domain could not be added.");
+  }
+}
+
+export async function checkDomainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    const d = await checkDomain(who, organizationId, field(form, "domain_id"));
+    revalidatePath(page(organizationId));
+    return d.state === "confirmed" ? { notice: d.in_words } : { error: d.last_error ?? d.in_words };
+  } catch (err) {
+    return said(err, "The domain could not be checked.");
+  }
+}
+
+export async function removeDomainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    await removeDomain(who, organizationId, field(form, "domain_id"));
+  } catch (err) {
+    return said(err, "The domain could not be removed.");
+  }
+  revalidatePath(page(organizationId));
+  return { notice: "Removed. It is no longer shown or checked." };
+}
+
+export async function retireDeploymentAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    await retireDeployment(who, organizationId, field(form, "deployment_id"));
+  } catch (err) {
+    return said(err, "The deployment could not be retired.");
+  }
+  revalidatePath(page(organizationId));
+  return { notice: "Retired. Its key no longer works here; it says so on its own pages the next time it asks." };
 }
 
 export async function denyConnectAction(_prev: FormState, form: FormData): Promise<FormState> {

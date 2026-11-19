@@ -340,12 +340,12 @@ export const CONFIG_FILE_KEYS: readonly ConfigFileKey[] = [
   { key: "public_graph.api_url", env: "PUBLIC_GRAPH_API_URL", kind: "text", field: "publicGraphApiUrl" },
   { key: "public_graph.acts_by", env: "PUBLIC_ACTS_BY", kind: "text", field: "publicActsBy" },
   { key: "public_graph.price", env: "PUBLIC_GRAPH_PRICE", kind: "text", field: "publicGraphPrice" },
-  secret("public_graph.api_key", "PUBLIC_GRAPH_API_KEY"),
+  secret("public_graph.hosting_token", "MINERVAL_HOSTING_TOKEN"),
+  secret("oidc.signing_key", "OIDC_SIGNING_KEY"),
 
   { key: "usage_report.url", env: "USAGE_REPORT_URL", kind: "text", field: "usageReportUrl" },
   { key: "usage_report.dir", env: "USAGE_REPORT_DIR", kind: "text", field: "usageReportDir" },
   { key: "usage_report.from", env: "USAGE_REPORT_FROM", kind: "text", field: "usageReportFrom" },
-  secret("usage_report.api_key", "USAGE_REPORT_API_KEY"),
 
   // Sets of files and the sandbox agents explore them in (docs/file-sets.md).
   { key: "file_sets.store_dir", env: "FILE_SET_STORE_DIR", kind: "text", field: "fileSetStoreDir" },
@@ -416,9 +416,9 @@ export const CONFIG_FILE_GROUPS: Readonly<Record<string, string>> = {
     "stated in every package. The signing key is PUBLISH_SIGNING_KEY.",
   public_graph:
     "The public graph as this deployment reaches it: its API, which permission's holders may act there in the " +
-    "organization's name, and how the deployment pays toward it (metered or flat). The account key is PUBLIC_GRAPH_API_KEY.",
+    "organization's name, and how the deployment pays toward it (metered or flat). It reaches it over its connection, made on the Overview.",
   usage_report:
-    "Where a metered deployment's usage reports go: an address (with USAGE_REPORT_API_KEY) or a directory, never both.",
+    "Where a metered deployment's usage reports go, where not over its connection: another address, or a directory, never both.",
   file_sets: "Where uploaded sets of files are kept, and the directory that directories are registered from.",
   sandbox: "The sandbox agents run commands over file sets in. Its token is SANDBOX_TOKEN.",
 };
