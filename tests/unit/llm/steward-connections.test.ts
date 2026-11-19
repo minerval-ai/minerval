@@ -135,7 +135,7 @@ beforeEach(() => {
 describe("a Steward on a deployment with no connection", () => {
   it("reads nothing about connections on the public graph, and is sent what it was always sent", async () => {
     // The public graph: READS is not set, and the real function answers.
-    expect(await createConnectionTools({ config: {} })).toBe(NO_CONNECTION_TOOLS);
+    expect(await createConnectionTools({ config: {}, role: "steward" })).toBe(NO_CONNECTION_TOOLS);
     const open = await run("claim");
     expect(mocks.queries.filter((q) => /connection/.test(q))).toEqual([]);
 

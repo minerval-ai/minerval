@@ -256,6 +256,8 @@ function connectionSettings(form: FormData): ConnectionSettings {
     ...(text(form, "label") ? { label: text(form, "label") } : {}),
     // Optional: empty is none.
     stake: text(form, "stake") || null,
+    // Only where the checklist was on the form: none ticked is then a choice.
+    ...(form.get("offered_to_listed") ? { offered_to: form.getAll("offered_to").map(String) } : {}),
     calls_per_minute: rate ? Number(rate) : null,
     ...(timeout ? { timeout_seconds: Number(timeout) } : {}),
   };
@@ -321,6 +323,9 @@ export async function changeConnectionAction(_previous: FormState, form: FormDat
         : {}),
       ...(wanted.party_id !== now.party.id ? { party_id: wanted.party_id } : {}),
       ...(wanted.stake !== now.stake ? { stake: wanted.stake } : {}),
+      ...(wanted.offered_to && [...wanted.offered_to].sort().join() !== [...now.offered_to].sort().join()
+        ? { offered_to: wanted.offered_to }
+        : {}),
       ...(wanted.calls_per_minute !== now.calls_per_minute ? { calls_per_minute: wanted.calls_per_minute } : {}),
       ...(wanted.timeout_seconds !== undefined && wanted.timeout_seconds !== now.timeout_seconds
         ? { timeout_seconds: wanted.timeout_seconds }

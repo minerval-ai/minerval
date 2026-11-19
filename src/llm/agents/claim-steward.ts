@@ -726,7 +726,7 @@ async function runClaimStewardImpl(input: {
   // The reading tools of the systems this deployment is connected to, for
   // a run whose label reads them (tools/connection-tools.ts). None on the
   // public graph, where this reads nothing and adds nothing.
-  const connectionTools = await createConnectionTools({ config });
+  const connectionTools = await createConnectionTools({ config, role: "steward" });
   // The sets of files this deployment holds for a run whose label reads
   // them, and the sandbox they are explored in (tools/file-set-tools.ts).
   // None on the public graph, where this reads nothing and adds nothing.

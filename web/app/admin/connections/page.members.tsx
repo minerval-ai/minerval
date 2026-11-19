@@ -42,7 +42,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
   if (!can(who, "administer")) return <NeedsPermission title="Connections" permission="administer" />;
   const sp = await searchParams;
 
-  const [{ notice, can_keep_credentials: canKeepCredentials, connections, not_shown_note: notShown }, labels, parties] = await Promise.all([
+  const [{ notice, can_keep_credentials: canKeepCredentials, roles, connections, not_shown_note: notShown }, labels, parties] = await Promise.all([
     fetchConnections(who.externalId),
     fetchMyLabels(who.externalId),
     fetchParties(who.externalId),
@@ -201,7 +201,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
                 </>
               }
             >
-              <ConnectionFields labels={labels} parties={parties} canKeepCredentials={canKeepCredentials} />
+              <ConnectionFields labels={labels} parties={parties} canKeepCredentials={canKeepCredentials} roles={roles} />
             </WorkForm>
           )}
         </Drawer>

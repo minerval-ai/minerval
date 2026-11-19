@@ -39,12 +39,26 @@ import {
   CONNECTION_NOTICE,
   CONNECTION_STAKE_MAX_CHARS,
   CONNECTION_TIMEOUT_SECONDS,
+  CONNECTION_ROLES,
+  CONNECTION_ROLE_INFO,
   CONNECTION_TRANSPORTS,
   CREDENTIAL_ENV_PATTERN,
   CREDENTIAL_HEADER_PATTERN,
   TOOL_PREFIX_PATTERN,
 } from "../connections.js";
 import { CREDENTIAL_MAX_CHARS, credentialKeys } from "../services/connection-credential.js";
+
+/**
+ * The roles a connection may be offered to, as a page lists them: each
+ * one's name, whether it may keep a reading as a source, and, for a role a
+ * new connection starts unticked for, why.
+ */
+const ROLES = CONNECTION_ROLES.map((role) => ({
+  role,
+  name: CONNECTION_ROLE_INFO[role].name,
+  keeps: CONNECTION_ROLE_INFO[role].keeps,
+  ...(CONNECTION_ROLE_INFO[role].offFirst ? { off_at_first: CONNECTION_ROLE_INFO[role].offFirst } : {}),
+}));
 
 /** Whether this deployment can keep a credential given to a connection itself: its key is set, and is a key. */
 const canKeepCredentials = (): boolean => credentialKeys().current !== null;
@@ -131,6 +145,20 @@ const SETTINGS = {
     description: `How long a call may go unanswered before it is given up (default ${CONNECTION_TIMEOUT_SECONDS.default}).`,
   },
   enabled: { type: "boolean", description: "False switches the connection off: no run is offered its tools. Readings already kept stand." },
+  offered_to: {
+    type: "array",
+    uniqueItems: true,
+    maxItems: CONNECTION_ROLES.length,
+    items: { type: "string", enum: [...CONNECTION_ROLES] },
+    description:
+      "The agent roles a run is offered the connection in, when it works at a label that reads the " +
+      "connection's. Left out when adding, every role but those that start unticked: " +
+      CONNECTION_ROLES.filter((role) => CONNECTION_ROLE_INFO[role].offFirst)
+        .map((role) => `${role} (${CONNECTION_ROLE_INFO[role].offFirst})`)
+        .join(" ") +
+      " Only the Stewards, and a Researcher whose work records sources, may keep a reading as a source; " +
+      "the assistant role is offered a connection only for a person who may open raw sources at its label.",
+  },
 } as const;
 
 interface SettingsBody {
@@ -146,6 +174,7 @@ interface SettingsBody {
   calls_per_minute?: number | null;
   timeout_seconds?: number;
   enabled?: boolean;
+  offered_to?: string[];
 }
 
 function settingsOf(body: SettingsBody): ConnectionSettings {
@@ -162,6 +191,7 @@ function settingsOf(body: SettingsBody): ConnectionSettings {
     callsPerMinute: body.calls_per_minute,
     timeoutSeconds: body.timeout_seconds,
     enabled: body.enabled,
+    offeredTo: body.offered_to,
   };
 }
 
@@ -212,7 +242,9 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
         "rest, and `not_shown_note` says so in a sentence when there are any. A tool's `calls` and " +
         "`readings_kept` count the calls the caller reads. `can_keep_credentials` says whether a " +
         "credential can be given to a connection itself, to be kept sealed: the deployment has the key " +
-        "for it. `notice` is what to tell whoever adds or " +
+        "for it. `roles` lists the agent roles a connection may be offered to (`offered_to`): each one's " +
+        "name, whether it may keep a reading as a source, and why a new connection starts it unticked where " +
+        "it does. `notice` is what to tell whoever adds or " +
         `changes one. ${CONNECTION_NOTICE}`,
     },
     preHandler: administrator,
@@ -223,6 +255,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
       return reply.send({
         notice: CONNECTION_NOTICE,
         can_keep_credentials: canKeepCredentials(),
+        roles: ROLES,
         connections,
         not_shown: notShown,
         ...(note ? { not_shown_note: note } : {}),
@@ -240,7 +273,7 @@ export async function connectionRoutes(app: FastifyInstance): Promise<void> {
     handler: async (request, reply) => {
       const connection = await getConnection(request.params.connection_id);
       if (!connection) return reply.code(404).send({ error: "Connection not found", code: "NOT_FOUND" });
-      return reply.send({ notice: CONNECTION_NOTICE, can_keep_credentials: canKeepCredentials(), connection });
+      return reply.send({ notice: CONNECTION_NOTICE, can_keep_credentials: canKeepCredentials(), roles: ROLES, connection });
     },
   });
 

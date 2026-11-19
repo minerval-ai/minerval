@@ -165,6 +165,96 @@ export function credentialHeaders(header: string, credential: string): Record<st
     : { [header]: credential };
 }
 
+/**
+ * The roles a connection may be offered to, which an administrator ticks
+ * one by one on the connection (`offered_to`). Every agent that works at a
+ * label whose clearance reads the connection's may be offered it: an agent
+ * directing the graph, or answering a person, at a label should be able to
+ * read what that label's systems hold. Each role here runs a tool loop at
+ * the label of its work. Not listed, and never offered: the mathematics
+ * solver, whose tools are fixed when its run starts and a test holds them.
+ */
+export const CONNECTION_ROLES = [
+  "steward",
+  "researcher",
+  "lookout",
+  "grantmaker",
+  "program_officer",
+  "correspondent",
+  "curator",
+  "consistency_checker",
+  "contribution_reviewer",
+  "dispute_arbitrator",
+  "audit",
+  "redactor",
+  "matcher",
+  "extractor",
+  "tagger",
+  "assistant",
+] as const;
+export type ConnectionRole = (typeof CONNECTION_ROLES)[number];
+
+export function isConnectionRole(value: unknown): value is ConnectionRole {
+  return typeof value === "string" && (CONNECTION_ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * Each role as an administrator is shown it: its name, whether it may keep
+ * a reading as a source (only where its work records sources), and, for a
+ * role a new connection is not offered to unless ticked, why not.
+ */
+export const CONNECTION_ROLE_INFO: Readonly<
+  Record<ConnectionRole, { name: string; keeps: "yes" | "when_recording" | "no"; offFirst?: string }>
+> = {
+  steward: { name: "Claim and Question Stewards", keeps: "yes" },
+  researcher: { name: "Researchers", keeps: "when_recording" },
+  lookout: { name: "Lookouts", keeps: "no" },
+  grantmaker: { name: "Grantmakers (conversation, planning and review passes)", keeps: "no" },
+  program_officer: { name: "Program officers", keeps: "no" },
+  correspondent: {
+    name: "Correspondents",
+    keeps: "no",
+    offFirst:
+      "A Correspondent's updates cite what they rest on, and it keeps no source, so a reading it cites is one its readers cannot open.",
+  },
+  curator: { name: "Curator", keeps: "no" },
+  consistency_checker: { name: "Consistency Checker", keeps: "no" },
+  contribution_reviewer: { name: "Contribution Reviewer", keeps: "no" },
+  dispute_arbitrator: { name: "Dispute Arbitrator", keeps: "no" },
+  audit: {
+    name: "Audit",
+    keeps: "no",
+    offFirst:
+      "Audit judges the record as it stands, and one of its passes tells the readers of its log that it was handed no operator data.",
+  },
+  redactor: {
+    name: "Redactor",
+    keeps: "no",
+    offFirst: "The Redactor decides what of a page leaves for readers who do not read its label; it works from the page and the sources it rests on.",
+  },
+  matcher: {
+    name: "Matcher",
+    keeps: "no",
+    offFirst: "The Matcher runs on every claim extracted, and each run would carry the connection's tool definitions.",
+  },
+  extractor: {
+    name: "Extractor",
+    keeps: "no",
+    offFirst: "The Extractor runs on every source, reading the text it is handed, and each run would carry the connection's tool definitions.",
+  },
+  tagger: {
+    name: "Tagger",
+    keeps: "no",
+    offFirst: "The Tagger runs on every new node, and each run would carry the connection's tool definitions.",
+  },
+  assistant: { name: "The Assistant, for people who may open raw sources at the connection's label", keeps: "no" },
+};
+
+/** The roles a new connection is offered to until an administrator says otherwise. */
+export const DEFAULT_CONNECTION_ROLES: readonly ConnectionRole[] = CONNECTION_ROLES.filter(
+  (role) => CONNECTION_ROLE_INFO[role].offFirst === undefined
+);
+
 /** How long a call may go unanswered, within what an administrator may set. */
 export const CONNECTION_TIMEOUT_SECONDS = { default: 120, min: 5, max: 900 } as const;
 

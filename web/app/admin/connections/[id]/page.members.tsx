@@ -26,6 +26,7 @@ import {
   fetchMyLabels,
   fetchParties,
   type ConnectionCall,
+  type ConnectionRoleView,
   type ConnectionView,
 } from "@/lib/admin-api";
 import { callOutcome, withdrawnWords } from "@/lib/admin-words";
@@ -70,8 +71,9 @@ export default async function ConnectionPage({
   let notice: string;
   let connection: ConnectionView;
   let canKeepCredentials: boolean;
+  let roles: ConnectionRoleView[];
   try {
-    ({ notice, connection, can_keep_credentials: canKeepCredentials } = await fetchConnection(who.externalId, id));
+    ({ notice, connection, can_keep_credentials: canKeepCredentials, roles } = await fetchConnection(who.externalId, id));
   } catch (err) {
     if (err instanceof AccountApiError && (err.status === 404 || err.status === 400)) notFound();
     throw err;
@@ -172,6 +174,18 @@ export default async function ConnectionPage({
             <span key="l">
               {connection.calls_per_minute === null ? "No rate" : `${connection.calls_per_minute} calls/min`}
               <div className="w-faint w-small">{connection.timeout_seconds} s timeout</div>
+            </span>,
+          ],
+          [
+            <span key="k" className="w-row" style={{ gap: 6 }}>
+              Offered to <Tip>{roles.filter((r) => connection.offered_to.includes(r.role)).map((r) => r.name).join("; ") || "No agent: tick roles under Settings."}</Tip>
+            </span>,
+            <span key="to">
+              {connection.offered_to.length === 0 ? (
+                <span className="w-faint">No agent</span>
+              ) : (
+                `${connection.offered_to.length} of ${roles.length} roles`
+              )}
             </span>,
           ],
           [
@@ -327,7 +341,7 @@ export default async function ConnectionPage({
                 }
               >
                 <input type="hidden" name="connection_id" value={connection.id} />
-                <ConnectionFields labels={labels} parties={parties} current={connection} />
+                <ConnectionFields labels={labels} parties={parties} current={connection} roles={roles} />
               </WorkForm>
             </div>
           </div>

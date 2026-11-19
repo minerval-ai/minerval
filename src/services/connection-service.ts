@@ -44,6 +44,10 @@ import {
   toolDefinitionHash,
   toolPrefixFromName,
   CONNECTION_TRANSPORTS,
+  CONNECTION_ROLES,
+  DEFAULT_CONNECTION_ROLES,
+  isConnectionRole,
+  type ConnectionRole,
   type ServerToolDefinition,
 } from "../connections.js";
 import {
@@ -96,6 +100,7 @@ interface ConnectionRow {
   party_is_own: boolean;
   stake: string | null;
   sensitivity_label: string;
+  offered_to: string[];
   calls_per_minute: number | null;
   timeout_seconds: number;
   enabled: boolean;
@@ -128,7 +133,7 @@ const CONNECTION_SELECT = `
   SELECT c.id, c.name, c.tool_prefix, c.transport, c.url, c.credential_env,
          c.credential_sealed, c.credential_key_id, c.credential_set_at, c.credential_header,
          c.party_id, p.name AS party_name, p.is_own_organization AS party_is_own, c.stake,
-         c.sensitivity_label, c.calls_per_minute, c.timeout_seconds, c.enabled,
+         c.sensitivity_label, c.offered_to, c.calls_per_minute, c.timeout_seconds, c.enabled,
          c.last_checked_at, c.last_answered_at, c.last_error, c.last_error_at, c.created_at, c.updated_at
     FROM connections c
     JOIN parties p ON p.id = c.party_id`;
@@ -197,6 +202,8 @@ export interface ConnectionView {
   /** What the party stands to gain or lose from what the system shows, where an administrator gave it; recorded on every reading kept. */
   stake: string | null;
   label: string;
+  /** The roles a run is offered the connection in (CONNECTION_ROLES), in that list's order. */
+  offered_to: ConnectionRole[];
   calls_per_minute: number | null;
   timeout_seconds: number;
   enabled: boolean;
@@ -247,6 +254,7 @@ function connectionView(c: ConnectionRow, tools: ToolRow[]): ConnectionView {
     party: { id: c.party_id, name: c.party_name, is_own_organization: c.party_is_own },
     stake: c.stake,
     label: c.sensitivity_label,
+    offered_to: rolesInOrder(c.offered_to),
     calls_per_minute: c.calls_per_minute,
     timeout_seconds: c.timeout_seconds,
     enabled: c.enabled,
@@ -260,6 +268,12 @@ function connectionView(c: ConnectionRow, tools: ToolRow[]): ConnectionView {
     created_at: iso(c.created_at)!,
     updated_at: iso(c.updated_at)!,
   };
+}
+
+/** Known roles, once each, in CONNECTION_ROLES order. A role a later build dropped is left out. */
+function rolesInOrder(roles: readonly string[]): ConnectionRole[] {
+  const set = new Set(roles);
+  return CONNECTION_ROLES.filter((role) => set.has(role));
 }
 
 /** What a connection's view says of its credential, read from the row and the keys set now. Nothing is opened. */
@@ -373,6 +387,7 @@ export type ConnectionFailureCode =
   | "INVALID_STAKE"
   | "INVALID_RATE"
   | "INVALID_TIMEOUT"
+  | "INVALID_ROLE"
   | "UNKNOWN_PARTY"
   | "UNKNOWN_LABEL"
   | "NAME_TAKEN"
@@ -441,6 +456,8 @@ export interface ConnectionSettings {
   callsPerMinute?: number | null;
   timeoutSeconds?: number;
   enabled?: boolean;
+  /** The roles a run is offered the connection in. */
+  offeredTo?: readonly string[];
 }
 
 /** The settings as they will be stored, or the first thing wrong with them. */
@@ -532,6 +549,17 @@ function cleanSettings(input: ConnectionSettings): { ok: true; value: Connection
   }
   if (input.label !== undefined) out.label = input.label.trim();
   if (input.enabled !== undefined) out.enabled = input.enabled === true;
+  if (input.offeredTo !== undefined) {
+    const unknown = input.offeredTo.filter((role) => !isConnectionRole(role));
+    if (unknown.length > 0) {
+      return refuse(
+        "INVALID_ROLE",
+        `offered_to names roles a connection may be offered to: ${CONNECTION_ROLES.join(", ")}. ` +
+          `Not one of them: ${unknown.join(", ")}.`
+      );
+    }
+    out.offeredTo = rolesInOrder(input.offeredTo);
+  }
   return { ok: true, value: out };
 }
 
@@ -593,10 +621,11 @@ export async function addConnection(
         `INSERT INTO connections
            (id, name, tool_prefix, transport, url, credential_env, credential_header, party_id, stake,
             sensitivity_label, calls_per_minute, timeout_seconds, enabled, created_by,
-            credential_sealed, credential_key_id, credential_set_at, credential_set_by)
+            credential_sealed, credential_key_id, credential_set_at, credential_set_by, offered_to)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
                  CASE WHEN $15::text IS NULL THEN NULL ELSE now() END,
-                 CASE WHEN $15::text IS NULL THEN NULL ELSE $14::uuid END)
+                 CASE WHEN $15::text IS NULL THEN NULL ELSE $14::uuid END,
+                 $17::text[])
          RETURNING id`,
         [
           id,
@@ -615,6 +644,7 @@ export async function addConnection(
           actorId,
           sealed?.sealed ?? null,
           sealed?.keyId ?? null,
+          [...(s.offeredTo ?? DEFAULT_CONNECTION_ROLES)],
         ]
       );
       await logAdministrativeEvent(tx, "connection_added", actorId, {
@@ -800,6 +830,7 @@ const SETTING_COLUMNS: Array<[keyof ConnectionSettings, string, string]> = [
   ["callsPerMinute", "calls_per_minute", "calls_per_minute"],
   ["timeoutSeconds", "timeout_seconds", "timeout_seconds"],
   ["enabled", "enabled", "enabled"],
+  ["offeredTo", "offered_to", "offered_to"],
 ];
 
 /**
@@ -852,6 +883,10 @@ export async function changeConnection(
       for (const [key, column, routeName] of SETTING_COLUMNS) {
         const value = s[key];
         if (value === undefined || value === before[column]) continue;
+        // A list of roles is the same list when it names the same roles.
+        if (Array.isArray(value) && Array.isArray(before[column]) && rolesInOrder(value).join() === rolesInOrder(before[column] as string[]).join()) {
+          continue;
+        }
         params.push(value);
         sets.push(`${column} = $${params.length}`);
         changed.push(routeName);
@@ -1230,9 +1265,10 @@ export interface RunConnection {
 }
 
 /**
- * The connections a run working at `label` has, with the tools it is
- * offered from each: every connection that is on, whose label that label
- * reads, and that has a tool an administrator picked. Each server is asked
+ * The connections a run working at `label` in `role` has, with the tools
+ * it is offered from each: every connection that is on, whose label that
+ * label reads, that an administrator offered to the role, and that has a
+ * tool an administrator picked. Each server is asked
  * for its tools as they are now. A picked tool is offered only where the
  * server's definition still has the hash the pick was made on; one that
  * differs or is gone is withdrawn here, for this run and every later one,
@@ -1242,15 +1278,28 @@ export interface RunConnection {
  * the run can be told the reading it might have made is not available and
  * why.
  */
-export async function connectionsOfferedAt(label: string): Promise<RunConnection[]> {
+export async function connectionsOfferedAt(
+  label: string,
+  role: ConnectionRole,
+  opts: {
+    /**
+     * Only connections at these labels, where the run's reading goes on to
+     * a person: the Assistant's, held to the labels whose raw sources its
+     * person may open (src/raw-sources.ts). Null or absent: no such limit.
+     */
+    onlyLabels?: readonly string[] | null;
+  } = {}
+): Promise<RunConnection[]> {
   const readable = await labelsReadableFrom([label]);
+  const labels = opts.onlyLabels ? readable.filter((l) => opts.onlyLabels!.includes(l)) : readable;
+  if (labels.length === 0) return [];
   const rows = await rawQuery<ConnectionRow>(
     `${CONNECTION_SELECT}
-      WHERE c.enabled AND c.sensitivity_label = ANY($1::text[])
+      WHERE c.enabled AND c.sensitivity_label = ANY($1::text[]) AND $2 = ANY(c.offered_to)
         AND EXISTS (SELECT 1 FROM connection_tools t
                      WHERE t.connection_id = c.id AND (t.offered OR t.withdrawn_at IS NOT NULL))
       ORDER BY lower(c.name)`,
-    [readable]
+    [labels, role]
   );
   return Promise.all(rows.map((c) => runConnection(c)));
 }

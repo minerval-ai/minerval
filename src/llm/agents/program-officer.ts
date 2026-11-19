@@ -25,6 +25,7 @@ import { getProgramOfficerSystemPromptBlocks } from "../prompts/program-officer.
 import { getGraphReadToolDefinitions, executeGraphReadTool } from "../tools/graph-read-tools.js";
 import { getSqlToolDefinition, executeSqlTool } from "../tools/sql-tools.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { listSkills } from "../prompts/skills.js";
 import { executeSkillTool, getActiveSkillToolDefinitions } from "../tools/skill-tools.js";
 import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
@@ -724,16 +725,22 @@ async function runRole(grant: GrantRow, role: Role): Promise<{ ran: boolean }> {
           // Every agent carries the report channel (#366): a sitting that meets a
           // broken tool or an impossible result says so, as every other agent can.
           const reportTools = createReportTools({ model });
+          // The systems this deployment is connected to, where an
+          // administrator offered them to program officers: a petition or
+          // an item may turn on what they hold. Read, never kept.
+          const connectionTools = await createConnectionTools({ config, role: "program_officer", keeps: false });
           await withSkills([], () =>
             toolUseLoop({
               initialMessages: [{ role: "user", content: brief }],
-              tools: [...getOfficerToolDefinitions(role), ...reportTools.definitions],
-              system,
+              tools: [...getOfficerToolDefinitions(role), ...reportTools.definitions, ...connectionTools.definitions],
+              system: withConnectionsBlock(system, connectionTools),
               model,
               maxIterations: RUN_TURN_GUARD,
               executeTool: async (name, input) => {
                 const report = await reportTools.execute(name, input);
                 if (report !== null) return report;
+                const connection = await connectionTools.execute(name, input);
+                if (connection !== null) return connection;
                 return executeOfficerTool(name, input, { grant, role, labels, limitMicroUsd: limit.microUsd, decidedBy });
               },
             })

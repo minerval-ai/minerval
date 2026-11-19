@@ -2173,6 +2173,25 @@ export const connections = pgTable(
       .references(() => parties.id),
     stake: text("stake"),
     sensitivityLabel: sensitivityLabelColumn(),
+    // The roles a run is offered the connection in, an administrator's
+    // choice (CONNECTION_ROLES in src/connections.ts). Not held to a list
+    // here, so that a role added later is not a migration. The default is
+    // the roles a new connection is offered to; the service always states it.
+    offeredTo: text("offered_to")
+      .array()
+      .notNull()
+      .default([
+        "steward",
+        "researcher",
+        "lookout",
+        "grantmaker",
+        "program_officer",
+        "curator",
+        "consistency_checker",
+        "contribution_reviewer",
+        "dispute_arbitrator",
+        "assistant",
+      ]),
     callsPerMinute: integer("calls_per_minute"),
     timeoutSeconds: integer("timeout_seconds").notNull().default(120),
     // Off: no run is offered its tools. A connection is never deleted, since

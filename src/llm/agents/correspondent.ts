@@ -15,8 +15,11 @@
  *    outside client: a Graph Correspondent has no read an outside one lacks;
  *  - the world: web_search, read_page, a paper's figures and arXiv source,
  *    Elicit and Pangram where configured, and the skill tools its role
- *    takes. Not a connection's or a file set's tools: those go to roles
- *    that record sources, and a correspondent's outputs are public;
+ *    takes. A connection's tools only where an administrator ticked
+ *    Correspondents on it: a new connection is not offered to them, since
+ *    an update cites what it rests on and a Correspondent keeps no reading
+ *    a reader could open (CONNECTION_ROLE_INFO in src/connections.ts). Not
+ *    a file set's tools: those go to roles that record sources;
  *  - note_finding and search_findings, as every administrator has;
  *  - publish_update: one update a run, its items validated against the
  *    window and the graph, its "not covered" changes computed here, never
@@ -38,6 +41,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { getUsageContext, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
 import { executeGraphReadTool, getGraphReadToolDefinitions } from "../tools/graph-read-tools.js";
 import { createWebSearch, WEB_SEARCH_TOOL_NAME } from "../tools/web-search-tool.js";
@@ -154,7 +158,10 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   }
 
   const skillLoader = createSkillLoadTools("correspondent", { names: c.grant_skills ?? [] });
-  const system = getCorrespondentSystemPromptBlocks();
+  // A connection's reading tools, where an administrator offered the
+  // connection to Correspondents. Read, never kept.
+  const connectionTools = await createConnectionTools({ config, role: "correspondent", keeps: false });
+  const system = withConnectionsBlock(getCorrespondentSystemPromptBlocks(), connectionTools);
   const model = input.model ?? c.model ?? config.correspondentModel;
   const reportTools = createReportTools({ model });
   // The world as well as the graph. Its outputs answer what people are
@@ -162,9 +169,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
   // that weighs or writes about the world does: search, a page in full, a
   // paper's figures and source, the literature, and the checks on a text's
   // origin. What it says is still the graph's verdict where it says so, and
-  // its own reading labeled as its own (the constitution). Connections and
-  // file sets stay with the roles that record sources: a correspondent
-  // records none and its outputs are public (tools/connection-tools.ts).
+  // its own reading labeled as its own (the constitution). File sets stay
+  // with the roles that record sources: a correspondent records none.
   const webSearch = createWebSearch(model);
   const figureTools = createFigureTools({ model });
   const findingTools = createFindingTools({ model, mandate: true });
@@ -211,6 +217,7 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
     ...reportTools.definitions,
     ...findingTools.definitions,
     ...getGraphReadToolDefinitions(),
+    ...connectionTools.definitions,
     getReadPageToolDefinition(),
     ...figureTools.definitions,
     ...elicitTools,
@@ -431,6 +438,8 @@ async function runCorrespondentImpl(input: { correspondentId: string; model?: st
         if (report !== null) return report;
         const finding = await findingTools.execute(name, toolInput);
         if (finding !== null) return finding;
+        const connection = await connectionTools.execute(name, toolInput);
+        if (connection !== null) return connection;
         if (name === WEB_SEARCH_TOOL_NAME && webSearch.execute) return webSearch.execute(toolInput);
         if (name === READ_PAGE_TOOL_NAME) return (await executeReadPage(name, toolInput))!;
         const figure = await figureTools.execute(name, toolInput);

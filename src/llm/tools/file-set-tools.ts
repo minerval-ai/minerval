@@ -3,11 +3,14 @@
  * deployment's sandbox against the sets it has, the three tools that work
  * on what it found, and the passage that tells the run what it has.
  *
- * Which roles get them. The roles a connection's tools go to, for the same
- * reason (tools/connection-tools.ts): the Claim Steward, the Question
- * Steward, and the Researcher when a Steward launched it or it takes up a
- * request. These weigh evidence about the world and record sources, so an
- * analysis has somewhere to go on the record. The agent files decide.
+ * Which roles get them. The Claim Steward, the Question Steward, and the
+ * Researcher when a Steward launched it or it takes up a request. These
+ * weigh evidence about the world and record sources, so an analysis has
+ * somewhere to go on the record. The agent files decide. (A connection's
+ * tools now go to every role an administrator offers it to, at the labels
+ * that read its own: tools/connection-tools.ts. Whether a set of files
+ * should follow is its own question: a command costs the run's budget,
+ * where a connection's call costs none.)
  *
  * What a run is offered. When the label it works at reads the label of at
  * least one closed set: run_command, where the sandbox is configured and

@@ -41,6 +41,7 @@ import { getUsageContext, runBudget, withAgent, withSkills } from "../usage-cont
 import { reviewPassBudgetBasis } from "../prompts/pass-budget.js";
 import { reviewPassBudget, type OperatingPolicy } from "../../services/operating-policy-service.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { getGrantmakerSystemPromptBlocks } from "../prompts/grantmaker.js";
 import { createSkillLoadTools } from "../tools/skill-load-tools.js";
@@ -267,7 +268,12 @@ async function runMandateReviewImpl(input: {
   // Skills load on demand; the mandate's grants.skills points to the ones
   // its work needs (docs/mathematics.md §3.4).
   const skillLoader = createSkillLoadTools("grantmaker", { names: grant.skills ?? [] });
-  const system = getGrantmakerSystemPromptBlocks();
+  // The systems this deployment is connected to, where an administrator
+  // offered them to Grantmakers: the mandate's territory includes what they
+  // hold. Read, never kept (tools/connection-tools.ts). Told in a system
+  // block of its own, so a resumed pass is told what it has now.
+  const connectionTools = await createConnectionTools({ config, role: "grantmaker", keeps: false });
+  const system = withConnectionsBlock(getGrantmakerSystemPromptBlocks(), connectionTools);
 
   const committed = await grantCommittedMicroUsd({
     id: grant.id,
@@ -300,6 +306,7 @@ async function runMandateReviewImpl(input: {
   const shareOwls = Number(grant.mandate?.grantmaker_share_owls ?? 0);
   const tools: Tool[] = [
     ...reportTools.definitions, ...findingTools.definitions,
+    ...connectionTools.definitions,
     // Shared graph reads: semantic search plus the three structural reads
     // (get_claim, get_decomposition, get_dependents). Valuing the ledger is a
     // judgment call about what falls under this mandate's words, and that is
@@ -807,6 +814,8 @@ async function runMandateReviewImpl(input: {
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
+      const connection = await connectionTools.execute(name, toolInput);
+      if (connection !== null) return connection;
       // Shared graph reads first; null means "not mine", so the mandate's own
       // handlers below still run.
       // Each node a read returns carries the open actions on it.

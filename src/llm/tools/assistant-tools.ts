@@ -29,6 +29,8 @@ import { membersOnly, type PermissionName } from "../../permissions.js";
 import { resolveStanding } from "../../services/permission-service.js";
 import { getCallerSkill, listCallerSkills } from "../../mcp/caller-skills.js";
 import { runAsAssistant } from "../assistant-acting.js";
+import { rawSourceLabelsOf } from "../../raw-sources.js";
+import { NO_CONNECTION_TOOLS, type ConnectionToolBundle } from "./connection-tools.js";
 
 type Tool = Anthropic.Tool;
 
@@ -311,6 +313,13 @@ export interface AccountToolResult {
 /** The account's MCP tools, opened for one user for the length of a run. */
 export interface AccountTools {
   definitions: Tool[];
+  /**
+   * The labels whose raw sources the user may open (src/raw-sources.ts), or
+   * null where nothing is held (the public graph). What the Assistant reads
+   * through a connection goes on to its user as it is, so it is offered a
+   * connection only at one of these labels. Absent: no connection.
+   */
+  rawSourceLabels?: readonly string[] | null;
   /** Tools whose MCP annotation says they only read. */
   readOnly: Set<string>;
   /**
@@ -396,6 +405,7 @@ export async function openAccountTools(
 
   return {
     definitions,
+    rawSourceLabels: rawSourceLabelsOf(auth),
     readOnly,
     withheld,
     async labelRefusal(name, input) {
@@ -465,9 +475,24 @@ export interface AssistantToolHooks {
   used(tool: string, result: { text: string; isError: boolean }, input: Record<string, unknown>): void;
 }
 
-/** The Assistant's toolset for one run, and the executor the loop calls. */
-export function createAssistantTools(account: AccountTools, hooks: AssistantToolHooks) {
-  const own: Tool[] = [loadSkillTool(), NOTE_PROGRESS_TOOL, ...(hooks.delegate ? [DELEGATE_TOOL] : [])];
+/**
+ * The Assistant's toolset for one run, and the executor the loop calls.
+ * `connections` is the reading tools of the systems the deployment is
+ * connected to that the Assistant is offered (createConnectionTools with the
+ * assistant role, held to the labels whose raw sources its user may open):
+ * reads, run without asking, and counted in the reply's account of its work.
+ */
+export function createAssistantTools(
+  account: AccountTools,
+  hooks: AssistantToolHooks,
+  connections: Pick<ConnectionToolBundle, "definitions" | "execute"> = NO_CONNECTION_TOOLS
+) {
+  const own: Tool[] = [
+    loadSkillTool(),
+    NOTE_PROGRESS_TOOL,
+    ...(hooks.delegate ? [DELEGATE_TOOL] : []),
+    ...connections.definitions,
+  ];
   const accountNames = new Set(account.definitions.map((d) => d.name));
 
   const execute = async (name: string, input: Record<string, unknown>): Promise<string> => {
@@ -487,6 +512,11 @@ export function createAssistantTools(account: AccountTools, hooks: AssistantTool
       return report;
     }
     if (!accountNames.has(name)) {
+      const read = await connections.execute(name, input);
+      if (read !== null) {
+        hooks.used(name, { text: read, isError: false }, input);
+        return read;
+      }
       return JSON.stringify({ success: false, message: `No tool named "${name}".` });
     }
     const kind = HELD_TOOLS[name];

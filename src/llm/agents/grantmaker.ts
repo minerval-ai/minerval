@@ -33,6 +33,7 @@ import { rawQuery } from "../../db/client.js";
 import { loadConfig } from "../../config.js";
 import { currentLabel, markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { createGrantContributionTools } from "../tools/grant-contribution-tools.js";
@@ -676,8 +677,15 @@ async function runGrantmakerTurnImpl(input: {
       ).catch(() => [])
     : [];
   const funderNotes = (notesRow?.notes ?? []).slice(-5);
+  // The systems this deployment is connected to, where an administrator
+  // offered them to Grantmakers: a mandate is planned over what the label's
+  // systems hold, and a Grantmaker that cannot look cannot scope it. It
+  // reads and keeps nothing: what it reads informs the plan, and the agents
+  // the mandate pays record the sources (tools/connection-tools.ts).
+  const connectionTools = await createConnectionTools({ config: loadConfig(), role: "grantmaker", keeps: false });
   const tools: Tool[] = [
     ...graphReadTools,
+    ...connectionTools.definitions,
     ...reportTools.definitions, ...findingTools.definitions,
     ...mandateTools.definitions,
     ...(managed ? researchTools.definitions : []),
@@ -711,6 +719,7 @@ async function runGrantmakerTurnImpl(input: {
   });
   const blocks = getGrantmakerSystemPromptBlocks();
   if (skillLoader.pointerNote) blocks[0] = blocks[0] + skillLoader.pointerNote;
+  if (connectionTools.note) blocks[0] = blocks[0] + `\n\n## Systems you can read\n\n${connectionTools.note}`;
   if (managed) {
     blocks[0] =
       blocks[0] +
@@ -796,6 +805,8 @@ async function runGrantmakerTurnImpl(input: {
       if (report !== null) return report;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
+      const connection = await connectionTools.execute(name, toolInput);
+      if (connection !== null) return connection;
       if (contributionTools) {
         const contributed = await contributionTools.execute(name, toolInput);
         if (contributed !== null) return contributed;

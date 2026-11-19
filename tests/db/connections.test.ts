@@ -24,7 +24,12 @@ vi.hoisted(() => {
 
 import { rawQuery } from "../../src/db/client.js";
 import { ensureEnforcement } from "../../src/db/enforcement.js";
-import { CONNECTION_NOTICE, CONNECTION_RESULT_MAX_CHARS } from "../../src/connections.js";
+import {
+  CONNECTION_NOTICE,
+  CONNECTION_RESULT_MAX_CHARS,
+  CONNECTION_ROLES,
+  DEFAULT_CONNECTION_ROLES,
+} from "../../src/connections.js";
 import { createConnectionTools, NO_CONNECTION_TOOLS, PRIVATE_PERSONS_REMINDER } from "../../src/llm/tools/connection-tools.js";
 import { executeStewardTool } from "../../src/llm/tools/steward-tools.js";
 import { runAtLabel, runWithUsageContext } from "../../src/llm/usage-context.js";
@@ -104,6 +109,7 @@ interface ConnectionView {
   url: string;
   label: string;
   credential: { source: "stored" | "environment" | null; env: string | null; header: string; set: boolean; stored: unknown };
+  offered_to: string[];
   party: { id: string; name: string; is_own_organization: boolean };
   state: { status: string; last_error: { at: string; message: string } | null };
   tools: ToolView[];
@@ -162,10 +168,14 @@ async function switchAllOff() {
   await rawQuery(`UPDATE connections SET enabled = false`);
 }
 
-/** The connection tools a run at `label` is given, as an agent's entry point builds them. */
-function bundleAt(label: string, context: { runId?: string; agent?: string; claimId?: string } = {}) {
+/** The connection tools a run at `label` is given, as an agent's entry point builds them: a Steward's unless `as` says. */
+function bundleAt(
+  label: string,
+  context: { runId?: string; agent?: string; claimId?: string } = {},
+  as: { role?: Parameters<typeof createConnectionTools>[0]["role"]; keeps?: boolean; onlyLabels?: string[] | null } = {}
+) {
   return runAtLabel(label, "the connections test", () =>
-    runWithUsageContext(context, () => createConnectionTools())
+    runWithUsageContext(context, () => createConnectionTools({ role: as.role ?? "steward", keeps: as.keeps, onlyLabels: as.onlyLabels }))
   );
 }
 
@@ -564,6 +574,71 @@ describe("an administrator's routes", () => {
   });
 });
 
+describe("which agents a connection is offered to", () => {
+  it("is every role but those that start unticked, on a new connection, and the API lists each role with why", async () => {
+    const c = await connect({ name: "Roles warehouse", tool_prefix: "roles" });
+    expect(c.offered_to).toEqual([...DEFAULT_CONNECTION_ROLES]);
+    const res = await as(admin, { url: `/connections/${c.id}` });
+    const roles = res.json().roles as Array<{ role: string; keeps: string; off_at_first?: string }>;
+    expect(roles.map((r) => r.role)).toEqual([...CONNECTION_ROLES]);
+    for (const role of ["correspondent", "audit", "redactor", "matcher", "extractor", "tagger"]) {
+      expect(roles.find((r) => r.role === role)!.off_at_first, role).toBeTruthy();
+      expect(c.offered_to, role).not.toContain(role);
+    }
+  });
+
+  it("is chosen role by role, logged, and a run in a role it is not offered to has nothing from it", async () => {
+    await switchAllOff();
+    const c = await connect({ name: "Chosen warehouse", tool_prefix: "chosen", offered_to: ["steward"] });
+    await pick(c, ["read_rows"]);
+    expect((await bundleAt(INTERNAL)).definitions.map((d) => d.name)).toContain("chosen__read_rows");
+    for (const role of ["grantmaker", "lookout", "assistant", "researcher"] as const) {
+      const bundle = await bundleAt(INTERNAL, {}, { role, keeps: false, onlyLabels: null });
+      expect(bundle.definitions, role).toEqual([]);
+      expect(bundle.note, role).toBe("");
+    }
+
+    const changed = await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: ["steward", "grantmaker"] } });
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(changed.json().connection.offered_to).toEqual(["steward", "grantmaker"]);
+    const entry = (await log()).find((e) => e.event === "connection_changed" && e.connection === "Chosen warehouse");
+    expect(entry).toMatchObject({ changed: ["offered_to"] });
+    // The same roles in another order are no change.
+    const same = await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: ["grantmaker", "steward"] } });
+    expect(same.json().code).toBe("NOTHING_TO_CHANGE");
+    expect((await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: ["oracle"] } })).statusCode).toBe(400);
+
+    // A Grantmaker reads and keeps nothing, and is told so.
+    const grantmaker = await bundleAt(INTERNAL, {}, { role: "grantmaker", keeps: false });
+    expect(grantmaker.definitions.map((d) => d.name)).toEqual(["chosen__read_rows", "open_reading"]);
+    expect(grantmaker.note).toContain("You keep no reading as a source: what you read informs your own work.");
+    const read = await run(INTERNAL, grantmaker, "chosen__read_rows", { table: "refunds" });
+    expect(read).toMatchObject({ success: true });
+    expect(read.note).toContain("Where a judgment on the graph should rest on what this shows, say the tool and the arguments");
+    expect(await grantmaker.execute("keep_reading", { reading: read.reading })).toBeNull();
+
+    // Unticked everywhere, it is offered to no one.
+    await as(admin, { method: "PATCH", url: `/connections/${c.id}`, payload: { offered_to: [] } });
+    expect((await bundleAt(INTERNAL)).definitions).toEqual([]);
+  });
+
+  it("is offered to the Assistant only at labels whose raw sources its person may open", async () => {
+    await switchAllOff();
+    const c = await connect({ name: "Assistant warehouse", tool_prefix: "asst" });
+    await pick(c, ["read_rows"]);
+    expect(c.offered_to).toContain("assistant");
+    const names = async (onlyLabels: string[] | null) =>
+      (await bundleAt(INTERNAL, {}, { role: "assistant", keeps: false, onlyLabels })).definitions.map((d) => d.name);
+    expect(await names([])).toEqual([]);
+    expect(await names([RESTRICTED])).toEqual([]);
+    expect(await names([INTERNAL])).toEqual(["asst__read_rows", "open_reading"]);
+    // A run above the connection's label, for a person who may open its sources.
+    expect(
+      (await bundleAt(RESTRICTED, {}, { role: "assistant", keeps: false, onlyLabels: [INTERNAL, RESTRICTED] })).definitions.map((d) => d.name)
+    ).toEqual(["asst__read_rows", "open_reading"]);
+  });
+});
+
 describe("the tools a run is offered", () => {
   it("are the picked ones and no others, under the connection's prefix, with the system's own description", async () => {
     await switchAllOff();
@@ -748,7 +823,7 @@ describe("what a run is told", () => {
     const steward = await bundleAt(INTERNAL);
     const asLookout = { runId: randomUUID(), agent: "lookout" };
     const lookout = await runAtLabel(INTERNAL, "the connections test", () =>
-      runWithUsageContext(asLookout, () => createConnectionTools({ keeps: false }))
+      runWithUsageContext(asLookout, () => createConnectionTools({ role: "lookout", keeps: false }))
     );
     // The administrator's picks, with the system's own descriptions, and open_reading. Not keep_reading.
     expect(lookout.definitions).toEqual(steward.definitions.filter((d) => d.name !== "keep_reading"));

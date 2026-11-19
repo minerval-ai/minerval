@@ -11,6 +11,7 @@ import { loadConfig } from "../../config.js";
 import { LlmRefusalError } from "../errors.js";
 import { RUN_TURN_GUARD } from "../prompts/turn-budget.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import {
   claimTypeEnum,
   SOURCE_KIND_GUIDANCE,
@@ -432,6 +433,11 @@ async function extractClaimsImpl(input: {
     let finished = false;
     input.onClaims?.([]);
     const reportTools = createReportTools({ model });
+    // A connection's reading tools only where an administrator ticked the
+    // Extractor on it: a new connection is not offered to this role, which runs
+    // often enough that every run would carry the tool definitions
+    // (CONNECTION_ROLE_INFO in src/connections.ts). Read, never kept.
+    const connectionTools = await createConnectionTools({ config, role: "extractor", keeps: false });
     // Ends the loop once finish_extraction has run. Not onFinalTool: that
     // stops the loop before the turn's other tool calls run, and a turn that
     // records its last claims and finishes in one go would lose them.
@@ -445,8 +451,8 @@ async function extractClaimsImpl(input: {
     try {
       result = await toolUseLoop({
         initialMessages: [{ role: "user", content: userPrompt() }],
-        tools: [recordTool, finishTool, ...reportTools.definitions],
-        system,
+        tools: [recordTool, finishTool, ...reportTools.definitions, ...connectionTools.definitions],
+        system: withConnectionsBlock(system, connectionTools),
         ...(model ? { model } : {}),
         maxTokens: config.extractionMaxTokens,
         stream: true,
@@ -471,6 +477,8 @@ async function extractClaimsImpl(input: {
         executeTool: async (name, toolInput) => {
           const report = await reportTools.execute(name, toolInput);
           if (report !== null) return report;
+          const connection = await connectionTools.execute(name, toolInput);
+          if (connection !== null) return connection;
           if (name === FINISH_TOOL) {
             const raw = toolInput.document_problem as { kind?: unknown; note?: unknown } | null | undefined;
             let problem: DocumentProblem | null = null;

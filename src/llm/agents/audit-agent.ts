@@ -32,6 +32,7 @@ import { loadConfig } from "../../config.js";
 import { markCurrentRunPrivate, withAgent, withSkills } from "../usage-context.js";
 import { REDACTION_CHECK_REASON } from "../run-visibility.js";
 import { createReportTools } from "../tools/report-tools.js";
+import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import { createFindingTools } from "../tools/finding-tools.js";
 import { createResearchTools } from "../tools/research-tools.js";
 import { RUN_TURN_GUARD, turnBudgetLine } from "../prompts/turn-budget.js";
@@ -95,7 +96,13 @@ async function runAuditImpl(input: {
   // only when the run has a budget and the researcher is enabled.
   const researchTools = createResearchTools({ requestedBy: "audit" });
 
+  // The systems this deployment is connected to, where an administrator
+  // offered them to this role. Audit may check the record against what a system holds now, where an administrator offered it.
+  // Read, never kept: a judgment that should rest on a reading is recorded
+  // by an agent that keeps it (tools/connection-tools.ts).
+  const connectionTools = await createConnectionTools({ config, role: "audit", keeps: false });
   const tools = [
+    ...connectionTools.definitions,
     ...getGovernanceToolDefinitions(),
     // Less the prize tools while the prizes feature is off (src/features.ts).
     // And less the two that check a redaction where the graph has one label
@@ -111,7 +118,7 @@ async function runAuditImpl(input: {
     ...reportTools.definitions, ...findingTools.definitions,
     ...researchTools.definitions,
   ];
-  const system = getAuditAgentSystemPromptBlocks();
+  const system = withConnectionsBlock(getAuditAgentSystemPromptBlocks(), connectionTools);
   const skillsNote = skillLoader.pointerNote;
 
   const AUDIT_MAX_TURNS = RUN_TURN_GUARD;
@@ -146,6 +153,8 @@ ${turnBudgetLine(AUDIT_MAX_TURNS, { canSpend: true })}`;
       // The report channel first (#366): null means "not my tool".
       const report = await reportTools.execute(name, toolInput);
       if (report !== null) return report;
+      const connection = await connectionTools.execute(name, toolInput);
+      if (connection !== null) return connection;
       const finding = await findingTools.execute(name, toolInput);
       if (finding !== null) return finding;
       const research = await researchTools.execute(name, toolInput);

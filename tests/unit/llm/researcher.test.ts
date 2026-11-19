@@ -45,6 +45,8 @@ const mocks = vi.hoisted(() => ({
   // about connections. `asked` counts the runs that asked for them.
   connections: {
     asked: 0,
+    /** What each run asked for: its role, and whether it may keep a reading. */
+    opts: [] as Array<{ role?: string; keeps?: boolean }>,
     bundle: null as null | {
       definitions: Array<{ name: string; description: string; input_schema: Record<string, unknown> }>;
       note: string;
@@ -188,8 +190,9 @@ vi.mock("../../../src/llm/tools/connection-tools.js", async (importOriginal) => 
   const original = await importOriginal<typeof import("../../../src/llm/tools/connection-tools.js")>();
   return {
     ...original,
-    createConnectionTools: vi.fn(async () => {
+    createConnectionTools: vi.fn(async (opts: { role?: string; keeps?: boolean }) => {
       mocks.connections.asked += 1;
+      mocks.connections.opts.push({ role: opts?.role, keeps: opts?.keeps });
       return mocks.connections.bundle ?? original.NO_CONNECTION_TOOLS;
     }),
   };
@@ -1098,8 +1101,9 @@ describe("connections (src/connections.ts)", () => {
     expect(mocks.connections.asked).toBe(2);
   });
 
-  it("gives none to research for a mandate, the Curator or the Audit Agent, or to a scoping run, and does not look", async () => {
+  it("gives research for a mandate, the Curator or the Audit Agent, or a scoping run, the connections to read and not keep", async () => {
     mocks.connections.bundle = bundle();
+    mocks.connections.opts.length = 0;
     for (const requestedBy of ["grantmaker", "curator", "audit", "request_scope"]) {
       mocks.toolLoopCalls.length = 0;
       mocks.script.calls = [{ name: "warehouse__run_query", input: {} }];
@@ -1107,11 +1111,23 @@ describe("connections (src/connections.ts)", () => {
       const i = input();
       i.run.requested_by = requestedBy;
       await runResearcher(i);
-      expect(toolNames().filter((n) => /__|^(open|keep)_reading$/.test(n)), requestedBy).toEqual([]);
-      expect(task(), requestedBy).not.toContain(NOTE);
-      expect(JSON.parse(mocks.script.outputs[0]!).message, requestedBy).toMatch(/not in this run's toolset/);
+      expect(toolNames(), requestedBy).toContain("warehouse__run_query");
+      expect(task(), requestedBy).toContain(NOTE);
+      expect(JSON.parse(mocks.script.outputs[0]!), requestedBy).toMatchObject({ success: true, reading: "r1" });
     }
-    expect(mocks.connections.asked).toBe(0);
+    // Asked in the Researcher's role, and not to keep: the work records no source.
+    expect(mocks.connections.opts).toEqual(Array(4).fill({ role: "researcher", keeps: false }));
+  });
+
+  it("lets research a Steward launched, or that takes up a request, keep what it reads", async () => {
+    mocks.connections.bundle = bundle();
+    for (const requestedBy of ["claim_steward", "request"]) {
+      mocks.connections.opts.length = 0;
+      const i = input();
+      i.run.requested_by = requestedBy;
+      await runResearcher(i);
+      expect(mocks.connections.opts, requestedBy).toEqual([{ role: "researcher", keeps: true }]);
+    }
   });
 
   it("changes nothing in a run's tools or task where the deployment has no connection", async () => {
