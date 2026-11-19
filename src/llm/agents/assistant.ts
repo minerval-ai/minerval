@@ -22,7 +22,7 @@ import {
   DELEGATE_SECTION,
   getAssistantSystemPromptBlocks,
 } from "../prompts/assistant.js";
-import { permissionsNote } from "../permissions-note.js";
+import { organizationNote, permissionsNote } from "../permissions-note.js";
 import { createConnectionTools, withConnectionsBlock } from "../tools/connection-tools.js";
 import {
   createAssistantTools,
@@ -217,7 +217,11 @@ async function runAssistantTurnImpl(input: AssistantTurnInput): Promise<Assistan
     // out, and why (permissions-note.ts). Empty everywhere else. The reply's
     // run and each delegated copy are told at the head of their own first
     // message, since a copy sees nothing of this conversation.
-    const permissions = permissionsNote(input.account.withheld ?? []);
+    // In a conversation started as an organization, who it acts for, what
+    // its user may do as it, and the tools that leaves out (permissions-note.ts).
+    const permissions = [permissionsNote(input.account.withheld ?? []), organizationNote(input.account.actingFor)]
+      .filter((note) => note.length > 0)
+      .join("\n\n");
 
     // The systems the deployment is connected to, where an administrator
     // offered them to the Assistant, and only at labels whose raw sources

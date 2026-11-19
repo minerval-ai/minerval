@@ -82,8 +82,28 @@ const KINDS = {
       .join("; "),
 } as const;
 
+/**
+ * The person a request is for, and the organization they act as on it
+ * (docs/organizations.md, "Acting as the organization"): a request acting as
+ * one is the organization's (its userId), with the person beside it. A
+ * conversation is the person's, found only while they act as it acts.
+ */
 function userOf(request: FastifyRequest): AssistantUser {
-  return { id: request.auth!.userId!, externalId: request.auth!.contributorExternalId };
+  const auth = request.auth!;
+  if (auth.actingMember) {
+    return {
+      id: auth.actingMember.accountId,
+      externalId: auth.actingMember.externalId,
+      actingFor: { id: auth.userId!, externalId: auth.contributorExternalId },
+    };
+  }
+  return { id: auth.userId!, externalId: auth.contributorExternalId };
+}
+
+/** The person's own id, and the organization the request acts as, if any. */
+function scopeOf(request: FastifyRequest): { userId: string; actingFor: string | null } {
+  const user = userOf(request);
+  return { userId: user.id, actingFor: user.actingFor?.id ?? null };
 }
 
 function statusOf(code: Exclude<AssistantResult, { ok: true }>["code"]): number {
@@ -190,10 +210,11 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: guards,
     handler: async (request, reply) => {
-      const userId = request.auth!.userId!;
+      const { userId, actingFor } = scopeOf(request);
       const [rows, entitlement, always, showLabels] = await Promise.all([
-        listAssistantConversations(userId, request.query.limit ?? 50, request.query.offset ?? 0),
-        getEntitlement(userId),
+        listAssistantConversations(userId, request.query.limit ?? 50, request.query.offset ?? 0, actingFor),
+        // The balance a conversation would be charged to: the organization's when acting as one.
+        getEntitlement(actingFor ?? userId),
         getAllowance(userId),
         assistantShowsLabels(),
       ]);
@@ -216,7 +237,8 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: guards,
     handler: async (request, reply) => {
-      const convo = await getAssistantConversation(request.params.id, request.auth!.userId!);
+      const { userId, actingFor } = scopeOf(request);
+      const convo = await getAssistantConversation(request.params.id, userId, actingFor);
       if (!convo) return reply.code(404).send({ error: "Conversation not found", code: "NOT_FOUND" });
       return reply.send({ conversation: await serializeAssistantConversation(convo) });
     },
@@ -239,9 +261,9 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: guards,
     handler: async (request, reply) => {
-      const userId = request.auth!.userId!;
+      const { userId, actingFor } = scopeOf(request);
       const id = request.params.id;
-      const first = await getAssistantConversation(id, userId);
+      const first = await getAssistantConversation(id, userId, actingFor);
       if (!first) return reply.code(404).send({ error: "Conversation not found", code: "NOT_FOUND" });
 
       reply.hijack();
@@ -257,7 +279,7 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
         if (open) reply.raw.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       };
       const stateOf = async () => {
-        const convo = await getAssistantConversation(id, userId);
+        const convo = await getAssistantConversation(id, userId, actingFor);
         return convo ? (await serializeAssistantConversation(convo)).turn : null;
       };
 
@@ -358,7 +380,8 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: guards,
     handler: async (request, reply) => {
-      const stopping = await stopAssistantTurn(request.params.id, request.auth!.userId!);
+      const { userId, actingFor } = scopeOf(request);
+      const stopping = await stopAssistantTurn(request.params.id, userId, actingFor);
       return reply.send({ stopping });
     },
   });
@@ -372,7 +395,8 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: guards,
     handler: async (request, reply) => {
-      const result = await setAssistantModel(request.params.id, request.auth!.userId!, request.body.model);
+      const { userId, actingFor } = scopeOf(request);
+      const result = await setAssistantModel(request.params.id, userId, request.body.model, actingFor);
       if (!result.ok) return reply.code(statusOf(result.code)).send(await refuse(request, result));
       return reply.send({ conversation: await serializeAssistantConversation(result.conversation) });
     },
@@ -387,7 +411,8 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: guards,
     handler: async (request, reply) => {
-      const deleted = await deleteAssistantConversation(request.params.id, request.auth!.userId!);
+      const { userId, actingFor } = scopeOf(request);
+      const deleted = await deleteAssistantConversation(request.params.id, userId, actingFor);
       if (!deleted) return reply.code(404).send({ error: "Conversation not found", code: "NOT_FOUND" });
       return reply.send({ deleted: true });
     },
@@ -441,7 +466,8 @@ export async function assistantRoutes(app: FastifyInstance): Promise<void> {
           .code(result.code === "NOT_FOUND" ? 404 : 409)
           .send({ error: result.message, code: result.code });
       }
-      const convo = await getAssistantConversation(request.params.id, request.auth!.userId!);
+      const { userId, actingFor } = scopeOf(request);
+      const convo = await getAssistantConversation(request.params.id, userId, actingFor);
       return reply.send({ conversation: convo ? await serializeAssistantConversation(convo) : null });
     },
   });

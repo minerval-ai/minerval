@@ -11,11 +11,14 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
 import {
+  NATIVE_TOOL_PERMISSIONS,
   ORGANIZATION_ROUTES,
   PERSON_READS,
   PERSON_ROUTES,
   memberMayCall,
 } from "../../../src/server/organization-routes.js";
+import { assistantAuth, openAccountTools } from "../../../src/llm/tools/assistant-tools.js";
+import { NATIVE_TOOL_ROUTES, ROUTE_TOOLS } from "../../../src/mcp/route-tools.js";
 import { DEPLOYMENT_GRANTS, MEMBER_PERMISSIONS } from "../../../src/db/schema.js";
 import { routeKey } from "../../../src/server/plugins/route-catalog.js";
 
@@ -113,5 +116,52 @@ describe("a member acting as the organization", () => {
   it("leaves the ledger to admins", () => {
     expect(memberMayCall("GET /billing/ledger", "GET", member(["spend", "buy"]))).toMatchObject({ ok: false, code: "ADMIN_REQUIRED" });
     expect(memberMayCall("GET /billing/ledger", "GET", admin)).toEqual({ ok: true });
+  });
+});
+
+describe("the MCP tools, done as the organization", () => {
+  const someone = { id: "00000000-0000-4000-8000-000000000001", externalId: null };
+
+  it("decides every tool that writes or spends: by its route, or by name", async () => {
+    const account = await openAccountTools(app, assistantAuth(someone), "test");
+    try {
+      const routeTools = new Set(Object.values(ROUTE_TOOLS).map((t) => t.name));
+      const nativeWrites = new Set(
+        Object.entries(NATIVE_TOOL_ROUTES)
+          .filter(([key]) => !key.startsWith("GET "))
+          .flatMap(([, names]) => names)
+      );
+      const undecided = account.definitions
+        .map((d) => d.name)
+        .filter((name) => !account.readOnly.has(name))
+        .filter((name) => !routeTools.has(name) && !nativeWrites.has(name) && !(name in NATIVE_TOOL_PERMISSIONS));
+      expect(undecided).toEqual([]);
+    } finally {
+      await account.close();
+    }
+  });
+
+  it("offers a member only what they may do as it, and says what it left out", async () => {
+    const auth = {
+      ...assistantAuth({ id: "00000000-0000-4000-8000-0000000000aa", externalId: "org:00000000-0000-4000-8000-0000000000aa" }),
+      actingMember: { accountId: someone.id, externalId: null },
+      actingStanding: { organizationName: "Acme Corp", role: "member" as const, permissions: ["speak" as const] },
+    };
+    const account = await openAccountTools(app, auth, "test");
+    try {
+      const names = new Set(account.definitions.map((d) => d.name));
+      expect(names.has("submit_contribution")).toBe(true);
+      expect(names.has("state_view")).toBe(true);
+      expect(names.has("search_claims")).toBe(true);
+      expect(names.has("fund_mandate")).toBe(false);
+      expect(names.has("match_claim")).toBe(false);
+      expect(names.has("create_api_key")).toBe(false);
+      const left = new Map(account.actingFor!.withheld.map((w) => [w.tool, w.permission]));
+      expect(left.get("fund_mandate")).toBe("spend");
+      expect(left.get("match_claim")).toBe("spend");
+      expect(account.actingFor!.organizationName).toBe("Acme Corp");
+    } finally {
+      await account.close();
+    }
   });
 });

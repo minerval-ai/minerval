@@ -920,9 +920,12 @@ Each phase is one pull request or a few, and leaves things working.
    reason across the public site; the organization's pages redrawn in the
    public site's style as management only, with Activity in place of Public
    acts and its forms removed, and the account page's section; and no free
-   owls for an organization, which the free tier had been granting it.
-   Still to come: allowances; the Assistant acting for the organization,
-   charged under `spend`; credentials made for an organization; the
+   owls for an organization, which the free tier had been granting it; and
+   the Assistant acting for the organization (`assistant_conversations.acting_for`),
+   charged to its owls under `spend`, offered only the tools its user may
+   use as it and told which it was not, with every call checked against
+   their standing as it is then. Still to come: allowances; credentials
+   made for an organization; the
    organization's log saying how each act was made; and prizes for
    organizations: the prize rules
    ([prizes.md](prizes.md), "What a winner must do") name natural persons

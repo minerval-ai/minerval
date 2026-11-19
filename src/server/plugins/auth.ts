@@ -63,7 +63,7 @@ import {
   resolveDispatchedAuth,
 } from "../../mcp/dispatch.js";
 import { membersOnly, type Standing } from "../../permissions.js";
-import type { DeploymentGrant } from "../../db/schema.js";
+import type { DeploymentGrant, MemberPermission } from "../../db/schema.js";
 import { deploymentNeeds, memberMayCall } from "../organization-routes.js";
 import { deploymentByKey, logDeploymentRequest, recordNonce } from "../../services/deployment-service.js";
 import {
@@ -135,6 +135,14 @@ export interface RequestAuth {
    * log names.
    */
   actingMember?: { accountId: string; externalId: string | null };
+  /**
+   * For a credential made to act as an organization (the Assistant in a
+   * conversation started as it): the person's role and permissions there
+   * when the credential was opened, and the organization's name, which say
+   * what tools it is offered (mcp/route-tools.ts). Every request it makes is
+   * checked again against their standing as it is then.
+   */
+  actingStanding?: { organizationName: string; role: "admin" | "member"; permissions: MemberPermission[] };
   /**
    * Set for a request signed by a connected deployment's key
    * (docs/organizations.md, "Signed requests"). The request is its
@@ -286,6 +294,27 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             : null;
         if (!dispatched) {
           return reply.code(401).send({ error: "Invalid or missing API key" });
+        }
+        // A tool call made as an organization is checked here as the request
+        // the person would make themselves: they are a member now, and hold
+        // what this route needs (docs/organizations.md, "Acting as the
+        // organization"). The tools offered were chosen when the run began;
+        // a permission withdrawn since is refused here.
+        if (dispatched.actingMember && dispatched.userId) {
+          const standing = await memberStanding(dispatched.userId, dispatched.actingMember.accountId);
+          const check = standing
+            ? memberMayCall(routeKeyOf(request), request.method, standing)
+            : ({ ok: false, code: "NOT_A_MEMBER", reason: "Your user is no longer a member of the organization this conversation acts for." } as const);
+          if (!check.ok) {
+            return reply.code(403).send({
+              error:
+                check.code === "PERMISSION_NOT_HELD"
+                  ? `Acting as this organization, ${check.reason.charAt(0).toLowerCase()}${check.reason.slice(1)} An admin of it grants that on its Members tab.`
+                  : check.reason,
+              code: check.code,
+              ...("permission" in check && check.permission ? { permission: check.permission } : {}),
+            });
+          }
         }
         request.auth = dispatched;
         request.contributorExternalId = dispatched.contributorExternalId;

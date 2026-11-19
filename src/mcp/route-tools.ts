@@ -46,6 +46,8 @@ import {
   type PermissionName,
 } from "../permissions.js";
 import { loadConfig } from "../config.js";
+import { NATIVE_TOOL_PERMISSIONS, memberMayCall } from "../server/organization-routes.js";
+import type { MemberPermission } from "../db/schema.js";
 
 export interface RouteTool {
   name: string;
@@ -978,6 +980,57 @@ function missingPermission(route: CatalogRoute, auth: RequestAuth): PermissionNa
 }
 
 /**
+ * Why a credential acting as an organization is not offered a tool
+ * (docs/organizations.md, "Acting as the organization"): the permission the
+ * person lacks there, or a reason the tool is never done as an organization.
+ * Null where it may be offered, and for every credential not acting as one.
+ * `routeKey` is the route the tool stands for; a native tool with no route of
+ * its own is looked up by name (server/organization-routes.ts).
+ */
+export function organizationRefusal(
+  auth: RequestAuth,
+  tool: { routeKey?: string; name: string }
+): { permission: MemberPermission | null; reason: string } | null {
+  const standing = auth.actingMember ? auth.actingStanding : undefined;
+  if (!standing) return null;
+  if (tool.routeKey) {
+    const [method] = tool.routeKey.split(" ");
+    const check = memberMayCall(tool.routeKey, method!, standing);
+    return check.ok ? null : { permission: check.permission ?? null, reason: check.reason };
+  }
+  const needs = NATIVE_TOOL_PERMISSIONS[tool.name];
+  if (!needs || standing.role === "admin" || standing.permissions.includes(needs)) return null;
+  return { permission: needs, reason: `This needs ${needs}.` };
+}
+
+/** The route a native tool stands for, where it stands for one (NATIVE_TOOL_ROUTES). */
+export function nativeToolRoute(name: string): string | undefined {
+  const writes = Object.entries(NATIVE_TOOL_ROUTES).find(([key, names]) => !key.startsWith("GET ") && names.includes(name));
+  if (writes) return writes[0];
+  return Object.entries(NATIVE_TOOL_ROUTES).find(([, names]) => names.includes(name))?.[0];
+}
+
+/**
+ * The route tools a credential acting as an organization is not offered, with
+ * why, in the catalog's order. Empty for every other credential.
+ */
+export function withheldOrganizationRouteTools(
+  app: FastifyInstance,
+  auth: RequestAuth
+): Array<{ tool: string; permission: MemberPermission | null; reason: string }> {
+  if (!auth.actingStanding) return [];
+  const withheld: Array<{ tool: string; permission: MemberPermission | null; reason: string }> = [];
+  for (const route of app.routeCatalog ?? []) {
+    const key = routeKey(route.method, route.url);
+    const tool = ROUTE_TOOLS[key];
+    if (!tool) continue;
+    const refusal = organizationRefusal(auth, { routeKey: key, name: tool.name });
+    if (refusal) withheld.push({ tool: tool.name, ...refusal });
+  }
+  return withheld;
+}
+
+/**
  * The route tools `auth` is not offered because the account lacks the
  * permission each needs, in the catalog's order. Empty on the public graph.
  */
@@ -1005,9 +1058,11 @@ export function registerRouteTools(
   auth: RequestAuth
 ): void {
   for (const route of app.routeCatalog ?? []) {
-    const tool = ROUTE_TOOLS[routeKey(route.method, route.url)];
+    const key = routeKey(route.method, route.url);
+    const tool = ROUTE_TOOLS[key];
     if (!tool) continue;
     if (missingPermission(route, auth)) continue;
+    if (organizationRefusal(auth, { routeKey: key, name: tool.name })) continue;
     const input = routeInput(route);
 
     server.registerTool(

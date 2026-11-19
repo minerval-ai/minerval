@@ -90,7 +90,8 @@ import {
   REPORT_BODY_MAX_CHARS,
   REPORT_TITLE_MAX_CHARS,
 } from "../services/report-service.js";
-import { registerRouteTools, withheldRouteTools } from "./route-tools.js";
+import { nativeToolRoute, organizationRefusal, registerRouteTools, withheldRouteTools } from "./route-tools.js";
+import { memberStanding } from "../services/organization-service.js";
 import { permissionsNote } from "../llm/permissions-note.js";
 import { membersOnly } from "../permissions.js";
 import { enforcementLastKnown } from "../db/clearance.js";
@@ -451,6 +452,41 @@ export function buildMcpServer(ctx: McpRequestContext): McpServer {
     // (llm/permissions-note.ts). Everywhere else the note is empty.
     { instructions: withPermissions(MCP_INSTRUCTIONS, ctx) }
   );
+
+  // A credential acting as an organization is offered only the tools the
+  // person may use as it (docs/organizations.md, "Acting as the
+  // organization"; route-tools.ts organizationRefusal). The hand-written
+  // tools below are many registrations; each is asked once, here, by name.
+  // Every call is checked again when it reaches its route.
+  // A hand-written tool reaches its service directly, not through a route,
+  // so each call is also checked here against the person's standing as it is
+  // then, as a route checks a dispatched call (server/plugins/auth.ts).
+  if (ctx.auth.actingStanding) {
+    const auth = ctx.auth;
+    const register = server.registerTool.bind(server) as (...args: unknown[]) => unknown;
+    (server as unknown as { registerTool: (...args: unknown[]) => unknown }).registerTool = (...args: unknown[]) => {
+      const name = String(args[0]);
+      const tool = { routeKey: nativeToolRoute(name), name };
+      if (organizationRefusal(auth, tool)) return undefined;
+      const run = args[args.length - 1] as (...a: unknown[]) => Promise<CallToolResult>;
+      const checked = async (...a: unknown[]): Promise<CallToolResult> => {
+        const now = auth.userId && auth.actingMember ? await memberStanding(auth.userId, auth.actingMember.accountId) : null;
+        const refusal = now
+          ? organizationRefusal({ ...auth, actingStanding: { ...auth.actingStanding!, ...now } }, tool)
+          : { permission: null, reason: "Your user is no longer a member of the organization this conversation acts for." };
+        if (refusal) {
+          return errorResult(
+            refusal.permission ? "PERMISSION_NOT_HELD" : "NOT_AN_ORGANIZATION_ACT",
+            refusal.permission
+              ? `Acting as ${auth.actingStanding!.organizationName}, this needs ${refusal.permission}. An admin of it grants that on its Members tab.`
+              : refusal.reason
+          );
+        }
+        return run(...a);
+      };
+      return register(...args.slice(0, -1), checked);
+    };
+  }
 
   // ---- free read tools ----
 

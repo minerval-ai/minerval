@@ -22,7 +22,17 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RequestAuth } from "../../server/plugins/auth.js";
 import { buildMcpServer } from "../../mcp/server.js";
-import { NATIVE_TOOL_ROUTES, ROUTE_TOOLS, withheldRouteTools } from "../../mcp/route-tools.js";
+import {
+  NATIVE_TOOL_ROUTES,
+  ROUTE_TOOLS,
+  organizationRefusal,
+  withheldOrganizationRouteTools,
+  withheldRouteTools,
+} from "../../mcp/route-tools.js";
+import { NATIVE_TOOL_PERMISSIONS } from "../../server/organization-routes.js";
+import { memberStanding } from "../../services/organization-service.js";
+import { rawQuery } from "../../db/client.js";
+import type { MemberPermission } from "../../db/schema.js";
 import { REQUEST_LABELS } from "../../server/request-labels.js";
 import { decideRequestLabel } from "../../server/plugins/request-label.js";
 import { membersOnly, type PermissionName } from "../../permissions.js";
@@ -329,6 +339,17 @@ export interface AccountTools {
    */
   withheld?: Array<{ tool: string; permission: PermissionName }>;
   /**
+   * Set in a conversation acting as an organization: its name, what the
+   * person may do as it, and the tools left out because they lack what each
+   * needs there. The run is told (llm/permissions-note.ts, organizationNote).
+   */
+  actingFor?: {
+    organizationName: string;
+    role: "admin" | "member";
+    permissions: MemberPermission[];
+    withheld: Array<{ tool: string; permission: MemberPermission | null; reason: string }>;
+  };
+  /**
    * Whether a call would be refused for its label (server/request-labels.ts)
    * before anything else about it is looked at: the tool's own refusal, as
    * the Assistant would be given it, or null. Asked before a call is held,
@@ -367,6 +388,56 @@ export function assistantAuth(
   };
 }
 
+/**
+ * The organization a conversation acts for (docs/organizations.md, "Acting as
+ * the organization"), as the person sees it.
+ */
+export interface AssistantActingFor {
+  id: string;
+  externalId: string | null;
+}
+
+/**
+ * The identity the Assistant's tools run as in a conversation: the person's
+ * own (assistantAuth), or, in one started as an organization, that
+ * organization's, with the person beside it and their standing there read
+ * now. Null where the person is no longer a member of it, or holds nothing
+ * there: such a conversation cannot run.
+ */
+export async function assistantAuthFor(
+  user: { id: string; externalId: string | null; actingFor?: AssistantActingFor | null },
+  label?: string
+): Promise<RequestAuth | null> {
+  if (!user.actingFor) return assistantAuth(user, label);
+  const standing = await memberStanding(user.actingFor.id, user.id);
+  if (!standing || (standing.role !== "admin" && standing.permissions.length === 0)) return null;
+  const [org] = await rawQuery<{ display_name: string }>(`SELECT display_name FROM contributors WHERE id = $1`, [user.actingFor.id]);
+  return {
+    ...assistantAuth({ id: user.actingFor.id, externalId: user.actingFor.externalId }, label),
+    actingMember: { accountId: user.id, externalId: user.externalId },
+    actingStanding: { organizationName: org?.display_name ?? "the organization", ...standing },
+  };
+}
+
+/** The tools a credential acting as an organization is not offered, with why. */
+function withheldAsOrganization(
+  app: FastifyInstance,
+  auth: RequestAuth
+): Array<{ tool: string; permission: MemberPermission | null; reason: string }> {
+  if (!auth.actingStanding) return [];
+  const natives = [
+    ...Object.keys(NATIVE_TOOL_PERMISSIONS).map((name) => ({ name, routeKey: undefined as string | undefined })),
+    ...Object.entries(NATIVE_TOOL_ROUTES)
+      .filter(([key]) => !key.startsWith("GET "))
+      .flatMap(([key, names]) => names.map((name) => ({ name, routeKey: key }))),
+  ];
+  const fromNatives = natives.flatMap((t) => {
+    const refusal = organizationRefusal(auth, t);
+    return refusal ? [{ tool: t.name, ...refusal }] : [];
+  });
+  return [...withheldOrganizationRouteTools(app, auth), ...fromNatives];
+}
+
 export async function openAccountTools(
   app: FastifyInstance,
   auth: RequestAuth,
@@ -379,6 +450,7 @@ export async function openAccountTools(
     auth = { ...auth, standing: await resolveStanding(auth.userId) };
   }
   const withheld = withheldRouteTools(app, auth);
+  const withheldForOrganization = withheldAsOrganization(app, auth);
   const server = buildMcpServer({ auth, requestId, app });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
@@ -408,6 +480,7 @@ export async function openAccountTools(
     rawSourceLabels: rawSourceLabelsOf(auth),
     readOnly,
     withheld,
+    ...(auth.actingStanding ? { actingFor: { ...auth.actingStanding, withheld: withheldForOrganization } } : {}),
     async labelRefusal(name, input) {
       if (!membersOnly()) return null;
       const key = writingRoute.get(name);
