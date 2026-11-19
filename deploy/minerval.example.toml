@@ -16,7 +16,7 @@
 # The optional parts of the product this deployment switches off, by name:
 # "extension", "mathematics", "prizes". Everything not named is on.
 [features]
-off = []
+off = ["prizes"]
 
 # Which model serves each role. An id starting "claude-" is served by
 # Anthropic, "gpt-" by OpenAI, and "vendor/model" by OpenRouter; the
