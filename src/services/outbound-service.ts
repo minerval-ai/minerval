@@ -121,13 +121,26 @@ function signer(): Signer {
   return made;
 }
 
-function hosting(): "own_machines" | "minerval" | "third_party" {
-  const where = loadConfig().deploymentHosting;
+/**
+ * Where this deployment says it runs: the operator's DEPLOYMENT_HOSTING,
+ * which fixes it, or else the answer an administrator gave when connecting
+ * it to minerval.ai (docs/organizations.md, "Connecting").
+ */
+export async function statedHosting(): Promise<"own_machines" | "minerval" | "third_party" | null> {
+  const fixed = loadConfig().deploymentHosting;
+  if (fixed) return fixed;
+  const { readConnection } = await import("./public-graph-client.js");
+  return (await readConnection())?.hosting ?? null;
+}
+
+async function hosting(): Promise<"own_machines" | "minerval" | "third_party"> {
+  const where = await statedHosting();
   if (!where) {
     throw new OutboundError(
       "HOSTING_NOT_STATED",
-      "This deployment has not said where it runs (DEPLOYMENT_HOSTING: own_machines, minerval or third_party). Every " +
-        "package states it, because a reader weighs a page by who controlled the machine it was made on."
+      "This deployment has not said where it runs. Every package states it, because a reader weighs a page by who controlled the " +
+        "machine it was made on. An administrator answers it when connecting to minerval.ai, on the Public graph page; where the " +
+        "deployment is not connected, the operator sets DEPLOYMENT_HOSTING (own_machines, third_party or minerval)."
     );
   }
   return where;
@@ -139,15 +152,15 @@ function hosting(): "own_machines" | "minerval" | "third_party" {
  * the signature over a hash. A node's page and a published mandate
  * (gate-outside.ts) are signed with the same key.
  */
-export function outsideSigner(): { key_id: string; public_key: string; hosting: string; sign: (hashHex: string) => string } {
+export async function outsideSigner(): Promise<{ key_id: string; public_key: string; hosting: string; sign: (hashHex: string) => string }> {
   const s = signer();
-  return { key_id: s.keyId, public_key: s.publicKey, hosting: hosting(), sign: (hashHex) => cryptoSign(null, Buffer.from(hashHex, "hex"), s.key).toString("base64") };
+  return { key_id: s.keyId, public_key: s.publicKey, hosting: await hosting(), sign: (hashHex) => cryptoSign(null, Buffer.from(hashHex, "hex"), s.key).toString("base64") };
 }
 
 /** The key's public half and where the deployment says it runs: what the organization registers on the public graph. */
-export function publisherIdentity(): { public_key: string; key_id: string; hosting: string } {
+export async function publisherIdentity(): Promise<{ public_key: string; key_id: string; hosting: string }> {
   const s = signer();
-  return { public_key: s.publicKey, key_id: s.keyId, hosting: hosting() };
+  return { public_key: s.publicKey, key_id: s.keyId, hosting: await hosting() };
 }
 
 /** The short name of the deployment's signing key (its fingerprint), or null where it has none that parses. */
@@ -161,9 +174,9 @@ export function signingKeyId(): string | null {
 }
 
 /** The registration the organization's account presents on the public graph, signed with the deployment's key. */
-export function signedRegistration(account: string): { public_key: string; hosting: string; account: string; signature: string } {
+export async function signedRegistration(account: string): Promise<{ public_key: string; hosting: string; account: string; signature: string }> {
   const s = signer();
-  const where = hosting();
+  const where = await hosting();
   const statement = registrationStatement({ account, publicKey: s.publicKey, hosting: where });
   return {
     public_key: s.publicKey,
@@ -345,7 +358,7 @@ const PACKAGE_COLUMNS = `id, release_id, node_id, public_node_id, sequence, hash
 export async function buildOutboundPackages(opts: { releaseId?: string } = {}): Promise<number> {
   if (oneLabelOnly()) return 0;
   const s = signer();
-  const where = hosting();
+  const where = await hosting();
   // Stamped on every package: whether the gate the page leaves by asks the public graph for a fresh public
   // assessment when a version here changes (keep-current.ts).
   const { keepCurrentStamp } = await import("./keep-current.js");
@@ -587,7 +600,7 @@ export async function sendOutbound(input: { releaseId: string; sender: Sender })
 export async function followOutbound(): Promise<{ built: number; sent: number }> {
   if (oneLabelOnly()) return { built: 0, sent: 0 };
   const config = loadConfig();
-  if (!config.publishSigningKey || !config.deploymentHosting) return { built: 0, sent: 0 };
+  if (!config.publishSigningKey || !(await statedHosting())) return { built: 0, sent: 0 };
   const built = await buildOutboundPackages();
   if (!(await hasRouteOut())) return { built, sent: 0 };
   const standing = await asOwner(() =>
@@ -621,7 +634,7 @@ export function followReleaseOutside(releaseId: string): Promise<void> {
   const work = async (): Promise<void> => {
     if (oneLabelOnly()) return;
     const config = loadConfig();
-    if (!config.publishSigningKey || !config.deploymentHosting || !(await hasRouteOut())) return;
+    if (!config.publishSigningKey || !(await statedHosting()) || !(await hasRouteOut())) return;
     const [release] = await asOwner(() =>
       rawQuery<{ send_as_released: boolean }>(`SELECT send_as_released FROM received_releases WHERE id = $1 AND to_outside AND kind = 'page'`, [releaseId])
     );

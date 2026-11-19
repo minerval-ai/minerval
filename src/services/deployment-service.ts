@@ -75,8 +75,70 @@ export interface ConnectAsk {
   publicKey: string;
   name: unknown;
   hosting: unknown;
-  grants: unknown;
+  /** The grants its settings need, alone: what a deployment built before `needs` sends. */
+  grants?: unknown;
+  /** The grants its settings need, each with why ([{ grant, why }]). */
+  needs?: unknown;
+  /** Where its own site is, for links back to it. */
+  address?: unknown;
   reportIdentifier?: unknown;
+}
+
+export interface Need {
+  grant: DeploymentGrant;
+  why: string | null;
+}
+
+const WHY_MAX = 300;
+const ADDRESS_MAX = 500;
+
+/**
+ * What a deployment says its settings need: `needs` with why, or `grants`
+ * alone from one built before. Neither is required: the admin approving
+ * chooses from every grant. Anything that is not a grant is refused.
+ */
+function readNeeds(input: ConnectAsk): Need[] {
+  const out = new Map<DeploymentGrant, string | null>();
+  const add = (grant: unknown, why: unknown) => {
+    for (const g of readGrants([grant])) {
+      if (!isGrant(g)) throw new DeploymentError("BAD_GRANTS", `Needs are among ${DEPLOYMENT_GRANTS.join(", ")}.`, 422);
+      const words = typeof why === "string" && why.trim() ? why.trim().replace(/\s+/g, " ").slice(0, WHY_MAX) : null;
+      if (!out.has(g) || (out.get(g) === null && words)) out.set(g, words);
+    }
+  };
+  if (input.needs !== undefined && input.needs !== null) {
+    if (!Array.isArray(input.needs)) throw new DeploymentError("BAD_NEEDS", "needs is a list of { grant, why }.", 422);
+    for (const n of input.needs) {
+      if (!n || typeof n !== "object") throw new DeploymentError("BAD_NEEDS", "needs is a list of { grant, why }.", 422);
+      add((n as { grant?: unknown }).grant, (n as { why?: unknown }).why);
+    }
+  }
+  if (input.grants !== undefined && input.grants !== null) {
+    if (!Array.isArray(input.grants)) throw new DeploymentError("BAD_GRANTS", `grants is a list among ${DEPLOYMENT_GRANTS.join(", ")}.`, 422);
+    for (const g of input.grants) add(g, null);
+  }
+  return [...out].map(([grant, why]) => ({ grant, why }));
+}
+
+const BAD_ADDRESS = "address is the deployment's own web address, https://...";
+
+/**
+ * The address a deployment states for its own site: an http(s) origin and
+ * path, nothing else. It is shown, linked to, and sent back to after
+ * approval; it is never fetched.
+ */
+export function readAddress(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string" || value.length > ADDRESS_MAX) throw new DeploymentError("BAD_ADDRESS", BAD_ADDRESS, 422);
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new DeploymentError("BAD_ADDRESS", BAD_ADDRESS, 422);
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new DeploymentError("BAD_ADDRESS", BAD_ADDRESS, 422);
+  if (url.username || url.password) throw new DeploymentError("BAD_ADDRESS", "address carries no user name or password.", 422);
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
 /** Record a deployment's request to connect. The caller has checked it is signed with the key it names. */
@@ -91,10 +153,8 @@ export async function askToConnect(input: ConnectAsk): Promise<{ code: string; e
   if (typeof input.hosting !== "string" || !(input.hosting in HOSTING_WORDS)) {
     throw new DeploymentError("BAD_HOSTING", `hosting is one of ${Object.keys(HOSTING_WORDS).join(", ")}.`, 422);
   }
-  const grants = readGrants(input.grants);
-  if (grants.length === 0 || !grants.every(isGrant)) {
-    throw new DeploymentError("BAD_GRANTS", `Ask for one or more of ${DEPLOYMENT_GRANTS.join(", ")}.`, 422);
-  }
+  const needs = readNeeds(input);
+  const address = readAddress(input.address);
   const report = input.reportIdentifier === undefined || input.reportIdentifier === null ? null : input.reportIdentifier;
   if (report !== null && !isUuid(report)) throw new DeploymentError("BAD_REPORT_IDENTIFIER", "report_identifier is a uuid.", 422);
   const keyId = keyIdOf(input.publicKey);
@@ -105,10 +165,10 @@ export async function askToConnect(input: ConnectAsk): Promise<{ code: string; e
     try {
       const [row] = await asOwner(() =>
         rawQuery<{ expires_at: Date }>(
-          `INSERT INTO deployment_connect_requests (code, public_key, key_id, suggested_name, hosting, asked_grants, report_identifier, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, now() + ($8 || ' milliseconds')::interval)
+          `INSERT INTO deployment_connect_requests (code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, expires_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, now() + ($10 || ' milliseconds')::interval)
            RETURNING expires_at`,
-          [code, input.publicKey, keyId, name, input.hosting, grants, report, String(CONNECT_TTL_MS)]
+          [code, input.publicKey, keyId, name, input.hosting, needs.map((n) => n.grant), JSON.stringify(needs), address, report, String(CONNECT_TTL_MS)]
         )
       );
       return { code, expires_at: new Date(row!.expires_at).toISOString(), key_id: keyId };
@@ -128,6 +188,8 @@ interface ConnectRow {
   suggested_name: string;
   hosting: string;
   asked_grants: string[];
+  needs: Array<{ grant: string; why: string | null }>;
+  address: string | null;
   report_identifier: string | null;
   expires_at: Date;
   state: "waiting" | "approved" | "denied";
@@ -136,7 +198,7 @@ interface ConnectRow {
 
 async function connectRow(code: string): Promise<ConnectRow | null> {
   const [row] = await rawQuery<ConnectRow>(
-    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, report_identifier, expires_at, state, deployment_id
+    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, expires_at, state, deployment_id
        FROM deployment_connect_requests WHERE code = $1`,
     [normalizeCode(code)]
   );
@@ -187,11 +249,26 @@ export interface ConnectRequestView {
   hosting: string;
   hosting_words: string;
   key_id: string;
+  /** The grants its settings need, alone (as before `needs`). */
   asked_grants: DeploymentGrant[];
+  /** The grants its settings need, each with why, where it said. */
+  needs: Need[];
+  /** Where its own site is, as it stated. */
+  address: string | null;
   expires_at: string;
   state: "waiting" | "approved" | "denied" | "expired";
   /** The organizations the reader is an admin of, to choose from. */
   your_organizations: Array<{ id: string; name: string }>;
+  /** Those they are only a member of, with the admins who can approve it there. */
+  member_organizations: Array<{ id: string; name: string; admins: string[] }>;
+}
+
+/** What a request says its settings need, from `needs`, or from the grants alone where it said no more. */
+function needsOf(row: ConnectRow): Need[] {
+  const said = Array.isArray(row.needs) ? row.needs.filter((n) => isGrant(n?.grant)) : [];
+  const out: Need[] = said.map((n) => ({ grant: n.grant as DeploymentGrant, why: n.why ?? null }));
+  for (const g of readGrants(row.asked_grants).filter(isGrant)) if (!out.some((n) => n.grant === g)) out.push({ grant: g, why: null });
+  return out;
 }
 
 export async function readConnectRequest(code: string, readerId: string): Promise<ConnectRequestView> {
@@ -203,22 +280,36 @@ export async function readConnectRequest(code: string, readerId: string): Promis
       ORDER BY c.display_name`,
     [readerId]
   );
+  const memberOf = await rawQuery<{ id: string; name: string; admins: string[] | null }>(
+    `SELECT c.id, c.display_name AS name,
+            (SELECT array_agg(a.display_name ORDER BY a.display_name) FROM organization_members am
+               JOIN contributors a ON a.id = am.account_id
+              WHERE am.organization_id = c.id AND am.role = 'admin' AND am.removed_at IS NULL AND NOT a.is_suspended) AS admins
+       FROM organization_members m JOIN contributors c ON c.id = m.organization_id
+      WHERE m.account_id = $1 AND m.role = 'member' AND m.removed_at IS NULL AND c.kind = 'organization'
+      ORDER BY c.display_name`,
+    [readerId]
+  );
+  const needs = needsOf(row);
   return {
     code: row.code,
     suggested_name: row.suggested_name,
     hosting: row.hosting,
     hosting_words: HOSTING_WORDS[row.hosting as keyof typeof HOSTING_WORDS] ?? row.hosting,
     key_id: row.key_id,
-    asked_grants: readGrants(row.asked_grants).filter(isGrant),
+    asked_grants: needs.map((n) => n.grant),
+    needs,
+    address: row.address,
     expires_at: new Date(row.expires_at).toISOString(),
     state: expired(row) ? "expired" : row.state,
     your_organizations: orgs,
+    member_organizations: memberOf.map((o) => ({ id: o.id, name: o.name, admins: o.admins ?? [] })),
   };
 }
 
 async function openRow(tx: TxQuery, code: string): Promise<ConnectRow> {
   const [row] = await tx.query<ConnectRow>(
-    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, report_identifier, expires_at, state, deployment_id
+    `SELECT id, code, public_key, key_id, suggested_name, hosting, asked_grants, needs, address, report_identifier, expires_at, state, deployment_id
        FROM deployment_connect_requests WHERE code = $1 FOR UPDATE`,
     [normalizeCode(code)]
   );
@@ -230,42 +321,46 @@ async function openRow(tx: TxQuery, code: string): Promise<ConnectRow> {
 
 /**
  * An admin of the organization approves the deployment, with the grants
- * they leave ticked (a subset of what it asked for) and a name. The code
- * is used once. Recorded on the organization's log under the admin.
+ * they choose (any of the organization's grants for deployments; those its
+ * settings need are only ticked to start with), a name, and an allowance on
+ * spend where they set one. The code is used once. Recorded on the
+ * organization's log under the admin. Answers where to send the admin back:
+ * the deployment's own Overview, at the address it stated.
  */
 export async function approveConnect(input: {
   code: string;
   organizationId: string;
   name?: unknown;
   grants: unknown;
+  allowanceOwls?: unknown;
   by: string;
-}): Promise<{ deployment_id: string }> {
+}): Promise<{ deployment_id: string; return_to: string | null }> {
   if (!(await isLiveAdmin(input.organizationId, input.by))) {
     throw new DeploymentError("ADMIN_REQUIRED", "Only an admin of that organization can approve a deployment for it.", 403);
   }
   return asOwner(() =>
     withTransaction(async (tx) => {
       const row = await openRow(tx, input.code);
-      const asked = new Set(readGrants(row.asked_grants));
       const grants = readGrants(input.grants);
       if (!grants.every(isGrant)) throw new DeploymentError("BAD_GRANTS", `Grants are among ${DEPLOYMENT_GRANTS.join(", ")}.`, 422);
-      if (!grants.every((g) => asked.has(g))) {
-        throw new DeploymentError("GRANT_NOT_ASKED", "Grant only what the deployment asked for. It can ask again for more.", 422);
+      if (grants.length === 0) throw new DeploymentError("NO_GRANTS", "Tick at least one thing it may do, or deny it.", 422);
+      const allowance = readAllowance(input.allowanceOwls);
+      if (allowance !== null && !grants.includes("spend")) {
+        throw new DeploymentError("ALLOWANCE_WITHOUT_SPEND", "An allowance is on spend: tick spend, or leave the allowance empty.", 422);
       }
-      if (grants.length === 0) throw new DeploymentError("NO_GRANTS", "Leave at least one grant ticked, or deny it.", 422);
       const name =
         typeof input.name === "string" && input.name.trim() ? input.name.trim().replace(/\s+/g, " ").slice(0, NAME_MAX) : row.suggested_name;
       const [live] = await tx.query<{ id: string }>(`SELECT id FROM deployments WHERE key_id = $1 AND retired_at IS NULL`, [row.key_id]);
       if (live) throw new DeploymentError("KEY_ALREADY_CONNECTED", "This key is already a connected deployment's.", 409);
       const [dep] = await tx.query<{ id: string }>(
-        `INSERT INTO deployments (organization_id, name, hosting, public_key, key_id, report_identifier, approved_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [input.organizationId, name, row.hosting, row.public_key, row.key_id, row.report_identifier, input.by]
+        `INSERT INTO deployments (organization_id, name, hosting, public_key, key_id, report_identifier, address, approved_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [input.organizationId, name, row.hosting, row.public_key, row.key_id, row.report_identifier, row.address, input.by]
       );
       for (const g of grants) {
         await tx.query(
-          `INSERT INTO organization_grants (organization_id, deployment_id, permission, granted_by) VALUES ($1, $2, $3, $4)`,
-          [input.organizationId, dep!.id, g, input.by]
+          `INSERT INTO organization_grants (organization_id, deployment_id, permission, granted_by, allowance_micro_usd) VALUES ($1, $2, $3, $4, $5)`,
+          [input.organizationId, dep!.id, g, input.by, g === "spend" ? allowance : null]
         );
       }
       await tx.query(
@@ -275,11 +370,32 @@ export async function approveConnect(input: {
       await tx.query(
         `INSERT INTO organization_log (organization_id, actor_id, credential, kind, detail)
          VALUES ($1, $2, 'session', 'deployment_approved', $3::jsonb)`,
-        [input.organizationId, input.by, JSON.stringify({ deployment_id: dep!.id, name, hosting: row.hosting, key_id: row.key_id, grants })]
+        [
+          input.organizationId,
+          input.by,
+          JSON.stringify({
+            deployment_id: dep!.id,
+            name,
+            hosting: row.hosting,
+            key_id: row.key_id,
+            grants,
+            ...(allowance !== null ? { allowance_micro_usd: allowance } : {}),
+          }),
+        ]
       );
-      return { deployment_id: dep!.id };
+      return { deployment_id: dep!.id, return_to: row.address ? `${row.address}/admin/outside?check=1` : null };
     })
   );
+}
+
+/** An allowance given in owls on approval, as micro-USD, or null for none. */
+function readAllowance(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const owls = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(owls) || owls < 0 || owls > 1_000_000_000) {
+    throw new DeploymentError("BAD_ALLOWANCE", "An allowance is a number of owls, zero or more.", 422);
+  }
+  return Math.round(owls * 1_000_000);
 }
 
 /** Deny a waiting request. Only someone who admins an organization can, so a stranger with the link cannot block one. */
@@ -423,9 +539,9 @@ export async function organizationForDeployment(deploymentId: string): Promise<R
 export async function listDeployments(organizationId: string): Promise<Array<Record<string, unknown>>> {
   const rows = await rawQuery<{
     id: string; name: string; hosting: string; key_id: string; approved_at: Date; approved_by: string | null;
-    retired_at: Date | null; grants: string[]; last_write: Date | null;
+    retired_at: Date | null; grants: string[]; last_write: Date | null; address: string | null;
   }>(
-    `SELECT d.id, d.name, d.hosting, d.key_id, d.approved_at, a.display_name AS approved_by, d.retired_at,
+    `SELECT d.id, d.name, d.hosting, d.key_id, d.address, d.approved_at, a.display_name AS approved_by, d.retired_at,
             COALESCE((SELECT array_agg(g.permission ORDER BY g.permission) FROM organization_grants g WHERE g.deployment_id = d.id AND g.withdrawn_at IS NULL), '{}') AS grants,
             (SELECT max(r.at) FROM deployment_requests r WHERE r.deployment_id = d.id) AS last_write
        FROM deployments d LEFT JOIN contributors a ON a.id = d.approved_by
@@ -445,6 +561,7 @@ export async function listDeployments(organizationId: string): Promise<Array<Rec
     hosting: r.hosting,
     hosting_words: HOSTING_WORDS[r.hosting as keyof typeof HOSTING_WORDS] ?? r.hosting,
     key_id: r.key_id,
+    address: r.address,
     approved_at: new Date(r.approved_at).toISOString(),
     approved_by: r.approved_by,
     retired_at: r.retired_at ? new Date(r.retired_at).toISOString() : null,

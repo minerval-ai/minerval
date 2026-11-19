@@ -96,7 +96,7 @@ async function main(): Promise<number> {
   const { closeDb, rawQuery } = await import("../src/db/client.js");
   try {
     if (command === "key") {
-      const id = publisherIdentity();
+      const id = await publisherIdentity();
       console.log(`Public key: ${id.public_key}`);
       console.log(`Key id:     ${id.key_id}`);
       console.log(`Runs on:    ${HOSTING_WORDS[id.hosting as keyof typeof HOSTING_WORDS]} (${id.hosting})`);
@@ -107,7 +107,7 @@ async function main(): Promise<number> {
         console.error("Give the sign-in identity of the organization's account on the public graph, for example github:12345.");
         return 2;
       }
-      console.log(JSON.stringify(signedRegistration(arg), null, 2));
+      console.log(JSON.stringify(await signedRegistration(arg), null, 2));
       return 0;
     }
     if (command === "build" || command === "export") {

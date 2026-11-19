@@ -103,7 +103,15 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
     });
 
     scope.post<{
-      Body: { public_key: string; name: string; hosting: string; grants: string[]; report_identifier?: string };
+      Body: {
+        public_key: string;
+        name: string;
+        hosting: string;
+        grants?: string[];
+        needs?: Array<{ grant: string; why?: string }>;
+        address?: string;
+        report_identifier?: string;
+      };
     }>("/deployments/connect", {
       schema: {
         tags: TAGS,
@@ -111,14 +119,24 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
           "A private deployment asks to be connected to an organization, signing the request with the key it made " +
           "(Authorization: Minerval-Deployment). Answers a short code and a link for an admin of the organization, " +
           "who approves it with the grants they choose",
+        description:
+          "`needs` says which grants the deployment's own settings need, each with why; the admin approving sees them ticked and " +
+          "chooses from every grant. `grants` is the same list without why, as a deployment built before `needs` sends it. " +
+          "`address` is the deployment's own web address: shown to the admin, linked to from the organization's Deployments tab, " +
+          "and where the admin is sent back to after approving. It is never fetched.",
         body: {
           type: "object",
-          required: ["public_key", "name", "hosting", "grants"],
+          required: ["public_key", "name", "hosting"],
           properties: {
             public_key: { type: "string" },
             name: { type: "string" },
             hosting: { type: "string" },
-            grants: { type: "array", items: GRANT, minItems: 1 },
+            grants: { type: "array", items: GRANT },
+            needs: {
+              type: "array",
+              items: { type: "object", required: ["grant"], properties: { grant: GRANT, why: { type: "string", maxLength: 300 } } },
+            },
+            address: { type: "string", maxLength: 500 },
             report_identifier: { type: "string" },
           },
         },
@@ -133,6 +151,8 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
               name: request.body.name,
               hosting: request.body.hosting,
               grants: request.body.grants,
+              needs: request.body.needs,
+              address: request.body.address,
               reportIdentifier: request.body.report_identifier,
             });
             return {
@@ -172,26 +192,33 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
       tags: TAGS,
       summary:
         "What a deployment asking to connect says of itself (its suggested name, the hosting it states, its key id, " +
-        "the grants it asks for), and the organizations you are an admin of, to approve it for",
+        "its address, the grants its settings need and why), the organizations you are an admin of, to approve it for, and " +
+        "those you are only a member of, with their admins, who can",
       params: { type: "object", required: ["code"], properties: { code: { type: "string" } } },
     },
     preHandler: reader,
     handler: (request, reply) => answer(reply, async () => ({ request: await readConnectRequest(request.params.code, me(request)) })),
   });
 
-  app.post<{ Params: { code: string }; Body: { organization_id: string; name?: string; grants: string[] } }>(
+  app.post<{ Params: { code: string }; Body: { organization_id: string; name?: string; grants: string[]; allowance_owls?: number } }>(
     "/connect-requests/:code/approve",
     {
       schema: {
         tags: TAGS,
         summary:
-          "Approve a deployment for an organization you are an admin of, with the grants you choose from those it asked for. " +
-          "The code is used once. Approve only if a deployment of yours shows this code and key id now",
+          "Approve a deployment for an organization you are an admin of, with the grants you choose, and an allowance on spend " +
+          "if you set one. The code is used once. Approve only if a deployment of yours shows this code and key id now. " +
+          "Answers return_to, the deployment's own Overview at the address it stated, where it has one",
         params: { type: "object", required: ["code"], properties: { code: { type: "string" } } },
         body: {
           type: "object",
           required: ["organization_id", "grants"],
-          properties: { organization_id: { type: "string" }, name: { type: "string" }, grants: { type: "array", items: GRANT } },
+          properties: {
+            organization_id: { type: "string" },
+            name: { type: "string" },
+            grants: { type: "array", items: GRANT },
+            allowance_owls: { type: "number", minimum: 0 },
+          },
         },
       },
       preHandler: session,
@@ -202,6 +229,7 @@ export async function deploymentRoutes(app: FastifyInstance): Promise<void> {
             organizationId: request.body.organization_id,
             name: request.body.name,
             grants: request.body.grants,
+            allowanceOwls: request.body.allowance_owls,
             by: me(request),
           })
         ),

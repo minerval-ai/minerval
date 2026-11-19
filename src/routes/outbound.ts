@@ -206,7 +206,7 @@ export async function outboundRoutes(app: FastifyInstance): Promise<void> {
     preHandler: session("administer"),
     handler: async (request, reply) => {
       try {
-        return reply.send({ ...signedRegistration(request.body.account), key_id: publisherIdentity().key_id, how_packages_are_sent: SEND_CHOICES });
+        return reply.send({ ...(await signedRegistration(request.body.account)), key_id: (await publisherIdentity()).key_id, how_packages_are_sent: SEND_CHOICES });
       } catch (err) {
         return refuse(reply, err);
       }

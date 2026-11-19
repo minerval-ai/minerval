@@ -2853,6 +2853,9 @@ export const deployments = pgTable(
     keyId: text("key_id").notNull(),
     // The identifier the deployment puts on its usage reports (docs/usage-report.md).
     reportIdentifier: uuid("report_identifier"),
+    // Where its own site is, as it stated when it asked to connect: used only
+    // for links back to it, never checked or fetched.
+    address: text("address"),
     approvedBy: uuid("approved_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
     approvedAt: timestamp("approved_at", { withTimezone: true }).notNull().defaultNow(),
     retiredBy: uuid("retired_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
@@ -2921,7 +2924,13 @@ export const deploymentConnectRequests = pgTable(
     keyId: text("key_id").notNull(),
     suggestedName: text("suggested_name").notNull(),
     hosting: text("hosting").notNull(),
+    // The grants its own settings need, as it said: kept as asked_grants for
+    // the grants alone, and with why in needs ([{ grant, why }]). The admin
+    // approving chooses from every grant, these ticked to start with.
     askedGrants: text("asked_grants").array().notNull(),
+    needs: jsonb("needs").$type<Array<{ grant: string; why: string | null }>>().notNull().default(sql`'[]'::jsonb`),
+    // Where its own site is, as it stated: used for the links back to it.
+    address: text("address"),
     reportIdentifier: uuid("report_identifier"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -2996,6 +3005,9 @@ export const publicGraphConnection = pgTable(
     verificationUri: text("verification_uri"),
     codeExpiresAt: timestamp("code_expires_at", { withTimezone: true }),
     askedGrants: text("asked_grants").array().notNull().default(sql`'{}'::text[]`),
+    // Where it runs, as the administrator who connected it answered (or the
+    // operator's DEPLOYMENT_HOSTING, which fixes it). Packages state it too.
+    hosting: text("hosting"),
     // What the public graph said when it was approved, and last read.
     deploymentId: uuid("deployment_id"),
     deploymentName: text("deployment_name"),

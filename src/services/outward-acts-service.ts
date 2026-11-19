@@ -779,7 +779,7 @@ export async function registerPublisherOutside(input: { declaredInterest?: strin
   }
   let statement;
   try {
-    statement = signedRegistration(account);
+    statement = await signedRegistration(account);
   } catch (err) {
     if (err instanceof OutboundError) throw new OutwardError(err.code, err.message, 409);
     throw err;

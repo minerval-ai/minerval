@@ -109,7 +109,7 @@ async function lastMandatePackage(releaseId: string): Promise<{ sequence: number
 
 /** The signed package of a mandate as the gate let it through, or as withdrawn. */
 async function mandatePackage(item: NonNullable<Awaited<ReturnType<typeof itemAsReceived>>>, release: { id: string; asked_at: Date }, withdrawn: Date | null): Promise<PublishedMandatePackage> {
-  const signer = outsideSigner();
+  const signer = await outsideSigner();
   const last = await lastMandatePackage(release.id);
   const name = item.parts.find((p) => p.kind === "name");
   const body = {

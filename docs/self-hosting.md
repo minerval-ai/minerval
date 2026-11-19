@@ -212,15 +212,18 @@ person ([organizations.md](organizations.md), "Connecting"):
 
 1. Someone makes the organization on minerval.ai, signed in as themselves
    (Account, Organizations). They are its first admin.
-2. Set `DEPLOYMENT_HOSTING` (`own_machines`, for this package). An
-   organization admin is shown it when they approve the deployment.
-3. An administrator of the deployment presses "Connect to minerval.ai" on the
-   public graph's Overview (`/admin/outside`) and chooses which grants to ask
-   for. The deployment makes a key of its own, kept in its database and never
-   in `.env`, and shows a short code and a link.
-4. An admin of the organization opens the link, checks the code and key id,
-   and approves it with the grants they choose. The deployment learns it the
-   next time the Overview is opened. No restart.
+2. An administrator of the deployment presses "Connect to minerval.ai" on
+   the public graph's Overview (`/admin/outside`), says what to call it and
+   where it runs (on the organization's own machines, for this package), and
+   presses Connect. The deployment makes a key of its own, kept in its
+   database and never in `.env`, and sends which grants its settings need,
+   and why. It asks for none: the organization's admin chooses.
+3. "Approve on minerval.ai" opens the approval page there; someone who is
+   not the organization's admin sends its link to one instead. The admin
+   checks the code and key id, ticks what the deployment may do, and
+   approves. They are sent back to the deployment's Overview, which shows it
+   connected (the address is `SITE_URL`). No restart. Someone who admins no
+   organization yet can make one on the same page.
 
 From then on every request to minerval.ai is signed with that key and carries
 no bearer secret. The organization's admins see the deployment, its grants
@@ -228,7 +231,7 @@ and the writes it signed on the organization's Deployments tab.
 
 | Setting | For Minerval's public graph |
 | --- | --- |
-| `DEPLOYMENT_HOSTING` | `own_machines`, for this package |
+| `DEPLOYMENT_HOSTING` | Optional: fixes where it runs (`own_machines`, for this package), which the Connect drawer then shows and does not ask |
 | `MIRROR_FEED_URL` | `https://api.claimgraph.io`, to follow the mirror (with the `read_feed` grant) |
 | `MIRROR_FEED_PUBLIC_KEYS` | the `public_key` that `https://api.claimgraph.io/mirror/feed/key` answers |
 | `PUBLISH_SIGNING_KEY` | `npx tsx scripts/published-page.ts keygen` makes one; keep a copy |

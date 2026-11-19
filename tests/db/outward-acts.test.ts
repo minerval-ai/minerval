@@ -437,7 +437,7 @@ describe("a page shown outside, to begin from", () => {
     const asked = await askRelease({ nodeId: id.p!, pageLabel: A, toLabel: null, form: "standing", scope: "node", actor: actor.director! });
     id.release = asked.release_id;
     await redactCheckRelease(id.release!, id.p!);
-    const mine = signedRegistration(orgAccount);
+    const mine = await signedRegistration(orgAccount);
     expect((await pubApi("POST", "/publishers", { public_key: mine.public_key, hosting: mine.hosting, signature: mine.signature })).status).toBe(201);
     await buildAndSend(id.release!);
     const [publication] = await pubRows<{ id: string; contribution_id: string }>(`SELECT id, contribution_id FROM published_pages WHERE node_id = $1`, [id.p]);
@@ -460,7 +460,7 @@ describe("registering the deployment's key from inside", () => {
     expect((await as("director", { method: "POST", url: "/outbound/registration/send", payload: {} })).status).toBe(403);
 
     // The key was registered by a statement sent to the public graph by hand: the account read finds it on the public graph's record.
-    const fingerprint = keyIdOf(signedRegistration(orgAccount).public_key);
+    const fingerprint = keyIdOf((await signedRegistration(orgAccount)).public_key);
     const before = await as("reader", { url: "/outside/account" });
     expect(before.json.signing_key_fingerprint).toBe(fingerprint);
     expect(before.json.registration).toMatchObject({

@@ -15,14 +15,17 @@
 import { withSystemClearance } from "../db/clearance.js";
 import { rawQuery } from "../db/client.js";
 import { DEPLOYMENT_GRANTS, type DeploymentGrant } from "../db/schema.js";
-import { loadConfig } from "../config.js";
+import { loadConfig, type Config } from "../config.js";
+import { membersOnly } from "../permissions.js";
 import { generateSigningKey } from "./mirror-batch.js";
 import {
   forgetConnection,
+  isHosting,
   publicGraphFetch,
   readConnection,
   signedAuthorization,
   type Connection,
+  type Hosting,
 } from "./public-graph-client.js";
 import { logOutwardAct, type Actor } from "./outward-acts-service.js";
 
@@ -97,26 +100,120 @@ async function reportIdentifier(): Promise<string | null> {
 
 // ---- connecting -------------------------------------------------------------
 
+/**
+ * The grants this deployment's own settings need from its connection, each
+ * with why, in words for the organization's admin who approves it. The
+ * deployment asks for none: the admin chooses, these ticked to start with
+ * (docs/organizations.md, "Connecting"). The setup checklist warns of one
+ * not held.
+ */
+export function neededGrants(
+  config: {
+    mirrorFeedUrl?: string;
+    mirrorFeedDir?: string;
+    publicGraphPrice?: string;
+    reads?: string;
+    usageReportDir?: string;
+    publishSigningKey?: string;
+  },
+  opts: { forConnecting?: boolean } = {}
+): Array<{ grant: DeploymentGrant; why: string }> {
+  const out: Array<{ grant: DeploymentGrant; why: string }> = [];
+  const privateDeployment = config.reads === "members";
+  if (config.mirrorFeedUrl) out.push({ grant: "read_feed", why: "It follows the public graph, keeping a mirror of it to work from." });
+  else if (opts.forConnecting && privateDeployment && !config.mirrorFeedDir) {
+    out.push({ grant: "read_feed", why: "To follow the public graph from its Mirror page, keeping a copy of it to work from." });
+  }
+  if (privateDeployment && config.publicGraphPrice !== "flat" && !config.usageReportDir) {
+    out.push({ grant: "report_usage", why: "On the metered price, each day's total of owls spent is reported privately to Minerval." });
+  }
+  if (config.publishSigningKey) out.push({ grant: "publish", why: "Pages released at its gate to outside are sent to the public graph." });
+  if (opts.forConnecting && privateDeployment) {
+    out.push(
+      { grant: "take_up", why: "Its members may take up requests on the public graph for the organization, from its Public graph page." },
+      { grant: "spend", why: "Its members may open and fund public mandates and pay for public assessments, from its Public graph page." },
+      { grant: "speak", why: "Its members may send its agents' reports to Minerval under the organization." }
+    );
+  }
+  return out;
+}
+
+/** What to call this deployment, where it was never named: the host name of its own site. */
+function ownName(config: Pick<Config, "publicWebBaseUrl">): string {
+  try {
+    return new URL(config.publicWebBaseUrl).hostname;
+  } catch {
+    return "";
+  }
+}
+
+/** This deployment's own web address, stated to the public graph for links back to it, where it has one of its own. */
+function ownAddress(config: Pick<Config, "publicWebBaseUrl" | "reads">): string | null {
+  if (!membersOnly(config)) return null;
+  try {
+    const url = new URL(config.publicWebBaseUrl);
+    if (url.hostname === "minerval.ai") return null;
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return null;
+  }
+}
+
+export interface ConnectWith {
+  /** What to call it: the name it has there already, or its own host name. */
+  name: string;
+  /** Where it runs: the operator's fixed answer, or the last one given here. */
+  hosting: Hosting | null;
+  /** Whether the operator fixed it (DEPLOYMENT_HOSTING), so the drawer shows it and does not ask. */
+  hosting_fixed: boolean;
+  /** The grants its settings need, with why, sent for the admin to see. */
+  needs: Array<{ grant: DeploymentGrant; why: string }>;
+  /** Its own web address, sent for links back to it. */
+  address: string | null;
+  /** The public graph's API address it connects to, unless one is given. */
+  api_url: string;
+}
+
+/** What the drawer fills its questions with (docs/organizations.md, "Connecting"). */
+export async function connectWith(): Promise<ConnectWith> {
+  const config = loadConfig();
+  const c = await readConnection();
+  const fixed = isHosting(config.deploymentHosting) ? config.deploymentHosting : null;
+  return {
+    name: c?.deploymentName || ownName(config),
+    hosting: fixed ?? c?.hosting ?? null,
+    hosting_fixed: fixed !== null,
+    needs: neededGrants(config, { forConnecting: true }),
+    address: ownAddress(config),
+    api_url: base(config.publicGraphApiUrl || MINERVAL_API_URL),
+  };
+}
+
 export async function startConnect(input: {
   name: string;
-  grants: DeploymentGrant[];
+  hosting?: string | null;
   apiUrl?: string | null;
   replace?: boolean;
   actor: Actor;
 }): Promise<ConnectionView> {
   const config = loadConfig();
-  const hosting = config.deploymentHosting;
+  // The operator's setting fixes the answer; otherwise the administrator gives it here.
+  const hosting: Hosting | null = isHosting(config.deploymentHosting)
+    ? config.deploymentHosting
+    : isHosting(input.hosting)
+      ? input.hosting
+      : null;
   if (!hosting) {
     throw new ConnectionError(
-      "HOSTING_NOT_STATED",
-      "Say where this deployment runs before connecting: DEPLOYMENT_HOSTING (own_machines, minerval or third_party). The organization's admin is shown it.",
-      409
+      "HOSTING_NOT_CHOSEN",
+      "Choose where this deployment runs: on your own machines, on machines you hired, or run by Minerval. Your organization's admin is shown it.",
+      422
     );
   }
-  const grants = [...new Set(input.grants)].filter((g): g is DeploymentGrant => (DEPLOYMENT_GRANTS as readonly string[]).includes(g));
-  if (grants.length === 0) throw new ConnectionError("NO_GRANTS", "Ask for at least one grant.", 422);
   const name = input.name.trim().replace(/\s+/g, " ").slice(0, 120);
-  if (!name) throw new ConnectionError("NAME_REQUIRED", "Suggest a name for this deployment.", 422);
+  if (!name) throw new ConnectionError("NAME_REQUIRED", "Say what to call this deployment. Your organization's admin can change it.", 422);
+  const needs = neededGrants(config, { forConnecting: true });
+  const address = ownAddress(config);
   const existing = await readConnection();
   if (existing?.state === "connected" && !input.replace) {
     throw new ConnectionError(
@@ -130,27 +227,43 @@ export async function startConnect(input: {
   const asked = { privateKeyPem: key.privateKeyPem, publicKey: key.publicKey };
   let res: { status: number; json: Record<string, any> };
   try {
+    const report = await reportIdentifier();
     res = await sendWithKey(asked, `${apiUrl}/deployments/connect`, "POST", {
       public_key: key.publicKey,
       name,
       hosting,
-      grants,
-      ...((await reportIdentifier()) ? { report_identifier: await reportIdentifier() } : {}),
+      needs,
+      // The same, without why, for a public graph that reads only these.
+      ...(needs.length > 0 ? { grants: needs.map((n) => n.grant) } : {}),
+      ...(address ? { address } : {}),
+      ...(report ? { report_identifier: report } : {}),
     });
   } catch (err) {
-    throw new ConnectionError("PUBLIC_GRAPH_UNREACHABLE", `${apiUrl} could not be reached: ${err instanceof Error ? err.message.slice(0, 200) : "no answer"}`, 502);
+    throw new ConnectionError(
+      "PUBLIC_GRAPH_UNREACHABLE",
+      `This server could not reach the public graph at ${apiUrl} (${err instanceof Error ? err.message.slice(0, 200) : "no answer"}). ` +
+        `The operator who runs this server makes sure it can reach that address; where the public graph is somewhere else, ` +
+        `give its address under Advanced.`,
+      502
+    );
   }
   if (res.status !== 201) {
-    await logOutwardAct({ kind: "connect_deployment", by: input.actor, sent: { api_url: apiUrl, name, hosting, grants }, result: "refused", said: errorWords(res.json, res.status) });
-    throw new ConnectionError("PUBLIC_GRAPH_REFUSED", errorWords(res.json, res.status), 502);
+    await logOutwardAct({
+      kind: "connect_deployment",
+      by: input.actor,
+      sent: { api_url: apiUrl, name, hosting, needs: needs.map((n) => n.grant), address },
+      result: "refused",
+      said: errorWords(res.json, res.status),
+    });
+    throw new ConnectionError("PUBLIC_GRAPH_REFUSED", `The public graph refused it: ${errorWords(res.json, res.status)}`, 502);
   }
   await asOwner(() =>
     rawQuery(
-      `INSERT INTO public_graph_connection (id, api_url, private_key_pem, public_key, key_id, state, code, verification_uri, code_expires_at, asked_grants, started_by, started_at)
-       VALUES ('this', $1, $2, $3, $4, 'waiting', $5, $6, $7, $8, $9, now())
+      `INSERT INTO public_graph_connection (id, api_url, private_key_pem, public_key, key_id, state, code, verification_uri, code_expires_at, asked_grants, started_by, started_at, hosting)
+       VALUES ('this', $1, $2, $3, $4, 'waiting', $5, $6, $7, $8, $9, now(), $10)
        ON CONFLICT (id) DO UPDATE SET api_url = EXCLUDED.api_url, private_key_pem = EXCLUDED.private_key_pem, public_key = EXCLUDED.public_key,
          key_id = EXCLUDED.key_id, state = 'waiting', code = EXCLUDED.code, verification_uri = EXCLUDED.verification_uri,
-         code_expires_at = EXCLUDED.code_expires_at, asked_grants = EXCLUDED.asked_grants, started_by = EXCLUDED.started_by,
+         code_expires_at = EXCLUDED.code_expires_at, asked_grants = EXCLUDED.asked_grants, started_by = EXCLUDED.started_by, hosting = EXCLUDED.hosting,
          started_at = now(), deployment_id = NULL, deployment_name = NULL, organization_id = NULL, organization_name = NULL,
          grants = '{}', connected_at = NULL, last_checked_at = NULL, last_error = NULL`,
       [
@@ -161,8 +274,9 @@ export async function startConnect(input: {
         String(res.json.code),
         String(res.json.verification_uri_complete ?? ""),
         res.json.expires_at ? new Date(String(res.json.expires_at)) : null,
-        grants,
+        needs.map((n) => n.grant),
         "actor" in input.actor ? input.actor.actor.id : null,
+        hosting,
       ]
     )
   );
@@ -170,7 +284,7 @@ export async function startConnect(input: {
   await logOutwardAct({
     kind: "connect_deployment",
     by: input.actor,
-    sent: { api_url: apiUrl, name, hosting, grants, key_id: key.keyId },
+    sent: { api_url: apiUrl, name, hosting, needs: needs.map((n) => n.grant), address, key_id: key.keyId },
     result: "done",
     said: `Code ${String(res.json.code)}, waiting for an admin of the organization`,
   });
@@ -314,6 +428,10 @@ export interface ConnectionView {
   link: string | null;
   code_expires_at: string | null;
   asked_grants: DeploymentGrant[];
+  /** Where it runs, as stated when it connected. */
+  hosting: Hosting | null;
+  /** The public graph's web address, for links to the organization there. */
+  web_url: string | null;
   organization: { id: string; name: string } | null;
   deployment: { id: string; name: string } | null;
   grants: DeploymentGrant[];
@@ -328,6 +446,16 @@ export interface ConnectionView {
  * is open learns of an approval or a withdrawal without anyone pressing
  * anything.
  */
+/** The public graph's web address, from the link it gave for approving: links to the organization go there. */
+function webOf(verificationUri: string | null): string | null {
+  if (!verificationUri) return null;
+  try {
+    return new URL(verificationUri).origin;
+  } catch {
+    return null;
+  }
+}
+
 export async function connectionStatus(opts: { check?: boolean } = {}): Promise<ConnectionView | null> {
   let c = await readConnection();
   if (opts.check !== false && c) {
@@ -347,6 +475,8 @@ export async function connectionStatus(opts: { check?: boolean } = {}): Promise<
     link: c.state === "waiting" ? c.verificationUri : null,
     code_expires_at: c.codeExpiresAt ? new Date(c.codeExpiresAt).toISOString() : null,
     asked_grants: c.askedGrants,
+    hosting: c.hosting,
+    web_url: webOf(c.verificationUri),
     organization: c.organizationId ? { id: c.organizationId, name: c.organizationName ?? "" } : null,
     deployment: c.deploymentId ? { id: c.deploymentId, name: c.deploymentName ?? "" } : null,
     grants: c.grants,

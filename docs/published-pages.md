@@ -74,9 +74,12 @@ stake is said to exist or not; its words stay inside.
 
 `PUBLISH_SIGNING_KEY` is an Ed25519 private key in PEM form, made the way
 the mirror's is ([mirror.md](mirror.md)):
-`npx tsx scripts/published-page.ts keygen`. `DEPLOYMENT_HOSTING` says
-where the deployment runs (`own_machines`, `minerval`, `third_party`). It
-has no default, and no package is built until it is set.
+`npx tsx scripts/published-page.ts keygen`. Every package says where the
+deployment runs (`own_machines`, `minerval`, `third_party`): the answer an
+administrator gave when connecting it to minerval.ai, or the operator's
+`DEPLOYMENT_HOSTING`, which fixes it (`statedHosting` in
+`src/services/outbound-service.ts`). It has no default, and no package is
+built until one of them says.
 
 ## The check
 
