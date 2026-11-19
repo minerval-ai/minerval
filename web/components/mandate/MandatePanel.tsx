@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { MandateDetailView } from "@/lib/account-api";
 import type { MandateAllocationView } from "@/lib/api";
 import { cancelGrantAction, approveGrantAction } from "@/app/account/actions";
+import { ActingLine } from "@/components/account/ActingAs";
 import { dateish, owls } from "@/lib/account-format";
 import { paceWords, windowWords } from "@/lib/mandate-page";
 import { TopUpGrant } from "./TopUpGrant";
@@ -120,6 +121,7 @@ export function MandatePanel({
 
       {open && (
         <div className="askm-do">
+          <ActingLine permission="spend" />
           {mandate.status === "pending_approval" && (
             <form action={approveGrantAction}>
               <input type="hidden" name="grant_id" value={mandate.id} />

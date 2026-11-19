@@ -40,6 +40,9 @@ import { grantText, listed } from "../../lib/admin-words";
 import { loadStanding } from "../../lib/standing";
 import { fetchMyLabels } from "../../lib/admin-api";
 import { membersOnly } from "../../lib/members";
+import { listMyOrganizations, type OrganizationView } from "../../lib/organizations-api";
+import { actingOrganization, type ActingOrganization } from "../../lib/acting-as";
+import { switchActingAction } from "./acting-actions";
 
 export const metadata: Metadata = { title: "Account · Minerval" };
 export const dynamic = "force-dynamic";
@@ -117,11 +120,17 @@ export default async function AccountPage({
   );
   const listsRead = Promise.all([
     fetchOwlLedger(externalId, LEDGER_ENTRIES).catch(() => [] as OwlLedgerEntry[]),
-    listAssessmentOrders(externalId).catch(() => [] as AssessmentOrderView[]),
-    listBudgetJobs(externalId).catch(() => [] as BudgetJobView[]),
-    listGrants(externalId).catch(() => [] as GrantView[]),
+    // Your account is yours whoever you are acting as (lib/acting-as.ts).
+    listAssessmentOrders(externalId, "self").catch(() => [] as AssessmentOrderView[]),
+    listBudgetJobs(externalId, "self").catch(() => [] as BudgetJobView[]),
+    listGrants(externalId, "self").catch(() => [] as GrantView[]),
   ]);
   const featuresRead = loadFeatures();
+  // The organizations the person belongs to, and who they are acting as
+  // (docs/organizations.md, "Acting as the organization"). minerval.ai's only.
+  const organizationsRead = membersOnly()
+    ? Promise.resolve({ orgs: [] as OrganizationView[], acting: null as ActingOrganization | null })
+    : Promise.all([listMyOrganizations(externalId).catch(() => [] as OrganizationView[]), actingOrganization()]).then(([orgs, acting]) => ({ orgs, acting }));
   // What the person holds in a members-only deployment, and, where it holds
   // material at more than one label, the labels a new key may work at.
   const standingRead = loadStanding().then(async (standing) => ({
@@ -130,7 +139,7 @@ export default async function AccountPage({
       standing.state === "signed_in" ? await fetchMyLabels(externalId).catch(() => null) : null,
   }));
   // Read whether or not the account read fails, so none is left unhandled.
-  for (const p of [profileRead, listsRead, featuresRead, standingRead]) p.catch(() => {});
+  for (const p of [profileRead, listsRead, featuresRead, standingRead, organizationsRead]) p.catch(() => {});
   try {
     const [account, usageSummary, keyList] = await Promise.all([
       accountRead,
@@ -158,11 +167,12 @@ export default async function AccountPage({
 
   // The user's own contribution history, from the same public profile data
   // anyone can see; absence (no contributions yet) just hides the table.
-  const [profile, [ledger, orders, jobs, grants], features, { standing, myLabels }] = await Promise.all([
+  const [profile, [ledger, orders, jobs, grants], features, { standing, myLabels }, { orgs, acting }] = await Promise.all([
     profileRead,
     listsRead,
     featuresRead,
     standingRead,
+    organizationsRead,
   ]);
 
   // Purchases are possible only when the API deployment has Stripe on; the
@@ -347,6 +357,13 @@ export default async function AccountPage({
         </div>
       </section>
 
+      {acting && (
+        <p className="acting-line" role="status">
+          You are acting as <Link href={`/account/organizations/${acting.id}`}>{acting.name}</Link> on the public graph. This page is
+          your own account, shown as you.
+        </p>
+      )}
+
       <nav className="acct-nav" aria-label="On this page">
         <a href="#owls">Owls</a>
         {prizesOn && prizeClaims.length > 0 && <a href="#prizes">Prizes</a>}
@@ -354,6 +371,7 @@ export default async function AccountPage({
         <a href="#usage">Usage</a>
         <a href="#keys">API keys</a>
         <a href="#contributions">Contributions</a>
+        {!membersOnly() && <a href="#organizations">Organizations</a>}
       </nav>
 
       {/* ------------------------------------------------ owls */}
@@ -683,6 +701,45 @@ export default async function AccountPage({
       </section>
 
       {/* ------------------------------------------------ contributor half */}
+      {!membersOnly() && (
+        <section className="acct-section" id="organizations">
+          <div className="acct-head">
+            <h2>Organizations</h2>
+            <Link className="acct-note" href="/account/organizations">
+              All of them, and making one →
+            </Link>
+          </div>
+          {orgs.length === 0 ? (
+            <p className="acct-prose acct-quiet">
+              You belong to no organization. An organization has owls of its own, and its members act as it with the pages you use as
+              yourself. <Link href="/account/organizations">Make one</Link>.
+            </p>
+          ) : (
+            orgs.map((o) => {
+              const mayAct = o.role === "admin" || (o.permissions ?? []).length > 0;
+              const on = acting?.id === o.id;
+              return (
+                <div key={o.id} className="acct-line">
+                  <div>
+                    <Link href={`/account/organizations/${o.id}`}>{o.name}</Link>
+                    <span className="acct-detail">{o.role === "admin" ? "admin" : (o.permissions ?? []).join(", ") || "member"}</span>
+                  </div>
+                  {mayAct && (
+                    <form action={switchActingAction}>
+                      <input type="hidden" name="organization_id" value={on ? "" : o.id} />
+                      <input type="hidden" name="return_to" value="/account#organizations" />
+                      <button type="submit" className="linklike">
+                        {on ? "acting as it · act as yourself" : "act as it"}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </section>
+      )}
+
       <section className="acct-section" id="contributions">
         <div className="acct-head">
           <h2>Contributions</h2>

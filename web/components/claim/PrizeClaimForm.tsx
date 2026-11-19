@@ -1,5 +1,7 @@
 "use client";
 
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
+
 import { useState } from "react";
 import Link from "next/link";
 import type { BountySummary, FormalizationSummary } from "@/lib/types";
@@ -335,6 +337,7 @@ export function PrizeClaimForm({
         <p>{PRIZE_TAX_SANCTIONS_NOTICE}</p>
       </div>
 
+      <ActingLine permission={null} ownWhy="the prize rules name natural persons, so a prize is filed by a person for now." />
       <div className="contribute-actions">
         <button className="signin-button" type="submit" disabled={status.kind === "sending"}>
           {status.kind === "sending" ? "Filing…" : "File the claim"}

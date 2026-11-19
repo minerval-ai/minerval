@@ -909,19 +909,22 @@ Each phase is one pull request or a few, and leaves things working.
    start, pause and check now, as built. Bearer keys still work beside it: a deployment that has a
    connection uses it, and one that does not falls back to the keys in
    `.env`.
-3. **Acting as the organization.** Built so far: the permissions list and
+3. **Acting as the organization.** Built: the permissions list and
    `organization_grants`, with `deployment_grants` moved into it and a
    deployment's `act` split; granting and withdrawing for members and
    deployments; one route map for members and deployments
    (`src/server/organization-routes.ts`), with its test; members acting
-   under their grants. Still to come: allowances; the switch,
-   the header and the submit lines, and turned-off acts with their reason
-   across the public site; the Assistant acting for the organization,
+   under their grants; the switch (`web/lib/acting-as.ts`, a cookie checked
+   against the person's organizations on every request), the header's sign,
+   each form's line saying who it is sent as, and acts turned off with their
+   reason across the public site; the organization's pages redrawn in the
+   public site's style as management only, with Activity in place of Public
+   acts and its forms removed, and the account page's section; and no free
+   owls for an organization, which the free tier had been granting it.
+   Still to come: allowances; the Assistant acting for the organization,
    charged under `spend`; credentials made for an organization; the
-   organization's log saying how each act was made. The organization's
-   pages redrawn in the public site's style as management only, with
-   Activity in place of Public acts and its forms removed, and the
-   account page's section. Prizes for organizations: the prize rules
+   organization's log saying how each act was made; and prizes for
+   organizations: the prize rules
    ([prizes.md](prizes.md), "What a winner must do") name natural persons
    today, so this needs a new version of the published rules, with an
    entity's tax form (a W-9, or a W-8BEN-E outside the United States) and

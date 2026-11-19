@@ -1,5 +1,7 @@
 "use client";
 
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OwlMark } from "../OwlMark";
@@ -26,6 +28,7 @@ export function OrderAssessment({
   variant: "unassessed" | "reassess";
 }) {
   const router = useRouter();
+  const blocked = useActingBlocked("spend");
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [order, setOrder] = useState<OrderView | null>(null);
   const [busy, setBusy] = useState(false);
@@ -148,11 +151,12 @@ export function OrderAssessment({
 
   return (
     <div className="order-line">
+      <ActingLine permission="spend" />
       {variant === "unassessed" ? (
         <button
           className="order-button"
           onClick={place}
-          disabled={busy}
+          disabled={busy || blocked}
           // What the order does and costs, on the button rather than
           // under it: the button already says "up to 2 owls".
           title={
@@ -171,7 +175,7 @@ export function OrderAssessment({
           )}
         </button>
       ) : (
-        <button className="linklike" onClick={place} disabled={busy}>
+        <button className="linklike" onClick={place} disabled={busy || blocked}>
           {busy ? "placing order…" : "order a fresh assessment (up to 2 owls)"}
         </button>
       )}

@@ -1,5 +1,7 @@
 "use client";
 
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
+
 import { useActionState } from "react";
 import { topUpGrantAction, type JobActionState } from "@/app/account/actions";
 
@@ -10,6 +12,7 @@ export function TopUpGrant({
   grantId: string;
   paused: boolean;
 }) {
+  const blocked = useActingBlocked("spend");
   const [state, formAction, pending] = useActionState<JobActionState, FormData>(
     topUpGrantAction,
     {}
@@ -17,6 +20,7 @@ export function TopUpGrant({
 
   return (
     <div>
+      <ActingLine permission="spend" />
       <form action={formAction} className="key-create">
         <input type="hidden" name="grant_id" value={grantId} />
         <input
@@ -29,7 +33,7 @@ export function TopUpGrant({
           required
           aria-label="owls to add"
         />
-        <button type="submit" disabled={pending}>
+        <button type="submit" disabled={pending || blocked}>
           {pending ? "adding…" : paused ? "Top up & resume" : "Top up"}
         </button>
       </form>

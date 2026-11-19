@@ -47,7 +47,7 @@ export default async function JobPage({
 
   let job: BudgetJobView;
   try {
-    job = await getBudgetJob(session.externalId, id);
+    job = await getBudgetJob(session.externalId, id, "self");
   } catch {
     notFound();
   }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import styles from "./request.module.css";
+import { ActingLine, useActing, useActingBlocked } from "@/components/account/ActingAs";
 
 // Taking a request up from its page (docs/outward-acts.md, "Taking up a
 // request in public"): one statement on the record, under the account's
@@ -10,6 +11,8 @@ export function TakeUp({ requestId }: { requestId: string }) {
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const acting = useActing();
+  const blocked = useActingBlocked("take_up");
 
   const takeUp = async () => {
     setBusy(true);
@@ -22,7 +25,7 @@ export function TakeUp({ requestId }: { requestId: string }) {
         return;
       }
       if (!res.ok) setError(data.error ?? "That did not go through; please try again.");
-      else setSaid(data.already ? data.in_words : "It is on the record: your account is taking this request up.");
+      else setSaid(data.already ? data.in_words : `It is on the record: ${acting ? acting.name : "your account"} is taking this request up.`);
     } catch {
       setError("That did not go through; please try again.");
     } finally {
@@ -39,7 +42,8 @@ export function TakeUp({ requestId }: { requestId: string }) {
   }
   return (
     <>
-      <button type="button" className={styles.sideButton} onClick={takeUp} disabled={busy}>
+      <ActingLine permission="take_up" />
+      <button type="button" className={styles.sideButton} onClick={takeUp} disabled={busy || blocked}>
         {busy ? "Saying so…" : "Take it up"}
       </button>
       {error && (

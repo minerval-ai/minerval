@@ -1,5 +1,7 @@
 "use client";
 
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
+
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
@@ -67,6 +69,7 @@ export function GrantmakerConversation({
   children?: ReactNode;
 }) {
   const router = useRouter();
+  const blocked = useActingBlocked("spend");
   const [convo, setConvo] = useState<ConversationView | null>(null);
   const [loading, setLoading] = useState(!!conversationId);
   const [draft, setDraft] = useState(initialDraft);
@@ -305,12 +308,13 @@ export function GrantmakerConversation({
                 aria-label="Your message to the Grantmaker"
                 disabled={busy || loading}
               />
+              <ActingLine permission="spend" />
               <div className="ask-composer-row">
                 <span className="ask-model">Grantmaker</span>
                 <button
                   className="order-button"
                   onClick={() => void send()}
-                  disabled={busy || loading || !draft.trim()}
+                  disabled={busy || loading || blocked || !draft.trim()}
                 >
                   {busy ? "Thinking…" : "Send"}
                 </button>

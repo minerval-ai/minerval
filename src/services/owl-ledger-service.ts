@@ -356,13 +356,20 @@ export async function refundOwls(input: {
 }
 
 /**
- * Ensure the free-tier grants are on the ledger: the one-time signup grant
- * and this month's trickle. Idempotent via unique keys, so it's safe (and
+ * Ensure the free-tier grants are on a person's ledger: the one-time signup
+ * grant and this month's trickle. An organization or the platform gets none. Idempotent via unique keys, so it's safe (and
  * cheap) to call from every entitlement read — which is what makes the
  * monthly grant "lazy": it lands the first time the user shows up in a month.
  */
 export async function ensureFreeGrants(userId: string): Promise<void> {
   const config = loadConfig();
+  if (config.signupGrantOwls <= 0 && config.monthlyGrantOwls <= 0) return;
+  // The free tier is a person's. An organization is made for nothing and
+  // given nothing (docs/organizations.md, "Making one"): granting it owls
+  // would let anyone mint them by making organizations, which its members
+  // can then spend as it. The platform account is funded by the operator.
+  const [account] = await rawQuery<{ kind: string }>(`SELECT kind FROM contributors WHERE id = $1`, [userId]);
+  if (account && account.kind !== "person") return;
   if (config.signupGrantOwls > 0) {
     await recordOwlEntry({
       userId,

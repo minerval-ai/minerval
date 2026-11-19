@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useViewerSession } from "../useViewerSession";
+import { ActingLine, useActing, useActingBlocked } from "@/components/account/ActingAs";
 
 // The contribution entry point on a claim page (#174). Visible to every
 // reader — the prompt is also the advertisement that the page is challengeable
@@ -74,6 +75,8 @@ function isTypeValue(v: string | null): v is TypeValue {
 export function Contribute({ claimId }: { claimId: string }) {
   const [open, setOpen] = useState(false);
   const session = useViewerSession();
+  const acting = useActing();
+  const blocked = useActingBlocked("speak");
   const [type, setType] = useState<TypeValue>("challenge");
   const [prefill, setPrefill] = useState("");
   const [status, setStatus] = useState<SubmitState>({ kind: "idle" });
@@ -310,16 +313,17 @@ export function Contribute({ claimId }: { claimId: string }) {
             placeholder={"https://…"}
           />
 
+          <ActingLine permission="speak" />
           <div className="contribute-actions">
             <button
               className="signin-button"
               type="submit"
-              disabled={status.kind === "sending"}
+              disabled={status.kind === "sending" || blocked}
             >
               {status.kind === "sending" ? "Submitting…" : "Submit for review"}
             </button>
             <span className="contribute-hint" style={{ margin: 0 }}>
-              contributing as {session.name ?? "you"}
+              contributing as {acting?.name ?? session.name ?? "you"}
             </span>
           </div>
           <p className="contribute-hint">

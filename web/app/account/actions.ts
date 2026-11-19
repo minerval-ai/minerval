@@ -109,7 +109,7 @@ export async function topUpJobAction(
     return { error: "Enter how many owls to add." };
   }
   try {
-    await topUpBudgetJob(session.externalId, jobId, owls);
+    await topUpBudgetJob(session.externalId, jobId, owls, "self");
   } catch (err) {
     return {
       error:
@@ -126,7 +126,7 @@ export async function cancelJobAction(formData: FormData): Promise<void> {
   const jobId = String(formData.get("job_id") ?? "");
   if (!jobId) return;
   try {
-    await cancelBudgetJob(session.externalId, jobId);
+    await cancelBudgetJob(session.externalId, jobId, "self");
   } catch (err) {
     console.error("[account] job cancel failed:", err);
   }

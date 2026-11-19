@@ -1,5 +1,7 @@
 "use client";
 
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
+
 import { useState } from "react";
 import { OwlMark } from "../OwlMark";
 import { GettingOwls } from "../GettingOwls";
@@ -19,6 +21,7 @@ const PRESETS = [5, 20, 100];
 // says so instead (#1095).
 // `compact` is the left rail's form, for a claim with no subclaims yet.
 export function FundDecomposition({ claimId, compact = false }: { claimId: string; compact?: boolean }) {
+  const blocked = useActingBlocked("spend");
   const [open, setOpen] = useState(false);
   const [budget, setBudget] = useState(PRESETS[0]!);
   const [custom, setCustom] = useState(false);
@@ -127,8 +130,9 @@ export function FundDecomposition({ claimId, compact = false }: { claimId: strin
           />
         )}
       </div>
+      <ActingLine permission="spend" />
       <div className="key-create">
-        <button onClick={fund} disabled={busy || !valid}>
+        <button onClick={fund} disabled={busy || blocked || !valid}>
           {busy ? (
             "funding…"
           ) : (

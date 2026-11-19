@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { RequestItem } from "@/lib/types";
 import { OwlMark } from "@/components/OwlMark";
 import styles from "./request.module.css";
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
 
 // The work on a request is a row on the action ledger (docs/allocation.md,
 // "Requests on the ledger"): a scoping pass while it has no budget, then the
@@ -17,6 +18,7 @@ export function RequestFunding({ r }: { r: RequestItem }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [commissioned, setCommissioned] = useState((ledger?.backing_usd ?? 0) > 0);
+  const blocked = useActingBlocked("spend");
   if (!ledger) return null;
 
   const running = ledger.status === "running";
@@ -74,6 +76,7 @@ export function RequestFunding({ r }: { r: RequestItem }) {
             actually costs and the rest comes back, as does everything if the request closes first. Funding buys the
             work, never its result.
           </p>
+          <ActingLine permission="spend" />
           <div className="key-create">
             <input
               type="number"
@@ -83,7 +86,7 @@ export function RequestFunding({ r }: { r: RequestItem }) {
               onChange={(e) => setOwls(Number(e.target.value))}
               aria-label="budget in owls for this work"
             />
-            <button onClick={fund} disabled={busy || !(owls > 0)}>
+            <button onClick={fund} disabled={busy || blocked || !(owls > 0)}>
               {busy ? "commissioning…" : <>Commission it with <OwlMark size={14} className="owl-mark" />{owls}</>}
             </button>
           </div>

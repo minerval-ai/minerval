@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useViewerSession } from "../useViewerSession";
+import { ActingLine, useActing, useActingBlocked } from "@/components/account/ActingAs";
 
 // Stating a view on a node (constitution §4). Visible to every reader, with
 // the act itself behind sign-in, since a statement is published under its
@@ -45,6 +46,8 @@ type SubmitState =
 export function StateView({ claimId, kind }: { claimId: string; kind: Kind }) {
   const [open, setOpen] = useState(false);
   const session = useViewerSession();
+  const acting = useActing();
+  const blocked = useActingBlocked("speak");
   const [stance, setStance] = useState(STANCES[kind][0]!.value);
   const [figureForm, setFigureForm] = useState<(typeof FIGURE_FORMS)[number]["value"]>("point");
   const [noStake, setNoStake] = useState(false);
@@ -59,7 +62,7 @@ export function StateView({ claimId, kind }: { claimId: string; kind: Kind }) {
   }, []);
 
   const noun = kind === "quantity" ? "quantity" : kind === "question" ? "question" : "claim";
-  const name = session.kind === "signed-in" ? (session.name ?? "this account") : "this account";
+  const name = acting?.name ?? (session.kind === "signed-in" ? (session.name ?? "this account") : "this account");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -313,8 +316,9 @@ export function StateView({ claimId, kind }: { claimId: string; kind: Kind }) {
             individuals.
           </p>
 
+          <ActingLine permission="speak" />
           <div className="contribute-actions">
-            <button className="signin-button" type="submit" disabled={status.kind === "sending"}>
+            <button className="signin-button" type="submit" disabled={status.kind === "sending" || blocked}>
               {status.kind === "sending" ? "Submitting…" : "Submit statement for review"}
             </button>
             <span className="contribute-hint" style={{ margin: 0 }}>

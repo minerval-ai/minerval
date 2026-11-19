@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useViewerSession } from "./useViewerSession";
 import { LabelChoice } from "./admin/LabelChoice";
 import type { MyLabels } from "../lib/admin-api";
+import { ActingLine, useActing, useActingBlocked } from "@/components/account/ActingAs";
 
 // The claims-index contribution entry (#174): the "I know something the graph
 // is missing" path. Challenges and evidence about an existing claim belong on
@@ -37,6 +38,8 @@ export function ProposeClaim({
 }) {
   const [open, setOpen] = useState(false);
   const session = useViewerSession();
+  const acting = useActing();
+  const blocked = useActingBlocked("propose");
   const [prefill, setPrefill] = useState("");
   const [status, setStatus] = useState<SubmitState>({ kind: "idle" });
   // Where the sent proposal stands, polled so that once review accepts it the
@@ -268,16 +271,17 @@ export function ProposeClaim({
             where each is reviewed on its merits.
           </p>
 
+          <ActingLine permission="propose" />
           <div className="contribute-actions">
             <button
               className="signin-button"
               type="submit"
-              disabled={status.kind === "sending"}
+              disabled={status.kind === "sending" || blocked}
             >
               {status.kind === "sending" ? "Submitting…" : "Submit for review"}
             </button>
             <span className="contribute-hint" style={{ margin: 0 }}>
-              contributing as {session.name ?? "you"}
+              contributing as {acting?.name ?? session.name ?? "you"}
             </span>
           </div>
           {status.kind === "error" && (

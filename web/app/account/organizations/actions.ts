@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "../../../auth";
 import { AccountApiError } from "../../../lib/account-api";
 import type { FormState } from "../../../components/admin/ActionForm";
-import { DEPLOYMENT_GRANTS } from "../../../lib/organization-permissions";
+import { DEPLOYMENT_GRANTS, MEMBER_PERMISSIONS, type OrganizationPermission } from "../../../lib/organization-permissions";
 import {
   acceptConversion,
   acceptInvitation,
@@ -16,12 +16,9 @@ import {
   makeInvitation,
   approveConnectRequest,
   denyConnectRequest,
-  organizationAddToMandate,
-  organizationContinueConversation,
-  organizationFundConversation,
-  organizationStartConversation,
+  grantPermission,
   organizationCheckout,
-  organizationFundClaim,
+  withdrawGrant,
   removeMember,
   renameOrganization,
   revokeOldKey,
@@ -194,7 +191,7 @@ export async function acceptConversionAction(_prev: FormState, form: FormData): 
   redirect(page(id));
 }
 
-// ---- as the organization ----
+// ---- buying owls for the organization (admins, and members granted buy) ----
 
 export async function buyOwlsAction(_prev: FormState, form: FormData): Promise<FormState> {
   const who = await me();
@@ -208,89 +205,42 @@ export async function buyOwlsAction(_prev: FormState, form: FormData): Promise<F
   redirect(url);
 }
 
-function amount(form: FormData): number | null {
-  const n = Number(field(form, "owls"));
-  return Number.isFinite(n) && n > 0 ? n : null;
-}
+// ---- what each member and deployment may do as the organization ----
 
-export async function addToMandateAction(_prev: FormState, form: FormData): Promise<FormState> {
+const PERMISSIONS: readonly string[] = [...MEMBER_PERMISSIONS, ...DEPLOYMENT_GRANTS];
+
+export async function grantAction(_prev: FormState, form: FormData): Promise<FormState> {
   const who = await me();
   if (!who) return { error: "Not signed in." };
   const id = field(form, "organization_id");
-  const owls = amount(form);
-  if (owls === null) return { error: "Say how many owls." };
+  const permission = field(form, "permission");
+  if (!PERMISSIONS.includes(permission)) return { error: "Choose a permission." };
+  const accountId = field(form, "account_id");
+  const deploymentId = field(form, "deployment_id");
   try {
-    await organizationAddToMandate(who, id, field(form, "mandate_id"), owls);
+    await grantPermission(who, id, {
+      permission: permission as OrganizationPermission,
+      ...(accountId ? { account_id: accountId } : {}),
+      ...(deploymentId ? { deployment_id: deploymentId } : {}),
+    });
   } catch (err) {
-    return said(err, "The owls could not be added.");
+    return said(err, "The permission could not be given.");
   }
   revalidatePath(page(id));
-  return { notice: `Added ${owls} owls from the organization.` };
+  return { notice: `Given ${permission}.` };
 }
 
-export async function fundClaimAction(_prev: FormState, form: FormData): Promise<FormState> {
+export async function withdrawGrantAction(_prev: FormState, form: FormData): Promise<FormState> {
   const who = await me();
   if (!who) return { error: "Not signed in." };
   const id = field(form, "organization_id");
-  const owls = amount(form);
-  if (owls === null) return { error: "Say how many owls." };
-  const raw = field(form, "claim");
-  const claim = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? raw;
   try {
-    await organizationFundClaim(who, id, claim, owls);
+    await withdrawGrant(who, id, field(form, "grant_id"));
   } catch (err) {
-    return said(err, "The assessment could not be paid for.");
+    return said(err, "The permission could not be withdrawn.");
   }
   revalidatePath(page(id));
-  return { notice: `Paid ${owls} owls from the organization toward the claim's next assessment.` };
-}
-
-// ---- the organization's public mandates, in conversation with the public Grantmaker ----
-
-export async function startMandateAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const who = await me();
-  if (!who) return { error: "Not signed in." };
-  const id = field(form, "organization_id");
-  const message = field(form, "message");
-  if (!message) return { error: "Write what the mandate is for." };
-  let conversation: string;
-  try {
-    conversation = (await organizationStartConversation(who, id, message)).id;
-  } catch (err) {
-    return said(err, "The conversation could not be started.");
-  }
-  redirect(`${page(id)}?tab=acts&conversation=${conversation}`);
-}
-
-export async function continueMandateAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const who = await me();
-  if (!who) return { error: "Not signed in." };
-  const id = field(form, "organization_id");
-  const conversation = field(form, "conversation_id");
-  const message = field(form, "message");
-  if (!message) return { error: "Write a message." };
-  try {
-    await organizationContinueConversation(who, id, conversation, message);
-  } catch (err) {
-    return said(err, "The message could not be sent.");
-  }
-  revalidatePath(page(id));
-  return { notice: "Sent. The Grantmaker's reply appears here when it has written it; reload to see it." };
-}
-
-export async function fundMandateAction(_prev: FormState, form: FormData): Promise<FormState> {
-  const who = await me();
-  if (!who) return { error: "Not signed in." };
-  const id = field(form, "organization_id");
-  const owls = amount(form);
-  if (owls === null) return { error: "Say how many owls." };
-  try {
-    await organizationFundConversation(who, id, field(form, "conversation_id"), owls, field(form, "acknowledge") === "1");
-  } catch (err) {
-    return said(err, "The mandate could not be funded.");
-  }
-  revalidatePath(page(id));
-  return { notice: `Funded with ${owls} owls from the organization.` };
+  return { notice: "Withdrawn." };
 }
 
 // ---- connecting a deployment ----

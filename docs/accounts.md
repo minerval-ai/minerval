@@ -90,6 +90,15 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   its log under the person. A key or a token never acts as an
   organization, and the web tier cannot name one in `x-acting-user`
   (`ORGANIZATION_NOT_ACTABLE`).
+- **The switch.** On minerval.ai a person switches to acting as an
+  organization from their account or the organization's page. The web tier
+  keeps the choice in a cookie, checks it against the person's
+  organizations on every request (`web/lib/acting-as.ts`), and sends the
+  header on the acts of the public graph's pages; the header shows the
+  organization's name, and each form says who it is sent as. The person's
+  own account pages are always theirs.
+- **No free owls.** The free tier's signup and monthly grants are a
+  person's; an organization and the platform account get none.
 - **A shared login becomes one in place** (`POST /account-conversion`,
   accepted at `POST /account-conversions/:id/accept` by the person it
   names as first admin). The row keeps its id, so its record, pages, owls

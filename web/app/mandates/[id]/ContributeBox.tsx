@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { OwlMark } from "../../../components/OwlMark";
+import { ActingLine, useActingBlocked } from "@/components/account/ActingAs";
 
 // Putting owls behind someone's mandate: one number, one action. The owls
 // escrow into the mandate's budget; whatever the work never spends comes
@@ -19,6 +20,7 @@ export function ContributeBox({
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const blocked = useActingBlocked("spend");
 
   if (!signedIn) {
     return (
@@ -74,7 +76,8 @@ export function ContributeBox({
             />
             owls
           </span>
-          <button className="order-button" onClick={contribute} disabled={busy}>
+          <ActingLine permission="spend" />
+          <button className="order-button" onClick={contribute} disabled={busy || blocked}>
             {busy ? "escrowing…" : "Back this mandate"}
           </button>
           <span className="order-caption">
