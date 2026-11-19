@@ -499,23 +499,6 @@ async function gatesOverview(): Promise<SetupChecklist["gates"]> {
 const RELEASED_OUTSIDE_COUNT_REASON =
   "The setup checklist tells an administrator whether pages are released outside under a signing key that is not registered, and the key signs pages at every label.";
 
-/** The grants this deployment's own settings need from its connection, each with why. */
-function neededGrants(config: {
-  mirrorFeedUrl?: string;
-  publicGraphPrice?: string;
-  reads?: string;
-  usageReportDir?: string;
-  publishSigningKey?: string;
-}): Array<{ grant: string; why: string }> {
-  const out: Array<{ grant: string; why: string }> = [];
-  if (config.mirrorFeedUrl) out.push({ grant: "read_feed", why: "A mirror of the public graph is followed (MIRROR_FEED_URL)." });
-  if (config.reads === "members" && config.publicGraphPrice !== "flat" && !config.usageReportDir) {
-    out.push({ grant: "report_usage", why: "On the metered price, each day's usage report is sent privately to Minerval." });
-  }
-  if (config.publishSigningKey) out.push({ grant: "publish", why: "Pages released outside are signed to be sent (PUBLISH_SIGNING_KEY)." });
-  return out;
-}
-
 /** Where keeping public versions current stands, and whether the signing key is registered from here, for the checklist. */
 async function publicGraphState(config: {
   publicGraphApiUrl?: string;
@@ -555,7 +538,7 @@ async function publicGraphState(config: {
           organization_name: connection.organizationName,
           grants: connection.grants,
           problem: connection.lastError,
-          missing_grants: connection.state === "connected" ? neededGrants(config).filter((n) => !connection.grants.includes(n.grant as never)) : [],
+          missing_grants: connection.state === "connected" ? (await import("./public-graph-connection.js")).neededGrants(config).filter((n) => !connection.grants.includes(n.grant as never)) : [],
         }
       : null,
     keep_public_current: { setting: state.setting, sends: state.sends, in_words: state.in_words },

@@ -939,12 +939,18 @@ Each phase is one pull request or a few, and leaves things working.
    entity's tax form (a W-9, or a W-8BEN-E outside the United States) and
    the bar on a funder applied to the organization and to the member who
    files.
-4. **Connecting, revised.** The drawer's two questions with their answers
-   filled, hosting chosen in the app with `DEPLOYMENT_HOSTING` as the
-   operator's override, no grants asked for by the deployment, the
-   address it states, the round trip back to Overview and the drawer's
-   own checking, making an organization on the approval page, the links
-   both ways, and refusals in words with who fixes them.
+4. **Connecting, revised** (built). The drawer's two questions with their
+   answers filled, hosting chosen in the app with `DEPLOYMENT_HOSTING` as
+   the operator's override (kept on `public_graph_connection.hosting`, and
+   stated on packages too: `statedHosting` in `outbound-service.ts`); no
+   grants asked for by the deployment, which sends what its settings need
+   and why (`neededGrants` in `public-graph-connection.ts`, which the setup
+   checklist reads too), the admin choosing from every grant with an
+   allowance on spend; the address it states (`deployments.address`, from
+   `PUBLIC_WEB_BASE_URL`), the round trip back to Overview (`?check=1`,
+   which asks at once) and the drawer's own checking every five seconds;
+   making an organization on the approval page, and a member shown its
+   admins; the links both ways; and refusals in words with who fixes them.
 5. **Control.** Withdrawing grants and retiring deployments from
    minerval.ai, replacing the connection key, the owl allowance, connecting
    by hand, submitting carried-out page packages and uploading usage

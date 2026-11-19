@@ -135,10 +135,10 @@ export default async function OrganizationPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; approved?: string }>;
 }) {
   const { id } = await params;
-  const { tab: askedTab } = await searchParams;
+  const { tab: askedTab, approved } = await searchParams;
   const session = await auth();
   if (!session?.externalId) redirect("/signin");
   const me = session.externalId;
@@ -397,6 +397,12 @@ export default async function OrganizationPage({
               <h2>Deployments</h2>
               <span className="acct-note">Private deployments that act as the organization with their own keys, each under its own grants</span>
             </div>
+            {approved === "1" && (
+              <p className="acct-prose acct-measure" role="status">
+                Approved. The deployment learns it the next time it asks, within seconds where its drawer is open; its Public graph
+                page then shows it connected.
+              </p>
+            )}
             {deployments.length === 0 ? (
               <div className="acct-prose acct-measure">
                 <p>
@@ -692,6 +698,15 @@ function DeploymentBlock({
           <b>{d.name}</b>
           <span className="acct-detail">
             {d.hosting_words} (its statement) · key <code>{d.key_id.slice(0, 8)}</code>
+            {d.address && !d.retired_at && (
+              <>
+                {" "}
+                · <a href={`${d.address}/admin/outside`}>open it</a>{" "}
+                <span title="Its own address, as it stated when it connected. Only its own members can sign in there.">
+                  ({d.address.replace(/^https?:\/\//, "")})
+                </span>
+              </>
+            )}
           </span>
         </div>
         <span className="acct-status">{d.retired_at ? `retired ${dateish(d.retired_at)}` : d.last_write_at ? `last wrote ${dateish(d.last_write_at)}` : "connected"}</span>

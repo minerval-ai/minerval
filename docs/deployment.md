@@ -309,7 +309,7 @@ output_usd_per_mtok = 1.5
 
 | Name | What it sets | Environment variable |
 |---|---|---|
-| `hosting` | Where the deployment runs: `"own_machines"`, `"minerval"` or `"third_party"`. It is stated in every package of a page released outside, and no package is built until it is set ([published-pages.md](published-pages.md)). | `DEPLOYMENT_HOSTING` |
+| `hosting` | Where the deployment runs: `"own_machines"`, `"minerval"` or `"third_party"`. Optional: an administrator answers it when connecting to minerval.ai, and this fixes the answer, shown fixed there. It is stated in every package of a page released outside, and no package is built until one of the two says ([published-pages.md](published-pages.md)). | `DEPLOYMENT_HOSTING` |
 
 The signing key is a secret (above).
 

@@ -33,6 +33,8 @@ export interface Connection {
   verificationUri: string | null;
   codeExpiresAt: Date | null;
   askedGrants: DeploymentGrant[];
+  /** Where it runs, as the administrator who connected it answered. */
+  hosting: Hosting | null;
   deploymentId: string | null;
   deploymentName: string | null;
   organizationId: string | null;
@@ -43,6 +45,12 @@ export interface Connection {
   connectedAt: Date | null;
   lastCheckedAt: Date | null;
   lastError: string | null;
+}
+
+export const HOSTINGS = ["own_machines", "third_party", "minerval"] as const;
+export type Hosting = (typeof HOSTINGS)[number];
+export function isHosting(value: unknown): value is Hosting {
+  return typeof value === "string" && (HOSTINGS as readonly string[]).includes(value);
 }
 
 const CACHE_MS = 5_000;
@@ -58,7 +66,7 @@ export async function readConnection(): Promise<Connection | null> {
   const [row] = await withSystemClearance(REASON, () =>
     rawQuery<{
       api_url: string; state: Connection["state"]; private_key_pem: string; public_key: string; key_id: string;
-      code: string | null; verification_uri: string | null; code_expires_at: Date | null; asked_grants: DeploymentGrant[];
+      code: string | null; verification_uri: string | null; code_expires_at: Date | null; asked_grants: DeploymentGrant[]; hosting: string | null;
       deployment_id: string | null; deployment_name: string | null; organization_id: string | null; organization_name: string | null;
       grants: DeploymentGrant[]; started_by: string | null; started_at: Date; connected_at: Date | null; last_checked_at: Date | null;
       last_error: string | null;
@@ -75,6 +83,7 @@ export async function readConnection(): Promise<Connection | null> {
         verificationUri: row.verification_uri,
         codeExpiresAt: row.code_expires_at,
         askedGrants: row.asked_grants,
+        hosting: isHosting(row.hosting) ? row.hosting : null,
         deploymentId: row.deployment_id,
         deploymentName: row.deployment_name,
         organizationId: row.organization_id,

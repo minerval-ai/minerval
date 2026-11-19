@@ -69,6 +69,7 @@ import { DEPLOYMENT_GRANTS, type DeploymentGrant } from "../db/schema.js";
 import {
   ConnectionError,
   checkConnect,
+  connectWith,
   connectionStatus,
   disconnect,
   refreshConnection,
@@ -121,29 +122,34 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
         "expired; or connected, with the organization, the deployment's name there and the grants it holds (read_feed, report_usage, publish, spend, speak, propose, take_up)",
       description:
         "A waiting connection is checked with minerval.ai when this is read, and a connected one read again now and then, so a withdrawn grant " +
-        "is seen here. The connection key's private half is never returned.",
+        "is seen here. The connection key's private half is never returned. `connect_with` is what connecting would send: the name, " +
+        "where it runs (fixed where the operator set DEPLOYMENT_HOSTING), the grants its settings need and why, and its own address.",
     },
     preHandler: signedIn,
-    handler: async (_request, reply) => reply.send({ connection: await connectionStatus() }),
+    handler: async (_request, reply) => reply.send({ connection: await connectionStatus(), connect_with: await connectWith() }),
   });
 
-  app.post<{ Body: { name: string; grants: DeploymentGrant[]; api_url?: string; replace?: boolean } }>("/outside/connection", {
+  app.post<{ Body: { name: string; hosting?: string; api_url?: string; replace?: boolean; grants?: DeploymentGrant[] } }>("/outside/connection", {
     schema: {
       tags: TAG,
       summary:
-        "Connect this deployment to minerval.ai (administrators, from a signed-in session): make a new connection key, ask for the grants named, " +
-        "and get a code and a link for an admin of the organization to approve",
+        "Connect this deployment to minerval.ai (administrators, from a signed-in session): make a new connection key, say what to call it " +
+        "and where it runs, and get a code and a link for an admin of the organization to approve",
       description:
-        "The key is made here and kept in this deployment's database, the owner's alone; it never leaves the machine. Connecting a deployment " +
-        "that is connected already needs `replace`, and a new approval. Recorded on the log of acts on the public graph.",
+        "The key is made here and kept in this deployment's database, the owner's alone; it never leaves the machine. It asks for no grants: " +
+        "it sends which its settings need, and why, and the organization's admin chooses. `hosting` is own_machines, third_party or minerval; " +
+        "where the operator set DEPLOYMENT_HOSTING, that is used. Connecting a deployment that is connected already needs `replace`, and a " +
+        "new approval. Recorded on the log of acts on the public graph.",
       body: {
         type: "object",
-        required: ["name", "grants"],
+        required: ["name"],
         properties: {
           name: { type: "string", minLength: 1, maxLength: 120 },
-          grants: { type: "array", minItems: 1, items: { type: "string", enum: [...DEPLOYMENT_GRANTS] } },
+          hosting: { type: "string", enum: ["own_machines", "third_party", "minerval"] },
           api_url: { type: "string", maxLength: 500 },
           replace: { type: "boolean" },
+          // Sent by a page built before the deployment stopped asking for grants; read as nothing.
+          grants: { type: "array", items: { type: "string", enum: [...DEPLOYMENT_GRANTS] } },
         },
       },
     },
@@ -153,7 +159,7 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(201).send({
           connection: await startConnect({
             name: request.body.name,
-            grants: request.body.grants,
+            hosting: request.body.hosting ?? null,
             apiUrl: request.body.api_url ?? null,
             replace: request.body.replace === true,
             actor: { actor: await actorOf(request) },

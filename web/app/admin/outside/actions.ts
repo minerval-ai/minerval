@@ -5,7 +5,6 @@ import { redirect } from "next/navigation";
 import { auth } from "../../../auth";
 import type { FormState } from "../../../components/admin/ActionForm";
 import { AccountApiError, createAssessmentOrder } from "../../../lib/account-api";
-import { DEPLOYMENT_GRANTS } from "../../../lib/organization-permissions";
 import { offerMandateOutside } from "../../../lib/inside-api";
 import {
   adoptPublicRequest,
@@ -21,7 +20,7 @@ import {
   declinePublicRequest,
   disconnectConnection,
   startConnection,
-  type DeploymentGrant,
+  type Hosting,
   fundPublicMandate,
   fundPublicNode,
   openPublicMandate,
@@ -193,18 +192,19 @@ export async function offerMandateOutsideAction(_previous: FormState, form: Form
 
 // ---- the connection to minerval.ai ----
 
-const GRANTS: readonly DeploymentGrant[] = DEPLOYMENT_GRANTS;
+const HOSTINGS: readonly Hosting[] = ["own_machines", "third_party", "minerval"];
 
 export async function connectAction(_prev: FormState, form: FormData): Promise<FormState> {
   const who = await actingUser();
   if (!who) return NOT_SIGNED_IN;
-  const grants = form.getAll("grant").map(String).filter((g): g is DeploymentGrant => (GRANTS as readonly string[]).includes(g));
-  if (grants.length === 0) return { error: "Ask for at least one grant." };
+  const name = String(form.get("name") ?? "").trim();
+  if (!name) return { error: "Say what to call this deployment. Your organization's admin can change it." };
+  const hosting = String(form.get("hosting") ?? "");
   const apiUrl = String(form.get("api_url") ?? "").trim();
   try {
     await startConnection(who, {
-      name: String(form.get("name") ?? "").trim(),
-      grants,
+      name,
+      ...(HOSTINGS.includes(hosting as Hosting) ? { hosting: hosting as Hosting } : {}),
       ...(apiUrl ? { api_url: apiUrl } : {}),
       ...(form.get("replace") === "1" ? { replace: true } : {}),
     });

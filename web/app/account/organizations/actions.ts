@@ -282,13 +282,40 @@ export async function approveConnectAction(_prev: FormState, form: FormData): Pr
   if (!who) return { error: "Not signed in." };
   const organizationId = field(form, "organization_id");
   const grants = form.getAll("grant").map(String).filter((g): g is DeploymentGrant => (DEPLOYMENT_GRANTS as readonly string[]).includes(g));
-  if (grants.length === 0) return { error: "Leave at least one grant ticked, or deny it." };
+  if (grants.length === 0) return { error: "Tick at least one thing it may do, or deny it." };
+  const allowanceText = field(form, "allowance_owls");
+  const allowance = allowanceText === "" ? null : Number(allowanceText);
+  if (allowance !== null && (!Number.isFinite(allowance) || allowance < 0)) return { error: "An allowance is a number of owls, zero or more, or empty for none." };
+  let returnTo: string | null = null;
   try {
-    await approveConnectRequest(who, field(form, "code"), organizationId, field(form, "name"), grants);
+    returnTo = (await approveConnectRequest(who, field(form, "code"), organizationId, field(form, "name"), grants, grants.includes("spend") ? allowance : null)).return_to ?? null;
   } catch (err) {
     return said(err, "The deployment could not be approved.");
   }
-  redirect(`${page(organizationId)}?tab=deployments`);
+  // Back to the deployment's own Overview, where it stated one, which checks
+  // at once and shows it connected; otherwise to the organization's
+  // Deployments tab. The address was shown on the page before approving.
+  if (returnTo && /^https?:\/\//.test(returnTo) && field(form, "go_back") !== "no") redirect(returnTo);
+  redirect(`${page(organizationId)}?tab=deployments&approved=1`);
+}
+
+/**
+ * Make an organization from the page that approves a deployment, for
+ * someone who admins none yet, and go on approving there with it chosen.
+ */
+export async function createOrganizationForConnectAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const name = field(form, "name");
+  if (!name) return { error: "Give the organization a name." };
+  const code = field(form, "code");
+  let id: string;
+  try {
+    id = (await createOrganization(who, name)).id;
+  } catch (err) {
+    return said(err, "The organization could not be made.");
+  }
+  redirect(`/connect?code=${encodeURIComponent(code)}&organization=${encodeURIComponent(id)}`);
 }
 
 export async function denyConnectAction(_prev: FormState, form: FormData): Promise<FormState> {

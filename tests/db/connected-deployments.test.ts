@@ -169,7 +169,7 @@ describe("connecting", () => {
     expect(logged!.actor_id).toBe(dana.id);
   });
 
-  it("is approved only by an admin of the organization, and only with what was asked", async () => {
+  it("is approved only by an admin of the organization, who chooses from every grant, not only what its settings need", async () => {
     const dana = await signIn("dana");
     const priya = await signIn("priya");
     const org = await makeOrganization(dana);
@@ -177,8 +177,85 @@ describe("connecting", () => {
     const code = await askToConnect(key, ["read_feed"]);
     const byStranger = await as(priya, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["read_feed"] } });
     expect(byStranger.json().code).toBe("ADMIN_REQUIRED");
-    const more = await as(dana, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["spend"] } });
-    expect(more.json().code).toBe("GRANT_NOT_ASKED");
+    const more = await as(dana, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["read_feed", "take_up"] } });
+    expect(more.statusCode, more.body).toBe(200);
+    // It stated no address, so there is nowhere to send the admin back to.
+    expect(more.json().return_to).toBeNull();
+    const learnt = (await signed(key, { url: `/deployments/connect/${code}` }).send()).json();
+    expect(learnt.grants).toEqual(["read_feed", "take_up"]);
+  });
+
+  it("says which grants its settings need and why, and where it is, which the admin is sent back to", async () => {
+    const dana = await signIn("dana");
+    const priya = await signIn("priya");
+    const org = await makeOrganization(dana);
+    const invite = await as(dana, { method: "POST", url: `/organizations/${org}/invitations`, payload: { role: "member" } });
+    await as(priya, { method: "POST", url: `/organization-invitations/${invite.json().token}/accept` });
+    const key = newKey();
+    const asked = await signed(key, {
+      method: "POST",
+      url: "/deployments/connect",
+      body: {
+        public_key: key.publicKey,
+        name: "Research",
+        hosting: "third_party",
+        needs: [{ grant: "read_feed", why: "To follow the public graph." }, { grant: "spend", why: "For public mandates." }],
+        address: "https://research.acme.example/",
+      },
+    }).send();
+    expect(asked.statusCode, asked.body).toBe(201);
+    const code = asked.json().code as string;
+
+    const read = (await as(dana, { url: `/connect-requests/${code}` })).json().request;
+    expect(read).toMatchObject({
+      needs: [
+        { grant: "read_feed", why: "To follow the public graph." },
+        { grant: "spend", why: "For public mandates." },
+      ],
+      asked_grants: ["read_feed", "spend"],
+      address: "https://research.acme.example",
+      member_organizations: [],
+    });
+    // A member who is not an admin is shown who can approve it.
+    const byMember = (await as(priya, { url: `/connect-requests/${code}` })).json().request;
+    expect(byMember.your_organizations).toEqual([]);
+    expect(byMember.member_organizations).toEqual([{ id: org, name: "Acme Corp", admins: ["dana"] }]);
+
+    const ok = await as(dana, {
+      method: "POST",
+      url: `/connect-requests/${code}/approve`,
+      payload: { organization_id: org, grants: ["read_feed", "spend"], allowance_owls: 5 },
+    });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json().return_to).toBe("https://research.acme.example/admin/outside?check=1");
+    const [spend] = await rawQuery<{ allowance: string }>(
+      `SELECT g.allowance_micro_usd AS allowance FROM organization_grants g JOIN deployments d ON d.id = g.deployment_id
+        WHERE d.key_id = $1 AND g.permission = 'spend'`,
+      [key.keyId]
+    );
+    expect(Number(spend!.allowance)).toBe(5_000_000);
+    const listed = (await as(dana, { url: `/organizations/${org}/deployments` })).json().deployments;
+    expect(listed[0]).toMatchObject({ address: "https://research.acme.example", hosting: "third_party" });
+  });
+
+  it("refuses an address that is not a web address, and an allowance without spend", async () => {
+    const dana = await signIn("dana");
+    const org = await makeOrganization(dana);
+    const key = newKey();
+    const bad = await signed(key, {
+      method: "POST",
+      url: "/deployments/connect",
+      body: { public_key: key.publicKey, name: "Research", hosting: "own_machines", address: "javascript:alert(1)" },
+    }).send();
+    expect(bad.json().code).toBe("BAD_ADDRESS");
+    // Asking for nothing is allowed: the admin chooses.
+    const code = await askToConnect(newKey(), []);
+    const noSpend = await as(dana, {
+      method: "POST",
+      url: `/connect-requests/${code}/approve`,
+      payload: { organization_id: org, grants: ["read_feed"], allowance_owls: 5 },
+    });
+    expect(noSpend.json().code).toBe("ALLOWANCE_WITHOUT_SPEND");
   });
 
   it("reads phase 2's act, which a deployment built before the split still asks for, as the four it became", async () => {

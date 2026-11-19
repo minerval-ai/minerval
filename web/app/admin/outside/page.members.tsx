@@ -25,15 +25,19 @@ import {
 } from "@/components/work/ui";
 import {
   british,
-  fetchConnection,
+  checkConnection,
+  fetchConnectionAndDefaults,
   fetchOutwardLog,
   fetchPublicConversations,
   type ConnectionView,
+  type ConnectWith,
+  type Hosting,
   type DeploymentGrant,
   type OutwardAct,
   type PublicAccount,
   type PublicConversation,
 } from "@/lib/outside-api";
+import { LiveRefresh } from "@/components/LiveRefresh";
 import { registerPublisherAction } from "../../releases/actions";
 import { backPublicMandateAction, checkConnectionAction, connectAction, disconnectAction, openPublicMandateAction } from "./actions";
 import { HeadSub, Note, loadAccount, tryRead } from "./parts";
@@ -102,22 +106,25 @@ function mandateTone(status: string | null): Tone {
   return "info";
 }
 
-export default async function OutsidePage({ searchParams }: { searchParams: Promise<{ kind?: string; drawer?: string }> }) {
+export default async function OutsidePage({ searchParams }: { searchParams: Promise<{ kind?: string; drawer?: string; check?: string }> }) {
   const who = await viewer();
   if (!who) return null;
-  const { kind, drawer } = await searchParams;
+  const { kind, drawer, check } = await searchParams;
+  // Sent back here by minerval.ai after an admin approved this deployment: ask now, so it shows connected at once.
+  if (check === "1") await checkConnection(who.externalId).catch(() => undefined);
   const filter = GROUPS.some((g) => g.key === kind) ? (kind as Group | "all") : "all";
 
   const mayAct = can(who, "direct");
-  const [{ data: account, problem: accountProblem }, { data: log, problem: logProblem }, { data: talks, problem: talksProblem }, connection] = await Promise.all([
+  const [{ data: account, problem: accountProblem }, { data: log, problem: logProblem }, { data: talks, problem: talksProblem }, connectionRead] = await Promise.all([
     loadAccount(who.externalId),
     tryRead(() => fetchOutwardLog(who.externalId), "The log of acts on the public graph could not be read"),
     // The conversations with the public Grantmaker are read by those who may act there, who are the ones who open and fund them.
     mayAct
       ? tryRead(() => fetchPublicConversations(who.externalId), "The conversations with the public Grantmaker could not be read")
       : Promise.resolve({ data: null, problem: null }),
-    fetchConnection(who.externalId).catch(() => null as ConnectionView | null),
+    fetchConnectionAndDefaults(who.externalId).catch(() => ({ connection: null as ConnectionView | null, connect_with: undefined })),
   ]);
+  const connection = connectionRead.connection;
   const acts = log ?? [];
   const mayAdminister = can(who, "administer");
   const connected = !!account?.connected;
@@ -161,7 +168,7 @@ export default async function OutsidePage({ searchParams }: { searchParams: Prom
 
       {mayAdminister && drawer === "connect" && (
         <Drawer title={connection?.state === "waiting" ? "Waiting for your organization" : "Connect to minerval.ai"} close={close}>
-          <ConnectDrawer connection={connection} />
+          <ConnectDrawer connection={connection} connectWith={connectionRead.connect_with ?? null} />
         </Drawer>
       )}
       {mayAdminister && drawer === "disconnect" && connection && (
@@ -509,9 +516,20 @@ function ConnectionCard({
 }) {
   const state = connection?.state ?? "none";
   if (state === "connected" && connection) {
+    const orgName = connection.organization?.name ?? "the organization";
+    // Its organization's page on minerval.ai, where its admins change what this deployment may do.
+    const orgPage = connection.web_url && connection.organization ? `${connection.web_url}/account/organizations/${connection.organization.id}` : null;
     return (
       <Section
-        title={connection.organization?.name ?? "Connected"}
+        title={
+          orgPage ? (
+            <>
+              Connected as <a href={orgPage}>{orgName}</a>
+            </>
+          ) : (
+            `Connected as ${orgName}`
+          )
+        }
         aside={`This deployment is ${connection.deployment?.name ?? "connected"} on minerval.ai, since ${shortDay(connection.connected_at)}`}
         actions={mayAdminister ? <ButtonLink href={disconnectHref} danger small>Disconnect</ButtonLink> : undefined}
       >
@@ -526,8 +544,14 @@ function ConnectionCard({
           ))}
         </div>
         <p className="w-muted" style={{ margin: "8px 0 0", fontSize: 12.5 }}>
-          Every request to minerval.ai is signed with this deployment&apos;s own key (<span className="w-mono">{connection.key_id?.slice(0, 8)}</span>
-          ), at {connection.api_url}. Grants are set by an admin of {connection.organization?.name ?? "the organization"} on minerval.ai.
+          What it may do is chosen by an admin of {orgName} on minerval.ai
+          {orgPage ? (
+            <>
+              , on its <a href={`${orgPage}?tab=deployments`}>Deployments tab</a>
+            </>
+          ) : null}
+          . Every request there is signed with this deployment&apos;s own key (<span className="w-mono">{connection.key_id?.slice(0, 8)}</span>
+          ){connection.hosting ? `, and states that it runs ${HOSTING_LABEL[connection.hosting].toLowerCase()}` : ""}.
         </p>
         {connection.problem && <Note tone="warn">{british(connection.problem)}</Note>}
       </Section>
@@ -540,84 +564,153 @@ function ConnectionCard({
       actions={
         mayAdminister ? (
           <ButtonLink href={connectHref} primary small>
-            {state === "waiting" ? "See the code" : "Connect to minerval.ai"}
+            {state === "waiting" ? "Open the request" : "Connect to minerval.ai"}
           </ButtonLink>
         ) : undefined
       }
     >
       <p className="w-muted" style={{ margin: 0 }}>
         {state === "waiting"
-          ? `Code ${connection?.code ?? ""}: an admin of your organization approves it on minerval.ai.`
+          ? `Code ${connection?.code ?? ""}: waiting for an admin of your organization to approve it on minerval.ai.`
           : state === "denied"
             ? "An admin of the organization denied the last request. Connect again to ask anew."
             : state === "expired"
               ? "The last code expired before anyone approved it. Connect again for a new one."
-              : "Until it is connected, this deployment reaches minerval.ai with the account key in its settings, where it has one. Connecting replaces that with this deployment's own key and the grants an organization admin chooses."}
+              : mayAdminister
+                ? "Connect it to act for your organization on minerval.ai with a key of its own: following the public graph, publishing what its gate lets out, and the acts on this page. An admin of the organization approves it there."
+                : "Not connected to minerval.ai. An administrator of this deployment connects it, and an admin of the organization approves it there."}
       </p>
     </Section>
   );
 }
 
-function ConnectDrawer({ connection }: { connection: ConnectionView | null }) {
+const HOSTING_LABEL: Record<Hosting, string> = {
+  own_machines: "On our own machines",
+  third_party: "On machines we hired",
+  minerval: "Minerval runs it for us",
+};
+
+const HOSTING_HELP: Record<Hosting, string> = {
+  own_machines: "Servers the organization owns or controls itself.",
+  third_party: "A cloud provider or host the organization pays, such as AWS or a data centre.",
+  minerval: "A deployment Minerval runs for the organization. Minerval checks this one.",
+};
+
+function ConnectDrawer({ connection, connectWith }: { connection: ConnectionView | null; connectWith: ConnectWith | null }) {
   if (connection?.state === "waiting") {
     return (
       <>
+        {/* The drawer asks the public graph every five seconds while it is open: reading this page checks a waiting connection. */}
+        <LiveRefresh seconds={5} />
         <p className="w-muted" style={{ marginTop: 0 }}>
-          Give this link to an admin of your organization on minerval.ai. They sign in as themselves, check the code and key id below, and
-          choose what this deployment may do.
+          An admin of your organization approves this on minerval.ai, signed in as themselves, and chooses what this deployment may do there.
+          This drawer checks every few seconds and shows it connected; nothing restarts.
         </p>
-        <div className="w-mono" style={{ fontSize: 30, letterSpacing: "0.08em", textAlign: "center", padding: "16px 0", border: "1px dashed var(--w-rule2)", borderRadius: 10 }}>
-          {connection.code}
-        </div>
         {connection.link && (
-          <p>
-            <a href={connection.link}>{connection.link}</a>
-          </p>
+          <div className="w-row" style={{ gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
+            <ButtonLink href={connection.link} primary>
+              Approve on minerval.ai
+            </ButtonLink>
+          </div>
         )}
+        <p className="w-muted" style={{ fontSize: 12.5 }}>
+          You are sent back here after approving. Not an admin of the organization? Open “Someone else approves” for the link to send one of its admins.
+        </p>
+        <details className="w-details">
+          <summary>Someone else approves</summary>
+          <p className="w-muted">Send them this link. They check that the code and key id match what you see here.</p>
+          <div className="w-mono" style={{ fontSize: 26, letterSpacing: "0.08em", textAlign: "center", padding: "12px 0", border: "1px dashed var(--w-rule2)", borderRadius: 10 }}>
+            {connection.code}
+          </div>
+          {connection.link && (
+            <p style={{ wordBreak: "break-all" }}>
+              <a href={connection.link}>{connection.link}</a>
+            </p>
+          )}
+        </details>
         <Kv
           rows={[
             ["Key id", <span key="k" className="w-mono">{connection.key_id?.slice(0, 8)} (first eight)</span>],
-            ["Asked for", connection.asked_grants.join(", ")],
             ["Expires", shortWhen(connection.code_expires_at)],
           ]}
         />
         <WorkForm action={checkConnectionAction} submit="Check now" />
-        <p className="w-muted" style={{ fontSize: 12.5 }}>This page checks when it is opened. Nothing restarts when it is approved.</p>
       </>
     );
   }
   const replacing = connection?.state === "connected";
+  const w = connectWith;
   return (
     <>
       <p className="w-muted" style={{ marginTop: 0 }}>
-        This deployment makes a key of its own and asks your organization to approve it. You get a short code and a link for an admin of the
-        organization. The key is kept in this deployment&apos;s database, the owner&apos;s alone, and never leaves the machine.
+        This deployment makes a key of its own, which never leaves it, and asks your organization on minerval.ai to approve it. An admin of the
+        organization chooses what it may do there.
+        {replacing && " It is connected already: connecting again makes a new key, and the old connection stops when this one is approved."}
       </p>
-      <WorkForm action={connectAction} submit="Get a code" primary>
+      <WorkForm action={connectAction} submit={replacing ? "Connect again" : "Connect"} primary>
         {replacing && <input type="hidden" name="replace" value="1" />}
         <div className="w-field">
-          <label htmlFor="connect-name">Name to suggest</label>
-          <input id="connect-name" className="w-input" name="name" required maxLength={120} defaultValue={connection?.deployment?.name ?? ""} />
+          <label htmlFor="connect-name">What to call this deployment</label>
+          <input id="connect-name" className="w-input" name="name" required maxLength={120} defaultValue={w?.name ?? connection?.deployment?.name ?? ""} />
+          <span className="w-help">Shown to your organization, and on every page this deployment publishes. Your organization&apos;s admin can change it.</span>
         </div>
         <div className="w-field">
-          <span className="w-label">Ask for</span>
-          <div className="w-options">
-            {DEPLOYMENT_GRANTS.map((g) => (
-              <label key={g} className="w-option">
-                <input type="checkbox" name="grant" value={g} defaultChecked />
-                <div>
-                  <b className="w-mono">{g}</b>
-                  <span>{GRANT_WORDS[g]}</span>
-                </div>
-              </label>
-            ))}
+          <span className="w-label">Where it runs</span>
+          {w?.hosting_fixed && w.hosting ? (
+            <>
+              <input type="hidden" name="hosting" value={w.hosting} />
+              <p style={{ margin: "2px 0" }}>
+                <b>{HOSTING_LABEL[w.hosting]}</b>
+              </p>
+              <span className="w-help">Fixed by the operator who runs this server (DEPLOYMENT_HOSTING).</span>
+            </>
+          ) : (
+            <>
+              <div className="w-options">
+                {(Object.keys(HOSTING_LABEL) as Hosting[]).map((h) => (
+                  <label key={h} className="w-option">
+                    <input type="radio" name="hosting" value={h} required defaultChecked={w?.hosting === h} />
+                    <div>
+                      <b>{HOSTING_LABEL[h]}</b>
+                      <span>{HOSTING_HELP[h]}</span>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <span className="w-help">
+                Shown to your organization&apos;s admin and on every page this deployment publishes. It is your statement.
+              </span>
+            </>
+          )}
+        </div>
+        {w && w.needs.length > 0 && (
+          <div className="w-field">
+            <span className="w-label">What its settings need</span>
+            <ul className="w-muted" style={{ margin: "2px 0 0", paddingLeft: 18, fontSize: 12.5 }}>
+              {w.needs.map((n) => (
+                <li key={n.grant}>
+                  <span className="w-mono">{n.grant}</span>: {n.why}
+                </li>
+              ))}
+            </ul>
+            <span className="w-help">Sent so the admin can see why. They choose; these are only ticked to start with.</span>
           </div>
-        </div>
-        <div className="w-field">
-          <label htmlFor="connect-url">Public graph address</label>
-          <input id="connect-url" className="w-input" name="api_url" placeholder="https://api.claimgraph.io" />
-          <span className="w-help">Minerval&apos;s, unless you were told another.</span>
-        </div>
+        )}
+        <details className="w-details">
+          <summary>Advanced</summary>
+          <div className="w-field">
+            <label htmlFor="connect-url">The public graph&apos;s address</label>
+            <input id="connect-url" className="w-input" name="api_url" placeholder={w?.api_url ?? "https://api.claimgraph.io"} />
+            <span className="w-help">Minerval&apos;s, unless you were told another.</span>
+          </div>
+          {w && (
+            <p className="w-muted" style={{ fontSize: 12.5 }}>
+              {w.address
+                ? `This deployment's own address, ${w.address}, is sent too, for links back to it: the admin is returned here after approving.`
+                : "This deployment has no address of its own to send (PUBLIC_WEB_BASE_URL), so the admin is not sent back here after approving; this drawer still sees the approval."}
+            </p>
+          )}
+        </details>
       </WorkForm>
     </>
   );

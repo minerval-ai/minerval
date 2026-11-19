@@ -350,6 +350,10 @@ textarea.w-input { height: auto; min-height: 84px; padding: 8px 10px; line-heigh
   position: absolute; z-index: 30; min-width: 260px; background: var(--w-panel); border: 1px solid var(--w-rule2);
   border-radius: 8px; box-shadow: var(--w-shadow); padding: 12px;
 }
+/* a part of a drawer folded away until asked for (the connect drawer's Advanced, "Someone else approves") */
+details.w-details { margin: 12px 0; border-top: 1px solid var(--w-rule); padding-top: 8px; }
+details.w-details > summary { cursor: pointer; color: var(--w-muted); font-size: 12.5px; }
+details.w-details[open] > summary { margin-bottom: 8px; }
 details.w-menu { position: relative; display: inline-block; }
 details.w-menu > summary { list-style: none; }
 details.w-menu > summary::-webkit-details-marker { display: none; }

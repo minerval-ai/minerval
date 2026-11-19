@@ -470,9 +470,9 @@ describe("a mirrored node's page, shown outside and standing", () => {
   });
 
   it("registers its key to the organization's account, by a statement only the key's holder can sign", async () => {
-    const forged = { ...signedRegistration("someone-else:1") };
+    const forged = { ...(await signedRegistration("someone-else:1")) };
     expect((await pubApi("POST", "/publishers", { public_key: forged.public_key, hosting: forged.hosting, signature: forged.signature })).status).toBe(400);
-    const mine = signedRegistration(orgAccount);
+    const mine = await signedRegistration(orgAccount);
     const registered = await pubApi("POST", "/publishers", { public_key: mine.public_key, hosting: mine.hosting, signature: mine.signature, declared_interest: "Halden Works runs the plant the claims are about." });
     expect(registered.status).toBe(201);
     expect(registered.json.key_id).toBe(publishKey.keyId);

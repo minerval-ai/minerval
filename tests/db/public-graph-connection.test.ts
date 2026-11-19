@@ -37,6 +37,7 @@ vi.hoisted(() => {
 import { rawQuery, withTransaction } from "../../src/db/client.js";
 import { forgetConnection, setPublicGraphFetch } from "../../src/services/public-graph-client.js";
 import { setConnectionFetch } from "../../src/services/public-graph-connection.js";
+import { loadConfig } from "../../src/config.js";
 import { call, publicGraph } from "../../src/services/outbound-service.js";
 import { sendUsageReports } from "../../src/services/usage-report-service.js";
 import { checkSignature, parseSignatureHeader, sha256Hex, EMPTY_BODY_HASH } from "../../src/services/request-signature.js";
@@ -52,6 +53,8 @@ const fake = {
   retired: false,
   seen: [] as Array<{ method: string; path: string; signed: boolean; bearer: boolean }>,
   reports: [] as string[],
+  /** The last body a connect request carried. */
+  asked: null as Record<string, unknown> | null,
 };
 
 function answer(status: number, body: unknown): Response {
@@ -72,6 +75,7 @@ const fakeFetch: typeof fetch = async (input, init) => {
       return answer(401, { error: "bad signature", code: "SIGNATURE_BAD_SIGNATURE" });
     }
     fake.key = asked.public_key;
+    fake.asked = asked as Record<string, unknown>;
     return answer(201, {
       code: fake.code,
       key_id: presented.keyId,
@@ -158,17 +162,51 @@ afterAll(async () => {
 });
 
 describe("connecting to minerval.ai", () => {
+  it("fills the drawer's questions: the name, where it runs (fixed by the operator here), what its settings need", async () => {
+    const read = (await asAdmin({ url: "/outside/connection" })).json();
+    expect(read.connect_with).toMatchObject({ hosting: "own_machines", hosting_fixed: true });
+    expect(read.connect_with.needs.map((n: { grant: string }) => n.grant)).toContain("read_feed");
+  });
+
+  it("takes where it runs from the administrator where the operator did not fix it, and refuses with none", async () => {
+    const config = loadConfig() as { deploymentHosting: string };
+    const fixed = config.deploymentHosting;
+    config.deploymentHosting = "";
+    try {
+      const none = await asAdmin({ method: "POST", url: "/outside/connection", payload: { name: "Research", api_url: API } });
+      expect(none.json().code).toBe("HOSTING_NOT_CHOSEN");
+      expect(none.json().error).toMatch(/Choose where this deployment runs/);
+      const chosen = await asAdmin({ method: "POST", url: "/outside/connection", payload: { name: "Research", hosting: "third_party", api_url: API } });
+      expect(chosen.statusCode, chosen.body).toBe(201);
+      expect(fake.asked).toMatchObject({ hosting: "third_party" });
+      const { statedHosting } = await import("../../src/services/outbound-service.js");
+      forgetConnection();
+      expect(await statedHosting()).toBe("third_party");
+      const read = (await asAdmin({ url: "/outside/connection" })).json();
+      expect(read.connect_with).toMatchObject({ hosting: "third_party", hosting_fixed: false });
+    } finally {
+      config.deploymentHosting = fixed;
+      await rawQuery(`DELETE FROM public_graph_connection`);
+      forgetConnection();
+    }
+  });
+
   it("makes a key, shows a code, and learns an approval with no restart", async () => {
     expect((await asAdmin({ url: "/outside/connection" })).json().connection).toBeNull();
 
     const start = await asAdmin({
       method: "POST",
       url: "/outside/connection",
-      payload: { name: "Research", grants: ["read_feed", "report_usage", "spend"], api_url: API },
+      payload: { name: "Research", api_url: API },
     });
     expect(start.statusCode, start.body).toBe(201);
-    expect(start.json().connection).toMatchObject({ state: "waiting", code: fake.code, connected: false });
+    expect(start.json().connection).toMatchObject({ state: "waiting", code: fake.code, connected: false, hosting: "own_machines" });
     expect(start.body).not.toContain("PRIVATE KEY");
+    // It asks for no grants: it says which its settings need, and why, and the admin chooses.
+    const needs = fake.asked!.needs as Array<{ grant: string; why: string }>;
+    expect(needs.map((n) => n.grant)).toEqual(expect.arrayContaining(["read_feed", "report_usage", "take_up", "spend", "speak"]));
+    expect(needs.every((n) => n.why.length > 10)).toBe(true);
+    expect(fake.asked).toMatchObject({ name: "Research", hosting: "own_machines" });
 
     // Not yet approved: still waiting.
     const waiting = await asAdmin({ method: "POST", url: "/outside/connection/check" });

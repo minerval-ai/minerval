@@ -264,9 +264,15 @@ export interface ConnectRequestView {
   hosting_words: string;
   key_id: string;
   asked_grants: DeploymentGrant[];
+  /** The grants its settings need, each with why, where it said. */
+  needs?: Array<{ grant: DeploymentGrant; why: string | null }>;
+  /** Where its own site is, as it stated. */
+  address?: string | null;
   expires_at: string;
   state: "waiting" | "approved" | "denied" | "expired";
   your_organizations: Array<{ id: string; name: string }>;
+  /** Organizations the reader is only a member of, with the admins who can approve it there. */
+  member_organizations?: Array<{ id: string; name: string; admins: string[] }>;
 }
 
 export interface DeploymentView {
@@ -275,6 +281,8 @@ export interface DeploymentView {
   hosting: string;
   hosting_words: string;
   key_id: string;
+  /** Where its own site is, as it stated when it connected. */
+  address?: string | null;
   approved_at: string;
   approved_by: string | null;
   retired_at: string | null;
@@ -292,11 +300,12 @@ export async function approveConnectRequest(
   code: string,
   organizationId: string,
   name: string,
-  grants: DeploymentGrant[]
-): Promise<{ deployment_id: string }> {
+  grants: DeploymentGrant[],
+  allowanceOwls: number | null = null
+): Promise<{ deployment_id: string; return_to?: string | null }> {
   return accountFetch(`/connect-requests/${pathSegment(code)}/approve`, {
     method: "POST",
-    body: { organization_id: organizationId, grants, ...(name ? { name } : {}) },
+    body: { organization_id: organizationId, grants, ...(name ? { name } : {}), ...(allowanceOwls !== null ? { allowance_owls: allowanceOwls } : {}) },
     actingUser: me,
   });
 }

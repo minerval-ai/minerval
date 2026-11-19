@@ -174,6 +174,10 @@ export interface ConnectionView {
   link: string | null;
   code_expires_at: string | null;
   asked_grants: DeploymentGrant[];
+  /** Where it runs, as stated when it connected. */
+  hosting?: Hosting | null;
+  /** The public graph's web address, for links to the organization there. */
+  web_url?: string | null;
   organization: { id: string; name: string } | null;
   deployment: { id: string; name: string } | null;
   grants: DeploymentGrant[];
@@ -182,8 +186,23 @@ export interface ConnectionView {
   problem: string | null;
 }
 
+export type Hosting = "own_machines" | "third_party" | "minerval";
+
+/** What connecting would send, to fill the drawer's questions with. */
+export interface ConnectWith {
+  name: string;
+  hosting: Hosting | null;
+  /** Fixed by the operator (DEPLOYMENT_HOSTING): shown, not asked. */
+  hosting_fixed: boolean;
+  needs: Array<{ grant: DeploymentGrant; why: string }>;
+  address: string | null;
+  api_url: string;
+}
+
 export const fetchConnection = async (who: string) => (await get<{ connection: ConnectionView | null }>("/outside/connection", who)).connection;
-export const startConnection = (who: string, body: { name: string; grants: DeploymentGrant[]; api_url?: string; replace?: boolean }) =>
+export const fetchConnectionAndDefaults = (who: string) =>
+  get<{ connection: ConnectionView | null; connect_with?: ConnectWith }>("/outside/connection", who);
+export const startConnection = (who: string, body: { name: string; hosting?: Hosting; api_url?: string; replace?: boolean }) =>
   post<{ connection: ConnectionView }>("/outside/connection", who, body);
 export const checkConnection = (who: string) => post<{ connection: ConnectionView | null }>("/outside/connection/check", who);
 export const disconnectConnection = (who: string) =>
