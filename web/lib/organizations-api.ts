@@ -245,7 +245,8 @@ export async function organizationFundConversation(
 
 // ---- connected deployments ----
 
-export type DeploymentGrant = "read_feed" | "report_usage" | "publish" | "act";
+export type { DeploymentGrant } from "./organization-permissions";
+import type { DeploymentGrant } from "./organization-permissions";
 
 export interface ConnectRequestView {
   code: string;

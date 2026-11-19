@@ -7,6 +7,7 @@ import { readConnectRequest, type ConnectRequestView, type DeploymentGrant } fro
 import { Banner, Card, Kv, Section, WorkHead, WorkPage, shortWhen } from "../../components/work/ui";
 import { WorkForm } from "../../components/work/WorkForm";
 import { approveConnectAction, denyConnectAction } from "../account/organizations/actions";
+import { PERMISSION_WORDS } from "../../lib/organization-permissions";
 
 export const metadata: Metadata = { title: "Connect a deployment · Minerval", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -17,12 +18,7 @@ export const dynamic = "force-dynamic";
 // deployment shows, and approves it with the grants they choose, or denies
 // it.
 
-const GRANT_WORDS: Record<DeploymentGrant, string> = {
-  read_feed: "Pull the whole mirror feed. It shows only that the deployment exists and when it pulls.",
-  report_usage: "Send its daily usage total, privately to Minerval. Billed to the organization.",
-  publish: "Register its signing key, and send pages and mandates under the organization's name.",
-  act: "Take up requests, open and fund mandates, and spend the organization's public owls.",
-};
+const GRANT_WORDS: Record<DeploymentGrant, string> = PERMISSION_WORDS;
 
 export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ code?: string }> }) {
   const { code } = await searchParams;

@@ -138,7 +138,7 @@ const ADMINISTRATION =
 const ACCOUNT = "Writes only to the account's own tables, which carry no label.";
 const OAUTH = "The OAuth server's own tables, which carry no label.";
 const ORGANIZATION =
-  "Writes only to accounts, an organization's members, invitations and log, and a converted account's keys and tokens, which carry no label.";
+  "Writes only to accounts, an organization's members, grants, invitations and log, and a converted account's keys and tokens, which carry no label.";
 
 /** Every route that is not a read, with how its request gets a label. */
 export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
@@ -304,6 +304,8 @@ export const REQUEST_LABELS: Readonly<Record<string, RequestLabelRule>> = {
   "PATCH /organizations/:id": { rule: "none", why: ORGANIZATION },
   "PUT /organizations/:id/members/:account_id": { rule: "none", why: ORGANIZATION },
   "DELETE /organizations/:id/members/:account_id": { rule: "none", why: ORGANIZATION },
+  "POST /organizations/:id/grants": { rule: "none", why: ORGANIZATION },
+  "DELETE /organizations/:id/grants/:grant_id": { rule: "none", why: ORGANIZATION },
   "POST /organizations/:id/invitations": { rule: "none", why: ORGANIZATION },
   "DELETE /organizations/:id/invitations/:invitation_id": { rule: "none", why: ORGANIZATION },
   "POST /organization-invitations/:token/accept": { rule: "none", why: ORGANIZATION },

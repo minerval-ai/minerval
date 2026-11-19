@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "../../../auth";
 import { AccountApiError } from "../../../lib/account-api";
 import type { FormState } from "../../../components/admin/ActionForm";
+import { DEPLOYMENT_GRANTS } from "../../../lib/organization-permissions";
 import {
   acceptConversion,
   acceptInvitation,
@@ -298,7 +299,7 @@ export async function approveConnectAction(_prev: FormState, form: FormData): Pr
   const who = await me();
   if (!who) return { error: "Not signed in." };
   const organizationId = field(form, "organization_id");
-  const grants = form.getAll("grant").map(String).filter((g): g is DeploymentGrant => ["read_feed", "report_usage", "publish", "act"].includes(g));
+  const grants = form.getAll("grant").map(String).filter((g): g is DeploymentGrant => (DEPLOYMENT_GRANTS as readonly string[]).includes(g));
   if (grants.length === 0) return { error: "Leave at least one grant ticked, or deny it." };
   try {
     await approveConnectRequest(who, field(form, "code"), organizationId, field(form, "name"), grants);

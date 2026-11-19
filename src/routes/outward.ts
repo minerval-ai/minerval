@@ -65,7 +65,7 @@ import {
 import { REPORT_AT_GATE_TOLD, ReportSendingError, reportsOverview } from "../services/report-sending-service.js";
 import { DECLINE_REASONS } from "../services/request-take-up-service.js";
 import { actorOf } from "./outbound.js";
-import type { DeploymentGrant } from "../db/schema.js";
+import { DEPLOYMENT_GRANTS, type DeploymentGrant } from "../db/schema.js";
 import {
   ConnectionError,
   checkConnect,
@@ -118,7 +118,7 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
       tags: TAG,
       summary:
         "This deployment's connection to minerval.ai: none; waiting, with the code and the link for an admin of the organization; denied or " +
-        "expired; or connected, with the organization, the deployment's name there and the grants it holds (read_feed, report_usage, publish, act)",
+        "expired; or connected, with the organization, the deployment's name there and the grants it holds (read_feed, report_usage, publish, spend, speak, propose, take_up)",
       description:
         "A waiting connection is checked with minerval.ai when this is read, and a connected one read again now and then, so a withdrawn grant " +
         "is seen here. The connection key's private half is never returned.",
@@ -141,7 +141,7 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
         required: ["name", "grants"],
         properties: {
           name: { type: "string", minLength: 1, maxLength: 120 },
-          grants: { type: "array", minItems: 1, items: { type: "string", enum: ["read_feed", "report_usage", "publish", "act"] } },
+          grants: { type: "array", minItems: 1, items: { type: "string", enum: [...DEPLOYMENT_GRANTS] } },
           api_url: { type: "string", maxLength: 500 },
           replace: { type: "boolean" },
         },

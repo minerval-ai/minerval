@@ -22,6 +22,8 @@ import {
   createOrganization,
   getOpenConversion,
   getOrganization,
+  grantPermission,
+  listGrants,
   listConversionsForMe,
   listInvitations,
   listLog,
@@ -35,8 +37,9 @@ import {
   renameOrganization,
   revokeOldKey,
   setRole,
+  withdrawGrant,
 } from "../services/organization-service.js";
-import type { OrganizationRole } from "../db/schema.js";
+import { ORGANIZATION_PERMISSIONS, type OrganizationRole } from "../db/schema.js";
 
 const TAGS = ["organizations"];
 const ROLE = { type: "string", enum: ["admin", "member"] } as const;
@@ -147,6 +150,69 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
         await removeMember({ organizationId: request.params.id, accountId: request.params.account_id, by: me(request) });
         return { removed: true };
       }),
+  });
+
+  // ---- grants: what each member and deployment may do as the organization ----
+
+  app.get<{ Params: { id: string } }>("/organizations/:id/grants", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "An organization's live grants: the permissions its admins gave each member and each deployment (its members only). " +
+        "Admins hold every member permission without a grant.",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+    },
+    preHandler: reader,
+    handler: (request, reply) => answer(reply, async () => ({ grants: await listGrants(request.params.id, me(request)) })),
+  });
+
+  app.post<{ Params: { id: string }; Body: { permission: string; account_id?: string; deployment_id?: string } }>("/organizations/:id/grants", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "Give a member or a deployment a permission to act as the organization (admins): for a member spend, buy, speak, propose, take_up " +
+        "or claim_prizes; for a deployment read_feed, report_usage, publish, spend, speak, propose or take_up",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      body: {
+        type: "object",
+        required: ["permission"],
+        properties: {
+          permission: { type: "string", enum: [...ORGANIZATION_PERMISSIONS] },
+          account_id: { type: "string" },
+          deployment_id: { type: "string" },
+        },
+      },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(
+        reply,
+        async () => ({
+          grants: await grantPermission({
+            organizationId: request.params.id,
+            permission: request.body.permission,
+            accountId: request.body.account_id ?? null,
+            deploymentId: request.body.deployment_id ?? null,
+            by: me(request),
+          }),
+        }),
+        201
+      ),
+  });
+
+  app.delete<{ Params: { id: string; grant_id: string } }>("/organizations/:id/grants/:grant_id", {
+    schema: {
+      tags: TAGS,
+      summary: "Withdraw a grant from a member or a deployment (admins). It stops working at their next request",
+      params: {
+        type: "object",
+        required: ["id", "grant_id"],
+        properties: { id: { type: "string" }, grant_id: { type: "string" } },
+      },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, async () => ({ grants: await withdrawGrant({ organizationId: request.params.id, grantId: request.params.grant_id, by: me(request) }) })),
   });
 
   // ---- invitations ----

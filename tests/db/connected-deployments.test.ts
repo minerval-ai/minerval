@@ -96,7 +96,7 @@ async function makeOrganization(admin: Person): Promise<string> {
   return res.json().organization.id;
 }
 
-async function askToConnect(key: Key, grants = ["read_feed", "report_usage", "publish", "act"]): Promise<string> {
+async function askToConnect(key: Key, grants = ["read_feed", "report_usage", "publish", "spend", "speak"]): Promise<string> {
   const res = await signed(key, {
     method: "POST",
     url: "/deployments/connect",
@@ -141,7 +141,7 @@ describe("connecting", () => {
       suggested_name: "Research",
       hosting_words: "the organization's own machines",
       key_id: key.keyId,
-      asked_grants: ["read_feed", "report_usage", "publish", "act"],
+      asked_grants: ["read_feed", "report_usage", "publish", "spend", "speak"],
       state: "waiting",
       your_organizations: [{ id: org, name: "Acme Corp" }],
     });
@@ -149,7 +149,7 @@ describe("connecting", () => {
     const approve = await as(dana, {
       method: "POST",
       url: `/connect-requests/${code}/approve`,
-      payload: { organization_id: org, name: "Research lab", grants: ["read_feed", "act"] },
+      payload: { organization_id: org, name: "Research lab", grants: ["read_feed", "spend"] },
     });
     expect(approve.statusCode, approve.body).toBe(200);
 
@@ -158,9 +158,9 @@ describe("connecting", () => {
       state: "approved",
       deployment: { name: "Research lab" },
       organization: { id: org, name: "Acme Corp" },
-      grants: ["act", "read_feed"],
+      grants: ["read_feed", "spend"],
     });
-    const again = await as(dana, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["act"] } });
+    const again = await as(dana, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["spend"] } });
     expect(again.json().code).toBe("CODE_USED");
     const [logged] = await rawQuery<{ actor_id: string }>(
       `SELECT actor_id FROM organization_log WHERE organization_id = $1 AND kind = 'deployment_approved'`,
@@ -177,8 +177,21 @@ describe("connecting", () => {
     const code = await askToConnect(key, ["read_feed"]);
     const byStranger = await as(priya, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["read_feed"] } });
     expect(byStranger.json().code).toBe("ADMIN_REQUIRED");
-    const more = await as(dana, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["act"] } });
+    const more = await as(dana, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["spend"] } });
     expect(more.json().code).toBe("GRANT_NOT_ASKED");
+  });
+
+  it("reads phase 2's act, which a deployment built before the split still asks for, as the four it became", async () => {
+    const dana = await signIn("dana");
+    const org = await makeOrganization(dana);
+    const key = newKey();
+    const code = await askToConnect(key, ["read_feed", "act"]);
+    const read = await as(dana, { url: `/connect-requests/${code}` });
+    expect(read.json().request.asked_grants).toEqual(["read_feed", "spend", "speak", "propose", "take_up"]);
+    const ok = await as(dana, { method: "POST", url: `/connect-requests/${code}/approve`, payload: { organization_id: org, grants: ["act"] } });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const learnt = (await signed(key, { url: `/deployments/connect/${code}` }).send()).json();
+    expect(learnt.grants).toEqual(["propose", "speak", "spend", "take_up"]);
   });
 
   it("tells the deployment when it was denied, and when its code has expired", async () => {
@@ -214,11 +227,11 @@ describe("a connected deployment's signed requests", () => {
   it("are its organization's, on the routes its grants open", async () => {
     const dana = await signIn("dana");
     const org = await makeOrganization(dana);
-    const key = await connected(dana, org, ["read_feed", "act"]);
+    const key = await connected(dana, org, ["read_feed", "spend"]);
 
     const me = await signed(key, { url: "/organizations/me" }).send();
     expect(me.statusCode, me.body).toBe(200);
-    expect(me.json()).toMatchObject({ organization: { id: org, name: "Acme Corp" }, deployment: { grants: ["act", "read_feed"] } });
+    expect(me.json()).toMatchObject({ organization: { id: org, name: "Acme Corp" }, deployment: { grants: ["read_feed", "spend"] } });
     expect((await signed(key, { url: "/users/me" }).send()).json().user).toMatchObject({ id: org, kind: "organization" });
 
     // A body the route's schema takes, so the grant is what refuses it.
@@ -240,7 +253,7 @@ describe("a connected deployment's signed requests", () => {
   it("are refused when signed for another host, another body, or too long ago", async () => {
     const dana = await signIn("dana");
     const org = await makeOrganization(dana);
-    const key = await connected(dana, org, ["read_feed", "act"]);
+    const key = await connected(dana, org, ["read_feed", "spend"]);
     const url = `/mandates/${randomUUID()}/contribute`;
 
     const otherHost = await signed(key, { method: "POST", url, body: { owls: 1 } }, { host: "other.example" }).send();
@@ -256,7 +269,7 @@ describe("a connected deployment's signed requests", () => {
   it("make a write once, and record it for the organization; a read is neither", async () => {
     const dana = await signIn("dana");
     const org = await makeOrganization(dana);
-    const key = await connected(dana, org, ["act"]);
+    const key = await connected(dana, org, ["spend"]);
     const write = signed(key, { method: "POST", url: `/mandates/${randomUUID()}/contribute`, body: { owls: 1 } });
     const first = await write.send();
     expect(first.statusCode).not.toBe(401);
@@ -279,13 +292,20 @@ describe("a connected deployment's signed requests", () => {
   it("stop when a grant is withdrawn or the deployment retired", async () => {
     const dana = await signIn("dana");
     const org = await makeOrganization(dana);
-    const key = await connected(dana, org, ["read_feed", "act"]);
-    await rawQuery(
-      `UPDATE deployment_grants SET withdrawn_at = now() WHERE "grant" = 'act' AND deployment_id = (SELECT id FROM deployments WHERE key_id = $1)`,
-      [key.keyId]
-    );
+    const key = await connected(dana, org, ["read_feed", "spend"]);
+    const grants = (await as(dana, { url: `/organizations/${org}/grants` })).json().grants as Array<{ id: string; permission: string; deployment_id: string | null }>;
+    const spend = grants.find((g) => g.permission === "spend" && g.deployment_id);
+    expect((await as(dana, { method: "DELETE", url: `/organizations/${org}/grants/${spend!.id}` })).statusCode).toBe(200);
     const act = await signed(key, { method: "POST", url: `/mandates/${randomUUID()}/contribute`, body: { owls: 1 } }).send();
-    expect(act.json()).toMatchObject({ code: "GRANT_NOT_HELD", grant: "act" });
+    expect(act.json()).toMatchObject({ code: "GRANT_NOT_HELD", grant: "spend" });
+    // Granted again from minerval.ai, it works again at once.
+    const deploymentId = spend!.deployment_id!;
+    const again = await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "spend", deployment_id: deploymentId } });
+    expect(again.statusCode, again.body).toBe(201);
+    const back = await signed(key, { method: "POST", url: `/mandates/${randomUUID()}/contribute`, body: { owls: 1 } }).send();
+    expect(back.statusCode).not.toBe(403);
+    const buy = await as(dana, { method: "POST", url: `/organizations/${org}/grants`, payload: { permission: "buy", deployment_id: deploymentId } });
+    expect(buy.json().code).toBe("BAD_PERMISSION");
     await rawQuery(`UPDATE deployments SET retired_at = now() WHERE key_id = $1`, [key.keyId]);
     expect((await signed(key, { url: "/organizations/me" }).send()).json().code).toBe("DEPLOYMENT_NOT_CONNECTED");
   });

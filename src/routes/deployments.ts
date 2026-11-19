@@ -28,6 +28,7 @@ import {
   retireSelf,
 } from "../services/deployment-service.js";
 import { OrganizationError, requireMember } from "../services/organization-service.js";
+import { DEPLOYMENT_GRANTS } from "../db/schema.js";
 import {
   EMPTY_BODY_HASH,
   SIGNATURE_FAULT_WORDS,
@@ -37,7 +38,9 @@ import {
 } from "../services/request-signature.js";
 
 const TAGS = ["organizations"];
-const GRANT = { type: "string", enum: ["read_feed", "report_usage", "publish", "act"] } as const;
+// `act` is phase 2's name for spend, speak, propose and take_up together; a
+// deployment built before the split still asks for it (deployment-service.ts, readGrants).
+const GRANT = { type: "string", enum: [...DEPLOYMENT_GRANTS, "act"] } as const;
 
 async function answer<T>(reply: FastifyReply, fn: () => Promise<T>, status = 200): Promise<FastifyReply> {
   try {
