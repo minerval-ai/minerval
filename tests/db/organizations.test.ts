@@ -301,9 +301,10 @@ describe("acting for an organization from minerval.ai", () => {
     expect(mint.statusCode).toBe(403);
     expect(mint.json().code).toBe("NOT_AN_ORGANIZATION_ACT");
 
-    const publish = await as(dana, { method: "POST", url: "/published-pages", payload: {}, organization: org });
-    expect(publish.statusCode).toBe(403);
-    expect(publish.json().code).toBe("NOT_AN_ORGANIZATION_ACT");
+    // A deployment's own work, which no person does as the organization, even an admin.
+    const retire = await as(dana, { method: "POST", url: "/deployments/me/retire", organization: org });
+    expect(retire.statusCode).toBe(403);
+    expect(retire.json().code).toBe("NOT_AN_ORGANIZATION_ACT");
 
     const key = await createApiKey({ userId: dana.id, name: "dana's key" });
     const keyed = await app.inject({
