@@ -160,6 +160,13 @@ export class ApiStack extends cdk.Stack {
     // same deployment (it refuses production without every model named).
     const environment: Record<string, string> = {
       ENVIRONMENT: "production",
+      // Prizes stay off until a version of the prize rules is final: the one
+      // in force (2026-09-04) still waits on counsel for its sponsor and
+      // disputes terms, and a version letting organizations win is in draft
+      // (docs/organizations.md, phase 3). Off, no prize can be posted or
+      // claimed, and the prize routes, tools and runner lanes are absent
+      // (src/features.ts). Mathematics stays on.
+      FEATURES_OFF: "prizes",
       PORT: "3000",
       HOST: "0.0.0.0",
       DB_HOST: props.dbInstance.dbInstanceEndpointAddress,
