@@ -1345,6 +1345,13 @@
       "when": 1795108666065,
       "tag": "0191_assistant_acting_for",
       "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1795110464139,
+      "tag": "0192_credentials_acting_for",
+      "breakpoints": true
     }
   ]
 }

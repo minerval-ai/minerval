@@ -88,9 +88,22 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   permission not held answers `PERMISSION_NOT_HELD`, naming it. Reads are
   open to any live member, but for the person's own and the ledger, which
   is admins'. The request is then the organization's, and each write is on
-  its log under the person. A key or a token never acts as an
-  organization, and the web tier cannot name one in `x-acting-user`
+  its log under the person, with how it was made (`detail.how`: page,
+  assistant, api_key or mcp_client). The header needs a signed-in session,
+  and the web tier cannot name an organization in `x-acting-user`
   (`ORGANIZATION_NOT_ACTABLE`).
+- **Credentials made for it.** An API key (`POST /api-keys` with
+  `acting_for`) or an MCP client's consent (`POST
+  /oauth/requests/:id/approve` with `acting_for`) may be made to act as an
+  organization its person may act for (`CANNOT_ACT_AS` otherwise). It acts
+  as them acting as it: each request is checked against their standing then
+  (`CREDENTIAL_ORGANIZATION_LEFT` once they hold nothing there), the MCP
+  server offers only the tools they may use as it, and a refreshed token
+  carries the same choice. The organization holds no credential of its
+  own. Its members read the live ones (`GET /organizations/:id/credentials`);
+  an admin, or the maker, revokes one (`DELETE
+  /organizations/:id/credentials/:kind/:credential_id`); and leaving the
+  organization revokes what the person made for it.
 - **The switch.** On minerval.ai a person switches to acting as an
   organization from their account or the organization's page. The web tier
   keeps the choice in a cookie, checks it against the person's

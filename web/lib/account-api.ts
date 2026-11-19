@@ -264,6 +264,8 @@ export interface ApiKeyMeta {
   revoked_at: string | null;
   /** The label the key works at, where the deployment holds more than one (fixed when made). */
   label?: string;
+  /** The organization the key acts as (docs/organizations.md, "Other credentials"), or null for the person's own. */
+  acting_for?: string | null;
 }
 
 export interface UsageBucket {
@@ -373,13 +375,16 @@ export async function listApiKeys(externalId: string): Promise<ApiKeyMeta[]> {
 export async function createApiKey(
   externalId: string,
   name: string,
-  label?: string
+  label?: string,
+  actingFor?: string
 ): Promise<ApiKeyMeta & { key: string }> {
   return accountFetch("/api-keys", {
     method: "POST",
     // Where the deployment holds material at more than one label, the key
     // works at the one named here, fixed for its life (docs/accounts.md).
-    body: { name, ...(label ? { label } : {}) },
+    // On minerval.ai it may be made to act as an organization the person may
+    // act for (docs/organizations.md, "Other credentials").
+    body: { name, ...(label ? { label } : {}), ...(actingFor ? { acting_for: actingFor } : {}) },
     actingUser: externalId,
   });
 }
@@ -789,11 +794,12 @@ export async function fetchOAuthRequest(
 /** Approve as the signed-in user; returns the client redirect URL. */
 export async function approveOAuthRequest(
   externalId: string,
-  requestId: string
+  requestId: string,
+  actingFor?: string
 ): Promise<string> {
   const r = await accountFetch<{ redirect_to: string }>(
     `/oauth/requests/${pathSegment(requestId)}/approve`,
-    { method: "POST", actingUser: externalId }
+    { method: "POST", actingUser: externalId, ...(actingFor ? { body: { acting_for: actingFor } } : {}) }
   );
   return r.redirect_to;
 }

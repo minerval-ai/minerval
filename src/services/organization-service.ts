@@ -361,6 +361,10 @@ export async function removeMember(input: { organizationId: string; accountId: s
     );
     await log(tx, { organizationId: org.id, actorId: input.by, kind: leaving ? "left" : "removed", detail: { account_id: input.accountId, role: current } });
     await withdrawAllOf(tx, { organizationId: org.id, accountId: input.accountId, by: input.by });
+    // What they made to act as it stops with their membership, so a person added again starts with none.
+    if ((await revokeCredentialsOf(tx, org.id, input.accountId)) > 0) {
+      await log(tx, { organizationId: org.id, actorId: input.by, kind: "credentials_revoked", detail: { account_id: input.accountId } });
+    }
   });
 }
 
@@ -543,13 +547,28 @@ export async function listLog(organizationId: string, readerId: string, limit = 
  * as the organization"): which route, and what the API answered. Written
  * after the response, so it records what happened.
  */
-export async function logActedAs(entry: { organizationId: string; actorId: string; method: string; route: string; status: number }): Promise<void> {
+export async function logActedAs(entry: {
+  organizationId: string;
+  actorId: string;
+  method: string;
+  route: string;
+  status: number;
+  /** "page", "assistant", "api_key" or "mcp_client". */
+  how?: string;
+  apiKeyId?: string;
+}): Promise<void> {
   await inTransaction((tx) =>
     log(tx, {
       organizationId: entry.organizationId,
       actorId: entry.actorId,
       kind: "acted",
-      detail: { method: entry.method, route: entry.route, status: entry.status },
+      detail: {
+        method: entry.method,
+        route: entry.route,
+        status: entry.status,
+        ...(entry.how ? { how: entry.how } : {}),
+        ...(entry.apiKeyId ? { api_key_id: entry.apiKeyId } : {}),
+      },
     })
   );
 }
@@ -730,6 +749,118 @@ export async function memberStanding(
     [organizationId, accountId]
   );
   return row ?? null;
+}
+
+/** A person's standing in an organization with its name, for a credential acting as it; null where none. */
+export async function actingStandingOf(
+  organizationId: string,
+  accountId: string
+): Promise<{ organizationName: string; role: OrganizationRole; permissions: MemberPermission[] } | null> {
+  const standing = await memberStanding(organizationId, accountId);
+  if (!standing) return null;
+  const [org] = await rawQuery<{ display_name: string }>(`SELECT display_name FROM contributors WHERE id = $1`, [organizationId]);
+  return { organizationName: org?.display_name ?? "the organization", ...standing };
+}
+
+// ---- credentials made for the organization --------------------------------
+//
+// A person may make an API key, or approve an MCP client, to act as an
+// organization they may act for (docs/organizations.md, "Other
+// credentials"). It acts as them acting as it: every request is checked
+// against their standing then. The organization's admins see every live one
+// and can revoke any; a person's are revoked when they leave.
+
+export interface OrganizationCredentialView {
+  kind: "api_key" | "mcp_client";
+  /** The key's id, or the consent's grant id. */
+  id: string;
+  name: string;
+  account_id: string;
+  made_at: string;
+  last_used_at: string | null;
+}
+
+/** The live credentials made to act as an organization (its members read them). */
+export async function listOrganizationCredentials(organizationId: string, readerId: string): Promise<OrganizationCredentialView[]> {
+  await requireMember(organizationId, readerId);
+  const keys = await rawQuery<{ id: string; name: string; user_id: string; created_at: Date; last_used_at: Date | null }>(
+    `SELECT id, name, user_id, created_at, last_used_at FROM api_keys
+      WHERE acting_for = $1 AND revoked_at IS NULL ORDER BY created_at DESC`,
+    [organizationId]
+  );
+  const grants = await rawQuery<{ grant_id: string; client_name: string; user_id: string; made_at: Date; last_used_at: Date | null }>(
+    `SELECT t.grant_id, max(c.name) AS client_name, max(t.user_id::text)::uuid AS user_id,
+            min(t.created_at) AS made_at, max(t.last_used_at) AS last_used_at
+       FROM oauth_tokens t JOIN oauth_clients c ON c.id = t.client_id
+      WHERE t.acting_for = $1
+      GROUP BY t.grant_id
+     HAVING bool_or(t.revoked_at IS NULL AND t.expires_at > now())
+      ORDER BY min(t.created_at) DESC`,
+    [organizationId]
+  );
+  return [
+    ...keys.map((k) => ({
+      kind: "api_key" as const,
+      id: k.id,
+      name: k.name,
+      account_id: k.user_id,
+      made_at: new Date(k.created_at).toISOString(),
+      last_used_at: k.last_used_at ? new Date(k.last_used_at).toISOString() : null,
+    })),
+    ...grants.map((g) => ({
+      kind: "mcp_client" as const,
+      id: g.grant_id,
+      name: g.client_name,
+      account_id: g.user_id,
+      made_at: new Date(g.made_at).toISOString(),
+      last_used_at: g.last_used_at ? new Date(g.last_used_at).toISOString() : null,
+    })),
+  ];
+}
+
+async function revokeCredentialsOf(tx: TxQuery, organizationId: string, accountId: string): Promise<number> {
+  const keys = await tx.query(
+    `UPDATE api_keys SET revoked_at = now() WHERE acting_for = $1 AND user_id = $2 AND revoked_at IS NULL RETURNING id`,
+    [organizationId, accountId]
+  );
+  const tokens = await tx.query(
+    `UPDATE oauth_tokens SET revoked_at = now() WHERE acting_for = $1 AND user_id = $2 AND revoked_at IS NULL RETURNING id`,
+    [organizationId, accountId]
+  );
+  return keys.length + tokens.length;
+}
+
+/**
+ * Revoke a credential made to act as the organization: an admin's act, or
+ * its own maker's. It stops working at its next request.
+ */
+export async function revokeOrganizationCredential(input: {
+  organizationId: string;
+  kind: "api_key" | "mcp_client";
+  id: string;
+  by: string;
+}): Promise<void> {
+  await inTransaction(async (tx) => {
+    const org = await lockOrganization(tx, input.organizationId);
+    const byRole = await roleOf(tx, org.id, input.by);
+    if (!byRole) throw NOT_FOUND();
+    if (!isUuid(input.id)) throw new OrganizationError("CREDENTIAL_NOT_FOUND", "No live credential of this organization has that id.", 404);
+    const table = input.kind === "api_key" ? "api_keys" : "oauth_tokens";
+    const idColumn = input.kind === "api_key" ? "id" : "grant_id";
+    const [owner] = await tx.query<{ user_id: string }>(
+      `SELECT user_id FROM ${table} WHERE ${idColumn} = $1 AND acting_for = $2 AND revoked_at IS NULL LIMIT 1`,
+      [input.id, org.id]
+    );
+    if (!owner) throw new OrganizationError("CREDENTIAL_NOT_FOUND", "No live credential of this organization has that id.", 404);
+    if (byRole !== "admin" && owner.user_id !== input.by) throw ADMINS_ONLY();
+    await tx.query(`UPDATE ${table} SET revoked_at = now() WHERE ${idColumn} = $1 AND acting_for = $2 AND revoked_at IS NULL`, [input.id, org.id]);
+    await log(tx, {
+      organizationId: org.id,
+      actorId: input.by,
+      kind: "credential_revoked",
+      detail: { kind: input.kind, id: input.id, account_id: owner.user_id },
+    });
+  });
 }
 
 // ---- old keys -------------------------------------------------------------

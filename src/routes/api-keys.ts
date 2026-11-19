@@ -17,6 +17,7 @@ import {
   listApiKeys,
   revokeApiKey,
 } from "../services/api-key-service.js";
+import { actingStandingOf } from "../services/organization-service.js";
 
 /**
  * `showLabel` is set where the deployment holds material at more than one
@@ -29,6 +30,8 @@ export function serializeKey(key: ApiKey, showLabel = false) {
     key_prefix: key.keyPrefix,
     scope: key.scope,
     ...(showLabel ? { label: key.workLabel } : {}),
+    // The organization the key acts as, or null for its person's own.
+    acting_for: key.actingFor ?? null,
     created_at: key.createdAt?.toISOString(),
     last_used_at: key.lastUsedAt?.toISOString() ?? null,
     revoked_at: key.revokedAt?.toISOString() ?? null,
@@ -44,6 +47,29 @@ export const KEY_LABEL_NOTE =
 /** Whether keys say and take a label here: a members-only deployment with more than one. */
 async function keysCarryLabels(): Promise<boolean> {
   return membersOnly() && (await deploymentHoldsLabels());
+}
+
+/**
+ * The organization a new key or MCP client is to act as (docs/organizations.md,
+ * "Other credentials"): one the person may act for now. The public graph's
+ * alone: a members-only deployment is an organization's own.
+ */
+export const ACTING_FOR_FIELD = {
+  type: "string",
+  format: "uuid",
+  description:
+    "An organization you may act for, for the credential to act as it: under your permissions there as they stand " +
+    "at each request, until you leave it. Left out, it acts as you.",
+} as const;
+
+/** Null where the person may make a credential to act as the organization, else the refusal. */
+export async function mayMakeCredentialFor(organizationId: string, accountId: string): Promise<Record<string, string> | null> {
+  const standing = await actingStandingOf(organizationId, accountId);
+  if (standing && (standing.role === "admin" || standing.permissions.length > 0)) return null;
+  return {
+    error: "You may not act as that organization: you are not its member, or hold no permission there.",
+    code: "CANNOT_ACT_AS",
+  };
 }
 
 export async function apiKeyRoutes(app: FastifyInstance): Promise<void> {
@@ -76,13 +102,15 @@ export async function apiKeyRoutes(app: FastifyInstance): Promise<void> {
           name: { type: "string", minLength: 1, maxLength: 120 },
           // The label the key will work at. Only a members-only deployment
           // has the field: the public graph has one label.
-          ...(membersOnly() ? { label: LABEL_FIELD } : {}),
+          ...(membersOnly() ? { label: LABEL_FIELD } : { acting_for: ACTING_FOR_FIELD }),
         },
       },
     },
     preHandler: [app.authenticate, app.requireSession, app.requireUser],
     handler: async (request, reply) => {
-      const { name, label } = request.body as { name: string; label?: unknown };
+      const { name, label, acting_for } = request.body as { name: string; label?: unknown; acting_for?: string };
+      const refused = acting_for ? await mayMakeCredentialFor(acting_for, request.auth!.userId!) : null;
+      if (refused) return reply.code(403).send(refused);
       // The person minting says which label the key works at, among the
       // labels they may read. Whoever holds the key afterwards, an agent
       // included, never chooses one.
@@ -103,6 +131,7 @@ export async function apiKeyRoutes(app: FastifyInstance): Promise<void> {
         name,
         scope: "user",
         workLabel,
+        ...(acting_for ? { actingFor: acting_for } : {}),
       });
       return reply.code(201).send({
         key: created.plaintext,

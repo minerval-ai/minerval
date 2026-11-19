@@ -212,6 +212,27 @@ export async function grantPermission(
   return (await accountFetch<{ grants: GrantRow[] }>(`${org(id)}/grants`, { method: "POST", body: grant, actingUser: me })).grants;
 }
 
+/** A key or MCP client a member made to act as the organization (docs/organizations.md, "Other credentials"). */
+export interface CredentialRow {
+  kind: "api_key" | "mcp_client";
+  id: string;
+  name: string;
+  account_id: string;
+  made_at: string;
+  last_used_at: string | null;
+}
+
+export async function listOrganizationCredentials(me: string, id: string): Promise<CredentialRow[]> {
+  return (await accountFetch<{ credentials: CredentialRow[] }>(`${org(id)}/credentials`, { actingUser: me })).credentials;
+}
+
+export async function revokeOrganizationCredential(me: string, id: string, kind: CredentialRow["kind"], credentialId: string): Promise<void> {
+  await accountFetch(`${org(id)}/credentials/${kind === "api_key" ? "api_key" : "mcp_client"}/${pathSegment(credentialId)}`, {
+    method: "DELETE",
+    actingUser: me,
+  });
+}
+
 export async function withdrawGrant(me: string, id: string, grantId: string): Promise<GrantRow[]> {
   return (await accountFetch<{ grants: GrantRow[] }>(`${org(id)}/grants/${pathSegment(grantId)}`, { method: "DELETE", actingUser: me })).grants;
 }

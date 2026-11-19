@@ -14,9 +14,15 @@ import { createKeyAction, type CreateKeyState } from "./actions";
 export function KeyCreator({
   extension = true,
   labels,
+  organizations = [],
 }: {
   extension?: boolean;
   labels?: MyLabels | null;
+  /**
+   * Organizations the person may act for: a key can be made to act as one
+   * (docs/organizations.md, "Other credentials"). Empty, it acts as them.
+   */
+  organizations?: Array<{ id: string; name: string }>;
 }) {
   const [state, formAction, pending] = useActionState<CreateKeyState, FormData>(
     createKeyAction,
@@ -27,8 +33,20 @@ export function KeyCreator({
   // who reads each label above, the name and the button on one row below.
   // On one row the three crushed the name field to nothing.
   const choosing = labels?.must_choose === true;
+  const actsAs =
+    organizations.length > 0 ? (
+      <select name="acting_for" aria-label="Who the key acts as" defaultValue="">
+        <option value="">acts as you</option>
+        {organizations.map((o) => (
+          <option key={o.id} value={o.id}>
+            acts as {o.name}
+          </option>
+        ))}
+      </select>
+    ) : null;
   const nameAndSubmit = (
     <>
+      {actsAs}
       <input
         name="name"
         placeholder={extension ? 'key name, e.g. "browser extension"' : "key name"}
@@ -61,7 +79,9 @@ export function KeyCreator({
       {state.plaintext && (
         <div className="key-reveal" role="status">
           <p className="sc">
-            new key “{state.name}”{state.label ? ` at ${state.label}` : ""}: copy it now; it will not be shown again
+            new key “{state.name}”{state.label ? ` at ${state.label}` : ""}
+            {state.actingFor ? `, acting as ${organizations.find((o) => o.id === state.actingFor)?.name ?? "an organization"}` : ""}: copy it now;
+            it will not be shown again
           </p>
           <code className="key-plaintext">{state.plaintext}</code>
         </div>

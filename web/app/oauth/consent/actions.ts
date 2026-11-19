@@ -19,7 +19,8 @@ export async function approveConsentAction(formData: FormData): Promise<void> {
   if (!session?.externalId || !requestId) redirect("/signin");
   let redirectTo: string;
   try {
-    redirectTo = await approveOAuthRequest(session.externalId, requestId);
+    const actingFor = String(formData.get("acting_for") ?? "").trim() || undefined;
+    redirectTo = await approveOAuthRequest(session.externalId, requestId, actingFor);
   } catch (err) {
     const gone = err instanceof AccountApiError && err.status === 410;
     redirect(
