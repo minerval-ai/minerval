@@ -22,7 +22,7 @@
 import { loadConfig } from "../config.js";
 import { afterMirrorApplied, type MirrorUpkeepResult } from "../services/mirror-upkeep.js";
 import { MirrorConfigError, syncMirror, type SyncResult } from "../services/mirror-apply-service.js";
-import { checkRequested, followedSource, noteChecked, trustedKeys } from "../services/mirror-following.js";
+import { checkRequested, followedSource, followsInApp, noteChecked, readFeedKeys, trustedKeys } from "../services/mirror-following.js";
 
 /** One sync, described for the log; null when there was nothing new. */
 export function describeSync(result: SyncResult): { info: string | null; error: string | null } {
@@ -82,6 +82,13 @@ export function startMirrorApplier(options: {
       }
       const result = await syncMirror(source, { trustedKeys: keys });
       await noteChecked(null);
+      // A batch signed with a key nobody here accepted: the feed may have
+      // moved to a new key. Read its keys again, so the Mirror page offers
+      // the new one beside the one accepted, for an administrator to compare
+      // and accept (docs/organizations.md, "When the feed's key changes").
+      if (result.refusal?.code === "unknown_key" && followsInApp() && loadConfig().mirrorFeedPublicKeys.length === 0) {
+        await readFeedKeys().catch(() => undefined);
+      }
       const { info, error } = describeSync(result);
       if (info) options.logger.info(info);
       // What the batches mean for this deployment's own work: reassessments

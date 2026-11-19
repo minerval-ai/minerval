@@ -460,6 +460,8 @@ describe("what a permission guards", () => {
       "POST /outbound/registration/send": ["administer"],
       "POST /outside/connection": ["administer"],
       "DELETE /outside/connection": ["administer"],
+      "POST /outside/connection/key": ["administer"],
+      "POST /outside/connection/by-hand": ["administer"],
       "POST /mirror/follow": ["administer"],
       "POST /mirror/pause": ["administer"],
       "POST /mirror/check": ["administer"],

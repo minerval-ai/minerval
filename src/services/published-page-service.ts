@@ -75,9 +75,13 @@ interface PublisherRow {
   registered_at: Date;
   retired_at: Date | null;
   name: string;
+  /** The connected deployment that registered the key, where one did. */
+  deployment_id: string | null;
+  deployment_name: string | null;
 }
 
-const PUBLISHER_COLUMNS = `p.id, p.account_id, p.key_id, p.public_key, p.hosting, p.declared_interest, p.registered_at, p.retired_at, c.display_name AS name`;
+const PUBLISHER_COLUMNS = `p.id, p.account_id, p.key_id, p.public_key, p.hosting, p.declared_interest, p.registered_at, p.retired_at, c.display_name AS name,
+  p.deployment_id, (SELECT d.name FROM deployments d WHERE d.id = p.deployment_id) AS deployment_name`;
 
 /** The longest statement of interest a registration carries. A backstop: it is a sentence or two shown on a public page. */
 export const DECLARED_INTEREST_MAX_CHARS = 1000;
@@ -97,6 +101,12 @@ export async function registerPublisher(input: {
   hosting: string;
   signature: string;
   declaredInterest?: string | null;
+  /** The connected deployment registering its key over its connection, or the one an admin names by hand. */
+  deploymentId?: string | null;
+  /** Whether the statement signed names the deployment: over its connection it does; carried by hand it cannot, as the deployment never learns its id. */
+  statementNamesDeployment?: boolean;
+  /** The organization an admin acts as, where one does: a deployment named by hand must be its own. */
+  organizationId?: string | null;
 }): Promise<{ publisher_id: string; key_id: string; hosting: string; in_words: string }> {
   if (!(input.hosting in HOSTING_WORDS)) {
     throw new PublishedPageError("BAD_HOSTING", `Say where the deployment runs as one of: ${Object.entries(HOSTING_WORDS).map(([k, v]) => `${k} (${v})`).join(", ")}.`);
@@ -108,7 +118,15 @@ export async function registerPublisher(input: {
     keyId = keyIdOf(input.publicKey.trim());
     verified = cryptoVerify(
       null,
-      Buffer.from(registrationStatement({ account: input.account, publicKey: input.publicKey.trim(), hosting: input.hosting }), "utf8"),
+      Buffer.from(
+        registrationStatement({
+          account: input.account,
+          publicKey: input.publicKey.trim(),
+          hosting: input.hosting,
+          deploymentId: input.statementNamesDeployment === false ? null : (input.deploymentId ?? null),
+        }),
+        "utf8"
+      ),
       key,
       Buffer.from(input.signature, "base64")
     );
@@ -122,6 +140,35 @@ export async function registerPublisher(input: {
         "`npx tsx scripts/published-page.ts registration <your account's identity here>` in the deployment prints one that is."
     );
   }
+  // A deployment says where it runs once, when it connects, and its admin is
+  // shown that; the key it registers says the same, or it is refused
+  // (docs/organizations.md, "Hosted by Minerval": hosting is checked).
+  let deploymentName: string | null = null;
+  if (!input.deploymentId && input.hosting === "minerval") {
+    throw new PublishedPageError(
+      "HOSTING_NOT_MINERVAL",
+      "Only a deployment Minerval runs says it runs on Minerval's machines, and it registers its key over its connection to minerval.ai, " +
+        "where that is checked. A key registered with an account key says where it runs as own_machines or third_party."
+    );
+  }
+  if (input.deploymentId) {
+    const [dep] = await rawQuery<{ hosting: string; name: string; organization_id: string }>(
+      `SELECT hosting, name, organization_id FROM deployments WHERE id = $1 AND retired_at IS NULL`,
+      [input.deploymentId]
+    );
+    if (!dep || (input.organizationId && dep.organization_id !== input.organizationId)) {
+      throw new PublishedPageError("DEPLOYMENT_RETIRED", "The organization has no live deployment with that id, so it registers nothing for one.");
+    }
+    if (dep.hosting !== input.hosting) {
+      throw new PublishedPageError(
+        "HOSTING_DIFFERS",
+        `This deployment said it runs on ${HOSTING_WORDS[dep.hosting as Hosting] ?? dep.hosting} when it connected, and this registration says ` +
+          `${HOSTING_WORDS[input.hosting as Hosting]}. Its pages state one answer: an administrator of the deployment sets where it runs to match, ` +
+          `or connects it again saying where it now runs.`
+      );
+    }
+    deploymentName = dep.name;
+  }
   const interest = input.declaredInterest?.trim() || null;
   if (interest && interest.length > DECLARED_INTEREST_MAX_CHARS) {
     throw new PublishedPageError("TOO_LONG", `A statement of interest is at most ${DECLARED_INTEREST_MAX_CHARS} characters: it is shown whole beside every page you publish.`);
@@ -134,16 +181,16 @@ export async function registerPublisher(input: {
     }
     if (live) await tx.query(`UPDATE publishers SET retired_at = now() WHERE id = $1`, [live.id]);
     const [row] = await tx.query<{ id: string }>(
-      `INSERT INTO publishers (account_id, key_id, public_key, hosting, declared_interest, sensitivity_label)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [input.accountId, keyId, input.publicKey.trim(), input.hosting, interest, currentLabel()]
+      `INSERT INTO publishers (account_id, key_id, public_key, hosting, declared_interest, deployment_id, sensitivity_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      [input.accountId, keyId, input.publicKey.trim(), input.hosting, interest, input.deploymentId ?? null, currentLabel()]
     );
     return {
       publisher_id: row!.id,
       key_id: keyId,
       hosting: input.hosting,
       in_words:
-        `This account is on record as the publisher for key ${keyId.slice(0, 16)}, of a deployment that runs on ${HOSTING_WORDS[input.hosting as Hosting]}. ` +
+        `This account is on record as the publisher for key ${keyId.slice(0, 16)}, of ${deploymentName ? `its deployment ${deploymentName}, which` : "a deployment that"} runs on ${HOSTING_WORDS[input.hosting as Hosting]}. ` +
         `The registration is public. A page published under this key is submitted by this account, and is reviewed and weighed as any contribution is.`,
     };
   });
@@ -234,7 +281,7 @@ function runLogWords(log: NonNullable<PublishedPagePackage["record"]["made"]>["r
  */
 export function sourceTextOf(
   pkg: PublishedPagePackage,
-  publisher: { name: string; declared_interest: string | null },
+  publisher: { name: string; declared_interest: string | null; deployment_name?: string | null },
   check: PackageCheck,
   /** The publisher's other pages and the requests it took up, from this graph's record (publisher-record-service.ts). */
   publishersRecord: string[] = []
@@ -247,7 +294,7 @@ export function sourceTextOf(
       "that graph's Steward for this node, wrote it. What a policy removed is marked where it was removed, and each part " +
       "that is held is named in its place.",
     "",
-    `Published by ${publisher.name} (key ${pkg.publisher.key_id.slice(0, 16)}), whose deployment is recorded as running on ` +
+    `Published by ${publisher.name}${publisher.deployment_name ? `, deployment ${publisher.deployment_name},` : ""} (key ${pkg.publisher.key_id.slice(0, 16)}), whose deployment is recorded as running on ` +
       `${HOSTING_WORDS[pkg.deployment.hosting]}; ${ATTESTATION_WORDS[pkg.deployment.attested_by]}.`,
     publisher.declared_interest ? `The publisher says of its own interest: ${publisher.declared_interest}` : "The publisher has said nothing of its own interest.",
     `The release: ${pkg.release.form === "standing" ? "standing, so each later version follows" : "once, so nothing is undertaken about later versions"}; ` +
@@ -862,6 +909,7 @@ export async function readPublishedPage(publishedPageId: string, opts: { sequenc
       public_key: pkg.publisher.public_key,
       runs_on: HOSTING_WORDS[pkg.deployment.hosting],
       attested_by: ATTESTATION_WORDS[pkg.deployment.attested_by],
+      deployment: registration?.deployment_id ? { id: registration.deployment_id, name: registration.deployment_name } : null,
       declared_interest: registration?.declared_interest ?? null,
       registered_at: registration?.registered_at.toISOString() ?? null,
     },
@@ -917,6 +965,7 @@ export async function publisherRecord(accountId: string): Promise<Record<string,
       public_key: r.public_key,
       runs_on: HOSTING_WORDS[r.hosting],
       attested_by: ATTESTATION_WORDS.nothing,
+      deployment: r.deployment_id ? { id: r.deployment_id, name: r.deployment_name } : null,
       declared_interest: r.declared_interest,
       registered_at: r.registered_at.toISOString(),
       retired_at: r.retired_at?.toISOString() ?? null,

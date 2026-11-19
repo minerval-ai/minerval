@@ -58,6 +58,8 @@ async function answer<T>(reply: FastifyReply, fn: () => Promise<T>, status = 200
   }
 }
 
+import { nextFeedBatch, uploadUsageReport } from "../services/organization-carried.js";
+
 export async function organizationRoutes(app: FastifyInstance): Promise<void> {
   const reader = [app.authenticate, app.requireUser];
   const session = [app.authenticate, app.requireSession, app.requireUser];
@@ -464,6 +466,63 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
     },
     preHandler: session,
     handler: (request, reply) => answer(reply, async () => ({ organization: await acceptConversion({ conversionId: request.params.id, by: me(request) }) })),
+  });
+
+  // ---- carried by hand (docs/organizations.md, "Connecting by hand") ----
+
+  app.get<{ Params: { id: string; deployment_id: string }; Querystring: { after?: number } }>("/organizations/:id/deployments/:deployment_id/feed", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "The next batch of the public graph's mirror feed after the one named (its members), exactly as signed, as a file to carry to " +
+        "one of the organization's deployments that holds read_feed and follows from files. Every batch after one you name, never a " +
+        "choice among nodes, so the download shows no more than a pull over the network. On the organization's log as a pull. 204 where " +
+        "there is no later batch",
+      params: {
+        type: "object",
+        required: ["id", "deployment_id"],
+        properties: { id: { type: "string" }, deployment_id: { type: "string" } },
+      },
+      querystring: { type: "object", properties: { after: { type: "integer", minimum: 0 } } },
+    },
+    preHandler: reader,
+    handler: async (request, reply) => {
+      try {
+        const batch = await nextFeedBatch({
+          organizationId: request.params.id,
+          deploymentId: request.params.deployment_id,
+          after: Number(request.query.after ?? 0),
+          by: me(request),
+        });
+        if (!batch) return reply.code(204).send();
+        return reply
+          .header("content-type", "application/json; charset=utf-8")
+          .header("content-disposition", `attachment; filename="${batch.file_name}"`)
+          .header("x-mirror-batch-sequence", String(batch.sequence))
+          .send(batch.body);
+      } catch (err) {
+        if (err instanceof OrganizationError) return reply.code(err.status).send({ error: err.message, code: err.code });
+        throw err;
+      }
+    },
+  });
+
+  app.post<{ Params: { id: string }; Body: { report: unknown } }>("/organizations/:id/usage-reports", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "Upload a usage report a deployment of the organization wrote as a file (its admins, from a signed-in session): recorded against " +
+        "the organization exactly as one sent over the network is, privately, and published nowhere",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      body: { type: "object", required: ["report"], properties: { report: {} } },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        const result = await uploadUsageReport({ organizationId: request.params.id, report: request.body.report, by: me(request) });
+        if (!result.ok) throw new OrganizationError(result.code, result.message, result.code === "REPORT_DIFFERS" ? 409 : 422);
+        return { recorded: result.recorded, period: result.period, revision: result.revision, received_at: result.received_at };
+      }),
   });
 
   // ---- the operator's way back ----

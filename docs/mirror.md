@@ -242,6 +242,7 @@ The settings below stay the operator's overrides: where `MIRROR_FEED_URL` or `MI
 | --- | --- |
 | `MIRROR_PUBLISH` | `true` makes the deployment a publisher |
 | `MIRROR_SIGNING_KEY` | Ed25519 private key, PEM. A secret |
+| `MIRROR_FEED_NEXT_PUBLIC_KEYS` | Keys the feed will sign with next, comma-separated, as the base64 of 32 bytes. Listed at `/mirror/feed/key` after the current key, so followers accept a new key before any batch is signed with it. A follower that meets a batch under a key it has not accepted reads the feed's keys again, and its Mirror page offers the new one |
 | `MIRROR_PUBLISHER_WORKER` | `true` runs the cuts in a process of their own (`npm run worker:mirror-publisher`), and the API only serves the feed. Default `false`: the API cuts too |
 | `MIRROR_PUBLISH_INTERVAL_SECONDS` | How often a cut is made. Default 900 |
 | `MIRROR_BATCH_MAX_BYTES` | Most bytes of rows in one batch. Default 8,000,000 |

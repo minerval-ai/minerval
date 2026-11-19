@@ -784,6 +784,14 @@ function Usage({ outgoing }: { outgoing: OutgoingUsageReports }) {
         <>
           <Section title="Where reports go">
             <Destination destination={outgoing.destination} billedTo={outgoing.billed_to ?? null} />
+            {outgoing.allowance && (
+              <p className="w-muted" style={{ margin: "6px 0 10px", fontSize: 12.5 }}>
+                What this deployment may spend of {outgoing.billed_to ?? "the organisation"}&rsquo;s public owls:{" "}
+                <b>{(outgoing.allowance.left_micro_usd / 1_000_000).toLocaleString("en-GB", { maximumFractionDigits: 2 })}</b> left of{" "}
+                {(outgoing.allowance.allowance_micro_usd / 1_000_000).toLocaleString("en-GB", { maximumFractionDigits: 2 })}, set by an admin of
+                the organisation on minerval.ai. A public act that would pass it is refused there.
+              </p>
+            )}
             <div className="w-card">
               <div className="w-card-b">
                 <WorkForm action={sendUsageReportsAction} submit="Prepare and send now" inline>

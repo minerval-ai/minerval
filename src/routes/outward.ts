@@ -73,7 +73,9 @@ import {
   connectionStatus,
   disconnect,
   refreshConnection,
+  replaceConnectionKey,
   startConnect,
+  startConnectByHand,
 } from "../services/public-graph-connection.js";
 
 const UUID = { type: "string", format: "uuid" } as const;
@@ -181,6 +183,57 @@ export async function outwardRoutes(app: FastifyInstance): Promise<void> {
       await checkConnect();
       await refreshConnection();
       return reply.send({ connection: await connectionStatus({ check: false }) });
+    },
+  });
+
+  app.post<{ Body: { name: string; hosting?: string; replace?: boolean } }>("/outside/connection/by-hand", {
+    schema: {
+      tags: TAG,
+      summary:
+        "Connect this deployment to minerval.ai by hand (administrators, from a signed-in session), where the network does not join them: " +
+        "make a key and a signed connection request for an admin of the organization to paste on its Deployments tab there. Nothing is sent " +
+        "over the network; what the deployment sends leaves as files",
+      body: {
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 120 },
+          hosting: { type: "string", enum: ["own_machines", "third_party", "minerval"] },
+          replace: { type: "boolean" },
+        },
+      },
+    },
+    preHandler: inSession("administer"),
+    handler: async (request, reply) => {
+      try {
+        return reply.code(201).send({
+          connection: await startConnectByHand({
+            name: request.body.name,
+            hosting: request.body.hosting ?? null,
+            replace: request.body.replace === true,
+            actor: { actor: await actorOf(request) },
+          }),
+        });
+      } catch (err) {
+        return connectionRefused(reply, err);
+      }
+    },
+  });
+
+  app.post("/outside/connection/key", {
+    schema: {
+      tags: TAG,
+      summary:
+        "Replace this deployment's connection key (administrators, from a signed-in session): a new key is made here, and minerval.ai " +
+        "puts it in place of the old one, which stops at once. Grants, the organization and the record stay; no new approval is needed",
+    },
+    preHandler: inSession("administer"),
+    handler: async (request, reply) => {
+      try {
+        return reply.send({ connection: await replaceConnectionKey({ actor: { actor: await actorOf(request) } }) });
+      } catch (err) {
+        return connectionRefused(reply, err);
+      }
     },
   });
 

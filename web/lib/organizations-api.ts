@@ -314,6 +314,44 @@ export async function denyConnectRequest(me: string, code: string): Promise<void
   await accountFetch(`/connect-requests/${pathSegment(code)}/deny`, { method: "POST", actingUser: me });
 }
 
+export async function approveByHand(
+  me: string,
+  id: string,
+  request: string,
+  name: string,
+  grants: DeploymentGrant[],
+  allowanceOwls: number | null
+): Promise<{ deployment_id: string; key_id: string }> {
+  return accountFetch(`${org(id)}/deployments/by-hand`, {
+    method: "POST",
+    body: { request, grants, ...(name ? { name } : {}), ...(allowanceOwls !== null ? { allowance_owls: allowanceOwls } : {}) },
+    actingUser: me,
+  });
+}
+
+/** Upload a usage report a deployment wrote as a file, recorded against the organization as if sent. */
+export async function uploadUsageReport(me: string, id: string, report: string): Promise<{ recorded: boolean; period: string; revision: number }> {
+  return accountFetch(`${org(id)}/usage-reports`, { method: "POST", body: { report }, actingUser: me });
+}
+
+/**
+ * Submit a page or mandate package a deployment of the organization wrote as
+ * a file, acting as the organization: checked and admitted as if the
+ * deployment had sent it.
+ */
+export async function submitCarriedPackage(me: string, id: string, kind: "page" | "mandate", pkg: unknown): Promise<Record<string, unknown>> {
+  return accountFetch(kind === "page" ? "/published-pages" : "/published-mandates", {
+    method: "POST",
+    body: { package: pkg },
+    actingUser: me,
+    actingOrganization: id,
+  });
+}
+
+export async function retireDeployment(me: string, id: string, deploymentId: string): Promise<void> {
+  await accountFetch(`${org(id)}/deployments/${pathSegment(deploymentId)}`, { method: "DELETE", actingUser: me });
+}
+
 export async function listDeployments(me: string, id: string): Promise<DeploymentView[]> {
   return (await accountFetch<{ deployments: DeploymentView[] }>(`${org(id)}/deployments`, { actingUser: me })).deployments;
 }

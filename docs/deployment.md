@@ -70,6 +70,7 @@ of the variable to use. The secrets are:
 | `GITHUB_APP_PRIVATE_KEY`, `GITHUB_TOKEN` | The credential for filing reports as GitHub issues. |
 | `PUBLISH_SIGNING_KEY` | The Ed25519 private key, in PEM form, that signs packages of pages released outside ([published-pages.md](published-pages.md)). |
 | `PUBLIC_GRAPH_API_KEY` | The organization's own account key on the public graph, for everything the deployment sends or does there ([outward-acts.md](outward-acts.md)). |
+| `MINERVAL_HOSTING_TOKEN` | Only on a deployment Minerval runs: the token its provisioning gave it. Sent when it connects to minerval.ai, which accepts "Minerval's machines" as where it runs only with a live token, and fixes that answer in the Connect drawer ([organizations.md](organizations.md), "Hosted by Minerval"). |
 | `USAGE_REPORT_API_KEY` | The key usage reports are sent to the public graph with ([usage-report.md](usage-report.md)). |
 | `SANDBOX_TOKEN` | The secret the API and the sandbox service share ([file-sets.md](file-sets.md)). |
 | `CONNECTION_...` | Each connection's credential, in a variable the connection names ([connections.md](connections.md)). There may be any number, so a file is refused for any name that begins this way. |

@@ -110,7 +110,7 @@ export interface SetupChecklist {
     account_set: boolean;
     /** This deployment's connection to minerval.ai, with the grants its settings need and it lacks. Absent from an older API; null where never connected. */
     connection?: {
-      state: "waiting" | "connected" | "denied" | "expired";
+      state: "waiting" | "connected" | "denied" | "expired" | "by_hand";
       organization_name: string | null;
       grants: string[];
       problem: string | null;
@@ -676,6 +676,8 @@ export interface OutgoingUsageReports {
     | { kind: "none" };
   /** The organization the reports are billed to, where this deployment is connected to minerval.ai. Absent from an older API. */
   billed_to?: string | null;
+  /** The allowance on what it spends of the organization's public owls, where an admin set one (micro-USD). */
+  allowance?: { allowance_micro_usd: number; left_micro_usd: number } | null;
   reports: UsageReport[];
 }
 

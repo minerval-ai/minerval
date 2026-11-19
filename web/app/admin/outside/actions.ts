@@ -19,7 +19,9 @@ import {
   readMirrorKeys,
   declinePublicRequest,
   disconnectConnection,
+  replaceConnectionKey,
   startConnection,
+  startConnectionByHand,
   type Hosting,
   fundPublicMandate,
   fundPublicNode,
@@ -201,8 +203,15 @@ export async function connectAction(_prev: FormState, form: FormData): Promise<F
   if (!name) return { error: "Say what to call this deployment. Your organization's admin can change it." };
   const hosting = String(form.get("hosting") ?? "");
   const apiUrl = String(form.get("api_url") ?? "").trim();
+  const byHand = form.get("by_hand") === "1";
   try {
-    await startConnection(who, {
+    if (byHand) {
+      await startConnectionByHand(who, {
+        name,
+        ...(HOSTINGS.includes(hosting as Hosting) ? { hosting: hosting as Hosting } : {}),
+        ...(form.get("replace") === "1" ? { replace: true } : {}),
+      });
+    } else await startConnection(who, {
       name,
       ...(HOSTINGS.includes(hosting as Hosting) ? { hosting: hosting as Hosting } : {}),
       ...(apiUrl ? { api_url: apiUrl } : {}),
@@ -211,7 +220,7 @@ export async function connectAction(_prev: FormState, form: FormData): Promise<F
   } catch (err) {
     return refused(err);
   }
-  redirect("/admin/outside?drawer=connect");
+  redirect(byHand ? "/admin/outside" : "/admin/outside?drawer=connect");
 }
 
 export async function checkConnectionAction(_prev: FormState, _form: FormData): Promise<FormState> {
@@ -224,6 +233,18 @@ export async function checkConnectionAction(_prev: FormState, _form: FormData): 
     if (connection?.state === "denied") return { error: "An admin of the organisation denied it." };
     if (connection?.state === "expired") return { error: "The code expired. Start again." };
     return { notice: "Still waiting for an admin of the organisation." };
+  } catch (err) {
+    return refused(err);
+  }
+}
+
+export async function replaceKeyAction(_prev: FormState, _form: FormData): Promise<FormState> {
+  const who = await actingUser();
+  if (!who) return NOT_SIGNED_IN;
+  try {
+    const { connection } = await replaceConnectionKey(who);
+    revalidatePath("/admin/outside");
+    return { notice: `Replaced. The new key (${connection.key_id?.slice(0, 8) ?? "?"}) signs from now on; the old one no longer works on minerval.ai.` };
   } catch (err) {
     return refused(err);
   }

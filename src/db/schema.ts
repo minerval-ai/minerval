@@ -2760,7 +2760,8 @@ export const organizationLog = pgTable(
       .notNull()
       .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
     actorId: uuid("actor_id").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
-    // 'session' (a person signed in) or 'operator' (the operator key).
+    // 'session' (a person signed in), 'operator' (the operator key), or
+    // 'deployment' (a connected deployment's own key: replacing it, retiring itself).
     credential: text("credential").notNull(),
     kind: text("kind").notNull(),
     detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
@@ -2768,7 +2769,7 @@ export const organizationLog = pgTable(
   },
   (table) => [
     index("idx_organization_log_org").on(table.organizationId, table.createdAt),
-    check("ck_organization_log_credential", sql`${table.credential} IN ('session', 'operator')`),
+    check("ck_organization_log_credential", sql`${table.credential} IN ('session', 'operator', 'deployment')`),
   ]
 );
 
@@ -2856,6 +2857,11 @@ export const deployments = pgTable(
     // Where its own site is, as it stated when it asked to connect: used only
     // for links back to it, never checked or fetched.
     address: text("address"),
+    // Whether Minerval provisioned it: it presented a hosting token Minerval's
+    // operator made (hosted_deployment_tokens) when it connected. Only such a
+    // deployment may say it runs on Minerval's machines, and it may say
+    // nothing else (docs/organizations.md, "Hosted by Minerval").
+    hostedByMinerval: boolean("hosted_by_minerval").notNull().default(false),
     approvedBy: uuid("approved_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
     approvedAt: timestamp("approved_at", { withTimezone: true }).notNull().defaultNow(),
     retiredBy: uuid("retired_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
@@ -2932,6 +2938,8 @@ export const deploymentConnectRequests = pgTable(
     // Where its own site is, as it stated: used for the links back to it.
     address: text("address"),
     reportIdentifier: uuid("report_identifier"),
+    // The hosting token it presented, where Minerval provisioned it.
+    hostingTokenId: uuid("hosting_token_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     // 'waiting', 'approved' or 'denied'.
@@ -2945,6 +2953,27 @@ export const deploymentConnectRequests = pgTable(
     check("ck_deployment_connect_requests_state", sql`${table.state} IN ('waiting', 'approved', 'denied')`),
     check("ck_deployment_connect_requests_hosting", sql`${table.hosting} IN ('own_machines', 'minerval', 'third_party')`),
   ]
+);
+
+// A token Minerval's operator makes for a deployment Minerval provisions, and
+// the provisioning puts in its settings (MINERVAL_HOSTING_TOKEN). It is sent
+// when the deployment connects: the public graph accepts the hosting word
+// `minerval` only with a live token, and refuses any other word with one, so
+// "Minerval's machines" is checked, not badged (docs/organizations.md, "Hosted
+// by Minerval"). Only its hash is kept. A token serves one live deployment;
+// one that reconnects (a lost key) presents it again.
+export const hostedDeploymentTokens = pgTable(
+  "hosted_deployment_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tokenHash: text("token_hash").notNull().unique(),
+    // What the operator says it is for: the organization and the machine, in their words.
+    note: text("note").notNull(),
+    madeAt: timestamp("made_at", { withTimezone: true }).notNull().defaultNow(),
+    // The deployment it was last used by, when an admin approved it.
+    deploymentId: uuid("deployment_id").references((): AnyPgColumn => deployments.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  }
 );
 
 // One row per signed request that wrote, for the organization's members.
@@ -2999,7 +3028,9 @@ export const publicGraphConnection = pgTable(
     privateKeyPem: text("private_key_pem").notNull(),
     publicKey: text("public_key").notNull(),
     keyId: text("key_id").notNull(),
-    // 'waiting' (a code shown, not yet approved), 'connected', 'denied' or 'expired'.
+    // 'waiting' (a code shown, not yet approved), 'connected', 'denied',
+    // 'expired', or 'by_hand' (a request shown to carry by hand, for a
+    // deployment the network does not join: it sends nothing over it).
     state: text("state").notNull(),
     code: text("code"),
     verificationUri: text("verification_uri"),
@@ -3014,6 +3045,12 @@ export const publicGraphConnection = pgTable(
     organizationId: uuid("organization_id"),
     organizationName: text("organization_name"),
     grants: text("grants").array().notNull().default(sql`'{}'::text[]`),
+    // The allowance on its spend, as last read: what it may spend of the
+    // organization's owls and what is left (micro-USD); null where none is set.
+    allowanceMicroUsd: bigint("allowance_micro_usd", { mode: "number" }),
+    allowanceLeftMicroUsd: bigint("allowance_left_micro_usd", { mode: "number" }),
+    // The signed request shown to carry by hand, where it was connected that way.
+    byHandRequest: text("by_hand_request"),
     startedBy: uuid("started_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     connectedAt: timestamp("connected_at", { withTimezone: true }),
@@ -3022,7 +3059,7 @@ export const publicGraphConnection = pgTable(
   },
   (table) => [
     check("ck_public_graph_connection_one", sql`${table.id} = 'this'`),
-    check("ck_public_graph_connection_state", sql`${table.state} IN ('waiting', 'connected', 'denied', 'expired')`),
+    check("ck_public_graph_connection_state", sql`${table.state} IN ('waiting', 'connected', 'denied', 'expired', 'by_hand')`),
   ]
 );
 
@@ -9329,6 +9366,10 @@ export const publishers = pgTable(
     // What the publisher says of its own interest in what it publishes, in
     // its own words; null where it said nothing.
     declaredInterest: text("declared_interest"),
+    // The connected deployment that registered this key over its connection
+    // (docs/organizations.md, "Publishing"), so a page names the deployment as
+    // well as the organization; null for a key registered by an account key.
+    deploymentId: uuid("deployment_id"),
     registeredAt: timestamp("registered_at", { withTimezone: true }).notNull().defaultNow(),
     retiredAt: timestamp("retired_at", { withTimezone: true }),
     sensitivityLabel: sensitivityLabelColumn(),

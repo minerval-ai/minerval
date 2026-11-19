@@ -42,7 +42,11 @@ import {
   grantAction,
   inviteAction,
   removeMemberAction,
+  approveByHandAction,
+  retireDeploymentAction,
   revokeCredentialAction,
+  submitCarriedPackageAction,
+  uploadUsageReportAction,
   setAllowanceAction,
   renameAction,
   revokeOldKeyAction,
@@ -119,6 +123,14 @@ function logLine(e: LogEntry, names: Map<string, string>, deployments: Map<strin
       return `approved the deployment ${String(d.name)}, with ${Array.isArray(d.grants) ? (d.grants as string[]).join(", ") : "its grants"}`;
     case "deployment_disconnected":
       return `the deployment ${String(d.name)} disconnected`;
+    case "feed_downloaded":
+      return `downloaded feed batch ${String(d.sequence)} for the deployment ${String(d.name)}, to carry by hand`;
+    case "usage_report_uploaded":
+      return `uploaded the usage report for ${String(d.period)} (revision ${String(d.revision)})${d.recorded ? "" : ", which was recorded already"}`;
+    case "deployment_retired":
+      return `retired the deployment ${String(d.name)}`;
+    case "deployment_key_replaced":
+      return `the deployment ${String(d.name)} replaced its connection key (${String(d.old_key_id ?? "").slice(0, 8)} → ${String(d.key_id ?? "").slice(0, 8)})`;
     case "acted":
       return `acted as the organization${HOW[String(d.how)] ?? ""}: ${String(d.method)} ${String(d.route)} (${String(d.status)})`;
     case "credential_revoked":
@@ -420,6 +432,7 @@ export default async function OrganizationPage({
               ))
             )}
           </section>
+          {admin && <ConnectByHand organizationId={id} />}
         </>
       )}
 
@@ -447,6 +460,25 @@ export default async function OrganizationPage({
               ))}
             </div>
           </section>
+          {admin && (
+            <section className="acct-section">
+              <div className="acct-head">
+                <h2>Usage reports carried by hand</h2>
+                <span className="acct-note">From a deployment the network does not join to minerval.ai</span>
+              </div>
+              <p className="acct-prose acct-measure">
+                Such a deployment writes each day&rsquo;s usage report as a file (its Budget page, USAGE_REPORT_DIR). Upload them here and they
+                are recorded against {org.name} exactly as if it had sent them: privately, for the metered price, and published nowhere.
+              </p>
+              <ActionForm action={uploadUsageReportAction} submit="Upload">
+                <input type="hidden" name="organization_id" value={id} />
+                <label>
+                  Report files
+                  <input type="file" name="report_file" accept="application/json,.json" multiple required />
+                </label>
+              </ActionForm>
+            </section>
+          )}
           {admin && (
             <section className="acct-section">
               <div className="acct-head">
@@ -723,6 +755,54 @@ function DeploymentBlock({
             <GrantChips grants={grants} admin={admin} organizationId={organizationId} />
           )}
           {admin && missing.length > 0 && <GiveForm organizationId={organizationId} field="deployment_id" grantee={d.id} choices={missing} />}
+          <details className="acct-asTable">
+            <summary>Carried by hand, for a deployment the network does not join</summary>
+            {d.grants.includes("read_feed") ? (
+              <form action={`/api/organizations/${organizationId}/feed`} method="get" className="admin-form">
+                <input type="hidden" name="deployment" value={d.id} />
+                <label>
+                  Download the feed batch after
+                  <input name="after" type="number" min={0} defaultValue={0} />
+                  <small>
+                    The number of the last batch it applied, from its Mirror page (0 for none). Put the file in its MIRROR_FEED_DIR. Each download
+                    is on the log as a pull, and shows no more than a pull over the network does.
+                  </small>
+                </label>
+                <div className="admin-form-foot">
+                  <button className="order-button" type="submit">
+                    Download
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <p className="acct-note">It does not hold read_feed, so no feed batch is downloaded for it.</p>
+            )}
+            <ActionForm action={submitCarriedPackageAction} submit="Submit">
+              <input type="hidden" name="organization_id" value={organizationId} />
+              <label>
+                Page or mandate packages from its Outbox
+                <input type="file" name="package_file" accept="application/json,.json" multiple required />
+                <small>
+                  Submitted as the organization and checked as if the deployment had sent them: signed with its registered key. A page&rsquo;s first
+                  package is charged to the organization&rsquo;s owls, so this needs spend.
+                </small>
+              </label>
+            </ActionForm>
+          </details>
+          {admin && (
+            <details className="acct-asTable">
+              <summary>Retire this deployment</summary>
+              <p className="acct-note">
+                Its key stops working here at once and everything it may do is withdrawn. Nothing it did is undone. To act again it connects
+                anew, with a new key and an admin&rsquo;s approval. If its key may have been copied, its own administrators can replace the key
+                instead, keeping everything else.
+              </p>
+              <ActionForm action={retireDeploymentAction} submit={`Retire ${d.name}`} inline danger>
+                <input type="hidden" name="organization_id" value={organizationId} />
+                <input type="hidden" name="deployment_id" value={d.id} />
+              </ActionForm>
+            </details>
+          )}
           {d.recent_writes.length > 0 && (
             <details className="acct-asTable">
               <summary>{plural(d.recent_writes.length, "recent write")} · reads are not recorded</summary>
@@ -833,5 +913,52 @@ function LogLines({ log, names, deployments }: { log: LogEntry[]; names: Map<str
         </div>
       ))}
     </>
+  );
+}
+
+/** Approving a deployment the network does not join, from the request it showed, pasted in (docs/organizations.md, "Connecting by hand"). */
+function ConnectByHand({ organizationId }: { organizationId: string }) {
+  return (
+    <section className="acct-section">
+      <details>
+        <summary className="acct-note">Connect one by hand, for a deployment the network does not join to minerval.ai</summary>
+        <p className="acct-prose acct-measure">
+          An administrator of the deployment chooses &ldquo;Connect by hand&rdquo; in its Connect drawer, and it shows a signed request. Paste it
+          here whole, or choose the file it is in. It is checked as one sent over the network is. The deployment needs nothing back: its pages,
+          usage reports and the feed then travel as files, from each deployment&rsquo;s row above and the Billing tab.
+        </p>
+        <ActionForm action={approveByHandAction} submit="Approve it">
+          <input type="hidden" name="organization_id" value={organizationId} />
+          <label>
+            The request
+            <textarea name="request" rows={6} placeholder='{ "format": "minerval-connection-request/1", ... }' />
+          </label>
+          <label>
+            Or its file
+            <input type="file" name="request_file" accept="application/json,.json,.txt" />
+          </label>
+          <label>
+            What to call it
+            <input name="name" maxLength={120} placeholder="the name it asks for" />
+          </label>
+          <fieldset className="admin-fieldset">
+            <legend>What it may do as the organization</legend>
+            {DEPLOYMENT_GRANTS.map((g) => (
+              <label key={g} className="admin-check">
+                <input type="checkbox" name="grant" value={g} defaultChecked={g === "read_feed" || g === "report_usage" || g === "publish"} />
+                <span>
+                  <code>{g}</code> {PERMISSION_WORDS[g]}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          <label>
+            Allowance on spend, in owls
+            <input name="allowance_owls" type="number" min={0} step="any" placeholder="none: the whole balance" />
+          </label>
+          <small className="acct-note">Approve only a request an administrator of your own deployment gave you. Recorded on the log under your name.</small>
+        </ActionForm>
+      </details>
+    </section>
   );
 }

@@ -591,6 +591,8 @@ describe("the columns", () => {
       "eval_runs",
       // Where the subscription router has read the event log to: a number.
       "event_router_state",
+      // Hosting tokens for deployments Minerval provisions, kept as hashes (docs/organizations.md, "Hosted by Minerval").
+      "hosted_deployment_tokens",
       // The labels themselves.
       "label_reads",
       "labels",

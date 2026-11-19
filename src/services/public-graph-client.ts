@@ -25,7 +25,7 @@ const REASON =
 
 export interface Connection {
   apiUrl: string;
-  state: "waiting" | "connected" | "denied" | "expired";
+  state: "waiting" | "connected" | "denied" | "expired" | "by_hand";
   privateKeyPem: string;
   publicKey: string;
   keyId: string;
@@ -40,6 +40,11 @@ export interface Connection {
   organizationId: string | null;
   organizationName: string | null;
   grants: DeploymentGrant[];
+  /** The allowance on its spend as last read, and what is left (micro-USD); null where none is set. */
+  allowanceMicroUsd: number | null;
+  allowanceLeftMicroUsd: number | null;
+  /** The signed request shown to carry by hand, where it was connected that way. */
+  byHandRequest: string | null;
   startedBy: string | null;
   startedAt: Date;
   connectedAt: Date | null;
@@ -68,7 +73,7 @@ export async function readConnection(): Promise<Connection | null> {
       api_url: string; state: Connection["state"]; private_key_pem: string; public_key: string; key_id: string;
       code: string | null; verification_uri: string | null; code_expires_at: Date | null; asked_grants: DeploymentGrant[]; hosting: string | null;
       deployment_id: string | null; deployment_name: string | null; organization_id: string | null; organization_name: string | null;
-      grants: DeploymentGrant[]; started_by: string | null; started_at: Date; connected_at: Date | null; last_checked_at: Date | null;
+      grants: DeploymentGrant[]; allowance_micro_usd: string | null; allowance_left_micro_usd: string | null; by_hand_request: string | null; started_by: string | null; started_at: Date; connected_at: Date | null; last_checked_at: Date | null;
       last_error: string | null;
     }>(`SELECT * FROM public_graph_connection WHERE id = 'this'`)
   );
@@ -89,6 +94,9 @@ export async function readConnection(): Promise<Connection | null> {
         organizationId: row.organization_id,
         organizationName: row.organization_name,
         grants: row.grants,
+        allowanceMicroUsd: row.allowance_micro_usd === null ? null : Number(row.allowance_micro_usd),
+        allowanceLeftMicroUsd: row.allowance_left_micro_usd === null ? null : Number(row.allowance_left_micro_usd),
+        byHandRequest: row.by_hand_request,
         startedBy: row.started_by,
         startedAt: row.started_at,
         connectedAt: row.connected_at,

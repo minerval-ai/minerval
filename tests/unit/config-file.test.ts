@@ -127,6 +127,7 @@ describe("the table of settings", () => {
         "OPENROUTER_API_KEY",
         "PANGRAM_API_KEY",
         "PUBLIC_GRAPH_API_KEY",
+        "MINERVAL_HOSTING_TOKEN",
         "PUBLISH_SIGNING_KEY",
         "SANDBOX_TOKEN",
         "SQL_AGENT_DATABASE_URL",

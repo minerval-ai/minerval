@@ -86,7 +86,8 @@ export type OutwardActKind =
   | "send_failure_facts"
   | "register_publisher"
   | "connect_deployment"
-  | "disconnect_deployment";
+  | "disconnect_deployment"
+  | "replace_connection_key";
 
 /** What each kind of act is, as the log says it to a member. */
 export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
@@ -105,6 +106,7 @@ export const OUTWARD_ACT_WORDS: Record<OutwardActKind, string> = {
   register_publisher: "registered this deployment's signing key to the organization's account on the public graph",
   connect_deployment: "asked minerval.ai to connect this deployment to an organization, with a new connection key",
   disconnect_deployment: "disconnected this deployment from minerval.ai, retiring its connection key there",
+  replace_connection_key: "replaced this deployment's connection key on minerval.ai; the old key stopped working there",
 };
 
 /** Who made a call: a person, or the gate to outside sending what its setting let through with nobody sending it. */
@@ -779,7 +781,9 @@ export async function registerPublisherOutside(input: { declaredInterest?: strin
   }
   let statement;
   try {
-    statement = await signedRegistration(account);
+    // Over the connection, the statement names this deployment, as the public graph checks.
+    const { liveConnection } = await import("./public-graph-client.js");
+    statement = await signedRegistration(account, (await liveConnection())?.deploymentId ?? null);
   } catch (err) {
     if (err instanceof OutboundError) throw new OutwardError(err.code, err.message, 409);
     throw err;

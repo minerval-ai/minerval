@@ -549,15 +549,20 @@ its address. A missing grant on either side says where it is granted.
 **Connecting by hand**, under "Advanced" in the drawer, is for a
 deployment the network does not join to minerval.ai (`MIRROR_FEED_DIR`,
 `USAGE_REPORT_DIR`). It is kept as a fallback. The deployment shows a
-connection request: the same body, signed, as text. An admin pastes it into the organization's
-page on minerval.ai and approves it there. The deployment needs nothing
+connection request: the same body, signed, as text, good for seven days.
+An admin pastes it into the organization's Deployments tab on minerval.ai,
+under "Connect one by hand", and approves it there. Its publishing key is
+registered the same way, by an admin acting as the organization, naming the
+deployment. The deployment needs nothing
 back, since it sends nothing over the network. What it would have sent
 leaves as files, and two kinds go two ways, because one is public and
 the other is not:
 
 - **Page packages**, from the Outbox, are for the public graph. A member
-  of the organization submits one on minerval.ai, signed in as
-  themselves, and it is checked and admitted as if the deployment had
+  of the organization holding `spend` (a page's first package is charged
+  to the organization's owls) submits one on minerval.ai, from the
+  deployment's row on the Deployments tab, signed in as themselves, and it
+  is checked and admitted as if the deployment had
   sent it, under the organization and the deployment.
 - **Usage reports**, from Budget (`USAGE_REPORT_DIR`), are billing, sent
   privately to Minerval. An admin uploads them on the organization's
@@ -695,7 +700,10 @@ does not get a shortcut because Minerval is on both sides. Reasons:
   `minerval` ("Minerval's machines") are in every package and on the
   deployment's record, and the approving admin sees them.
 - **Hosting is checked, not badged.** The public graph knows which
-  deployments Minerval provisioned. It refuses the hosting word
+  deployments Minerval provisioned: Minerval's operator makes a hosting
+  token for each (`POST /operator/hosted-deployment-tokens`, kept only as a
+  hash), and provisioning puts it in the deployment's
+  `MINERVAL_HOSTING_TOKEN`, which it sends when it connects. It refuses the hosting word
   `minerval` from a deployment Minerval did not provision, and refuses
   any other word from one it did. That holds at connection and at
   publisher registration. The words shown stay the same three, with
@@ -951,12 +959,40 @@ Each phase is one pull request or a few, and leaves things working.
    which asks at once) and the drawer's own checking every five seconds;
    making an organization on the approval page, and a member shown its
    admins; the links both ways; and refusals in words with who fixes them.
-5. **Control.** Withdrawing grants and retiring deployments from
-   minerval.ai, replacing the connection key, the owl allowance, connecting
-   by hand, submitting carried-out page packages and uploading usage
-   reports, feed files to download, accepting a new feed key, publishing
-   through the connection
-   (`publishers.deployment_id`), and the check on hosting words.
+5. **Control** (built). Withdrawing grants, and retiring a deployment
+   from its organization's Deployments tab (`DELETE
+   /organizations/:id/deployments/:deployment_id`), which the deployment
+   learns on its next request and says in words. A deployment's own
+   standing is readable whatever it holds (`deployment: "self"` in
+   `organization-routes.ts`: `GET /organizations/me`, retiring itself,
+   replacing its key). Replacing the connection key (`POST
+   /deployments/me/key`, signed with the old key and carrying the new key's
+   signature over `keyReplacementStatement`, so the old key alone cannot
+   hand the deployment to a key nobody holds; Overview's "Replace the
+   key"). The allowance on spend shown on Overview and Budget, as last read.
+   Connecting by hand: the drawer's "Connect by hand" makes a signed request
+   (`signByHandRequest`, good for seven days) that an admin pastes on the
+   Deployments tab (`POST /organizations/:id/deployments/by-hand`); a member
+   downloads the next feed batch after one they name (`GET
+   /organizations/:id/deployments/:deployment_id/feed`, logged as a pull);
+   a member with `spend` submits page and mandate packages acting as the
+   organization, and an admin registers the deployment's key the same way,
+   naming it (`deployment_id` on `POST /publishers`); an admin uploads
+   usage reports on the Billing tab (`POST /organizations/:id/usage-reports`).
+   A new feed key: the feed lists the keys it will sign with next
+   (`MIRROR_FEED_NEXT_PUBLIC_KEYS`), and a follower that meets a batch under
+   a key it has not accepted reads the feed's keys again, so the Mirror page
+   offers it. Publishing through the connection: a key registered over it
+   names the deployment in the statement it signs
+   (`minerval-publisher-registration/2`), is kept with
+   `publishers.deployment_id`, and pages say "deployment Research". The
+   check on hosting words: Minerval's operator makes a hosting token for
+   each deployment Minerval provisions (`/operator/hosted-deployment-tokens`,
+   kept as a hash), which goes in its `MINERVAL_HOSTING_TOKEN`; `minerval`
+   is accepted at connection only with a live token and no other word with
+   one, a token serves one live deployment, a key registered over a
+   connection must say the hosting the deployment connected with, and an
+   account key cannot say `minerval` at all.
 6. **Domains.** Verification, the daily check, and showing the domain.
 7. **Billing on the organization.** The report identifier tied to the
    organization, reports refused when it does not match, the admins' read of reports received, and

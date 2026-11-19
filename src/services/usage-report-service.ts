@@ -463,6 +463,8 @@ export interface OutgoingUsageReports {
     | { kind: "none" };
   /** The organization the reports are billed to, where this deployment is connected to minerval.ai. */
   billed_to: string | null;
+  /** The allowance on what this deployment spends of the organization's public owls, where an admin set one (micro-USD). */
+  allowance: { allowance_micro_usd: number; left_micro_usd: number } | null;
   /** Every report, newest day first, each exactly as it is sent. */
   reports: UsageReportRow[];
 }
@@ -484,6 +486,10 @@ export async function outgoingUsageReports(limit = 400): Promise<OutgoingUsageRe
     corrections: reporting ? HOW_A_REPORT_IS_CORRECTED : null,
     destination: usageReportDestination(config, connection),
     billed_to: connection?.organizationName ?? null,
+    allowance:
+      connection && connection.allowanceMicroUsd !== null
+        ? { allowance_micro_usd: connection.allowanceMicroUsd, left_micro_usd: connection.allowanceLeftMicroUsd ?? 0 }
+        : null,
     reports: rows.map(reportRow),
   };
 }

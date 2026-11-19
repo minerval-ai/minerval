@@ -155,7 +155,7 @@ export interface SetupChecklist {
      * has never been connected.
      */
     connection: {
-      state: "waiting" | "connected" | "denied" | "expired";
+      state: "waiting" | "connected" | "denied" | "expired" | "by_hand";
       organization_name: string | null;
       grants: string[];
       problem: string | null;

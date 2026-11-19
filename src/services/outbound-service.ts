@@ -127,7 +127,9 @@ function signer(): Signer {
  * it to minerval.ai (docs/organizations.md, "Connecting").
  */
 export async function statedHosting(): Promise<"own_machines" | "minerval" | "third_party" | null> {
-  const fixed = loadConfig().deploymentHosting;
+  const config = loadConfig();
+  if (config.minervalHostingToken) return "minerval";
+  const fixed = config.deploymentHosting;
   if (fixed) return fixed;
   const { readConnection } = await import("./public-graph-client.js");
   return (await readConnection())?.hosting ?? null;
@@ -173,11 +175,18 @@ export function signingKeyId(): string | null {
   }
 }
 
-/** The registration the organization's account presents on the public graph, signed with the deployment's key. */
-export async function signedRegistration(account: string): Promise<{ public_key: string; hosting: string; account: string; signature: string }> {
+/**
+ * The registration the organization's account presents on the public graph,
+ * signed with the deployment's key. Sent over the deployment's connection, it
+ * names the deployment too (`deploymentId`), as the public graph then checks.
+ */
+export async function signedRegistration(
+  account: string,
+  deploymentId: string | null = null
+): Promise<{ public_key: string; hosting: string; account: string; signature: string }> {
   const s = signer();
   const where = await hosting();
-  const statement = registrationStatement({ account, publicKey: s.publicKey, hosting: where });
+  const statement = registrationStatement({ account, publicKey: s.publicKey, hosting: where, deploymentId });
   return {
     public_key: s.publicKey,
     hosting: where,

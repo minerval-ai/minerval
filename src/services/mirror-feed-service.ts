@@ -56,6 +56,7 @@ import {
   feedGenesisHash,
   keyIdOf,
   orderByReferences,
+  parsePublicKey,
   parseSigningKey,
   publicKeyString,
   signBatch,
@@ -555,6 +556,20 @@ export interface FeedKey {
   keys: Array<{ public_key: string; key_id: string }>;
 }
 
+/** The keys the operator says the feed will sign with next, each that parses, as the feed lists them. */
+function announcedKeys(): Array<{ public_key: string; key_id: string }> {
+  const out: Array<{ public_key: string; key_id: string }> = [];
+  for (const k of loadConfig().mirrorFeedNextPublicKeys) {
+    try {
+      const stated = publicKeyString(parsePublicKey(k));
+      if (!out.some((o) => o.public_key === stated)) out.push({ public_key: stated, key_id: keyIdOf(stated) });
+    } catch {
+      // A key that does not parse is not listed; the preflight says which.
+    }
+  }
+  return out;
+}
+
 export async function feedKey(db: MirrorDb = appDb, signingKey: KeyObject = configuredSigningKey()): Promise<FeedKey> {
   const { publicKey, keyId } = publicHalf(signingKey);
   const [head] = await db.query<{ feed_id: string }>(
@@ -565,9 +580,13 @@ export async function feedKey(db: MirrorDb = appDb, signingKey: KeyObject = conf
     public_key: publicKey,
     key_id: keyId,
     feed_id: head?.feed_id ?? null,
-    // Every key the feed signs with, the current one first. One today; a
-    // publisher changing its key lists the new one before it signs with it.
-    keys: [{ public_key: publicKey, key_id: keyId }],
+    // Every key the feed signs with, the current one first, then those it
+    // will sign with next (MIRROR_FEED_NEXT_PUBLIC_KEYS), so a follower can
+    // accept a new key before any batch is signed with it.
+    keys: [
+      { public_key: publicKey, key_id: keyId },
+      ...announcedKeys().filter((k) => k.key_id !== keyId),
+    ],
   };
 }
 

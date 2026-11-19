@@ -413,13 +413,14 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             code: "NOT_A_DEPLOYMENT_ROUTE",
           });
         }
-        const holds = needed === "any" ? deployment.grants.length > 0 : needed.some((g) => deployment.grants.includes(g));
+        const holds =
+          needed === "self" ? true : needed === "any" ? deployment.grants.length > 0 : needed.some((g) => deployment.grants.includes(g));
         if (!holds) {
-          const words = needed === "any" ? "any grant" : needed.join(" or ");
+          const words = needed === "any" || needed === "self" ? "any grant" : needed.join(" or ");
           return reply.code(403).send({
             error: `This deployment does not hold ${words}. An admin of ${deployment.organization_name} gives it on minerval.ai.`,
             code: "GRANT_NOT_HELD",
-            grant: needed === "any" ? "any" : needed[0],
+            grant: needed === "any" || needed === "self" ? "any" : needed[0],
           });
         }
         // A write may be made once: its nonce is refused if seen with this key lately.
