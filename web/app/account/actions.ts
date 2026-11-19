@@ -19,6 +19,8 @@ export interface CreateKeyState {
   plaintext?: string;
   name?: string;
   label?: string;
+  /** The organization the new key acts as, where it was made for one. */
+  actingFor?: string;
   error?: string;
 }
 
@@ -34,10 +36,12 @@ export async function createKeyAction(
   if (!name) return { error: "Give the key a name." };
   // Named where the deployment holds material at more than one label.
   const label = String(formData.get("label") ?? "").trim() || undefined;
+  // An organization the key is to act as, where the person chose one.
+  const actingFor = String(formData.get("acting_for") ?? "").trim() || undefined;
   try {
-    const created = await createApiKey(session.externalId, name, label);
+    const created = await createApiKey(session.externalId, name, label, actingFor);
     revalidatePath("/account");
-    return { plaintext: created.key, name: created.name, label: created.label };
+    return { plaintext: created.key, name: created.name, label: created.label, actingFor: created.acting_for ?? undefined };
   } catch (err) {
     const message =
       err instanceof AccountApiError ? err.message : "Key creation failed.";

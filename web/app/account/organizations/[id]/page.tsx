@@ -10,10 +10,12 @@ import {
   listLog,
   listMembers,
   listOldKeys,
+  listOrganizationCredentials,
   listOrganizationGrants,
   organizationAccount,
   organizationLedger,
   organizationMandates,
+  type CredentialRow,
   type DeploymentView,
   type GrantRow,
   type InvitationView,
@@ -40,6 +42,7 @@ import {
   grantAction,
   inviteAction,
   removeMemberAction,
+  revokeCredentialAction,
   renameAction,
   revokeOldKeyAction,
   setRoleAction,
@@ -67,6 +70,14 @@ const TAB_WORDS: Record<Tab, string> = {
 };
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** How an act in the organization's name was made, as its log says (docs/organizations.md, "The record"). */
+const HOW: Record<string, string> = {
+  page: " on minerval.ai",
+  assistant: " through the Assistant",
+  api_key: " with an API key",
+  mcp_client: " through an MCP client",
+};
 
 /** A log entry in words. */
 function logLine(e: LogEntry, names: Map<string, string>, deployments: Map<string, string>): string {
@@ -108,7 +119,11 @@ function logLine(e: LogEntry, names: Map<string, string>, deployments: Map<strin
     case "deployment_disconnected":
       return `the deployment ${String(d.name)} disconnected`;
     case "acted":
-      return `acted as the organization: ${String(d.method)} ${String(d.route)} (${String(d.status)})`;
+      return `acted as the organization${HOW[String(d.how)] ?? ""}: ${String(d.method)} ${String(d.route)} (${String(d.status)})`;
+    case "credential_revoked":
+      return `revoked ${who(d.account_id)}'s ${d.kind === "mcp_client" ? "MCP client" : "API key"} for the organization`;
+    case "credentials_revoked":
+      return `revoked what ${who(d.account_id)} had made to act as the organization, as they left`;
     default:
       return e.kind.replace(/_/g, " ");
   }
@@ -160,6 +175,7 @@ export default async function OrganizationPage({
     tab === "billing" && admin ? organizationLedger(me, id, 100).catch(() => [] as OwlLedgerEntry[]) : Promise.resolve([] as OwlLedgerEntry[]),
     tab === "deployments" ? listOrganizationGrants(me, id).catch(() => [] as GrantRow[]) : Promise.resolve([] as GrantRow[]),
   ]);
+  const credentials = tab === "members" ? await listOrganizationCredentials(me, id).catch(() => [] as CredentialRow[]) : [];
 
   const live = deployments.filter((d) => !d.retired_at);
   const names = new Map(members.map((m) => [m.account_id, m.display_name]));
@@ -294,7 +310,14 @@ export default async function OrganizationPage({
               <span className="acct-note">An organization always has an admin. An admin holds every permission.</span>
             </div>
             {members.map((m) => (
-              <MemberLine key={m.account_id} m={m} self={m.account_id === myId} admin={admin} organizationId={id} />
+              <MemberLine
+                key={m.account_id}
+                m={m}
+                self={m.account_id === myId}
+                admin={admin}
+                organizationId={id}
+                credentials={credentials.filter((c) => c.account_id === m.account_id)}
+              />
             ))}
           </section>
 
@@ -495,7 +518,19 @@ function PermissionList({ held, all }: { held: readonly OrganizationPermission[]
   );
 }
 
-function MemberLine({ m, self, admin, organizationId }: { m: MemberView; self: boolean; admin: boolean; organizationId: string }) {
+function MemberLine({
+  m,
+  self,
+  admin,
+  organizationId,
+  credentials,
+}: {
+  m: MemberView;
+  self: boolean;
+  admin: boolean;
+  organizationId: string;
+  credentials: CredentialRow[];
+}) {
   const missing = MEMBER_PERMISSIONS.filter((p) => !m.permissions.includes(p));
   return (
     <div className="acct-line org-member">
@@ -516,6 +551,25 @@ function MemberLine({ m, self, admin, organizationId }: { m: MemberView; self: b
           )}
           {admin && m.role !== "admin" && missing.length > 0 && (
             <GiveForm organizationId={organizationId} field="account_id" grantee={m.account_id} choices={missing} />
+          )}
+          {credentials.length > 0 && (
+            <ul className="admin-grants org-grant-list">
+              {credentials.map((c) => (
+                <li key={`${c.kind}:${c.id}`}>
+                  {c.kind === "api_key" ? "API key" : "MCP client"} <b>{c.name}</b>
+                  <span className="acct-detail">
+                    acts as the organization · made {dateish(c.made_at)} · {c.last_used_at ? `last used ${dateish(c.last_used_at)}` : "never used"}
+                  </span>
+                  {(admin || self) && (
+                    <ActionForm action={revokeCredentialAction} submit="revoke" inline danger>
+                      <input type="hidden" name="organization_id" value={organizationId} />
+                      <input type="hidden" name="kind" value={c.kind} />
+                      <input type="hidden" name="credential_id" value={c.id} />
+                    </ActionForm>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>
@@ -667,7 +721,7 @@ function Activity({
         what: `${String(e.detail.method)} ${String(e.detail.route)}`,
         status: Number(e.detail.status),
         by: e.actor?.display_name ?? names.get(e.actor?.id ?? "") ?? "a former member",
-        how: "on minerval.ai",
+        how: HOW[String(e.detail.how)]?.trim() ?? "on minerval.ai",
       })),
     ...deployments.flatMap((d) =>
       d.recent_writes.map((w) => ({ at: w.at, what: `${w.method} ${w.route}`, status: w.status, by: d.name, how: "through its deployment" }))

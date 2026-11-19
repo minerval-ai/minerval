@@ -76,6 +76,7 @@ import {
 import { Transform } from "node:stream";
 import { createHash } from "node:crypto";
 import {
+  actingStandingOf,
   isOrganizationExternalId,
   logActedAs,
   memberStanding,
@@ -241,6 +242,59 @@ export function presentsCredentials(request: FastifyRequest): boolean {
  * no body has none here, and is checked against the hash of nothing.
  */
 const signedBodyHash = new WeakMap<FastifyRequest, string>();
+
+/** The MCP transport's own routes: each tool call through it is a request of its own, checked as one. */
+const MCP_TRANSPORT = new Set(["POST /mcp", "GET /mcp", "DELETE /mcp"]);
+
+/**
+ * A key or token made to act as an organization (docs/organizations.md,
+ * "Other credentials"): the request is the organization's, as the person
+ * acting as it, under their standing there as it is now. A refusal where
+ * they no longer may, or may not do this.
+ */
+async function asCredentialFor(
+  auth: RequestAuth,
+  actingFor: string,
+  route: string,
+  method: string
+): Promise<{ auth: RequestAuth } | { status: number; body: Record<string, unknown> }> {
+  const person = auth.userId!;
+  const standing = await actingStandingOf(actingFor, person);
+  if (!standing || (standing.role !== "admin" && standing.permissions.length === 0)) {
+    return {
+      status: 403,
+      body: {
+        error: "This credential was made to act as an organization its person can no longer act as. Make a new one.",
+        code: "CREDENTIAL_ORGANIZATION_LEFT",
+      },
+    };
+  }
+  if (!MCP_TRANSPORT.has(route)) {
+    const check = memberMayCall(route, method, standing);
+    if (!check.ok) {
+      return {
+        status: 403,
+        body: {
+          error:
+            check.code === "PERMISSION_NOT_HELD"
+              ? `Acting as ${standing.organizationName}, ${check.reason.charAt(0).toLowerCase()}${check.reason.slice(1)} An admin of it grants that on its Members tab.`
+              : check.reason,
+          code: check.code,
+          ...(check.permission ? { permission: check.permission } : {}),
+        },
+      };
+    }
+  }
+  return {
+    auth: {
+      ...auth,
+      userId: actingFor,
+      contributorExternalId: `org:${actingFor}`,
+      actingMember: { accountId: person, externalId: auth.contributorExternalId },
+      actingStanding: standing,
+    },
+  };
+}
 
 export async function registerAuth(app: FastifyInstance): Promise<void> {
   app.decorateRequest("contributorExternalId", null);
@@ -418,6 +472,11 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
             ? { fixedLabel: { label: resolved.token.workLabel, of: "access token" as const } }
             : {}),
         };
+        if (resolved.token.actingFor) {
+          const acted = await asCredentialFor(auth, resolved.token.actingFor, routeKeyOf(request), request.method);
+          if ("status" in acted) return reply.code(acted.status).send(acted.body);
+          auth = acted.auth;
+        }
       } else if (presented) {
         // 1. DB-backed key
         const resolved = await resolveApiKey(presented);
@@ -457,6 +516,11 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
               ? { fixedLabel: { label: resolved.key.workLabel, of: "API key" as const } }
               : {}),
           };
+          if (resolved.key.actingFor) {
+            const acted = await asCredentialFor(auth, resolved.key.actingFor, routeKeyOf(request), request.method);
+            if ("status" in acted) return reply.code(acted.status).send(acted.body);
+            auth = acted.auth;
+          }
         } else if (envKeysConfigured && config.apiKeys.includes(presented)) {
           // 2. Env-configured operator key
           const boundExternalId =
@@ -613,6 +677,22 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
     }
     const acting = request.auth?.actingMember;
     if (!acting || request.method === "GET" || !request.auth?.userId) return;
+    // The MCP transport carries tool calls, each logged as the request it makes.
+    if (MCP_TRANSPORT.has(routeKeyOf(request))) return;
+    const a = request.auth;
+    // How the act was made (docs/organizations.md, "The record"): in a page,
+    // by the Assistant (its calls carry no key of their own), by a key, or by
+    // an MCP client.
+    const how =
+      a.isSession || a.method === "dev_bypass"
+        ? "page"
+        : a.method === "oauth"
+          ? "mcp_client"
+          : a.method === "api_key" && a.apiKeyId
+            ? "api_key"
+            : a.fixedLabel?.of === "Assistant conversation" || a.method === "api_key"
+              ? "assistant"
+              : a.method;
     try {
       await logActedAs({
         organizationId: request.auth.userId,
@@ -620,6 +700,8 @@ export async function registerAuth(app: FastifyInstance): Promise<void> {
         method: request.method,
         route: request.routeOptions.url ?? request.url,
         status: reply.statusCode,
+        how,
+        ...(a.apiKeyId ? { apiKeyId: a.apiKeyId } : {}),
       });
     } catch (err) {
       request.log.error({ err }, "organization log: could not record an act made for an organization");

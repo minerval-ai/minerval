@@ -40,6 +40,7 @@ import {
   type OAuthClient,
   type TokenEndpointAuthMethod,
 } from "../services/oauth-service.js";
+import { mayMakeCredentialFor } from "./api-keys.js";
 
 const SCOPES_SUPPORTED = ["mcp"];
 
@@ -483,6 +484,9 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
       },
       // The label the issued tokens will work at. Only a members-only
       // deployment has the field: the public graph has one label.
+      // On the public graph the body is optional: `acting_for`, read below,
+      // names an organization for the client to act as. An approval with no
+      // body acts as the person, as every approval did before.
       ...(membersOnly() ? { body: { type: "object", properties: { label: LABEL_FIELD } } } : {}),
     },
     preHandler: [app.authenticate, app.requireSession, app.requireUser],
@@ -501,10 +505,20 @@ export async function oauthRoutes(app: FastifyInstance): Promise<void> {
         }
         workLabel = chosen.label;
       }
+      // The person approving may have the client act as an organization they
+      // may act for (docs/organizations.md, "Other credentials").
+      const named = membersOnly() ? undefined : (request.body as { acting_for?: unknown } | null | undefined)?.acting_for;
+      const actingFor = typeof named === "string" && named !== "" ? named : undefined;
+      if (actingFor && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(actingFor)) {
+        return reply.code(400).send({ error: "acting_for is an organization's id.", code: "BAD_ACTING_FOR" });
+      }
+      const refused = actingFor ? await mayMakeCredentialFor(actingFor, request.auth!.userId!) : null;
+      if (refused) return reply.code(403).send(refused);
       const outcome = await approveAuthorizationRequest({
         requestId: request_id,
         userId: request.auth!.userId!,
         ...(workLabel !== undefined ? { workLabel } : {}),
+        ...(actingFor ? { actingFor } : {}),
       });
       if (!outcome) {
         return reply.code(410).send({

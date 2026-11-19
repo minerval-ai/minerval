@@ -624,7 +624,13 @@ export default async function AccountPage({
             its own.
           </p>
           <div className={myLabels?.must_choose ? "acct-side acct-side-wide" : "acct-side"}>
-            <KeyCreator extension={extensionOn} labels={myLabels} />
+            <KeyCreator
+              extension={extensionOn}
+              labels={myLabels}
+              organizations={orgs
+                .filter((o) => o.role === "admin" || (o.permissions ?? []).length > 0)
+                .map((o) => ({ id: o.id, name: o.name }))}
+            />
           </div>
         </div>
         <div className="acct-scroll">
@@ -646,7 +652,12 @@ export default async function AccountPage({
                 const used = usageByKey.get(k.id);
                 return (
                   <tr key={k.id}>
-                    <td>{k.name}</td>
+                    <td>
+                      {k.name}
+                      {k.acting_for && (
+                        <span className="acct-detail">acts as {orgs.find((o) => o.id === k.acting_for)?.name ?? "an organization"}</span>
+                      )}
+                    </td>
                     {keyLabels && <td>{k.label ? <code>{k.label}</code> : null}</td>}
                     <td>
                       <code>{k.key_prefix}…</code>

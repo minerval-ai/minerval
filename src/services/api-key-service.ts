@@ -59,6 +59,11 @@ export async function createApiKey(input: {
    * on a deployment with one label.
    */
   workLabel?: string;
+  /**
+   * The organization the key acts as (docs/organizations.md, "Other
+   * credentials"). The caller has checked the person may act for it.
+   */
+  actingFor?: string | null;
 }): Promise<CreatedApiKey> {
   return asOwner(async () => {
     const plaintext = generateApiKeyPlaintext();
@@ -72,6 +77,7 @@ export async function createApiKey(input: {
         keyHash: hashApiKey(plaintext),
         scope: input.scope ?? "user",
         ...(input.workLabel !== undefined ? { workLabel: input.workLabel } : {}),
+        ...(input.actingFor ? { actingFor: input.actingFor } : {}),
       })
       .returning();
     return { key: key!, plaintext };

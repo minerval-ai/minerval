@@ -206,6 +206,12 @@ export async function approveAuthorizationRequest(input: {
    * a deployment with one label, where the tokens work at `public`.
    */
   workLabel?: string;
+  /**
+   * The organization the client is to act as (docs/organizations.md, "Other
+   * credentials"), chosen by the person approving. The caller has checked
+   * they may act for it.
+   */
+  actingFor?: string | null;
 }): Promise<ConsentOutcome | null> {
   return asOwner(async () => {
     const db = getDb();
@@ -218,6 +224,7 @@ export async function approveAuthorizationRequest(input: {
         codeHash: hashToken(code),
         codeExpiresAt: new Date(Date.now() + CODE_TTL_MS),
         ...(input.workLabel !== undefined ? { workLabel: input.workLabel } : {}),
+        ...(input.actingFor ? { actingFor: input.actingFor } : {}),
       })
       .where(
         and(
@@ -277,6 +284,8 @@ async function issueTokenPair(
     scope: string | null;
     /** The label the pair works at; absent, the column's default, `public`. */
     workLabel?: string | null;
+    /** The organization the grant acts as, or null for the person's own. */
+    actingFor?: string | null;
   },
   db: TxQuery["db"] = getDb()
 ): Promise<IssuedTokens> {
@@ -285,7 +294,10 @@ async function issueTokenPair(
   const now = Date.now();
   // The label is the consent's, the same for the access token and the
   // refresh token and for every pair a refresh issues after them.
-  const label = input.workLabel ? { workLabel: input.workLabel } : {};
+  const label = {
+    ...(input.workLabel ? { workLabel: input.workLabel } : {}),
+    ...(input.actingFor ? { actingFor: input.actingFor } : {}),
+  };
   await db.insert(oauthTokens).values([
     {
       grantId: input.grantId,
@@ -379,6 +391,7 @@ export async function exchangeAuthorizationCode(input: {
       userId: row.userId,
       scope: row.scope,
       workLabel: row.workLabel,
+      actingFor: row.actingFor,
     });
   });
 }
@@ -433,6 +446,7 @@ export async function refreshAccessToken(input: {
           userId: row.userId,
           scope: row.scope,
           workLabel: row.workLabel,
+          actingFor: row.actingFor,
         },
         tx.db
       );

@@ -8,6 +8,8 @@ import {
 } from "../../../lib/account-api";
 import { approveConsentAction, denyConsentAction } from "./actions";
 import { PageHead } from "../../../components/PageHead";
+import { listMyOrganizations } from "../../../lib/organizations-api";
+import { membersOnly } from "../../../lib/members";
 
 export const metadata: Metadata = { title: "Authorize access · Minerval" };
 export const dynamic = "force-dynamic";
@@ -45,6 +47,12 @@ export default async function ConsentPage({
       </Shell>
     );
   }
+
+  const actable = membersOnly()
+    ? []
+    : (await listMyOrganizations(session!.externalId!).catch(() => [])).filter(
+        (o) => o.role === "admin" || (o.permissions ?? []).length > 0
+      );
 
   if (request.status !== "pending" || request.expired) {
     return (
@@ -90,6 +98,22 @@ export default async function ConsentPage({
       <div className="signin-options">
         <form action={approveConsentAction}>
           <input type="hidden" name="request_id" value={requestId} />
+          {actable.length > 0 && (
+            // An organization the person may act for: the client then acts as
+            // it, under their permissions there (docs/organizations.md,
+            // "Other credentials").
+            <fieldset className="consent-acting">
+              <legend>Connect it to act as</legend>
+              <label>
+                <input type="radio" name="acting_for" value="" defaultChecked /> you
+              </label>
+              {actable.map((o) => (
+                <label key={o.id}>
+                  <input type="radio" name="acting_for" value={o.id} /> {o.name}, with what you may do as it
+                </label>
+              ))}
+            </fieldset>
+          )}
           <button className="signin-button" type="submit">
             Approve
           </button>

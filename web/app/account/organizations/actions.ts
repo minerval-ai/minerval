@@ -18,6 +18,7 @@ import {
   denyConnectRequest,
   grantPermission,
   organizationCheckout,
+  revokeOrganizationCredential,
   withdrawGrant,
   removeMember,
   renameOrganization,
@@ -228,6 +229,20 @@ export async function grantAction(_prev: FormState, form: FormData): Promise<For
   }
   revalidatePath(page(id));
   return { notice: `Given ${permission}.` };
+}
+
+export async function revokeCredentialAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const id = field(form, "organization_id");
+  const kind = field(form, "kind") === "mcp_client" ? "mcp_client" : "api_key";
+  try {
+    await revokeOrganizationCredential(who, id, kind, field(form, "credential_id"));
+  } catch (err) {
+    return said(err, "The credential could not be revoked.");
+  }
+  revalidatePath(page(id));
+  return { notice: "Revoked." };
 }
 
 export async function withdrawGrantAction(_prev: FormState, form: FormData): Promise<FormState> {

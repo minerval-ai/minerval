@@ -3042,6 +3042,10 @@ export const apiKeys = pgTable(
     // key is minted and never changed: an outside agent holding the key
     // does not choose a label call by call.
     workLabel: workLabelColumn(),
+    // The organization the key acts as, chosen when it is made, or null for
+    // the person's own (docs/organizations.md, "Other credentials"). Each
+    // request is then checked against the person's standing there as it is.
+    actingFor: uuid("acting_for").references(() => contributors.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -5294,6 +5298,9 @@ export const oauthAuthorizationRequests = pgTable(
     // issues; null until it is approved, and where the approval named none
     // (a deployment whose only label is 'public').
     workLabel: text("work_label").references(() => labels.name),
+    // The organization the person approving chose for the client to act as,
+    // or null for themselves (docs/organizations.md, "Other credentials").
+    actingFor: uuid("acting_for").references(() => contributors.id, { onDelete: "cascade" }),
     // The consent window: an unapproved request dies after this.
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     // The minted code's own (shorter) lifetime.
@@ -5330,6 +5337,9 @@ export const oauthTokens = pgTable(
     // person named when they approved the consent, carried through each
     // refresh. Fixed for the life of the grant.
     workLabel: workLabelColumn(),
+    // The organization the grant acts as, carried through each refresh, or
+    // null for the person's own.
+    actingFor: uuid("acting_for").references(() => contributors.id, { onDelete: "cascade" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })

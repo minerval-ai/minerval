@@ -24,6 +24,8 @@ import {
   getOrganization,
   grantPermission,
   listGrants,
+  listOrganizationCredentials,
+  revokeOrganizationCredential,
   listConversionsForMe,
   listInvitations,
   listLog,
@@ -214,6 +216,50 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
     handler: (request, reply) =>
       answer(reply, async () => ({ grants: await withdrawGrant({ organizationId: request.params.id, grantId: request.params.grant_id, by: me(request) }) })),
   });
+
+  // ---- credentials made to act as the organization ----
+
+  app.get<{ Params: { id: string } }>("/organizations/:id/credentials", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "The live API keys and MCP clients its members made to act as the organization, by whom (its members only). " +
+        "Each acts as its maker acting as the organization, under their permissions there at each request",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+    },
+    preHandler: reader,
+    handler: (request, reply) => answer(reply, async () => ({ credentials: await listOrganizationCredentials(request.params.id, me(request)) })),
+  });
+
+  app.delete<{ Params: { id: string; kind: "api_key" | "mcp_client"; credential_id: string } }>(
+    "/organizations/:id/credentials/:kind/:credential_id",
+    {
+      schema: {
+        tags: TAGS,
+        summary: "Revoke an API key or MCP client made to act as the organization (admins, or the member who made it)",
+        params: {
+          type: "object",
+          required: ["id", "kind", "credential_id"],
+          properties: {
+            id: { type: "string" },
+            kind: { type: "string", enum: ["api_key", "mcp_client"] },
+            credential_id: { type: "string" },
+          },
+        },
+      },
+      preHandler: session,
+      handler: (request, reply) =>
+        answer(reply, async () => {
+          await revokeOrganizationCredential({
+            organizationId: request.params.id,
+            kind: request.params.kind,
+            id: request.params.credential_id,
+            by: me(request),
+          });
+          return { credentials: await listOrganizationCredentials(request.params.id, me(request)) };
+        }),
+    }
+  );
 
   // ---- invitations ----
 
