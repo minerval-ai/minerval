@@ -607,6 +607,8 @@ describe("the columns", () => {
       "oauth_authorization_requests",
       "oauth_clients",
       "oauth_tokens",
+      // Verified domains: a domain, a token for its TXT record and when it was checked (docs/organizations.md, "A verified domain").
+      "organization_domains",
       // Who acts for an organization, what each member and deployment may do as it, the invitations
       // that add them, and its log: who an account is.
       "organization_grants",

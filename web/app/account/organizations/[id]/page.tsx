@@ -6,6 +6,7 @@ import { AccountApiError, fetchAccount, type GrantView, type OwlLedgerEntry, typ
 import {
   getOrganization,
   listDeployments,
+  listDomains,
   listInvitations,
   listLog,
   listMembers,
@@ -17,6 +18,7 @@ import {
   organizationMandates,
   type CredentialRow,
   type DeploymentView,
+  type DomainView,
   type GrantRow,
   type InvitationView,
   type LogEntry,
@@ -42,7 +44,10 @@ import {
   grantAction,
   inviteAction,
   removeMemberAction,
+  addDomainAction,
   approveByHandAction,
+  checkDomainAction,
+  removeDomainAction,
   retireDeploymentAction,
   revokeCredentialAction,
   submitCarriedPackageAction,
@@ -123,6 +128,16 @@ function logLine(e: LogEntry, names: Map<string, string>, deployments: Map<strin
       return `approved the deployment ${String(d.name)}, with ${Array.isArray(d.grants) ? (d.grants as string[]).join(", ") : "its grants"}`;
     case "deployment_disconnected":
       return `the deployment ${String(d.name)} disconnected`;
+    case "domain_added":
+      return `added the domain ${String(d.domain)}`;
+    case "domain_confirmed":
+      return `the domain ${String(d.domain)} was confirmed`;
+    case "domain_unconfirmed":
+      return `the domain ${String(d.domain)} could not be confirmed: it is shown as unconfirmed for seven days`;
+    case "domain_lapsed":
+      return `the domain ${String(d.domain)} is no longer shown`;
+    case "domain_removed":
+      return `removed the domain ${String(d.domain)}`;
     case "feed_downloaded":
       return `downloaded feed batch ${String(d.sequence)} for the deployment ${String(d.name)}, to carry by hand`;
     case "usage_report_uploaded":
@@ -189,6 +204,7 @@ export default async function OrganizationPage({
     tab === "deployments" ? listOrganizationGrants(me, id).catch(() => [] as GrantRow[]) : Promise.resolve([] as GrantRow[]),
   ]);
   const credentials = tab === "members" ? await listOrganizationCredentials(me, id).catch(() => [] as CredentialRow[]) : [];
+  const domains = tab === "overview" ? await listDomains(me, id).catch(() => [] as DomainView[]) : [];
 
   const live = deployments.filter((d) => !d.retired_at);
   const names = new Map(members.map((m) => [m.account_id, m.display_name]));
@@ -249,6 +265,8 @@ export default async function OrganizationPage({
               <p className="acct-figure-note">Funded in its name</p>
             </div>
           </section>
+
+          <Domains domains={domains} admin={admin} organizationId={id} />
 
           <section className="acct-section">
             <div className="acct-head">
@@ -959,6 +977,68 @@ function ConnectByHand({ organizationId }: { organizationId: string }) {
           <small className="acct-note">Approve only a request an administrator of your own deployment gave you. Recorded on the log under your name.</small>
         </ActionForm>
       </details>
+    </section>
+  );
+}
+
+const DOMAIN_STATE: Record<DomainView["state"], string> = {
+  waiting: "not yet found",
+  confirmed: "shown",
+  unconfirmed: "shown as unconfirmed",
+  lapsed: "not shown",
+};
+
+/** The organization's domains: what each says, the record to put in DNS, and checking (docs/organizations.md, "A verified domain"). */
+function Domains({ domains, admin, organizationId }: { domains: DomainView[]; admin: boolean; organizationId: string }) {
+  if (!admin && domains.length === 0) return null;
+  return (
+    <section className="acct-section">
+      <div className="acct-head">
+        <h2>Domain</h2>
+        <span className="acct-note">Shown beside its name: it controls DNS for the domain, and nothing more</span>
+      </div>
+      {domains.map((d) => (
+        <div key={d.id} className="acct-job">
+          <div className="acct-job-head">
+            <div>
+              <b>{d.domain}</b>
+              <span className="acct-detail">{d.in_words}</span>
+            </div>
+            <span className="acct-status">{DOMAIN_STATE[d.state]}</span>
+          </div>
+          {d.state !== "confirmed" && (
+            <p className="acct-note">
+              TXT record at <code>{d.record.name}</code>: <code>{d.record.value}</code>
+              {d.last_error ? ` · last check: ${d.last_error}` : ""}
+            </p>
+          )}
+          {admin && (
+            <div className="org-member-acts">
+              <ActionForm action={checkDomainAction} submit="Check now" inline>
+                <input type="hidden" name="organization_id" value={organizationId} />
+                <input type="hidden" name="domain_id" value={d.id} />
+              </ActionForm>
+              <ActionForm action={removeDomainAction} submit="Remove" inline danger>
+                <input type="hidden" name="organization_id" value={organizationId} />
+                <input type="hidden" name="domain_id" value={d.id} />
+              </ActionForm>
+            </div>
+          )}
+        </div>
+      ))}
+      {admin && domains.length === 0 && (
+        <ActionForm action={addDomainAction} submit="Add a domain">
+          <input type="hidden" name="organization_id" value={organizationId} />
+          <label>
+            Domain
+            <input name="domain" required placeholder="acme.com" autoComplete="off" />
+            <small>
+              You are shown a TXT record to put in its DNS. Once a check finds it, the domain is shown beside the organization&rsquo;s name
+              and checked again daily. One organization holds a domain at a time.
+            </small>
+          </label>
+        </ActionForm>
+      )}
     </section>
   );
 }

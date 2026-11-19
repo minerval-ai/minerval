@@ -16,6 +16,9 @@ import {
   makeInvitation,
   approveConnectRequest,
   denyConnectRequest,
+  addDomain,
+  checkDomain,
+  removeDomain,
   approveByHand,
   retireDeployment,
   submitCarriedPackage,
@@ -392,6 +395,45 @@ export async function submitCarriedPackageAction(_prev: FormState, form: FormDat
   }
   revalidatePath(page(organizationId));
   return { notice: out.join(" ") };
+}
+
+export async function addDomainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    const d = await addDomain(who, organizationId, field(form, "domain"));
+    revalidatePath(page(organizationId));
+    return { notice: `Added. Put a TXT record at ${d.record.name} saying ${d.record.value}, then check it.` };
+  } catch (err) {
+    return said(err, "The domain could not be added.");
+  }
+}
+
+export async function checkDomainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    const d = await checkDomain(who, organizationId, field(form, "domain_id"));
+    revalidatePath(page(organizationId));
+    return d.state === "confirmed" ? { notice: d.in_words } : { error: d.last_error ?? d.in_words };
+  } catch (err) {
+    return said(err, "The domain could not be checked.");
+  }
+}
+
+export async function removeDomainAction(_prev: FormState, form: FormData): Promise<FormState> {
+  const who = await me();
+  if (!who) return { error: "Not signed in." };
+  const organizationId = field(form, "organization_id");
+  try {
+    await removeDomain(who, organizationId, field(form, "domain_id"));
+  } catch (err) {
+    return said(err, "The domain could not be removed.");
+  }
+  revalidatePath(page(organizationId));
+  return { notice: "Removed. It is no longer shown or checked." };
 }
 
 export async function retireDeploymentAction(_prev: FormState, form: FormData): Promise<FormState> {

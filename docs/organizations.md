@@ -993,7 +993,17 @@ Each phase is one pull request or a few, and leaves things working.
    one, a token serves one live deployment, a key registered over a
    connection must say the hosting the deployment connected with, and an
    account key cannot say `minerval` at all.
-6. **Domains.** Verification, the daily check, and showing the domain.
+6. **Domains** (built). `organization_domains` and
+   `services/organization-domains.ts`: an admin adds a domain on the
+   organization's Overview and is shown the TXT record; "Check now" and a
+   daily check (`workers/domain-checks.ts`, on the public graph only) look
+   for it; the domain is shown beside the name on the organization's public
+   page and its pages, and in "Published by Acme Corp (acme.com)", with when
+   it was last confirmed; a failing check marks it unconfirmed for seven
+   days, after which it is not shown, and each change is on the
+   organization's log for its admins; one organization holds a domain at a
+   time. `list_organization_domains` is a tool; adding, checking and
+   removing are an admin's, in their session.
 7. **Billing on the organization.** The report identifier tied to the
    organization, reports refused when it does not match, the admins' read of reports received, and
    the organization's billing page.

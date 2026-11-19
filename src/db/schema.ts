@@ -2955,6 +2955,42 @@ export const deploymentConnectRequests = pgTable(
   ]
 );
 
+// A domain an organization's admin added, and whether DNS shows it holds it
+// (docs/organizations.md, "A verified domain"). The admin puts a TXT record
+// at _minerval.<domain>: minerval-organization=<token>. The public graph
+// checks it when asked and once a day. While it checks out the domain is
+// shown beside the organization's name; after a failure it is shown as
+// unconfirmed for seven days, then not at all. The row stays as the record of
+// when it was verified. A domain says the organization controls its DNS,
+// and nothing more.
+export const organizationDomains = pgTable(
+  "organization_domains",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references((): AnyPgColumn => contributors.id, { onDelete: "cascade" }),
+    // Lowercase, without a trailing dot.
+    domain: text("domain").notNull(),
+    // Made for this organization and this domain; what the TXT record names.
+    token: text("token").notNull(),
+    addedBy: uuid("added_by").references((): AnyPgColumn => contributors.id, { onDelete: "set null" }),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+    // When a check first found the record, and when one last did.
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    // Since when checks have failed, after it was confirmed; null while they pass.
+    failingSince: timestamp("failing_since", { withTimezone: true }),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("uq_organization_domains_live").on(table.organizationId, table.domain).where(sql`${table.removedAt} IS NULL`),
+    index("idx_organization_domains_domain").on(table.domain),
+  ]
+);
+
 // A token Minerval's operator makes for a deployment Minerval provisions, and
 // the provisioning puts in its settings (MINERVAL_HOSTING_TOKEN). It is sent
 // when the deployment connects: the public graph accepts the hosting word

@@ -348,6 +348,35 @@ export async function submitCarriedPackage(me: string, id: string, kind: "page" 
   });
 }
 
+// ---- a verified domain (docs/organizations.md, "A verified domain") ----
+
+export interface DomainView {
+  id: string;
+  domain: string;
+  record: { name: string; type: "TXT"; value: string };
+  state: "waiting" | "confirmed" | "unconfirmed" | "lapsed";
+  added_at: string;
+  verified_at: string | null;
+  confirmed_at: string | null;
+  unconfirmed_since: string | null;
+  last_checked_at: string | null;
+  last_error: string | null;
+  in_words: string;
+}
+
+export async function listDomains(me: string, id: string): Promise<DomainView[]> {
+  return (await accountFetch<{ domains: DomainView[] }>(`${org(id)}/domains`, { actingUser: me })).domains;
+}
+export async function addDomain(me: string, id: string, domain: string): Promise<DomainView> {
+  return (await accountFetch<{ domain: DomainView }>(`${org(id)}/domains`, { method: "POST", body: { domain }, actingUser: me })).domain;
+}
+export async function checkDomain(me: string, id: string, domainId: string): Promise<DomainView> {
+  return (await accountFetch<{ domain: DomainView }>(`${org(id)}/domains/${pathSegment(domainId)}/check`, { method: "POST", actingUser: me })).domain;
+}
+export async function removeDomain(me: string, id: string, domainId: string): Promise<void> {
+  await accountFetch(`${org(id)}/domains/${pathSegment(domainId)}`, { method: "DELETE", actingUser: me });
+}
+
 export async function retireDeployment(me: string, id: string, deploymentId: string): Promise<void> {
   await accountFetch(`${org(id)}/deployments/${pathSegment(deploymentId)}`, { method: "DELETE", actingUser: me });
 }

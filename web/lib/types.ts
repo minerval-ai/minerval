@@ -1398,6 +1398,8 @@ export interface ContributorProfile {
     /** "person" or "organization" (docs/organizations.md). Absent from an API older than organizations. */
     kind?: string;
     display_name: string;
+    /** An organization's verified domain, where one is shown: it controls DNS for it, and nothing more. */
+    domain?: { domain: string; confirmed_at: string; unconfirmed_since: string | null } | null;
     avatar_url: string | null;
     member_since: string;
     reputation_score: number;

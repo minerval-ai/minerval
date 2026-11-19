@@ -59,6 +59,7 @@ async function answer<T>(reply: FastifyReply, fn: () => Promise<T>, status = 200
 }
 
 import { nextFeedBatch, uploadUsageReport } from "../services/organization-carried.js";
+import { addDomain, checkDomain, listDomains, removeDomain, shownDomain } from "../services/organization-domains.js";
 
 export async function organizationRoutes(app: FastifyInstance): Promise<void> {
   const reader = [app.authenticate, app.requireUser];
@@ -92,7 +93,61 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
       params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
     },
     preHandler: reader,
-    handler: (request, reply) => answer(reply, async () => ({ organization: await getOrganization(request.params.id, me(request)) })),
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        const organization = await getOrganization(request.params.id, me(request));
+        return { organization: { ...organization, domain: await shownDomain(organization.id) } };
+      }),
+  });
+
+  // ---- a verified domain (docs/organizations.md, "A verified domain") ----
+
+  app.get<{ Params: { id: string } }>("/organizations/:id/domains", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "An organization's domains (its members): each with the TXT record to put at _minerval.<domain>, and whether a check found it: " +
+        "waiting, confirmed (shown beside the name), unconfirmed (failing, shown for seven days) or lapsed (not shown). A domain says the " +
+        "organization controls DNS for it, and nothing more",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+    },
+    preHandler: reader,
+    handler: (request, reply) => answer(reply, async () => ({ domains: await listDomains(request.params.id, me(request)) })),
+  });
+
+  app.post<{ Params: { id: string }; Body: { domain: string } }>("/organizations/:id/domains", {
+    schema: {
+      tags: TAGS,
+      summary: "Add a domain to an organization (its admins, from a signed-in session), and get the TXT record to put in its DNS",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      body: { type: "object", required: ["domain"], properties: { domain: { type: "string", minLength: 1, maxLength: 300 } } },
+    },
+    preHandler: session,
+    handler: (request, reply) => answer(reply, async () => ({ domain: await addDomain(request.params.id, request.body.domain, me(request)) }), 201),
+  });
+
+  app.post<{ Params: { id: string; domain_id: string } }>("/organizations/:id/domains/:domain_id/check", {
+    schema: {
+      tags: TAGS,
+      summary: "Check an organization's domain now (its admins, from a signed-in session): look for its TXT record and keep what was found",
+      params: { type: "object", required: ["id", "domain_id"], properties: { id: { type: "string" }, domain_id: { type: "string" } } },
+    },
+    preHandler: session,
+    handler: (request, reply) => answer(reply, async () => ({ domain: await checkDomain(request.params.id, request.params.domain_id, me(request)) })),
+  });
+
+  app.delete<{ Params: { id: string; domain_id: string } }>("/organizations/:id/domains/:domain_id", {
+    schema: {
+      tags: TAGS,
+      summary: "Remove a domain from an organization (its admins, from a signed-in session): it is no longer shown or checked",
+      params: { type: "object", required: ["id", "domain_id"], properties: { id: { type: "string" }, domain_id: { type: "string" } } },
+    },
+    preHandler: session,
+    handler: (request, reply) =>
+      answer(reply, async () => {
+        await removeDomain(request.params.id, request.params.domain_id, me(request));
+        return { removed: true };
+      }),
   });
 
   app.patch<{ Params: { id: string }; Body: { name: string } }>("/organizations/:id", {

@@ -74,6 +74,15 @@ export default async function ContributorPage({
         title={c.display_name}
         meta={
           <>
+            {c.domain && (
+              <span
+                title={`It controls DNS for ${c.domain.domain}, and nothing more: a domain is no reason to believe what it says.${c.domain.unconfirmed_since ? ` Unconfirmed since ${c.domain.unconfirmed_since.slice(0, 10)}.` : ""}`}
+              >
+                {c.domain.domain}
+                {c.domain.unconfirmed_since ? ` (unconfirmed since ${c.domain.unconfirmed_since.slice(0, 10)})` : ` (confirmed ${c.domain.confirmed_at.slice(0, 10)})`}{" "}
+                ·{" "}
+              </span>
+            )}
             member since {c.member_since.slice(0, 10)} · {c.trust_level}
             {c.is_suspended ? " · suspended" : ""}
           </>

@@ -78,10 +78,15 @@ interface PublisherRow {
   /** The connected deployment that registered the key, where one did. */
   deployment_id: string | null;
   deployment_name: string | null;
+  /** The publisher's verified domain, where one is shown (organization-domains.ts). */
+  domain: string | null;
 }
 
 const PUBLISHER_COLUMNS = `p.id, p.account_id, p.key_id, p.public_key, p.hosting, p.declared_interest, p.registered_at, p.retired_at, c.display_name AS name,
-  p.deployment_id, (SELECT d.name FROM deployments d WHERE d.id = p.deployment_id) AS deployment_name`;
+  p.deployment_id, (SELECT d.name FROM deployments d WHERE d.id = p.deployment_id) AS deployment_name,
+  (SELECT od.domain FROM organization_domains od WHERE od.organization_id = p.account_id AND od.removed_at IS NULL AND od.confirmed_at IS NOT NULL
+      AND (od.failing_since IS NULL OR od.failing_since > now() - interval '7 days')
+    ORDER BY od.failing_since IS NOT NULL, od.confirmed_at DESC LIMIT 1) AS domain`;
 
 /** The longest statement of interest a registration carries. A backstop: it is a sentence or two shown on a public page. */
 export const DECLARED_INTEREST_MAX_CHARS = 1000;
@@ -281,7 +286,7 @@ function runLogWords(log: NonNullable<PublishedPagePackage["record"]["made"]>["r
  */
 export function sourceTextOf(
   pkg: PublishedPagePackage,
-  publisher: { name: string; declared_interest: string | null; deployment_name?: string | null },
+  publisher: { name: string; declared_interest: string | null; deployment_name?: string | null; domain?: string | null },
   check: PackageCheck,
   /** The publisher's other pages and the requests it took up, from this graph's record (publisher-record-service.ts). */
   publishersRecord: string[] = []
@@ -294,7 +299,7 @@ export function sourceTextOf(
       "that graph's Steward for this node, wrote it. What a policy removed is marked where it was removed, and each part " +
       "that is held is named in its place.",
     "",
-    `Published by ${publisher.name}${publisher.deployment_name ? `, deployment ${publisher.deployment_name},` : ""} (key ${pkg.publisher.key_id.slice(0, 16)}), whose deployment is recorded as running on ` +
+    `Published by ${publisher.name}${publisher.domain ? ` (${publisher.domain})` : ""}${publisher.deployment_name ? `, deployment ${publisher.deployment_name},` : ""} (key ${pkg.publisher.key_id.slice(0, 16)}), whose deployment is recorded as running on ` +
       `${HOSTING_WORDS[pkg.deployment.hosting]}; ${ATTESTATION_WORDS[pkg.deployment.attested_by]}.`,
     publisher.declared_interest ? `The publisher says of its own interest: ${publisher.declared_interest}` : "The publisher has said nothing of its own interest.",
     `The release: ${pkg.release.form === "standing" ? "standing, so each later version follows" : "once, so nothing is undertaken about later versions"}; ` +
@@ -960,6 +965,8 @@ export async function publisherRecord(accountId: string): Promise<Record<string,
   return {
     account_id: accountId,
     name: registrations[0]!.name,
+    // A verified domain says the organization controls DNS for it, and nothing more.
+    domain: registrations[0]!.domain,
     registrations: registrations.map((r) => ({
       key_id: r.key_id,
       public_key: r.public_key,

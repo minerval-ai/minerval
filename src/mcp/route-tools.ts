@@ -255,6 +255,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /organizations/:id/log": { name: "get_organization_log" },
   "GET /organizations/:id/old-keys": { name: "list_organization_old_keys" },
   "GET /organizations/:id/deployments": { name: "list_organization_deployments" },
+  "GET /organizations/:id/domains": { name: "list_organization_domains" },
   // This deployment's own connection to minerval.ai (docs/organizations.md, "Connecting").
   "GET /outside/connection": { name: "get_public_graph_connection" },
   "GET /account-conversion": { name: "get_account_conversion" },
@@ -754,6 +755,9 @@ export const MCP_EXCLUDED_ROUTES: Record<string, string> = {
   "POST /deployments/me/key": DEPLOYMENT_SIGNED,
   "DELETE /organizations/:id/deployments/:deployment_id": ORGANIZATION_SESSION,
   "POST /organizations/:id/deployments/by-hand": ORGANIZATION_SESSION,
+  "POST /organizations/:id/domains": ORGANIZATION_SESSION,
+  "POST /organizations/:id/domains/:domain_id/check": ORGANIZATION_SESSION,
+  "DELETE /organizations/:id/domains/:domain_id": ORGANIZATION_SESSION,
   "GET /organizations/:id/deployments/:deployment_id/feed": CARRIED_BY_HAND,
   "POST /organizations/:id/usage-reports": CARRIED_BY_HAND,
   "GET /connect-requests/:code": CONNECT_CODE,
