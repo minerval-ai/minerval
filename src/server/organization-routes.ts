@@ -90,6 +90,15 @@ export const ORGANIZATION_ROUTES: Readonly<Record<string, OrganizationRouteRule>
   "GET /mirror/feed/:sequence": { deployment: ["read_feed"] },
   "POST /usage-reports": { deployment: ["report_usage"] },
 
+  // ---- the Assistant, working for the organization (its model calls are the organization's spend) ----
+  "POST /assistant/conversations": { member: "spend" },
+  "POST /assistant/conversations/:id/messages": { member: "spend" },
+  // Each tool call a held action makes is checked on its own, as the Assistant's are.
+  "POST /assistant/conversations/:id/held/:action_id": { member: "member" },
+  "POST /assistant/conversations/:id/stop": { member: "member" },
+  "PATCH /assistant/conversations/:id": { member: "member" },
+  "DELETE /assistant/conversations/:id": { member: "member" },
+
   // ---- reads that write nothing, sent as POST ----
   "POST /sql": { member: "member" },
 
@@ -108,8 +117,6 @@ const PERSONAL = "A person's own credentials and settings: they are the person's
 const MANAGING =
   "Running the organization, not acting on the public graph in its name: an admin does it as themselves, on the organization's pages.";
 const SERVICE = "Not a caller's route: the service, the operator key or a provider's callback calls it, for no organization.";
-const ASSISTANT =
-  "The Assistant acting for an organization is its own piece of work (docs/organizations.md, phase 3): until it is built, it acts only for the person.";
 const PRIZES =
   "The prize rules name natural persons (docs/prizes.md, \"What a winner must do\"). An organization files under claim_prizes once a version of the rules allows it.";
 
@@ -134,13 +141,7 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
   "DELETE /pages/:id/share": "A saved page is its person's notebook, not an act on the public graph.",
   "POST /extension/analyze": "The browser extension acts as the person whose key it holds.",
 
-  "POST /assistant/conversations": ASSISTANT,
-  "POST /assistant/conversations/:id/messages": ASSISTANT,
-  "POST /assistant/conversations/:id/stop": ASSISTANT,
-  "PATCH /assistant/conversations/:id": ASSISTANT,
-  "DELETE /assistant/conversations/:id": ASSISTANT,
-  "POST /assistant/conversations/:id/held/:action_id": ASSISTANT,
-  "PUT /assistant/allowance": PERSONAL,
+  "PUT /assistant/allowance": "What the Assistant may do without asking is the person's own choice, wherever they are acting.",
 
   "POST /claims/:claim_id/prize-claims": PRIZES,
   "POST /prize-claims/:id/attachments": PRIZES,
@@ -186,10 +187,22 @@ export const PERSON_ROUTES: Readonly<Record<string, string>> = {
 /** Reads that are a person's own and are refused while acting as an organization. */
 export const PERSON_READS: Readonly<Record<string, string>> = {
   "GET /api-keys": PERSONAL,
-  "GET /assistant/allowance": PERSONAL,
-  "GET /assistant/conversations": ASSISTANT,
-  "GET /assistant/conversations/:id": ASSISTANT,
-  "GET /assistant/conversations/:id/stream": ASSISTANT,
+  "GET /assistant/allowance": "What the Assistant may do without asking is the person's own choice, wherever they are acting.",
+};
+
+/**
+ * MCP tools that stand for no route of their own and are not reads
+ * (src/mcp/server.ts), with what a person acting as an organization needs to
+ * be offered them. A tool that stands for a route (mcp/route-tools.ts,
+ * ROUTE_TOOLS and NATIVE_TOOL_ROUTES) takes that route's rule instead.
+ * tests/unit/server/organization-routes.test.ts fails on a native tool that
+ * writes or spends and is in neither.
+ */
+export const NATIVE_TOOL_PERMISSIONS: Readonly<Record<string, MemberPermission>> = {
+  // Paid analyses: each runs a model, charged to whoever the call is for.
+  match_claim: "spend",
+  extract_claims: "spend",
+  assess_text: "spend",
 };
 
 export type MemberCheck =

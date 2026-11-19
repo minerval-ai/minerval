@@ -1338,6 +1338,13 @@
       "when": 1795105747923,
       "tag": "0190_connection_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 191,
+      "version": "7",
+      "when": 1795108666065,
+      "tag": "0191_assistant_acting_for",
+      "breakpoints": true
     }
   ]
 }

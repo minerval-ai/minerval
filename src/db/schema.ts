@@ -5101,6 +5101,12 @@ export const assistantConversations = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => contributors.id, { onDelete: "cascade" }),
+    // The organization the user was acting as when they started it
+    // (docs/organizations.md, "Acting as the organization"), or null for
+    // their own. The conversation stays that organization's: its tools act as
+    // it, under the user's permissions there, and its work is charged to the
+    // organization's owls. It is listed only while the user acts as it.
+    actingFor: uuid("acting_for").references(() => contributors.id, { onDelete: "cascade" }),
     // The user's first message, shortened: what the conversation list shows.
     title: text("title").notNull().default(""),
     // Where the user is: 'web' today.

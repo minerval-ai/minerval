@@ -82,8 +82,9 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   needs, from one map for members and deployments
   (`src/server/organization-routes.ts`). A route that writes and is not in
   it refuses the header (`NOT_AN_ORGANIZATION_ACT`), as do a person's own
-  routes listed there with their reasons (keys, OAuth, their pages, the
-  Assistant for now, prizes until the rules allow an organization), and a
+  routes listed there with their reasons (keys, OAuth, their pages, what
+  the Assistant may do without asking, prizes until the rules allow an
+  organization), and a
   permission not held answers `PERMISSION_NOT_HELD`, naming it. Reads are
   open to any live member, but for the person's own and the ledger, which
   is admins'. The request is then the organization's, and each write is on
@@ -97,6 +98,15 @@ deployments, domains, billing), are in [organizations.md](organizations.md).
   header on the acts of the public graph's pages; the header shows the
   organization's name, and each form says who it is sent as. The person's
   own account pages are always theirs.
+- **The Assistant as it.** A conversation started while acting as an
+  organization is that organization's (`assistant_conversations.acting_for`):
+  found only while its user acts as it, its model calls charged to the
+  organization's owls (starting or continuing one needs `spend`), its tools
+  only those its user may use as the organization, and it is told whom it
+  works for and which tools that leaves out (`organizationNote`,
+  llm/permissions-note.ts). Each of its calls is checked again against the
+  user's standing then, in the auth plugin for a call dispatched to a route
+  and in the MCP server for a hand-written tool.
 - **No free owls.** The free tier's signup and monthly grants are a
   person's; an organization and the platform account get none.
 - **A shared login becomes one in place** (`POST /account-conversion`,

@@ -1636,31 +1636,33 @@ export interface AssistantHome {
   allowed_kinds: { always: string[]; labels: Record<string, string> };
 }
 
-export function getAssistantHome(externalId: string): Promise<AssistantHome> {
-  return accountFetch("/assistant/conversations", { actingUser: externalId });
+export async function getAssistantHome(externalId: string, as: ActAs = "switch"): Promise<AssistantHome> {
+  return accountFetch("/assistant/conversations", { actingUser: externalId, ...(await actingAs(as)) });
 }
 
 type AssistantConvo = { conversation: AssistantConversationView };
 
 export async function startAssistantConversation(
   externalId: string,
-  input: { message: string; model?: string; node_id?: string; label?: string }
+  input: { message: string; model?: string; node_id?: string; label?: string },
+  as: ActAs = "switch"
 ): Promise<AssistantConversationView> {
   const r = await accountFetch<AssistantConvo>("/assistant/conversations", {
     method: "POST",
     body: input,
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
   return r.conversation;
 }
 
 export async function getAssistantConversation(
   externalId: string,
-  id: string
+  id: string,
+  as: ActAs = "switch"
 ): Promise<AssistantConversationView> {
   const r = await accountFetch<AssistantConvo>(
     `/assistant/conversations/${pathSegment(id)}`,
-    { actingUser: externalId }
+    { actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.conversation;
 }
@@ -1668,45 +1670,49 @@ export async function getAssistantConversation(
 export async function sendAssistantMessage(
   externalId: string,
   id: string,
-  message: string
+  message: string,
+  as: ActAs = "switch"
 ): Promise<AssistantConversationView> {
   const r = await accountFetch<AssistantConvo>(
     `/assistant/conversations/${pathSegment(id)}/messages`,
-    { method: "POST", body: { message }, actingUser: externalId }
+    { method: "POST", body: { message }, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.conversation;
 }
 
-export function stopAssistantTurn(
+export async function stopAssistantTurn(
   externalId: string,
-  id: string
+  id: string,
+  as: ActAs = "switch"
 ): Promise<{ stopping: boolean }> {
   return accountFetch(`/assistant/conversations/${pathSegment(id)}/stop`, {
     method: "POST",
     body: {},
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
 export async function setAssistantModel(
   externalId: string,
   id: string,
-  model: string
+  model: string,
+  as: ActAs = "switch"
 ): Promise<AssistantConversationView> {
   const r = await accountFetch<AssistantConvo>(
     `/assistant/conversations/${pathSegment(id)}`,
-    { method: "PATCH", body: { model }, actingUser: externalId }
+    { method: "PATCH", body: { model }, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.conversation;
 }
 
-export function deleteAssistantConversation(
+export async function deleteAssistantConversation(
   externalId: string,
-  id: string
+  id: string,
+  as: ActAs = "switch"
 ): Promise<{ deleted: boolean }> {
   return accountFetch(`/assistant/conversations/${pathSegment(id)}`, {
     method: "DELETE",
-    actingUser: externalId,
+    actingUser: externalId, ...(await actingAs(as)),
   });
 }
 
@@ -1717,11 +1723,12 @@ export async function decideAssistantHeldAction(
   body: {
     decision: "run" | "decline";
     allow?: { scope: "conversation" | "always" };
-  }
+  },
+  as: ActAs = "switch"
 ): Promise<AssistantConversationView> {
   const r = await accountFetch<AssistantConvo>(
     `/assistant/conversations/${pathSegment(id)}/held/${pathSegment(actionId)}`,
-    { method: "POST", body, actingUser: externalId }
+    { method: "POST", body, actingUser: externalId, ...(await actingAs(as)) }
   );
   return r.conversation;
 }
@@ -1846,16 +1853,19 @@ export async function getSharedPage(token: string): Promise<SharedPageView | nul
  * The API's event stream of a conversation's running turn, to be passed on
  * to the browser as it arrives.
  */
-export function assistantTurnStream(
+export async function assistantTurnStream(
   externalId: string,
   id: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  as: ActAs = "switch"
 ): Promise<Response> {
   if (!BASE) throw new Error("MINERVAL_API_URL is not set");
+  const acting = await actingAs(as);
   return fetch(`${BASE}/assistant/conversations/${pathSegment(id)}/stream`, {
     headers: {
       ...(KEY ? { "x-api-key": KEY } : {}),
       "x-acting-user": externalId,
+      ...(acting.actingOrganization ? { "x-acting-organization": acting.actingOrganization } : {}),
       accept: "text/event-stream",
     },
     cache: "no-store",

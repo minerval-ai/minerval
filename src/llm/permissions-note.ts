@@ -45,3 +45,49 @@ export function permissionsNote(
     `cannot grant one to themselves. The rest of your instructions hold as written.`
   );
 }
+
+/**
+ * What the Assistant is told in a conversation its user started while acting
+ * as an organization (docs/organizations.md, "Acting as the organization"):
+ * that it works for the organization, under what its user may do as it, that
+ * its work is the organization's on the public record and is charged to the
+ * organization's owls, and which tools that leaves out. "" in a conversation
+ * of the user's own.
+ */
+export function organizationNote(
+  actingFor:
+    | {
+        organizationName: string;
+        role: "admin" | "member";
+        permissions: readonly string[];
+        withheld: ReadonlyArray<{ tool: string; permission: string | null; reason: string }>;
+      }
+    | undefined
+): string {
+  if (!actingFor) return "";
+  const name = actingFor.organizationName;
+  const holds =
+    actingFor.role === "admin"
+      ? `Your user is an admin of ${name}, and holds every permission a member can be given.`
+      : `Your user is a member of ${name} and may, as it: ${actingFor.permissions.join(", ")}.`;
+  const byPermission = new Map<string, string[]>();
+  const other: string[] = [];
+  for (const w of actingFor.withheld) {
+    if (w.permission) byPermission.set(w.permission, [...(byPermission.get(w.permission) ?? []), w.tool]);
+    else other.push(w.tool);
+  }
+  const lines = [
+    ...[...byPermission].map(([permission, tools]) => `Without ${permission}: ${tools.join(", ")}.`),
+    ...(other.length > 0 ? [`Never done as an organization: ${other.join(", ")}.`] : []),
+  ];
+  return (
+    `Your user started this conversation acting as the organization ${name}, so in it you work for ${name}. ` +
+    `What you do on the public graph is ${name}'s: the public record shows ${name}, and its log shows your user. ` +
+    `Your own work here is charged to ${name}'s owls, not your user's. ${holds}` +
+    (lines.length > 0
+      ? ` The tools that need what your user does not hold as ${name} are not offered to you here:\n${lines.join("\n")}\n` +
+        `An admin of ${name} grants a permission, on its Members tab. You cannot, and your user cannot grant one to themselves.`
+      : "") +
+    ` The rest of your instructions hold as written.`
+  );
+}

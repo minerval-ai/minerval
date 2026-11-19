@@ -52,7 +52,8 @@ import { RUN_TURN_GUARD } from "../llm/prompts/turn-budget.js";
 import { getChatContextPrompt } from "../llm/prompts/extension-agent.js";
 import {
   alwaysAsks,
-  assistantAuth,
+  assistantAuthFor,
+  type AssistantActingFor,
   currentToolInput,
   currentToolName,
   HELD_KINDS,
@@ -126,7 +127,39 @@ export type AssistantActivity = TurnStep;
 export interface AssistantUser {
   id: string;
   externalId: string | null;
+  /**
+   * The organization the person is acting as on this request
+   * (docs/organizations.md, "Acting as the organization"), or none. A
+   * conversation is found only under the same, and one started as an
+   * organization is that organization's.
+   */
+  actingFor?: AssistantActingFor | null;
 }
+
+/** Who a conversation's work is charged to: the organization it acts for, or its user. */
+function payerOf(convo: Pick<AssistantConversation, "userId" | "actingFor">): string {
+  return convo.actingFor ?? convo.userId;
+}
+
+/** The person, acting as the conversation says: the conversation, not the request, decides. */
+function userFor(convo: Pick<AssistantConversation, "actingFor">, user: AssistantUser): AssistantUser {
+  return {
+    id: user.id,
+    externalId: user.externalId,
+    actingFor: convo.actingFor ? { id: convo.actingFor, externalId: `org:${convo.actingFor}` } : null,
+  };
+}
+
+/** The conversations a person sees while acting as `actingFor` (null: as themselves). */
+function inScope(userId: string, actingFor: string | null) {
+  return and(
+    eq(assistantConversations.userId, userId),
+    actingFor ? eq(assistantConversations.actingFor, actingFor) : isNull(assistantConversations.actingFor)
+  );
+}
+
+const NO_LONGER_ACTS =
+  "This conversation works for an organization its user can no longer act as: they have left it, or hold no permission there now.";
 
 export type AssistantResult =
   | { ok: true; conversation: AssistantConversation }
@@ -307,6 +340,10 @@ export async function decideHeldAction(input: {
   );
   const [row] = await db.select().from(assistantHeldActions).where(mine).limit(1);
   if (!row) return { ok: false, code: "NOT_FOUND", message: "No such held action" };
+  // Pressed only by the person acting as the conversation acts.
+  if (!(await getAssistantConversation(input.conversationId, input.user.id, input.user.actingFor?.id ?? null))) {
+    return { ok: false, code: "NOT_FOUND", message: "No such held action" };
+  }
 
   if (input.allow && input.decision === "run") {
     const kinds = [...new Set([...kindsOf(input.allow.kinds), row.kind as HeldKind])].filter(isHeldKind);
@@ -336,18 +373,29 @@ export async function decideHeldAction(input: {
   }
   if (input.decision === "decline") return { ok: true, action: claimed };
 
-  const account = await openAccountTools(
-    input.app,
-    assistantAuth(input.user, claimed.sensitivityLabel),
-    `held:${claimed.id}`
-  );
+  const [owner] = await db
+    .select({ actingFor: assistantConversations.actingFor })
+    .from(assistantConversations)
+    .where(eq(assistantConversations.id, input.conversationId))
+    .limit(1);
+  const acting = userFor({ actingFor: owner?.actingFor ?? null }, input.user);
+  const auth = await assistantAuthFor(acting, claimed.sensitivityLabel);
+  if (!auth) {
+    const [failed] = await db
+      .update(assistantHeldActions)
+      .set({ status: "failed", result: { ok: false, text: NO_LONGER_ACTS } })
+      .where(eq(assistantHeldActions.id, claimed.id))
+      .returning();
+    return { ok: true, action: failed! };
+  }
+  const account = await openAccountTools(input.app, auth, `held:${claimed.id}`);
   let result: AccountToolResult;
   try {
     // The call is the one the Assistant made in its turn, run now. It runs
     // at the label that turn worked at, so an order, a job or a mandate it
     // creates is the turn's work and not the public work of a bare request.
     result = await runAtLabel(claimed.sensitivityLabel, `held action ${claimed.id}`, () =>
-      runWithUsageContext({ userId: input.user.id }, () =>
+      runWithUsageContext({ userId: acting.actingFor?.id ?? input.user.id }, () =>
         account.call(currentToolName(claimed.tool), currentToolInput(claimed.tool, claimed.input) as Record<string, unknown>)
       )
     );
@@ -535,14 +583,15 @@ async function runTurn(
 
   // What this reply has been charged so far. The run reports its metered
   // cost; the difference since the last report is debited, up to what the
-  // balance holds.
+  // balance holds: the organization's, in a conversation that acts for one.
+  const payer = payerOf(convo);
   let charged = 0;
   let metered = 0;
   const charge = async (replyMicroUsd: number) => {
     const delta = Math.max(0, replyMicroUsd - metered);
     metered = Math.max(metered, replyMicroUsd);
     const { chargedMicroUsd, balanceMicroUsd } = await chargeMetered({
-      userId: user.id,
+      userId: payer,
       microUsd: delta,
       op: ASSISTANT_OP,
     });
@@ -567,7 +616,7 @@ async function runTurn(
     // press, whatever they allow (assistant-tools.ts, ALWAYS_ASKS).
     const allowed = !alwaysAsks(tool, input) && (await allowedKinds(convo)).has(kind);
     const ran = allowed
-      ? await account.call(tool, input).catch(
+      ? await account!.call(tool, input).catch(
           (err): AccountToolResult => ({
             isError: true,
             text: err instanceof Error ? err.message : String(err),
@@ -586,9 +635,12 @@ async function runTurn(
     return ran ?? null;
   };
 
-  const account = await openAccountTools(app, assistantAuth(user, convo.sensitivityLabel), `assistant:${convo.id}`);
   const stream = openAssistantStream(convo.id);
+  let account: Awaited<ReturnType<typeof openAccountTools>> | null = null;
   try {
+    const auth = await assistantAuthFor(userFor(convo, user), convo.sensitivityLabel);
+    if (!auth) throw new Error(NO_LONGER_ACTS);
+    account = await openAccountTools(app, auth, `assistant:${convo.id}`);
     const model = modelFor(convo);
     const lastReplyAt = ((convo.messages ?? []) as AssistantMessage[])
       .filter((m) => m.role === "assistant")
@@ -597,7 +649,7 @@ async function runTurn(
     const context = getAssistantContext({
       openedFrom: await openedFrom(convo),
       model: modelDisplayName(model),
-      balanceMicroUsd: (await getEntitlement(user.id)).owlBalanceMicroUsd,
+      balanceMicroUsd: (await getEntitlement(payer)).owlBalanceMicroUsd,
       conversationMicroUsd: convo.spentMicroUsd,
       allowedKinds: [...(await allowedKinds(convo))].map((k) => HELD_KINDS[k]),
       waiting: held.filter((h) => h.status === "held").map(heldSummary),
@@ -615,7 +667,7 @@ async function runTurn(
       ...((await assistantShowsLabels()) ? { label: convo.sensitivityLabel } : {}),
     });
 
-    const turn = await runWithUsageContext({ userId: user.id }, () =>
+    const turn = await runWithUsageContext({ userId: payer }, () =>
       runAssistantTurn({
         transcript: transcriptOf(convo),
         context,
@@ -624,7 +676,7 @@ async function runTurn(
             ? [EXTENSION_SECTION]
             : [WEB_SECTION, ...((convo.origin as Origin)?.node_id ? [NODE_SECTION] : [])],
         model,
-        account,
+        account: account!,
         conversationMicroUsd: convo.spentMicroUsd,
         charge,
         hold,
@@ -704,7 +756,7 @@ async function runTurn(
     clearInterval(heartbeat);
     clearInterval(partialTimer);
     clearInterval(stopWatch);
-    await account.close();
+    await account?.close();
     // After the reply (or the failure) is saved, so a watcher told the turn
     // is done reads it finished.
     stream.end();
@@ -799,7 +851,7 @@ export function cleanTitle(reply: string): string | null {
 async function nameConversation(convo: AssistantConversation, message: string): Promise<void> {
   const meter = { billedMicroUsd: 0 };
   try {
-    const result = await runWithUsageContext({ userId: convo.userId, meter }, () =>
+    const result = await runWithUsageContext({ userId: payerOf(convo), meter }, () =>
       withAgent("assistant", () =>
         untraced(() =>
           complete({
@@ -828,7 +880,7 @@ async function nameConversation(convo: AssistantConversation, message: string): 
   } finally {
     if (meter.billedMicroUsd > 0) {
       const { chargedMicroUsd } = await chargeMetered({
-        userId: convo.userId,
+        userId: payerOf(convo),
         microUsd: meter.billedMicroUsd,
         op: ASSISTANT_OP,
       }).catch(() => ({ chargedMicroUsd: 0 }));
@@ -861,12 +913,13 @@ export async function startAssistantConversation(input: {
   if (input.model && !assistantModels().some((m) => m.id === input.model)) {
     return { ok: false, code: "UNKNOWN_MODEL", message: "That model is not offered for the Assistant" };
   }
-  const denied = await affordable(input.user.id);
+  const denied = await affordable(input.user.actingFor?.id ?? input.user.id);
   if (denied) return denied;
   const [convo] = await getDb()
     .insert(assistantConversations)
     .values({
       userId: input.user.id,
+      actingFor: input.user.actingFor?.id ?? null,
       // The label of the request that opens the conversation (src/labels.ts).
       sensitivityLabel: currentLabel(),
       title: titleOf(message),
@@ -895,25 +948,30 @@ export async function addAssistantMessage(input: {
 }): Promise<AssistantResult> {
   const message = cleanMessage(input.message);
   if (!message) return { ok: false, code: "EMPTY_MESSAGE", message: "The message is empty" };
-  const convo = await getAssistantConversation(input.conversationId, input.user.id);
+  const convo = await getAssistantConversation(input.conversationId, input.user.id, input.user.actingFor?.id ?? null);
   if (!convo) return { ok: false, code: "NOT_FOUND", message: "Conversation not found" };
-  const denied = await affordable(input.user.id);
+  const denied = await affordable(payerOf(convo));
   if (denied) return denied;
   return beginTurn(input.app, input.user, convo, message);
 }
 
 // ---- reads and small writes ------------------------------------------------
 
+/**
+ * One conversation, for its user acting as it acts: as themselves for one of
+ * their own, as the organization for one started as it. Null otherwise.
+ */
 export async function getAssistantConversation(
   conversationId: string,
-  userId: string
+  userId: string,
+  actingFor: string | null = null
 ): Promise<AssistantConversation | null> {
   const [convo] = await getDb()
     .select()
     .from(assistantConversations)
     .where(eq(assistantConversations.id, conversationId))
     .limit(1);
-  if (!convo || convo.userId !== userId) return null;
+  if (!convo || convo.userId !== userId || (convo.actingFor ?? null) !== actingFor) return null;
   return convo;
 }
 
@@ -926,26 +984,27 @@ export async function getAssistantConversation(
 export async function listAssistantConversations(
   userId: string,
   limit = 50,
-  offset = 0
+  offset = 0,
+  actingFor: string | null = null
 ): Promise<AssistantConversation[]> {
   return getDb()
     .select({ ...getTableColumns(assistantConversations), messages: sql<unknown>`'[]'::jsonb` })
     .from(assistantConversations)
-    .where(eq(assistantConversations.userId, userId))
+    .where(inScope(userId, actingFor))
     .orderBy(desc(assistantConversations.updatedAt))
     .limit(limit)
     .offset(Math.max(0, offset));
 }
 
 /** Ask the running turn to stop at its next step. True when one was running. */
-export async function stopAssistantTurn(conversationId: string, userId: string): Promise<boolean> {
+export async function stopAssistantTurn(conversationId: string, userId: string, actingFor: string | null = null): Promise<boolean> {
   const rows = await getDb()
     .update(assistantConversations)
     .set({ stopRequested: true })
     .where(
       and(
         eq(assistantConversations.id, conversationId),
-        eq(assistantConversations.userId, userId),
+        inScope(userId, actingFor),
         gt(assistantConversations.turnHeartbeatAt, new Date(Date.now() - TURN_LOST_AFTER_MS))
       )
     )
@@ -956,7 +1015,8 @@ export async function stopAssistantTurn(conversationId: string, userId: string):
 export async function setAssistantModel(
   conversationId: string,
   userId: string,
-  model: string
+  model: string,
+  actingFor: string | null = null
 ): Promise<AssistantResult> {
   if (!assistantModels().some((m) => m.id === model)) {
     return { ok: false, code: "UNKNOWN_MODEL", message: "That model is not offered for the Assistant" };
@@ -964,7 +1024,7 @@ export async function setAssistantModel(
   const [convo] = await getDb()
     .update(assistantConversations)
     .set({ model })
-    .where(and(eq(assistantConversations.id, conversationId), eq(assistantConversations.userId, userId)))
+    .where(and(eq(assistantConversations.id, conversationId), inScope(userId, actingFor)))
     .returning();
   return convo
     ? { ok: true, conversation: convo }
@@ -983,9 +1043,10 @@ export async function setAssistantModel(
  */
 export async function deleteAssistantConversation(
   conversationId: string,
-  userId: string
+  userId: string,
+  actingFor: string | null = null
 ): Promise<boolean> {
-  const convo = await getAssistantConversation(conversationId, userId);
+  const convo = await getAssistantConversation(conversationId, userId, actingFor);
   if (!convo) return false;
   const runIds = ((convo.messages ?? []) as AssistantMessage[])
     .map((m) => m.run_id)
@@ -1092,7 +1153,7 @@ export async function serializeAssistantConversation(convo: AssistantConversatio
   const [held, account, entitlement, showLabels] = await Promise.all([
     heldActionsOf(convo.id),
     getAllowance(convo.userId),
-    getEntitlement(convo.userId),
+    getEntitlement(payerOf(convo)),
     assistantShowsLabels(),
   ]);
   return {
