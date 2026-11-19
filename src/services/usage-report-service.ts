@@ -500,7 +500,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const OWLS = /^\d{1,15}\.\d{6}$/;
 const REPORT_FIELDS = ["format", "kind", "deployment", "period", "revision", "owls_spent"];
 
-export type ReceiveFailure = "NOT_A_USAGE_REPORT" | "PERIOD_NOT_CLOSED" | "REPORT_DIFFERS";
+export type ReceiveFailure = "NOT_A_USAGE_REPORT" | "PERIOD_NOT_CLOSED" | "REPORT_DIFFERS" | "IDENTIFIER_HELD" | "IDENTIFIER_DIFFERS";
 
 export type ReceiveResult =
   | {
@@ -571,14 +571,65 @@ export function readUsageReport(
  * one account reports never touches another's, whatever identifier it
  * names.
  */
+/**
+ * Tie a report's identifier to the organization (docs/organizations.md,
+ * "Billing"). The identifier is the one a deployment made for itself and
+ * gave when it connected. A report signed by a deployment must carry that
+ * deployment's identifier; a deployment that connected before it had one
+ * takes the first it reports, unless another organization holds it. Any
+ * report, signed or uploaded, whose identifier a deployment of another
+ * organization holds is refused. Answers a refusal, or null to go on.
+ */
+async function tieReportIdentifier(
+  accountId: string,
+  identifier: string,
+  via: { deploymentId: string } | { uploadedBy: string } | null
+): Promise<ReceiveResult | null> {
+  const [elsewhere] = await rawQuery<{ name: string }>(
+    `SELECT c.display_name AS name FROM deployments d JOIN contributors c ON c.id = d.organization_id
+      WHERE d.report_identifier = $1 AND d.organization_id <> $2 LIMIT 1`,
+    [identifier, accountId]
+  );
+  if (elsewhere) {
+    return {
+      ok: false,
+      code: "IDENTIFIER_HELD",
+      message:
+        `This report's deployment identifier belongs to a deployment of another organization, so it is not recorded here. ` +
+        `A deployment's reports are recorded against the organization it is connected for.`,
+    };
+  }
+  if (via && "deploymentId" in via) {
+    const [signer] = await rawQuery<{ report_identifier: string | null }>(`SELECT report_identifier FROM deployments WHERE id = $1`, [via.deploymentId]);
+    if (signer?.report_identifier && signer.report_identifier !== identifier) {
+      return {
+        ok: false,
+        code: "IDENTIFIER_DIFFERS",
+        message:
+          `This report says it is of deployment ${identifier}, and the deployment that signed it gave ${signer.report_identifier} when it ` +
+          `connected. A deployment reports under its own identifier only.`,
+      };
+    }
+    if (signer && !signer.report_identifier) {
+      // Connected before it had made a report: the first it sends names it.
+      await rawQuery(`UPDATE deployments SET report_identifier = $2 WHERE id = $1 AND report_identifier IS NULL`, [via.deploymentId, identifier]);
+    }
+  }
+  return null;
+}
+
 export async function receiveUsageReport(
   accountId: string,
   payload: unknown,
-  now: Date = new Date()
+  now: Date = new Date(),
+  /** How it came: signed by a connected deployment, or uploaded by an admin. Absent for an account key. */
+  via: { deploymentId: string } | { uploadedBy: string } | null = null
 ): Promise<ReceiveResult> {
   const read = readUsageReport(payload);
   if (!read.ok) return { ok: false, code: "NOT_A_USAGE_REPORT", message: read.message };
   const report = read.report;
+  const tied = await tieReportIdentifier(accountId, report.deployment, via);
+  if (tied) return tied;
   if (report.period >= utcDay(now)) {
     return {
       ok: false,
@@ -595,11 +646,22 @@ export async function receiveUsageReport(
 
   const inserted = await rawQuery<{ received_at: Date }>(
     `INSERT INTO usage_reports_received
-       (account_id, deployment_id, period, revision, body, body_hash, spent_micro_owls)
-     VALUES ($1, $2, $3::date, $4, $5, $6, $7)
+       (account_id, deployment_id, period, revision, body, body_hash, spent_micro_owls, received_via, connected_deployment_id, uploaded_by)
+     VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (account_id, deployment_id, period, revision) DO NOTHING
      RETURNING received_at`,
-    [accountId, report.deployment, report.period, report.revision, body, hash, microOwls]
+    [
+      accountId,
+      report.deployment,
+      report.period,
+      report.revision,
+      body,
+      hash,
+      microOwls,
+      via === null ? "account_key" : "deploymentId" in via ? "signed" : "uploaded",
+      via && "deploymentId" in via ? via.deploymentId : null,
+      via && "uploadedBy" in via ? via.uploadedBy : null,
+    ]
   );
   if (inserted.length > 0) {
     return {

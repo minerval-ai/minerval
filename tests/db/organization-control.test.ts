@@ -350,3 +350,73 @@ describe("connecting by hand", () => {
     expect(kept!.n).toBe(1);
   });
 });
+
+describe("billing on the organization", () => {
+  const report = (deployment: string, period = "2026-11-02", owls = "1.000000") =>
+    ({ format: 1, kind: "minerval-usage-report", deployment, period, revision: 0, owls_spent: owls });
+
+  it("records a signed report against the organization and its deployment, and its admins read it back", async () => {
+    const dana = await signIn("dana");
+    const priya = await signIn("priya");
+    const org = await makeOrganization(dana);
+    const identifier = randomUUID();
+    const { key, id } = await connected(dana, org, ["report_usage"], { report_identifier: identifier });
+    const sent = await signed(key, { method: "POST", url: "/usage-reports", body: report(identifier) });
+    expect(sent.statusCode, sent.body).toBe(201);
+
+    const read = await as(dana, { url: `/organizations/${org}/usage-reports` });
+    expect(read.statusCode, read.body).toBe(200);
+    expect(read.json().reports[0]).toMatchObject({
+      period: "2026-11-02",
+      owls_spent: "1.000000",
+      deployment_identifier: identifier,
+      deployment: { id, name: "Research" },
+      via: "signed",
+    });
+    const invite = await as(dana, { method: "POST", url: `/organizations/${org}/invitations`, payload: { role: "member" } });
+    await as(priya, { method: "POST", url: `/organization-invitations/${invite.json().token}/accept` });
+    expect((await as(priya, { url: `/organizations/${org}/usage-reports` })).json().code).toBe("ADMIN_REQUIRED");
+  });
+
+  it("refuses a report under another deployment's identifier, and ties a first identifier to a deployment that had none", async () => {
+    const dana = await signIn("dana");
+    const org = await makeOrganization(dana);
+    const mine = randomUUID();
+    const { key } = await connected(dana, org, ["report_usage"], { report_identifier: mine });
+    const differs = await signed(key, { method: "POST", url: "/usage-reports", body: report(randomUUID()) });
+    expect(differs.statusCode).toBe(409);
+    expect(differs.json().code).toBe("IDENTIFIER_DIFFERS");
+
+    // Connected before it made a report: the first it sends names it, and the next must match.
+    const { key: fresh, id } = await connected(dana, org, ["report_usage"]);
+    const first = randomUUID();
+    expect((await signed(fresh, { method: "POST", url: "/usage-reports", body: report(first) })).statusCode).toBe(201);
+    const [row] = await rawQuery<{ report_identifier: string }>(`SELECT report_identifier FROM deployments WHERE id = $1`, [id]);
+    expect(row!.report_identifier).toBe(first);
+    expect((await signed(fresh, { method: "POST", url: "/usage-reports", body: report(randomUUID(), "2026-11-03") })).json().code).toBe("IDENTIFIER_DIFFERS");
+  });
+
+  it("keeps one organization's identifier its own, connecting and uploading", async () => {
+    const dana = await signIn("dana");
+    const omar = await signIn("omar");
+    const acme = await makeOrganization(dana);
+    const other = (await as(omar, { method: "POST", url: "/organizations", payload: { name: "Other Inc" } })).json().organization.id;
+    const identifier = randomUUID();
+    await connected(dana, acme, ["report_usage"], { report_identifier: identifier });
+
+    const asked = await ask(newKey(), { report_identifier: identifier });
+    const refused = await as(omar, { method: "POST", url: `/connect-requests/${asked.json().code}/approve`, payload: { organization_id: other, grants: ["report_usage"] } });
+    expect(refused.json().code).toBe("IDENTIFIER_HELD");
+
+    const upload = await as(omar, { method: "POST", url: `/organizations/${other}/usage-reports`, payload: { report: JSON.stringify(report(identifier)) } });
+    expect(upload.json().code).toBe("IDENTIFIER_HELD");
+    const ok = await as(dana, { method: "POST", url: `/organizations/${acme}/usage-reports`, payload: { report: JSON.stringify(report(identifier, "2026-11-04")) } });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const [via] = await rawQuery<{ received_via: string; uploaded_by: string }>(
+      `SELECT received_via, uploaded_by FROM usage_reports_received WHERE account_id = $1 AND period = '2026-11-04'`,
+      [acme]
+    );
+    expect(via).toEqual({ received_via: "uploaded", uploaded_by: dana.id });
+  });
+});
+

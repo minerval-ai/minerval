@@ -64,10 +64,11 @@ export async function usageReportReceivingRoutes(app: FastifyInstance): Promise<
     },
     preHandler: [app.authenticate, app.requireUser],
     handler: async (request, reply) => {
-      const result = await receiveUsageReport(request.auth!.userId!, request.body);
+      const signer = request.auth?.deployment;
+      const result = await receiveUsageReport(request.auth!.userId!, request.body, new Date(), signer ? { deploymentId: signer.id } : null);
       if (!result.ok) {
         return reply
-          .code(result.code === "REPORT_DIFFERS" ? 409 : 400)
+          .code(result.code === "REPORT_DIFFERS" || result.code === "IDENTIFIER_HELD" || result.code === "IDENTIFIER_DIFFERS" ? 409 : 400)
           .send({ error: result.message, code: result.code });
       }
       return reply.code(result.recorded ? 201 : 200).send({

@@ -7,6 +7,7 @@ import {
   getOrganization,
   listDeployments,
   listDomains,
+  listReceivedReports,
   listInvitations,
   listLog,
   listMembers,
@@ -19,6 +20,7 @@ import {
   type CredentialRow,
   type DeploymentView,
   type DomainView,
+  type ReceivedReport,
   type GrantRow,
   type InvitationView,
   type LogEntry,
@@ -205,6 +207,7 @@ export default async function OrganizationPage({
   ]);
   const credentials = tab === "members" ? await listOrganizationCredentials(me, id).catch(() => [] as CredentialRow[]) : [];
   const domains = tab === "overview" ? await listDomains(me, id).catch(() => [] as DomainView[]) : [];
+  const received = tab === "billing" && admin ? await listReceivedReports(me, id).catch(() => [] as ReceivedReport[]) : [];
 
   const live = deployments.filter((d) => !d.retired_at);
   const names = new Map(members.map((m) => [m.account_id, m.display_name]));
@@ -478,6 +481,7 @@ export default async function OrganizationPage({
               ))}
             </div>
           </section>
+          {admin && <ReceivedReports reports={received} />}
           {admin && (
             <section className="acct-section">
               <div className="acct-head">
@@ -1038,6 +1042,54 @@ function Domains({ domains, admin, organizationId }: { domains: DomainView[]; ad
             </small>
           </label>
         </ActionForm>
+      )}
+    </section>
+  );
+}
+
+const VIA: Record<ReceivedReport["via"], string> = { signed: "signed by the deployment", uploaded: "uploaded here", account_key: "sent with an account key" };
+
+/**
+ * What Minerval has recorded against the organization from its deployments'
+ * usage reports (docs/organizations.md, "Billing"): exactly what each
+ * deployment's Budget page shows as sent. Only the latest revision of a day counts.
+ */
+function ReceivedReports({ reports }: { reports: ReceivedReport[] }) {
+  const latest = new Map<string, ReceivedReport>();
+  for (const r of reports) {
+    const k = `${r.deployment_identifier}:${r.period}`;
+    if (!latest.has(k) || latest.get(k)!.revision < r.revision) latest.set(k, r);
+  }
+  return (
+    <section className="acct-section">
+      <div className="acct-head">
+        <h2>Usage recorded</h2>
+        <span className="acct-note">What it will be billed on, once a price per owl is decided</span>
+      </div>
+      {reports.length === 0 ? (
+        <p className="acct-prose acct-quiet">
+          No usage report has been recorded against it. A private deployment on the metered price reports each day&rsquo;s total of owls
+          its runs spent, and nothing else.
+        </p>
+      ) : (
+        reports.slice(0, 120).map((r) => {
+          const counts = latest.get(`${r.deployment_identifier}:${r.period}`) === r;
+          return (
+            <div key={`${r.deployment_identifier}-${r.period}-${r.revision}`} className="acct-line">
+              <div>
+                {r.period}
+                {r.revision > 0 ? ` (revision ${r.revision})` : ""}
+                <span className="acct-detail">
+                  {r.deployment?.name ?? `deployment ${r.deployment_identifier.slice(0, 8)}`} · {VIA[r.via]}
+                  {counts ? "" : " · replaced by a later revision"}
+                </span>
+              </div>
+              <span className="acct-amount" style={counts ? undefined : { textDecoration: "line-through" }}>
+                {r.owls_spent} owls
+              </span>
+            </div>
+          );
+        })
       )}
     </section>
   );

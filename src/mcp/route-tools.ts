@@ -256,6 +256,7 @@ export const ROUTE_TOOLS: Record<string, RouteTool> = {
   "GET /organizations/:id/old-keys": { name: "list_organization_old_keys" },
   "GET /organizations/:id/deployments": { name: "list_organization_deployments" },
   "GET /organizations/:id/domains": { name: "list_organization_domains" },
+  "GET /organizations/:id/usage-reports": { name: "list_organization_usage_reports" },
   // This deployment's own connection to minerval.ai (docs/organizations.md, "Connecting").
   "GET /outside/connection": { name: "get_public_graph_connection" },
   "GET /account-conversion": { name: "get_account_conversion" },

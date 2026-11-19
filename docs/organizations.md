@@ -1004,9 +1004,17 @@ Each phase is one pull request or a few, and leaves things working.
    organization's log for its admins; one organization holds a domain at a
    time. `list_organization_domains` is a tool; adding, checking and
    removing are an admin's, in their session.
-7. **Billing on the organization.** The report identifier tied to the
-   organization, reports refused when it does not match, the admins' read of reports received, and
-   the organization's billing page.
+7. **Billing on the organization** (built). The report identifier tied to
+   the organization: a connection that gives one another organization's
+   deployment holds is refused at approval (`IDENTIFIER_HELD`), a signed
+   report must carry its deployment's identifier (`IDENTIFIER_DIFFERS`), a
+   deployment that connected before it had one takes the first it reports,
+   and an uploaded report under another organization's identifier is
+   refused. `usage_reports_received` keeps how each came (`received_via`:
+   signed, uploaded or account key, with the deployment or the admin). The
+   admins' read, `GET /organizations/:id/usage-reports`
+   (`list_organization_usage_reports`), on the Billing tab as "Usage
+   recorded", the latest revision of each day counted.
 8. **minerval.ai as an OpenID Connect provider** for organizations, which
    a hosted deployment needs and a self-hosted one may use. Naming the
    person who acted, as a gate setting.

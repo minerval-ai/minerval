@@ -81,7 +81,7 @@ export async function uploadUsageReport(input: { organizationId: string; report:
       throw new OrganizationError("NOT_A_REPORT", "This is not a usage report: it is not JSON. Upload the file the deployment wrote, as it is.", 422);
     }
   }
-  const result = await receiveUsageReport(input.organizationId, payload);
+  const result = await receiveUsageReport(input.organizationId, payload, new Date(), { uploadedBy: input.by });
   if (result.ok) {
     await rawQuery(
       `INSERT INTO organization_log (organization_id, actor_id, credential, kind, detail)
@@ -90,4 +90,67 @@ export async function uploadUsageReport(input: { organizationId: string; report:
     );
   }
   return result;
+}
+
+export interface ReceivedReportView {
+  period: string;
+  revision: number;
+  /** The day's total, in owls with six decimal places, as the report states it. */
+  owls_spent: string;
+  /** The identifier the deployment made for itself, which the report carries. */
+  deployment_identifier: string;
+  /** The connected deployment it belongs to, by name, where one is known. */
+  deployment: { id: string; name: string } | null;
+  via: "signed" | "uploaded" | "account_key";
+  received_at: string;
+  /** The report exactly as received. */
+  body: string;
+}
+
+/**
+ * What Minerval has recorded against the organization (its admins only),
+ * newest day first: exactly what its deployments' Budget pages show their
+ * administrators as sent, so nothing new leaves anyone. What it will be
+ * billed on, once a price per owl is decided, from the latest revision of
+ * each day.
+ */
+export async function receivedUsageReports(input: { organizationId: string; by: string; limit?: number }): Promise<ReceivedReportView[]> {
+  if (!(await isLiveAdmin(input.organizationId, input.by))) {
+    throw new OrganizationError("ADMIN_REQUIRED", "Only an admin of the organization reads the usage reports recorded against it.", 403);
+  }
+  const rows = await rawQuery<{
+    period: string; revision: number; body: string; deployment_id: string; received_via: ReceivedReportView["via"]; received_at: Date;
+    dep_id: string | null; dep_name: string | null;
+  }>(
+    `SELECT to_char(r.period, 'YYYY-MM-DD') AS period, r.revision, r.body, r.deployment_id, r.received_via, r.received_at,
+            d.id AS dep_id, d.name AS dep_name
+       FROM usage_reports_received r
+       LEFT JOIN LATERAL (
+         SELECT id, name FROM deployments
+          WHERE organization_id = r.account_id AND (id = r.connected_deployment_id OR report_identifier = r.deployment_id)
+          ORDER BY id = r.connected_deployment_id DESC LIMIT 1
+       ) d ON true
+      WHERE r.account_id = $1
+      ORDER BY r.period DESC, r.revision DESC
+      LIMIT $2`,
+    [input.organizationId, Math.min(Math.max(1, Math.trunc(input.limit ?? 400)), 2000)]
+  );
+  return rows.map((r) => {
+    let owls = "";
+    try {
+      owls = String((JSON.parse(r.body) as { owls_spent?: unknown }).owls_spent ?? "");
+    } catch {
+      owls = "";
+    }
+    return {
+      period: r.period,
+      revision: r.revision,
+      owls_spent: owls,
+      deployment_identifier: r.deployment_id,
+      deployment: r.dep_id ? { id: r.dep_id, name: r.dep_name ?? "" } : null,
+      via: r.received_via,
+      received_at: r.received_at.toISOString(),
+      body: r.body,
+    };
+  });
 }

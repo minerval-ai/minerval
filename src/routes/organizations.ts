@@ -58,7 +58,7 @@ async function answer<T>(reply: FastifyReply, fn: () => Promise<T>, status = 200
   }
 }
 
-import { nextFeedBatch, uploadUsageReport } from "../services/organization-carried.js";
+import { nextFeedBatch, receivedUsageReports, uploadUsageReport } from "../services/organization-carried.js";
 import { addDomain, checkDomain, listDomains, removeDomain, shownDomain } from "../services/organization-domains.js";
 
 export async function organizationRoutes(app: FastifyInstance): Promise<void> {
@@ -560,6 +560,23 @@ export async function organizationRoutes(app: FastifyInstance): Promise<void> {
         throw err;
       }
     },
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { limit?: number } }>("/organizations/:id/usage-reports", {
+    schema: {
+      tags: TAGS,
+      summary:
+        "The usage reports Minerval has recorded against an organization (its admins only), newest day first: each day's total of owls " +
+        "its deployments spent, which deployment it was of, and whether it was signed or uploaded. Exactly what each deployment's own " +
+        "Budget page shows as sent. What it will be billed on, once a price per owl is decided",
+      params: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+      querystring: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 2000 } } },
+    },
+    preHandler: reader,
+    handler: (request, reply) =>
+      answer(reply, async () => ({
+        reports: await receivedUsageReports({ organizationId: request.params.id, by: me(request), limit: request.query.limit }),
+      })),
   });
 
   app.post<{ Params: { id: string }; Body: { report: unknown } }>("/organizations/:id/usage-reports", {

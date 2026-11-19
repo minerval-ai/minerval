@@ -329,6 +329,22 @@ export async function approveByHand(
   });
 }
 
+export interface ReceivedReport {
+  period: string;
+  revision: number;
+  owls_spent: string;
+  deployment_identifier: string;
+  deployment: { id: string; name: string } | null;
+  via: "signed" | "uploaded" | "account_key";
+  received_at: string;
+  body: string;
+}
+
+/** What Minerval has recorded against the organization (admins only). */
+export async function listReceivedReports(me: string, id: string): Promise<ReceivedReport[]> {
+  return (await accountFetch<{ reports: ReceivedReport[] }>(`${org(id)}/usage-reports?limit=400`, { actingUser: me })).reports;
+}
+
 /** Upload a usage report a deployment wrote as a file, recorded against the organization as if sent. */
 export async function uploadUsageReport(me: string, id: string, report: string): Promise<{ recorded: boolean; period: string; revision: number }> {
   return accountFetch(`${org(id)}/usage-reports`, { method: "POST", body: { report }, actingUser: me });

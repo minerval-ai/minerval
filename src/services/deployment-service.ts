@@ -359,6 +359,21 @@ export async function approveConnect(input: {
         typeof input.name === "string" && input.name.trim() ? input.name.trim().replace(/\s+/g, " ").slice(0, NAME_MAX) : row.suggested_name;
       const [live] = await tx.query<{ id: string }>(`SELECT id FROM deployments WHERE key_id = $1 AND retired_at IS NULL`, [row.key_id]);
       if (live) throw new DeploymentError("KEY_ALREADY_CONNECTED", "This key is already a connected deployment's.", 409);
+      if (row.report_identifier) {
+        // The identifier its usage reports carry is tied to one organization (docs/organizations.md, "Billing").
+        const [held] = await tx.query<{ id: string }>(
+          `SELECT id FROM deployments WHERE report_identifier = $1 AND organization_id <> $2 LIMIT 1`,
+          [row.report_identifier, input.organizationId]
+        );
+        if (held) {
+          throw new DeploymentError(
+            "IDENTIFIER_HELD",
+            "This deployment's usage-report identifier belongs to a deployment of another organization, so it cannot be connected for this one: " +
+              "its usage is on that organization's record. Ask Minerval if it should move.",
+            409
+          );
+        }
+      }
       if (row.hosting_token_id) {
         const [inUse] = await tx.query<{ name: string }>(
           `SELECT d.name FROM hosted_deployment_tokens t JOIN deployments d ON d.id = t.deployment_id

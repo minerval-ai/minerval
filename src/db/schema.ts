@@ -3691,7 +3691,9 @@ export const usageReports = pgTable(
 // The receiving side of the same report (POST /usage-reports): a private
 // deployment sends its report privately to Minerval's server under the
 // organization's account, and it is recorded here against that account
-// alone, as it was sent. No route reads these rows back.
+// alone, as it was sent. Only that organization's admins read them back
+// (GET /organizations/:id/usage-reports), seeing what its deployments'
+// Budget pages already show as sent.
 // Nothing reads these rows to bill yet. One row per account, deployment,
 // period and revision: the same report sent again is recognized by its
 // hash and changes nothing, and a different report for a period already
@@ -3717,6 +3719,12 @@ export const usageReportsReceived = pgTable(
     bodyHash: text("body_hash").notNull(),
     // The total the body states, in millionths of an owl.
     spentMicroOwls: bigint("spent_micro_owls", { mode: "number" }).notNull(),
+    // How it came (docs/organizations.md, "Billing"): 'signed' by a connected
+    // deployment (connected_deployment_id names it), 'uploaded' by an admin of
+    // the organization (uploaded_by names them), or 'account_key'.
+    receivedVia: text("received_via").notNull().default("account_key"),
+    connectedDeploymentId: uuid("connected_deployment_id"),
+    uploadedBy: uuid("uploaded_by"),
     receivedAt: timestamp("received_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
